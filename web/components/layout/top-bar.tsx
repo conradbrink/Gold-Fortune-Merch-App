@@ -1,0 +1,99 @@
+"use client";
+
+import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
+import {
+  Search,
+  Mail,
+  Bell,
+  Settings,
+  ChevronDown,
+  LogOut,
+  Menu,
+} from "lucide-react";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { createClient } from "@/lib/supabase/client";
+
+export function TopBar({ onOpenNav }: { onOpenNav?: () => void }) {
+  const router = useRouter();
+  const supabase = createClient();
+  const [label, setLabel] = useState("Gold Fortune User");
+  const [initials, setInitials] = useState("GF");
+
+  useEffect(() => {
+    supabase.auth.getUser().then(({ data }) => {
+      const meta = data.user?.user_metadata as { full_name?: string } | undefined;
+      const name = meta?.full_name || data.user?.email || "Gold Fortune User";
+      setLabel(name);
+      const parts = name.trim().split(/\s+/);
+      setInitials(
+        parts.length > 1
+          ? `${parts[0][0]}${parts[1][0]}`.toUpperCase()
+          : name.slice(0, 2).toUpperCase()
+      );
+    });
+  }, [supabase]);
+
+  async function handleSignOut() {
+    await supabase.auth.signOut();
+    router.push("/login");
+    router.refresh();
+  }
+
+  return (
+    <header className="flex h-16 shrink-0 items-center gap-3 border-b border-border bg-background px-4 sm:px-6">
+      <Button
+        variant="ghost"
+        size="icon"
+        className="md:hidden"
+        onClick={onOpenNav}
+        aria-label="Open navigation"
+      >
+        <Menu className="h-5 w-5" />
+      </Button>
+
+      <div className="hidden min-w-0 flex-1 items-center gap-2 rounded-md border border-border bg-secondary/50 px-3 py-2 text-sm text-muted-foreground sm:flex sm:max-w-md">
+        <Search className="h-4 w-4 shrink-0" />
+        <span className="truncate">
+          Find places, reps, forms, files and products
+        </span>
+      </div>
+
+      <div className="ml-auto flex items-center gap-2 text-muted-foreground sm:gap-4">
+        <Button variant="ghost" size="icon" className="sm:hidden" aria-label="Search">
+          <Search className="h-5 w-5" />
+        </Button>
+        <Mail className="hidden h-5 w-5 lg:block" />
+        <Bell className="hidden h-5 w-5 lg:block" />
+        <Settings className="hidden h-5 w-5 lg:block" />
+        <div className="mx-1 hidden h-6 w-px bg-border lg:block" />
+        <DropdownMenu>
+          <DropdownMenuTrigger className="flex items-center gap-2 outline-none">
+            <Avatar className="h-7 w-7 shrink-0">
+              <AvatarFallback className="bg-primary text-primary-foreground text-xs">
+                {initials}
+              </AvatarFallback>
+            </Avatar>
+            <span className="hidden max-w-[12rem] truncate text-sm font-medium text-foreground lg:block">
+              {label}
+            </span>
+            <ChevronDown className="h-4 w-4 shrink-0" />
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            <DropdownMenuItem onClick={handleSignOut} className="gap-2">
+              <LogOut className="h-4 w-4" />
+              Sign out
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </div>
+    </header>
+  );
+}

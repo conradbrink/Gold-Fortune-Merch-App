@@ -1,0 +1,495 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:intl/intl.dart';
+
+import '../../core/providers.dart';
+import '../../core/theme.dart';
+import '../../data/models/route_visit.dart';
+import '../../shared/widgets/status_badge.dart';
+import '../forms/form_fill_screen.dart';
+import '../workday/workday_controller.dart';
+
+/// Below this, a check-out is treated as suspiciously quick and the rep is
+/// asked to confirm. Real merchandising work at a store takes longer.
+const kMinimumVisitDuration = Duration(minutes: 5);
+
+class StoreDetailScreen extends ConsumerStatefulWidget {
+  const StoreDetailScreen({super.key, required this.routeId});
+  final String routeId;
+
+  @override
+  ConsumerState<StoreDetailScreen> createState() => _StoreDetailScreenState();
+}
+
+class _StoreDetailScreenState extends ConsumerState<StoreDetailScreen> {
+  bool _busy = false;
+
+  RouteVisit? _find(List<RouteVisit> routes) {
+    for (final r in routes) {
+      if (r.routeId == widget.routeId) return r;
+    }
+    return null;
+  }
+
+  Future<void> _checkIn(RouteVisit rv) async {
+    final profile = ref.read(profileProvider).value;
+    if (profile == null) return;
+
+    setState(() => _busy = true);
+    try {
+      final session = ref.read(workdayControllerProvider).value;
+      final result = await ref.read(visitRepositoryProvider).checkIn(
+            orgId: profile.orgId,
+            repId: profile.id,
+            routeVisit: rv,
+            workdaySessionClientId: session?.clientGeneratedId,
+          );
+      ref.invalidate(todayRoutesProvider);
+
+      if (!mounted) return;
+      final metres = result.distanceFromStoreM;
+      final message = result.outsideGeofence
+          ? 'Checked in — but you appear ${metres!.round()}m from the store. '
+              'This was recorded for your manager.'
+          : metres != null
+              ? 'Checked in (${metres.round()}m from store).'
+              : 'Checked in.';
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(SnackBar(
+          content: Text(message),
+          backgroundColor:
+              result.outsideGeofence ? AppColors.warning : AppColors.success,
+        ));
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(SnackBar(content: Text('$e')));
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  /// Asks the rep to confirm when they're leaving unusually fast, so a
+  /// mis-tap or a drive-by doesn't silently record as a completed visit.
+  Future<bool> _confirmShortVisit(Duration spent) async {
+    final minutes = spent.inMinutes;
+    final label = minutes < 1 ? 'less than a minute' : '$minutes min';
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Check out already?'),
+        content: Text(
+          "You've only been at this store for $label. Short visits are "
+          'flagged for your manager.\n\nAre you sure you want to check out?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Stay checked in'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: ElevatedButton.styleFrom(backgroundColor: AppColors.warning),
+            child: const Text('Check out anyway'),
+          ),
+        ],
+      ),
+    );
+    return confirmed ?? false;
+  }
+
+  Future<void> _checkOut(RouteVisit rv) async {
+    final profile = ref.read(profileProvider).value;
+    if (profile == null) return;
+
+    if (rv.checkinAt != null) {
+      final spent = DateTime.now().difference(rv.checkinAt!);
+      if (spent < kMinimumVisitDuration) {
+        final proceed = await _confirmShortVisit(spent);
+        if (!proceed) return;
+      }
+    }
+
+    if (!mounted) return;
+    setState(() => _busy = true);
+    try {
+      final session = ref.read(workdayControllerProvider).value;
+      await ref.read(visitRepositoryProvider).checkOut(
+            orgId: profile.orgId,
+            repId: profile.id,
+            routeVisit: rv,
+            workdaySessionClientId: session?.clientGeneratedId,
+          );
+      ref.invalidate(todayRoutesProvider);
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(const SnackBar(
+          content: Text('Checked out.'),
+          backgroundColor: AppColors.success,
+        ));
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(SnackBar(content: Text('$e')));
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final routesAsync = ref.watch(todayRoutesProvider);
+    final workdayAsync = ref.watch(workdayControllerProvider);
+    // Only warn once we actually know there's no open workday — otherwise the
+    // banner flashes during the provider's initial load.
+    final showNoWorkdayWarning =
+        !workdayAsync.isLoading && workdayAsync.value == null;
+
+    return Scaffold(
+      appBar: AppBar(title: const Text('Store visit')),
+      body: routesAsync.when(
+        loading: () => const Center(child: CircularProgressIndicator()),
+        error: (e, _) => Center(child: Text('$e')),
+        data: (routes) {
+          final rv = _find(routes);
+          if (rv == null) {
+            return const Center(child: Text('Visit not found.'));
+          }
+
+          final timeFormat = DateFormat.jm();
+          return ListView(
+            padding: const EdgeInsets.all(16),
+            children: [
+              Card(
+                margin: EdgeInsets.zero,
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Container(
+                            width: 46,
+                            height: 46,
+                            decoration: BoxDecoration(
+                              color: AppColors.gold.withValues(alpha: 0.18),
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: const Icon(Icons.storefront_outlined,
+                                color: AppColors.navy),
+                          ),
+                          const SizedBox(width: 14),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  rv.storeName,
+                                  style: const TextStyle(
+                                    fontSize: 17,
+                                    fontWeight: FontWeight.bold,
+                                    color: AppColors.textPrimary,
+                                  ),
+                                ),
+                                const SizedBox(height: 3),
+                                StatusBadge(status: rv.status),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                      if (rv.storeAddress != null) ...[
+                        const Divider(height: 26),
+                        _DetailRow(
+                          icon: Icons.location_on_outlined,
+                          label: 'Address',
+                          value: [rv.storeAddress, rv.storeCity, rv.storeState]
+                              .where((s) => s != null && s.isNotEmpty)
+                              .join(', '),
+                        ),
+                      ],
+                      if (rv.scheduledStartAt != null) ...[
+                        const SizedBox(height: 12),
+                        _DetailRow(
+                          icon: Icons.schedule,
+                          label: 'Scheduled',
+                          value:
+                              '${timeFormat.format(rv.scheduledStartAt!)}${rv.scheduledEndAt != null ? ' – ${timeFormat.format(rv.scheduledEndAt!)}' : ''}',
+                        ),
+                      ],
+                      if (rv.checkinAt != null) ...[
+                        const SizedBox(height: 12),
+                        _DetailRow(
+                          icon: Icons.login,
+                          label: 'Checked in',
+                          value: timeFormat.format(rv.checkinAt!),
+                        ),
+                      ],
+                      if (rv.checkoutAt != null) ...[
+                        const SizedBox(height: 12),
+                        _DetailRow(
+                          icon: Icons.logout,
+                          label: 'Checked out',
+                          value: timeFormat.format(rv.checkoutAt!),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+              if (showNoWorkdayWarning)
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: AppColors.warning.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: const Row(
+                    children: [
+                      Icon(Icons.info_outline,
+                          size: 18, color: AppColors.warning),
+                      SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'Start your workday first so this visit is tracked.',
+                          style: TextStyle(
+                              fontSize: 12.5, color: AppColors.textPrimary),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              if (showNoWorkdayWarning) const SizedBox(height: 12),
+              // Forms become available once the rep is on site.
+              if (rv.visitClientGeneratedId != null && (rv.isCheckedIn || rv.isCheckedOut)) ...[
+                _FormsSection(
+                  visitClientGeneratedId: rv.visitClientGeneratedId!,
+                  readOnly: rv.isCheckedOut,
+                ),
+                const SizedBox(height: 16),
+              ],
+              if (rv.isCheckedOut)
+                const _DoneNotice()
+              else
+                SizedBox(
+                  width: double.infinity,
+                  height: 52,
+                  child: ElevatedButton.icon(
+                    onPressed: _busy
+                        ? null
+                        : () => rv.isCheckedIn ? _checkOut(rv) : _checkIn(rv),
+                    icon: _busy
+                        ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              valueColor:
+                                  AlwaysStoppedAnimation<Color>(Colors.white),
+                            ),
+                          )
+                        : Icon(rv.isCheckedIn ? Icons.logout : Icons.login),
+                    label: Text(
+                      _busy
+                          ? 'Getting your location…'
+                          : rv.isCheckedIn
+                              ? 'Check out'
+                              : 'Check in',
+                      style: const TextStyle(fontSize: 16),
+                    ),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor:
+                          rv.isCheckedIn ? AppColors.danger : AppColors.navy,
+                    ),
+                  ),
+                ),
+              const SizedBox(height: 10),
+              const Text(
+                'Your GPS location is recorded at check-in and check-out.',
+                textAlign: TextAlign.center,
+                style: TextStyle(color: AppColors.textMuted, fontSize: 11.5),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+}
+
+/// Lists the org's active form templates for this visit, marking off the ones
+/// already submitted so a rep can see what's still outstanding.
+class _FormsSection extends ConsumerWidget {
+  const _FormsSection({required this.visitClientGeneratedId, required this.readOnly});
+
+  final String visitClientGeneratedId;
+  final bool readOnly;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final templatesAsync = ref.watch(formTemplatesProvider);
+    final submittedAsync = ref.watch(submittedTemplateIdsProvider(visitClientGeneratedId));
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'Forms',
+          style: TextStyle(
+            fontWeight: FontWeight.bold,
+            fontSize: 15,
+            color: AppColors.textPrimary,
+          ),
+        ),
+        const SizedBox(height: 8),
+        templatesAsync.when(
+          loading: () => const Padding(
+            padding: EdgeInsets.symmetric(vertical: 12),
+            child: Center(child: CircularProgressIndicator()),
+          ),
+          error: (e, _) => Text('Could not load forms: $e',
+              style: const TextStyle(color: AppColors.textMuted)),
+          data: (templates) {
+            if (templates.isEmpty) {
+              return const Text(
+                'No forms have been published for your team yet.',
+                style: TextStyle(color: AppColors.textMuted, fontSize: 13),
+              );
+            }
+            final submitted = submittedAsync.value ?? const <String>{};
+            return Column(
+              children: templates.map((t) {
+                final done = submitted.contains(t.id);
+                return Card(
+                  margin: const EdgeInsets.only(bottom: 8),
+                  child: ListTile(
+                    leading: Icon(
+                      done ? Icons.check_circle : Icons.assignment_outlined,
+                      color: done ? AppColors.success : AppColors.navy,
+                    ),
+                    title: Text(
+                      t.name,
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w600,
+                        fontSize: 14,
+                      ),
+                    ),
+                    subtitle: Text(
+                      done
+                          ? 'Submitted'
+                          : '${t.fields.length} question${t.fields.length == 1 ? '' : 's'}',
+                      style: const TextStyle(fontSize: 12),
+                    ),
+                    trailing: done || readOnly
+                        ? null
+                        : const Icon(Icons.chevron_right),
+                    onTap: done || readOnly
+                        ? null
+                        : () async {
+                            final saved = await Navigator.push<bool>(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => FormFillScreen(
+                                  template: t,
+                                  visitClientGeneratedId: visitClientGeneratedId,
+                                ),
+                              ),
+                            );
+                            if (saved == true) {
+                              ref.invalidate(
+                                  submittedTemplateIdsProvider(visitClientGeneratedId));
+                            }
+                          },
+                  ),
+                );
+              }).toList(),
+            );
+          },
+        ),
+      ],
+    );
+  }
+}
+
+class _DoneNotice extends StatelessWidget {
+  const _DoneNotice();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: AppColors.success.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: const Row(
+        children: [
+          Icon(Icons.check_circle, color: AppColors.success),
+          SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              'This visit is complete.',
+              style: TextStyle(
+                fontWeight: FontWeight.w600,
+                color: AppColors.textPrimary,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _DetailRow extends StatelessWidget {
+  const _DetailRow({
+    required this.icon,
+    required this.label,
+    required this.value,
+  });
+
+  final IconData icon;
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Icon(icon, size: 17, color: AppColors.textMuted),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                label,
+                style: const TextStyle(
+                  color: AppColors.textMuted,
+                  fontSize: 11.5,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+              const SizedBox(height: 1),
+              Text(
+                value,
+                style: const TextStyle(
+                  fontSize: 14,
+                  color: AppColors.textPrimary,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
