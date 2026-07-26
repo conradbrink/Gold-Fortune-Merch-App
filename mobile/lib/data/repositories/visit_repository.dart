@@ -8,6 +8,7 @@ import '../local/app_database.dart';
 import '../local/outbox_types.dart';
 import '../models/route_visit.dart';
 import '../sync/sync_engine.dart';
+import 'route_repository.dart';
 import 'workday_repository.dart';
 
 const _uuid = Uuid();
@@ -27,11 +28,12 @@ class CheckInResult {
 /// Visit writes are queued locally first, then synced. A rep standing in a
 /// signal dead zone still gets an immediate, durable check-in.
 class VisitRepository {
-  VisitRepository(this._db, this._sync, this._workdayRepo);
+  VisitRepository(this._db, this._sync, this._workdayRepo, this._routeRepo);
 
   final AppDatabase _db;
   final SyncEngine _sync;
   final WorkdayRepository _workdayRepo;
+  final RouteRepository _routeRepo;
 
   Future<CheckInResult> checkIn({
     required String orgId,
@@ -54,6 +56,7 @@ class VisitRepository {
     // Reuse the existing visit's key when the manager pre-created the row,
     // so we update rather than insert a parallel visit.
     final clientId = routeVisit.visitClientGeneratedId ?? _uuid.v4();
+    final checkinAt = DateTime.now();
 
     await _db.enqueue(
       entityType: OutboxType.visitCheckIn,
@@ -64,7 +67,7 @@ class VisitRepository {
         'rep_id': repId,
         'store_id': routeVisit.storeId,
         'status': 'checked_in',
-        'checkin_at': DateTime.now().toUtc().toIso8601String(),
+        'checkin_at': checkinAt.toUtc().toIso8601String(),
         'checkin_lat': position.latitude,
         'checkin_lng': position.longitude,
         'checkin_gps_accuracy_m': position.accuracy,
@@ -79,6 +82,17 @@ class VisitRepository {
       sessionClientId: workdaySessionClientId,
       position: position,
       source: 'checkin',
+    );
+
+    // Write the new state into the route cache. Without this the offline UI
+    // re-reads the stale cached row, still shows "not started", and a rep who
+    // taps Check in again mints a second client id — a duplicate visit.
+    await _routeRepo.applyLocalVisitChange(
+      routeVisit.copyWith(
+        status: 'checked_in',
+        visitClientGeneratedId: clientId,
+        checkinAt: checkinAt,
+      ),
     );
 
     unawaited(_sync.sync());
@@ -129,6 +143,10 @@ class VisitRepository {
       sessionClientId: workdaySessionClientId,
       position: position,
       source: 'checkout',
+    );
+
+    await _routeRepo.applyLocalVisitChange(
+      routeVisit.copyWith(status: 'checked_out', checkoutAt: checkoutAt),
     );
 
     unawaited(_sync.sync());

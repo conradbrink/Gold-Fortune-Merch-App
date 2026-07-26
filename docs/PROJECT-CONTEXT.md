@@ -129,12 +129,65 @@ Riverpod 3, go_router, drift, geolocator, image_picker, connectivity_plus, uuid.
   disabled to prevent passing off stored images), GPS-stamped at capture
 - **Short-visit warning** — confirm dialog if checking out under 5 minutes
 
-**Written but NEVER RUN — this is the top priority:**
-- **Offline sync.** Drift outbox (`lib/data/local/app_database.dart`,
-  `lib/data/sync/sync_engine.dart`), all rep writes routed through it, route
-  caching for offline reads, and a `SyncBanner`. It passes `flutter analyze`
-  but the emulator shut down before it ever launched. **Assume it is unverified
-  and possibly broken.**
+**Offline sync — VERIFIED end-to-end on the emulator (26 Jul 2026).**
+Drift outbox (`lib/data/local/app_database.dart`, `lib/data/sync/sync_engine.dart`),
+all rep writes routed through it, route caching for offline reads, `SyncBanner`.
+
+Full airplane-mode run: start workday → check in → form with camera photo →
+check out → cold restart still offline → reconnect. Result: **7 queued
+operations drained, every row landed exactly once, zero duplicates.**
+- Offline timestamps are preserved (check-in 19:42, check-out 19:49 recorded
+  as such despite syncing at 19:52) — the server clock does not overwrite them.
+- Geofence distance 0.15 m; photo reached storage byte-identical (31,321 B) at
+  `org/rep/visit/<uuid>.jpg`; all 3 pings resolved to their workday session.
+- `client_generated_id` upsert proved itself: re-checking in against an
+  existing visit row updated it rather than inserting a second visit.
+
+Verifying it uncovered four real bugs, all fixed on branch
+`offline-sync-verification` — see §4.1.
+
+### 4.1 Bugs found by actually running the offline path
+
+Every one of these passed `flutter analyze` and would only ever appear on a
+device with no signal. Worth remembering: the analyzer proves nothing about
+offline behaviour.
+
+1. **The router made every navigation a network call.** `redirect` in
+   `app.dart` fetched the profile role from Supabase on *every* navigation.
+   Offline the host lookup threw `GoException` and navigation was aborted —
+   the rep was frozen on the route list and could not open a store at all.
+   Fixed: the role is cached in a Drift key/value table and read cache-first,
+   refreshed in the background. An unknown role now falls through to the rep
+   UI rather than trapping the user (RLS, not routing, is the access boundary).
+
+2. **An offline workday vanished on app restart.** `fetchActiveSession` was
+   server-only, so after a restart the app showed "Workday not started" while
+   a `workday_start` sat in the outbox. The rep would tap Start again and
+   queue a **second session**. Fixed: the active session is cached locally,
+   cleared on end, and trusted whenever its start is still queued.
+
+3. **An offline check-in was invisible, which duplicated visits.** After
+   check-in the UI re-read the *cached* route (still `not_started`) because
+   `applyLocalVisitChange` was written but never called. Tapping Check in
+   again minted a **new** `client_generated_id` — a genuine duplicate visit,
+   defeating the whole idempotency scheme. Fixed: check-in/check-out now write
+   through to the route cache.
+
+4. **Forms were unusable offline.** `fetchActiveTemplates` had no cache or
+   fallback, and `fetchSubmittedTemplateIds` ignored the outbox, so a form
+   submitted offline never showed as submitted. Fixed: templates are cached on
+   every successful fetch (and warmed from the route screen, so a rep who
+   loses signal on the road still has their forms), and queued submissions
+   count as submitted.
+
+### Business rules enforced in the rep app
+- **A workday must be open before checking in.** Check in is disabled with an
+  explanatory note, plus a backstop in `_checkIn`.
+- **All active forms must be submitted before checking out.** Check out is
+  disabled until then, naming the outstanding form. Queued (unsynced)
+  submissions satisfy this, so the rule works offline. If templates cannot be
+  loaded at all the gate stays open — a rep must never be stranded at a store
+  by a form the app can't show them.
 
 ### Riverpod 3 gotchas
 - **Providers auto-dispose by default** — call `ref.keepAlive()` for anything
@@ -192,9 +245,15 @@ adb shell screencap -p /sdcard/s.png && adb pull /sdcard/s.png /tmp/s.png
 
 ## 6. Open items, roughly by priority
 
-1. **Verify offline sync end-to-end** (airplane mode: check in → submit form
-   with photo → check out → reconnect → confirm each row lands exactly once,
-   no duplicates). Never been run.
+1. ~~Verify offline sync end-to-end~~ **Done** — see §4 and §4.1.
+   Remaining smaller offline items:
+   - The rep's name disappears from the route header while offline
+     (`profileProvider` has no cache, unlike role/routes/templates). Cosmetic.
+   - `SyncBanner` only appears on the route screen, not on store/form screens,
+     so a rep filling a form has no offline indicator.
+   - The sync engine's "already landed" guard for partially-replayed form
+     submissions was never exercised — the queue drained cleanly first time.
+     Worth a deliberate mid-drain kill to test.
 2. **Wire Time & Mileage page** — data exists, page is a stub.
 3. **Wire Reports page** — real form submissions now exist.
 4. **Background GPS decision.** The 20-min timer only runs while the app is

@@ -4,6 +4,7 @@ import 'package:intl/intl.dart';
 
 import '../../core/providers.dart';
 import '../../core/theme.dart';
+import '../../data/models/form_template.dart';
 import '../../data/models/route_visit.dart';
 import '../../shared/widgets/status_badge.dart';
 import '../forms/form_fill_screen.dart';
@@ -35,14 +36,26 @@ class _StoreDetailScreenState extends ConsumerState<StoreDetailScreen> {
     final profile = ref.read(profileProvider).value;
     if (profile == null) return;
 
+    // The button is disabled without an open workday; this is the backstop so
+    // a visit can never be recorded outside a tracked day.
+    final session = ref.read(workdayControllerProvider).value;
+    if (session == null) {
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(const SnackBar(
+          content: Text('Start your workday before checking in.'),
+          backgroundColor: AppColors.warning,
+        ));
+      return;
+    }
+
     setState(() => _busy = true);
     try {
-      final session = ref.read(workdayControllerProvider).value;
       final result = await ref.read(visitRepositoryProvider).checkIn(
             orgId: profile.orgId,
             repId: profile.id,
             routeVisit: rv,
-            workdaySessionClientId: session?.clientGeneratedId,
+            workdaySessionClientId: session.clientGeneratedId,
           );
       ref.invalidate(todayRoutesProvider);
 
@@ -145,10 +158,10 @@ class _StoreDetailScreenState extends ConsumerState<StoreDetailScreen> {
   Widget build(BuildContext context) {
     final routesAsync = ref.watch(todayRoutesProvider);
     final workdayAsync = ref.watch(workdayControllerProvider);
-    // Only warn once we actually know there's no open workday — otherwise the
-    // banner flashes during the provider's initial load.
-    final showNoWorkdayWarning =
-        !workdayAsync.isLoading && workdayAsync.value == null;
+    // Only judge once we actually know — otherwise the gate flickers on during
+    // the provider's initial load.
+    final workdayKnown = !workdayAsync.isLoading;
+    final hasWorkday = workdayAsync.value != null;
 
     return Scaffold(
       appBar: AppBar(title: const Text('Store visit')),
@@ -159,6 +172,35 @@ class _StoreDetailScreenState extends ConsumerState<StoreDetailScreen> {
           final rv = _find(routes);
           if (rv == null) {
             return const Center(child: Text('Visit not found.'));
+          }
+
+          // Outstanding forms gate the check-out. If templates can't be read
+          // at all (no connection, nothing cached) the list is empty and the
+          // gate stays open — a rep must never be stranded at a store by a
+          // form we can't even show them.
+          final templates =
+              ref.watch(formTemplatesProvider).value ?? const <FormTemplate>[];
+          final submitted = rv.visitClientGeneratedId != null
+              ? ref
+                      .watch(submittedTemplateIdsProvider(
+                          rv.visitClientGeneratedId!))
+                      .value ??
+                  const <String>{}
+              : const <String>{};
+          final outstanding =
+              templates.where((t) => !submitted.contains(t.id)).toList();
+
+          // Why the primary action is unavailable, or null when it's allowed.
+          final String? blockedReason;
+          if (!rv.isCheckedIn && workdayKnown && !hasWorkday) {
+            blockedReason =
+                'Start your workday before checking in to a store.';
+          } else if (rv.isCheckedIn && outstanding.isNotEmpty) {
+            blockedReason = outstanding.length == 1
+                ? 'Submit "${outstanding.first.name}" before checking out.'
+                : 'Submit all ${outstanding.length} forms before checking out.';
+          } else {
+            blockedReason = null;
           }
 
           final timeFormat = DateFormat.jm();
@@ -244,29 +286,30 @@ class _StoreDetailScreenState extends ConsumerState<StoreDetailScreen> {
                 ),
               ),
               const SizedBox(height: 16),
-              if (showNoWorkdayWarning)
+              if (blockedReason != null && !rv.isCheckedOut) ...[
                 Container(
                   padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
                     color: AppColors.warning.withValues(alpha: 0.1),
                     borderRadius: BorderRadius.circular(10),
                   ),
-                  child: const Row(
+                  child: Row(
                     children: [
-                      Icon(Icons.info_outline,
+                      const Icon(Icons.info_outline,
                           size: 18, color: AppColors.warning),
-                      SizedBox(width: 8),
+                      const SizedBox(width: 8),
                       Expanded(
                         child: Text(
-                          'Start your workday first so this visit is tracked.',
-                          style: TextStyle(
+                          blockedReason,
+                          style: const TextStyle(
                               fontSize: 12.5, color: AppColors.textPrimary),
                         ),
                       ),
                     ],
                   ),
                 ),
-              if (showNoWorkdayWarning) const SizedBox(height: 12),
+                const SizedBox(height: 12),
+              ],
               // Forms become available once the rep is on site.
               if (rv.visitClientGeneratedId != null && (rv.isCheckedIn || rv.isCheckedOut)) ...[
                 _FormsSection(
@@ -282,7 +325,7 @@ class _StoreDetailScreenState extends ConsumerState<StoreDetailScreen> {
                   width: double.infinity,
                   height: 52,
                   child: ElevatedButton.icon(
-                    onPressed: _busy
+                    onPressed: _busy || blockedReason != null
                         ? null
                         : () => rv.isCheckedIn ? _checkOut(rv) : _checkIn(rv),
                     icon: _busy

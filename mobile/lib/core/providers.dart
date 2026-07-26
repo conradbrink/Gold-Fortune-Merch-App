@@ -85,6 +85,7 @@ final visitRepositoryProvider = Provider<VisitRepository>((ref) {
     ref.watch(appDatabaseProvider),
     ref.watch(syncEngineProvider),
     ref.watch(workdayRepositoryProvider),
+    ref.watch(routeRepositoryProvider),
   );
 });
 

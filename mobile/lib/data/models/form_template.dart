@@ -15,6 +15,16 @@ class FormFieldDef {
     required this.sortOrder,
   });
 
+  /// Same shape [fromMap] reads, so a cached template rebuilds verbatim.
+  Map<String, dynamic> toMap() => {
+        'id': id,
+        'label': label,
+        'field_type': fieldType,
+        'options': options,
+        'required': required,
+        'sort_order': sortOrder,
+      };
+
   factory FormFieldDef.fromMap(Map<String, dynamic> map) {
     final rawOptions = map['options'];
     return FormFieldDef(
@@ -42,6 +52,13 @@ class FormTemplate {
     this.description,
     required this.fields,
   });
+
+  Map<String, dynamic> toMap() => {
+        'id': id,
+        'name': name,
+        'description': description,
+        'form_fields': fields.map((f) => f.toMap()).toList(),
+      };
 
   factory FormTemplate.fromMap(Map<String, dynamic> map) {
     final rawFields = (map['form_fields'] as List?) ?? const [];

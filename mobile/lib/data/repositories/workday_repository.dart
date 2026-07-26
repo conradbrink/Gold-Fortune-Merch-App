@@ -20,9 +20,18 @@ class WorkdayRepository {
   final AppDatabase _db;
   final SyncEngine _sync;
 
-  /// Server-side lookup; returns null when offline. The controller keeps its
-  /// own local record so an offline start still shows as in progress.
+  static String _activeKey(String repId) => 'active_workday:$repId';
+
+  /// The open workday, resilient to having no connection.
+  ///
+  /// A workday started offline exists only in the outbox until it syncs, so a
+  /// server lookup alone reports "not started" after an app restart — and the
+  /// rep would tap Start again and queue a duplicate session. The locally
+  /// cached copy is therefore authoritative whenever the server can't be
+  /// reached or hasn't received the row yet.
   Future<WorkdaySession?> fetchActiveSession(String repId) async {
+    final local = await _cachedActiveSession(repId);
+
     try {
       final row = await _client
           .from('workday_sessions')
@@ -32,11 +41,54 @@ class WorkdayRepository {
           .order('started_at', ascending: false)
           .limit(1)
           .maybeSingle();
-      return row == null ? null : WorkdaySession.fromMap(row);
-    } catch (_) {
+
+      if (row != null) {
+        final server = WorkdaySession.fromMap(row);
+        // Locally accrued mileage is ahead of the server until the pings
+        // drain, so keep whichever is greater.
+        final merged = local != null &&
+                local.clientGeneratedId == server.clientGeneratedId &&
+                local.distanceMeters > server.distanceMeters
+            ? server.copyWith(distanceMeters: local.distanceMeters)
+            : server;
+        await cacheActiveSession(merged);
+        return merged;
+      }
+
+      // Server has no open session. Trust the local copy only while its start
+      // is still queued — otherwise the day genuinely ended elsewhere.
+      if (local != null && await _hasPendingStart(local.clientGeneratedId)) {
+        return local;
+      }
+      if (local != null) await clearActiveSession(repId);
       return null;
+    } catch (_) {
+      return local;
     }
   }
+
+  Future<WorkdaySession?> _cachedActiveSession(String repId) async {
+    final raw = await _db.getValue(_activeKey(repId));
+    if (raw == null) return null;
+    return WorkdaySession.fromMap(jsonDecode(raw) as Map<String, dynamic>);
+  }
+
+  Future<bool> _hasPendingStart(String clientGeneratedId) async {
+    final pending = await _db.pendingEntries(limit: 1000);
+    return pending.any((e) =>
+        e.entityType == OutboxType.workdayStart &&
+        e.clientGeneratedId == clientGeneratedId);
+  }
+
+  Future<void> cacheActiveSession(WorkdaySession session) {
+    return _db.setValue(
+      _activeKey(session.repId),
+      jsonEncode(session.toMap()),
+    );
+  }
+
+  Future<void> clearActiveSession(String repId) =>
+      _db.deleteValue(_activeKey(repId));
 
   Future<WorkdaySession> startWorkday({
     required String orgId,
@@ -69,7 +121,7 @@ class WorkdayRepository {
 
     unawaited(_sync.sync());
 
-    return WorkdaySession(
+    final session = WorkdaySession(
       id: clientId,
       clientGeneratedId: clientId,
       orgId: orgId,
@@ -77,6 +129,9 @@ class WorkdayRepository {
       startedAt: startedAt,
       distanceMeters: 0,
     );
+    // Survives an app restart before the row ever reaches the server.
+    await cacheActiveSession(session);
+    return session;
   }
 
   Future<void> endWorkday({
@@ -110,6 +165,8 @@ class WorkdayRepository {
         },
       }),
     );
+
+    await clearActiveSession(repId);
 
     unawaited(_sync.sync());
   }

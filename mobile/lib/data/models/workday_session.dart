@@ -41,6 +41,21 @@ class WorkdaySession {
     );
   }
 
+  /// Mirrors the server column names so the same [fromMap] reads both a
+  /// Supabase row and a locally cached copy.
+  Map<String, dynamic> toMap() {
+    return {
+      'id': id,
+      'client_generated_id': clientGeneratedId,
+      'org_id': orgId,
+      'rep_id': repId,
+      'started_at': startedAt.toUtc().toIso8601String(),
+      'ended_at': endedAt?.toUtc().toIso8601String(),
+      'distance_meters': distanceMeters,
+      'duration_seconds': durationSeconds,
+    };
+  }
+
   factory WorkdaySession.fromMap(Map<String, dynamic> map) {
     return WorkdaySession(
       id: map['id'] as String,

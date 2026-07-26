@@ -35,12 +35,51 @@ class CachedRoutes extends Table {
   Set<Column> get primaryKey => {routeId};
 }
 
-@DriftDatabase(tables: [OutboxEntries, CachedRoutes])
+/// Small durable key/value store for things the app must know before it can
+/// reach the network — currently the signed-in user's role, which routing
+/// depends on and which would otherwise force a request on every navigation.
+class KeyValueEntries extends Table {
+  TextColumn get key => text()();
+  TextColumn get value => text()();
+
+  @override
+  Set<Column> get primaryKey => {key};
+}
+
+@DriftDatabase(tables: [OutboxEntries, CachedRoutes, KeyValueEntries])
 class AppDatabase extends _$AppDatabase {
   AppDatabase() : super(_openConnection());
 
   @override
-  int get schemaVersion => 1;
+  int get schemaVersion => 2;
+
+  @override
+  MigrationStrategy get migration => MigrationStrategy(
+        onCreate: (m) => m.createAll(),
+        onUpgrade: (m, from, to) async {
+          if (from < 2) {
+            await m.createTable(keyValueEntries);
+          }
+        },
+      );
+
+  // --- Key/value --------------------------------------------------------
+
+  Future<String?> getValue(String key) async {
+    final row = await (select(keyValueEntries)
+          ..where((t) => t.key.equals(key)))
+        .getSingleOrNull();
+    return row?.value;
+  }
+
+  Future<void> setValue(String key, String value) {
+    return into(keyValueEntries).insertOnConflictUpdate(
+      KeyValueEntriesCompanion.insert(key: key, value: value),
+    );
+  }
+
+  Future<void> deleteValue(String key) =>
+      (delete(keyValueEntries)..where((t) => t.key.equals(key))).go();
 
   // --- Outbox ---------------------------------------------------------
 

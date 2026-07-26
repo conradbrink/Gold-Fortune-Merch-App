@@ -58,12 +58,13 @@ class WorkdayController extends AsyncNotifier<WorkdaySession?> {
         last: _lastPingPosition,
       );
       _lastPingPosition = result.position;
-      // Mileage accrues locally so it stays correct with no connection.
-      state = AsyncData(
-        session.copyWith(
-          distanceMeters: session.distanceMeters + result.legMeters,
-        ),
+      // Mileage accrues locally so it stays correct with no connection, and
+      // is cached so a restart mid-day doesn't reset the odometer.
+      final updated = session.copyWith(
+        distanceMeters: session.distanceMeters + result.legMeters,
       );
+      await repo.cacheActiveSession(updated);
+      state = AsyncData(updated);
     } catch (_) {
       // A single failed ping (no fix, permission revoked mid-day) must not
       // kill the timer — the next interval tries again.

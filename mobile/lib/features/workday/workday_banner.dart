@@ -162,7 +162,7 @@ class _WorkdayBannerState extends ConsumerState<WorkdayBanner> {
                 Expanded(
                   child: _Metric(
                     icon: Icons.timer_outlined,
-                    label: 'Hours',
+                    label: 'Time worked',
                     value: _formatElapsed(session.elapsed),
                   ),
                 ),

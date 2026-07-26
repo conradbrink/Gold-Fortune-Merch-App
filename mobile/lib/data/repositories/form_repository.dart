@@ -38,39 +38,80 @@ class FormRepository {
   final AppDatabase _db;
   final SyncEngine _sync;
 
-  Future<List<FormTemplate>> fetchActiveTemplates() async {
-    final rows = await _client
-        .from('form_templates')
-        .select(
-            'id, name, description, form_fields(id, label, field_type, options, required, sort_order)')
-        .eq('active', true)
-        .order('name');
+  static const _templatesKey = 'form_templates';
 
-    return (rows as List)
-        .map((r) => FormTemplate.fromMap(r as Map<String, dynamic>))
+  /// Templates are cached on every successful fetch: a rep who loses signal
+  /// between opening the app and reaching the store still has their forms.
+  Future<List<FormTemplate>> fetchActiveTemplates() async {
+    try {
+      final rows = await _client
+          .from('form_templates')
+          .select(
+              'id, name, description, form_fields(id, label, field_type, options, required, sort_order)')
+          .eq('active', true)
+          .order('name');
+
+      final templates = (rows as List)
+          .map((r) => FormTemplate.fromMap(r as Map<String, dynamic>))
+          .toList();
+
+      await _db.setValue(
+        _templatesKey,
+        jsonEncode(templates.map((t) => t.toMap()).toList()),
+      );
+      return templates;
+    } catch (_) {
+      return _cachedTemplates();
+    }
+  }
+
+  Future<List<FormTemplate>> _cachedTemplates() async {
+    final raw = await _db.getValue(_templatesKey);
+    if (raw == null) return [];
+    return (jsonDecode(raw) as List)
+        .map((t) => FormTemplate.fromMap(t as Map<String, dynamic>))
         .toList();
   }
 
+  /// Templates already submitted for this visit — counting submissions still
+  /// sitting in the outbox, so a form filled in offline immediately shows as
+  /// done and can't be filled in twice.
   Future<Set<String>> fetchSubmittedTemplateIds(String visitClientId) async {
+    final ids = await pendingTemplateIds(visitClientId);
+
     try {
       final visit = await _client
           .from('visits')
           .select('id')
           .eq('client_generated_id', visitClientId)
           .maybeSingle();
-      if (visit == null) return {};
+      if (visit == null) return ids;
 
       final rows = await _client
           .from('form_submissions')
           .select('form_template_id')
           .eq('visit_id', visit['id'] as String);
 
-      return (rows as List)
-          .map((r) => (r as Map<String, dynamic>)['form_template_id'] as String)
-          .toSet();
+      ids.addAll((rows as List)
+          .map((r) => (r as Map<String, dynamic>)['form_template_id'] as String));
+      return ids;
     } catch (_) {
-      return {};
+      return ids;
     }
+  }
+
+  /// Template ids for this visit whose submissions are queued but not synced.
+  Future<Set<String>> pendingTemplateIds(String visitClientId) async {
+    final pending = await _db.pendingEntries(limit: 1000);
+    final ids = <String>{};
+    for (final entry in pending) {
+      if (entry.entityType != OutboxType.formSubmission) continue;
+      final data = jsonDecode(entry.payload) as Map<String, dynamic>;
+      if (data['visit_client_generated_id'] == visitClientId) {
+        ids.add(data['form_template_id'] as String);
+      }
+    }
+    return ids;
   }
 
   /// Queues the whole form — submission, answers, and any photos — as one

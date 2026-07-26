@@ -19,6 +19,10 @@ class RouteTodayScreen extends ConsumerWidget {
     final routesAsync = ref.watch(todayRoutesProvider);
     final profileAsync = ref.watch(profileProvider);
     final date = ref.watch(selectedRouteDateProvider);
+    // Warm the form-template cache here rather than on the store screen: a rep
+    // who opens the app in the depot and loses signal on the road would
+    // otherwise reach the store with no forms to fill in.
+    ref.watch(formTemplatesProvider);
 
     return Scaffold(
       appBar: AppBar(
