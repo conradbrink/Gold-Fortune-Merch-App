@@ -6,6 +6,17 @@ import '../local/app_database.dart';
 import '../models/route_visit.dart';
 import '../models/store_summary.dart';
 
+/// Month-to-date progress against the rep's schedule.
+class MonthlyCompletion {
+  final int completed;
+  final int total;
+
+  const MonthlyCompletion({required this.completed, required this.total});
+
+  double get fraction => total == 0 ? 0 : completed / total;
+  int get percent => (fraction * 100).round();
+}
+
 class RouteRepository {
   RouteRepository(this._client, this._db);
 
@@ -38,7 +49,10 @@ class RouteRepository {
           )
           .eq('rep_id', repId)
           .eq('scheduled_date', dateStr)
-          .order('scheduled_start_at');
+          // postgrest-dart's .order() defaults to DESCENDING — without the
+          // flag the day renders latest-stop-first whenever it comes from the
+          // server (the offline cache path sorts ascending, masking it).
+          .order('scheduled_start_at', ascending: true);
 
       final visits = (rows as List)
           .map((r) => RouteVisit.fromMap(r as Map<String, dynamic>))
@@ -107,7 +121,7 @@ class RouteRepository {
           .from('stores')
           .select('id, name, address, city, state, lat, lng, geofence_radius_m')
           .eq('active', true)
-          .order('name');
+          .order('name', ascending: true);
 
       final stores = (rows as List)
           .map((r) => StoreSummary.fromMap(r as Map<String, dynamic>))
@@ -135,6 +149,57 @@ class RouteRepository {
       scheduledDate: formatDate(date),
       payload: jsonEncode(visit.toMap()),
     );
+  }
+
+  /// Month-to-date schedule completion for the rep: how many of the routes
+  /// scheduled from the 1st through today have a checked-out visit.
+  ///
+  /// This is the gamification metric — visit 90% of scheduled stores in the
+  /// month to earn the reward. Unscheduled visits deliberately count neither
+  /// for nor against it: the target is about covering the plan, and extra
+  /// stores shouldn't let a rep skip planned ones. Checked-out is the bar
+  /// (not checked-in) because that's when the work is actually done, and the
+  /// recorded GPS distance keeps it honest.
+  ///
+  /// Cached per month so the summary screen still shows progress offline.
+  /// Returns null when nothing is scheduled this month or nothing is cached.
+  Future<MonthlyCompletion?> fetchMonthlyCompletion(String repId) async {
+    final now = DateTime.now();
+    final monthStart = formatDate(DateTime(now.year, now.month, 1));
+    final today = formatDate(now);
+    final cacheKey =
+        'monthly_completion:$repId:${now.year}-${now.month.toString().padLeft(2, '0')}';
+
+    try {
+      final rows = await _client
+          .from('routes')
+          .select('id, visits(status)')
+          .eq('rep_id', repId)
+          .gte('scheduled_date', monthStart)
+          .lte('scheduled_date', today);
+
+      final total = (rows as List).length;
+      if (total == 0) return null;
+
+      final completed = rows.where((r) {
+        final visits = r['visits'] as List? ?? [];
+        return visits.any((v) =>
+            (v as Map<String, dynamic>)['status'] == 'checked_out');
+      }).length;
+
+      final result = MonthlyCompletion(completed: completed, total: total);
+      await _db.setValue(
+          cacheKey, jsonEncode({'completed': completed, 'total': total}));
+      return result;
+    } catch (_) {
+      final raw = await _db.getValue(cacheKey);
+      if (raw == null) return null;
+      final map = jsonDecode(raw) as Map<String, dynamic>;
+      return MonthlyCompletion(
+        completed: map['completed'] as int,
+        total: map['total'] as int,
+      );
+    }
   }
 
   /// Applies a local status change immediately so the UI reflects an offline

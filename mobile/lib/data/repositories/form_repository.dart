@@ -49,7 +49,7 @@ class FormRepository {
           .select(
               'id, name, description, form_fields(id, label, field_type, options, required, sort_order)')
           .eq('active', true)
-          .order('name');
+          .order('name', ascending: true);
 
       final templates = (rows as List)
           .map((r) => FormTemplate.fromMap(r as Map<String, dynamic>))

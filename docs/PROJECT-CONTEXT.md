@@ -223,6 +223,45 @@ query today's route-less visits by `rep_id` on fetch.
    that did nothing. The profile is now cached per user (`profile:<uid>`),
    and the guards show a "connect once" snackbar instead of failing silently.
 
+### Workday bookends + gamification (added 27 Jul 2026, verified on-device)
+
+The start and end of the workday are now full-screen moments, not just a
+button toggle:
+
+- **Day plan** (`/day-plan`, shown after Start workday): greeting with the
+  rep's first name, numbered list of today's stops with time slots (done ones
+  ticked and struck through), and the month-so-far progress card. Renders
+  offline (route cache + cached monthly figure). Empty-schedule variant
+  points at "Unscheduled visit".
+- **End-of-day guard**: ending with unfinished stores shows "Finish your
+  route first?" naming the store (or count), with "Keep working" as the
+  emphasised default. Never-checked-in unscheduled visits don't nag — they're
+  abandoned intentions, not commitments.
+- **Workday summary** (`/workday-summary`): time worked, distance, "N of M"
+  scheduled stores, "+N" unscheduled extras. If the whole schedule was
+  covered: trophy + "Well done!". Otherwise a neutral "Workday ended".
+- **Monthly reward metric** (`RouteRepository.fetchMonthlyCompletion`):
+  scheduled routes month-to-date with a checked-out visit / total scheduled.
+  ≥90% (`kMonthlyRewardTarget`) shows gold "on track for this month's
+  reward" messaging on both screens; below shows progress toward it.
+  Unscheduled visits deliberately count neither for nor against. **What the
+  reward actually is remains a product decision** — the app only promises
+  "the monthly reward". Cached per month for offline display.
+
+**Distance/mileage is now actually verified** (it never had been — it only
+accrues on the 20-min interval ping). Tested with the interval temporarily at
+2 min: two pings 4.96 km apart → banner showed 5.0 km → summary showed
+5.0 km → server row recorded `distance_meters` 4965. Interval is back at
+20 min. Note the accrual model: chord distance between successive interval
+pings only — check-in/out pings don't contribute legs, and `_lastPingPosition`
+resets on app restart, so real driving is somewhat undercounted by design.
+
+**Also found while testing:** postgrest-dart's `.order()` defaults to
+*descending*. Today's route (server path), the store picker, and form
+templates had all been rendering reverse-ordered whenever data came from the
+network — the offline cache paths sort ascending, which masked it. All three
+now pass `ascending: true` explicitly.
+
 ### Business rules enforced in the rep app
 - **A workday must be open before checking in.** Check in is disabled with an
   explanatory note, plus a backstop in `_checkIn`.

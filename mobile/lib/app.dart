@@ -13,6 +13,8 @@ import 'features/auth/manager_notice_screen.dart';
 import 'features/route_today/route_today_screen.dart';
 import 'features/visit/store_detail_screen.dart';
 import 'features/visit/store_picker_screen.dart';
+import 'features/workday/day_plan_screen.dart';
+import 'features/workday/workday_summary_screen.dart';
 
 /// Bridges Supabase's auth stream into a [Listenable] so go_router
 /// re-evaluates its `redirect` callback on every sign-in/out/token event.
@@ -82,6 +84,22 @@ final routerProvider = Provider<GoRouter>((ref) {
           GoRoute(
             path: 'unscheduled',
             builder: (context, state) => const StorePickerScreen(),
+          ),
+          GoRoute(
+            path: 'day-plan',
+            builder: (context, state) => const DayPlanScreen(),
+          ),
+          GoRoute(
+            path: 'workday-summary',
+            builder: (context, state) {
+              // Only reachable with the snapshot the banner hands over; a
+              // stale deep link just goes home.
+              final data = state.extra;
+              if (data is! WorkdaySummaryData) {
+                return const RouteTodayScreen();
+              }
+              return WorkdaySummaryScreen(data: data);
+            },
           ),
           GoRoute(
             // Route id for a scheduled visit, or the visit's client id for an

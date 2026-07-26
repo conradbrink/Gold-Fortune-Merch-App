@@ -132,6 +132,15 @@ final selectedRouteDateProvider = StateProvider<DateTime>((ref) {
   return DateTime(now.year, now.month, now.day);
 });
 
+/// Month-to-date completion against the rep's schedule, for the day-plan and
+/// workday-summary screens (cached copy when offline).
+final monthlyCompletionProvider =
+    FutureProvider.autoDispose<MonthlyCompletion?>((ref) async {
+  final user = ref.watch(currentUserProvider);
+  if (user == null) return null;
+  return ref.watch(routeRepositoryProvider).fetchMonthlyCompletion(user.id);
+});
+
 /// Active stores for the unscheduled-visit picker. Cached for offline use.
 final storesProvider = FutureProvider<List<StoreSummary>>((ref) async {
   return ref.watch(routeRepositoryProvider).fetchStores();
