@@ -12,6 +12,7 @@ import 'features/auth/login_screen.dart';
 import 'features/auth/manager_notice_screen.dart';
 import 'features/route_today/route_today_screen.dart';
 import 'features/visit/store_detail_screen.dart';
+import 'features/visit/store_picker_screen.dart';
 
 /// Bridges Supabase's auth stream into a [Listenable] so go_router
 /// re-evaluates its `redirect` callback on every sign-in/out/token event.
@@ -79,9 +80,15 @@ final routerProvider = Provider<GoRouter>((ref) {
         builder: (context, state) => const RouteTodayScreen(),
         routes: [
           GoRoute(
-            path: 'visit/:routeId',
+            path: 'unscheduled',
+            builder: (context, state) => const StorePickerScreen(),
+          ),
+          GoRoute(
+            // Route id for a scheduled visit, or the visit's client id for an
+            // unscheduled one — see RouteVisit.cacheKey.
+            path: 'visit/:key',
             builder: (context, state) => StoreDetailScreen(
-              routeId: state.pathParameters['routeId']!,
+              visitKey: state.pathParameters['key']!,
             ),
           ),
         ],

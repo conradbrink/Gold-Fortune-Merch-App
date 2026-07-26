@@ -23,16 +23,25 @@ class OutboxEntries extends Table {
   TextColumn get lastError => text().nullable()();
 }
 
-/// Local snapshot of the rep's route so the day's list renders with no
-/// connection. Refreshed whenever a fetch succeeds.
+/// Local snapshot of the rep's day so the list renders with no connection.
+/// Refreshed whenever a fetch succeeds.
+///
+/// Holds both scheduled visits and unscheduled ("ad-hoc") ones the rep started
+/// themselves. [cacheKey] is the route id for a scheduled visit and the
+/// visit's `client_generated_id` for an ad-hoc one, which has no route. It
+/// keeps the original `route_id` column name so no rewrite migration is needed.
 class CachedRoutes extends Table {
-  TextColumn get routeId => text()();
+  TextColumn get cacheKey => text().named('route_id')();
   TextColumn get scheduledDate => text()();
   TextColumn get payload => text()(); // JSON of the RouteVisit row
   DateTimeColumn get cachedAt => dateTime()();
 
+  /// Ad-hoc rows exist only on this device until they sync, so a schedule
+  /// refresh must never delete them.
+  BoolColumn get adHoc => boolean().withDefault(const Constant(false))();
+
   @override
-  Set<Column> get primaryKey => {routeId};
+  Set<Column> get primaryKey => {cacheKey};
 }
 
 /// Small durable key/value store for things the app must know before it can
@@ -51,7 +60,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase() : super(_openConnection());
 
   @override
-  int get schemaVersion => 2;
+  int get schemaVersion => 3;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -59,6 +68,9 @@ class AppDatabase extends _$AppDatabase {
         onUpgrade: (m, from, to) async {
           if (from < 2) {
             await m.createTable(keyValueEntries);
+          }
+          if (from < 3) {
+            await m.addColumn(cachedRoutes, cachedRoutes.adHoc);
           }
         },
       );
@@ -129,18 +141,22 @@ class AppDatabase extends _$AppDatabase {
 
   // --- Route cache ----------------------------------------------------
 
+  /// Replaces the *scheduled* rows for a date. Ad-hoc rows are left alone —
+  /// they only exist here until they sync, so dropping them would lose an
+  /// unscheduled visit the rep has already performed.
   Future<void> replaceCachedRoutes(
     String scheduledDate,
-    List<({String routeId, String payload})> rows,
+    List<({String cacheKey, String payload})> rows,
   ) async {
     await transaction(() async {
       await (delete(cachedRoutes)
-            ..where((t) => t.scheduledDate.equals(scheduledDate)))
+            ..where((t) =>
+                t.scheduledDate.equals(scheduledDate) & t.adHoc.equals(false)))
           .go();
       for (final row in rows) {
         await into(cachedRoutes).insertOnConflictUpdate(
           CachedRoutesCompanion.insert(
-            routeId: row.routeId,
+            cacheKey: row.cacheKey,
             scheduledDate: scheduledDate,
             payload: row.payload,
             cachedAt: DateTime.now(),
@@ -150,14 +166,37 @@ class AppDatabase extends _$AppDatabase {
     });
   }
 
+  Future<void> insertAdHocVisit({
+    required String cacheKey,
+    required String scheduledDate,
+    required String payload,
+  }) {
+    return into(cachedRoutes).insertOnConflictUpdate(
+      CachedRoutesCompanion.insert(
+        cacheKey: cacheKey,
+        scheduledDate: scheduledDate,
+        payload: payload,
+        cachedAt: DateTime.now(),
+        adHoc: const Value(true),
+      ),
+    );
+  }
+
   Future<List<CachedRoute>> cachedRoutesForDate(String scheduledDate) {
     return (select(cachedRoutes)
           ..where((t) => t.scheduledDate.equals(scheduledDate)))
         .get();
   }
 
-  Future<void> updateCachedRoute(String routeId, String payload) {
-    return (update(cachedRoutes)..where((t) => t.routeId.equals(routeId)))
+  Future<List<CachedRoute>> adHocVisitsForDate(String scheduledDate) {
+    return (select(cachedRoutes)
+          ..where((t) =>
+              t.scheduledDate.equals(scheduledDate) & t.adHoc.equals(true)))
+        .get();
+  }
+
+  Future<void> updateCachedRoute(String cacheKey, String payload) {
+    return (update(cachedRoutes)..where((t) => t.cacheKey.equals(cacheKey)))
         .write(CachedRoutesCompanion(payload: Value(payload)));
   }
 }

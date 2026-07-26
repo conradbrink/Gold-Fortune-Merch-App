@@ -1,8 +1,15 @@
-/// A single row on the rep's "today" list: a scheduled `routes` entry joined
-/// with its `stores` row and (if it exists yet) the corresponding `visits`
-/// row. A visit row is created lazily on check-in, so it may be null.
+/// A single row on the rep's "today" list.
+///
+/// Usually a scheduled `routes` entry joined with its `stores` row and (if it
+/// exists yet) the corresponding `visits` row — a visit row is created lazily
+/// on check-in, so it may be null.
+///
+/// It can also be an **unscheduled visit**: a store the rep decided to call on
+/// that nobody planned. Those have no route, so [routeId] is null and the
+/// server's `visits.route_id` stays null too, which keeps `routes` meaning
+/// strictly "what was planned" for adherence reporting.
 class RouteVisit {
-  final String routeId;
+  final String? routeId;
   final String storeId;
   final String storeName;
   final String? storeAddress;
@@ -23,7 +30,7 @@ class RouteVisit {
   final DateTime? checkoutAt;
 
   const RouteVisit({
-    required this.routeId,
+    this.routeId,
     required this.storeId,
     required this.storeName,
     this.storeAddress,
@@ -44,6 +51,41 @@ class RouteVisit {
   bool get isCheckedIn => status == 'checked_in';
   bool get isCheckedOut => status == 'checked_out';
   bool get isMissed => status == 'missed';
+
+  /// True when nobody scheduled this — the rep started it themselves.
+  bool get isUnscheduled => routeId == null;
+
+  /// Stable local identity, used as the cache key and the router parameter.
+  /// Scheduled visits are identified by their route; unscheduled ones have no
+  /// route, so they fall back to the visit's offline idempotency key.
+  String get cacheKey => routeId ?? visitClientGeneratedId!;
+
+  /// Builds an unscheduled visit against a store the rep picked. [clientId] is
+  /// minted up front so the visit has an identity before it ever syncs.
+  factory RouteVisit.unscheduled({
+    required String clientId,
+    required String storeId,
+    required String storeName,
+    String? storeAddress,
+    String? storeCity,
+    String? storeState,
+    double? storeLat,
+    double? storeLng,
+    required int geofenceRadiusM,
+  }) {
+    return RouteVisit(
+      storeId: storeId,
+      storeName: storeName,
+      storeAddress: storeAddress,
+      storeCity: storeCity,
+      storeState: storeState,
+      storeLat: storeLat,
+      storeLng: storeLng,
+      geofenceRadiusM: geofenceRadiusM,
+      visitClientGeneratedId: clientId,
+      status: 'not_started',
+    );
+  }
 
   /// Round-trips through the same shape [fromMap] reads, so the local cache
   /// can store rows verbatim and rebuild them offline.
@@ -107,7 +149,7 @@ class RouteVisit {
         : null;
 
     return RouteVisit(
-      routeId: map['id'] as String,
+      routeId: map['id'] as String?,
       storeId: map['store_id'] as String,
       storeName: store?['name'] as String? ?? 'Unknown store',
       storeAddress: store?['address'] as String?,

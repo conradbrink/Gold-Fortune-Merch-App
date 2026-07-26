@@ -23,6 +23,9 @@ class RouteTodayScreen extends ConsumerWidget {
     // who opens the app in the depot and loses signal on the road would
     // otherwise reach the store with no forms to fill in.
     ref.watch(formTemplatesProvider);
+    // Same reasoning for the store list, which the unscheduled-visit picker
+    // needs and which is otherwise only fetched once that screen is opened.
+    ref.watch(storesProvider);
 
     return Scaffold(
       appBar: AppBar(
@@ -34,6 +37,13 @@ class RouteTodayScreen extends ConsumerWidget {
             onPressed: () => ref.read(authControllerProvider.notifier).signOut(),
           ),
         ],
+      ),
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: () => context.go('/unscheduled'),
+        backgroundColor: AppColors.navy,
+        foregroundColor: Colors.white,
+        icon: const Icon(Icons.add_business_outlined),
+        label: const Text('Unscheduled visit'),
       ),
       body: RefreshIndicator(
         onRefresh: () async => ref.invalidate(todayRoutesProvider),
@@ -175,7 +185,7 @@ class _RouteCard extends StatelessWidget {
       margin: EdgeInsets.zero,
       child: InkWell(
         borderRadius: BorderRadius.circular(14),
-        onTap: () => context.go('/visit/${routeVisit.routeId}'),
+        onTap: () => context.go('/visit/${routeVisit.cacheKey}'),
         child: Padding(
           padding: const EdgeInsets.all(16),
           child: Row(
@@ -226,6 +236,17 @@ class _RouteCard extends StatelessWidget {
                               color: AppColors.textMuted,
                               fontSize: 12.5,
                               fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ],
+                        if (routeVisit.isUnscheduled) ...[
+                          const SizedBox(width: 8),
+                          Text(
+                            'Unscheduled',
+                            style: TextStyle(
+                              color: AppColors.gold.withValues(alpha: 0.95),
+                              fontSize: 12.5,
+                              fontWeight: FontWeight.w600,
                             ),
                           ),
                         ],

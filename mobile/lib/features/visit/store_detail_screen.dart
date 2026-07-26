@@ -15,8 +15,11 @@ import '../workday/workday_controller.dart';
 const kMinimumVisitDuration = Duration(minutes: 5);
 
 class StoreDetailScreen extends ConsumerStatefulWidget {
-  const StoreDetailScreen({super.key, required this.routeId});
-  final String routeId;
+  const StoreDetailScreen({super.key, required this.visitKey});
+
+  /// Route id for a scheduled visit, or the visit's client id for an
+  /// unscheduled one.
+  final String visitKey;
 
   @override
   ConsumerState<StoreDetailScreen> createState() => _StoreDetailScreenState();
@@ -27,14 +30,32 @@ class _StoreDetailScreenState extends ConsumerState<StoreDetailScreen> {
 
   RouteVisit? _find(List<RouteVisit> routes) {
     for (final r in routes) {
-      if (r.routeId == widget.routeId) return r;
+      if (r.cacheKey == widget.visitKey) return r;
     }
     return null;
   }
 
+  /// A missing profile means we're offline with no cached copy — tell the rep
+  /// instead of silently doing nothing when they tap the button.
+  void _showProfileMissing() {
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(const SnackBar(
+        content: Text(
+          "Your profile hasn't loaded yet. Connect to the internet once and "
+          'try again.',
+        ),
+        backgroundColor: AppColors.warning,
+      ));
+  }
+
   Future<void> _checkIn(RouteVisit rv) async {
+    if (_busy) return;
     final profile = ref.read(profileProvider).value;
-    if (profile == null) return;
+    if (profile == null) {
+      _showProfileMissing();
+      return;
+    }
 
     // The button is disabled without an open workday; this is the backstop so
     // a visit can never be recorded outside a tracked day.
@@ -114,20 +135,27 @@ class _StoreDetailScreenState extends ConsumerState<StoreDetailScreen> {
   }
 
   Future<void> _checkOut(RouteVisit rv) async {
+    if (_busy) return;
     final profile = ref.read(profileProvider).value;
-    if (profile == null) return;
-
-    if (rv.checkinAt != null) {
-      final spent = DateTime.now().difference(rv.checkinAt!);
-      if (spent < kMinimumVisitDuration) {
-        final proceed = await _confirmShortVisit(spent);
-        if (!proceed) return;
-      }
+    if (profile == null) {
+      _showProfileMissing();
+      return;
     }
 
-    if (!mounted) return;
+    // Claim the button before awaiting the confirm dialog. Setting this only
+    // afterwards let two quick taps both reach the queue and enqueue the
+    // check-out twice.
     setState(() => _busy = true);
     try {
+      if (rv.checkinAt != null) {
+        final spent = DateTime.now().difference(rv.checkinAt!);
+        if (spent < kMinimumVisitDuration) {
+          final proceed = await _confirmShortVisit(spent);
+          if (!proceed) return;
+        }
+      }
+
+      if (!mounted) return;
       final session = ref.read(workdayControllerProvider).value;
       await ref.read(visitRepositoryProvider).checkOut(
             orgId: profile.orgId,
@@ -254,6 +282,14 @@ class _StoreDetailScreenState extends ConsumerState<StoreDetailScreen> {
                           value: [rv.storeAddress, rv.storeCity, rv.storeState]
                               .where((s) => s != null && s.isNotEmpty)
                               .join(', '),
+                        ),
+                      ],
+                      if (rv.isUnscheduled) ...[
+                        const SizedBox(height: 12),
+                        const _DetailRow(
+                          icon: Icons.event_busy_outlined,
+                          label: 'Scheduled',
+                          value: 'Unscheduled visit',
                         ),
                       ],
                       if (rv.scheduledStartAt != null) ...[

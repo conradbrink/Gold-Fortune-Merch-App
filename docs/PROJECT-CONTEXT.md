@@ -180,6 +180,49 @@ offline behaviour.
    loses signal on the road still has their forms), and queued submissions
    count as submitted.
 
+### Unscheduled visits (added 26 Jul 2026, verified offline end-to-end)
+
+A rep can start a visit at any active org store via the "Unscheduled visit"
+FAB on the route list. Decisions locked in with the user:
+- **`visits.route_id` stays NULL** — `routes` means strictly "what was
+  planned", so adherence reporting stays honest.
+- **Any active store in the org** is allowed; the recorded GPS distance tells
+  the manager whether the rep was really there. Deactivated stores are
+  excluded from the picker.
+- The store list is cached (key `stores` in the KV table) and prefetched from
+  the route screen, so the picker works offline.
+- Ad-hoc visits live in `cached_routes` with `ad_hoc=1`, keyed by the visit's
+  `client_generated_id` (`RouteVisit.cacheKey`); schedule refreshes never
+  delete them. They sort after scheduled stops and wear an "Unscheduled" tag;
+  the web Visits page shows an amber UNSCHEDULED badge (`route === null`).
+- Workday-first and forms-before-checkout gates apply to them unchanged.
+
+Verified: picked a store offline, checked in (0.0 m), form + photo offline,
+cold restart offline, reconnect → landed exactly once with `route_id` NULL,
+checkout preserved the offline timestamps (43m 35s duration).
+
+**Known limitation:** the rep's own view of a *synced* unscheduled visit
+depends on the local ad-hoc cache row — the routes query cannot return a
+route-less visit. If app data is wiped mid-visit, the rep can no longer see or
+check out of it (the server row stays open). Fine for now; a proper fix would
+query today's route-less visits by `rep_id` on fetch.
+
+### More bugs found while verifying (all fixed)
+
+5. **Double-tap check-out queued twice.** `_busy` was only set after awaiting
+   the short-visit confirm dialog, so two quick taps both enqueued. Harmless
+   server-side (idempotent UPDATE) but wrong; `_busy` now latches first.
+6. **`getCurrentPosition` could hang forever.** geolocator's `timeLimit`
+   does not fire when the platform never emits a fix (observed >90 s on the
+   emulator); the check-in/out button stayed latched indefinitely. Now
+   wrapped in a hard `.timeout(20s)` falling back to `getLastKnownPosition()`,
+   then a clear "couldn't get a GPS fix" error.
+7. **Null profile silently disabled every rep action.** `profileProvider` had
+   no offline cache; after an offline app restart, check-in/check-out/form
+   submit all began `if (profile == null) return;` — live-looking buttons
+   that did nothing. The profile is now cached per user (`profile:<uid>`),
+   and the guards show a "connect once" snackbar instead of failing silently.
+
 ### Business rules enforced in the rep app
 - **A workday must be open before checking in.** Check in is disabled with an
   explanatory note, plus a backstop in `_checkIn`.
@@ -247,10 +290,13 @@ adb shell screencap -p /sdcard/s.png && adb pull /sdcard/s.png /tmp/s.png
 
 1. ~~Verify offline sync end-to-end~~ **Done** — see §4 and §4.1.
    Remaining smaller offline items:
-   - The rep's name disappears from the route header while offline
-     (`profileProvider` has no cache, unlike role/routes/templates). Cosmetic.
+   - ~~Rep's name disappears offline~~ Fixed — profile is cached now (§ bugs 7).
    - `SyncBanner` only appears on the route screen, not on store/form screens,
      so a rep filling a form has no offline indicator.
+   - The store screen's form gate shows "submit the form" for ~15 s after an
+     offline restart while `submittedTemplateIds` waits for the network to
+     fail before falling back to the outbox. Cosmetic flicker; querying the
+     outbox first would fix it.
    - The sync engine's "already landed" guard for partially-replayed form
      submissions was never exercised — the queue drained cleanly first time.
      Worth a deliberate mid-drain kill to test.

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:geolocator/geolocator.dart';
 
 class LocationDeniedException implements Exception {
@@ -8,8 +10,12 @@ class LocationDeniedException implements Exception {
 }
 
 class LocationService {
+  /// How long to wait for a fresh fix before falling back. Deep inside a large
+  /// store a rep may never get one, and they still need to check out.
+  static const kFixTimeout = Duration(seconds: 20);
+
   /// Ensures location services are on and permission is granted, then returns
-  /// a fresh high-accuracy fix. Throws [LocationDeniedException] with a
+  /// a high-accuracy fix. Throws [LocationDeniedException] with a
   /// user-presentable message when it can't.
   static Future<Position> getCurrentPosition() async {
     if (!await Geolocator.isLocationServiceEnabled()) {
@@ -33,12 +39,27 @@ class LocationService {
       );
     }
 
-    return Geolocator.getCurrentPosition(
-      locationSettings: const LocationSettings(
-        accuracy: LocationAccuracy.high,
-        timeLimit: Duration(seconds: 30),
-      ),
-    );
+    // geolocator's own `timeLimit` does not reliably fire when the platform
+    // never emits a fix — observed hanging indefinitely on Android, which
+    // latches the check-in/out button and strands the rep at the store. The
+    // outer timeout is the one actually relied on.
+    try {
+      return await Geolocator.getCurrentPosition(
+        locationSettings: const LocationSettings(
+          accuracy: LocationAccuracy.high,
+          timeLimit: kFixTimeout,
+        ),
+      ).timeout(kFixTimeout);
+    } on TimeoutException {
+      // A slightly stale fix is far better than blocking the visit; the
+      // recorded distance still tells the manager where they were.
+      final last = await Geolocator.getLastKnownPosition();
+      if (last != null) return last;
+      throw const LocationDeniedException(
+        "Couldn't get a GPS fix. Move to where you have a clearer view of the "
+        'sky and try again.',
+      );
+    }
   }
 
   /// Straight-line metres between two points.

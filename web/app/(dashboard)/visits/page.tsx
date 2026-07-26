@@ -26,6 +26,9 @@ type VisitRow = {
   duration_seconds: number | null;
   scheduledStart: string | null;
   scheduledEnd: string | null;
+  /// No route — the rep started this visit themselves rather than working
+  /// from their schedule.
+  unscheduled: boolean;
   storeName: string;
   repName: string;
   formCount: number;
@@ -113,6 +116,7 @@ function VisitsContent() {
           duration_seconds: v.duration_seconds,
           scheduledStart: route?.scheduled_start_at ?? null,
           scheduledEnd: route?.scheduled_end_at ?? null,
+          unscheduled: route === null,
           storeName: store?.name ?? "Unknown store",
           repName: rep?.full_name ?? "Unassigned",
           formCount: formCounts[v.id] ?? 0,
@@ -226,8 +230,18 @@ function VisitsContent() {
                         <Store className="h-4 w-4" />
                       </div>
                       <div className="min-w-0">
-                        <div className="truncate font-medium text-foreground">
-                          {visit.storeName}
+                        <div className="flex items-center gap-1.5">
+                          <span className="truncate font-medium text-foreground">
+                            {visit.storeName}
+                          </span>
+                          {visit.unscheduled && (
+                            <span
+                              title="The rep started this visit themselves; it was not on their schedule."
+                              className="shrink-0 rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-800 dark:bg-amber-950 dark:text-amber-300"
+                            >
+                              Unscheduled
+                            </span>
+                          )}
                         </div>
                         <div className="truncate text-xs text-muted-foreground sm:hidden">
                           {visit.repName}

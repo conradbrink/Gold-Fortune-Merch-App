@@ -63,6 +63,8 @@ class VisitRepository {
       clientGeneratedId: clientId,
       payload: jsonEncode({
         'org_id': orgId,
+        // Null for an unscheduled visit — `routes` stays a record of what was
+        // planned, so planned-vs-actual reporting remains meaningful.
         'route_id': routeVisit.routeId,
         'rep_id': repId,
         'store_id': routeVisit.storeId,

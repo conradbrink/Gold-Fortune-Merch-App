@@ -65,7 +65,18 @@ class _FormFillScreenState extends ConsumerState<FormFillScreen> {
     }
 
     final profile = ref.read(profileProvider).value;
-    if (profile == null) return;
+    if (profile == null) {
+      // Offline with no cached profile — say so rather than doing nothing.
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(const SnackBar(
+          content: Text(
+            "Your profile hasn't loaded yet. Connect to the internet once "
+            'and try again.',
+          ),
+        ));
+      return;
+    }
 
     setState(() => _submitting = true);
     try {

@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_riverpod/legacy.dart'; // StateProvider moved here in Riverpod 3
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -5,6 +7,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'supabase_client.dart';
 import '../data/models/profile.dart';
 import '../data/models/route_visit.dart';
+import '../data/models/store_summary.dart';
 import '../data/models/form_template.dart';
 import '../data/local/app_database.dart';
 import '../data/repositories/form_repository.dart';
@@ -29,18 +32,32 @@ final currentUserProvider = Provider<User?>((ref) {
 
 /// The signed-in user's `profiles` row (org_id, role, full_name). Null when
 /// signed out. Re-fetches whenever auth state changes.
+///
+/// Cached locally per user: check-in, check-out and form submission all need
+/// the org id, so a null profile after an offline app restart silently
+/// disables every rep action — the buttons look live but their handlers bail.
 final profileProvider = FutureProvider<Profile?>((ref) async {
   final user = ref.watch(currentUserProvider);
   if (user == null) return null;
 
-  final row = await supabase
-      .from('profiles')
-      .select()
-      .eq('id', user.id)
-      .maybeSingle();
+  final db = ref.watch(appDatabaseProvider);
+  final cacheKey = 'profile:${user.id}';
 
-  if (row == null) return null;
-  return Profile.fromMap(row);
+  try {
+    final row = await supabase
+        .from('profiles')
+        .select()
+        .eq('id', user.id)
+        .maybeSingle();
+
+    if (row == null) return null;
+    await db.setValue(cacheKey, jsonEncode(row));
+    return Profile.fromMap(row);
+  } catch (_) {
+    final raw = await db.getValue(cacheKey);
+    if (raw == null) rethrow;
+    return Profile.fromMap(jsonDecode(raw) as Map<String, dynamic>);
+  }
 });
 
 /// Single long-lived local database for the whole app.
@@ -113,6 +130,11 @@ final submittedTemplateIdsProvider =
 final selectedRouteDateProvider = StateProvider<DateTime>((ref) {
   final now = DateTime.now();
   return DateTime(now.year, now.month, now.day);
+});
+
+/// Active stores for the unscheduled-visit picker. Cached for offline use.
+final storesProvider = FutureProvider<List<StoreSummary>>((ref) async {
+  return ref.watch(routeRepositoryProvider).fetchStores();
 });
 
 final todayRoutesProvider = FutureProvider<List<RouteVisit>>((ref) async {

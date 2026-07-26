@@ -470,11 +470,11 @@ class $CachedRoutesTable extends CachedRoutes
   final GeneratedDatabase attachedDatabase;
   final String? _alias;
   $CachedRoutesTable(this.attachedDatabase, [this._alias]);
-  static const VerificationMeta _routeIdMeta = const VerificationMeta(
-    'routeId',
+  static const VerificationMeta _cacheKeyMeta = const VerificationMeta(
+    'cacheKey',
   );
   @override
-  late final GeneratedColumn<String> routeId = GeneratedColumn<String>(
+  late final GeneratedColumn<String> cacheKey = GeneratedColumn<String>(
     'route_id',
     aliasedName,
     false,
@@ -514,12 +514,26 @@ class $CachedRoutesTable extends CachedRoutes
     type: DriftSqlType.dateTime,
     requiredDuringInsert: true,
   );
+  static const VerificationMeta _adHocMeta = const VerificationMeta('adHoc');
+  @override
+  late final GeneratedColumn<bool> adHoc = GeneratedColumn<bool>(
+    'ad_hoc',
+    aliasedName,
+    false,
+    type: DriftSqlType.bool,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'CHECK ("ad_hoc" IN (0, 1))',
+    ),
+    defaultValue: const Constant(false),
+  );
   @override
   List<GeneratedColumn> get $columns => [
-    routeId,
+    cacheKey,
     scheduledDate,
     payload,
     cachedAt,
+    adHoc,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -535,11 +549,11 @@ class $CachedRoutesTable extends CachedRoutes
     final data = instance.toColumns(true);
     if (data.containsKey('route_id')) {
       context.handle(
-        _routeIdMeta,
-        routeId.isAcceptableOrUnknown(data['route_id']!, _routeIdMeta),
+        _cacheKeyMeta,
+        cacheKey.isAcceptableOrUnknown(data['route_id']!, _cacheKeyMeta),
       );
     } else if (isInserting) {
-      context.missing(_routeIdMeta);
+      context.missing(_cacheKeyMeta);
     }
     if (data.containsKey('scheduled_date')) {
       context.handle(
@@ -568,16 +582,22 @@ class $CachedRoutesTable extends CachedRoutes
     } else if (isInserting) {
       context.missing(_cachedAtMeta);
     }
+    if (data.containsKey('ad_hoc')) {
+      context.handle(
+        _adHocMeta,
+        adHoc.isAcceptableOrUnknown(data['ad_hoc']!, _adHocMeta),
+      );
+    }
     return context;
   }
 
   @override
-  Set<GeneratedColumn> get $primaryKey => {routeId};
+  Set<GeneratedColumn> get $primaryKey => {cacheKey};
   @override
   CachedRoute map(Map<String, dynamic> data, {String? tablePrefix}) {
     final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
     return CachedRoute(
-      routeId: attachedDatabase.typeMapping.read(
+      cacheKey: attachedDatabase.typeMapping.read(
         DriftSqlType.string,
         data['${effectivePrefix}route_id'],
       )!,
@@ -593,6 +613,10 @@ class $CachedRoutesTable extends CachedRoutes
         DriftSqlType.dateTime,
         data['${effectivePrefix}cached_at'],
       )!,
+      adHoc: attachedDatabase.typeMapping.read(
+        DriftSqlType.bool,
+        data['${effectivePrefix}ad_hoc'],
+      )!,
     );
   }
 
@@ -603,32 +627,39 @@ class $CachedRoutesTable extends CachedRoutes
 }
 
 class CachedRoute extends DataClass implements Insertable<CachedRoute> {
-  final String routeId;
+  final String cacheKey;
   final String scheduledDate;
   final String payload;
   final DateTime cachedAt;
+
+  /// Ad-hoc rows exist only on this device until they sync, so a schedule
+  /// refresh must never delete them.
+  final bool adHoc;
   const CachedRoute({
-    required this.routeId,
+    required this.cacheKey,
     required this.scheduledDate,
     required this.payload,
     required this.cachedAt,
+    required this.adHoc,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
     final map = <String, Expression>{};
-    map['route_id'] = Variable<String>(routeId);
+    map['route_id'] = Variable<String>(cacheKey);
     map['scheduled_date'] = Variable<String>(scheduledDate);
     map['payload'] = Variable<String>(payload);
     map['cached_at'] = Variable<DateTime>(cachedAt);
+    map['ad_hoc'] = Variable<bool>(adHoc);
     return map;
   }
 
   CachedRoutesCompanion toCompanion(bool nullToAbsent) {
     return CachedRoutesCompanion(
-      routeId: Value(routeId),
+      cacheKey: Value(cacheKey),
       scheduledDate: Value(scheduledDate),
       payload: Value(payload),
       cachedAt: Value(cachedAt),
+      adHoc: Value(adHoc),
     );
   }
 
@@ -638,119 +669,134 @@ class CachedRoute extends DataClass implements Insertable<CachedRoute> {
   }) {
     serializer ??= driftRuntimeOptions.defaultSerializer;
     return CachedRoute(
-      routeId: serializer.fromJson<String>(json['routeId']),
+      cacheKey: serializer.fromJson<String>(json['cacheKey']),
       scheduledDate: serializer.fromJson<String>(json['scheduledDate']),
       payload: serializer.fromJson<String>(json['payload']),
       cachedAt: serializer.fromJson<DateTime>(json['cachedAt']),
+      adHoc: serializer.fromJson<bool>(json['adHoc']),
     );
   }
   @override
   Map<String, dynamic> toJson({ValueSerializer? serializer}) {
     serializer ??= driftRuntimeOptions.defaultSerializer;
     return <String, dynamic>{
-      'routeId': serializer.toJson<String>(routeId),
+      'cacheKey': serializer.toJson<String>(cacheKey),
       'scheduledDate': serializer.toJson<String>(scheduledDate),
       'payload': serializer.toJson<String>(payload),
       'cachedAt': serializer.toJson<DateTime>(cachedAt),
+      'adHoc': serializer.toJson<bool>(adHoc),
     };
   }
 
   CachedRoute copyWith({
-    String? routeId,
+    String? cacheKey,
     String? scheduledDate,
     String? payload,
     DateTime? cachedAt,
+    bool? adHoc,
   }) => CachedRoute(
-    routeId: routeId ?? this.routeId,
+    cacheKey: cacheKey ?? this.cacheKey,
     scheduledDate: scheduledDate ?? this.scheduledDate,
     payload: payload ?? this.payload,
     cachedAt: cachedAt ?? this.cachedAt,
+    adHoc: adHoc ?? this.adHoc,
   );
   CachedRoute copyWithCompanion(CachedRoutesCompanion data) {
     return CachedRoute(
-      routeId: data.routeId.present ? data.routeId.value : this.routeId,
+      cacheKey: data.cacheKey.present ? data.cacheKey.value : this.cacheKey,
       scheduledDate: data.scheduledDate.present
           ? data.scheduledDate.value
           : this.scheduledDate,
       payload: data.payload.present ? data.payload.value : this.payload,
       cachedAt: data.cachedAt.present ? data.cachedAt.value : this.cachedAt,
+      adHoc: data.adHoc.present ? data.adHoc.value : this.adHoc,
     );
   }
 
   @override
   String toString() {
     return (StringBuffer('CachedRoute(')
-          ..write('routeId: $routeId, ')
+          ..write('cacheKey: $cacheKey, ')
           ..write('scheduledDate: $scheduledDate, ')
           ..write('payload: $payload, ')
-          ..write('cachedAt: $cachedAt')
+          ..write('cachedAt: $cachedAt, ')
+          ..write('adHoc: $adHoc')
           ..write(')'))
         .toString();
   }
 
   @override
-  int get hashCode => Object.hash(routeId, scheduledDate, payload, cachedAt);
+  int get hashCode =>
+      Object.hash(cacheKey, scheduledDate, payload, cachedAt, adHoc);
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
       (other is CachedRoute &&
-          other.routeId == this.routeId &&
+          other.cacheKey == this.cacheKey &&
           other.scheduledDate == this.scheduledDate &&
           other.payload == this.payload &&
-          other.cachedAt == this.cachedAt);
+          other.cachedAt == this.cachedAt &&
+          other.adHoc == this.adHoc);
 }
 
 class CachedRoutesCompanion extends UpdateCompanion<CachedRoute> {
-  final Value<String> routeId;
+  final Value<String> cacheKey;
   final Value<String> scheduledDate;
   final Value<String> payload;
   final Value<DateTime> cachedAt;
+  final Value<bool> adHoc;
   final Value<int> rowid;
   const CachedRoutesCompanion({
-    this.routeId = const Value.absent(),
+    this.cacheKey = const Value.absent(),
     this.scheduledDate = const Value.absent(),
     this.payload = const Value.absent(),
     this.cachedAt = const Value.absent(),
+    this.adHoc = const Value.absent(),
     this.rowid = const Value.absent(),
   });
   CachedRoutesCompanion.insert({
-    required String routeId,
+    required String cacheKey,
     required String scheduledDate,
     required String payload,
     required DateTime cachedAt,
+    this.adHoc = const Value.absent(),
     this.rowid = const Value.absent(),
-  }) : routeId = Value(routeId),
+  }) : cacheKey = Value(cacheKey),
        scheduledDate = Value(scheduledDate),
        payload = Value(payload),
        cachedAt = Value(cachedAt);
   static Insertable<CachedRoute> custom({
-    Expression<String>? routeId,
+    Expression<String>? cacheKey,
     Expression<String>? scheduledDate,
     Expression<String>? payload,
     Expression<DateTime>? cachedAt,
+    Expression<bool>? adHoc,
     Expression<int>? rowid,
   }) {
     return RawValuesInsertable({
-      if (routeId != null) 'route_id': routeId,
+      if (cacheKey != null) 'route_id': cacheKey,
       if (scheduledDate != null) 'scheduled_date': scheduledDate,
       if (payload != null) 'payload': payload,
       if (cachedAt != null) 'cached_at': cachedAt,
+      if (adHoc != null) 'ad_hoc': adHoc,
       if (rowid != null) 'rowid': rowid,
     });
   }
 
   CachedRoutesCompanion copyWith({
-    Value<String>? routeId,
+    Value<String>? cacheKey,
     Value<String>? scheduledDate,
     Value<String>? payload,
     Value<DateTime>? cachedAt,
+    Value<bool>? adHoc,
     Value<int>? rowid,
   }) {
     return CachedRoutesCompanion(
-      routeId: routeId ?? this.routeId,
+      cacheKey: cacheKey ?? this.cacheKey,
       scheduledDate: scheduledDate ?? this.scheduledDate,
       payload: payload ?? this.payload,
       cachedAt: cachedAt ?? this.cachedAt,
+      adHoc: adHoc ?? this.adHoc,
       rowid: rowid ?? this.rowid,
     );
   }
@@ -758,8 +804,8 @@ class CachedRoutesCompanion extends UpdateCompanion<CachedRoute> {
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
     final map = <String, Expression>{};
-    if (routeId.present) {
-      map['route_id'] = Variable<String>(routeId.value);
+    if (cacheKey.present) {
+      map['route_id'] = Variable<String>(cacheKey.value);
     }
     if (scheduledDate.present) {
       map['scheduled_date'] = Variable<String>(scheduledDate.value);
@@ -770,6 +816,9 @@ class CachedRoutesCompanion extends UpdateCompanion<CachedRoute> {
     if (cachedAt.present) {
       map['cached_at'] = Variable<DateTime>(cachedAt.value);
     }
+    if (adHoc.present) {
+      map['ad_hoc'] = Variable<bool>(adHoc.value);
+    }
     if (rowid.present) {
       map['rowid'] = Variable<int>(rowid.value);
     }
@@ -779,10 +828,11 @@ class CachedRoutesCompanion extends UpdateCompanion<CachedRoute> {
   @override
   String toString() {
     return (StringBuffer('CachedRoutesCompanion(')
-          ..write('routeId: $routeId, ')
+          ..write('cacheKey: $cacheKey, ')
           ..write('scheduledDate: $scheduledDate, ')
           ..write('payload: $payload, ')
           ..write('cachedAt: $cachedAt, ')
+          ..write('adHoc: $adHoc, ')
           ..write('rowid: $rowid')
           ..write(')'))
         .toString();
@@ -1254,18 +1304,20 @@ typedef $$OutboxEntriesTableProcessedTableManager =
     >;
 typedef $$CachedRoutesTableCreateCompanionBuilder =
     CachedRoutesCompanion Function({
-      required String routeId,
+      required String cacheKey,
       required String scheduledDate,
       required String payload,
       required DateTime cachedAt,
+      Value<bool> adHoc,
       Value<int> rowid,
     });
 typedef $$CachedRoutesTableUpdateCompanionBuilder =
     CachedRoutesCompanion Function({
-      Value<String> routeId,
+      Value<String> cacheKey,
       Value<String> scheduledDate,
       Value<String> payload,
       Value<DateTime> cachedAt,
+      Value<bool> adHoc,
       Value<int> rowid,
     });
 
@@ -1278,8 +1330,8 @@ class $$CachedRoutesTableFilterComposer
     super.$addJoinBuilderToRootComposer,
     super.$removeJoinBuilderFromRootComposer,
   });
-  ColumnFilters<String> get routeId => $composableBuilder(
-    column: $table.routeId,
+  ColumnFilters<String> get cacheKey => $composableBuilder(
+    column: $table.cacheKey,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -1297,6 +1349,11 @@ class $$CachedRoutesTableFilterComposer
     column: $table.cachedAt,
     builder: (column) => ColumnFilters(column),
   );
+
+  ColumnFilters<bool> get adHoc => $composableBuilder(
+    column: $table.adHoc,
+    builder: (column) => ColumnFilters(column),
+  );
 }
 
 class $$CachedRoutesTableOrderingComposer
@@ -1308,8 +1365,8 @@ class $$CachedRoutesTableOrderingComposer
     super.$addJoinBuilderToRootComposer,
     super.$removeJoinBuilderFromRootComposer,
   });
-  ColumnOrderings<String> get routeId => $composableBuilder(
-    column: $table.routeId,
+  ColumnOrderings<String> get cacheKey => $composableBuilder(
+    column: $table.cacheKey,
     builder: (column) => ColumnOrderings(column),
   );
 
@@ -1327,6 +1384,11 @@ class $$CachedRoutesTableOrderingComposer
     column: $table.cachedAt,
     builder: (column) => ColumnOrderings(column),
   );
+
+  ColumnOrderings<bool> get adHoc => $composableBuilder(
+    column: $table.adHoc,
+    builder: (column) => ColumnOrderings(column),
+  );
 }
 
 class $$CachedRoutesTableAnnotationComposer
@@ -1338,8 +1400,8 @@ class $$CachedRoutesTableAnnotationComposer
     super.$addJoinBuilderToRootComposer,
     super.$removeJoinBuilderFromRootComposer,
   });
-  GeneratedColumn<String> get routeId =>
-      $composableBuilder(column: $table.routeId, builder: (column) => column);
+  GeneratedColumn<String> get cacheKey =>
+      $composableBuilder(column: $table.cacheKey, builder: (column) => column);
 
   GeneratedColumn<String> get scheduledDate => $composableBuilder(
     column: $table.scheduledDate,
@@ -1351,6 +1413,9 @@ class $$CachedRoutesTableAnnotationComposer
 
   GeneratedColumn<DateTime> get cachedAt =>
       $composableBuilder(column: $table.cachedAt, builder: (column) => column);
+
+  GeneratedColumn<bool> get adHoc =>
+      $composableBuilder(column: $table.adHoc, builder: (column) => column);
 }
 
 class $$CachedRoutesTableTableManager
@@ -1384,30 +1449,34 @@ class $$CachedRoutesTableTableManager
               $$CachedRoutesTableAnnotationComposer($db: db, $table: table),
           updateCompanionCallback:
               ({
-                Value<String> routeId = const Value.absent(),
+                Value<String> cacheKey = const Value.absent(),
                 Value<String> scheduledDate = const Value.absent(),
                 Value<String> payload = const Value.absent(),
                 Value<DateTime> cachedAt = const Value.absent(),
+                Value<bool> adHoc = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => CachedRoutesCompanion(
-                routeId: routeId,
+                cacheKey: cacheKey,
                 scheduledDate: scheduledDate,
                 payload: payload,
                 cachedAt: cachedAt,
+                adHoc: adHoc,
                 rowid: rowid,
               ),
           createCompanionCallback:
               ({
-                required String routeId,
+                required String cacheKey,
                 required String scheduledDate,
                 required String payload,
                 required DateTime cachedAt,
+                Value<bool> adHoc = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => CachedRoutesCompanion.insert(
-                routeId: routeId,
+                cacheKey: cacheKey,
                 scheduledDate: scheduledDate,
                 payload: payload,
                 cachedAt: cachedAt,
+                adHoc: adHoc,
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
