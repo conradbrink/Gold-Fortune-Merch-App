@@ -203,8 +203,9 @@ adb shell screencap -p /sdcard/s.png && adb pull /sdcard/s.png /tmp/s.png
    `ACCESS_BACKGROUND_LOCATION` (which Google reviews specially). This is a
    product/UX decision, not just code.
 5. **iOS** — completely untested; needs Xcode.
-6. **`git init`** — *there is no version control on this project at all.*
-   Strongly recommended before further work.
+6. **Remote backup** — git is initialised (branch `main`, initial commit
+   `5167116`) but is **local only**. No GitHub remote, and `gh` is not
+   installed on this machine. A disk failure still loses everything.
 7. See `docs/pre-launch-checklist.md` for security items (leaked-password
    protection is Pro-plan-only and the org is on Free; seeded dev accounts
    share a known password and must be rotated).
