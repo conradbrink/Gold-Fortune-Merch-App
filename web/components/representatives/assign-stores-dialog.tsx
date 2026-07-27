@@ -188,7 +188,7 @@ export function AssignStoresDialog({
               <Input
                 id="rep-phone"
                 value={phone}
-                placeholder="+27 82 000 0000"
+                placeholder="+267 71 000 000"
                 onChange={(e) => {
                   setPhone(e.target.value);
                   setSavedDetails(false);

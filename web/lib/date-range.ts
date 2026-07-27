@@ -11,8 +11,8 @@ export type DateRange = {
  * `YYYY-MM-DD` in the *viewer's* timezone.
  *
  * `toISOString().slice(0, 10)` is UTC, so east of Greenwich "today" flips
- * early — in SAST (UTC+2) a manager opening the dashboard at 01:00 would see
- * tomorrow's date. Always use this for `<input type="date">` values.
+ * early — in CAT (UTC+2, Botswana) a manager opening the dashboard at 01:00
+ * would see tomorrow's date. Always use this for `<input type="date">` values.
  */
 export function toLocalDateInput(d: Date): string {
   const y = d.getFullYear();
