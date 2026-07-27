@@ -286,7 +286,11 @@ export default function ReportsPage() {
         </div>
       )}
 
-      <InsightsPanel range={range} templateId={templateId} />
+      <InsightsPanel
+        request={{ reportType: "reports", range, templateId }}
+        title="Manager briefing"
+        blurb="Summarise this period’s coverage, rep performance and compliance metrics, and surface anomalies worth acting on."
+      />
 
       {/* Ordered by what a manager acts on first: which store is worst, what is
           out of stock, who has been neglected — then the descriptive reports. */}

@@ -5,12 +5,15 @@ Until now the schema existed **only** inside the hosted Supabase project
 server with nothing recorded in the repo. If that project were deleted or the
 account lost, the schema would have gone with it.
 
-`migrations/` now holds all 17 applied migrations, reconstructed verbatim from
+`migrations/` now holds every applied migration, reconstructed verbatim from
 `supabase_migrations.schema_migrations` (the table Supabase writes when a
 migration is applied). Filenames and ordering match the remote history exactly,
 so this directory is a faithful, replayable record.
 
 ## Layout
+
+The table below covers the first 17; later migrations are named for what they
+do (`…211052_add_call_cycle`, `…211122_create_generate_routes_rpc`, and so on).
 
 | migration | what it does |
 |---|---|
@@ -43,7 +46,7 @@ supabase link --project-ref bvbgtsxasttjzlemumwy
 supabase migration list          # compare local vs remote
 ```
 
-Against a *fresh* project, `supabase db push` replays all 17 in order. Against
+Against a *fresh* project, `supabase db push` replays them in order. Against
 the existing project they are already applied — do not re-run them.
 
 ## Rules for new migrations

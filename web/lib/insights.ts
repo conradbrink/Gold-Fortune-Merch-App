@@ -12,17 +12,29 @@ export type Insight = {
   data_caveat: string | null;
 };
 
-export type InsightRequest = {
-  range: DateRange;
-  templateId?: string | null;
-};
+/**
+ * Two briefings share one endpoint.
+ *
+ * A discriminated union rather than optional fields everywhere: the two have
+ * genuinely different inputs — reports look at a date *range*, the call cycle
+ * looks forward over a *horizon* — and collapsing them into one loose shape
+ * would make it possible to ask for a call-cycle review with a date range and
+ * get silence back.
+ */
+export type InsightRequest =
+  | { reportType: "reports"; range: DateRange; templateId?: string | null }
+  | { reportType: "call_cycle"; weeks: number };
 
 /** Identifies a briefing so an unchanged filter set doesn't pay for a second call. */
-export function insightCacheKey({ range, templateId }: InsightRequest): string {
+export function insightCacheKey(req: InsightRequest): string {
+  if (req.reportType === "call_cycle") {
+    return ["call_cycle", req.weeks].join("|");
+  }
   return [
-    range.from.toISOString(),
-    range.to.toISOString(),
-    templateId ?? "none",
+    "reports",
+    req.range.from.toISOString(),
+    req.range.to.toISOString(),
+    req.templateId ?? "none",
   ].join("|");
 }
 
@@ -34,14 +46,20 @@ export function insightCacheKey({ range, templateId }: InsightRequest): string {
  * which is why `proxy.ts` excludes /api from its matcher.
  */
 export async function fetchInsight(req: InsightRequest): Promise<Insight> {
+  const requestBody =
+    req.reportType === "call_cycle"
+      ? { reportType: req.reportType, weeks: req.weeks }
+      : {
+          reportType: req.reportType,
+          from: req.range.from.toISOString(),
+          to: req.range.to.toISOString(),
+          templateId: req.templateId ?? undefined,
+        };
+
   const res = await fetch("/api/insights", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      from: req.range.from.toISOString(),
-      to: req.range.to.toISOString(),
-      templateId: req.templateId ?? undefined,
-    }),
+    body: JSON.stringify(requestBody),
   });
 
   // Read as text first: a proxy or platform error page is HTML, and calling

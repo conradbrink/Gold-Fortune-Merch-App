@@ -5,37 +5,48 @@ import { Sparkles, RefreshCw, AlertTriangle, ArrowRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { fetchInsight, insightCacheKey, type Insight } from "@/lib/insights";
-import type { DateRange } from "@/lib/date-range";
+import { fetchInsight, insightCacheKey, type InsightRequest, type Insight } from "@/lib/insights";
 
 /**
- * AI briefing over the current filter set.
+ * AI briefing over whatever the caller is looking at.
  *
  * Deliberately generated on demand rather than on every filter change: the
  * input is deterministic, so an unchanged filter set would pay for an identical
- * answer. The cache is keyed on the filters and cleared implicitly when they
- * change (the key stops matching).
+ * answer. The cache is keyed on the request and cleared implicitly when it
+ * changes (the key stops matching).
+ *
+ * Takes the whole request rather than named filters, so the reports briefing
+ * and the call-cycle plan review share one component — the sections it renders
+ * (headline, anomalies, actions, caveat) are the same for both.
  */
 export function InsightsPanel({
-  range,
-  templateId,
+  request,
+  title,
+  blurb,
+  staleHint = "Filters changed since this was generated — regenerate to refresh.",
+  clearMessage = "Nothing anomalous stood out this period.",
 }: {
-  range: DateRange;
-  templateId: string | null;
+  request: InsightRequest;
+  title: string;
+  blurb: string;
+  staleHint?: string;
+  /** Shown when the model finds nothing wrong — "this period" is meaningless
+      for a forward-looking plan, so the caller supplies its own wording. */
+  clearMessage?: string;
 }) {
   const [insight, setInsight] = useState<Insight | null>(null);
   const [cacheKey, setCacheKey] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const currentKey = insightCacheKey({ range, templateId });
+  const currentKey = insightCacheKey(request);
   const stale = insight !== null && cacheKey !== currentKey;
 
   async function generate() {
     setLoading(true);
     setError(null);
     try {
-      const result = await fetchInsight({ range, templateId });
+      const result = await fetchInsight(request);
       setInsight(result);
       setCacheKey(currentKey);
     } catch (e) {
@@ -51,7 +62,7 @@ export function InsightsPanel({
       <CardHeader className="flex flex-row items-center justify-between gap-3 space-y-0 pb-3">
         <CardTitle className="flex items-center gap-2 text-base font-semibold">
           <Sparkles className="h-4 w-4 text-primary" />
-          Manager briefing
+          {title}
         </CardTitle>
         <Button size="sm" variant="outline" onClick={generate} disabled={loading}>
           {loading ? (
@@ -78,17 +89,10 @@ export function InsightsPanel({
         )}
 
         {!insight && !error && !loading && (
-          <p className="text-sm text-muted-foreground">
-            Summarise this period&rsquo;s coverage, rep performance and compliance
-            metrics, and surface anomalies worth acting on.
-          </p>
+          <p className="text-sm text-muted-foreground">{blurb}</p>
         )}
 
-        {stale && (
-          <p className="text-xs text-muted-foreground">
-            Filters changed since this was generated — regenerate to refresh.
-          </p>
-        )}
+        {stale && <p className="text-xs text-muted-foreground">{staleHint}</p>}
 
         {insight && (
           <div className="space-y-4">
@@ -104,9 +108,7 @@ export function InsightsPanel({
             {/* A clean period is a real result — say so rather than showing
                 an empty panel that reads as a failure to load. */}
             {insight.anomalies.length === 0 && !insight.data_caveat && (
-              <p className="text-sm text-muted-foreground">
-                Nothing anomalous stood out this period.
-              </p>
+              <p className="text-sm text-muted-foreground">{clearMessage}</p>
             )}
 
             {insight.anomalies.length > 0 && (

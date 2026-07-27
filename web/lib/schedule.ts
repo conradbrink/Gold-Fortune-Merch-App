@@ -1,0 +1,431 @@
+import type { SupabaseClient } from "@supabase/supabase-js";
+import { callRpc } from "@/lib/rpc";
+
+/**
+ * Call cycle (journey plan) — the recurring pattern the schedule is generated
+ * from.
+ *
+ * Assigning a store to a rep says *who* is responsible; the call cycle says
+ * *when*. Frequency lives on the **store** because it is intrinsic to the store
+ * (a high-volume branch needs weekly attention no matter who covers it, and
+ * reassigning it must not lose that). The day lives on the **assignment**,
+ * because a weekday only means something inside one rep's week.
+ *
+ * The weekday maths below deliberately mirrors `generate_routes` statement for
+ * statement. The planner previews what the generator will produce, so if the two
+ * disagree the preview is a lie — see `occursOn`.
+ */
+
+export type VisitFrequency = "weekly" | "biweekly" | "monthly";
+
+export const FREQUENCIES: { value: VisitFrequency; label: string }[] = [
+  { value: "weekly", label: "Weekly" },
+  { value: "biweekly", label: "Every 2 weeks" },
+  { value: "monthly", label: "Monthly" },
+];
+
+/** ISO weekdays: 1 = Monday … 7 = Sunday, matching `extract(isodow)`. */
+export const WEEKDAYS: { value: number; short: string; long: string }[] = [
+  { value: 1, short: "Mon", long: "Monday" },
+  { value: 2, short: "Tue", long: "Tuesday" },
+  { value: 3, short: "Wed", long: "Wednesday" },
+  { value: 4, short: "Thu", long: "Thursday" },
+  { value: 5, short: "Fri", long: "Friday" },
+  { value: 6, short: "Sat", long: "Saturday" },
+  { value: 7, short: "Sun", long: "Sunday" },
+];
+
+/**
+ * Measured mean visit duration across the 291 checked-out visits.
+ *
+ * Six stops is therefore about five hours of in-store time before any driving,
+ * which is a full day once travel and admin are counted. It is a hint, not a
+ * limit — the planner flags days past it rather than refusing them.
+ */
+export const AVG_VISIT_MINUTES = 49;
+export const FULL_DAY_STORES = 6;
+
+export type PlannedStore = {
+  /** `store_assignments.id` — the row the day/week is written to. */
+  assignment_id: string;
+  store_id: string;
+  store_name: string;
+  city: string | null;
+  state: string | null;
+  active: boolean;
+  is_primary: boolean;
+  /** Null means unplanned: the generator will never schedule this store. */
+  day_of_week: number | null;
+  week_of_cycle: number | null;
+  visit_frequency: VisitFrequency;
+};
+
+export type GenerateResult = {
+  created: number;
+  first_date: string | null;
+  last_date: string | null;
+  reps_covered: number;
+};
+
+/** One (rep, weekday) that carries stores. Figures are the busiest occurrence. */
+export type CallCycleDay = {
+  rep_id: string;
+  rep_name: string | null;
+  day_of_week: number;
+  peak_stores: number;
+  avg_stores: number;
+  occurrences: number;
+  cities: string[];
+  stores_without_city: number;
+  /** Widest straight-line gap between two stops. Null when any stop has no coordinates. */
+  span_km: number | null;
+  frequency_mix: Partial<Record<VisitFrequency, number>>;
+};
+
+/** What the plan is missing — the things a per-day view cannot show. */
+export type CallCycleGaps = {
+  stores_active: number;
+  stores_unassigned: number;
+  unassigned_store_names: string[];
+  stores_without_city: number;
+  stores_without_coords: number;
+  unplanned_assignments: number;
+  unplanned_by_rep: Record<string, number>;
+  reps_active: number;
+  reps_without_stores: number;
+  reps_without_stores_names: string[];
+};
+
+/* ------------------------------------------------------------------ *
+ * Weekday arithmetic
+ *
+ * There is no date library in this tree and `lib/date-range.ts` has no weekday
+ * helpers, so these are hand-rolled. All of them work in *local* time — a
+ * `getUTCDay()` here would drift the whole plan by a day for half of each day
+ * in CAT, exactly the class of bug `toLocalDateInput` exists to prevent.
+ * ------------------------------------------------------------------ */
+
+export function addDays(d: Date, n: number): Date {
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate() + n);
+}
+
+/** 1 = Monday … 7 = Sunday. `getDay()` is 0 = Sunday, hence the fold. */
+export function isoWeekday(d: Date): number {
+  return d.getDay() === 0 ? 7 : d.getDay();
+}
+
+/**
+ * ISO-8601 week number, matching Postgres's `extract(week from …)`.
+ *
+ * Only the *parity* is used (week A / week B), but it still has to agree with
+ * Postgres or bi-weekly stores would alternate on the opposite weeks in the
+ * preview to the ones the generator actually writes.
+ */
+export function isoWeekNumber(d: Date): number {
+  // Thursday of the same ISO week decides which year and week the week belongs
+  // to — that is the whole trick of ISO-8601 week numbering.
+  const t = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
+  t.setUTCDate(t.getUTCDate() + 4 - (t.getUTCDay() || 7));
+  const yearStart = new Date(Date.UTC(t.getUTCFullYear(), 0, 1));
+  return Math.ceil(((t.getTime() - yearStart.getTime()) / 86_400_000 + 1) / 7);
+}
+
+/** Which occurrence of its weekday this date is: the 2nd Tuesday returns 2. */
+export function nthWeekdayOfMonth(d: Date): number {
+  return Math.floor((d.getDate() - 1) / 7) + 1;
+}
+
+/**
+ * Does a store on this cycle fall on this date?
+ *
+ * Mirrors the `case c.visit_frequency` block in `generate_routes`. The caller
+ * has already matched the weekday.
+ */
+export function occursOn(
+  date: Date,
+  frequency: VisitFrequency,
+  weekOfCycle: number | null
+): boolean {
+  const week = weekOfCycle ?? 1;
+  switch (frequency) {
+    case "weekly":
+      return true;
+    case "biweekly":
+      // Week A / week B by ISO week parity: cycle 1 = odd weeks.
+      return isoWeekNumber(date) % 2 === week % 2;
+    case "monthly":
+      return nthWeekdayOfMonth(date) === week;
+    default:
+      return false;
+  }
+}
+
+const ORDINALS = ["", "1st", "2nd", "3rd", "4th"];
+
+/** Plain-English cycle, e.g. "2nd Tuesday of the month". */
+export function describeCycle(store: PlannedStore): string {
+  if (store.day_of_week === null) return "Not planned";
+  const day = WEEKDAYS.find((w) => w.value === store.day_of_week)?.long ?? "—";
+  const week = store.week_of_cycle ?? 1;
+  switch (store.visit_frequency) {
+    case "weekly":
+      return `Every ${day}`;
+    case "biweekly":
+      return `Every other ${day} (week ${week === 1 ? "A" : "B"})`;
+    case "monthly":
+      return `${ORDINALS[week] ?? `${week}th`} ${day} of the month`;
+  }
+}
+
+/* ------------------------------------------------------------------ *
+ * Week load
+ * ------------------------------------------------------------------ */
+
+export type DayLoad = {
+  weekday: number;
+  /** Stores set to this weekday, on any frequency. */
+  assigned: number;
+  /** Most stores landing on a single occurrence of this weekday. */
+  peakStores: number;
+  /** Mean stores per occurrence, to one decimal. */
+  avgStores: number;
+  /** Most distinct cities on a single occurrence — the number that matters. */
+  peakCities: number;
+  /** Every city this weekday touches, for the tooltip/label. */
+  cities: string[];
+};
+
+/**
+ * Simulates the next `weeks` weeks and reports per-weekday load.
+ *
+ * A plain count of stores per weekday would overstate every day that carries
+ * bi-weekly or monthly stores — those never all land in the same week. So the
+ * horizon is walked date by date, exactly as the generator does, and the
+ * reported figure is the **worst single day** the rep will actually face.
+ *
+ * The city count is likewise taken per occurrence, not per weekday: three
+ * cities spread over three different Tuesdays is a normal patch, three cities
+ * on one Tuesday is the mistake this view exists to prevent.
+ */
+export function computeWeekLoad(
+  stores: PlannedStore[],
+  weeks = 8,
+  from = new Date()
+): DayLoad[] {
+  // The generator starts tomorrow, so the preview must too.
+  const start = addDays(from, 1);
+  const days = weeks * 7;
+
+  const byWeekday = new Map<number, { counts: number[]; cityCounts: number[]; cities: Set<string> }>();
+  for (const w of WEEKDAYS) {
+    byWeekday.set(w.value, { counts: [], cityCounts: [], cities: new Set() });
+  }
+
+  for (let i = 0; i < days; i++) {
+    const date = addDays(start, i);
+    const dow = isoWeekday(date);
+    const landing = stores.filter(
+      (s) =>
+        s.active &&
+        s.day_of_week === dow &&
+        occursOn(date, s.visit_frequency, s.week_of_cycle)
+    );
+    const bucket = byWeekday.get(dow)!;
+    bucket.counts.push(landing.length);
+    const cities = new Set(landing.map((s) => s.city ?? "Unknown"));
+    bucket.cityCounts.push(cities.size);
+    for (const c of cities) bucket.cities.add(c);
+  }
+
+  return WEEKDAYS.map((w) => {
+    const b = byWeekday.get(w.value)!;
+    const total = b.counts.reduce((a, c) => a + c, 0);
+    return {
+      weekday: w.value,
+      assigned: stores.filter((s) => s.active && s.day_of_week === w.value).length,
+      peakStores: b.counts.length ? Math.max(...b.counts) : 0,
+      avgStores: b.counts.length
+        ? Math.round((total / b.counts.length) * 10) / 10
+        : 0,
+      peakCities: b.cityCounts.length ? Math.max(...b.cityCounts) : 0,
+      cities: [...b.cities].sort(),
+    };
+  });
+}
+
+/**
+ * How many routes the generator would create for this rep over the horizon.
+ *
+ * Purely local, and deliberately *not* the number shown before writing — the
+ * RPC's own dry run is the authority there, because it also subtracts dates
+ * that already have a route. This is the at-a-glance figure on the planner.
+ */
+export function countPlannedVisits(
+  stores: PlannedStore[],
+  weeks = 8,
+  from = new Date()
+): number {
+  const start = addDays(from, 1);
+  let n = 0;
+  for (let i = 0; i < weeks * 7; i++) {
+    const date = addDays(start, i);
+    const dow = isoWeekday(date);
+    for (const s of stores) {
+      if (!s.active || s.day_of_week !== dow) continue;
+      if (occursOn(date, s.visit_frequency, s.week_of_cycle)) n++;
+    }
+  }
+  return n;
+}
+
+/* ------------------------------------------------------------------ *
+ * Data access
+ * ------------------------------------------------------------------ */
+
+/**
+ * One rep's assigned stores, with the cycle fields the planner edits.
+ *
+ * The `.select()` is a single string literal — a concatenated one degrades to
+ * `GenericStringError` in postgrest-js.
+ */
+export async function fetchPlannedStores(
+  supabase: SupabaseClient,
+  repId: string
+): Promise<PlannedStore[]> {
+  const { data, error } = await supabase
+    .from("store_assignments")
+    .select(
+      "id, store_id, is_primary, day_of_week, week_of_cycle, stores(name, city, state, active, visit_frequency)"
+    )
+    .eq("rep_id", repId);
+  if (error) throw new Error(error.message);
+
+  const rows = (data ?? []) as unknown as {
+    id: string;
+    store_id: string;
+    is_primary: boolean;
+    day_of_week: number | null;
+    week_of_cycle: number | null;
+    stores:
+      | {
+          name: string;
+          city: string | null;
+          state: string | null;
+          active: boolean;
+          visit_frequency: VisitFrequency;
+        }
+      | {
+          name: string;
+          city: string | null;
+          state: string | null;
+          active: boolean;
+          visit_frequency: VisitFrequency;
+        }[]
+      | null;
+  }[];
+
+  return rows
+    .map((r) => {
+      // postgrest returns an embedded relation as an object or an array
+      // depending on the cardinality it infers; normalise rather than guess.
+      const store = Array.isArray(r.stores) ? r.stores[0] ?? null : r.stores;
+      return {
+        assignment_id: r.id,
+        store_id: r.store_id,
+        store_name: store?.name ?? "Unknown store",
+        city: store?.city ?? null,
+        state: store?.state ?? null,
+        active: store?.active ?? false,
+        is_primary: r.is_primary,
+        day_of_week: r.day_of_week,
+        week_of_cycle: r.week_of_cycle,
+        visit_frequency: (store?.visit_frequency ?? "weekly") as VisitFrequency,
+      };
+    })
+    .sort(
+      (a, b) =>
+        (a.city ?? "￿").localeCompare(b.city ?? "￿") ||
+        a.store_name.localeCompare(b.store_name)
+    );
+}
+
+/** Sets (or clears) which day of the rep's week covers this store. */
+export async function setAssignmentDay(
+  supabase: SupabaseClient,
+  assignmentId: string,
+  dayOfWeek: number | null,
+  weekOfCycle: number | null
+): Promise<void> {
+  const { error } = await supabase
+    .from("store_assignments")
+    .update({ day_of_week: dayOfWeek, week_of_cycle: weekOfCycle })
+    .eq("id", assignmentId);
+  if (error) throw new Error(error.message);
+}
+
+/**
+ * Changes a store's visit frequency.
+ *
+ * This is a property of the *store*, so it changes the cycle for every rep who
+ * covers it — the planner says so next to the control rather than letting a
+ * manager discover it from someone else's week.
+ */
+export async function setStoreFrequency(
+  supabase: SupabaseClient,
+  storeId: string,
+  frequency: VisitFrequency
+): Promise<void> {
+  const { error } = await supabase
+    .from("stores")
+    .update({ visit_frequency: frequency })
+    .eq("id", storeId);
+  if (error) throw new Error(error.message);
+}
+
+/**
+ * The org-wide call cycle, as the AI critic and the generator both see it.
+ *
+ * Takes the client as its first argument so the insights Route Handler can
+ * reuse it unchanged with a cookie-scoped server client — the plan the manager
+ * reads and the plan the model reads come from one code path, the same
+ * arrangement `lib/reports.ts` uses.
+ */
+export async function fetchCallCycleReview(
+  supabase: SupabaseClient,
+  weeks = 8
+): Promise<CallCycleDay[]> {
+  const res = await callRpc(supabase, "call_cycle_review", { p_weeks: weeks });
+  if (res.error) throw new Error(res.error.message);
+  return (res.data ?? []) as CallCycleDay[];
+}
+
+export async function fetchCallCycleGaps(
+  supabase: SupabaseClient
+): Promise<CallCycleGaps | null> {
+  const res = await callRpc(supabase, "call_cycle_gaps", {});
+  if (res.error) throw new Error(res.error.message);
+  const rows = (res.data ?? []) as CallCycleGaps[];
+  return rows[0] ?? null;
+}
+
+/**
+ * Materialises `routes` from the call cycle for the whole organisation.
+ *
+ * `p_dry_run` reports what *would* be written without writing it, which is what
+ * the confirm step shows. The real run is idempotent — `on conflict do nothing`
+ * against `routes_rep_store_date_key` — so a second click creates nothing
+ * rather than duplicating every stop.
+ */
+export async function generateRoutes(
+  supabase: SupabaseClient,
+  weeks: number,
+  dryRun: boolean
+): Promise<GenerateResult> {
+  const res = await callRpc(supabase, "generate_routes", {
+    p_weeks: weeks,
+    p_dry_run: dryRun,
+  });
+  if (res.error) throw new Error(res.error.message);
+  const rows = (res.data ?? []) as GenerateResult[];
+  return rows[0] ?? { created: 0, first_date: null, last_date: null, reps_covered: 0 };
+}

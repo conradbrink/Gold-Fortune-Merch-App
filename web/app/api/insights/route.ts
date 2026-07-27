@@ -8,6 +8,15 @@ import {
   formatDuration,
   type FieldReport,
 } from "@/lib/reports";
+import {
+  AVG_VISIT_MINUTES,
+  FULL_DAY_STORES,
+  WEEKDAYS,
+  fetchCallCycleGaps,
+  fetchCallCycleReview,
+  type CallCycleDay,
+  type CallCycleGaps,
+} from "@/lib/schedule";
 
 /**
  * Manager insights.
@@ -61,6 +70,49 @@ Accuracy:
 - Anomalies are outliers worth a second look, not every below-average value.
 - Actions must be things this manager can actually do: schedule a visit, coach a
   named rep, escalate a price or stock issue. No generic advice.`;
+
+const CALL_CYCLE_PROMPT = `You are an analyst reviewing the journey plan (call cycle) of a
+field-merchandising team at an FMCG company.
+
+The manager has assigned each store a weekday and a visit frequency. You are
+given the resulting weekly load per rep, plus the gaps in the plan. Write a
+SHORT review of the plan itself — not of past performance.
+
+The manager reads this on a phone while planning. Assume about fifteen seconds
+of attention. The Mon–Sun strip below your review already shows the per-day
+counts — your job is to say which day is wrong and what to change.
+
+Length:
+- At most 3 anomalies and at most 3 actions. Fewer is better.
+- Anomaly detail: one sentence, 25 words maximum.
+- Action: one sentence, 20 words maximum.
+- If the plan is sound, return no anomalies and say so in the headline. Never
+  pad the lists to reach three — a workable plan is a useful thing to report.
+
+What is worth flagging, roughly in order:
+- A day that spans more than one city. Name the rep, the day and the cities.
+  Driving between towns is the biggest single waste in a field day.
+- A day carrying more stops than fits. Visits average 49 minutes, so about
+  ${FULL_DAY_STORES} stores is a full day.
+- One rep well over capacity while another is well under.
+- Stores nobody covers at all — they will never be visited.
+- Stores assigned to a rep but with no day set — they will never be scheduled.
+- Stores with a day but no location on file, which cannot be grouped by area.
+
+Accuracy:
+- Ground every claim in the supplied numbers. Never invent a store, a rep or a
+  day that does not appear in the data.
+- "peak_stores" is the busiest single occurrence of that weekday, not a total.
+  A rep with monthly stores does not carry them every week. Never describe
+  peak_stores as a weekly total.
+- "span_km" is STRAIGHT-LINE distance in kilometres, not road distance. Say
+  "apart" or "as the crow flies". NEVER convert it to a drive time or a
+  duration of any kind, and never state a distance when span_km is null.
+- A null span_km means the stores have no coordinates on file — that is itself
+  worth reporting, and is not a distance of zero.
+- Actions must be things this manager can actually do: move a named store to a
+  different day, give an unassigned store to a named rep, set a day on the
+  stores that have none.`;
 
 const SCHEMA = {
   type: "object",
@@ -129,6 +181,52 @@ function toAggregate(fields: FieldReport[]) {
     }));
 }
 
+/**
+ * The call cycle as the model sees it.
+ *
+ * Note what cannot appear here even by accident: `call_cycle_review` returns
+ * city names and a derived `span_km`, never `lat`/`lng`, so the aggregates-only
+ * rule is enforced by the shape of the RPC rather than by remembering to strip
+ * fields at this layer.
+ */
+function buildCallCyclePayload(
+  days: CallCycleDay[],
+  gaps: CallCycleGaps | null,
+  weeks: number
+) {
+  const byRep = new Map<string, CallCycleDay[]>();
+  for (const d of days) {
+    const key = d.rep_name ?? d.rep_id;
+    if (!byRep.has(key)) byRep.set(key, []);
+    byRep.get(key)!.push(d);
+  }
+
+  return {
+    horizon_weeks: weeks,
+    avg_visit_minutes: AVG_VISIT_MINUTES,
+    full_day_stores: FULL_DAY_STORES,
+    reps: [...byRep.entries()].map(([rep, rows]) => ({
+      rep,
+      days_worked: rows.length,
+      // Peak load summed across the week, against what those days can hold.
+      // Both sides are peaks, so they compare like with like.
+      peak_week_stores: rows.reduce((n, r) => n + r.peak_stores, 0),
+      peak_week_capacity: rows.length * FULL_DAY_STORES,
+      days: rows.map((r) => ({
+        day: WEEKDAYS.find((w) => w.value === r.day_of_week)?.long ?? "?",
+        peak_stores: r.peak_stores,
+        avg_stores: r.avg_stores,
+        cities: r.cities,
+        stores_without_location: r.stores_without_city,
+        // Explicitly named so the model cannot mistake it for a drive time.
+        span_km_straight_line: r.span_km,
+        frequency_mix: r.frequency_mix,
+      })),
+    })),
+    gaps,
+  };
+}
+
 export async function POST(request: Request) {
   try {
     const supabase = await createClient();
@@ -169,71 +267,119 @@ export async function POST(request: Request) {
       templateId?: string;
       from?: string;
       to?: string;
+      weeks?: number;
     };
 
-    if (!body.from || !body.to) {
-      return Response.json({ error: "from and to are required." }, { status: 400 });
+    // Unknown values fall back to the reports briefing, which is what every
+    // caller asked for before this field meant anything.
+    const reportType = body.reportType === "call_cycle" ? "call_cycle" : "reports";
+
+    let instructions: string;
+    let userContent: string;
+
+    if (reportType === "call_cycle") {
+      // A call cycle has a horizon, not a date range — from/to are meaningless
+      // here, so they are neither required nor read.
+      const weeks = Number(body.weeks ?? 8);
+      if (!Number.isFinite(weeks) || weeks < 1 || weeks > 52) {
+        return Response.json(
+          { error: "weeks must be between 1 and 52." },
+          { status: 400 }
+        );
+      }
+
+      const [days, gaps] = await Promise.all([
+        fetchCallCycleReview(supabase, weeks),
+        fetchCallCycleGaps(supabase),
+      ]);
+
+      // Nothing is planned yet — the common first state. Answer it directly
+      // rather than paying for a call whose only possible output is invention:
+      // a model handed an empty plan will find something to say about it.
+      if (days.length === 0) {
+        return Response.json({
+          headline:
+            "No call cycle has been set up yet — no store has a day assigned, so nothing will be scheduled.",
+          anomalies: [],
+          actions: gaps?.unplanned_assignments
+            ? [
+                `Set a day for the ${gaps.unplanned_assignments} assigned store${gaps.unplanned_assignments === 1 ? "" : "s"} that have none.`,
+              ]
+            : [],
+          data_caveat: "",
+        });
+      }
+
+      instructions = CALL_CYCLE_PROMPT;
+      userContent =
+        `Call cycle over the next ${weeks} weeks.\n\n` +
+        JSON.stringify(buildCallCyclePayload(days, gaps, weeks));
+    } else {
+      if (!body.from || !body.to) {
+        return Response.json({ error: "from and to are required." }, { status: 400 });
+      }
+      const range = { from: new Date(body.from), to: new Date(body.to) };
+      if (Number.isNaN(range.from.getTime()) || Number.isNaN(range.to.getTime())) {
+        return Response.json({ error: "Invalid date range." }, { status: 400 });
+      }
+
+      // Same fetchers the UI uses, run with the caller's cookie session — so RLS
+      // scopes these to the caller's own org exactly as it does in the browser.
+      const [gaps, reps, trends] = await Promise.all([
+        fetchCoverageGaps(supabase, range),
+        fetchRepScorecard(supabase, range),
+        fetchComplianceTrends(supabase, range, "week"),
+      ]);
+
+      const form = body.templateId
+        ? await fetchFormReport(supabase, body.templateId, range)
+        : [];
+
+      const payload = {
+        period: { from: body.from, to: body.to },
+        coverage: gaps.map((g) => ({
+          store: g.store_name,
+          group: g.store_group,
+          days_since_last_visit: g.days_since,
+          visits_in_period: g.visits_in_period,
+          responsible_rep: g.assigned_reps,
+        })),
+        reps: reps.map((r) => ({
+          rep: r.rep_name,
+          visits_total: r.visits_total,
+          visits_completed: r.visits_completed,
+          completion_rate: r.completion_rate,
+          // Pre-formatted, not raw seconds. The model quotes whatever it is given,
+          // and "3,354 seconds" is not how anyone discusses a store visit. Sending
+          // the formatted string makes the wrong unit unreachable rather than
+          // merely discouraged by the prompt.
+          avg_visit_duration: formatDuration(r.avg_duration_seconds),
+          overall_score: r.score,
+          form_compliance_rate: r.form_compliance_rate,
+          location_verified_rate: r.verified_rate,
+        })),
+        weekly_compliance: trends,
+        audit_questions: toAggregate(form),
+      };
+
+      const totalSubmissions = trends.reduce(
+        (n, t) => n + Number(t.submissions ?? 0),
+        0
+      );
+
+      instructions = SYSTEM_PROMPT;
+      userContent =
+        `Period ${body.from.slice(0, 10)} to ${body.to.slice(0, 10)}. ` +
+        `${totalSubmissions} audit submissions in range.\n\n` +
+        JSON.stringify(payload);
     }
-    const range = { from: new Date(body.from), to: new Date(body.to) };
-    if (Number.isNaN(range.from.getTime()) || Number.isNaN(range.to.getTime())) {
-      return Response.json({ error: "Invalid date range." }, { status: 400 });
-    }
-
-    // Same fetchers the UI uses, run with the caller's cookie session — so RLS
-    // scopes these to the caller's own org exactly as it does in the browser.
-    const [gaps, reps, trends] = await Promise.all([
-      fetchCoverageGaps(supabase, range),
-      fetchRepScorecard(supabase, range),
-      fetchComplianceTrends(supabase, range, "week"),
-    ]);
-
-    const form = body.templateId
-      ? await fetchFormReport(supabase, body.templateId, range)
-      : [];
-
-    const payload = {
-      period: { from: body.from, to: body.to },
-      coverage: gaps.map((g) => ({
-        store: g.store_name,
-        group: g.store_group,
-        days_since_last_visit: g.days_since,
-        visits_in_period: g.visits_in_period,
-        responsible_rep: g.assigned_reps,
-      })),
-      reps: reps.map((r) => ({
-        rep: r.rep_name,
-        visits_total: r.visits_total,
-        visits_completed: r.visits_completed,
-        completion_rate: r.completion_rate,
-        // Pre-formatted, not raw seconds. The model quotes whatever it is given,
-        // and "3,354 seconds" is not how anyone discusses a store visit. Sending
-        // the formatted string makes the wrong unit unreachable rather than
-        // merely discouraged by the prompt.
-        avg_visit_duration: formatDuration(r.avg_duration_seconds),
-        overall_score: r.score,
-        form_compliance_rate: r.form_compliance_rate,
-        location_verified_rate: r.verified_rate,
-      })),
-      weekly_compliance: trends,
-      audit_questions: toAggregate(form),
-    };
-
-    const totalSubmissions = trends.reduce((n, t) => n + Number(t.submissions ?? 0), 0);
 
     const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
     const response = await client.responses.create({
       model: MODEL,
-      instructions: SYSTEM_PROMPT,
-      input: [
-        {
-          role: "user",
-          content:
-            `Period ${body.from.slice(0, 10)} to ${body.to.slice(0, 10)}. ` +
-            `${totalSubmissions} audit submissions in range.\n\n` +
-            JSON.stringify(payload),
-        },
-      ],
+      instructions,
+      input: [{ role: "user", content: userContent }],
       text: {
         format: {
           type: "json_schema",
