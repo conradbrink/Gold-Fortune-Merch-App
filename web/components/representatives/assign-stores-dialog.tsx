@@ -17,10 +17,13 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { createClient } from "@/lib/supabase/client";
 import {
   assignStore,
+  deleteRep,
+  fetchDeleteImpact,
   setRepActive,
   unassignStore,
   updateRep,
   type Assignment,
+  type DeleteImpact,
   type RepSummary,
   type StoreOption,
 } from "@/lib/representatives";
@@ -60,6 +63,8 @@ export function AssignStoresDialog({
   const [jobTitle, setJobTitle] = useState("");
   const [savingDetails, setSavingDetails] = useState(false);
   const [savedDetails, setSavedDetails] = useState(false);
+  const [impact, setImpact] = useState<DeleteImpact | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   const supabase = createClient();
 
@@ -112,6 +117,7 @@ export function AssignStoresDialog({
     setPhone(rep.phone ?? "");
     setJobTitle(rep.job_title ?? "");
     setSavedDetails(false);
+    setImpact(null);
   }, [open, rep]);
 
   // Open the groups this rep already covers; searching opens everything so
@@ -260,6 +266,71 @@ export function AssignStoresDialog({
             Deactivating keeps their visit history — it only stops new work being
             assigned.
           </p>
+
+          {/* Deleting cascades through visits, audits, photos and workdays, so
+              the cost is stated before the destructive button appears. */}
+          {rep && !impact && (
+            <button
+              type="button"
+              className="text-xs text-destructive underline underline-offset-4"
+              onClick={async () => {
+                setError(null);
+                try {
+                  setImpact(await fetchDeleteImpact(supabase, rep.rep_id));
+                } catch (e) {
+                  setError(e instanceof Error ? e.message : String(e));
+                }
+              }}
+            >
+              Delete permanently…
+            </button>
+          )}
+
+          {rep && impact && (
+            <div className="space-y-2 rounded-md border border-destructive/40 bg-destructive/10 p-3">
+              <p className="text-sm font-medium text-destructive">
+                Permanently delete {impact.rep_name ?? "this rep"}?
+              </p>
+              <p className="text-xs text-foreground">
+                This also deletes {impact.visits} visit
+                {impact.visits === 1 ? "" : "s"}, {impact.submissions} audit
+                {impact.submissions === 1 ? "" : "s"}, {impact.photos} photo
+                {impact.photos === 1 ? "" : "s"}, {impact.workdays} workday
+                {impact.workdays === 1 ? "" : "s"} and {impact.routes} scheduled
+                route{impact.routes === 1 ? "" : "s"}. Reports covering those
+                dates will change. This cannot be undone.
+              </p>
+              <p className="text-xs text-muted-foreground">
+                Deactivate instead if they have simply left — it keeps the
+                history.
+              </p>
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  size="sm"
+                  variant="destructive"
+                  disabled={deleting}
+                  onClick={async () => {
+                    setDeleting(true);
+                    setError(null);
+                    try {
+                      await deleteRep(rep.rep_id);
+                      onChanged();
+                      onOpenChange(false);
+                    } catch (e) {
+                      setError(e instanceof Error ? e.message : String(e));
+                    } finally {
+                      setDeleting(false);
+                    }
+                  }}
+                >
+                  {deleting ? "Deleting…" : "Yes, delete everything"}
+                </Button>
+                <Button size="sm" variant="outline" onClick={() => setImpact(null)}>
+                  Cancel
+                </Button>
+              </div>
+            </div>
+          )}
         </div>
 
         <Input

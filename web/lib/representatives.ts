@@ -232,6 +232,51 @@ export async function setRepActive(
   if (error) throw new Error(error.message);
 }
 
+export type DeleteImpact = {
+  rep_name: string | null;
+  visits: number;
+  submissions: number;
+  photos: number;
+  workdays: number;
+  routes: number;
+  assignments: number;
+};
+
+/** What a hard delete would destroy — shown before asking to confirm. */
+export async function fetchDeleteImpact(
+  supabase: SupabaseClient,
+  repId: string
+): Promise<DeleteImpact | null> {
+  const res = await callRpc(supabase, "rep_delete_impact", { p_rep_id: repId });
+  if (res.error) throw new Error(res.error.message);
+  const rows = (res.data ?? []) as DeleteImpact[];
+  return rows[0] ?? null;
+}
+
+/**
+ * Permanently deletes a rep and everything that cascades from them.
+ *
+ * Irreversible. `setRepActive(false)` is the right call in almost every real
+ * case — this is for genuine mistakes, such as an invite to the wrong address.
+ */
+export async function deleteRep(repId: string): Promise<void> {
+  const res = await fetch(`/api/reps/${repId}`, { method: "DELETE" });
+  const raw = await res.text();
+  let body: unknown;
+  try {
+    body = JSON.parse(raw);
+  } catch {
+    throw new Error(`Unexpected ${res.status} response from the delete endpoint.`);
+  }
+  if (!res.ok) {
+    const message =
+      typeof body === "object" && body !== null && "error" in body
+        ? String((body as { error: unknown }).error)
+        : `Request failed (${res.status}).`;
+    throw new Error(message);
+  }
+}
+
 export function formatLastActive(iso: string | null): string {
   if (!iso) return "Never";
   const days = Math.floor((Date.now() - new Date(iso).getTime()) / 86_400_000);
