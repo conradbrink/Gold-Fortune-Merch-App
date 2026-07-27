@@ -56,7 +56,6 @@ const emptyForm = {
   city: "",
   state: "",
   zip: "",
-  territory: "",
 };
 
 export default function StoresPage() {
@@ -149,7 +148,6 @@ export default function StoresPage() {
       city: store.city ?? "",
       state: store.state ?? "",
       zip: store.zip ?? "",
-      territory: store.territory ?? "",
     });
     setNewGroupName("");
     setDialogOpen(true);
@@ -180,7 +178,6 @@ export default function StoresPage() {
       city: form.city,
       state: form.state,
       zip: form.zip,
-      territory: form.territory,
     };
 
     if (editingId) {
@@ -437,14 +434,6 @@ export default function StoresPage() {
                 />
               </div>
             </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="store-territory">Territory</Label>
-              <Input
-                id="store-territory"
-                value={form.territory}
-                onChange={(e) => setForm({ ...form, territory: e.target.value })}
-              />
-            </div>
             {form.name && (
               <a
                 href={googleMapsUrl(form)}
@@ -482,7 +471,6 @@ export default function StoresPage() {
               <TableRow className="hover:bg-transparent">
                 <TableHead>Store</TableHead>
                 <TableHead className="hidden sm:table-cell">Group</TableHead>
-                <TableHead className="hidden lg:table-cell">Territory</TableHead>
                 <TableHead className="hidden md:table-cell">Status</TableHead>
                 <TableHead className="hidden lg:table-cell">
                   Latest activity
@@ -529,9 +517,6 @@ export default function StoresPage() {
                     ) : (
                       <span className="text-muted-foreground">Ungrouped</span>
                     )}
-                  </TableCell>
-                  <TableCell className="hidden text-sm lg:table-cell">
-                    {store.territory}
                   </TableCell>
                   <TableCell className="hidden text-sm md:table-cell">
                     <span

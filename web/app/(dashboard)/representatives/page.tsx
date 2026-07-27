@@ -139,7 +139,7 @@ export default function RepresentativesPage() {
                 <TableRow>
                   <TableHead>Rep</TableHead>
                   <TableHead className="hidden lg:table-cell">Contact</TableHead>
-                  <TableHead>Stores</TableHead>
+                  <TableHead className="text-right">Stores</TableHead>
                   <TableHead className="hidden md:table-cell text-right">
                     Visits (30d)
                   </TableHead>
@@ -167,21 +167,20 @@ export default function RepresentativesPage() {
                       {r.email ?? "—"}
                       <span className="block text-xs">{r.phone ?? "No phone"}</span>
                     </TableCell>
-                    <TableCell className="text-sm">
+                    <TableCell className="text-right">
                       {r.assigned_stores === 0 ? (
                         <Badge variant="outline" className="font-normal">
                           None
                         </Badge>
                       ) : (
-                        <>
-                          <span className="tabular-nums">{r.assigned_stores}</span>
-                          <span
-                            className="block max-w-[16rem] truncate text-xs text-muted-foreground"
-                            title={r.store_names ?? undefined}
-                          >
-                            {r.store_names}
-                          </span>
-                        </>
+                        // Names live in the Manage dialog; the list only needs
+                        // the count. Hover still reveals them.
+                        <span
+                          className="tabular-nums"
+                          title={r.store_names ?? undefined}
+                        >
+                          {r.assigned_stores}
+                        </span>
                       )}
                     </TableCell>
                     <TableCell className="hidden md:table-cell text-right tabular-nums">
