@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Store as StoreIcon } from "lucide-react";
+import { UserPlus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -15,6 +15,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { AssignStoresDialog } from "@/components/representatives/assign-stores-dialog";
+import { InviteRepDialog } from "@/components/representatives/invite-rep-dialog";
 import { createClient } from "@/lib/supabase/client";
 import {
   fetchAssignments,
@@ -30,9 +31,8 @@ import {
 /**
  * Representatives.
  *
- * There is deliberately no "Invite rep" button: creating an auth user needs the
- * service-role key, which must never reach a browser bundle. Reps are created
- * out of band; this page manages who covers which store.
+ * Inviting a rep goes through /api/reps/invite because creating an auth user
+ * needs the service-role key, which must never reach a browser bundle.
  */
 export default function RepresentativesPage() {
   const supabase = createClient();
@@ -44,6 +44,7 @@ export default function RepresentativesPage() {
 
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState<RepSummary | null>(null);
+  const [inviting, setInviting] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -83,22 +84,22 @@ export default function RepresentativesPage() {
     );
   }, [reps, query]);
 
-  // Stores nobody owns are the actionable gap this page exists to surface.
-  const unassignedStores = useMemo(() => {
-    const owned = new Set(assignments.map((a) => a.store_id));
-    return stores.filter((s) => !owned.has(s.id));
-  }, [stores, assignments]);
-
   return (
     <div className="space-y-4">
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight text-foreground">
-          Representatives
-        </h1>
-        <p className="text-sm text-muted-foreground">
-          {reps.length} field {reps.length === 1 ? "rep" : "reps"} · who covers
-          which store
-        </p>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight text-foreground">
+            Representatives
+          </h1>
+          <p className="text-sm text-muted-foreground">
+            {reps.length} field {reps.length === 1 ? "rep" : "reps"} · who covers
+            which store
+          </p>
+        </div>
+        <Button className="gap-1.5" onClick={() => setInviting(true)}>
+          <UserPlus className="h-4 w-4" />
+          Invite rep
+        </Button>
       </div>
 
       {error && (
@@ -108,24 +109,6 @@ export default function RepresentativesPage() {
           <Button size="sm" variant="outline" className="mt-2" onClick={load}>
             Retry
           </Button>
-        </div>
-      )}
-
-      {!loading && unassignedStores.length > 0 && (
-        <div className="flex items-start gap-2 rounded-md border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm">
-          <StoreIcon className="mt-0.5 h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400" />
-          <p className="text-foreground">
-            <span className="font-medium">
-              {unassignedStores.length}{" "}
-              {unassignedStores.length === 1 ? "store has" : "stores have"} no
-              rep assigned
-            </span>{" "}
-            <span className="text-muted-foreground">
-              — {unassignedStores.map((s) => s.name).slice(0, 4).join(", ")}
-              {unassignedStores.length > 4 &&
-                ` +${unassignedStores.length - 4} more`}
-            </span>
-          </p>
         </div>
       )}
 
@@ -155,10 +138,8 @@ export default function RepresentativesPage() {
               <TableHeader>
                 <TableRow>
                   <TableHead>Rep</TableHead>
-                  <TableHead className="text-right">Stores</TableHead>
-                  <TableHead className="hidden sm:table-cell text-right">
-                    Primary
-                  </TableHead>
+                  <TableHead className="hidden lg:table-cell">Contact</TableHead>
+                  <TableHead>Stores</TableHead>
                   <TableHead className="hidden md:table-cell text-right">
                     Visits (30d)
                   </TableHead>
@@ -170,22 +151,38 @@ export default function RepresentativesPage() {
                 {filtered.map((r) => (
                   <TableRow key={r.rep_id}>
                     <TableCell className="font-medium">
-                      {r.rep_name ?? "Unnamed rep"}
+                      <span className={r.is_active ? "" : "text-muted-foreground"}>
+                        {r.rep_name ?? "Unnamed rep"}
+                      </span>
+                      {!r.is_active && (
+                        <Badge variant="outline" className="ml-2 font-normal">
+                          Inactive
+                        </Badge>
+                      )}
                       <span className="block text-xs text-muted-foreground">
-                        {r.email ?? "—"}
+                        {r.job_title ?? "Field rep"}
                       </span>
                     </TableCell>
-                    <TableCell className="text-right tabular-nums">
+                    <TableCell className="hidden lg:table-cell text-sm text-muted-foreground">
+                      {r.email ?? "—"}
+                      <span className="block text-xs">{r.phone ?? "No phone"}</span>
+                    </TableCell>
+                    <TableCell className="text-sm">
                       {r.assigned_stores === 0 ? (
                         <Badge variant="outline" className="font-normal">
                           None
                         </Badge>
                       ) : (
-                        r.assigned_stores
+                        <>
+                          <span className="tabular-nums">{r.assigned_stores}</span>
+                          <span
+                            className="block max-w-[16rem] truncate text-xs text-muted-foreground"
+                            title={r.store_names ?? undefined}
+                          >
+                            {r.store_names}
+                          </span>
+                        </>
                       )}
-                    </TableCell>
-                    <TableCell className="hidden sm:table-cell text-right tabular-nums text-muted-foreground">
-                      {r.primary_stores}
                     </TableCell>
                     <TableCell className="hidden md:table-cell text-right tabular-nums">
                       {r.visits_30d}
@@ -209,6 +206,12 @@ export default function RepresentativesPage() {
           )}
         </CardContent>
       </Card>
+
+      <InviteRepDialog
+        open={inviting}
+        onOpenChange={setInviting}
+        onInvited={load}
+      />
 
       <AssignStoresDialog
         rep={selected}

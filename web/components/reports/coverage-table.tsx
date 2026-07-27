@@ -33,7 +33,7 @@ export function CoverageTable({ rows }: { rows: CoverageGap[] }) {
         <TableRow>
           <TableHead>Store</TableHead>
           <TableHead className="hidden sm:table-cell">Group</TableHead>
-          <TableHead className="hidden md:table-cell">Responsible rep</TableHead>
+          <TableHead className="hidden md:table-cell">Responsible</TableHead>
           <TableHead className="text-right">Visits in period</TableHead>
           <TableHead className="text-right">Last visit</TableHead>
         </TableRow>
@@ -56,8 +56,10 @@ export function CoverageTable({ rows }: { rows: CoverageGap[] }) {
               {r.store_group ?? "—"}
             </TableCell>
             <TableCell className="hidden md:table-cell text-muted-foreground">
-              {r.primary_rep_name ?? (
-                <span className="italic">Unassigned</span>
+              {r.assigned_reps ?? (
+                <span className="italic text-amber-600 dark:text-amber-400">
+                  Unassigned
+                </span>
               )}
             </TableCell>
             <TableCell className="text-right tabular-nums">

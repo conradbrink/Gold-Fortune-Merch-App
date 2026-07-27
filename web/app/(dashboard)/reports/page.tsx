@@ -163,7 +163,7 @@ export default function ReportsPage() {
       ...gaps.map((g) => [
         g.store_name,
         g.store_group ?? "",
-        g.primary_rep_name ?? "",
+        g.assigned_reps ?? "",
         g.visits_in_period,
         g.days_since ?? "never visited",
       ]),

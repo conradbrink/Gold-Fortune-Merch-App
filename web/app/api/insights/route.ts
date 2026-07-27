@@ -198,7 +198,7 @@ export async function POST(request: Request) {
         group: g.store_group,
         days_since_last_visit: g.days_since,
         visits_in_period: g.visits_in_period,
-        responsible_rep: g.primary_rep_name,
+        responsible_rep: g.assigned_reps,
       })),
       reps: reps.map((r) => ({
         rep: r.rep_name,

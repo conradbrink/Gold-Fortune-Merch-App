@@ -13,8 +13,14 @@ export type RepSummary = {
   rep_id: string;
   rep_name: string | null;
   email: string | null;
+  phone: string | null;
+  job_title: string | null;
+  /** Soft delete — deactivated reps keep their visit history. */
+  is_active: boolean;
+  joined_at: string | null;
   assigned_stores: number;
-  primary_stores: number;
+  /** Comma-joined store names, so the list shows the patch not just a count. */
+  store_names: string | null;
   last_active_at: string | null;
   visits_30d: number;
 };
@@ -26,7 +32,50 @@ export type Assignment = {
   is_primary: boolean;
 };
 
-export type StoreOption = { id: string; name: string; city: string | null };
+export type StoreOption = {
+  id: string;
+  name: string;
+  city: string | null;
+  group_id: string | null;
+  group_name: string | null;
+};
+
+export type InviteResult = { id: string; email: string; full_name: string };
+
+/**
+ * Invites a rep via `/api/reps/invite`.
+ *
+ * Creating an auth user needs the service-role key, so this cannot be done from
+ * the browser — the Route Handler holds the key and verifies the caller is a
+ * manager before using it.
+ */
+export async function inviteRep(
+  email: string,
+  fullName: string
+): Promise<InviteResult> {
+  const res = await fetch("/api/reps/invite", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email, full_name: fullName }),
+  });
+  // Read as text first — an error page is HTML, and .json() on it throws a
+  // parse error that hides the real status.
+  const raw = await res.text();
+  let body: unknown;
+  try {
+    body = JSON.parse(raw);
+  } catch {
+    throw new Error(`Unexpected ${res.status} response from the invite endpoint.`);
+  }
+  if (!res.ok) {
+    const message =
+      typeof body === "object" && body !== null && "error" in body
+        ? String((body as { error: unknown }).error)
+        : `Request failed (${res.status}).`;
+    throw new Error(message);
+  }
+  return body as InviteResult;
+}
 
 export async function fetchRepDirectory(
   supabase: SupabaseClient
@@ -39,13 +88,34 @@ export async function fetchRepDirectory(
 export async function fetchStores(
   supabase: SupabaseClient
 ): Promise<StoreOption[]> {
+  // Single string literal — a concatenated .select() degrades to
+  // GenericStringError in postgrest-js.
   const { data, error } = await supabase
     .from("stores")
-    .select("id, name, city")
+    .select("id, name, city, store_group_id, store_groups(name)")
     .eq("active", true)
     .order("name", { ascending: true });
   if (error) throw new Error(error.message);
-  return (data ?? []) as StoreOption[];
+
+  const rows = (data ?? []) as unknown as {
+    id: string;
+    name: string;
+    city: string | null;
+    store_group_id: string | null;
+    store_groups: { name: string } | { name: string }[] | null;
+  }[];
+
+  return rows.map((r) => ({
+    id: r.id,
+    name: r.name,
+    city: r.city,
+    group_id: r.store_group_id,
+    // postgrest returns an embedded relation as an object or array depending on
+    // the inferred cardinality; normalise rather than guessing.
+    group_name: Array.isArray(r.store_groups)
+      ? r.store_groups[0]?.name ?? null
+      : r.store_groups?.name ?? null,
+  }));
 }
 
 /** Every assignment in the org — small enough to fetch whole (21 rows today). */
@@ -134,6 +204,32 @@ export async function fetchOrgId(supabase: SupabaseClient): Promise<string | nul
     .single();
   if (error) throw new Error(error.message);
   return (data as { org_id: string } | null)?.org_id ?? null;
+}
+
+/** Edits the mutable profile fields. Email and role are deliberately not here. */
+export async function updateRep(
+  supabase: SupabaseClient,
+  repId: string,
+  patch: { full_name?: string; phone?: string | null; job_title?: string | null }
+): Promise<void> {
+  const { error } = await supabase.from("profiles").update(patch).eq("id", repId);
+  if (error) throw new Error(error.message);
+}
+
+/**
+ * Soft delete. Their visits, photos and form submissions reference this profile,
+ * so deleting the row would orphan history — deactivating keeps the record.
+ */
+export async function setRepActive(
+  supabase: SupabaseClient,
+  repId: string,
+  isActive: boolean
+): Promise<void> {
+  const { error } = await supabase
+    .from("profiles")
+    .update({ is_active: isActive })
+    .eq("id", repId);
+  if (error) throw new Error(error.message);
 }
 
 export function formatLastActive(iso: string | null): string {

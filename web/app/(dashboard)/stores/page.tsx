@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import {
   Map,
   List,
@@ -41,6 +42,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { createClient } from "@/lib/supabase/client";
+import { fetchAssignments } from "@/lib/representatives";
 import { googleMapsUrl } from "@/lib/maps";
 import type { Tables } from "@/lib/supabase/types";
 
@@ -63,6 +65,7 @@ export default function StoresPage() {
   const [stores, setStores] = useState<StoreRow[]>([]);
   const [groups, setGroups] = useState<StoreGroup[]>([]);
   const [latestActivity, setLatestActivity] = useState<Record<string, string>>({});
+  const [assignedStoreIds, setAssignedStoreIds] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [groupFilter, setGroupFilter] = useState("all");
@@ -90,6 +93,13 @@ export default function StoresPage() {
       .select("*")
       .order("name");
     setStores(storeRows ?? []);
+
+    // Which stores have an owner. A store nobody is responsible for is the
+    // gap worth prompting on — it will never appear on anyone's route.
+    // Reuses the representatives fetcher: store_assignments is missing from the
+    // stale generated types, so querying it off the typed client won't compile.
+    const assignmentRows = await fetchAssignments(supabase);
+    setAssignedStoreIds(new Set(assignmentRows.map((a) => a.store_id)));
 
     const { data: visitRows } = await supabase
       .from("visits")
@@ -221,6 +231,11 @@ export default function StoresPage() {
         .includes(search.toLowerCase())
     );
 
+  const unassignedCount = useMemo(
+    () => stores.filter((s) => s.active && !assignedStoreIds.has(s.id)).length,
+    [stores, assignedStoreIds]
+  );
+
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -242,6 +257,24 @@ export default function StoresPage() {
           New group
         </Button>
       </div>
+
+      {unassignedCount > 0 && (
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-md border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm">
+          <span className="font-medium text-foreground">
+            {unassignedCount} {unassignedCount === 1 ? "store has" : "stores have"}{" "}
+            no rep assigned
+          </span>
+          <span className="text-muted-foreground">
+            — nobody is responsible for visiting them.
+          </span>
+          <Link
+            href="/representatives"
+            className="font-medium text-primary underline underline-offset-4"
+          >
+            Assign reps
+          </Link>
+        </div>
+      )}
 
       <FilterBar />
 

@@ -49,8 +49,9 @@ export type CoverageGap = {
   last_visit_at: string | null;
   days_since: number | null;
   visits_in_period: number;
-  primary_rep_id: string | null;
-  primary_rep_name: string | null;
+  /** Comma-joined names of every rep responsible for the store. */
+  assigned_reps: string | null;
+  assigned_count: number;
 };
 
 export type RepScore = {
