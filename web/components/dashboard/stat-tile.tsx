@@ -6,7 +6,15 @@ type StatTileProps = {
   label: string;
   value: string | number;
   sublabel?: string;
-  deltaPct?: number;
+  /** Percentage change vs the comparison period. `null` renders an em dash. */
+  deltaPct?: number | null;
+  /** Defaults to "vs previous period"; pass the real span where known. */
+  deltaLabel?: string;
+  /**
+   * For metrics where down is good (out-of-stock rate, missed visits), so the
+   * colouring doesn't congratulate a manager on a rising failure rate.
+   */
+  invertDelta?: boolean;
   icon?: React.ReactNode;
   tone?: "solid" | "outline";
   className?: string;
@@ -18,12 +26,23 @@ export function StatTile({
   value,
   sublabel,
   deltaPct,
+  deltaLabel = "vs previous period",
+  invertDelta = false,
   icon,
   tone = "solid",
   className,
   href,
 }: StatTileProps) {
   const isSolid = tone === "solid";
+  const isGood = deltaPct == null ? false : invertDelta ? deltaPct < 0 : deltaPct > 0;
+  // The -300 shades are tuned for the navy tile and wash out on white.
+  const deltaTone = isGood
+    ? isSolid
+      ? "text-emerald-300"
+      : "text-emerald-700 dark:text-emerald-400"
+    : isSolid
+      ? "text-red-300"
+      : "text-red-700 dark:text-red-400";
 
   const body = (
     <>
@@ -59,22 +78,28 @@ export function StatTile({
           )}
         >
           {deltaPct !== undefined ? (
-            <>
-              <span>Previous Week:</span>
-              <span
-                className={cn(
-                  "flex items-center gap-0.5 font-semibold",
-                  deltaPct < 0 ? "text-red-300" : "text-emerald-300"
-                )}
-              >
-                {deltaPct < 0 ? (
-                  <ArrowDown className="h-3 w-3" />
-                ) : (
-                  <ArrowUp className="h-3 w-3" />
-                )}
-                {Math.abs(deltaPct)}%
-              </span>
-            </>
+            deltaPct === null ? (
+              // No previous data. "0%" here would assert "no change" when the
+              // truth is "nothing to compare against".
+              <span>No comparison data</span>
+            ) : (
+              <>
+                <span>{deltaLabel}</span>
+                <span
+                  className={cn(
+                    "flex items-center gap-0.5 font-semibold",
+                    deltaTone
+                  )}
+                >
+                  {deltaPct < 0 ? (
+                    <ArrowDown className="h-3 w-3" />
+                  ) : (
+                    <ArrowUp className="h-3 w-3" />
+                  )}
+                  {Math.abs(deltaPct)}%
+                </span>
+              </>
+            )
           ) : (
             <span>{sublabel}</span>
           )}
