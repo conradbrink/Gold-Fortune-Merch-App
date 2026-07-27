@@ -250,7 +250,7 @@ export function AssignStoresDialog({
                 onClick={async () => {
                   setError(null);
                   try {
-                    await setRepActive(supabase, rep.rep_id, !rep.is_active);
+                    await setRepActive(rep.rep_id, !rep.is_active);
                     onChanged();
                     onOpenChange(false);
                   } catch (e) {

@@ -219,17 +219,35 @@ export async function updateRep(
 /**
  * Soft delete. Their visits, photos and form submissions reference this profile,
  * so deleting the row would orphan history — deactivating keeps the record.
+ *
+ * Goes through the API rather than writing profiles directly, because two
+ * things must change together: `is_active` gates RLS (no data), and banning the
+ * auth user refuses the sign-in itself. Setting only the flag would leave a
+ * "deactivated" rep still able to log in to an empty app.
  */
 export async function setRepActive(
-  supabase: SupabaseClient,
   repId: string,
   isActive: boolean
 ): Promise<void> {
-  const { error } = await supabase
-    .from("profiles")
-    .update({ is_active: isActive })
-    .eq("id", repId);
-  if (error) throw new Error(error.message);
+  const res = await fetch(`/api/reps/${repId}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ is_active: isActive }),
+  });
+  const raw = await res.text();
+  let body: unknown;
+  try {
+    body = JSON.parse(raw);
+  } catch {
+    throw new Error(`Unexpected ${res.status} response from the rep endpoint.`);
+  }
+  if (!res.ok) {
+    const message =
+      typeof body === "object" && body !== null && "error" in body
+        ? String((body as { error: unknown }).error)
+        : `Request failed (${res.status}).`;
+    throw new Error(message);
+  }
 }
 
 export type DeleteImpact = {
