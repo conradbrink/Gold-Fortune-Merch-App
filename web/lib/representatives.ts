@@ -1,0 +1,146 @@
+import type { SupabaseClient } from "@supabase/supabase-js";
+import { callRpc } from "@/lib/rpc";
+
+/**
+ * Representatives and store ownership.
+ *
+ * `store_assignments` already existed with correct RLS (managers read and write
+ * org-wide, reps read their own) but had no UI at all, so nobody could say who
+ * owns which store.
+ */
+
+export type RepSummary = {
+  rep_id: string;
+  rep_name: string | null;
+  email: string | null;
+  assigned_stores: number;
+  primary_stores: number;
+  last_active_at: string | null;
+  visits_30d: number;
+};
+
+export type Assignment = {
+  id: string;
+  store_id: string;
+  rep_id: string;
+  is_primary: boolean;
+};
+
+export type StoreOption = { id: string; name: string; city: string | null };
+
+export async function fetchRepDirectory(
+  supabase: SupabaseClient
+): Promise<RepSummary[]> {
+  const res = await callRpc(supabase, "rep_directory", {});
+  if (res.error) throw new Error(res.error.message);
+  return (res.data ?? []) as RepSummary[];
+}
+
+export async function fetchStores(
+  supabase: SupabaseClient
+): Promise<StoreOption[]> {
+  const { data, error } = await supabase
+    .from("stores")
+    .select("id, name, city")
+    .eq("active", true)
+    .order("name", { ascending: true });
+  if (error) throw new Error(error.message);
+  return (data ?? []) as StoreOption[];
+}
+
+/** Every assignment in the org — small enough to fetch whole (21 rows today). */
+export async function fetchAssignments(
+  supabase: SupabaseClient
+): Promise<Assignment[]> {
+  const { data, error } = await supabase
+    .from("store_assignments")
+    .select("id, store_id, rep_id, is_primary");
+  if (error) throw new Error(error.message);
+  return (data ?? []) as Assignment[];
+}
+
+export async function assignStore(
+  supabase: SupabaseClient,
+  orgId: string,
+  storeId: string,
+  repId: string
+): Promise<void> {
+  const { error } = await supabase
+    .from("store_assignments")
+    .insert({ org_id: orgId, store_id: storeId, rep_id: repId, is_primary: false });
+  // unique(store_id, rep_id) — a double-click is a no-op, not an error worth
+  // showing the user.
+  if (error && error.code !== "23505") throw new Error(error.message);
+}
+
+export async function unassignStore(
+  supabase: SupabaseClient,
+  assignmentId: string
+): Promise<void> {
+  const { error } = await supabase
+    .from("store_assignments")
+    .delete()
+    .eq("id", assignmentId);
+  if (error) throw new Error(error.message);
+}
+
+/**
+ * Promotes one assignment to primary for its store.
+ *
+ * `store_assignments_one_primary_idx` is a partial unique index on
+ * (store_id) where is_primary, so the previous holder MUST be demoted first —
+ * writing the new one straight in violates the index. Demote-then-promote is
+ * two statements rather than one, but the index is what guarantees a store
+ * never ends up with two primaries even if this races.
+ */
+export async function setPrimary(
+  supabase: SupabaseClient,
+  storeId: string,
+  assignmentId: string
+): Promise<void> {
+  const demote = await supabase
+    .from("store_assignments")
+    .update({ is_primary: false })
+    .eq("store_id", storeId)
+    .eq("is_primary", true);
+  if (demote.error) throw new Error(demote.error.message);
+
+  const promote = await supabase
+    .from("store_assignments")
+    .update({ is_primary: true })
+    .eq("id", assignmentId);
+  if (promote.error) throw new Error(promote.error.message);
+}
+
+export async function clearPrimary(
+  supabase: SupabaseClient,
+  assignmentId: string
+): Promise<void> {
+  const { error } = await supabase
+    .from("store_assignments")
+    .update({ is_primary: false })
+    .eq("id", assignmentId);
+  if (error) throw new Error(error.message);
+}
+
+/** The signed-in manager's org, needed as `org_id` on inserts for RLS. */
+export async function fetchOrgId(supabase: SupabaseClient): Promise<string | null> {
+  const { data: auth } = await supabase.auth.getUser();
+  if (!auth.user) return null;
+  const { data, error } = await supabase
+    .from("profiles")
+    .select("org_id")
+    .eq("id", auth.user.id)
+    .single();
+  if (error) throw new Error(error.message);
+  return (data as { org_id: string } | null)?.org_id ?? null;
+}
+
+export function formatLastActive(iso: string | null): string {
+  if (!iso) return "Never";
+  const days = Math.floor((Date.now() - new Date(iso).getTime()) / 86_400_000);
+  if (days <= 0) return "Today";
+  if (days === 1) return "Yesterday";
+  if (days < 30) return `${days}d ago`;
+  return new Date(iso).toLocaleDateString();
+}
