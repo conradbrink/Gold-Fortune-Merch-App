@@ -80,8 +80,7 @@ export function InsightsPanel({
         {!insight && !error && !loading && (
           <p className="text-sm text-muted-foreground">
             Summarise this period&rsquo;s coverage, rep performance and compliance
-            metrics, and surface anomalies worth acting on. Only aggregated
-            numbers are sent — no photos, locations or free-text answers.
+            metrics, and surface anomalies worth acting on.
           </p>
         )}
 
