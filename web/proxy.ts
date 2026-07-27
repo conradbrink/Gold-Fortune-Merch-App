@@ -63,6 +63,11 @@ export async function proxy(request: NextRequest) {
 
 export const config = {
   matcher: [
-    "/((?!_next/static|_next/image|favicon.ico|logo.png|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
+    // `api` is excluded deliberately. Redirects default to 307, which preserves
+    // the method, so a rep POSTing to an API route would have the POST replayed
+    // against /rep-notice — fetch follows it, res.ok is true, and res.json()
+    // then throws a parse error on HTML. Route handlers authenticate themselves
+    // and return a real 401 instead.
+    "/((?!api|_next/static|_next/image|favicon.ico|logo.png|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
   ],
 };

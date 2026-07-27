@@ -1,0 +1,166 @@
+import type { SupabaseClient } from "@supabase/supabase-js";
+import { callRpc } from "@/lib/rpc";
+import type { DateRange } from "@/lib/date-range";
+
+/**
+ * Report fetchers.
+ *
+ * Every function takes the Supabase client as its first argument rather than
+ * constructing one, matching `lib/dashboard.ts` and `lib/activities.ts`. That
+ * is what lets the insights Route Handler reuse these unchanged on the server
+ * with a cookie-scoped client — the aggregates the manager sees and the
+ * aggregates Claude reads come from exactly the same code path.
+ *
+ * All aggregation happens in Postgres. Pulling `form_responses` to the browser
+ * would mean shipping 3,351 rows today and one more per question per visit
+ * forever.
+ */
+
+export type FieldType = "number" | "boolean" | "multiple_choice" | "photo" | "text";
+
+export type NumberStats = {
+  min: number | null;
+  avg: number | null;
+  max: number | null;
+  sum: number | null;
+  buckets: { label: string; count: number }[];
+};
+export type BooleanStats = { yes: number; no: number };
+export type ChoiceStats = { options: { option: string; count: number }[] };
+export type PhotoStats = { count: number; paths: string[] };
+export type TextStats = { recent: { text: string; submitted_at: string }[] };
+
+export type FieldReport = {
+  field_id: string;
+  label: string;
+  field_type: FieldType;
+  metric_key: string | null;
+  sort_order: number;
+  response_count: number;
+  stats: NumberStats | BooleanStats | ChoiceStats | PhotoStats | TextStats | null;
+};
+
+export type CoverageGap = {
+  store_id: string;
+  store_name: string;
+  store_group: string | null;
+  city: string | null;
+  state: string | null;
+  last_visit_at: string | null;
+  days_since: number | null;
+  visits_in_period: number;
+  primary_rep_id: string | null;
+  primary_rep_name: string | null;
+};
+
+export type RepScore = {
+  rep_id: string;
+  rep_name: string | null;
+  visits_total: number;
+  visits_completed: number;
+  completion_rate: number | null;
+  avg_duration_seconds: number | null;
+  stores_covered: number;
+  submissions: number;
+  form_compliance_rate: number | null;
+  verified_rate: number | null;
+};
+
+export type TrendPointRow = {
+  bucket_start: string;
+  submissions: number;
+  oos_rate: number | null;
+  planogram_rate: number | null;
+  price_correct_rate: number | null;
+  avg_facings: number | null;
+};
+
+export type FormTemplate = { id: string; name: string };
+
+/** Every RPC returns `{data, error}`; surface the message rather than an empty page. */
+function unwrap<T>(res: { data: unknown; error: { message: string } | null }): T[] {
+  if (res.error) throw new Error(res.error.message);
+  return (res.data ?? []) as T[];
+}
+
+export async function fetchFormTemplates(
+  supabase: SupabaseClient
+): Promise<FormTemplate[]> {
+  const { data, error } = await supabase
+    .from("form_templates")
+    .select("id, name")
+    .eq("active", true)
+    .order("name", { ascending: true });
+  if (error) throw new Error(error.message);
+  return (data ?? []) as FormTemplate[];
+}
+
+export async function fetchFormReport(
+  supabase: SupabaseClient,
+  templateId: string,
+  range: DateRange,
+  filters: { repIds?: string[]; storeIds?: string[] } = {}
+): Promise<FieldReport[]> {
+  return unwrap<FieldReport>(
+    await callRpc(supabase, "form_report", {
+      p_template_id: templateId,
+      p_from: range.from.toISOString(),
+      p_to: range.to.toISOString(),
+      p_rep_ids: filters.repIds?.length ? filters.repIds : null,
+      p_store_ids: filters.storeIds?.length ? filters.storeIds : null,
+    })
+  );
+}
+
+export async function fetchCoverageGaps(
+  supabase: SupabaseClient,
+  range: DateRange
+): Promise<CoverageGap[]> {
+  return unwrap<CoverageGap>(
+    await callRpc(supabase, "coverage_gaps", {
+      p_from: range.from.toISOString(),
+      p_to: range.to.toISOString(),
+    })
+  );
+}
+
+export async function fetchRepScorecard(
+  supabase: SupabaseClient,
+  range: DateRange
+): Promise<RepScore[]> {
+  return unwrap<RepScore>(
+    await callRpc(supabase, "rep_scorecard", {
+      p_from: range.from.toISOString(),
+      p_to: range.to.toISOString(),
+    })
+  );
+}
+
+export async function fetchComplianceTrends(
+  supabase: SupabaseClient,
+  range: DateRange,
+  bucket: "day" | "week" = "day",
+  storeGroupId?: string | null
+): Promise<TrendPointRow[]> {
+  return unwrap<TrendPointRow>(
+    await callRpc(supabase, "compliance_trends", {
+      p_from: range.from.toISOString(),
+      p_to: range.to.toISOString(),
+      p_bucket: bucket,
+      p_store_group_id: storeGroupId ?? null,
+    })
+  );
+}
+
+/** `0.1353` → `13.5%`; null stays an em dash rather than becoming a false 0%. */
+export function formatRate(v: number | null | undefined): string {
+  if (v === null || v === undefined) return "—";
+  return `${(v * 100).toFixed(1)}%`;
+}
+
+export function formatDuration(seconds: number | null | undefined): string {
+  if (!seconds) return "—";
+  const h = Math.floor(seconds / 3600);
+  const m = Math.round((seconds % 3600) / 60);
+  return h > 0 ? `${h}h ${m}m` : `${m}m`;
+}
