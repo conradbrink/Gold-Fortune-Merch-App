@@ -291,14 +291,18 @@ export default function ReportsPage() {
       {/* Ordered by what a manager acts on first: which store is worst, what is
           out of stock, who has been neglected — then the descriptive reports. */}
       <Tabs defaultValue="score">
-        <TabsList className="flex-wrap">
+        {/* One row, scrolled — never wrapped. TabsList is a fixed-height pill,
+            so wrapping pushes the second row outside its own background and the
+            triggers' `flex-1` stretches them into ragged spacing. Labels are
+            kept short so all eight fit without scrolling on a normal screen. */}
+        <TabsList className="max-w-full justify-start overflow-x-auto px-1 [&::-webkit-scrollbar]:hidden [&>*]:shrink-0 [&>*]:px-2.5">
           <TabsTrigger value="score">Perfect Store</TabsTrigger>
           <TabsTrigger value="oos">Out of stock</TabsTrigger>
-          <TabsTrigger value="coverage">Coverage &amp; gaps</TabsTrigger>
-          <TabsTrigger value="adherence">Schedule adherence</TabsTrigger>
-          <TabsTrigger value="reps">Rep scorecard</TabsTrigger>
-          <TabsTrigger value="trends">Compliance trends</TabsTrigger>
-          <TabsTrigger value="form">Form report</TabsTrigger>
+          <TabsTrigger value="coverage">Coverage</TabsTrigger>
+          <TabsTrigger value="adherence">Adherence</TabsTrigger>
+          <TabsTrigger value="reps">Reps</TabsTrigger>
+          <TabsTrigger value="trends">Trends</TabsTrigger>
+          <TabsTrigger value="form">Form</TabsTrigger>
           <TabsTrigger value="photos">Photos</TabsTrigger>
         </TabsList>
 

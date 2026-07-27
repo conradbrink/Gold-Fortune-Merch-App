@@ -63,7 +63,14 @@ export type RepScore = {
   stores_covered: number;
   submissions: number;
   form_compliance_rate: number | null;
+  /** Share of check-ins inside the store geofence. Now a pillar of `score`. */
   verified_rate: number | null;
+  /**
+   * Overall 0–100 rep score: the mean of completion, form compliance and
+   * location verification. A pillar with no data is excluded from the mean
+   * rather than counted as zero.
+   */
+  score: number | null;
 };
 
 export type TrendPointRow = {
