@@ -1,8 +1,12 @@
 import type { DateRange } from "@/lib/date-range";
 
+/**
+ * Deliberately short. The panel sits above the charts, which carry the detail —
+ * so the briefing is a headline plus what to do, capped at three of each by the
+ * server.
+ */
 export type Insight = {
   headline: string;
-  findings: { title: string; detail: string }[];
   anomalies: { subject: string; detail: string; severity: "low" | "medium" | "high" }[];
   actions: string[];
   data_caveat: string | null;

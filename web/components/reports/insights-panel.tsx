@@ -102,17 +102,12 @@ export function InsightsPanel({
               </p>
             )}
 
-            {insight.findings.length > 0 && (
-              <Section title="Findings">
-                <ul className="space-y-2">
-                  {insight.findings.map((f, i) => (
-                    <li key={i} className="text-sm">
-                      <span className="font-medium text-foreground">{f.title}. </span>
-                      <span className="text-muted-foreground">{f.detail}</span>
-                    </li>
-                  ))}
-                </ul>
-              </Section>
+            {/* A clean period is a real result — say so rather than showing
+                an empty panel that reads as a failure to load. */}
+            {insight.anomalies.length === 0 && !insight.data_caveat && (
+              <p className="text-sm text-muted-foreground">
+                Nothing anomalous stood out this period.
+              </p>
             )}
 
             {insight.anomalies.length > 0 && (

@@ -77,6 +77,47 @@ export type TrendPointRow = {
 
 export type FormTemplate = { id: string; name: string };
 
+/**
+ * Perfect Store index — the FMCG standard composite.
+ *
+ * A pillar is `null` when it was never measured in the period, and is excluded
+ * from `score` rather than counted as zero: a store nobody price-checked has
+ * not failed price compliance.
+ */
+export type PerfectStore = {
+  store_id: string;
+  store_name: string;
+  store_group: string | null;
+  audits: number;
+  availability_pct: number | null;
+  planogram_pct: number | null;
+  price_pct: number | null;
+  condition_pct: number | null;
+  score: number | null;
+};
+
+export type OosHotspot = {
+  store_id: string;
+  store_name: string;
+  checks: number;
+  oos_count: number;
+  oos_rate: number | null;
+  /** Longest unbroken run of visits that found the product out of stock. */
+  max_consecutive_oos: number;
+  last_oos_at: string | null;
+  top_skus: { sku: string; n: number }[];
+};
+
+export type Adherence = {
+  rep_id: string;
+  rep_name: string | null;
+  planned: number;
+  completed: number;
+  missed: number;
+  adherence_rate: number | null;
+  missed_detail: { store: string; date: string }[];
+};
+
 /** Every RPC returns `{data, error}`; surface the message rather than an empty page. */
 function unwrap<T>(res: { data: unknown; error: { message: string } | null }): T[] {
   if (res.error) throw new Error(res.error.message);
@@ -148,6 +189,42 @@ export async function fetchComplianceTrends(
       p_to: range.to.toISOString(),
       p_bucket: bucket,
       p_store_group_id: storeGroupId ?? null,
+    })
+  );
+}
+
+export async function fetchPerfectStoreScore(
+  supabase: SupabaseClient,
+  range: DateRange
+): Promise<PerfectStore[]> {
+  return unwrap<PerfectStore>(
+    await callRpc(supabase, "perfect_store_score", {
+      p_from: range.from.toISOString(),
+      p_to: range.to.toISOString(),
+    })
+  );
+}
+
+export async function fetchOosHotspots(
+  supabase: SupabaseClient,
+  range: DateRange
+): Promise<OosHotspot[]> {
+  return unwrap<OosHotspot>(
+    await callRpc(supabase, "oos_hotspots", {
+      p_from: range.from.toISOString(),
+      p_to: range.to.toISOString(),
+    })
+  );
+}
+
+export async function fetchScheduleAdherence(
+  supabase: SupabaseClient,
+  range: DateRange
+): Promise<Adherence[]> {
+  return unwrap<Adherence>(
+    await callRpc(supabase, "schedule_adherence", {
+      p_from: range.from.toISOString(),
+      p_to: range.to.toISOString(),
     })
   );
 }

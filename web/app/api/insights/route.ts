@@ -1,4 +1,4 @@
-import Anthropic from "@anthropic-ai/sdk";
+import OpenAI from "openai";
 import { createClient } from "@/lib/supabase/server";
 import {
   fetchComplianceTrends,
@@ -12,8 +12,8 @@ import {
  * Manager insights.
  *
  * The app's first server-side code, and it exists for one reason: an API key
- * cannot live in a browser bundle. `ANTHROPIC_API_KEY` has no NEXT_PUBLIC_
- * prefix, so Next keeps it server-only.
+ * cannot live in a browser bundle. `OPENAI_API_KEY` has no NEXT_PUBLIC_ prefix,
+ * so Next keeps it server-only.
  *
  * `proxy.ts` deliberately excludes /api from its matcher, so this handler owns
  * its own auth — the Next docs are explicit that proxy is not a security
@@ -24,26 +24,39 @@ export const runtime = "nodejs";
 // A long report can outrun the default serverless ceiling.
 export const maxDuration = 60;
 
-const MODEL = process.env.ANTHROPIC_MODEL ?? "claude-opus-5";
+const MODEL = process.env.OPENAI_MODEL ?? "gpt-5.5";
 
 const SYSTEM_PROMPT = `You are an analyst supporting a field-merchandising manager at an FMCG company.
 
 You are given pre-aggregated metrics from their field team's store visits and
-merchandising audits. Write a briefing for the manager.
+merchandising audits. Write a SHORT executive briefing.
 
-Rules:
+The manager reads this on a phone between store visits, not at a desk. Assume
+about fifteen seconds of attention. The charts below your briefing already show
+the detail — your job is to say what matters and what to do, not to narrate
+every metric.
+
+Length:
+- At most 3 anomalies and at most 3 actions. Fewer is better.
+- Anomaly detail: one sentence, 25 words maximum.
+- Action: one sentence, 20 words maximum.
+- If nothing is genuinely wrong, return no anomalies and say so in the headline.
+  Never pad the lists to reach three — a quiet period is a useful thing to report.
+
+Accuracy:
 - Ground every claim in the supplied numbers. Never invent a figure, a store, or
   a rep that does not appear in the data.
 - If the data is too thin to support a conclusion (a handful of submissions, a
-  range of a day or two, or a metric with a null rate), say so plainly instead
-  of describing a trend. Under-claiming is always better than a confident
-  statement the numbers do not support.
+  range of a day or two, or a metric with a null rate), set data_caveat and say
+  so plainly instead of describing a trend. Under-claiming is always better than
+  a confident statement the numbers do not support.
 - Rates arrive as decimals (0.1353 = 13.53%). Present them as percentages.
 - A null rate means "not measured in this period", not zero.
-- Be specific and brief. Name the store or rep the number belongs to.
+- Name the store or rep a number belongs to. "Ashley Williams completed 5 of 9"
+  is useful; "some reps are underperforming" is not.
 - Anomalies are outliers worth a second look, not every below-average value.
 - Actions must be things this manager can actually do: schedule a visit, coach a
-  rep, escalate a price or stock issue. No generic advice.`;
+  named rep, escalate a price or stock issue. No generic advice.`;
 
 const SCHEMA = {
   type: "object",
@@ -52,27 +65,21 @@ const SCHEMA = {
       type: "string",
       description: "One sentence: the single most important thing this period.",
     },
-    findings: {
-      type: "array",
-      description: "Notable, number-grounded observations.",
-      items: {
-        type: "object",
-        properties: {
-          title: { type: "string" },
-          detail: { type: "string" },
-        },
-        required: ["title", "detail"],
-        additionalProperties: false,
-      },
-    },
+    // No `findings` array: it was the bulk of the length and duplicated what
+    // the charts directly below the panel already show.
     anomalies: {
       type: "array",
-      description: "Specific outliers worth investigating. Empty if none stand out.",
+      maxItems: 3,
+      description:
+        "At most 3 outliers worth investigating. Empty array if none genuinely stand out — do not pad.",
       items: {
         type: "object",
         properties: {
           subject: { type: "string", description: "The store, rep or metric." },
-          detail: { type: "string" },
+          detail: {
+            type: "string",
+            description: "One sentence, 25 words maximum.",
+          },
           severity: { type: "string", enum: ["low", "medium", "high"] },
         },
         required: ["subject", "detail", "severity"],
@@ -81,7 +88,9 @@ const SCHEMA = {
     },
     actions: {
       type: "array",
-      description: "Concrete recommended next steps.",
+      maxItems: 3,
+      description:
+        "At most 3 next steps, highest impact first. Each one sentence, 20 words maximum.",
       items: { type: "string" },
     },
     // Plain string rather than a nullable union: structured outputs support a
@@ -92,7 +101,7 @@ const SCHEMA = {
         "Set when the period is too sparse to draw firm conclusions; empty string otherwise.",
     },
   },
-  required: ["headline", "findings", "anomalies", "actions", "data_caveat"],
+  required: ["headline", "anomalies", "actions", "data_caveat"],
   additionalProperties: false,
 } as const;
 
@@ -144,9 +153,9 @@ export async function POST(request: Request) {
 
     // Deliberately after authz: an anonymous caller should learn nothing about
     // how this server is configured, including whether a key is set.
-    if (!process.env.ANTHROPIC_API_KEY) {
+    if (!process.env.OPENAI_API_KEY) {
       return Response.json(
-        { error: "ANTHROPIC_API_KEY is not configured on the server." },
+        { error: "OPENAI_API_KEY is not configured on the server." },
         { status: 503 }
       );
     }
@@ -202,31 +211,12 @@ export async function POST(request: Request) {
 
     const totalSubmissions = trends.reduce((n, t) => n + Number(t.submissions ?? 0), 0);
 
-    const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+    const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
-    const response = await client.messages.create({
+    const response = await client.responses.create({
       model: MODEL,
-      max_tokens: 16000,
-      system: [
-        // Cached: the system prompt is byte-identical across every briefing,
-        // while the aggregates below change per request — so the stable half
-        // is the prefix and the volatile half comes last.
-        {
-          type: "text",
-          text: SYSTEM_PROMPT,
-          cache_control: { type: "ephemeral" },
-        },
-      ],
-      // `medium` is the sweet spot here: the analysis is over a few hundred
-      // pre-computed numbers, not an open-ended problem.
-      output_config: {
-        effort: "medium",
-        format: {
-          type: "json_schema",
-          schema: SCHEMA as unknown as Record<string, unknown>,
-        },
-      },
-      messages: [
+      instructions: SYSTEM_PROMPT,
+      input: [
         {
           role: "user",
           content:
@@ -235,19 +225,17 @@ export async function POST(request: Request) {
             JSON.stringify(payload),
         },
       ],
+      text: {
+        format: {
+          type: "json_schema",
+          name: "manager_briefing",
+          schema: SCHEMA as unknown as Record<string, unknown>,
+          strict: true,
+        },
+      },
     });
 
-    // Check stop_reason before touching content: on a refusal the content array
-    // is empty, and indexing into it would throw a confusing TypeError instead
-    // of reporting what actually happened.
-    if (response.stop_reason === "refusal") {
-      return Response.json(
-        { error: "The model declined to analyse this request." },
-        { status: 502 }
-      );
-    }
-
-    const text = response.content.find((b) => b.type === "text")?.text;
+    const text = response.output_text;
     if (!text) {
       return Response.json(
         { error: "The model returned no output." },
@@ -255,7 +243,19 @@ export async function POST(request: Request) {
       );
     }
 
-    return Response.json(JSON.parse(text));
+    const parsed = JSON.parse(text) as {
+      anomalies?: unknown[];
+      actions?: unknown[];
+    };
+
+    // Belt and braces. `maxItems` is not reliably enforced inside strict
+    // structured outputs, and "the briefing is too long" must not be able to
+    // regress just because the model felt thorough on a given day.
+    return Response.json({
+      ...parsed,
+      anomalies: (parsed.anomalies ?? []).slice(0, 3),
+      actions: (parsed.actions ?? []).slice(0, 3),
+    });
   } catch (reason) {
     // Mirrors the lib/ convention: throw Error(message), surface message.
     const message =

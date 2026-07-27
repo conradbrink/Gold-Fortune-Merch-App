@@ -13,6 +13,9 @@ import { RepScorecardTable } from "@/components/reports/rep-scorecard-table";
 import { ComplianceTrendChart } from "@/components/reports/compliance-trend-chart";
 import { PhotoGrid } from "@/components/reports/photo-grid";
 import { InsightsPanel } from "@/components/reports/insights-panel";
+import { PerfectStoreTable } from "@/components/reports/perfect-store-table";
+import { OosHotspotsTable } from "@/components/reports/oos-hotspots-table";
+import { AdherenceTable } from "@/components/reports/adherence-table";
 import { createClient } from "@/lib/supabase/client";
 import { rangeForPreset, rangeDays, type DateRange } from "@/lib/date-range";
 import {
@@ -21,10 +24,16 @@ import {
   fetchFormReport,
   fetchFormTemplates,
   fetchRepScorecard,
+  fetchPerfectStoreScore,
+  fetchOosHotspots,
+  fetchScheduleAdherence,
   formatRate,
+  type Adherence,
   type CoverageGap,
   type FieldReport,
   type FormTemplate,
+  type OosHotspot,
+  type PerfectStore,
   type PhotoStats,
   type RepScore,
   type TrendPointRow,
@@ -48,6 +57,9 @@ export default function ReportsPage() {
   const [gaps, setGaps] = useState<CoverageGap[]>([]);
   const [scores, setScores] = useState<RepScore[]>([]);
   const [trends, setTrends] = useState<TrendPointRow[]>([]);
+  const [perfect, setPerfect] = useState<PerfectStore[]>([]);
+  const [hotspots, setHotspots] = useState<OosHotspot[]>([]);
+  const [adherence, setAdherence] = useState<Adherence[]>([]);
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -86,7 +98,7 @@ export default function ReportsPage() {
     try {
       // Weekly buckets past ~6 weeks, or the x-axis becomes unreadable.
       const bucket = rangeDays(range) > 45 ? "week" : "day";
-      const [g, s, t, f] = await Promise.all([
+      const [g, s, t, f, ps, oh, ad] = await Promise.all([
         fetchCoverageGaps(supabase, range),
         fetchRepScorecard(supabase, range),
         fetchComplianceTrends(supabase, range, bucket),
@@ -96,11 +108,17 @@ export default function ReportsPage() {
               storeIds: storeId ? [storeId] : undefined,
             })
           : Promise.resolve([] as FieldReport[]),
+        fetchPerfectStoreScore(supabase, range),
+        fetchOosHotspots(supabase, range),
+        fetchScheduleAdherence(supabase, range),
       ]);
       setGaps(g);
       setScores(s);
       setTrends(t);
       setForm(f);
+      setPerfect(ps);
+      setHotspots(oh);
+      setAdherence(ad);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -270,14 +288,67 @@ export default function ReportsPage() {
 
       <InsightsPanel range={range} templateId={templateId} />
 
-      <Tabs defaultValue="form">
-        <TabsList>
-          <TabsTrigger value="form">Form report</TabsTrigger>
+      {/* Ordered by what a manager acts on first: which store is worst, what is
+          out of stock, who has been neglected — then the descriptive reports. */}
+      <Tabs defaultValue="score">
+        <TabsList className="flex-wrap">
+          <TabsTrigger value="score">Perfect Store</TabsTrigger>
+          <TabsTrigger value="oos">Out of stock</TabsTrigger>
           <TabsTrigger value="coverage">Coverage &amp; gaps</TabsTrigger>
+          <TabsTrigger value="adherence">Schedule adherence</TabsTrigger>
           <TabsTrigger value="reps">Rep scorecard</TabsTrigger>
           <TabsTrigger value="trends">Compliance trends</TabsTrigger>
+          <TabsTrigger value="form">Form report</TabsTrigger>
           <TabsTrigger value="photos">Photos</TabsTrigger>
         </TabsList>
+
+        <TabsContent value="score" className="mt-4">
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-base">Perfect Store score</CardTitle>
+              <p className="text-xs text-muted-foreground">
+                Availability, planogram, price accuracy and stock condition
+                averaged into one index, worst store first. Promotional displays
+                are excluded — they track whether a promo was running, not
+                whether the store executed.
+              </p>
+            </CardHeader>
+            <CardContent className="px-0">
+              {loading ? <SkeletonRows /> : <PerfectStoreTable rows={perfect} />}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="oos" className="mt-4">
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-base">Out-of-stock hotspots</CardTitle>
+              <p className="text-xs text-muted-foreground">
+                &ldquo;Worst run&rdquo; is the longest unbroken sequence of visits
+                that found an empty shelf — the difference between a chronic
+                supply problem and an unlucky day.
+              </p>
+            </CardHeader>
+            <CardContent className="px-0">
+              {loading ? <SkeletonRows /> : <OosHotspotsTable rows={hotspots} />}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="adherence" className="mt-4">
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-base">Schedule adherence</CardTitle>
+              <p className="text-xs text-muted-foreground">
+                Planned routes versus visits actually completed. Future-dated
+                routes are excluded.
+              </p>
+            </CardHeader>
+            <CardContent className="px-0">
+              {loading ? <SkeletonRows /> : <AdherenceTable rows={adherence} />}
+            </CardContent>
+          </Card>
+        </TabsContent>
 
         <TabsContent value="form" className="mt-4">
           {loading ? (
