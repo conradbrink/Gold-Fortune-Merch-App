@@ -5,6 +5,7 @@ import {
   fetchCoverageGaps,
   fetchFormReport,
   fetchRepScorecard,
+  formatDuration,
   type FieldReport,
 } from "@/lib/reports";
 
@@ -52,6 +53,9 @@ Accuracy:
   a confident statement the numbers do not support.
 - Rates arrive as decimals (0.1353 = 13.53%). Present them as percentages.
 - A null rate means "not measured in this period", not zero.
+- Durations are supplied pre-formatted ("56m", "1h 12m"). Quote them exactly as
+  given. Never convert a duration to seconds — nobody discusses a store visit
+  in seconds.
 - Name the store or rep a number belongs to. "Ashley Williams completed 5 of 9"
   is useful; "some reps are underperforming" is not.
 - Anomalies are outliers worth a second look, not every below-average value.
@@ -201,7 +205,12 @@ export async function POST(request: Request) {
         visits_total: r.visits_total,
         visits_completed: r.visits_completed,
         completion_rate: r.completion_rate,
-        avg_duration_seconds: r.avg_duration_seconds,
+        // Pre-formatted, not raw seconds. The model quotes whatever it is given,
+        // and "3,354 seconds" is not how anyone discusses a store visit. Sending
+        // the formatted string makes the wrong unit unreachable rather than
+        // merely discouraged by the prompt.
+        avg_visit_duration: formatDuration(r.avg_duration_seconds),
+        overall_score: r.score,
         form_compliance_rate: r.form_compliance_rate,
         location_verified_rate: r.verified_rate,
       })),

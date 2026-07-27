@@ -242,9 +242,22 @@ export function formatRate(v: number | null | undefined): string {
   return `${(v * 100).toFixed(1)}%`;
 }
 
+/**
+ * Human-readable duration: `1h 12m`, `56m`, `45s`.
+ *
+ * Under a minute falls back to seconds — rounding to the nearest minute turned
+ * a 30-second visit into "1m", which reads as a real visit rather than the
+ * drive-by it was.
+ */
 export function formatDuration(seconds: number | null | undefined): string {
-  if (!seconds) return "—";
-  const h = Math.floor(seconds / 3600);
-  const m = Math.round((seconds % 3600) / 60);
-  return h > 0 ? `${h}h ${m}m` : `${m}m`;
+  if (seconds === null || seconds === undefined) return "—";
+  const s = Math.round(Number(seconds));
+  if (s <= 0) return "—";
+  if (s < 60) return `${s}s`;
+  // Round to minutes first, or 3599s reads "60m" while 3600s reads "1h 0m".
+  const totalMin = Math.round(s / 60);
+  const h = Math.floor(totalMin / 60);
+  const m = totalMin % 60;
+  if (h === 0) return `${m}m`;
+  return m === 0 ? `${h}h` : `${h}h ${m}m`;
 }
