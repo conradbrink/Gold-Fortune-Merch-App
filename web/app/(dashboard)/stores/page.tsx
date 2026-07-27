@@ -63,8 +63,8 @@ export default function StoresPage() {
   const [view, setView] = useState<"list" | "map">("list");
   const [stores, setStores] = useState<StoreRow[]>([]);
   const [groups, setGroups] = useState<StoreGroup[]>([]);
-  const [latestActivity, setLatestActivity] = useState<Record<string, string>>({});
   const [assignedStoreIds, setAssignedStoreIds] = useState<Set<string>>(new Set());
+  const [repsByStore, setRepsByStore] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [groupFilter, setGroupFilter] = useState("all");
@@ -100,20 +100,30 @@ export default function StoresPage() {
     const assignmentRows = await fetchAssignments(supabase);
     setAssignedStoreIds(new Set(assignmentRows.map((a) => a.store_id)));
 
-    const { data: visitRows } = await supabase
-      .from("visits")
-      .select("store_id, checkin_at, profiles(full_name)")
-      .not("checkin_at", "is", null)
-      .order("checkin_at", { ascending: false });
-
-    const latest: Record<string, string> = {};
-    for (const v of visitRows ?? []) {
-      if (!latest[v.store_id]) {
-        const rep = v.profiles as unknown as { full_name: string | null } | null;
-        latest[v.store_id] = rep?.full_name ?? "—";
-      }
+    // Names for the "Responsible" column. profiles is already readable org-wide,
+    // so this is one extra query rather than a join through the stale types.
+    const { data: repRows } = await supabase
+      .from("profiles")
+      .select("id, full_name")
+      .eq("role", "rep");
+    // Plain objects, not Map: this file imports lucide's `Map` icon, which
+    // shadows the global constructor.
+    const nameById: Record<string, string> = {};
+    for (const r of (repRows ?? []) as { id: string; full_name: string | null }[]) {
+      nameById[r.id] = r.full_name ?? "Unnamed rep";
     }
-    setLatestActivity(latest);
+    const byStore: Record<string, string[]> = {};
+    for (const a of assignmentRows) {
+      const n = nameById[a.rep_id];
+      if (!n) continue;
+      (byStore[a.store_id] ??= []).push(n);
+    }
+    setRepsByStore(
+      Object.fromEntries(
+        Object.entries(byStore).map(([k, v]) => [k, v.sort().join(", ")])
+      )
+    );
+
     setLoading(false);
   }
 
@@ -228,11 +238,6 @@ export default function StoresPage() {
         .includes(search.toLowerCase())
     );
 
-  const unassignedCount = useMemo(
-    () => stores.filter((s) => s.active && !assignedStoreIds.has(s.id)).length,
-    [stores, assignedStoreIds]
-  );
-
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -254,24 +259,6 @@ export default function StoresPage() {
           New group
         </Button>
       </div>
-
-      {unassignedCount > 0 && (
-        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-md border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm">
-          <span className="font-medium text-foreground">
-            {unassignedCount} {unassignedCount === 1 ? "store has" : "stores have"}{" "}
-            no rep assigned
-          </span>
-          <span className="text-muted-foreground">
-            — nobody is responsible for visiting them.
-          </span>
-          <Link
-            href="/representatives"
-            className="font-medium text-primary underline underline-offset-4"
-          >
-            Assign reps
-          </Link>
-        </div>
-      )}
 
       <FilterBar />
 
@@ -472,9 +459,7 @@ export default function StoresPage() {
                 <TableHead>Store</TableHead>
                 <TableHead className="hidden sm:table-cell">Group</TableHead>
                 <TableHead className="hidden md:table-cell">Status</TableHead>
-                <TableHead className="hidden lg:table-cell">
-                  Latest activity
-                </TableHead>
+                <TableHead>Responsible</TableHead>
                 <TableHead className="w-10" />
               </TableRow>
             </TableHeader>
@@ -496,6 +481,7 @@ export default function StoresPage() {
                           {store.name}
                           <ExternalLink className="h-3 w-3 shrink-0 opacity-70" />
                         </a>
+
                         <div className="text-xs text-muted-foreground">
                           {[store.address, store.city, store.state, store.zip]
                             .filter(Boolean)
@@ -527,8 +513,21 @@ export default function StoresPage() {
                       {store.active ? "Active" : "Inactive"}
                     </span>
                   </TableCell>
-                  <TableCell className="hidden text-sm text-primary lg:table-cell">
-                    {latestActivity[store.id] ?? "—"}
+                  <TableCell className="text-sm">
+                    {repsByStore[store.id] ? (
+                      <span className="text-foreground">{repsByStore[store.id]}</span>
+                    ) : store.active ? (
+                      // Only active stores are expected to have an owner —
+                      // prompting on a deactivated one would be noise.
+                      <Link
+                        href="/representatives"
+                        className="inline-flex items-center rounded-full border border-amber-500/50 bg-amber-500/10 px-2 py-0.5 text-xs font-medium text-amber-700 hover:bg-amber-500/20 dark:text-amber-400"
+                      >
+                        Assign rep
+                      </Link>
+                    ) : (
+                      <span className="text-muted-foreground">—</span>
+                    )}
                   </TableCell>
                   <TableCell>
                     <DropdownMenu>

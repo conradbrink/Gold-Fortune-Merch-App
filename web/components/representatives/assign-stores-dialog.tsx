@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { ChevronDown, ChevronRight } from "lucide-react";
+import { AlertTriangle, ChevronDown, ChevronRight, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import {
@@ -270,20 +270,28 @@ export function AssignStoresDialog({
           {/* Deleting cascades through visits, audits, photos and workdays, so
               the cost is stated before the destructive button appears. */}
           {rep && !impact && (
-            <button
-              type="button"
-              className="text-xs text-destructive underline underline-offset-4"
-              onClick={async () => {
-                setError(null);
-                try {
-                  setImpact(await fetchDeleteImpact(supabase, rep.rep_id));
-                } catch (e) {
-                  setError(e instanceof Error ? e.message : String(e));
-                }
-              }}
-            >
-              Delete permanently…
-            </button>
+            <div className="space-y-1.5 border-t border-border pt-3">
+              <Button
+                size="sm"
+                variant="destructive"
+                onClick={async () => {
+                  setError(null);
+                  try {
+                    setImpact(await fetchDeleteImpact(supabase, rep.rep_id));
+                  } catch (e) {
+                    setError(e instanceof Error ? e.message : String(e));
+                  }
+                }}
+              >
+                <Trash2 className="mr-1.5 h-3.5 w-3.5" />
+                Delete permanently
+              </Button>
+              <p className="flex items-start gap-1.5 text-xs text-destructive">
+                <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                This erases the rep and all of their visits, audits and photos.
+                It cannot be undone.
+              </p>
+            </div>
           )}
 
           {rep && impact && (
