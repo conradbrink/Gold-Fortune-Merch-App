@@ -43,20 +43,22 @@ export type StoreOption = {
 export type InviteResult = { id: string; email: string; full_name: string };
 
 /**
- * Invites a rep via `/api/reps/invite`.
+ * Creates a rep with a starting password via `/api/reps/invite`.
  *
  * Creating an auth user needs the service-role key, so this cannot be done from
  * the browser — the Route Handler holds the key and verifies the caller is a
- * manager before using it.
+ * manager before using it. The password is posted once and never stored
+ * anywhere client-side.
  */
-export async function inviteRep(
+export async function createRep(
   email: string,
-  fullName: string
+  fullName: string,
+  password: string
 ): Promise<InviteResult> {
   const res = await fetch("/api/reps/invite", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ email, full_name: fullName }),
+    body: JSON.stringify({ email, full_name: fullName, password }),
   });
   // Read as text first — an error page is HTML, and .json() on it throws a
   // parse error that hides the real status.

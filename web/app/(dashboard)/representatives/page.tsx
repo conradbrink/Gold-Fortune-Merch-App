@@ -98,7 +98,7 @@ export default function RepresentativesPage() {
         </div>
         <Button className="gap-1.5" onClick={() => setInviting(true)}>
           <UserPlus className="h-4 w-4" />
-          Invite rep
+          Add rep
         </Button>
       </div>
 

@@ -2,7 +2,13 @@ import { createClient as createAdminClient } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/server";
 
 /**
- * Invite a field rep.
+ * Create a field rep with a starting password.
+ *
+ * Deliberately not an email invite. Reps here often have no work email, and
+ * Supabase rejects the org's own @goldfortune.dev addresses outright, so an
+ * email-dependent flow cannot onboard the people it needs to. The manager sets
+ * a password and hands it over directly; `email_confirm` is set so the account
+ * is usable immediately with no email round trip.
  *
  * Creating an auth user requires the service-role key, which bypasses RLS
  * entirely — it must never reach a browser bundle, which is why this is a Route
@@ -48,15 +54,26 @@ export async function POST(request: Request) {
       );
     }
 
-    const body = (await request.json()) as { email?: string; full_name?: string };
+    const body = (await request.json()) as {
+      email?: string;
+      full_name?: string;
+      password?: string;
+    };
     const email = body.email?.trim().toLowerCase() ?? "";
     const fullName = body.full_name?.trim() ?? "";
+    const password = body.password ?? "";
 
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
       return Response.json({ error: "Enter a valid email address." }, { status: 400 });
     }
     if (!fullName) {
       return Response.json({ error: "Name is required." }, { status: 400 });
+    }
+    if (password.length < 8) {
+      return Response.json(
+        { error: "Password must be at least 8 characters." },
+        { status: 400 }
+      );
     }
 
     const admin = createAdminClient(
@@ -67,22 +84,24 @@ export async function POST(request: Request) {
       { auth: { autoRefreshToken: false, persistSession: false } }
     );
 
-    const origin = new URL(request.url).origin;
-    const { data: invited, error: inviteError } =
-      await admin.auth.admin.inviteUserByEmail(email, {
-        redirectTo: `${origin}/login`,
-        data: { full_name: fullName },
-      });
+    // email_confirm skips the confirmation mail — the rep is handed their
+    // password in person, so there is nothing to confirm and no inbox to rely on.
+    const { data: created, error: createError } = await admin.auth.admin.createUser({
+      email,
+      password,
+      email_confirm: true,
+      user_metadata: { full_name: fullName },
+    });
 
-    if (inviteError || !invited?.user) {
-      const message = inviteError?.message ?? "Could not send the invite.";
-      // Supabase reports an existing address as a 422.
+    if (createError || !created?.user) {
+      const message = createError?.message ?? "Could not create the account.";
       const already = /already|registered|exists/i.test(message);
       return Response.json(
         { error: already ? "That email already has an account." : message },
         { status: already ? 409 : 502 }
       );
     }
+    const invited = created;
 
     // No trigger creates profiles on this project, so the row is ours to write.
     const { error: profileError } = await admin.from("profiles").insert({
@@ -99,7 +118,7 @@ export async function POST(request: Request) {
       // UI. Roll the auth user back rather than leaving that behind.
       await admin.auth.admin.deleteUser(invited.user.id);
       return Response.json(
-        { error: `Invite rolled back: ${profileError.message}` },
+        { error: `Account creation rolled back: ${profileError.message}` },
         { status: 500 }
       );
     }
