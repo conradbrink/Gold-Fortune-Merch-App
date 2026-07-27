@@ -41,8 +41,18 @@ Navy `#16224F`, gold `#E0B84B`, red for alerts/missed. Logo lives at
   (safe in client code — RLS is the real boundary)
 
 Managed via the Supabase MCP server (`apply_migration`, `execute_sql`,
-`get_advisors`). There is **no local `supabase/` migrations folder** — schema
-was applied directly through MCP.
+`get_advisors`).
+
+**The schema is now versioned in the repo** at `supabase/migrations/` — all 17
+applied migrations, reconstructed verbatim from
+`supabase_migrations.schema_migrations` so filenames and order match the remote
+history exactly. See `supabase/README.md` for how to apply them and for the
+three non-negotiable rules when writing new ones (`security invoker`, quoting
+`public."current_role"()`, materialising `current_org_id()`).
+
+The Supabase CLI and `pg_dump` are **not installed** on this machine, which is
+why the migrations were reconstructed from the database's own record rather than
+dumped.
 
 ### Schema (all RLS-protected, org-scoped)
 
