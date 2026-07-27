@@ -2,11 +2,18 @@
 
 import { Suspense, useEffect, useState } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
-import { ClipboardCheck, Store } from "lucide-react";
+import { ClipboardCheck, Store, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";
 import { StatusPill } from "@/components/dashboard/status-pill";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { SubmissionDetail } from "@/components/forms/submission-detail";
 import {
   Table,
   TableBody,
@@ -78,23 +85,28 @@ function VisitsContent() {
 
   const [visits, setVisits] = useState<VisitRow[]>([]);
   const [loading, setLoading] = useState(true);
+  const [openVisit, setOpenVisit] = useState<VisitRow | null>(null);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     async function load() {
       setLoading(true);
-
-      const { data: visitRows } = await supabase
+      setError(null);
+      try {
+      const { data: visitRows, error: visitsError } = await supabase
         .from("visits")
         .select(
           "id, status, checkin_at, checkout_at, duration_seconds, stores(name), profiles(full_name), routes(scheduled_start_at, scheduled_end_at)"
         )
         .order("checkin_at", { ascending: false, nullsFirst: false });
+      if (visitsError) throw visitsError;
 
-      const { data: submissionRows } = await supabase
+      const { data: submissionRows, error: subsError } = await supabase
         .from("form_submissions")
         .select("visit_id");
+      if (subsError) throw subsError;
 
       const formCounts: Record<string, number> = {};
       for (const s of submissionRows ?? []) {
@@ -124,7 +136,11 @@ function VisitsContent() {
       });
 
       setVisits(rows);
-      setLoading(false);
+      } catch (e) {
+        setError(e instanceof Error ? e.message : String(e));
+      } finally {
+        setLoading(false);
+      }
     }
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -213,6 +229,15 @@ function VisitsContent() {
                   Loading visits…
                 </TableCell>
               </TableRow>
+            ) : error ? (
+              <TableRow>
+                <TableCell colSpan={6} className="py-10 text-center text-sm">
+                  <p className="font-medium text-destructive">
+                    Could not load visits
+                  </p>
+                  <p className="mt-1 text-muted-foreground">{error}</p>
+                </TableCell>
+              </TableRow>
             ) : filtered.length === 0 ? (
               <TableRow>
                 <TableCell colSpan={6} className="py-10 text-center text-sm text-muted-foreground">
@@ -223,7 +248,18 @@ function VisitsContent() {
               </TableRow>
             ) : (
               filtered.map((visit) => (
-                <TableRow key={visit.id}>
+                <TableRow
+                  key={visit.id}
+                  onClick={
+                    visit.formCount > 0 ? () => setOpenVisit(visit) : undefined
+                  }
+                  title={
+                    visit.formCount > 0
+                      ? "View submitted forms for this visit"
+                      : undefined
+                  }
+                  className={visit.formCount > 0 ? "cursor-pointer" : undefined}
+                >
                   <TableCell className="min-w-[180px]">
                     <div className="flex items-center gap-2.5">
                       <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-accent text-accent-foreground">
@@ -282,7 +318,14 @@ function VisitsContent() {
                     {formatDuration(visit.duration_seconds)}
                   </TableCell>
                   <TableCell className="hidden text-sm md:table-cell">
-                    {visit.formCount}
+                    {visit.formCount > 0 ? (
+                      <span className="inline-flex items-center gap-0.5 font-semibold text-primary">
+                        {visit.formCount}
+                        <ChevronRight className="h-3.5 w-3.5" />
+                      </span>
+                    ) : (
+                      <span className="text-muted-foreground">—</span>
+                    )}
                   </TableCell>
                 </TableRow>
               ))
@@ -294,7 +337,118 @@ function VisitsContent() {
       <p className="text-xs text-muted-foreground">
         Showing {filtered.length} of {visits.length} visits.
       </p>
+
+      <VisitFormsDialog
+        visit={openVisit}
+        onClose={() => setOpenVisit(null)}
+      />
     </div>
+  );
+}
+
+type SubmissionRow = {
+  id: string;
+  submitted_at: string;
+  templateName: string;
+};
+
+/**
+ * The forms a rep submitted during one visit, with every answer expanded.
+ * Most visits have a single submission, so it renders inline rather than
+ * making the manager click through a list of one.
+ */
+function VisitFormsDialog({
+  visit,
+  onClose,
+}: {
+  visit: VisitRow | null;
+  onClose: () => void;
+}) {
+  const supabase = createClient();
+  const [subs, setSubs] = useState<SubmissionRow[]>([]);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (!visit) return;
+    let cancelled = false;
+
+    async function load() {
+      setLoading(true);
+      const { data } = await supabase
+        .from("form_submissions")
+        .select("id, submitted_at, form_templates(name)")
+        .eq("visit_id", visit!.id)
+        .order("submitted_at", { ascending: true });
+
+      if (cancelled) return;
+      setSubs(
+        (data ?? []).map((s) => ({
+          id: s.id,
+          submitted_at: s.submitted_at,
+          templateName:
+            (s.form_templates as unknown as { name: string } | null)?.name ??
+            "Form",
+        }))
+      );
+      setLoading(false);
+    }
+
+    load();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visit?.id]);
+
+  return (
+    <Dialog open={visit !== null} onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-2xl">
+        <DialogHeader>
+          <DialogTitle>{visit?.storeName ?? "Visit"}</DialogTitle>
+        </DialogHeader>
+
+        {visit && (
+          <p className="-mt-2 text-sm text-muted-foreground">
+            {visit.repName}
+            {(() => {
+              const when = formatDateTime(visit.checkin_at);
+              return when ? ` · ${when.date} at ${when.time}` : "";
+            })()}
+          </p>
+        )}
+
+        {loading ? (
+          <p className="py-8 text-center text-sm text-muted-foreground">
+            Loading forms…
+          </p>
+        ) : subs.length === 0 ? (
+          <p className="py-8 text-center text-sm text-muted-foreground">
+            No forms were submitted during this visit.
+          </p>
+        ) : (
+          <div className="space-y-5">
+            {subs.map((s) => (
+              <section key={s.id}>
+                <div className="mb-1 flex items-baseline justify-between gap-3">
+                  <h3 className="text-sm font-semibold text-foreground">
+                    {s.templateName}
+                  </h3>
+                  {(() => {
+                    const when = formatDateTime(s.submitted_at);
+                    return when ? (
+                      <span className="shrink-0 text-xs text-muted-foreground">
+                        Submitted {when.time}
+                      </span>
+                    ) : null;
+                  })()}
+                </div>
+                <SubmissionDetail submissionId={s.id} />
+              </section>
+            ))}
+          </div>
+        )}
+      </DialogContent>
+    </Dialog>
   );
 }
 
