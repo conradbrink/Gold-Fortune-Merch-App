@@ -319,6 +319,11 @@ export type SpreadResult = {
   overflow: PlannedStore[];
   /** Towns that had to be split across more than one day. */
   splitTowns: string[];
+  /**
+   * Days carrying more than one town — the thing the planner exists to avoid.
+   * Only happens when there are more towns than working days.
+   */
+  sharedDays: { day: number; towns: string[] }[];
   /** Peak stores on a single occurrence, per working day. */
   peakByDay: Record<number, number>;
   visitsPerCycle: number;
@@ -337,10 +342,23 @@ export type SpreadResult = {
  * does, and `week_of_cycle` is chosen to level the load rather than defaulting
  * to 1 and piling every monthly store into week one.
  *
- * Towns are placed largest-first (first-fit-decreasing, the standard bin-packing
- * heuristic) and kept on a single day wherever they fit. Town is the only
- * geography available — the estate has no coordinates — and grouping by it is
- * what stops a day spanning two towns.
+ * Town is the only geography available — the estate has no coordinates — and
+ * the goal is that no day carries two towns.
+ *
+ * Days are **reserved per town up front**, largest town first, according to how
+ * many that town's load actually needs. Two earlier attempts got this wrong in
+ * opposite directions, and both are worth remembering:
+ *
+ * - Penalising any day a town had not already used packed each town tight, so
+ *   75 Gaborone stores filled Monday to Wednesday and left Thursday and Friday
+ *   empty.
+ * - Penalising only days another town held spread Gaborone across all five
+ *   days, which left Francistown nowhere clean to go — it ended up sharing two
+ *   of them, which is the very thing this is meant to avoid.
+ *
+ * Reserving `ceil(load / (storesPerDay × 4))` days per town gets both: Gaborone
+ * takes the three days it needs, Francistown takes a fourth, and the fifth
+ * stays free. Days are only shared when the towns genuinely outnumber them.
  */
 export function autoSpreadDays(
   stores: PlannedStore[],
@@ -366,6 +384,29 @@ export function autoSpreadDays(
   const assignments: SpreadAssignment[] = [];
   const overflow: PlannedStore[] = [];
   const splitTowns: string[] = [];
+  const dayTowns: Record<number, Set<string>> = {};
+  for (const d of days) dayTowns[d] = new Set();
+
+  /**
+   * Reserve days per town before placing anything.
+   *
+   * A day holds `storesPerDay` on each of the cycle's four weeks, so one day
+   * absorbs `storesPerDay × 4` visits per cycle. A town needing more than that
+   * gets more days; one needing less gets exactly one, leaving the rest free
+   * for other towns.
+   */
+  const perDayCycleCapacity = cap * 4;
+  const reserved: Record<string, number[]> = {};
+  const unclaimed = [...days];
+
+  for (const [town, townStores] of towns) {
+    const load = townStores.reduce((n, s) => n + cycleVisits(s.visit_frequency), 0);
+    const need = Math.max(1, Math.ceil(load / perDayCycleCapacity));
+    // Once the week is fully claimed, later towns have to share. That is a
+    // genuine constraint — more towns than working days — and is reported.
+    reserved[town] =
+      unclaimed.length > 0 ? unclaimed.splice(0, Math.min(need, unclaimed.length)) : [...days];
+  }
 
   for (const [town, townStores] of towns) {
     // Heaviest stores first within a town, so a weekly store gets the roomiest
@@ -384,18 +425,23 @@ export function autoSpreadDays(
 
       let best: { day: number; slot: number; score: number } | null = null;
 
-      for (const day of days) {
+      // This town's own days first; only if they are genuinely full does it
+      // spill onto anyone else's, and then the least crowded one.
+      const ownDays = reserved[town] ?? days;
+      const candidates = [...ownDays, ...days.filter((d) => !ownDays.includes(d))];
+
+      for (const day of candidates) {
         for (const slot of slots) {
           const weeks = weeksFor(freq, slot);
           if (weeks.some((w) => occupancy[day][w - 1] >= cap)) continue;
 
-          // Prefer a day this town already uses, then the emptiest option —
-          // keeps a town together without letting one day run hot. The penalty
-          // exceeds any achievable occupancy, so "same town" always wins over
-          // "slightly emptier elsewhere".
+          // Within the town's own days, take the emptiest so the town spreads
+          // evenly rather than filling one day at a time. The penalty for
+          // someone else's day exceeds any achievable occupancy, so load never
+          // outvotes keeping towns apart.
           const peak = Math.max(...weeks.map((w) => occupancy[day][w - 1]));
-          const townPenalty = daysUsed.size > 0 && !daysUsed.has(day) ? 1000 : 0;
-          const score = peak + townPenalty;
+          const foreign = !ownDays.includes(day);
+          const score = peak + (foreign ? 1000 : 0);
 
           if (best === null || score < best.score) {
             best = { day, slot, score };
@@ -413,6 +459,7 @@ export function autoSpreadDays(
         splitTowns.push(town);
       }
       daysUsed.add(best.day);
+      dayTowns[best.day].add(town);
 
       assignments.push({
         assignmentId: store.assignment_id,
@@ -433,6 +480,9 @@ export function autoSpreadDays(
     assignments,
     overflow,
     splitTowns,
+    sharedDays: days
+      .filter((d) => dayTowns[d].size > 1)
+      .map((d) => ({ day: d, towns: [...dayTowns[d]].sort() })),
     peakByDay,
     visitsPerCycle: stores
       .filter((s) => s.active)

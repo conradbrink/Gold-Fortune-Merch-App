@@ -438,6 +438,21 @@ export function CallCyclePlanner() {
                   {spread.splitTowns.join(", ")}.
                 </p>
               )}
+              {/* The one outcome this whole view exists to prevent, so it is
+                  stated rather than left to be spotted on the strip. */}
+              {spread.sharedDays.length > 0 && (
+                <p className="flex items-start gap-1.5 text-xs text-amber-700 dark:text-amber-400">
+                  <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                  There are more towns than working days, so{" "}
+                  {spread.sharedDays
+                    .map(
+                      (d) =>
+                        `${WEEKDAYS.find((w) => w.value === d.day)?.long} covers ${d.towns.join(" and ")}`
+                    )
+                    .join("; ")}
+                  .
+                </p>
+              )}
               {spread.overflow.length > 0 && (
                 <p className="flex items-start gap-1.5 text-xs text-destructive">
                   <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
