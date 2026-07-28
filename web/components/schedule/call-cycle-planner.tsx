@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { AlertTriangle, CalendarPlus, MapPin } from "lucide-react";
+import { AlertTriangle, CalendarPlus, MapPin, Wand2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -22,8 +22,11 @@ import { fetchRepDirectory, type RepSummary } from "@/lib/representatives";
 import {
   FREQUENCIES,
   WEEKDAYS,
+  applySpread,
+  autoSpreadDays,
   computeWeekLoad,
   countPlannedVisits,
+  cycleVisits,
   describeCycle,
   fetchPlannedStores,
   generateRoutes,
@@ -31,8 +34,17 @@ import {
   setStoreFrequency,
   type GenerateResult,
   type PlannedStore,
+  type SpreadResult,
   type VisitFrequency,
 } from "@/lib/schedule";
+import {
+  DEFAULT_ORG_SETTINGS,
+  computeCapacity,
+  fetchOrgSettings,
+  type OrgSettings,
+} from "@/lib/org-settings";
+import { CapacityMeter } from "@/components/schedule/capacity-meter";
+import { CoveragePlanner } from "@/components/schedule/coverage-planner";
 
 /**
  * The call-cycle planner: pick a rep, give each of their stores a day and a
@@ -66,6 +78,16 @@ export function CallCyclePlanner() {
   const [previewing, setPreviewing] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [genResult, setGenResult] = useState<GenerateResult | null>(null);
+
+  const [settings, setSettings] = useState<OrgSettings>(DEFAULT_ORG_SETTINGS);
+  /** Non-null while an auto-spread proposal is waiting to be accepted. */
+  const [spread, setSpread] = useState<SpreadResult | null>(null);
+  const [applying, setApplying] = useState(false);
+
+  useEffect(() => {
+    fetchOrgSettings(supabase).then(setSettings).catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -150,6 +172,26 @@ export function CallCyclePlanner() {
     [stores, weeks]
   );
 
+  /**
+   * This rep's share of capacity.
+   *
+   * Counted over every assigned store, planned or not, because the question is
+   * "can this rep carry this patch" — a store with no day yet still has to fit
+   * somewhere, and excluding it would make an impossible patch look fine until
+   * the moment it is planned.
+   */
+  const capacity = useMemo(
+    () =>
+      computeCapacity(
+        settings,
+        1,
+        stores
+          .filter((s) => s.active)
+          .reduce((n, s) => n + cycleVisits(s.visit_frequency), 0)
+      ),
+    [settings, stores]
+  );
+
   async function run(
     assignmentId: string,
     optimistic: PlannedStore[],
@@ -212,6 +254,32 @@ export function CallCyclePlanner() {
         }
       }
     );
+  }
+
+  /** Proposes days for every store. Nothing is written until it is accepted. */
+  function proposeSpread() {
+    setError(null);
+    setSpread(
+      autoSpreadDays(stores, {
+        storesPerDay: settings.storesPerDay,
+        workingDays: settings.workingDays,
+      })
+    );
+  }
+
+  async function acceptSpread() {
+    if (!spread) return;
+    setApplying(true);
+    setError(null);
+    try {
+      await applySpread(supabase, spread.assignments);
+      setStores(await fetchPlannedStores(supabase, repId));
+      setSpread(null);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setApplying(false);
+    }
   }
 
   async function openGenerate() {
@@ -297,6 +365,19 @@ export function CallCyclePlanner() {
         </Button>
       </div>
 
+      {/* Setup before review: coverage is where an estate is divided up, and
+          nothing below it means anything until stores have a rep. */}
+      <CoveragePlanner
+        onChanged={() => {
+          fetchRepDirectory(supabase)
+            .then((rows) => setReps(rows.filter((r) => r.is_active)))
+            .catch(() => {});
+          if (repId) {
+            fetchPlannedStores(supabase, repId).then(setStores).catch(() => {});
+          }
+        }}
+      />
+
       {/* Org-wide, like the generator — deliberately outside the per-rep block
           below, because the gaps worth hearing about are the ones no single
           rep's view can show: stores nobody covers, and reps with no plan. */}
@@ -324,7 +405,61 @@ export function CallCyclePlanner() {
 
       {!loadingStores && stores.length > 0 && (
         <>
-          <WeekLoadStrip days={load} />
+          <CapacityMeter
+            capacity={capacity}
+            settings={settings}
+            repCount={1}
+          />
+
+          <div className="flex flex-wrap items-center gap-2">
+            <Button size="sm" variant="outline" onClick={proposeSpread}>
+              <Wand2 className="mr-1.5 h-3.5 w-3.5" />
+              Auto-spread days
+            </Button>
+            <span className="text-xs text-muted-foreground">
+              Fills every day, keeping each town together and staying within{" "}
+              {settings.storesPerDay} stores a day. You can change anything
+              after.
+            </span>
+          </div>
+
+          {spread && (
+            <div className="space-y-2 rounded-lg border border-primary/40 bg-primary/5 p-3">
+              <p className="text-sm font-medium text-foreground">
+                Proposed: {spread.assignments.length} store
+                {spread.assignments.length === 1 ? "" : "s"} across{" "}
+                {Object.values(spread.peakByDay).filter((n) => n > 0).length}{" "}
+                days, peak{" "}
+                {Math.max(0, ...Object.values(spread.peakByDay))} on a day.
+              </p>
+              {spread.splitTowns.length > 0 && (
+                <p className="text-xs text-muted-foreground">
+                  Too big for one day, so split across days:{" "}
+                  {spread.splitTowns.join(", ")}.
+                </p>
+              )}
+              {spread.overflow.length > 0 && (
+                <p className="flex items-start gap-1.5 text-xs text-destructive">
+                  <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                  {spread.overflow.length} store
+                  {spread.overflow.length === 1 ? "" : "s"} would not fit in the
+                  week at all and {spread.overflow.length === 1 ? "was" : "were"}{" "}
+                  left unplanned. Reduce their frequency, raise stores per day,
+                  or move them to another rep.
+                </p>
+              )}
+              <div className="flex flex-wrap gap-2">
+                <Button size="sm" onClick={acceptSpread} disabled={applying}>
+                  {applying ? "Applying…" : "Apply to all stores"}
+                </Button>
+                <Button size="sm" variant="outline" onClick={() => setSpread(null)}>
+                  Discard
+                </Button>
+              </div>
+            </div>
+          )}
+
+          <WeekLoadStrip days={load} storesPerDay={settings.storesPerDay} />
 
           <div className="flex flex-wrap items-center gap-3 text-sm">
             <span className="text-muted-foreground">

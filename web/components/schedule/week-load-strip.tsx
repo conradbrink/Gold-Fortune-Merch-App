@@ -1,7 +1,7 @@
 "use client";
 
 import { AlertTriangle, MapPin } from "lucide-react";
-import { WEEKDAYS, FULL_DAY_STORES, AVG_VISIT_MINUTES, type DayLoad } from "@/lib/schedule";
+import { WEEKDAYS, type DayLoad } from "@/lib/schedule";
 
 /**
  * Mon–Sun load for one rep's call cycle.
@@ -14,8 +14,15 @@ import { WEEKDAYS, FULL_DAY_STORES, AVG_VISIT_MINUTES, type DayLoad } from "@/li
  * The two things it flags are the two things that actually ruin a day: too many
  * stops, and stops in more than one city.
  */
-export function WeekLoadStrip({ days }: { days: DayLoad[] }) {
-  const overloaded = days.filter((d) => d.peakStores > FULL_DAY_STORES);
+export function WeekLoadStrip({
+  days,
+  storesPerDay,
+}: {
+  days: DayLoad[];
+  /** From org settings — what counts as a full day differs per business. */
+  storesPerDay: number;
+}) {
+  const overloaded = days.filter((d) => d.peakStores > storesPerDay);
   const split = days.filter((d) => d.peakCities > 1);
 
   return (
@@ -24,7 +31,7 @@ export function WeekLoadStrip({ days }: { days: DayLoad[] }) {
         <div className="grid min-w-[560px] grid-cols-7 gap-2">
           {days.map((d) => {
             const label = WEEKDAYS.find((w) => w.value === d.weekday)?.short ?? "";
-            const heavy = d.peakStores > FULL_DAY_STORES;
+            const heavy = d.peakStores > storesPerDay;
             const multiCity = d.peakCities > 1;
             const empty = d.peakStores === 0;
 
@@ -82,10 +89,12 @@ export function WeekLoadStrip({ days }: { days: DayLoad[] }) {
         </div>
       </div>
 
+      {/* Deliberately no per-visit duration. The figure this used to quote was
+          measured from demo data that no longer exists; stores-per-day is a
+          number the manager actually set. */}
       <p className="text-xs text-muted-foreground">
-        Peak load on any single occurrence of that day. Visits average{" "}
-        {AVG_VISIT_MINUTES} minutes, so about {FULL_DAY_STORES} stores is a full
-        day.
+        Peak load on any single occurrence of that day. A full day is{" "}
+        {storesPerDay} stores.
       </p>
 
       {(overloaded.length > 0 || split.length > 0) && (

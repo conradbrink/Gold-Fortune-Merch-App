@@ -37,14 +37,22 @@ export const WEEKDAYS: { value: number; short: string; long: string }[] = [
 ];
 
 /**
- * Measured mean visit duration across the 291 checked-out visits.
+ * How much a rep-day holds, and which days exist.
  *
- * Six stops is therefore about five hours of in-store time before any driving,
- * which is a full day once travel and admin are counted. It is a hint, not a
- * limit — the planner flags days past it rather than refusing them.
+ * Passed in rather than imported so this module stays free of any dependency
+ * on org settings — and structural, so callers can supply a literal in tests.
+ * Both values come from `organizations` (see `lib/org-settings.ts`): they were
+ * constants, which fitted exactly one customer.
+ *
+ * There is deliberately no average-minutes figure here any more. The old
+ * `AVG_VISIT_MINUTES = 49` was measured from seeded demo visits that have been
+ * deleted, so it asserted a duration nothing in the database supported.
  */
-export const AVG_VISIT_MINUTES = 49;
-export const FULL_DAY_STORES = 6;
+export type DayCapacity = {
+  storesPerDay: number;
+  /** ISO weekdays the team works: 1 = Monday … 7 = Sunday. */
+  workingDays: number[];
+};
 
 export type PlannedStore = {
   /** `store_assignments.id` — the row the day/week is written to. */
@@ -277,6 +285,221 @@ export function countPlannedVisits(
     }
   }
   return n;
+}
+
+/* ------------------------------------------------------------------ *
+ * Auto-spread
+ * ------------------------------------------------------------------ */
+
+/** Visits one store generates per four-week cycle. */
+export function cycleVisits(frequency: VisitFrequency): number {
+  return frequency === "weekly" ? 4 : frequency === "biweekly" ? 2 : 1;
+}
+
+/** Which weeks of a four-week cycle a store lands on, given its slot. */
+function weeksFor(frequency: VisitFrequency, slot: number): number[] {
+  if (frequency === "weekly") return [1, 2, 3, 4];
+  // Bi-weekly alternates: cycle 1 = weeks 1 and 3, cycle 2 = weeks 2 and 4.
+  if (frequency === "biweekly") return slot === 1 ? [1, 3] : [2, 4];
+  return [slot];
+}
+
+export type SpreadAssignment = {
+  assignmentId: string;
+  storeId: string;
+  storeName: string;
+  city: string | null;
+  dayOfWeek: number;
+  weekOfCycle: number | null;
+};
+
+export type SpreadResult = {
+  assignments: SpreadAssignment[];
+  /** Stores that could not be placed without exceeding capacity. */
+  overflow: PlannedStore[];
+  /** Towns that had to be split across more than one day. */
+  splitTowns: string[];
+  /** Peak stores on a single occurrence, per working day. */
+  peakByDay: Record<number, number>;
+  visitsPerCycle: number;
+};
+
+/**
+ * Proposes a day and week for every one of a rep's stores.
+ *
+ * Deterministic and pure: no AI, no network, same input to same output. That
+ * matters because the manager reviews this before it is written — a proposal
+ * they cannot predict or re-derive is one they cannot trust.
+ *
+ * The model is `workingDays × 4 weeks` buckets, each holding `storesPerDay`. A
+ * store occupies one **day** and, depending on frequency, some or all of that
+ * day's four weeks — so a weekly store costs four times what a monthly one
+ * does, and `week_of_cycle` is chosen to level the load rather than defaulting
+ * to 1 and piling every monthly store into week one.
+ *
+ * Towns are placed largest-first (first-fit-decreasing, the standard bin-packing
+ * heuristic) and kept on a single day wherever they fit. Town is the only
+ * geography available — the estate has no coordinates — and grouping by it is
+ * what stops a day spanning two towns.
+ */
+export function autoSpreadDays(
+  stores: PlannedStore[],
+  capacity: DayCapacity
+): SpreadResult {
+  const days = capacity.workingDays.length > 0 ? [...capacity.workingDays].sort((a, b) => a - b) : [1];
+  const cap = Math.max(1, capacity.storesPerDay);
+
+  // occupancy[day][week] — how many stores already land on that occurrence.
+  const occupancy: Record<number, number[]> = {};
+  for (const d of days) occupancy[d] = [0, 0, 0, 0];
+
+  const byTown: Record<string, PlannedStore[]> = {};
+  for (const s of stores) {
+    if (!s.active) continue;
+    (byTown[s.city ?? "￿No town"] ??= []).push(s);
+  }
+
+  // Largest towns first: they are the hardest to place, and leaving them until
+  // the end is what forces a big town to be split across days unnecessarily.
+  const towns = Object.entries(byTown).sort((a, b) => b[1].length - a[1].length);
+
+  const assignments: SpreadAssignment[] = [];
+  const overflow: PlannedStore[] = [];
+  const splitTowns: string[] = [];
+
+  for (const [town, townStores] of towns) {
+    // Heaviest stores first within a town, so a weekly store gets the roomiest
+    // day rather than being wedged into whatever is left.
+    const ordered = [...townStores].sort(
+      (a, b) =>
+        cycleVisits(b.visit_frequency) - cycleVisits(a.visit_frequency) ||
+        a.store_name.localeCompare(b.store_name)
+    );
+
+    const daysUsed = new Set<number>();
+
+    for (const store of ordered) {
+      const freq = store.visit_frequency;
+      const slots = freq === "weekly" ? [1] : freq === "biweekly" ? [1, 2] : [1, 2, 3, 4];
+
+      let best: { day: number; slot: number; score: number } | null = null;
+
+      for (const day of days) {
+        for (const slot of slots) {
+          const weeks = weeksFor(freq, slot);
+          if (weeks.some((w) => occupancy[day][w - 1] >= cap)) continue;
+
+          // Prefer a day this town already uses, then the emptiest option —
+          // keeps a town together without letting one day run hot. The penalty
+          // exceeds any achievable occupancy, so "same town" always wins over
+          // "slightly emptier elsewhere".
+          const peak = Math.max(...weeks.map((w) => occupancy[day][w - 1]));
+          const townPenalty = daysUsed.size > 0 && !daysUsed.has(day) ? 1000 : 0;
+          const score = peak + townPenalty;
+
+          if (best === null || score < best.score) {
+            best = { day, slot, score };
+          }
+        }
+      }
+
+      if (!best) {
+        overflow.push(store);
+        continue;
+      }
+
+      for (const w of weeksFor(freq, best.slot)) occupancy[best.day][w - 1] += 1;
+      if (daysUsed.size > 0 && !daysUsed.has(best.day) && !splitTowns.includes(town)) {
+        splitTowns.push(town);
+      }
+      daysUsed.add(best.day);
+
+      assignments.push({
+        assignmentId: store.assignment_id,
+        storeId: store.store_id,
+        storeName: store.store_name,
+        city: store.city,
+        dayOfWeek: best.day,
+        // Weekly ignores the week entirely; storing one would be noise.
+        weekOfCycle: freq === "weekly" ? null : best.slot,
+      });
+    }
+  }
+
+  const peakByDay: Record<number, number> = {};
+  for (const d of days) peakByDay[d] = Math.max(...occupancy[d]);
+
+  return {
+    assignments,
+    overflow,
+    splitTowns,
+    peakByDay,
+    visitsPerCycle: stores
+      .filter((s) => s.active)
+      .reduce((n, s) => n + cycleVisits(s.visit_frequency), 0),
+  };
+}
+
+/**
+ * Writes one row of a proposal and reports whether it actually landed.
+ *
+ * `.select("id")` is what makes that possible: a PostgREST update that matches
+ * nothing succeeds silently and returns no error, so without this an
+ * assignment can be dropped with nothing to show for it.
+ */
+async function writeDay(
+  supabase: SupabaseClient,
+  a: SpreadAssignment
+): Promise<boolean> {
+  const { data, error } = await supabase
+    .from("store_assignments")
+    .update({ day_of_week: a.dayOfWeek, week_of_cycle: a.weekOfCycle })
+    .eq("id", a.assignmentId)
+    .select("id");
+  if (error) throw new Error(error.message);
+  return (data?.length ?? 0) > 0;
+}
+
+/**
+ * Writes a proposal, and proves every row landed.
+ *
+ * Found the hard way: at 25 requests in flight a write was silently lost, and
+ * the planner reported "1 store with no day" with no error and no explanation.
+ * Modest concurrency plus a verified retry turns that into either a complete
+ * write or a clear failure — never a plan that is quietly one store short.
+ */
+export async function applySpread(
+  supabase: SupabaseClient,
+  assignments: SpreadAssignment[]
+): Promise<void> {
+  const BATCH = 8;
+  const missed: SpreadAssignment[] = [];
+
+  for (let i = 0; i < assignments.length; i += BATCH) {
+    const results = await Promise.all(
+      assignments.slice(i, i + BATCH).map(async (a) => ({
+        a,
+        ok: await writeDay(supabase, a),
+      }))
+    );
+    for (const r of results) if (!r.ok) missed.push(r.a);
+  }
+
+  // One retry, serially. A row that still will not take is a real problem —
+  // most likely the assignment was deleted while the proposal was on screen —
+  // and the manager needs to know rather than discover it later.
+  const stillMissing: string[] = [];
+  for (const a of missed) {
+    if (!(await writeDay(supabase, a))) stillMissing.push(a.storeName);
+  }
+
+  if (stillMissing.length > 0) {
+    throw new Error(
+      `${stillMissing.length} store${stillMissing.length === 1 ? "" : "s"} could not be updated (${stillMissing
+        .slice(0, 3)
+        .join(", ")}${stillMissing.length > 3 ? "…" : ""}). They may have been unassigned since the plan was proposed — reload and try again.`
+    );
+  }
 }
 
 /* ------------------------------------------------------------------ *

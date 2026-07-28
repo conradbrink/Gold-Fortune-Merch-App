@@ -16,6 +16,11 @@ import {
 } from "@/components/ui/dialog";
 import { createClient } from "@/lib/supabase/client";
 import { fetchOrgId } from "@/lib/representatives";
+import {
+  DEFAULT_ORG_SETTINGS,
+  fetchOrgSettings,
+  type OrgSettings,
+} from "@/lib/org-settings";
 import { ACCEPTED_EXTENSIONS, parseSpreadsheet, type ParsedSheet } from "@/lib/import/parse";
 import { knownTowns } from "@/lib/import/towns";
 import {
@@ -69,6 +74,7 @@ export function ImportStoresDialog({
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<ImportResult | null>(null);
   const [orgId, setOrgId] = useState<string | null>(null);
+  const [settings, setSettings] = useState<OrgSettings>(DEFAULT_ORG_SETTINGS);
 
   const towns = useMemo(() => knownTowns(), []);
 
@@ -83,6 +89,7 @@ export function ImportStoresDialog({
     setProgress(0);
     setFileName("");
     fetchOrgId(supabase).then(setOrgId).catch(() => setOrgId(null));
+    fetchOrgSettings(supabase).then(setSettings).catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
@@ -137,7 +144,13 @@ export function ImportStoresDialog({
     setBusy(true);
     setError(null);
     try {
-      const r = await importStores(supabase, orgId, drafts, (done) => setProgress(done));
+      const r = await importStores(
+        supabase,
+        orgId,
+        drafts,
+        settings.defaultVisitFrequency,
+        (done) => setProgress(done)
+      );
       setResult(r);
       setStep("done");
       onImported();
@@ -217,6 +230,7 @@ export function ImportStoresDialog({
                   ["phone", "Phone"],
                   ["state", "State / district"],
                   ["country", "Country"],
+                  ["rep", "Rep (optional)"],
                 ] as [keyof ColumnMap, string][]
               ).map(([field, label]) => (
                 <div key={field} className="space-y-1">
@@ -262,7 +276,9 @@ export function ImportStoresDialog({
             <p className="rounded-md border border-border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
               Coordinates are not set — this file has none. These stores will
               not geofence, and check-in distance will read as unknown rather
-              than as zero, until locations are added.
+              than as zero, until locations are added. Visit frequency is set to{" "}
+              {settings.defaultVisitFrequency}, which you can change per store
+              or in bulk afterwards.
             </p>
 
             <div className="flex flex-wrap gap-1.5">
@@ -368,6 +384,19 @@ export function ImportStoresDialog({
                 ` and created ${result.groupsCreated} store group${result.groupsCreated === 1 ? "" : "s"}`}
               .
             </p>
+            {result.assignmentsCreated > 0 && (
+              <p className="text-xs text-muted-foreground">
+                {result.assignmentsCreated} store
+                {result.assignmentsCreated === 1 ? "" : "s"} assigned to a rep
+                from the sheet.
+              </p>
+            )}
+            {result.unmatchedReps.length > 0 && (
+              <p className="text-xs text-amber-700 dark:text-amber-400">
+                No rep matched these names, so those stores were left
+                unassigned: {result.unmatchedReps.join(", ")}.
+              </p>
+            )}
             {result.skipped > 0 && (
               <p className="text-xs text-muted-foreground">
                 {result.skipped} row{result.skipped === 1 ? "" : "s"} skipped.

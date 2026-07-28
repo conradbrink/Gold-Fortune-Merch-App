@@ -9,14 +9,13 @@ import {
   type FieldReport,
 } from "@/lib/reports";
 import {
-  AVG_VISIT_MINUTES,
-  FULL_DAY_STORES,
   WEEKDAYS,
   fetchCallCycleGaps,
   fetchCallCycleReview,
   type CallCycleDay,
   type CallCycleGaps,
 } from "@/lib/schedule";
+import { fetchOrgSettings, type OrgSettings } from "@/lib/org-settings";
 
 /**
  * Manager insights.
@@ -71,7 +70,12 @@ Accuracy:
 - Actions must be things this manager can actually do: schedule a visit, coach a
   named rep, escalate a price or stock issue. No generic advice.`;
 
-const CALL_CYCLE_PROMPT = `You are an analyst reviewing the journey plan (call cycle) of a
+/**
+ * Capacity is per-organisation, so the prompt is built per request rather than
+ * being a module constant — a customer whose reps make five calls a day must
+ * not be told that eight is a full day.
+ */
+const callCyclePrompt = (storesPerDay: number) => `You are an analyst reviewing the journey plan (call cycle) of a
 field-merchandising team at an FMCG company.
 
 The manager has assigned each store a weekday and a visit frequency. You are
@@ -92,8 +96,9 @@ Length:
 What is worth flagging, roughly in order:
 - A day that spans more than one city. Name the rep, the day and the cities.
   Driving between towns is the biggest single waste in a field day.
-- A day carrying more stops than fits. Visits average 49 minutes, so about
-  ${FULL_DAY_STORES} stores is a full day.
+- A day carrying more stops than fits. A full day for this team is
+  ${storesPerDay} stores. Do not quote a per-visit duration — you are not given
+  one, and inventing one would be a fabricated figure.
 - One rep well over capacity while another is well under.
 - Stores nobody covers at all — they will never be visited.
 - Stores assigned to a rep but with no day set — they will never be scheduled.
@@ -192,7 +197,8 @@ function toAggregate(fields: FieldReport[]) {
 function buildCallCyclePayload(
   days: CallCycleDay[],
   gaps: CallCycleGaps | null,
-  weeks: number
+  weeks: number,
+  settings: OrgSettings
 ) {
   const byRep = new Map<string, CallCycleDay[]>();
   for (const d of days) {
@@ -203,15 +209,17 @@ function buildCallCyclePayload(
 
   return {
     horizon_weeks: weeks,
-    avg_visit_minutes: AVG_VISIT_MINUTES,
-    full_day_stores: FULL_DAY_STORES,
+    // No avg_visit_minutes: the old figure came from demo data that has been
+    // deleted, and a model given a number will quote it.
+    full_day_stores: settings.storesPerDay,
+    working_days: settings.workingDays.length,
     reps: [...byRep.entries()].map(([rep, rows]) => ({
       rep,
       days_worked: rows.length,
       // Peak load summed across the week, against what those days can hold.
       // Both sides are peaks, so they compare like with like.
       peak_week_stores: rows.reduce((n, r) => n + r.peak_stores, 0),
-      peak_week_capacity: rows.length * FULL_DAY_STORES,
+      peak_week_capacity: rows.length * settings.storesPerDay,
       days: rows.map((r) => ({
         day: WEEKDAYS.find((w) => w.value === r.day_of_week)?.long ?? "?",
         peak_stores: r.peak_stores,
@@ -288,9 +296,10 @@ export async function POST(request: Request) {
         );
       }
 
-      const [days, gaps] = await Promise.all([
+      const [days, gaps, settings] = await Promise.all([
         fetchCallCycleReview(supabase, weeks),
         fetchCallCycleGaps(supabase),
+        fetchOrgSettings(supabase),
       ]);
 
       // Nothing is planned yet — the common first state. Answer it directly
@@ -310,10 +319,10 @@ export async function POST(request: Request) {
         });
       }
 
-      instructions = CALL_CYCLE_PROMPT;
+      instructions = callCyclePrompt(settings.storesPerDay);
       userContent =
         `Call cycle over the next ${weeks} weeks.\n\n` +
-        JSON.stringify(buildCallCyclePayload(days, gaps, weeks));
+        JSON.stringify(buildCallCyclePayload(days, gaps, weeks, settings));
     } else {
       if (!body.from || !body.to) {
         return Response.json({ error: "from and to are required." }, { status: 400 });

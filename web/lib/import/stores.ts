@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { deriveTown, type TownSource } from "@/lib/import/towns";
+import type { VisitFrequency } from "@/lib/schedule";
 
 /**
  * Turning an accounting export into an estate of stores.
@@ -29,6 +30,12 @@ export type ColumnMap = {
   zip: string | null;
   phone: string | null;
   country: string | null;
+  /**
+   * Optional. A business that already knows who covers each store can say so
+   * in the sheet and skip assigning 200 stores by hand. Matched against rep
+   * name or email; anything unmatched is flagged rather than guessed at.
+   */
+  rep: string | null;
 };
 
 export type StoreDraft = {
@@ -46,6 +53,8 @@ export type StoreDraft = {
   state: string | null;
   zip: string | null;
   phone: string | null;
+  /** Raw text from the sheet; resolved to a rep at write time. */
+  repName: string | null;
   include: boolean;
   /** Why this row needs a human glance. Empty means it is clean. */
   issues: string[];
@@ -55,6 +64,9 @@ export type ImportResult = {
   storesCreated: number;
   groupsCreated: number;
   skipped: number;
+  assignmentsCreated: number;
+  /** Rep names in the sheet that matched nobody — reported, never invented. */
+  unmatchedReps: string[];
 };
 
 const HEADER_HINTS: Record<keyof ColumnMap, string[]> = {
@@ -65,6 +77,7 @@ const HEADER_HINTS: Record<keyof ColumnMap, string[]> = {
   zip: ["zip", "postal", "post code", "postcode"],
   phone: ["phone", "tel", "mobile", "contact"],
   country: ["country"],
+  rep: ["rep", "merchandiser", "sales rep", "agent", "assigned to"],
 };
 
 /**
@@ -76,7 +89,7 @@ const HEADER_HINTS: Record<keyof ColumnMap, string[]> = {
 export function detectColumns(headers: string[]): ColumnMap {
   const map: ColumnMap = {
     name: null, address: null, city: null,
-    state: null, zip: null, phone: null, country: null,
+    state: null, zip: null, phone: null, country: null, rep: null,
   };
   const taken = new Set<string>();
 
@@ -219,6 +232,7 @@ export function buildDrafts(
       state: value(row, map.state),
       zip: value(row, map.zip),
       phone: value(row, map.phone),
+      repName: value(row, map.rep),
       include,
       issues,
     };
@@ -242,6 +256,12 @@ export async function importStores(
   supabase: SupabaseClient,
   orgId: string,
   drafts: StoreDraft[],
+  /**
+   * From org settings. Set explicitly rather than left to the column default,
+   * which is `weekly` — importing 200 stores as weekly would silently create a
+   * call cycle several times over capacity.
+   */
+  defaultFrequency: VisitFrequency,
   onProgress?: (done: number, total: number) => void
 ): Promise<ImportResult> {
   const accepted = drafts.filter((d) => d.include && d.name);
@@ -279,12 +299,32 @@ export async function importStores(
     groupsCreated = created?.length ?? 0;
   }
 
+  // Resolve rep names once, if the sheet has that column at all.
+  const repIdByKey: Record<string, string> = {};
+  if (accepted.some((d) => d.repName)) {
+    const { data: repRows } = await supabase
+      .from("profiles")
+      .select("id, full_name, email")
+      .eq("role", "rep");
+    for (const r of (repRows ?? []) as {
+      id: string;
+      full_name: string | null;
+      email: string | null;
+    }[]) {
+      if (r.full_name) repIdByKey[r.full_name.trim().toLowerCase()] = r.id;
+      if (r.email) repIdByKey[r.email.trim().toLowerCase()] = r.id;
+    }
+  }
+  const unmatchedReps = new Set<string>();
+
   // Batched rather than one request per row: 200 sequential inserts from the
   // browser is a minute of waiting and 200 chances to fail half way.
   const BATCH = 50;
   let storesCreated = 0;
+  let assignmentsCreated = 0;
   for (let i = 0; i < accepted.length; i += BATCH) {
-    const batch = accepted.slice(i, i + BATCH).map((d) => ({
+    const slice = accepted.slice(i, i + BATCH);
+    const batch = slice.map((d) => ({
       org_id: orgId,
       name: d.name,
       address: d.address,
@@ -294,6 +334,7 @@ export async function importStores(
       store_group_id: d.groupName
         ? groupIdByName[d.groupName.trim().toLowerCase()] ?? null
         : null,
+      visit_frequency: defaultFrequency,
       active: true,
     }));
     const { data, error } = await supabase.from("stores").insert(batch).select("id");
@@ -303,8 +344,46 @@ export async function importStores(
       );
     }
     storesCreated += data?.length ?? 0;
+
+    // Assignments ride along with the batch, matched positionally: the insert
+    // returns ids in the order they were sent.
+    const created = (data ?? []) as { id: string }[];
+    const links = slice
+      .map((d, n) => ({ draft: d, storeId: created[n]?.id }))
+      .filter((x) => x.draft.repName && x.storeId)
+      .map((x) => {
+        const repId = repIdByKey[x.draft.repName!.trim().toLowerCase()];
+        if (!repId) {
+          unmatchedReps.add(x.draft.repName!);
+          return null;
+        }
+        return {
+          org_id: orgId,
+          store_id: x.storeId!,
+          rep_id: repId,
+          is_primary: false,
+        };
+      })
+      .filter((x): x is NonNullable<typeof x> => x !== null);
+
+    if (links.length > 0) {
+      const { data: made, error: linkError } = await supabase
+        .from("store_assignments")
+        .insert(links)
+        .select("id");
+      // A failed assignment must not lose the stores that already landed —
+      // report it rather than throwing the whole import away.
+      if (!linkError) assignmentsCreated += made?.length ?? 0;
+    }
+
     onProgress?.(Math.min(i + BATCH, accepted.length), accepted.length);
   }
 
-  return { storesCreated, groupsCreated, skipped };
+  return {
+    storesCreated,
+    groupsCreated,
+    skipped,
+    assignmentsCreated,
+    unmatchedReps: [...unmatchedReps].sort(),
+  };
 }

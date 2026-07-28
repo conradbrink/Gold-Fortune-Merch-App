@@ -8,7 +8,14 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { NativeSelect } from "@/components/ui/native-select";
 import {
   Table,
   TableBody,
@@ -18,6 +25,13 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { createClient } from "@/lib/supabase/client";
+import {
+  DEFAULT_ORG_SETTINGS,
+  fetchOrgSettings,
+  updateOrgSettings,
+  type OrgSettings,
+} from "@/lib/org-settings";
+import { FREQUENCIES, WEEKDAYS } from "@/lib/schedule";
 import type { Tables } from "@/lib/supabase/types";
 import { currentPlan, availablePlans } from "@/lib/mock-data";
 
@@ -45,6 +59,12 @@ export default function CompanyProfilePage() {
     address: "",
     support_email: "",
   });
+  /** Planning capacity. Kept separate: it saves with its own button, because
+      it changes what the whole schedule is measured against. */
+  const [capacity, setCapacity] = useState<OrgSettings>(DEFAULT_ORG_SETTINGS);
+  const [savingCapacity, setSavingCapacity] = useState(false);
+  const [savedCapacity, setSavedCapacity] = useState(false);
+  const [capacityError, setCapacityError] = useState<string | null>(null);
 
   async function load() {
     setLoading(true);
@@ -72,6 +92,8 @@ export default function CompanyProfilePage() {
       });
     }
 
+    setCapacity(await fetchOrgSettings(supabase));
+
     const { data: memberRows } = await supabase
       .from("profiles")
       .select("*")
@@ -79,6 +101,37 @@ export default function CompanyProfilePage() {
       .order("full_name");
     setMembers(memberRows ?? []);
     setLoading(false);
+  }
+
+  async function handleSaveCapacity() {
+    if (!org) return;
+    setSavingCapacity(true);
+    setSavedCapacity(false);
+    setCapacityError(null);
+    try {
+      await updateOrgSettings(supabase, org.id, capacity);
+      setSavedCapacity(true);
+    } catch (e) {
+      setCapacityError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setSavingCapacity(false);
+    }
+  }
+
+  function toggleWorkingDay(day: number) {
+    setSavedCapacity(false);
+    setCapacity((prev) => {
+      const has = prev.workingDays.includes(day);
+      // Never allow zero working days — nothing could ever be scheduled, and
+      // the check constraint would reject the save anyway.
+      if (has && prev.workingDays.length === 1) return prev;
+      return {
+        ...prev,
+        workingDays: has
+          ? prev.workingDays.filter((d) => d !== day)
+          : [...prev.workingDays, day].sort((a, b) => a - b),
+      };
+    });
   }
 
   useEffect(() => {
@@ -195,6 +248,121 @@ export default function CompanyProfilePage() {
                   {saving ? "Saving…" : "Save changes"}
                 </Button>
                 {saved && (
+                  <span className="text-sm text-emerald-700">Saved.</span>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Capacity drives the call cycle: the load strip, the capacity
+              meter, the auto-spread and the AI plan review all measure against
+              these. They were constants in the code, which fitted exactly one
+              business. */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">Planning capacity</CardTitle>
+              <CardDescription>
+                What one rep-day holds, and which days your team works. Used by
+                the schedule to tell you whether a call cycle is deliverable.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {capacityError && (
+                <p className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+                  {capacityError}
+                </p>
+              )}
+
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div className="space-y-1.5">
+                  <Label htmlFor="stores-per-day">Stores per day</Label>
+                  <Input
+                    id="stores-per-day"
+                    type="number"
+                    min={1}
+                    max={50}
+                    value={capacity.storesPerDay}
+                    onChange={(e) => {
+                      setSavedCapacity(false);
+                      setCapacity({
+                        ...capacity,
+                        storesPerDay: Number(e.target.value),
+                      });
+                    }}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    How many stops one rep realistically makes in a day.
+                  </p>
+                </div>
+
+                <div className="space-y-1.5">
+                  <Label htmlFor="default-frequency">
+                    Default visit frequency
+                  </Label>
+                  <NativeSelect
+                    id="default-frequency"
+                    value={capacity.defaultVisitFrequency}
+                    onChange={(e) => {
+                      setSavedCapacity(false);
+                      setCapacity({
+                        ...capacity,
+                        defaultVisitFrequency: e.target
+                          .value as OrgSettings["defaultVisitFrequency"],
+                      });
+                    }}
+                  >
+                    {FREQUENCIES.map((f) => (
+                      <option key={f.value} value={f.value}>
+                        {f.label}
+                      </option>
+                    ))}
+                  </NativeSelect>
+                  <p className="text-xs text-muted-foreground">
+                    Applied to newly imported stores.
+                  </p>
+                </div>
+              </div>
+
+              <div className="space-y-1.5">
+                <Label>Working days</Label>
+                <div className="flex flex-wrap gap-1.5">
+                  {WEEKDAYS.map((w) => {
+                    const on = capacity.workingDays.includes(w.value);
+                    return (
+                      <button
+                        key={w.value}
+                        type="button"
+                        onClick={() => toggleWorkingDay(w.value)}
+                        className={`rounded-md border px-3 py-1.5 text-sm font-medium transition-colors ${
+                          on
+                            ? "border-primary bg-primary text-primary-foreground"
+                            : "border-border text-muted-foreground hover:text-foreground"
+                        }`}
+                      >
+                        {w.short}
+                      </button>
+                    );
+                  })}
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  {capacity.workingDays.length} days ×{" "}
+                  {capacity.storesPerDay} stores ={" "}
+                  <span className="font-medium text-foreground">
+                    {capacity.workingDays.length * capacity.storesPerDay} visits
+                  </span>{" "}
+                  per rep per week.
+                </p>
+              </div>
+
+              <div className="flex items-center gap-3">
+                <Button
+                  onClick={handleSaveCapacity}
+                  disabled={savingCapacity}
+                  className="bg-primary text-primary-foreground hover:bg-primary/90"
+                >
+                  {savingCapacity ? "Saving…" : "Save capacity"}
+                </Button>
+                {savedCapacity && (
                   <span className="text-sm text-emerald-700">Saved.</span>
                 )}
               </div>
