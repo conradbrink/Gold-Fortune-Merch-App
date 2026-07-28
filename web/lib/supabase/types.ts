@@ -20,6 +20,7 @@ export type Database = {
           form_template_id: string
           id: string
           label: string
+          metric_key: string | null
           options: Json | null
           required: boolean
           sort_order: number
@@ -29,6 +30,7 @@ export type Database = {
           form_template_id: string
           id?: string
           label: string
+          metric_key?: string | null
           options?: Json | null
           required?: boolean
           sort_order?: number
@@ -38,6 +40,7 @@ export type Database = {
           form_template_id?: string
           id?: string
           label?: string
+          metric_key?: string | null
           options?: Json | null
           required?: boolean
           sort_order?: number
@@ -214,6 +217,70 @@ export type Database = {
           },
         ]
       }
+      location_pings: {
+        Row: {
+          accuracy_m: number | null
+          client_generated_id: string
+          created_at: string
+          id: string
+          lat: number
+          lng: number
+          org_id: string
+          recorded_at: string
+          rep_id: string
+          source: string
+          workday_session_id: string | null
+        }
+        Insert: {
+          accuracy_m?: number | null
+          client_generated_id: string
+          created_at?: string
+          id?: string
+          lat: number
+          lng: number
+          org_id: string
+          recorded_at?: string
+          rep_id: string
+          source?: string
+          workday_session_id?: string | null
+        }
+        Update: {
+          accuracy_m?: number | null
+          client_generated_id?: string
+          created_at?: string
+          id?: string
+          lat?: number
+          lng?: number
+          org_id?: string
+          recorded_at?: string
+          rep_id?: string
+          source?: string
+          workday_session_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "location_pings_org_id_fkey"
+            columns: ["org_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "location_pings_rep_id_fkey"
+            columns: ["rep_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "location_pings_workday_session_id_fkey"
+            columns: ["workday_session_id"]
+            isOneToOne: false
+            referencedRelation: "workday_sessions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       organizations: {
         Row: {
           address: string | null
@@ -317,7 +384,10 @@ export type Database = {
           email: string | null
           full_name: string | null
           id: string
+          is_active: boolean
+          job_title: string | null
           org_id: string
+          phone: string | null
           role: string
         }
         Insert: {
@@ -325,7 +395,10 @@ export type Database = {
           email?: string | null
           full_name?: string | null
           id: string
+          is_active?: boolean
+          job_title?: string | null
           org_id: string
+          phone?: string | null
           role: string
         }
         Update: {
@@ -333,7 +406,10 @@ export type Database = {
           email?: string | null
           full_name?: string | null
           id?: string
+          is_active?: boolean
+          job_title?: string | null
           org_id?: string
+          phone?: string | null
           role?: string
         }
         Relationships: [
@@ -414,6 +490,71 @@ export type Database = {
           },
         ]
       }
+      store_assignments: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          day_of_week: number | null
+          id: string
+          is_primary: boolean
+          org_id: string
+          rep_id: string
+          store_id: string
+          week_of_cycle: number | null
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          day_of_week?: number | null
+          id?: string
+          is_primary?: boolean
+          org_id: string
+          rep_id: string
+          store_id: string
+          week_of_cycle?: number | null
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          day_of_week?: number | null
+          id?: string
+          is_primary?: boolean
+          org_id?: string
+          rep_id?: string
+          store_id?: string
+          week_of_cycle?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "store_assignments_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "store_assignments_org_id_fkey"
+            columns: ["org_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "store_assignments_rep_id_fkey"
+            columns: ["rep_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "store_assignments_store_id_fkey"
+            columns: ["store_id"]
+            isOneToOne: false
+            referencedRelation: "stores"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       store_groups: {
         Row: {
           created_at: string
@@ -459,6 +600,7 @@ export type Database = {
           state: string | null
           store_group_id: string | null
           territory: string | null
+          visit_frequency: string
           zip: string | null
         }
         Insert: {
@@ -476,6 +618,7 @@ export type Database = {
           state?: string | null
           store_group_id?: string | null
           territory?: string | null
+          visit_frequency?: string
           zip?: string | null
         }
         Update: {
@@ -493,6 +636,7 @@ export type Database = {
           state?: string | null
           store_group_id?: string | null
           territory?: string | null
+          visit_frequency?: string
           zip?: string | null
         }
         Relationships: [
@@ -604,13 +748,314 @@ export type Database = {
           },
         ]
       }
+      workday_sessions: {
+        Row: {
+          client_generated_id: string
+          created_at: string
+          distance_meters: number
+          duration_seconds: number | null
+          end_lat: number | null
+          end_lng: number | null
+          ended_at: string | null
+          id: string
+          org_id: string
+          rep_id: string
+          start_lat: number | null
+          start_lng: number | null
+          started_at: string
+          updated_at: string
+        }
+        Insert: {
+          client_generated_id: string
+          created_at?: string
+          distance_meters?: number
+          duration_seconds?: number | null
+          end_lat?: number | null
+          end_lng?: number | null
+          ended_at?: string | null
+          id?: string
+          org_id: string
+          rep_id: string
+          start_lat?: number | null
+          start_lng?: number | null
+          started_at?: string
+          updated_at?: string
+        }
+        Update: {
+          client_generated_id?: string
+          created_at?: string
+          distance_meters?: number
+          duration_seconds?: number | null
+          end_lat?: number | null
+          end_lng?: number | null
+          ended_at?: string | null
+          id?: string
+          org_id?: string
+          rep_id?: string
+          start_lat?: number | null
+          start_lng?: number | null
+          started_at?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "workday_sessions_org_id_fkey"
+            columns: ["org_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "workday_sessions_rep_id_fkey"
+            columns: ["rep_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       [_ in never]: never
     }
     Functions: {
+      activity_feed: {
+        Args: {
+          p_from: string
+          p_limit?: number
+          p_offset?: number
+          p_only_flagged?: boolean
+          p_rep_ids?: string[]
+          p_store_ids?: string[]
+          p_to: string
+        }
+        Returns: {
+          accuracy_m: number
+          distance_m: number
+          event_id: string
+          geofence_radius_m: number
+          kind: string
+          occurred_at: string
+          rep_id: string
+          rep_name: string
+          store_id: string
+          store_name: string
+          submission_id: string
+          total_count: number
+          verdict: string
+          visit_id: string
+        }[]
+      }
+      activity_feed_summary: {
+        Args: {
+          p_from: string
+          p_rep_ids?: string[]
+          p_store_ids?: string[]
+          p_to: string
+        }
+        Returns: Json
+      }
+      call_cycle_gaps: {
+        Args: never
+        Returns: {
+          reps_active: number
+          reps_without_stores: number
+          reps_without_stores_names: string[]
+          stores_active: number
+          stores_unassigned: number
+          stores_without_city: number
+          stores_without_coords: number
+          unassigned_store_names: string[]
+          unplanned_assignments: number
+          unplanned_by_rep: Json
+        }[]
+      }
+      call_cycle_review: {
+        Args: { p_weeks?: number }
+        Returns: {
+          avg_stores: number
+          cities: string[]
+          day_of_week: number
+          frequency_mix: Json
+          occurrences: number
+          peak_stores: number
+          rep_id: string
+          rep_name: string
+          span_km: number
+          stores_without_city: number
+        }[]
+      }
+      compliance_trends: {
+        Args: {
+          p_bucket?: string
+          p_from: string
+          p_store_group_id?: string
+          p_to: string
+        }
+        Returns: {
+          avg_facings: number
+          bucket_start: string
+          oos_rate: number
+          planogram_rate: number
+          price_correct_rate: number
+          submissions: number
+        }[]
+      }
+      coverage_gaps: {
+        Args: { p_from: string; p_to: string }
+        Returns: {
+          assigned_count: number
+          assigned_reps: string
+          city: string
+          days_since: number
+          last_visit_at: string
+          state: string
+          store_group: string
+          store_id: string
+          store_name: string
+          visits_in_period: number
+        }[]
+      }
       current_org_id: { Args: never; Returns: string }
       current_role: { Args: never; Returns: string }
+      dashboard_summary: {
+        Args: { p_from: string; p_to: string }
+        Returns: Json
+      }
+      form_report: {
+        Args: {
+          p_from: string
+          p_rep_ids?: string[]
+          p_store_ids?: string[]
+          p_template_id: string
+          p_to: string
+        }
+        Returns: {
+          field_id: string
+          field_type: string
+          label: string
+          metric_key: string
+          response_count: number
+          sort_order: number
+          stats: Json
+        }[]
+      }
+      generate_routes: {
+        Args: { p_dry_run?: boolean; p_weeks?: number }
+        Returns: {
+          created: number
+          first_date: string
+          last_date: string
+          reps_covered: number
+        }[]
+      }
+      haversine_m: {
+        Args: { lat1: number; lat2: number; lng1: number; lng2: number }
+        Returns: number
+      }
+      oos_hotspots: {
+        Args: { p_from: string; p_to: string }
+        Returns: {
+          checks: number
+          last_oos_at: string
+          max_consecutive_oos: number
+          oos_count: number
+          oos_rate: number
+          store_id: string
+          store_name: string
+          top_skus: Json
+        }[]
+      }
+      perfect_store_score: {
+        Args: { p_from: string; p_to: string }
+        Returns: {
+          audits: number
+          availability_pct: number
+          condition_pct: number
+          planogram_pct: number
+          price_pct: number
+          score: number
+          store_group: string
+          store_id: string
+          store_name: string
+        }[]
+      }
+      rep_delete_impact: {
+        Args: { p_rep_id: string }
+        Returns: {
+          assignments: number
+          photos: number
+          rep_name: string
+          routes: number
+          submissions: number
+          visits: number
+          workdays: number
+        }[]
+      }
+      rep_directory: {
+        Args: never
+        Returns: {
+          assigned_stores: number
+          email: string
+          is_active: boolean
+          job_title: string
+          joined_at: string
+          last_active_at: string
+          phone: string
+          rep_id: string
+          rep_name: string
+          store_names: string
+          visits_30d: number
+        }[]
+      }
+      rep_scorecard: {
+        Args: { p_from: string; p_to: string }
+        Returns: {
+          avg_duration_seconds: number
+          completion_rate: number
+          form_compliance_rate: number
+          rep_id: string
+          rep_name: string
+          score: number
+          stores_covered: number
+          submissions: number
+          verified_rate: number
+          visits_completed: number
+          visits_total: number
+        }[]
+      }
+      schedule_adherence: {
+        Args: { p_from: string; p_to: string }
+        Returns: {
+          adherence_rate: number
+          completed: number
+          missed: number
+          missed_detail: Json
+          planned: number
+          rep_id: string
+          rep_name: string
+        }[]
+      }
+      store_delete_impact: {
+        Args: { p_store_id: string }
+        Returns: {
+          assignments: number
+          photos: number
+          reps: number
+          routes: number
+          store_name: string
+          submissions: number
+          visits: number
+        }[]
+      }
+      store_last_visit: {
+        Args: never
+        Returns: {
+          last_visit_at: string
+          store_id: string
+          visits_total: number
+        }[]
+      }
     }
     Enums: {
       [_ in never]: never
