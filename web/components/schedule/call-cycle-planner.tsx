@@ -669,26 +669,38 @@ export function CallCyclePlanner() {
 
           {!previewing && !genResult && preview && (
             <div className="space-y-2 text-sm">
-              {preview.created === 0 ? (
+              {preview.created === 0 && preview.removed === 0 ? (
                 <p className="text-foreground">
-                  Nothing to create. Every date in the next {weeks} weeks that
+                  Nothing to change. Every date in the next {weeks} weeks that
                   the call cycle calls for already has a route — or no store has
                   a day set yet.
                 </p>
               ) : (
                 <>
-                  <p className="text-foreground">
-                    Creates{" "}
-                    <span className="font-semibold">{preview.created}</span>{" "}
-                    route{preview.created === 1 ? "" : "s"} for{" "}
-                    {preview.reps_covered} rep
-                    {preview.reps_covered === 1 ? "" : "s"}, from{" "}
-                    {preview.first_date} to {preview.last_date}.
-                  </p>
+                  {preview.created > 0 && (
+                    <p className="text-foreground">
+                      Creates{" "}
+                      <span className="font-semibold">{preview.created}</span>{" "}
+                      route{preview.created === 1 ? "" : "s"} for{" "}
+                      {preview.reps_covered} rep
+                      {preview.reps_covered === 1 ? "" : "s"}, from{" "}
+                      {preview.first_date} to {preview.last_date}.
+                    </p>
+                  )}
+                  {/* Stated plainly: this is the only part that takes work off
+                      a rep's phone, so it should never be a surprise. */}
+                  {preview.removed > 0 && (
+                    <p className="text-foreground">
+                      Removes{" "}
+                      <span className="font-semibold">{preview.removed}</span>{" "}
+                      future route{preview.removed === 1 ? "" : "s"} the plan no
+                      longer calls for.
+                    </p>
+                  )}
                   <p className="text-xs text-muted-foreground">
-                    Nothing in the past is touched, dates that already have a
-                    route are left alone, and no visit records are created —
-                    a visit belongs to a check-in.
+                    Nothing in the past is touched, nothing a rep has already
+                    checked into, and no stop added by hand. No visit records
+                    are created — a visit belongs to a check-in.
                   </p>
                 </>
               )}
@@ -701,6 +713,8 @@ export function CallCyclePlanner() {
               {genResult.created === 1 ? "" : "s"}
               {genResult.created > 0 &&
                 ` from ${genResult.first_date} to ${genResult.last_date}`}
+              {genResult.removed > 0 &&
+                `, and removed ${genResult.removed} that no longer matched`}
               .
             </p>
           )}

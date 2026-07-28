@@ -71,6 +71,8 @@ export type PlannedStore = {
 
 export type GenerateResult = {
   created: number;
+  /** Future cycle-built routes the plan no longer calls for. */
+  removed: number;
   first_date: string | null;
   last_date: string | null;
   reps_covered: number;
@@ -728,6 +730,10 @@ export async function addStop(
     store_id: storeId,
     scheduled_date: toLocalDateInput(date),
     sequence_order: sequence,
+    // 'manual' keeps this stop out of the generator's cleanup. A stop added by
+    // hand does not match the call cycle by definition, so without this the
+    // next generate would quietly delete it.
+    source: "manual",
   });
   // unique (rep_id, store_id, scheduled_date) — adding the same stop twice is
   // a no-op, not an error worth showing.
@@ -891,5 +897,13 @@ export async function generateRoutes(
   });
   if (res.error) throw new Error(res.error.message);
   const rows = (res.data ?? []) as GenerateResult[];
-  return rows[0] ?? { created: 0, first_date: null, last_date: null, reps_covered: 0 };
+  return (
+    rows[0] ?? {
+      created: 0,
+      removed: 0,
+      first_date: null,
+      last_date: null,
+      reps_covered: 0,
+    }
+  );
 }
