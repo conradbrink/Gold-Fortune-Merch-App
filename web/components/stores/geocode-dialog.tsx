@@ -97,7 +97,11 @@ export function GeocodeDialog({
   async function acceptOne(c: GeocodeCandidate) {
     setError(null);
     try {
-      await applyCandidates(supabase, [c]);
+      // Recorded as "manual", not as whichever service proposed it. Someone
+      // opened the map and vouched for this point, which is a stronger fact
+      // than the lookup that suggested it — and until now it was written
+      // indistinguishably from one applied automatically.
+      await applyCandidates(supabase, [c], "manual");
       setNeedsReview((prev) => prev.filter((x) => x.storeId !== c.storeId));
       setApplied((n) => n + 1);
       onDone();
@@ -244,15 +248,25 @@ export function GeocodeDialog({
 export function SharedPointBanner({
   points,
   onClear,
+  onShowAll,
 }: {
   points: SharedPoint[];
   onClear: (storeIds: string[]) => void;
+  /** Filters the table down to these stores, so the banner leads somewhere. */
+  onShowAll?: () => void;
 }) {
   const [busy, setBusy] = useState(false);
   if (points.length === 0) return null;
 
   // Pairs are often genuine — two numbered branches in one shopping centre.
   // Three or more differently-named branches on one point is not.
+  //
+  // In this estate that fires on nothing: every shared point is a pair, so the
+  // clear button below has never had anything to clear. `sameResult` is the
+  // signal this heuristic was reaching for — 17 of the 18 pairs hold the
+  // identical matched listing — but adopting it would turn a button that clears
+  // 0 stores into one that clears 34 in a click, so it stays a separate
+  // decision. Meanwhile "Show these" gives the banner an action either way.
   const suspect = points.filter((p) => p.stores.length >= 3);
   const affected = points.reduce((n, p) => n + p.stores.length, 0);
 
@@ -284,6 +298,12 @@ export function SharedPointBanner({
         ))}
         {points.length > 4 && <li>…and {points.length - 4} more.</li>}
       </ul>
+      <div className="flex flex-wrap gap-2">
+      {onShowAll && (
+        <Button size="sm" variant="outline" onClick={onShowAll}>
+          Show these {affected}
+        </Button>
+      )}
       {suspect.length > 0 && (
         <Button
           size="sm"
@@ -303,6 +323,7 @@ export function SharedPointBanner({
             : `Clear the ${suspect.reduce((n, p) => n + p.stores.length, 0)} in groups of 3+`}
         </Button>
       )}
+      </div>
     </div>
   );
 }
@@ -310,26 +331,43 @@ export function SharedPointBanner({
 /** Prompt on the Stores page when coordinates are missing. */
 export function GeocodeBanner({
   count,
+  ruledOut = 0,
   onClick,
 }: {
+  /** Stores an automatic lookup may still try. */
   count: number;
+  /** Stores with no location that a person has already ruled on. */
+  ruledOut?: number;
   onClick: () => void;
 }) {
-  if (count === 0) return null;
+  if (count === 0 && ruledOut === 0) return null;
   return (
     <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2.5">
       <p className="flex items-start gap-2 text-sm text-amber-800 dark:text-amber-300">
         <MapPin className="mt-0.5 h-4 w-4 shrink-0" />
         <span>
-          <span className="font-semibold">{count}</span> store
-          {count === 1 ? " has" : "s have"} no location, so{" "}
-          {count === 1 ? "it cannot" : "they cannot"} geofence and check-in
-          distance reads as unknown.
+          <span className="font-semibold">{count + ruledOut}</span> store
+          {count + ruledOut === 1 ? " has" : "s have"} no location, so{" "}
+          {count + ruledOut === 1 ? "it cannot" : "they cannot"} geofence and
+          check-in distance reads as unknown.
+          {ruledOut > 0 && (
+            <>
+              {" "}
+              <span className="font-semibold">{ruledOut}</span> of{" "}
+              {count + ruledOut === 1 ? "them" : "those"} already had an answer a
+              person rejected, so looking{" "}
+              {ruledOut === 1 ? "it" : "them"} up again would only find the same
+              wrong shop — {ruledOut === 1 ? "it needs" : "they need"} a human
+              eye or a rep standing in the door.
+            </>
+          )}
         </span>
       </p>
-      <Button size="sm" variant="outline" onClick={onClick}>
-        Find locations
-      </Button>
+      {count > 0 && (
+        <Button size="sm" variant="outline" onClick={onClick}>
+          Find locations for {count}
+        </Button>
+      )}
     </div>
   );
 }

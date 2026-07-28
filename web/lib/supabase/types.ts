@@ -716,6 +716,8 @@ export type Database = {
           id: string
           lat: number | null
           lng: number | null
+          location_confirmed_at: string | null
+          location_confirmed_by: string | null
           name: string
           org_id: string
           place_code: string | null
@@ -739,6 +741,8 @@ export type Database = {
           id?: string
           lat?: number | null
           lng?: number | null
+          location_confirmed_at?: string | null
+          location_confirmed_by?: string | null
           name: string
           org_id: string
           place_code?: string | null
@@ -762,6 +766,8 @@ export type Database = {
           id?: string
           lat?: number | null
           lng?: number | null
+          location_confirmed_at?: string | null
+          location_confirmed_by?: string | null
           name?: string
           org_id?: string
           place_code?: string | null
@@ -777,6 +783,13 @@ export type Database = {
             columns: ["geocode_visit_id"]
             isOneToOne: false
             referencedRelation: "visits"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "stores_location_confirmed_by_fkey"
+            columns: ["location_confirmed_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
             referencedColumns: ["id"]
           },
           {
@@ -1199,6 +1212,16 @@ export type Database = {
           store_name: string
           submissions: number
           visits: number
+        }[]
+      }
+      store_geocode_capture: {
+        Args: never
+        Returns: {
+          rep_id: string
+          rep_name: string
+          store_id: string
+          visit_checkin_at: string
+          visit_id: string
         }[]
       }
       store_last_visit: {

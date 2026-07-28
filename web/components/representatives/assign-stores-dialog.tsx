@@ -391,6 +391,12 @@ export function AssignStoresDialog({
                       const mine = mineByStore.get(s.id);
                       const others = otherCover.get(s.id) ?? 0;
                       const busy = busyStore === s.id;
+                      // The same rule as the Stores page, enforced here too or
+                      // it is not a rule — this dialog is the faster way to
+                      // assign in bulk and would simply route around it.
+                      // Un-ticking an existing assignment stays allowed.
+                      const unchecked = s.location_confirmed_at === null;
+                      const blocked = unchecked && !mine;
                       return (
                         <li
                           key={s.id}
@@ -398,7 +404,7 @@ export function AssignStoresDialog({
                         >
                           <Checkbox
                             checked={Boolean(mine)}
-                            disabled={busy || !orgId}
+                            disabled={busy || !orgId || blocked}
                             aria-label={`Assign ${s.name}`}
                             onCheckedChange={() =>
                               run(s.id, () =>
@@ -409,7 +415,9 @@ export function AssignStoresDialog({
                             }
                           />
                           <div className="min-w-0 flex-1">
-                            <p className="truncate text-sm text-foreground">
+                            <p
+                              className={`truncate text-sm ${blocked ? "text-muted-foreground" : "text-foreground"}`}
+                            >
                               {s.name}
                             </p>
                             <p className="truncate text-xs text-muted-foreground">
@@ -418,6 +426,11 @@ export function AssignStoresDialog({
                                 <span className="ml-1.5">
                                   · also covered by {others} other
                                   {others === 1 ? "" : "s"}
+                                </span>
+                              )}
+                              {unchecked && (
+                                <span className="ml-1.5 text-amber-700 dark:text-amber-400">
+                                  · location not checked
                                 </span>
                               )}
                             </p>

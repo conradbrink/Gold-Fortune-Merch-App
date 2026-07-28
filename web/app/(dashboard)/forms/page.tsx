@@ -181,9 +181,13 @@ export default function FormsPage() {
                     {new Date(form.updated_at).toLocaleDateString()}
                   </TableCell>
                   <TableCell>
+                    {/* `nativeButton={false}` because the render target is an
+                        anchor. Without it Base UI logged an accessibility
+                        error on every load of this page. */}
                     <Button
                       variant="ghost"
                       size="sm"
+                      nativeButton={false}
                       render={<Link href={`/forms/${form.id}`}>Edit</Link>}
                     />
                   </TableCell>

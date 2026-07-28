@@ -38,6 +38,9 @@ export type StoreOption = {
   city: string | null;
   group_id: string | null;
   group_name: string | null;
+  /** Null until somebody has checked the store is where the map says. A rep
+      may not be assigned to one, so the dialog has to be able to see it. */
+  location_confirmed_at: string | null;
 };
 
 export type InviteResult = { id: string; email: string; full_name: string };
@@ -94,7 +97,9 @@ export async function fetchStores(
   // GenericStringError in postgrest-js.
   const { data, error } = await supabase
     .from("stores")
-    .select("id, name, city, store_group_id, store_groups(name)")
+    .select(
+      "id, name, city, store_group_id, location_confirmed_at, store_groups(name)"
+    )
     .eq("active", true)
     .order("name", { ascending: true });
   if (error) throw new Error(error.message);
@@ -104,6 +109,7 @@ export async function fetchStores(
     name: string;
     city: string | null;
     store_group_id: string | null;
+    location_confirmed_at: string | null;
     store_groups: { name: string } | { name: string }[] | null;
   }[];
 
@@ -112,6 +118,7 @@ export async function fetchStores(
     name: r.name,
     city: r.city,
     group_id: r.store_group_id,
+    location_confirmed_at: r.location_confirmed_at,
     // postgrest returns an embedded relation as an object or array depending on
     // the inferred cardinality; normalise rather than guessing.
     group_name: Array.isArray(r.store_groups)

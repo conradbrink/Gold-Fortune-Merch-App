@@ -16,6 +16,7 @@ import {
   AlertTriangle,
   Check,
   Building2,
+  MapPin,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -36,11 +37,20 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { ImportStoresButton } from "@/components/stores/import-dialog";
 import {
-  GeocodeBanner,
-  GeocodeDialog,
-  SharedPointBanner,
-} from "@/components/stores/geocode-dialog";
-import { clearCoordinates, findSharedPoints } from "@/lib/geocode";
+  findSharedPoints,
+  geocodeState,
+  type GeocodeState,
+  type SharedPointStore,
+} from "@/lib/geocode";
+import {
+  GEOCODE_STATE_ORDER,
+  GEOCODE_STATE_STYLES,
+  GeocodePill,
+} from "@/components/stores/geocode-pill";
+import {
+  StoreLocationDialog,
+  type GeocodeCapture,
+} from "@/components/stores/store-location-dialog";
 // `components/dashboard/filter-bar.tsx` is deliberately NOT used here: its
 // "Add filter", "Clear" and "Apply" buttons have no onClick at all. It read as
 // decorative chrome next to the real filter row below, and with 200+ stores a
@@ -129,7 +139,14 @@ export default function StoresPage() {
   const [deleteTarget, setDeleteTarget] = useState<StoreRow | null>(null);
   const [deleteImpact, setDeleteImpact] = useState<StoreDeleteImpact | null>(null);
   const [deleting, setDeleting] = useState(false);
-  const [geocodeOpen, setGeocodeOpen] = useState(false);
+  /** The rep and visit behind each field-captured location, keyed by store. */
+  const [captures, setCaptures] = useState<Record<string, GeocodeCapture>>({});
+  /** Filter on where a location came from — "shared" cuts across the sources. */
+  const [provFilter, setProvFilter] = useState<GeocodeState | "all" | "shared">(
+    "all"
+  );
+  /** Non-null while the location-provenance dialog is open. */
+  const [locationTarget, setLocationTarget] = useState<StoreRow | null>(null);
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -138,6 +155,13 @@ export default function StoresPage() {
   const [saving, setSaving] = useState(false);
 
   const [groupDialogOpen, setGroupDialogOpen] = useState(false);
+  const [editingGroupId, setEditingGroupId] = useState<string | null>(null);
+  const [editingGroupName, setEditingGroupName] = useState("");
+  const [groupBusy, setGroupBusy] = useState<string | null>(null);
+  /** Second click confirms — deleting un-groups every store in it. */
+  const [confirmDeleteGroup, setConfirmDeleteGroup] = useState<string | null>(
+    null
+  );
   const [groupForm, setGroupForm] = useState("");
 
   async function loadData() {
@@ -175,6 +199,25 @@ export default function StoresPage() {
       }
     }
     setLastVisits(seen);
+
+    // Who captured a location in the field, resolved through the visit it was
+    // taken during. Skipped entirely when no store has one — which is every
+    // store until reps start doing it — rather than asking Postgres for an
+    // empty set on every page load.
+    const byStore: Record<string, GeocodeCapture> = {};
+    if ((storeRows ?? []).some((s) => s.geocode_visit_id !== null)) {
+      const { data: captureRows } = await supabase.rpc("store_geocode_capture");
+      for (const r of captureRows ?? []) {
+        byStore[r.store_id] = {
+          visitId: r.visit_id,
+          // The RPC left-joins profiles and the generated types cannot express
+          // that, so these two are narrowed here rather than trusted.
+          repName: (r.rep_name as string | null) ?? null,
+          checkinAt: (r.visit_checkin_at as string | null) ?? null,
+        };
+      }
+    }
+    setCaptures(byStore);
 
     // Names for the "Responsible" column. profiles is already readable org-wide,
     // so this is one extra query rather than a join through the stale types.
@@ -407,9 +450,57 @@ export default function StoresPage() {
       .from("store_groups")
       .insert({ org_id: orgId, name: groupForm.trim() });
     setSaving(false);
-    setGroupDialogOpen(false);
     setGroupForm("");
     loadData();
+  }
+
+  async function renameGroup(id: string, name: string) {
+    if (!name.trim()) return;
+    setGroupBusy(id);
+    setRowError(null);
+    try {
+      const { data, error } = await supabase
+        .from("store_groups")
+        .update({ name: name.trim() })
+        .eq("id", id)
+        .select("id");
+      if (error) throw new Error(error.message);
+      if ((data?.length ?? 0) === 0) {
+        throw new Error("That group could not be renamed — reload and retry.");
+      }
+      setEditingGroupId(null);
+      await loadData();
+    } catch (e) {
+      setRowError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setGroupBusy(null);
+    }
+  }
+
+  /**
+   * Deleting a group does not delete its stores.
+   *
+   * `stores.store_group_id` is `on delete set null`, so they survive and become
+   * ungrouped — which is why this is safe to offer inline, and why the count of
+   * what is about to be un-grouped is shown before the second click. Losing a
+   * chain grouping quietly would be hard to notice and tedious to rebuild.
+   */
+  async function deleteGroup(id: string) {
+    setGroupBusy(id);
+    setRowError(null);
+    try {
+      const { error } = await supabase
+        .from("store_groups")
+        .delete()
+        .eq("id", id);
+      if (error) throw new Error(error.message);
+      setConfirmDeleteGroup(null);
+      await loadData();
+    } catch (e) {
+      setRowError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setGroupBusy(null);
+    }
   }
 
   async function toggleActive(store: StoreRow) {
@@ -452,14 +543,17 @@ export default function StoresPage() {
 
   const missingCity = stores.filter((s) => !s.city).length;
 
-  /** Without coordinates a store cannot geofence and its visits cannot be
-      verified, so it is worth prompting about rather than leaving to be
-      noticed. */
-  const missingCoords = useMemo(
+  /** Active stores still waiting on a human verdict. Rep captures are excluded
+      for the same reason the queue excludes them: someone already stood in the
+      shop, which beats anyone's opinion at a desk. */
+  const unchecked = useMemo(
     () =>
-      stores
-        .filter((s) => s.active && (s.lat === null || s.lng === null))
-        .map((s) => ({ id: s.id, name: s.name, city: s.city, address: s.address })),
+      stores.filter(
+        (s) =>
+          s.active &&
+          s.location_confirmed_at === null &&
+          s.geocode_source !== "rep"
+      ).length,
     [stores]
   );
 
@@ -470,9 +564,57 @@ export default function StoresPage() {
     [stores]
   );
 
+  /** One derivation of location trust, shared by the pill, the filter and the
+      dialog, so the three can never disagree about a store. Plain objects, not
+      Map — lucide's `Map` icon shadows the constructor in this file. */
+  const stateById = useMemo(() => {
+    const byId: Record<string, GeocodeState> = {};
+    for (const s of stores) byId[s.id] = geocodeState(s);
+    return byId;
+  }, [stores]);
+
+  const stateCounts = useMemo(() => {
+    const counts: Record<string, number> = {};
+    for (const s of stores) {
+      const k = stateById[s.id];
+      counts[k] = (counts[k] ?? 0) + 1;
+    }
+    return counts;
+  }, [stores, stateById]);
+
+  /** Store ids sitting on a coordinate another store also claims. */
+  const sharedIds = useMemo(() => {
+    const ids: Record<string, true> = {};
+    for (const p of sharedPoints) for (const s of p.stores) ids[s.id] = true;
+    return ids;
+  }, [sharedPoints]);
+
+  /** The other stores on this store's point, and whether they all matched the
+      same listing — which is what separates a collapse from a coincidence. */
+  function sharedWith(store: StoreRow): {
+    others: SharedPointStore[];
+    sameResult: boolean;
+  } {
+    const point = sharedPoints.find((p) =>
+      p.stores.some((s) => s.id === store.id)
+    );
+    if (!point) return { others: [], sameResult: false };
+    return {
+      others: point.stores.filter((s) => s.id !== store.id),
+      sameResult: point.sameResult,
+    };
+  }
+
   const filtered = stores
     .filter((s) =>
       groupFilter === "all" ? true : (s.store_group_id ?? "none") === groupFilter
+    )
+    .filter((s) =>
+      provFilter === "all"
+        ? true
+        : provFilter === "shared"
+          ? sharedIds[s.id] === true
+          : stateById[s.id] === provFilter
     )
     .filter((s) =>
       cityFilter === "all"
@@ -498,34 +640,37 @@ export default function StoresPage() {
             Every store you service, organised by retail group.
           </p>
         </div>
-        <Button
-          variant="outline"
-          size="sm"
-          className="gap-1.5"
-          onClick={() => setGroupDialogOpen(true)}
-        >
-          <Building2 className="h-4 w-4" />
-          New group
-        </Button>
       </div>
 
-      <GeocodeBanner
-        count={missingCoords.length}
-        onClick={() => setGeocodeOpen(true)}
-      />
+      {/* The one banner on this page, and the only thing standing between a
+          fresh import and reps working it.
 
-      <SharedPointBanner
-        points={sharedPoints}
-        onClear={async (ids) => {
-          setRowError(null);
-          try {
-            await clearCoordinates(supabase, ids);
-            await loadData();
-          } catch (e) {
-            setRowError(e instanceof Error ? e.message : String(e));
-          }
-        }}
-      />
+          The missing-location and shared-point banners that used to sit here
+          are gone: the review queue already surfaces both, as its top two
+          reasons, with the store in front of you and a map to fix it on. Three
+          banners saying overlapping things about the same problem taught a
+          manager to scroll past all of them. */}
+      {unchecked > 0 && (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border bg-card px-3 py-2.5">
+          <p className="flex items-start gap-2 text-sm text-foreground">
+            <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+            <span>
+              <span className="font-semibold">{unchecked}</span> store
+              {unchecked === 1 ? "" : "s"} nobody has checked. A coordinate in
+              the wrong place records an honest visit as off-site, so it is
+              worth an eye before reps start work.
+            </span>
+          </p>
+          {/* `nativeButton={false}` because the render target is an anchor, not
+              a <button>. Without it Base UI logs an accessibility error — as
+              forms/page.tsx:187 still does. */}
+          <Button
+            size="sm"
+            nativeButton={false}
+            render={<Link href="/stores/review">Check locations</Link>}
+          />
+        </div>
+      )}
 
       <div className="flex flex-wrap items-center gap-2 sm:gap-3">
         <div className="w-full min-w-0 sm:w-auto sm:flex-1">
@@ -569,6 +714,32 @@ export default function StoresPage() {
             )}
           </NativeSelect>
         </div>
+        <div className="w-full sm:w-48">
+          <NativeSelect
+            value={provFilter}
+            onChange={(e) =>
+              setProvFilter(e.target.value as GeocodeState | "all" | "shared")
+            }
+            aria-label="Filter by where the location came from"
+          >
+            <option value="all">All sources</option>
+            {GEOCODE_STATE_ORDER.filter(
+              // A state nobody is in is noise in the list — but the selected
+              // one always stays, or the control blanks itself after a reload
+              // that empties it.
+              (st) => (stateCounts[st] ?? 0) > 0 || provFilter === st
+            ).map((st) => (
+              <option key={st} value={st}>
+                {GEOCODE_STATE_STYLES[st].label} ({stateCounts[st] ?? 0})
+              </option>
+            ))}
+            {sharedPoints.length > 0 && (
+              <option value="shared">
+                Shares a point ({Object.keys(sharedIds).length})
+              </option>
+            )}
+          </NativeSelect>
+        </div>
         <Button
           variant="outline"
           size="sm"
@@ -589,6 +760,15 @@ export default function StoresPage() {
         </Button>
         <ImportStoresButton onImported={loadData} />
         <Button
+          variant="outline"
+          size="sm"
+          className="gap-1.5"
+          onClick={() => setGroupDialogOpen(true)}
+        >
+          <Building2 className="h-4 w-4" />
+          Groups
+        </Button>
+        <Button
           size="sm"
           className="gap-1.5 bg-primary text-primary-foreground hover:bg-primary/90"
           onClick={openCreate}
@@ -599,28 +779,151 @@ export default function StoresPage() {
       </div>
 
       <Dialog open={groupDialogOpen} onOpenChange={setGroupDialogOpen}>
-        <DialogContent>
+        <DialogContent className="max-h-[85vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>New store group</DialogTitle>
+            <DialogTitle>Store groups</DialogTitle>
           </DialogHeader>
-          <div className="space-y-1.5">
-            <Label htmlFor="group-name">Group name</Label>
-            <Input
-              id="group-name"
-              placeholder="e.g. Choppies Retail Group"
-              value={groupForm}
-              onChange={(e) => setGroupForm(e.target.value)}
-            />
-          </div>
-          <DialogFooter>
+
+          <div className="flex items-end gap-2">
+            <div className="flex-1 space-y-1.5">
+              <Label htmlFor="group-name">Add a group</Label>
+              <Input
+                id="group-name"
+                placeholder="e.g. Choppies Retail Group"
+                value={groupForm}
+                onChange={(e) => setGroupForm(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && handleCreateGroup()}
+              />
+            </div>
             <Button
               onClick={handleCreateGroup}
               disabled={saving || !groupForm.trim()}
               className="bg-primary text-primary-foreground hover:bg-primary/90"
             >
-              {saving ? "Saving…" : "Create group"}
+              {saving ? "Saving…" : "Add"}
             </Button>
-          </DialogFooter>
+          </div>
+
+          {groups.length > 0 && (
+            <ul className="divide-y divide-border rounded-lg border border-border">
+              {groups.map((g) => {
+                const count = stores.filter(
+                  (s) => s.store_group_id === g.id
+                ).length;
+                const busy = groupBusy === g.id;
+
+                if (editingGroupId === g.id) {
+                  return (
+                    <li key={g.id} className="flex items-center gap-2 p-2">
+                      <Input
+                        value={editingGroupName}
+                        autoFocus
+                        onChange={(e) => setEditingGroupName(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter")
+                            renameGroup(g.id, editingGroupName);
+                          if (e.key === "Escape") setEditingGroupId(null);
+                        }}
+                      />
+                      <Button
+                        size="sm"
+                        disabled={busy || !editingGroupName.trim()}
+                        onClick={() => renameGroup(g.id, editingGroupName)}
+                      >
+                        {busy ? "Saving…" : "Save"}
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => setEditingGroupId(null)}
+                      >
+                        Cancel
+                      </Button>
+                    </li>
+                  );
+                }
+
+                if (confirmDeleteGroup === g.id) {
+                  return (
+                    <li
+                      key={g.id}
+                      className="flex flex-wrap items-center justify-between gap-2 p-2"
+                    >
+                      <p className="text-sm text-foreground">
+                        Delete <span className="font-medium">{g.name}</span>?
+                        {count > 0 ? (
+                          <span className="text-muted-foreground">
+                            {" "}
+                            {count} store{count === 1 ? "" : "s"} will become
+                            ungrouped — none are deleted.
+                          </span>
+                        ) : (
+                          <span className="text-muted-foreground">
+                            {" "}
+                            It has no stores.
+                          </span>
+                        )}
+                      </p>
+                      <div className="flex gap-2">
+                        <Button
+                          size="sm"
+                          variant="destructive"
+                          disabled={busy}
+                          onClick={() => deleteGroup(g.id)}
+                        >
+                          {busy ? "Deleting…" : "Delete"}
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => setConfirmDeleteGroup(null)}
+                        >
+                          Cancel
+                        </Button>
+                      </div>
+                    </li>
+                  );
+                }
+
+                return (
+                  <li
+                    key={g.id}
+                    className="flex items-center justify-between gap-2 px-3 py-2"
+                  >
+                    <span className="min-w-0 truncate text-sm text-foreground">
+                      {g.name}
+                      <span className="ml-2 text-xs text-muted-foreground">
+                        {count} store{count === 1 ? "" : "s"}
+                      </span>
+                    </span>
+                    <div className="flex shrink-0 gap-1">
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        className="h-8 w-8"
+                        aria-label={`Rename ${g.name}`}
+                        onClick={() => {
+                          setEditingGroupId(g.id);
+                          setEditingGroupName(g.name);
+                        }}
+                      >
+                        <Pencil className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        className="h-8 w-8 text-destructive"
+                        aria-label={`Delete ${g.name}`}
+                        onClick={() => setConfirmDeleteGroup(g.id)}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
         </DialogContent>
       </Dialog>
 
@@ -813,6 +1116,9 @@ export default function StoresPage() {
             <TableHeader>
               <TableRow className="hover:bg-transparent">
                 <TableHead>Store</TableHead>
+                {/* Beside the name on purpose: the name links to the point on
+                    Google Maps, this says how much that point can be trusted. */}
+                <TableHead className="hidden md:table-cell">Location</TableHead>
                 {/* lg, not sm: the sidebar takes ~225px, so a "640px viewport"
                     is a ~415px table. Breakpoints here have to be read against
                     the container the table actually gets. */}
@@ -870,10 +1176,21 @@ export default function StoresPage() {
                           <span className="md:hidden">
                             {" · "}
                             {formatLastVisit(lastVisits[store.id])}
+                            {" · "}
+                            {GEOCODE_STATE_STYLES[stateById[store.id]].label}
                           </span>
                         </div>
                       </div>
                     </div>
+                  </TableCell>
+                  <TableCell className="hidden md:table-cell">
+                    <GeocodePill
+                      state={stateById[store.id]}
+                      accuracyM={store.geocode_accuracy_m}
+                      shared={sharedIds[store.id] === true}
+                      confirmed={store.location_confirmed_at !== null}
+                      onClick={() => setLocationTarget(store)}
+                    />
                   </TableCell>
                   <TableCell className="hidden text-sm lg:table-cell">
                     {/* The group badge is the control, same as the rep name.
@@ -988,6 +1305,27 @@ export default function StoresPage() {
                           align="start"
                           className="max-h-72 overflow-y-auto"
                         >
+                          {/* Nobody may be sent to a shop whose position has
+                              not been checked. A wrong coordinate makes every
+                              visit there read as off-site, and the rep carries
+                              that on their record for something a manager
+                              never looked at. Unassigning stays available —
+                              taking work away is never the unsafe direction —
+                              and existing assignments are left alone. */}
+                          {store.location_confirmed_at === null && (
+                            <div className="border-b border-border px-2 py-2">
+                              <p className="text-xs text-muted-foreground">
+                                Check this store&apos;s location before
+                                assigning anyone to it.
+                              </p>
+                              <Link
+                                href="/stores/review"
+                                className="mt-1 inline-block text-xs font-medium text-primary hover:underline"
+                              >
+                                Go and check it →
+                              </Link>
+                            </div>
+                          )}
                           {reps.length === 0 && (
                             <DropdownMenuItem disabled>No reps yet</DropdownMenuItem>
                           )}
@@ -995,14 +1333,19 @@ export default function StoresPage() {
                             const mine = assignedByStore[store.id]?.find(
                               (a) => a.repId === r.id
                             );
+                            const blocked =
+                              !mine && store.location_confirmed_at === null;
                             return (
                               <DropdownMenuItem
                                 key={r.id}
                                 className="gap-2"
+                                disabled={blocked}
                                 onClick={() =>
-                                  mine
-                                    ? unassignRep(store, mine.id)
-                                    : assignRep(store, r.id)
+                                  blocked
+                                    ? undefined
+                                    : mine
+                                      ? unassignRep(store, mine.id)
+                                      : assignRep(store, r.id)
                                 }
                               >
                                 <Check
@@ -1030,6 +1373,16 @@ export default function StoresPage() {
                         }
                       />
                       <DropdownMenuContent align="end">
+                        {/* The pill is the usual way in, but the Location
+                            column is hidden below md — this keeps the detail
+                            reachable on a phone. */}
+                        <DropdownMenuItem
+                          onClick={() => setLocationTarget(store)}
+                          className="gap-2"
+                        >
+                          <MapPin className="h-4 w-4" />
+                          Location details
+                        </DropdownMenuItem>
                         <DropdownMenuItem
                           onClick={() => openEdit(store)}
                           className="gap-2"
@@ -1071,7 +1424,7 @@ export default function StoresPage() {
               {filtered.length === 0 && (
                 <TableRow>
                   <TableCell
-                    colSpan={6}
+                    colSpan={7}
                     className="py-10 text-center text-sm text-muted-foreground"
                   >
                     No stores found.
@@ -1087,11 +1440,14 @@ export default function StoresPage() {
         {filtered.length} of {stores.length} stores across {groups.length} groups.
       </p>
 
-      <GeocodeDialog
-        open={geocodeOpen}
-        onOpenChange={setGeocodeOpen}
-        stores={missingCoords}
-        onDone={loadData}
+      <StoreLocationDialog
+        store={locationTarget}
+        capture={locationTarget ? (captures[locationTarget.id] ?? null) : null}
+        sharedWith={locationTarget ? sharedWith(locationTarget).others : []}
+        sameResult={
+          locationTarget ? sharedWith(locationTarget).sameResult : false
+        }
+        onClose={() => setLocationTarget(null)}
       />
     </div>
   );
