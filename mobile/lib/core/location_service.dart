@@ -9,6 +9,18 @@ class LocationDeniedException implements Exception {
   String toString() => message;
 }
 
+/// The worst fix accepted when a rep sets a store's location.
+///
+/// Half the default geofence, so a store located at the limit still leaves a
+/// check-in comfortably inside its own fence. Check-in and check-out
+/// deliberately accept any fix — a rep must never be stranded at a store — but
+/// this writes a coordinate that everything afterwards is measured against, so
+/// it is the one place worth refusing.
+///
+/// `set_store_location_from_visit` enforces the same number server-side; change
+/// both together.
+const kMaxLocationAccuracyM = 50.0;
+
 class LocationService {
   /// How long to wait for a fresh fix before falling back. Deep inside a large
   /// store a rep may never get one, and they still need to check out.

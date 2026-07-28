@@ -1,10 +1,43 @@
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../local/app_database.dart';
 import '../models/route_visit.dart';
 import '../models/store_summary.dart';
+
+/// A refusal from `set_store_location_from_visit`, carrying a message written
+/// for the rep to read rather than a Postgres error to decode.
+class StoreLocationException implements Exception {
+  final String message;
+  const StoreLocationException(this.message);
+  @override
+  String toString() => message;
+}
+
+/// Orders a rep's day the way the planner laid it out.
+///
+/// This used to compare `scheduled_start_at`. The call cycle generates routes
+/// without clock times, so that field is null on every route now: the sort was
+/// comparing nothing against nothing and the stops came back in whatever order
+/// the database happened to return, reshuffling between refreshes.
+/// `sequence_order` is the field the planner actually writes.
+///
+/// Unscheduled visits have no sequence — the rep added them mid-day — so they
+/// sit at the end. Store name breaks ties, which is arbitrary but stable, and
+/// stable is the whole point: a list that reorders itself between refreshes
+/// makes a rep lose their place in it.
+int compareStops(RouteVisit a, RouteVisit b) {
+  final aSeq = a.sequenceOrder;
+  final bSeq = b.sequenceOrder;
+  if (aSeq != bSeq) {
+    if (aSeq == null) return 1;
+    if (bSeq == null) return -1;
+    return aSeq.compareTo(bSeq);
+  }
+  return a.storeName.toLowerCase().compareTo(b.storeName.toLowerCase());
+}
 
 /// Month-to-date progress against the rep's schedule.
 class MonthlyCompletion {
@@ -43,7 +76,8 @@ class RouteRepository {
       final rows = await _client
           .from('routes')
           .select(
-            'id, store_id, scheduled_start_at, scheduled_end_at, '
+            'id, store_id, sequence_order, scheduled_start_at, '
+            'scheduled_end_at, '
             'stores(name, address, city, state, lat, lng, geofence_radius_m), '
             'visits(id, client_generated_id, status, checkin_at, checkout_at)',
           )
@@ -52,7 +86,7 @@ class RouteRepository {
           // postgrest-dart's .order() defaults to DESCENDING — without the
           // flag the day renders latest-stop-first whenever it comes from the
           // server (the offline cache path sorts ascending, masking it).
-          .order('scheduled_start_at', ascending: true);
+          .order('sequence_order', ascending: true);
 
       final visits = (rows as List)
           .map((r) => RouteVisit.fromMap(r as Map<String, dynamic>))
@@ -67,7 +101,7 @@ class RouteRepository {
 
       // Unscheduled visits live only on this device until they sync, so they
       // are merged in rather than coming back from the routes query.
-      return _withAdHoc(visits, dateStr);
+      return _withAdHoc(_sorted(visits), dateStr);
     } catch (_) {
       return _cachedRoutes(dateStr);
     }
@@ -99,17 +133,8 @@ class RouteRepository {
         .toList());
   }
 
-  /// Scheduled visits sort by their slot; unscheduled ones have no slot, so
-  /// they sit at the end of the day's list.
   List<RouteVisit> _sorted(List<RouteVisit> visits) {
-    visits.sort((a, b) {
-      final aStart = a.scheduledStartAt;
-      final bStart = b.scheduledStartAt;
-      if (aStart == null && bStart == null) return 0;
-      if (aStart == null) return 1;
-      if (bStart == null) return -1;
-      return aStart.compareTo(bStart);
-    });
+    visits.sort(compareStops);
     return visits;
   }
 
@@ -198,6 +223,38 @@ class RouteRepository {
       return MonthlyCompletion(
         completed: map['completed'] as int,
         total: map['total'] as int,
+      );
+    }
+  }
+
+  /// Records where the rep is standing as the store's location.
+  ///
+  /// Not queued through the outbox, unlike every other write here, and that is
+  /// deliberate. The server refuses this for several good reasons — the store
+  /// may have gained a location in the meantime, the fix may be too loose, the
+  /// visit may not have synced — and a refusal a rep never sees is worse than
+  /// no feature: they would walk away believing the shop was on the map. So it
+  /// happens now, in front of them, or not at all.
+  Future<void> setStoreLocationFromVisit({
+    required String visitClientGeneratedId,
+    required double lat,
+    required double lng,
+    required double accuracyM,
+  }) async {
+    try {
+      await _client.rpc('set_store_location_from_visit', params: {
+        'p_visit_client_id': visitClientGeneratedId,
+        'p_lat': lat,
+        'p_lng': lng,
+        'p_accuracy_m': accuracyM,
+      });
+    } on PostgrestException catch (e) {
+      // Every raise in that function is phrased for the rep.
+      throw StoreLocationException(e.message);
+    } on SocketException {
+      throw const StoreLocationException(
+        "You need a connection to set a store's location. Try again when you "
+        'have signal — the shop keeps its place on your list either way.',
       );
     }
   }

@@ -2,10 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 
+import '../../core/location_service.dart';
 import '../../core/providers.dart';
 import '../../core/theme.dart';
 import '../../data/models/form_template.dart';
 import '../../data/models/route_visit.dart';
+import '../../data/repositories/route_repository.dart';
 import '../../shared/widgets/status_badge.dart';
 import '../forms/form_fill_screen.dart';
 import '../workday/workday_controller.dart';
@@ -27,6 +29,7 @@ class StoreDetailScreen extends ConsumerStatefulWidget {
 
 class _StoreDetailScreenState extends ConsumerState<StoreDetailScreen> {
   bool _busy = false;
+  bool _locating = false;
 
   RouteVisit? _find(List<RouteVisit> routes) {
     for (final r in routes) {
@@ -179,6 +182,124 @@ class _StoreDetailScreenState extends ConsumerState<StoreDetailScreen> {
         ..showSnackBar(SnackBar(content: Text('$e')));
     } finally {
       if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  /// Last stop before a coordinate becomes permanent. A rep gets one chance at
+  /// this per store — the server will not let it be overwritten afterwards —
+  /// so the dialog says what it is about to do and what it will cost if the
+  /// rep is not actually in the shop.
+  Future<bool> _confirmStoreLocation(RouteVisit rv, double accuracyM) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Use this spot?'),
+        content: Text(
+          'This will put ${rv.storeName} on the map where you are standing '
+          'now, accurate to about ${accuracyM.round()}m.\n\n'
+          'Every future visit to this shop is measured from that point, and it '
+          "can't be changed from the app afterwards. Only do this if you are "
+          'at the shop itself.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Not now'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text("I'm at the shop"),
+          ),
+        ],
+      ),
+    );
+    return confirmed ?? false;
+  }
+
+  Future<void> _setStoreLocation(RouteVisit rv) async {
+    if (_locating) return;
+    final clientId = rv.visitClientGeneratedId;
+    if (clientId == null) return;
+
+    setState(() => _locating = true);
+    try {
+      final position = await LocationService.getCurrentPosition();
+
+      // Checked before asking rather than after: there is no point walking the
+      // rep through a confirmation the server is going to refuse. The same
+      // limit is enforced in `set_store_location_from_visit`.
+      if (position.accuracy <= 0 ||
+          position.accuracy > kMaxLocationAccuracyM) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context)
+          ..hideCurrentSnackBar()
+          ..showSnackBar(SnackBar(
+            content: Text(
+              'Your phone is only sure of your position to about '
+              '${position.accuracy.round()}m. Step outside the building, wait '
+              'a moment, and try again.',
+            ),
+            backgroundColor: AppColors.warning,
+          ));
+        return;
+      }
+
+      if (!mounted) return;
+      if (!await _confirmStoreLocation(rv, position.accuracy)) return;
+
+      // The check-in may still be sitting in the outbox — the server can only
+      // judge this against a visit it has. Flushing first turns "not synced
+      // yet" from the usual case into a rare one.
+      await ref.read(syncEngineProvider).sync();
+
+      await ref.read(routeRepositoryProvider).setStoreLocationFromVisit(
+            visitClientGeneratedId: clientId,
+            lat: position.latitude,
+            lng: position.longitude,
+            accuracyM: position.accuracy,
+          );
+
+      // Keep the cached copy in step so the prompt disappears immediately,
+      // including offline afterwards.
+      await ref.read(routeRepositoryProvider).applyLocalVisitChange(
+            rv.copyWith(
+              storeLat: position.latitude,
+              storeLng: position.longitude,
+            ),
+          );
+      ref.invalidate(todayRoutesProvider);
+      ref.invalidate(storesProvider);
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(SnackBar(
+          content: Text('${rv.storeName} is on the map now. Thank you.'),
+          backgroundColor: AppColors.success,
+        ));
+    } on LocationDeniedException catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(SnackBar(
+          content: Text(e.message),
+          backgroundColor: AppColors.warning,
+        ));
+    } on StoreLocationException catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(SnackBar(
+          content: Text(e.message),
+          backgroundColor: AppColors.warning,
+        ));
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(SnackBar(content: Text('$e')));
+    } finally {
+      if (mounted) setState(() => _locating = false);
     }
   }
 
@@ -346,6 +467,19 @@ class _StoreDetailScreenState extends ConsumerState<StoreDetailScreen> {
                 ),
                 const SizedBox(height: 12),
               ],
+              // Nobody has ever put this shop on the map, and the rep is
+              // standing in it. Offered only while checked in: the server
+              // anchors the point to the check-in fix, and a rep who has left
+              // is no longer the right instrument.
+              if (rv.isCheckedIn &&
+                  rv.visitClientGeneratedId != null &&
+                  (rv.storeLat == null || rv.storeLng == null)) ...[
+                _SetLocationCard(
+                  busy: _locating,
+                  onPressed: _locating ? null : () => _setStoreLocation(rv),
+                ),
+                const SizedBox(height: 16),
+              ],
               // Forms become available once the rep is on site.
               if (rv.visitClientGeneratedId != null && (rv.isCheckedIn || rv.isCheckedOut)) ...[
                 _FormsSection(
@@ -493,6 +627,84 @@ class _FormsSection extends ConsumerWidget {
           },
         ),
       ],
+    );
+  }
+}
+
+/// Asks the rep to put a store on the map.
+///
+/// Framed as something the rep is doing for themselves rather than a chore:
+/// until this shop has a point, the app cannot show it was visited from the
+/// right place, and the rep is the only person who can fix that.
+class _SetLocationCard extends StatelessWidget {
+  const _SetLocationCard({required this.busy, required this.onPressed});
+
+  final bool busy;
+  final VoidCallback? onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: AppColors.gold.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Row(
+            children: [
+              Icon(Icons.wrong_location_outlined,
+                  size: 18, color: AppColors.navy),
+              SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'This shop is not on the map',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w600,
+                    fontSize: 14,
+                    color: AppColors.textPrimary,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          const Text(
+            'We have no location for it, so your visits here cannot be shown '
+            'against the right place. You are standing in it — mark it once '
+            'and it is fixed for everyone.',
+            style: TextStyle(fontSize: 12.5, color: AppColors.textPrimary),
+          ),
+          const SizedBox(height: 12),
+          SizedBox(
+            width: double.infinity,
+            height: 46,
+            child: ElevatedButton.icon(
+              onPressed: onPressed,
+              icon: busy
+                  ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        valueColor:
+                            AlwaysStoppedAnimation<Color>(Colors.white),
+                      ),
+                    )
+                  : const Icon(Icons.add_location_alt_outlined, size: 20),
+              label: Text(
+                busy ? 'Getting your location…' : "Set it to where I'm standing",
+                style: const TextStyle(fontSize: 14.5),
+              ),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.navy,
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

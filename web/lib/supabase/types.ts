@@ -14,6 +14,123 @@ export type Database = {
   }
   public: {
     Tables: {
+      file_groups: {
+        Row: {
+          file_id: string
+          store_group_id: string
+        }
+        Insert: {
+          file_id: string
+          store_group_id: string
+        }
+        Update: {
+          file_id?: string
+          store_group_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "file_groups_file_id_fkey"
+            columns: ["file_id"]
+            isOneToOne: false
+            referencedRelation: "files"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "file_groups_store_group_id_fkey"
+            columns: ["store_group_id"]
+            isOneToOne: false
+            referencedRelation: "store_groups"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      file_reps: {
+        Row: {
+          file_id: string
+          rep_id: string
+        }
+        Insert: {
+          file_id: string
+          rep_id: string
+        }
+        Update: {
+          file_id?: string
+          rep_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "file_reps_file_id_fkey"
+            columns: ["file_id"]
+            isOneToOne: false
+            referencedRelation: "files"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "file_reps_rep_id_fkey"
+            columns: ["rep_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      files: {
+        Row: {
+          audience: string
+          created_at: string
+          description: string | null
+          id: string
+          mime_type: string | null
+          name: string
+          org_id: string
+          size_bytes: number | null
+          storage_path: string
+          updated_at: string
+          uploaded_by: string | null
+        }
+        Insert: {
+          audience?: string
+          created_at?: string
+          description?: string | null
+          id?: string
+          mime_type?: string | null
+          name: string
+          org_id: string
+          size_bytes?: number | null
+          storage_path: string
+          updated_at?: string
+          uploaded_by?: string | null
+        }
+        Update: {
+          audience?: string
+          created_at?: string
+          description?: string | null
+          id?: string
+          mime_type?: string | null
+          name?: string
+          org_id?: string
+          size_bytes?: number | null
+          storage_path?: string
+          updated_at?: string
+          uploaded_by?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "files_org_id_fkey"
+            columns: ["org_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "files_uploaded_by_fkey"
+            columns: ["uploaded_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       form_fields: {
         Row: {
           field_type: string
@@ -590,6 +707,11 @@ export type Database = {
           address: string | null
           city: string | null
           created_at: string
+          geocode_accuracy_m: number | null
+          geocode_result: string | null
+          geocode_source: string | null
+          geocode_visit_id: string | null
+          geocoded_at: string | null
           geofence_radius_m: number
           id: string
           lat: number | null
@@ -608,6 +730,11 @@ export type Database = {
           address?: string | null
           city?: string | null
           created_at?: string
+          geocode_accuracy_m?: number | null
+          geocode_result?: string | null
+          geocode_source?: string | null
+          geocode_visit_id?: string | null
+          geocoded_at?: string | null
           geofence_radius_m?: number
           id?: string
           lat?: number | null
@@ -626,6 +753,11 @@ export type Database = {
           address?: string | null
           city?: string | null
           created_at?: string
+          geocode_accuracy_m?: number | null
+          geocode_result?: string | null
+          geocode_source?: string | null
+          geocode_visit_id?: string | null
+          geocoded_at?: string | null
           geofence_radius_m?: number
           id?: string
           lat?: number | null
@@ -640,6 +772,13 @@ export type Database = {
           zip?: string | null
         }
         Relationships: [
+          {
+            foreignKeyName: "stores_geocode_visit_id_fkey"
+            columns: ["geocode_visit_id"]
+            isOneToOne: false
+            referencedRelation: "visits"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "stores_org_id_fkey"
             columns: ["org_id"]
@@ -885,6 +1024,10 @@ export type Database = {
           stores_without_city: number
         }[]
       }
+      can_see_file: {
+        Args: { p_audience: string; p_file_id: string }
+        Returns: boolean
+      }
       compliance_trends: {
         Args: {
           p_bucket?: string
@@ -922,6 +1065,7 @@ export type Database = {
         Args: { p_from: string; p_to: string }
         Returns: Json
       }
+      file_in_my_org: { Args: { p_file_id: string }; Returns: boolean }
       form_report: {
         Args: {
           p_from: string
@@ -1035,6 +1179,15 @@ export type Database = {
           rep_id: string
           rep_name: string
         }[]
+      }
+      set_store_location_from_visit: {
+        Args: {
+          p_accuracy_m: number
+          p_lat: number
+          p_lng: number
+          p_visit_client_id: string
+        }
+        Returns: Json
       }
       store_delete_impact: {
         Args: { p_store_id: string }

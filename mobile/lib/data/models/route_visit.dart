@@ -18,6 +18,9 @@ class RouteVisit {
   final double? storeLat;
   final double? storeLng;
   final int geofenceRadiusM;
+  /// The stop's position in the day, set by the planner. This — not the clock —
+  /// is what decides the order of the list; see [RouteRepository].
+  final int? sequenceOrder;
   final DateTime? scheduledStartAt;
   final DateTime? scheduledEndAt;
 
@@ -39,6 +42,7 @@ class RouteVisit {
     this.storeLat,
     this.storeLng,
     required this.geofenceRadiusM,
+    this.sequenceOrder,
     this.scheduledStartAt,
     this.scheduledEndAt,
     this.visitId,
@@ -92,6 +96,7 @@ class RouteVisit {
   Map<String, dynamic> toMap() => {
         'id': routeId,
         'store_id': storeId,
+        'sequence_order': sequenceOrder,
         'scheduled_start_at': scheduledStartAt?.toUtc().toIso8601String(),
         'scheduled_end_at': scheduledEndAt?.toUtc().toIso8601String(),
         'stores': {
@@ -119,6 +124,8 @@ class RouteVisit {
     String? visitClientGeneratedId,
     DateTime? checkinAt,
     DateTime? checkoutAt,
+    double? storeLat,
+    double? storeLng,
   }) {
     return RouteVisit(
       routeId: routeId,
@@ -127,9 +134,12 @@ class RouteVisit {
       storeAddress: storeAddress,
       storeCity: storeCity,
       storeState: storeState,
-      storeLat: storeLat,
-      storeLng: storeLng,
+      // Only ever set, never cleared — a store gains a location when the rep
+      // captures one, and nothing on the phone may take it away again.
+      storeLat: storeLat ?? this.storeLat,
+      storeLng: storeLng ?? this.storeLng,
       geofenceRadiusM: geofenceRadiusM,
+      sequenceOrder: sequenceOrder,
       scheduledStartAt: scheduledStartAt,
       scheduledEndAt: scheduledEndAt,
       visitId: visitId,
@@ -158,6 +168,7 @@ class RouteVisit {
       storeLat: (store?['lat'] as num?)?.toDouble(),
       storeLng: (store?['lng'] as num?)?.toDouble(),
       geofenceRadiusM: (store?['geofence_radius_m'] as num?)?.toInt() ?? 100,
+      sequenceOrder: (map['sequence_order'] as num?)?.toInt(),
       scheduledStartAt: map['scheduled_start_at'] != null
           ? DateTime.parse(map['scheduled_start_at'] as String).toLocal()
           : null,
