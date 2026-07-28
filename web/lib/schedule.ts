@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { callRpc } from "@/lib/rpc";
+import { toLocalDateInput } from "@/lib/date-range";
 
 /**
  * Call cycle (journey plan) — the recurring pattern the schedule is generated
@@ -276,6 +277,196 @@ export function countPlannedVisits(
     }
   }
   return n;
+}
+
+/* ------------------------------------------------------------------ *
+ * One day's work
+ * ------------------------------------------------------------------ */
+
+/**
+ * A single stop on a rep's day.
+ *
+ * There is deliberately no planned time here. Reps are given a list and choose
+ * their own order, so the only times that exist are the ones a check-in
+ * actually produced — anything else would be inventing a schedule the product
+ * does not have.
+ */
+export type DayStop = {
+  /** Route id, or the visit id for an ad-hoc stop that had no route. */
+  id: string;
+  storeId: string;
+  storeName: string;
+  city: string | null;
+  sequence: number | null;
+  /** Raw state. "Missed" is derived at render time from the date, not stored. */
+  status: "done" | "in_progress" | "not_started";
+  checkinAt: string | null;
+  checkoutAt: string | null;
+  durationSeconds: number | null;
+  /** A visit with no route — the rep called on a store that was not planned. */
+  adHoc: boolean;
+};
+
+export type DayRep = {
+  repId: string;
+  repName: string;
+  stops: DayStop[];
+};
+
+function endOfDay(d: Date): Date {
+  return addDays(new Date(d.getFullYear(), d.getMonth(), d.getDate()), 1);
+}
+
+/**
+ * Everything happening on one date, grouped by rep.
+ *
+ * Ad-hoc visits are unioned in so the board shows what actually happened, not
+ * just what was planned — a rep who called on three unplanned stores has had a
+ * working day, and a view that showed an empty column would be lying.
+ */
+export async function fetchDayBoard(
+  supabase: SupabaseClient,
+  date: Date
+): Promise<DayRep[]> {
+  const dateStr = toLocalDateInput(date);
+  const dayStart = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+
+  const [{ data: repRows, error: repError }, routeRes, adHocRes] = await Promise.all([
+    supabase
+      .from("profiles")
+      .select("id, full_name")
+      .eq("role", "rep")
+      .eq("is_active", true)
+      .order("full_name"),
+    // Single string literal — a concatenated .select() degrades to
+    // GenericStringError in postgrest-js.
+    supabase
+      .from("routes")
+      .select(
+        "id, rep_id, store_id, sequence_order, stores(name, city), visits(id, status, checkin_at, checkout_at, duration_seconds)"
+      )
+      .eq("scheduled_date", dateStr),
+    supabase
+      .from("visits")
+      .select("id, rep_id, store_id, status, checkin_at, checkout_at, duration_seconds, stores(name, city)")
+      .is("route_id", null)
+      .gte("checkin_at", dayStart.toISOString())
+      .lt("checkin_at", endOfDay(date).toISOString()),
+  ]);
+
+  if (repError) throw new Error(repError.message);
+  if (routeRes.error) throw new Error(routeRes.error.message);
+  if (adHocRes.error) throw new Error(adHocRes.error.message);
+
+  type Embedded = { name: string; city: string | null } | { name: string; city: string | null }[] | null;
+  // postgrest returns an embedded relation as an object or array depending on
+  // the cardinality it infers; normalise rather than guess.
+  const one = (e: Embedded) => (Array.isArray(e) ? e[0] ?? null : e);
+
+  const byRep: Record<string, DayStop[]> = {};
+
+  for (const r of (routeRes.data ?? []) as unknown as {
+    id: string;
+    rep_id: string;
+    store_id: string;
+    sequence_order: number | null;
+    stores: Embedded;
+    visits: { status: string; checkin_at: string | null; checkout_at: string | null; duration_seconds: number | null }[] | null;
+  }[]) {
+    const store = one(r.stores);
+    const visit = r.visits?.[0];
+    (byRep[r.rep_id] ??= []).push({
+      id: r.id,
+      storeId: r.store_id,
+      storeName: store?.name ?? "Unknown store",
+      city: store?.city ?? null,
+      sequence: r.sequence_order,
+      status: visit?.checkout_at
+        ? "done"
+        : visit?.checkin_at
+          ? "in_progress"
+          : "not_started",
+      checkinAt: visit?.checkin_at ?? null,
+      checkoutAt: visit?.checkout_at ?? null,
+      durationSeconds: visit?.duration_seconds ?? null,
+      adHoc: false,
+    });
+  }
+
+  for (const v of (adHocRes.data ?? []) as unknown as {
+    id: string;
+    rep_id: string;
+    store_id: string;
+    status: string;
+    checkin_at: string | null;
+    checkout_at: string | null;
+    duration_seconds: number | null;
+    stores: Embedded;
+  }[]) {
+    const store = one(v.stores);
+    (byRep[v.rep_id] ??= []).push({
+      id: v.id,
+      storeId: v.store_id,
+      storeName: store?.name ?? "Unknown store",
+      city: store?.city ?? null,
+      sequence: null,
+      status: v.checkout_at ? "done" : "in_progress",
+      checkinAt: v.checkin_at,
+      checkoutAt: v.checkout_at,
+      durationSeconds: v.duration_seconds,
+      adHoc: true,
+    });
+  }
+
+  return ((repRows ?? []) as { id: string; full_name: string | null }[])
+    .map((r) => ({
+      repId: r.id,
+      repName: r.full_name ?? "Unnamed rep",
+      stops: (byRep[r.id] ?? []).sort((a, b) => {
+        // Planned stops first, in sequence; ad-hoc appended in check-in order.
+        if (a.adHoc !== b.adHoc) return a.adHoc ? 1 : -1;
+        if (a.sequence !== null && b.sequence !== null && a.sequence !== b.sequence) {
+          return a.sequence - b.sequence;
+        }
+        return a.storeName.localeCompare(b.storeName);
+      }),
+    }));
+}
+
+/**
+ * Adds one stop to a rep's day.
+ *
+ * Writes a `routes` row and nothing else. The dialog this replaces also
+ * inserted a companion `visits` row, which is exactly what produced the
+ * fan-out bug fixed in migration 20260727194019 — a visit belongs to a
+ * check-in, not to a plan.
+ */
+export async function addStop(
+  supabase: SupabaseClient,
+  orgId: string,
+  repId: string,
+  storeId: string,
+  date: Date,
+  sequence: number
+): Promise<void> {
+  const { error } = await supabase.from("routes").insert({
+    org_id: orgId,
+    rep_id: repId,
+    store_id: storeId,
+    scheduled_date: toLocalDateInput(date),
+    sequence_order: sequence,
+  });
+  // unique (rep_id, store_id, scheduled_date) — adding the same stop twice is
+  // a no-op, not an error worth showing.
+  if (error && error.code !== "23505") throw new Error(error.message);
+}
+
+export async function removeStop(
+  supabase: SupabaseClient,
+  routeId: string
+): Promise<void> {
+  const { error } = await supabase.from("routes").delete().eq("id", routeId);
+  if (error) throw new Error(error.message);
 }
 
 /* ------------------------------------------------------------------ *
