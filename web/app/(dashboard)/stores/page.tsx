@@ -261,7 +261,9 @@ export default function StoresPage() {
     );
   }
 
-  function assignGroup(store: StoreRow, groupId: string) {
+  /** Moves a store between groups, or out of one entirely with `null`. */
+  function setStoreGroup(store: StoreRow, groupId: string | null) {
+    if (store.store_group_id === groupId) return;
     const before = stores;
     runOnRow(
       store.id,
@@ -831,43 +833,67 @@ export default function StoresPage() {
                     </div>
                   </TableCell>
                   <TableCell className="hidden text-sm lg:table-cell">
-                    {store.store_group_id ? (
-                      <span className="inline-flex items-center gap-1.5 rounded-full bg-secondary px-2.5 py-1 text-xs font-medium text-secondary-foreground">
-                        <Building2 className="h-3 w-3" />
-                        {groupName(store.store_group_id)}
-                      </span>
-                    ) : (
-                      // Same affordance as "Assign rep": say what is missing
-                      // and fix it in place, rather than reporting a state.
-                      <DropdownMenu>
-                        <DropdownMenuTrigger
-                          render={
-                            <button
-                              type="button"
-                              disabled={busyStore === store.id}
-                              className="inline-flex items-center rounded-full border border-amber-500/50 bg-amber-500/10 px-2 py-0.5 text-xs font-medium text-amber-700 hover:bg-amber-500/20 disabled:opacity-50 dark:text-amber-400"
-                            >
-                              Assign group
-                            </button>
-                          }
-                        />
-                        <DropdownMenuContent align="start" className="max-h-72 overflow-y-auto">
-                          {groups.length === 0 && (
-                            <DropdownMenuItem disabled>
-                              No groups yet
-                            </DropdownMenuItem>
-                          )}
-                          {groups.map((g) => (
-                            <DropdownMenuItem
-                              key={g.id}
-                              onClick={() => assignGroup(store, g.id)}
-                            >
-                              {g.name}
-                            </DropdownMenuItem>
-                          ))}
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    )}
+                    {/* The group badge is the control, same as the rep name.
+                        Unlike reps this REPLACES rather than toggles — a store
+                        has a single store_group_id — so the current group is
+                        ticked and "Ungrouped" is an explicit way back out. */}
+                    <DropdownMenu>
+                      <DropdownMenuTrigger
+                        render={
+                          <button
+                            type="button"
+                            disabled={busyStore === store.id}
+                            className={
+                              store.store_group_id
+                                ? "inline-flex items-center gap-1.5 rounded-full bg-secondary px-2.5 py-1 text-xs font-medium text-secondary-foreground hover:bg-secondary/70 disabled:opacity-50"
+                                : "inline-flex items-center rounded-full border border-amber-500/50 bg-amber-500/10 px-2 py-0.5 text-xs font-medium text-amber-700 hover:bg-amber-500/20 disabled:opacity-50 dark:text-amber-400"
+                            }
+                          >
+                            {store.store_group_id ? (
+                              <>
+                                <Building2 className="h-3 w-3" />
+                                {groupName(store.store_group_id)}
+                              </>
+                            ) : (
+                              "Assign group"
+                            )}
+                          </button>
+                        }
+                      />
+                      <DropdownMenuContent
+                        align="start"
+                        className="max-h-72 overflow-y-auto"
+                      >
+                        {groups.length === 0 && (
+                          <DropdownMenuItem disabled>No groups yet</DropdownMenuItem>
+                        )}
+                        {groups.map((g) => (
+                          <DropdownMenuItem
+                            key={g.id}
+                            className="gap-2"
+                            onClick={() => setStoreGroup(store, g.id)}
+                          >
+                            <Check
+                              className={`h-3.5 w-3.5 ${
+                                store.store_group_id === g.id
+                                  ? "opacity-100"
+                                  : "opacity-0"
+                              }`}
+                            />
+                            {g.name}
+                          </DropdownMenuItem>
+                        ))}
+                        {store.store_group_id && (
+                          <DropdownMenuItem
+                            className="gap-2 text-muted-foreground"
+                            onClick={() => setStoreGroup(store, null)}
+                          >
+                            <Check className="h-3.5 w-3.5 opacity-0" />
+                            Ungrouped
+                          </DropdownMenuItem>
+                        )}
+                      </DropdownMenuContent>
+                    </DropdownMenu>
                   </TableCell>
                   <TableCell className="hidden whitespace-nowrap text-sm md:table-cell">
                     {lastVisits[store.id] ? (
