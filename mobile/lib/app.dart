@@ -10,6 +10,7 @@ import 'core/theme.dart';
 import 'data/local/app_database.dart';
 import 'features/auth/login_screen.dart';
 import 'features/auth/manager_notice_screen.dart';
+import 'features/files/files_screen.dart';
 import 'features/route_today/route_today_screen.dart';
 import 'features/visit/store_detail_screen.dart';
 import 'features/visit/store_picker_screen.dart';
@@ -88,6 +89,10 @@ final routerProvider = Provider<GoRouter>((ref) {
           GoRoute(
             path: 'day-plan',
             builder: (context, state) => const DayPlanScreen(),
+          ),
+          GoRoute(
+            path: 'files',
+            builder: (context, state) => const FilesScreen(),
           ),
           GoRoute(
             path: 'workday-summary',

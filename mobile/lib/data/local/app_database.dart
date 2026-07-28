@@ -44,6 +44,28 @@ class CachedRoutes extends Table {
   Set<Column> get primaryKey => {cacheKey};
 }
 
+/// Shared documents the manager has made visible to this rep.
+///
+/// Metadata is cached so the list renders with no connection, but the file
+/// itself is only fetched when the rep taps it: they are on mobile data, and a
+/// planogram that silently costs them a chunk of their bundle is a planogram
+/// they will resent. [localPath] is null until that download happens, and is
+/// what makes a cached copy openable in a shop with no signal.
+class CachedFiles extends Table {
+  TextColumn get fileId => text()();
+  TextColumn get name => text()();
+  TextColumn get description => text().nullable()();
+  TextColumn get storagePath => text()();
+  TextColumn get mimeType => text().nullable()();
+  IntColumn get sizeBytes => integer().nullable()();
+  TextColumn get localPath => text().nullable()();
+  DateTimeColumn get updatedAt => dateTime()();
+  DateTimeColumn get cachedAt => dateTime()();
+
+  @override
+  Set<Column> get primaryKey => {fileId};
+}
+
 /// Small durable key/value store for things the app must know before it can
 /// reach the network — currently the signed-in user's role, which routing
 /// depends on and which would otherwise force a request on every navigation.
@@ -55,12 +77,12 @@ class KeyValueEntries extends Table {
   Set<Column> get primaryKey => {key};
 }
 
-@DriftDatabase(tables: [OutboxEntries, CachedRoutes, KeyValueEntries])
+@DriftDatabase(tables: [OutboxEntries, CachedRoutes, KeyValueEntries, CachedFiles])
 class AppDatabase extends _$AppDatabase {
   AppDatabase() : super(_openConnection());
 
   @override
-  int get schemaVersion => 3;
+  int get schemaVersion => 4;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -71,6 +93,9 @@ class AppDatabase extends _$AppDatabase {
           }
           if (from < 3) {
             await m.addColumn(cachedRoutes, cachedRoutes.adHoc);
+          }
+          if (from < 4) {
+            await m.createTable(cachedFiles);
           }
         },
       );
@@ -198,6 +223,45 @@ class AppDatabase extends _$AppDatabase {
   Future<void> updateCachedRoute(String cacheKey, String payload) {
     return (update(cachedRoutes)..where((t) => t.cacheKey.equals(cacheKey)))
         .write(CachedRoutesCompanion(payload: Value(payload)));
+  }
+
+  // --- File cache -----------------------------------------------------
+
+  /// Named `allCachedFiles` because drift already generates a `cachedFiles`
+  /// getter for the table itself.
+  Future<List<CachedFile>> allCachedFiles() {
+    return (select(cachedFiles)..orderBy([(t) => OrderingTerm.desc(t.updatedAt)]))
+        .get();
+  }
+
+  /// Replaces the metadata list with what the server says this rep may see.
+  ///
+  /// Rows that disappear server-side are deleted, so a file the manager
+  /// un-shared stops being listed. Any already-downloaded copy is deleted from
+  /// disk by the caller — [localPath] is preserved for files that survive, so
+  /// a refresh never forces a re-download.
+  Future<void> replaceCachedFiles(List<CachedFilesCompanion> rows) async {
+    await transaction(() async {
+      final existing = {
+        for (final f in await select(cachedFiles).get()) f.fileId: f.localPath,
+      };
+      final keep = rows.map((r) => r.fileId.value).toSet();
+
+      await (delete(cachedFiles)..where((t) => t.fileId.isNotIn(keep.toList())))
+          .go();
+
+      for (final row in rows) {
+        final held = existing[row.fileId.value];
+        await into(cachedFiles).insertOnConflictUpdate(
+          held == null ? row : row.copyWith(localPath: Value(held)),
+        );
+      }
+    });
+  }
+
+  Future<void> setLocalPath(String fileId, String? localPath) {
+    return (update(cachedFiles)..where((t) => t.fileId.equals(fileId)))
+        .write(CachedFilesCompanion(localPath: Value(localPath)));
   }
 }
 

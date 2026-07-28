@@ -10,6 +10,7 @@ import '../data/models/route_visit.dart';
 import '../data/models/store_summary.dart';
 import '../data/models/form_template.dart';
 import '../data/local/app_database.dart';
+import '../data/repositories/file_repository.dart';
 import '../data/repositories/form_repository.dart';
 import '../data/repositories/route_repository.dart';
 import '../data/repositories/visit_repository.dart';
@@ -83,6 +84,16 @@ final syncStatusProvider = StreamProvider<SyncStatus>((ref) {
 /// Number of operations still waiting to reach the server.
 final pendingSyncCountProvider = StreamProvider<int>((ref) {
   return ref.watch(appDatabaseProvider).watchPendingCount();
+});
+
+final fileRepositoryProvider = Provider<FileRepository>((ref) {
+  return FileRepository(supabase, ref.watch(appDatabaseProvider));
+});
+
+/// Shared documents this rep may see. Metadata only — nothing downloads until
+/// the rep taps a file.
+final filesProvider = FutureProvider<List<CachedFile>>((ref) {
+  return ref.watch(fileRepositoryProvider).fetchFiles();
 });
 
 final routeRepositoryProvider = Provider<RouteRepository>((ref) {

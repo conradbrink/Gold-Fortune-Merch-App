@@ -32,6 +32,11 @@ class RouteTodayScreen extends ConsumerWidget {
         title: const Text('Today\'s Route'),
         actions: [
           IconButton(
+            icon: const Icon(Icons.folder_outlined),
+            tooltip: 'Files',
+            onPressed: () => context.go('/files'),
+          ),
+          IconButton(
             icon: const Icon(Icons.logout),
             tooltip: 'Sign out',
             onPressed: () => ref.read(authControllerProvider.notifier).signOut(),

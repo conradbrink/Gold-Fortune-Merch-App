@@ -1047,6 +1047,581 @@ class KeyValueEntriesCompanion extends UpdateCompanion<KeyValueEntry> {
   }
 }
 
+class $CachedFilesTable extends CachedFiles
+    with TableInfo<$CachedFilesTable, CachedFile> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $CachedFilesTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _fileIdMeta = const VerificationMeta('fileId');
+  @override
+  late final GeneratedColumn<String> fileId = GeneratedColumn<String>(
+    'file_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _nameMeta = const VerificationMeta('name');
+  @override
+  late final GeneratedColumn<String> name = GeneratedColumn<String>(
+    'name',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _descriptionMeta = const VerificationMeta(
+    'description',
+  );
+  @override
+  late final GeneratedColumn<String> description = GeneratedColumn<String>(
+    'description',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _storagePathMeta = const VerificationMeta(
+    'storagePath',
+  );
+  @override
+  late final GeneratedColumn<String> storagePath = GeneratedColumn<String>(
+    'storage_path',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _mimeTypeMeta = const VerificationMeta(
+    'mimeType',
+  );
+  @override
+  late final GeneratedColumn<String> mimeType = GeneratedColumn<String>(
+    'mime_type',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _sizeBytesMeta = const VerificationMeta(
+    'sizeBytes',
+  );
+  @override
+  late final GeneratedColumn<int> sizeBytes = GeneratedColumn<int>(
+    'size_bytes',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _localPathMeta = const VerificationMeta(
+    'localPath',
+  );
+  @override
+  late final GeneratedColumn<String> localPath = GeneratedColumn<String>(
+    'local_path',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _updatedAtMeta = const VerificationMeta(
+    'updatedAt',
+  );
+  @override
+  late final GeneratedColumn<DateTime> updatedAt = GeneratedColumn<DateTime>(
+    'updated_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _cachedAtMeta = const VerificationMeta(
+    'cachedAt',
+  );
+  @override
+  late final GeneratedColumn<DateTime> cachedAt = GeneratedColumn<DateTime>(
+    'cached_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: true,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    fileId,
+    name,
+    description,
+    storagePath,
+    mimeType,
+    sizeBytes,
+    localPath,
+    updatedAt,
+    cachedAt,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'cached_files';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<CachedFile> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('file_id')) {
+      context.handle(
+        _fileIdMeta,
+        fileId.isAcceptableOrUnknown(data['file_id']!, _fileIdMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_fileIdMeta);
+    }
+    if (data.containsKey('name')) {
+      context.handle(
+        _nameMeta,
+        name.isAcceptableOrUnknown(data['name']!, _nameMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_nameMeta);
+    }
+    if (data.containsKey('description')) {
+      context.handle(
+        _descriptionMeta,
+        description.isAcceptableOrUnknown(
+          data['description']!,
+          _descriptionMeta,
+        ),
+      );
+    }
+    if (data.containsKey('storage_path')) {
+      context.handle(
+        _storagePathMeta,
+        storagePath.isAcceptableOrUnknown(
+          data['storage_path']!,
+          _storagePathMeta,
+        ),
+      );
+    } else if (isInserting) {
+      context.missing(_storagePathMeta);
+    }
+    if (data.containsKey('mime_type')) {
+      context.handle(
+        _mimeTypeMeta,
+        mimeType.isAcceptableOrUnknown(data['mime_type']!, _mimeTypeMeta),
+      );
+    }
+    if (data.containsKey('size_bytes')) {
+      context.handle(
+        _sizeBytesMeta,
+        sizeBytes.isAcceptableOrUnknown(data['size_bytes']!, _sizeBytesMeta),
+      );
+    }
+    if (data.containsKey('local_path')) {
+      context.handle(
+        _localPathMeta,
+        localPath.isAcceptableOrUnknown(data['local_path']!, _localPathMeta),
+      );
+    }
+    if (data.containsKey('updated_at')) {
+      context.handle(
+        _updatedAtMeta,
+        updatedAt.isAcceptableOrUnknown(data['updated_at']!, _updatedAtMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_updatedAtMeta);
+    }
+    if (data.containsKey('cached_at')) {
+      context.handle(
+        _cachedAtMeta,
+        cachedAt.isAcceptableOrUnknown(data['cached_at']!, _cachedAtMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_cachedAtMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {fileId};
+  @override
+  CachedFile map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return CachedFile(
+      fileId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}file_id'],
+      )!,
+      name: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}name'],
+      )!,
+      description: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}description'],
+      ),
+      storagePath: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}storage_path'],
+      )!,
+      mimeType: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}mime_type'],
+      ),
+      sizeBytes: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}size_bytes'],
+      ),
+      localPath: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}local_path'],
+      ),
+      updatedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}updated_at'],
+      )!,
+      cachedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}cached_at'],
+      )!,
+    );
+  }
+
+  @override
+  $CachedFilesTable createAlias(String alias) {
+    return $CachedFilesTable(attachedDatabase, alias);
+  }
+}
+
+class CachedFile extends DataClass implements Insertable<CachedFile> {
+  final String fileId;
+  final String name;
+  final String? description;
+  final String storagePath;
+  final String? mimeType;
+  final int? sizeBytes;
+  final String? localPath;
+  final DateTime updatedAt;
+  final DateTime cachedAt;
+  const CachedFile({
+    required this.fileId,
+    required this.name,
+    this.description,
+    required this.storagePath,
+    this.mimeType,
+    this.sizeBytes,
+    this.localPath,
+    required this.updatedAt,
+    required this.cachedAt,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['file_id'] = Variable<String>(fileId);
+    map['name'] = Variable<String>(name);
+    if (!nullToAbsent || description != null) {
+      map['description'] = Variable<String>(description);
+    }
+    map['storage_path'] = Variable<String>(storagePath);
+    if (!nullToAbsent || mimeType != null) {
+      map['mime_type'] = Variable<String>(mimeType);
+    }
+    if (!nullToAbsent || sizeBytes != null) {
+      map['size_bytes'] = Variable<int>(sizeBytes);
+    }
+    if (!nullToAbsent || localPath != null) {
+      map['local_path'] = Variable<String>(localPath);
+    }
+    map['updated_at'] = Variable<DateTime>(updatedAt);
+    map['cached_at'] = Variable<DateTime>(cachedAt);
+    return map;
+  }
+
+  CachedFilesCompanion toCompanion(bool nullToAbsent) {
+    return CachedFilesCompanion(
+      fileId: Value(fileId),
+      name: Value(name),
+      description: description == null && nullToAbsent
+          ? const Value.absent()
+          : Value(description),
+      storagePath: Value(storagePath),
+      mimeType: mimeType == null && nullToAbsent
+          ? const Value.absent()
+          : Value(mimeType),
+      sizeBytes: sizeBytes == null && nullToAbsent
+          ? const Value.absent()
+          : Value(sizeBytes),
+      localPath: localPath == null && nullToAbsent
+          ? const Value.absent()
+          : Value(localPath),
+      updatedAt: Value(updatedAt),
+      cachedAt: Value(cachedAt),
+    );
+  }
+
+  factory CachedFile.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return CachedFile(
+      fileId: serializer.fromJson<String>(json['fileId']),
+      name: serializer.fromJson<String>(json['name']),
+      description: serializer.fromJson<String?>(json['description']),
+      storagePath: serializer.fromJson<String>(json['storagePath']),
+      mimeType: serializer.fromJson<String?>(json['mimeType']),
+      sizeBytes: serializer.fromJson<int?>(json['sizeBytes']),
+      localPath: serializer.fromJson<String?>(json['localPath']),
+      updatedAt: serializer.fromJson<DateTime>(json['updatedAt']),
+      cachedAt: serializer.fromJson<DateTime>(json['cachedAt']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'fileId': serializer.toJson<String>(fileId),
+      'name': serializer.toJson<String>(name),
+      'description': serializer.toJson<String?>(description),
+      'storagePath': serializer.toJson<String>(storagePath),
+      'mimeType': serializer.toJson<String?>(mimeType),
+      'sizeBytes': serializer.toJson<int?>(sizeBytes),
+      'localPath': serializer.toJson<String?>(localPath),
+      'updatedAt': serializer.toJson<DateTime>(updatedAt),
+      'cachedAt': serializer.toJson<DateTime>(cachedAt),
+    };
+  }
+
+  CachedFile copyWith({
+    String? fileId,
+    String? name,
+    Value<String?> description = const Value.absent(),
+    String? storagePath,
+    Value<String?> mimeType = const Value.absent(),
+    Value<int?> sizeBytes = const Value.absent(),
+    Value<String?> localPath = const Value.absent(),
+    DateTime? updatedAt,
+    DateTime? cachedAt,
+  }) => CachedFile(
+    fileId: fileId ?? this.fileId,
+    name: name ?? this.name,
+    description: description.present ? description.value : this.description,
+    storagePath: storagePath ?? this.storagePath,
+    mimeType: mimeType.present ? mimeType.value : this.mimeType,
+    sizeBytes: sizeBytes.present ? sizeBytes.value : this.sizeBytes,
+    localPath: localPath.present ? localPath.value : this.localPath,
+    updatedAt: updatedAt ?? this.updatedAt,
+    cachedAt: cachedAt ?? this.cachedAt,
+  );
+  CachedFile copyWithCompanion(CachedFilesCompanion data) {
+    return CachedFile(
+      fileId: data.fileId.present ? data.fileId.value : this.fileId,
+      name: data.name.present ? data.name.value : this.name,
+      description: data.description.present
+          ? data.description.value
+          : this.description,
+      storagePath: data.storagePath.present
+          ? data.storagePath.value
+          : this.storagePath,
+      mimeType: data.mimeType.present ? data.mimeType.value : this.mimeType,
+      sizeBytes: data.sizeBytes.present ? data.sizeBytes.value : this.sizeBytes,
+      localPath: data.localPath.present ? data.localPath.value : this.localPath,
+      updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
+      cachedAt: data.cachedAt.present ? data.cachedAt.value : this.cachedAt,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('CachedFile(')
+          ..write('fileId: $fileId, ')
+          ..write('name: $name, ')
+          ..write('description: $description, ')
+          ..write('storagePath: $storagePath, ')
+          ..write('mimeType: $mimeType, ')
+          ..write('sizeBytes: $sizeBytes, ')
+          ..write('localPath: $localPath, ')
+          ..write('updatedAt: $updatedAt, ')
+          ..write('cachedAt: $cachedAt')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(
+    fileId,
+    name,
+    description,
+    storagePath,
+    mimeType,
+    sizeBytes,
+    localPath,
+    updatedAt,
+    cachedAt,
+  );
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is CachedFile &&
+          other.fileId == this.fileId &&
+          other.name == this.name &&
+          other.description == this.description &&
+          other.storagePath == this.storagePath &&
+          other.mimeType == this.mimeType &&
+          other.sizeBytes == this.sizeBytes &&
+          other.localPath == this.localPath &&
+          other.updatedAt == this.updatedAt &&
+          other.cachedAt == this.cachedAt);
+}
+
+class CachedFilesCompanion extends UpdateCompanion<CachedFile> {
+  final Value<String> fileId;
+  final Value<String> name;
+  final Value<String?> description;
+  final Value<String> storagePath;
+  final Value<String?> mimeType;
+  final Value<int?> sizeBytes;
+  final Value<String?> localPath;
+  final Value<DateTime> updatedAt;
+  final Value<DateTime> cachedAt;
+  final Value<int> rowid;
+  const CachedFilesCompanion({
+    this.fileId = const Value.absent(),
+    this.name = const Value.absent(),
+    this.description = const Value.absent(),
+    this.storagePath = const Value.absent(),
+    this.mimeType = const Value.absent(),
+    this.sizeBytes = const Value.absent(),
+    this.localPath = const Value.absent(),
+    this.updatedAt = const Value.absent(),
+    this.cachedAt = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  CachedFilesCompanion.insert({
+    required String fileId,
+    required String name,
+    this.description = const Value.absent(),
+    required String storagePath,
+    this.mimeType = const Value.absent(),
+    this.sizeBytes = const Value.absent(),
+    this.localPath = const Value.absent(),
+    required DateTime updatedAt,
+    required DateTime cachedAt,
+    this.rowid = const Value.absent(),
+  }) : fileId = Value(fileId),
+       name = Value(name),
+       storagePath = Value(storagePath),
+       updatedAt = Value(updatedAt),
+       cachedAt = Value(cachedAt);
+  static Insertable<CachedFile> custom({
+    Expression<String>? fileId,
+    Expression<String>? name,
+    Expression<String>? description,
+    Expression<String>? storagePath,
+    Expression<String>? mimeType,
+    Expression<int>? sizeBytes,
+    Expression<String>? localPath,
+    Expression<DateTime>? updatedAt,
+    Expression<DateTime>? cachedAt,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (fileId != null) 'file_id': fileId,
+      if (name != null) 'name': name,
+      if (description != null) 'description': description,
+      if (storagePath != null) 'storage_path': storagePath,
+      if (mimeType != null) 'mime_type': mimeType,
+      if (sizeBytes != null) 'size_bytes': sizeBytes,
+      if (localPath != null) 'local_path': localPath,
+      if (updatedAt != null) 'updated_at': updatedAt,
+      if (cachedAt != null) 'cached_at': cachedAt,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  CachedFilesCompanion copyWith({
+    Value<String>? fileId,
+    Value<String>? name,
+    Value<String?>? description,
+    Value<String>? storagePath,
+    Value<String?>? mimeType,
+    Value<int?>? sizeBytes,
+    Value<String?>? localPath,
+    Value<DateTime>? updatedAt,
+    Value<DateTime>? cachedAt,
+    Value<int>? rowid,
+  }) {
+    return CachedFilesCompanion(
+      fileId: fileId ?? this.fileId,
+      name: name ?? this.name,
+      description: description ?? this.description,
+      storagePath: storagePath ?? this.storagePath,
+      mimeType: mimeType ?? this.mimeType,
+      sizeBytes: sizeBytes ?? this.sizeBytes,
+      localPath: localPath ?? this.localPath,
+      updatedAt: updatedAt ?? this.updatedAt,
+      cachedAt: cachedAt ?? this.cachedAt,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (fileId.present) {
+      map['file_id'] = Variable<String>(fileId.value);
+    }
+    if (name.present) {
+      map['name'] = Variable<String>(name.value);
+    }
+    if (description.present) {
+      map['description'] = Variable<String>(description.value);
+    }
+    if (storagePath.present) {
+      map['storage_path'] = Variable<String>(storagePath.value);
+    }
+    if (mimeType.present) {
+      map['mime_type'] = Variable<String>(mimeType.value);
+    }
+    if (sizeBytes.present) {
+      map['size_bytes'] = Variable<int>(sizeBytes.value);
+    }
+    if (localPath.present) {
+      map['local_path'] = Variable<String>(localPath.value);
+    }
+    if (updatedAt.present) {
+      map['updated_at'] = Variable<DateTime>(updatedAt.value);
+    }
+    if (cachedAt.present) {
+      map['cached_at'] = Variable<DateTime>(cachedAt.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('CachedFilesCompanion(')
+          ..write('fileId: $fileId, ')
+          ..write('name: $name, ')
+          ..write('description: $description, ')
+          ..write('storagePath: $storagePath, ')
+          ..write('mimeType: $mimeType, ')
+          ..write('sizeBytes: $sizeBytes, ')
+          ..write('localPath: $localPath, ')
+          ..write('updatedAt: $updatedAt, ')
+          ..write('cachedAt: $cachedAt, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
 abstract class _$AppDatabase extends GeneratedDatabase {
   _$AppDatabase(QueryExecutor e) : super(e);
   $AppDatabaseManager get managers => $AppDatabaseManager(this);
@@ -1055,6 +1630,7 @@ abstract class _$AppDatabase extends GeneratedDatabase {
   late final $KeyValueEntriesTable keyValueEntries = $KeyValueEntriesTable(
     this,
   );
+  late final $CachedFilesTable cachedFiles = $CachedFilesTable(this);
   @override
   Iterable<TableInfo<Table, Object?>> get allTables =>
       allSchemaEntities.whereType<TableInfo<Table, Object?>>();
@@ -1063,6 +1639,7 @@ abstract class _$AppDatabase extends GeneratedDatabase {
     outboxEntries,
     cachedRoutes,
     keyValueEntries,
+    cachedFiles,
   ];
 }
 
@@ -1649,6 +2226,286 @@ typedef $$KeyValueEntriesTableProcessedTableManager =
       KeyValueEntry,
       PrefetchHooks Function()
     >;
+typedef $$CachedFilesTableCreateCompanionBuilder =
+    CachedFilesCompanion Function({
+      required String fileId,
+      required String name,
+      Value<String?> description,
+      required String storagePath,
+      Value<String?> mimeType,
+      Value<int?> sizeBytes,
+      Value<String?> localPath,
+      required DateTime updatedAt,
+      required DateTime cachedAt,
+      Value<int> rowid,
+    });
+typedef $$CachedFilesTableUpdateCompanionBuilder =
+    CachedFilesCompanion Function({
+      Value<String> fileId,
+      Value<String> name,
+      Value<String?> description,
+      Value<String> storagePath,
+      Value<String?> mimeType,
+      Value<int?> sizeBytes,
+      Value<String?> localPath,
+      Value<DateTime> updatedAt,
+      Value<DateTime> cachedAt,
+      Value<int> rowid,
+    });
+
+class $$CachedFilesTableFilterComposer
+    extends Composer<_$AppDatabase, $CachedFilesTable> {
+  $$CachedFilesTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get fileId => $composableBuilder(
+    column: $table.fileId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get name => $composableBuilder(
+    column: $table.name,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get description => $composableBuilder(
+    column: $table.description,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get storagePath => $composableBuilder(
+    column: $table.storagePath,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get mimeType => $composableBuilder(
+    column: $table.mimeType,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get sizeBytes => $composableBuilder(
+    column: $table.sizeBytes,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get localPath => $composableBuilder(
+    column: $table.localPath,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get updatedAt => $composableBuilder(
+    column: $table.updatedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get cachedAt => $composableBuilder(
+    column: $table.cachedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$CachedFilesTableOrderingComposer
+    extends Composer<_$AppDatabase, $CachedFilesTable> {
+  $$CachedFilesTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get fileId => $composableBuilder(
+    column: $table.fileId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get name => $composableBuilder(
+    column: $table.name,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get description => $composableBuilder(
+    column: $table.description,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get storagePath => $composableBuilder(
+    column: $table.storagePath,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get mimeType => $composableBuilder(
+    column: $table.mimeType,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get sizeBytes => $composableBuilder(
+    column: $table.sizeBytes,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get localPath => $composableBuilder(
+    column: $table.localPath,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<DateTime> get updatedAt => $composableBuilder(
+    column: $table.updatedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<DateTime> get cachedAt => $composableBuilder(
+    column: $table.cachedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$CachedFilesTableAnnotationComposer
+    extends Composer<_$AppDatabase, $CachedFilesTable> {
+  $$CachedFilesTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get fileId =>
+      $composableBuilder(column: $table.fileId, builder: (column) => column);
+
+  GeneratedColumn<String> get name =>
+      $composableBuilder(column: $table.name, builder: (column) => column);
+
+  GeneratedColumn<String> get description => $composableBuilder(
+    column: $table.description,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get storagePath => $composableBuilder(
+    column: $table.storagePath,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get mimeType =>
+      $composableBuilder(column: $table.mimeType, builder: (column) => column);
+
+  GeneratedColumn<int> get sizeBytes =>
+      $composableBuilder(column: $table.sizeBytes, builder: (column) => column);
+
+  GeneratedColumn<String> get localPath =>
+      $composableBuilder(column: $table.localPath, builder: (column) => column);
+
+  GeneratedColumn<DateTime> get updatedAt =>
+      $composableBuilder(column: $table.updatedAt, builder: (column) => column);
+
+  GeneratedColumn<DateTime> get cachedAt =>
+      $composableBuilder(column: $table.cachedAt, builder: (column) => column);
+}
+
+class $$CachedFilesTableTableManager
+    extends
+        RootTableManager<
+          _$AppDatabase,
+          $CachedFilesTable,
+          CachedFile,
+          $$CachedFilesTableFilterComposer,
+          $$CachedFilesTableOrderingComposer,
+          $$CachedFilesTableAnnotationComposer,
+          $$CachedFilesTableCreateCompanionBuilder,
+          $$CachedFilesTableUpdateCompanionBuilder,
+          (
+            CachedFile,
+            BaseReferences<_$AppDatabase, $CachedFilesTable, CachedFile>,
+          ),
+          CachedFile,
+          PrefetchHooks Function()
+        > {
+  $$CachedFilesTableTableManager(_$AppDatabase db, $CachedFilesTable table)
+    : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$CachedFilesTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$CachedFilesTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$CachedFilesTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback:
+              ({
+                Value<String> fileId = const Value.absent(),
+                Value<String> name = const Value.absent(),
+                Value<String?> description = const Value.absent(),
+                Value<String> storagePath = const Value.absent(),
+                Value<String?> mimeType = const Value.absent(),
+                Value<int?> sizeBytes = const Value.absent(),
+                Value<String?> localPath = const Value.absent(),
+                Value<DateTime> updatedAt = const Value.absent(),
+                Value<DateTime> cachedAt = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => CachedFilesCompanion(
+                fileId: fileId,
+                name: name,
+                description: description,
+                storagePath: storagePath,
+                mimeType: mimeType,
+                sizeBytes: sizeBytes,
+                localPath: localPath,
+                updatedAt: updatedAt,
+                cachedAt: cachedAt,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                required String fileId,
+                required String name,
+                Value<String?> description = const Value.absent(),
+                required String storagePath,
+                Value<String?> mimeType = const Value.absent(),
+                Value<int?> sizeBytes = const Value.absent(),
+                Value<String?> localPath = const Value.absent(),
+                required DateTime updatedAt,
+                required DateTime cachedAt,
+                Value<int> rowid = const Value.absent(),
+              }) => CachedFilesCompanion.insert(
+                fileId: fileId,
+                name: name,
+                description: description,
+                storagePath: storagePath,
+                mimeType: mimeType,
+                sizeBytes: sizeBytes,
+                localPath: localPath,
+                updatedAt: updatedAt,
+                cachedAt: cachedAt,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$CachedFilesTableProcessedTableManager =
+    ProcessedTableManager<
+      _$AppDatabase,
+      $CachedFilesTable,
+      CachedFile,
+      $$CachedFilesTableFilterComposer,
+      $$CachedFilesTableOrderingComposer,
+      $$CachedFilesTableAnnotationComposer,
+      $$CachedFilesTableCreateCompanionBuilder,
+      $$CachedFilesTableUpdateCompanionBuilder,
+      (
+        CachedFile,
+        BaseReferences<_$AppDatabase, $CachedFilesTable, CachedFile>,
+      ),
+      CachedFile,
+      PrefetchHooks Function()
+    >;
 
 class $AppDatabaseManager {
   final _$AppDatabase _db;
@@ -1659,4 +2516,6 @@ class $AppDatabaseManager {
       $$CachedRoutesTableTableManager(_db, _db.cachedRoutes);
   $$KeyValueEntriesTableTableManager get keyValueEntries =>
       $$KeyValueEntriesTableTableManager(_db, _db.keyValueEntries);
+  $$CachedFilesTableTableManager get cachedFiles =>
+      $$CachedFilesTableTableManager(_db, _db.cachedFiles);
 }
