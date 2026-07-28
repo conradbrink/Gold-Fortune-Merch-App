@@ -35,6 +35,12 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { ImportStoresButton } from "@/components/stores/import-dialog";
+import {
+  GeocodeBanner,
+  GeocodeDialog,
+  SharedPointBanner,
+} from "@/components/stores/geocode-dialog";
+import { clearCoordinates, findSharedPoints } from "@/lib/geocode";
 // `components/dashboard/filter-bar.tsx` is deliberately NOT used here: its
 // "Add filter", "Clear" and "Apply" buttons have no onClick at all. It read as
 // decorative chrome next to the real filter row below, and with 200+ stores a
@@ -123,6 +129,7 @@ export default function StoresPage() {
   const [deleteTarget, setDeleteTarget] = useState<StoreRow | null>(null);
   const [deleteImpact, setDeleteImpact] = useState<StoreDeleteImpact | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [geocodeOpen, setGeocodeOpen] = useState(false);
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -445,6 +452,24 @@ export default function StoresPage() {
 
   const missingCity = stores.filter((s) => !s.city).length;
 
+  /** Without coordinates a store cannot geofence and its visits cannot be
+      verified, so it is worth prompting about rather than leaving to be
+      noticed. */
+  const missingCoords = useMemo(
+    () =>
+      stores
+        .filter((s) => s.active && (s.lat === null || s.lng === null))
+        .map((s) => ({ id: s.id, name: s.name, city: s.city, address: s.address })),
+    [stores]
+  );
+
+  /** Several stores on one coordinate — see `findSharedPoints` for why that
+      is a quieter and more misleading failure than having none. */
+  const sharedPoints = useMemo(
+    () => findSharedPoints(stores.filter((s) => s.active)),
+    [stores]
+  );
+
   const filtered = stores
     .filter((s) =>
       groupFilter === "all" ? true : (s.store_group_id ?? "none") === groupFilter
@@ -483,6 +508,24 @@ export default function StoresPage() {
           New group
         </Button>
       </div>
+
+      <GeocodeBanner
+        count={missingCoords.length}
+        onClick={() => setGeocodeOpen(true)}
+      />
+
+      <SharedPointBanner
+        points={sharedPoints}
+        onClear={async (ids) => {
+          setRowError(null);
+          try {
+            await clearCoordinates(supabase, ids);
+            await loadData();
+          } catch (e) {
+            setRowError(e instanceof Error ? e.message : String(e));
+          }
+        }}
+      />
 
       <div className="flex flex-wrap items-center gap-2 sm:gap-3">
         <div className="w-full min-w-0 sm:w-auto sm:flex-1">
@@ -1043,6 +1086,13 @@ export default function StoresPage() {
       <p className="text-xs text-muted-foreground">
         {filtered.length} of {stores.length} stores across {groups.length} groups.
       </p>
+
+      <GeocodeDialog
+        open={geocodeOpen}
+        onOpenChange={setGeocodeOpen}
+        stores={missingCoords}
+        onDone={loadData}
+      />
     </div>
   );
 }
