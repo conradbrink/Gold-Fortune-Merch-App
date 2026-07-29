@@ -1,4 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
+import { enforceRateLimit, LIMITS } from "@/lib/rate-limit";
 
 /**
  * Turns store addresses into coordinates.
@@ -156,6 +157,12 @@ export async function POST(request: Request) {
         { status: 400 }
       );
     }
+
+    // Charged per store, because Google is: 25 stores is 25 lookups, not one
+    // request. Consumed before any call goes out, so an expensive batch cannot
+    // slip through while the counter is still being written.
+    const gate = await enforceRateLimit(supabase, LIMITS.geocode, storeIds.length);
+    if (!gate.ok) return gate.response;
 
     // RLS scopes this to the caller's org, so a store id from elsewhere simply
     // returns nothing rather than being geocoded on someone else's behalf.

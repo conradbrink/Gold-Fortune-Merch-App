@@ -128,14 +128,46 @@ Tested and behaving correctly:
 
 ---
 
+### HIGH — no rate limiting on paid endpoints · FIXED
+
+Three routes reached a paid third party on behalf of a signed-in user with no
+ceiling: `/api/geocode` (Google Places, then Geocoding, once per store),
+`/api/insights` (an OpenAI completion over the whole estate) and
+`/api/reps/invite` (creates an auth user). Any authenticated rep could call
+them in a loop; the bill is the customer's.
+
+**Fix** — `20260729172337_create_rate_limiter.sql` plus `web/lib/rate-limit.ts`.
+Counting lives in Postgres, not in the Next.js process: serverless instances
+come and go, several run at once, and an in-memory tally resets on every cold
+start. `insert … on conflict … do update` is atomic, so two simultaneous
+requests cannot both read "9 of 10" and both proceed.
+
+| Bucket | Limit | Why that number |
+|---|---|---|
+| `geocode` | 250 / hour, **charged per store** | A full estate re-geocode is 209 stores, so one legitimate run fits with room to retry |
+| `insights` | 20 / hour | A manager comparing periods might run half a dozen, never sixty |
+| `rep_invite` | 10 / hour | Abuse pollutes the org and the auth tenant |
+| `rep_admin` | 60 / hour | Cheap, but worth a ceiling |
+
+The `rate_limits` table has RLS enabled and **zero policies**, with all
+privileges revoked from `authenticated` — verified that a signed-in user can
+neither read nor reset their own counter. The subject comes from `auth.uid()`
+inside the function and never from an argument, so a caller cannot spread usage
+across identities. Exceeding a limit returns **429 with `Retry-After`**.
+
+Verified: 3 of 3 allowed and the 4th refused with a retry window; a cost of 25
+consumed 25 units in one call; counters unreadable and unresettable by the user;
+a second user got their own budget.
+
+One deliberate choice: if the limiter itself errors, the request is **allowed**
+and the failure logged. Losing the ability to count is a worse reason to take
+the product down than letting a few calls through uncounted.
+
 ## 3. Not yet done
 
 Phases 3–11 of the brief are **not complete**. In priority order:
 
-1. **Rate limiting** (Phase 6). Nothing exists. Highest remaining risk, because
-   it is the one that costs money: geocoding, Maps loads and OpenAI calls are
-   all reachable by an authenticated user with no ceiling.
-2. **Storage hardening** (Phase 7). Add a size and MIME limit to `visit-photos`;
+1. **Storage hardening** (Phase 7). Add a size and MIME limit to `visit-photos`;
    verify the per-user path is enforced by policy and not just by the client.
 3. **Audit logging** (Phase 9). Role changes, deactivations and assignment
    changes need a trail.

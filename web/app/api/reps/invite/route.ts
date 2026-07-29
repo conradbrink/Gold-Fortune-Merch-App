@@ -1,5 +1,6 @@
 import { createClient as createAdminClient } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/server";
+import { enforceRateLimit, LIMITS } from "@/lib/rate-limit";
 
 /**
  * Create a field rep with a starting password.
@@ -30,6 +31,11 @@ export async function POST(request: Request) {
     if (!user) {
       return Response.json({ error: "Not authenticated." }, { status: 401 });
     }
+
+    // Creates an auth user, so abuse pollutes the org and the auth tenant.
+    // Charged before anything is created.
+    const gate = await enforceRateLimit(supabase, LIMITS.repInvite);
+    if (!gate.ok) return gate.response;
 
     // The caller's own org is taken from their profile, never from the request
     // body — otherwise a manager could invite a rep into someone else's org.
