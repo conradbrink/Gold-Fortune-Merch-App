@@ -5,29 +5,48 @@ import type { Tables } from "./supabase/types";
 type StoreRow = Tables<"stores">;
 
 /**
- * The location review queue.
+ * The location exceptions list.
  *
- * A new customer imports a few thousand stores and the geocoder gets most of
- * them roughly right and some of them confidently wrong. Wrong is the expensive
- * kind: the geofence follows the coordinate, so a rep standing in the correct
- * shop is recorded as off-site, and nobody finds out until someone disputes a
- * visit months later. This is the pass that turns "mostly geocoded" into
- * "checked by a person", one store at a time.
+ * This began as a queue holding every store, on the theory that a manager would
+ * work through them and vouch for each. That theory did not survive contact
+ * with the estate: nobody at a desk can tell which unit in a Botswana mall is
+ * the Choppies, satellite imagery does not say, and a person asked to confirm
+ * two hundred shops they have never seen will confirm two hundred shops.
  *
- * The ordering is the whole design. Nobody reviews 2,000 stores; they review
- * until they get bored. So the queue must spend that attention on the stores
- * most likely to be wrong, and it must be able to say *why* each one is in the
- * list, or a reviewer has no basis to judge and will just click Confirm.
+ * So the reps establish locations now, by standing in them —
+ * `set_store_location_from_visit` — and this list holds only what that process
+ * cannot settle by itself:
+ *
+ *   * **drift** — reps keep checking in a long way from the recorded point,
+ *     tightly clustered somewhere else. The point is wrong and no rep can
+ *     overwrite it, because it was another rep who set it;
+ *   * **collapsed** — several stores share one coordinate, so at most one of
+ *     them is right and the rest are geofenced where they are not;
+ *   * **unusable record** — no town, no address, a duplicated name. A rep can
+ *     fix a coordinate; they cannot fix a row nobody can identify.
+ *
+ * A store simply waiting for a rep to reach it is **not** an exception, and
+ * putting it here would restore the original mistake in a smaller font.
  */
 
-/** Why a store is in the queue, worst first. */
+/** Why a store is in the list, worst first. */
 export type ReviewReason =
+  | "drift"
   | "collapsed"
   | "shared"
-  | "rejected"
-  | "missing"
-  | "weak_source"
-  | "unchecked";
+  | "bad_record";
+
+/** One store's drift signal, from the `store_location_drift` RPC. */
+export type DriftSignal = {
+  storeId: string;
+  visits: number;
+  reps: number;
+  medianOffsetM: number;
+  spreadM: number;
+  clusterLat: number;
+  clusterLng: number;
+  clusterOffsetM: number;
+};
 
 export type ReviewItem = {
   store: StoreRow;
@@ -37,58 +56,61 @@ export type ReviewItem = {
   sharedWith: { id: string; name: string }[];
   /** What the geocoder said it matched, when there is one. */
   matched: string | null;
+  /** Present when reps keep checking in somewhere else. */
+  drift: DriftSignal | null;
 };
+
+/**
+ * Where the check-ins cluster is only worth offering as a correction when they
+ * agree with each other. A wide spread makes the centroid an average of people
+ * standing in different places, which is not a shopfront.
+ */
+export function clusterIsTrustworthy(d: DriftSignal): boolean {
+  return d.spreadM <= 75 && d.reps >= 2;
+}
 
 export const REVIEW_REASONS: Record<
   ReviewReason,
   { label: string; blurb: string; rank: number }
 > = {
+  drift: {
+    label: "Reps keep checking in somewhere else",
+    blurb:
+      "Visits to this store consistently land a long way from the point on file. Where they land is tightly grouped, which points at the record rather than at the reps — the stored position is probably wrong, and no rep can replace it because a rep set it.",
+    rank: 0,
+  },
   collapsed: {
     label: "Same listing as another store",
     blurb:
       "Google returned the identical listing for this and at least one other branch, so they share one point. At most one of them can be right, and the others are geofenced somewhere they are not.",
-    rank: 0,
+    rank: 1,
   },
   shared: {
     label: "Shares a point with another store",
     blurb:
       "Another store sits on this exact coordinate. That is occasionally genuine — two branches in one centre — but it is worth a look.",
-    rank: 1,
-  },
-  rejected: {
-    label: "A match was already rejected",
-    blurb:
-      "Somebody looked at what the geocoder returned and threw it away. The store has had no location since. Looking it up again finds the same wrong shop, so this one needs a pin or a rep.",
     rank: 2,
   },
-  missing: {
-    label: "No location at all",
+  bad_record: {
+    label: "The store's own details are unusable",
     blurb:
-      "Nothing has ever been found for this store. Visits here cannot be verified against anything.",
+      "No town, no address, or a name that belongs to another store too. A rep can fix a coordinate by standing in the shop; they cannot fix a row nobody can identify.",
     rank: 3,
-  },
-  weak_source: {
-    label: "Found by address",
-    blurb:
-      "Matched through an address rather than the shop's name, which is the weakest signal available — an address it cannot parse still returns a confident answer.",
-    rank: 4,
-  },
-  unchecked: {
-    label: "Not checked yet",
-    blurb:
-      "Found by name through Google Places. Usually right, which is exactly why the wrong ones are easy to miss.",
-    rank: 5,
   },
 };
 
 /**
- * Builds the queue from stores already in memory.
+ * Builds the exceptions list from stores already in memory, plus the drift
+ * signal, which only Postgres can compute because it needs every check-in.
  *
- * Client-side because the page holds every store anyway, and because
- * `findSharedPoints` needs the whole estate to see a collision at all — a
- * server-side LIMIT would hide the very thing being looked for.
+ * The rest is client-side because the page holds every store anyway, and
+ * because `findSharedPoints` needs the whole estate to see a collision at all —
+ * a server-side LIMIT would hide the very thing being looked for.
  */
-export function buildReviewQueue(stores: StoreRow[]): ReviewItem[] {
+export function buildReviewQueue(
+  stores: StoreRow[],
+  drift: Record<string, DriftSignal> = {}
+): ReviewItem[] {
   const active = stores.filter((s) => s.active);
   const points = findSharedPoints(active);
 
@@ -107,22 +129,26 @@ export function buildReviewQueue(stores: StoreRow[]): ReviewItem[] {
 
   const items: ReviewItem[] = [];
   for (const store of active) {
-    // A confirmation is the point of the queue — once given, the store leaves
-    // and no automatic run may put it back.
-    if (store.location_confirmed_at) continue;
-
     const state = geocodeState(store);
-    // Captured by a rep standing in the shop. Better evidence than anything a
-    // reviewer at a desk can bring, so it is not queued for their opinion.
-    if (state === "rep") continue;
+    const d = drift[store.id] ?? null;
+    const problems = dataProblems(store, active);
 
-    let reason: ReviewReason;
-    if (collapsed[store.id]) reason = "collapsed";
+    // Only genuine exceptions. A store waiting for a rep to reach it is the
+    // normal state of most of the estate and belongs nowhere near this list —
+    // the whole reason it was rebuilt is that routing all 209 through here
+    // produced confirmations nobody could actually stand behind.
+    let reason: ReviewReason | null = null;
+    if (d) reason = "drift";
+    else if (collapsed[store.id]) reason = "collapsed";
     else if (sharedBy[store.id]) reason = "shared";
-    else if (state === "rejected") reason = "rejected";
-    else if (state === "missing") reason = "missing";
-    else if (state === "geocoding") reason = "weak_source";
-    else reason = "unchecked";
+    else if (problems.length > 0) reason = "bad_record";
+
+    if (reason === null) continue;
+
+    // Drift outranks everything, including a confirmation: a store somebody
+    // vouched for that reps keep missing is *more* worth a second look than one
+    // nobody has looked at, not less.
+    if (reason !== "drift" && store.location_confirmed_at) continue;
 
     items.push({
       store,
@@ -130,6 +156,7 @@ export function buildReviewQueue(stores: StoreRow[]): ReviewItem[] {
       state,
       sharedWith: sharedBy[store.id] ?? [],
       matched: store.geocode_result,
+      drift: d,
     });
   }
 

@@ -1214,6 +1214,24 @@ export type Database = {
           visits: number
         }[]
       }
+      store_location_drift: {
+        Args: { p_min_median_m?: number; p_min_visits?: number }
+        Returns: {
+          city: string
+          cluster_lat: number
+          cluster_lng: number
+          cluster_offset_m: number
+          geofence_radius_m: number
+          last_visit_at: string
+          location_source: string
+          median_offset_m: number
+          reps_involved: number
+          spread_m: number
+          store_id: string
+          store_name: string
+          visits_considered: number
+        }[]
+      }
       store_geocode_capture: {
         Args: never
         Returns: {

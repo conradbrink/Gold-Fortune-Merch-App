@@ -543,10 +543,10 @@ export default function StoresPage() {
 
   const missingCity = stores.filter((s) => !s.city).length;
 
-  /** Active stores still waiting on a human verdict. Rep captures are excluded
-      for the same reason the queue excludes them: someone already stood in the
-      shop, which beats anyone's opinion at a desk. */
-  const unchecked = useMemo(
+  /** Active stores whose position is still a guess — nobody has stood in them.
+      Not a to-do list: reps settle these by visiting, and this is here so a
+      manager can see the estate correcting itself over the first call cycle. */
+  const unverified = useMemo(
     () =>
       stores.filter(
         (s) =>
@@ -650,15 +650,15 @@ export default function StoresPage() {
           reasons, with the store in front of you and a map to fix it on. Three
           banners saying overlapping things about the same problem taught a
           manager to scroll past all of them. */}
-      {unchecked > 0 && (
+      {unverified > 0 && (
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border bg-card px-3 py-2.5">
           <p className="flex items-start gap-2 text-sm text-foreground">
             <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
             <span>
-              <span className="font-semibold">{unchecked}</span> store
-              {unchecked === 1 ? "" : "s"} nobody has checked. A coordinate in
-              the wrong place records an honest visit as off-site, so it is
-              worth an eye before reps start work.
+              <span className="font-semibold">{unverified}</span> store
+              {unverified === 1 ? "" : "s"} still on a guessed position. Each one
+              is settled the first time a rep checks in there and sets it from
+              inside the shop — nothing to do here unless one is flagged.
             </span>
           </p>
           {/* `nativeButton={false}` because the render target is an anchor, not
@@ -667,7 +667,7 @@ export default function StoresPage() {
           <Button
             size="sm"
             nativeButton={false}
-            render={<Link href="/stores/review">Check locations</Link>}
+            render={<Link href="/stores/review">Exceptions</Link>}
           />
         </div>
       )}
@@ -1315,27 +1315,12 @@ export default function StoresPage() {
                           align="start"
                           className="max-h-72 overflow-y-auto"
                         >
-                          {/* Nobody may be sent to a shop whose position has
-                              not been checked. A wrong coordinate makes every
-                              visit there read as off-site, and the rep carries
-                              that on their record for something a manager
-                              never looked at. Unassigning stays available —
-                              taking work away is never the unsafe direction —
-                              and existing assignments are left alone. */}
-                          {store.location_confirmed_at === null && (
-                            <div className="border-b border-border px-2 py-2">
-                              <p className="text-xs text-muted-foreground">
-                                Check this store&apos;s location before
-                                assigning anyone to it.
-                              </p>
-                              <Link
-                                href="/stores/review"
-                                className="mt-1 inline-block text-xs font-medium text-primary hover:underline"
-                              >
-                                Go and check it →
-                              </Link>
-                            </div>
-                          )}
+                          {/* Assignment is deliberately *not* gated on the
+                              location being confirmed, though it was briefly.
+                              Reps are the ones who establish where a shop is,
+                              by visiting it — so requiring a confirmed location
+                              before anyone can be sent there is a deadlock:
+                              nobody can visit the store that needs visiting. */}
                           {reps.length === 0 && (
                             <DropdownMenuItem disabled>No reps yet</DropdownMenuItem>
                           )}
@@ -1343,19 +1328,14 @@ export default function StoresPage() {
                             const mine = assignedByStore[store.id]?.find(
                               (a) => a.repId === r.id
                             );
-                            const blocked =
-                              !mine && store.location_confirmed_at === null;
                             return (
                               <DropdownMenuItem
                                 key={r.id}
                                 className="gap-2"
-                                disabled={blocked}
                                 onClick={() =>
-                                  blocked
-                                    ? undefined
-                                    : mine
-                                      ? unassignRep(store, mine.id)
-                                      : assignRep(store, r.id)
+                                  mine
+                                    ? unassignRep(store, mine.id)
+                                    : assignRep(store, r.id)
                                 }
                               >
                                 <Check

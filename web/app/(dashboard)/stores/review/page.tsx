@@ -19,11 +19,13 @@ import { createClient } from "@/lib/supabase/client";
 import { isProtectedFromAutoGeocode, mapsPreview } from "@/lib/geocode";
 import {
   buildReviewQueue,
+  clusterIsTrustworthy,
   confirmLocation,
   dataProblems,
   repositionLocation,
   suggestedCentre,
   REVIEW_REASONS,
+  type DriftSignal,
   type ReviewItem,
 } from "@/lib/store-review";
 import type { Tables } from "@/lib/supabase/types";
@@ -45,6 +47,7 @@ export default function StoreReviewPage() {
   const supabase = createClient();
 
   const [stores, setStores] = useState<StoreRow[]>([]);
+  const [drift, setDrift] = useState<Record<string, DriftSignal>>({});
   const [loading, setLoading] = useState(true);
   const [profileId, setProfileId] = useState<string | null>(null);
   const [index, setIndex] = useState(0);
@@ -58,10 +61,29 @@ export default function StoreReviewPage() {
 
   const load = useCallback(async () => {
     setLoading(true);
-    const { data: auth } = await supabase.auth.getUser();
-    setProfileId(auth.user?.id ?? null);
-    const { data } = await supabase.from("stores").select("*").order("name");
-    setStores(data ?? []);
+    const [auth, storeRes, driftRes] = await Promise.all([
+      supabase.auth.getUser(),
+      supabase.from("stores").select("*").order("name"),
+      // Only Postgres can compute this: it needs every check-in in the org.
+      supabase.rpc("store_location_drift", {}),
+    ]);
+    setProfileId(auth.data.user?.id ?? null);
+    setStores(storeRes.data ?? []);
+
+    const byStore: Record<string, DriftSignal> = {};
+    for (const r of driftRes.data ?? []) {
+      byStore[r.store_id] = {
+        storeId: r.store_id,
+        visits: r.visits_considered,
+        reps: r.reps_involved,
+        medianOffsetM: r.median_offset_m,
+        spreadM: r.spread_m,
+        clusterLat: r.cluster_lat,
+        clusterLng: r.cluster_lng,
+        clusterOffsetM: r.cluster_offset_m,
+      };
+    }
+    setDrift(byStore);
     setLoading(false);
   }, [supabase]);
 
@@ -69,7 +91,7 @@ export default function StoreReviewPage() {
     load();
   }, [load]);
 
-  const queue = useMemo(() => buildReviewQueue(stores), [stores]);
+  const queue = useMemo(() => buildReviewQueue(stores, drift), [stores, drift]);
   const item: ReviewItem | undefined = queue[index];
 
   /** Stores an automatic lookup may still usefully try.
@@ -220,13 +242,14 @@ export default function StoreReviewPage() {
               <ArrowLeft className="h-4 w-4" />
             </Link>
             <h1 className="text-2xl font-bold tracking-tight text-foreground">
-              Check store locations
+              Location exceptions
             </h1>
           </div>
           <p className="text-sm text-muted-foreground">
-            A wrong point is worse than none — the geofence follows it, so a rep
-            in the right shop is recorded as off-site. Confirm each one, or drop
-            a pin where the shop really is.
+            Reps set store locations by standing in them. These are the ones
+            that cannot settle themselves — where visits keep landing somewhere
+            else, where two shops share one point, or where the record is too
+            thin to act on.
           </p>
         </div>
         <div className="flex items-center gap-3">
@@ -241,10 +264,10 @@ export default function StoreReviewPage() {
           )}
           <div className="text-right text-sm">
             <div className="font-semibold text-foreground">
-              {remaining} to check
+              {remaining} needing a look
             </div>
             {done > 0 && (
-              <div className="text-muted-foreground">{done} done just now</div>
+              <div className="text-muted-foreground">{done} settled just now</div>
             )}
           </div>
         </div>
@@ -256,12 +279,12 @@ export default function StoreReviewPage() {
         <div className="rounded-lg border border-dashed border-border bg-card py-24 text-center">
           <Check className="mx-auto mb-3 h-8 w-8 text-emerald-600" />
           <p className="font-semibold text-foreground">
-            Every store has been checked.
+            Nothing needs a decision.
           </p>
           <p className="mt-1 text-sm text-muted-foreground">
             {done > 0
-              ? `You confirmed ${done} in this sitting.`
-              : "Nothing is waiting for review."}
+              ? `You settled ${done} in this sitting.`
+              : "No store is drifting, sharing a point, or missing the details needed to place it. Reps will fill in the rest as they visit."}
           </p>
           <Button
             variant="outline"
@@ -355,6 +378,71 @@ export default function StoreReviewPage() {
                 </p>
               )}
             </div>
+
+            {item.drift && (
+              <div className="rounded-lg border border-border bg-card p-3">
+                <p className="text-sm font-semibold text-foreground">
+                  What the visits show
+                </p>
+                <dl className="mt-2 space-y-1 text-xs">
+                  <div className="flex justify-between gap-3">
+                    <dt className="text-muted-foreground">Check-ins measured</dt>
+                    <dd className="font-medium">
+                      {item.drift.visits} across {item.drift.reps} rep
+                      {item.drift.reps === 1 ? "" : "s"}
+                    </dd>
+                  </div>
+                  <div className="flex justify-between gap-3">
+                    <dt className="text-muted-foreground">Typically this far off</dt>
+                    <dd className="font-medium">
+                      {Math.round(item.drift.medianOffsetM)} m
+                    </dd>
+                  </div>
+                  <div className="flex justify-between gap-3">
+                    <dt className="text-muted-foreground">
+                      How much they agree
+                    </dt>
+                    <dd className="font-medium">
+                      ± {Math.round(item.drift.spreadM)} m
+                    </dd>
+                  </div>
+                </dl>
+
+                {/* The centroid is only a shopfront when the check-ins agree.
+                    Scattered visits average to a point nobody stood on, so the
+                    offer is withheld rather than dressed up. */}
+                {clusterIsTrustworthy(item.drift) ? (
+                  <>
+                    <p className="mt-2 text-xs text-muted-foreground">
+                      They cluster tightly {Math.round(item.drift.clusterOffsetM)} m
+                      from the recorded point, across more than one rep. That
+                      reads as the record being wrong rather than the visits.
+                    </p>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="mt-2 w-full"
+                      onClick={() =>
+                        setDraft({
+                          lat: item.drift!.clusterLat,
+                          lng: item.drift!.clusterLng,
+                        })
+                      }
+                    >
+                      Move the pin to where they check in
+                    </Button>
+                  </>
+                ) : (
+                  <p className="mt-2 text-xs text-muted-foreground">
+                    The check-ins are spread out
+                    {item.drift.reps === 1 ? " and all from one rep" : ""}, so
+                    they do not agree on a better position. This may be how the
+                    store is being visited rather than where it is — worth a
+                    word before moving anything.
+                  </p>
+                )}
+              </div>
+            )}
 
             {draft && (
               <div className="rounded-lg border border-emerald-500/40 bg-emerald-500/10 p-3 text-sm text-emerald-800 dark:text-emerald-300">

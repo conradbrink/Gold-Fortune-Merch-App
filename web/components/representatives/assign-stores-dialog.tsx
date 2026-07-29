@@ -391,12 +391,12 @@ export function AssignStoresDialog({
                       const mine = mineByStore.get(s.id);
                       const others = otherCover.get(s.id) ?? 0;
                       const busy = busyStore === s.id;
-                      // The same rule as the Stores page, enforced here too or
-                      // it is not a rule — this dialog is the faster way to
-                      // assign in bulk and would simply route around it.
-                      // Un-ticking an existing assignment stays allowed.
-                      const unchecked = s.location_confirmed_at === null;
-                      const blocked = unchecked && !mine;
+                      // Shown, not blocked. A rep visiting is how an unverified
+                      // location gets fixed, so refusing the assignment would
+                      // prevent the only thing that resolves it — but it is
+                      // still worth knowing the geofence here cannot be trusted
+                      // yet, because the first visits will read as off-site.
+                      const unverified = s.location_confirmed_at === null;
                       return (
                         <li
                           key={s.id}
@@ -404,7 +404,7 @@ export function AssignStoresDialog({
                         >
                           <Checkbox
                             checked={Boolean(mine)}
-                            disabled={busy || !orgId || blocked}
+                            disabled={busy || !orgId}
                             aria-label={`Assign ${s.name}`}
                             onCheckedChange={() =>
                               run(s.id, () =>
@@ -415,9 +415,7 @@ export function AssignStoresDialog({
                             }
                           />
                           <div className="min-w-0 flex-1">
-                            <p
-                              className={`truncate text-sm ${blocked ? "text-muted-foreground" : "text-foreground"}`}
-                            >
+                            <p className="truncate text-sm text-foreground">
                               {s.name}
                             </p>
                             <p className="truncate text-xs text-muted-foreground">
@@ -428,9 +426,9 @@ export function AssignStoresDialog({
                                   {others === 1 ? "" : "s"}
                                 </span>
                               )}
-                              {unchecked && (
+                              {unverified && (
                                 <span className="ml-1.5 text-amber-700 dark:text-amber-400">
-                                  · location not checked
+                                  · location unverified
                                 </span>
                               )}
                             </p>
