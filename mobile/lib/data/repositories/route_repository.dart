@@ -78,7 +78,8 @@ class RouteRepository {
           .select(
             'id, store_id, sequence_order, scheduled_start_at, '
             'scheduled_end_at, '
-            'stores(name, address, city, state, lat, lng, geofence_radius_m), '
+            'stores(name, address, city, state, lat, lng, geocode_source, '
+            'geofence_radius_m), '
             'visits(id, client_generated_id, status, checkin_at, checkout_at)',
           )
           .eq('rep_id', repId)
@@ -144,7 +145,8 @@ class RouteRepository {
     try {
       final rows = await _client
           .from('stores')
-          .select('id, name, address, city, state, lat, lng, geofence_radius_m')
+          .select('id, name, address, city, state, lat, lng, geocode_source, '
+              'geofence_radius_m')
           .eq('active', true)
           .order('name', ascending: true);
 

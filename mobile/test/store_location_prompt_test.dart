@@ -20,7 +20,18 @@ import 'package:gf_merch_rep/features/workday/workday_controller.dart';
 
 const _visitClientId = 'visit-client-id';
 const _routeId = 'route-id';
-const _prompt = 'This shop is not on the map';
+
+/// The card has two headings, and which one appears is the whole point: a store
+/// with no coordinates is being placed, one with a guessed point is being
+/// corrected.
+///
+/// Both are asserted on, and so is the button label. An earlier version of this
+/// file checked only the "not on the map" heading, so when the offer was
+/// extended to guessed positions the test that claimed such stores were never
+/// offered kept passing — the heading had simply changed underneath it. A test
+/// that passes for the wrong reason is worse than no test.
+const _blankPrompt = 'This shop is not on the map';
+const _guessPrompt = 'This shop’s position is a guess';
 
 /// Stands in for the real controller so the screen sees an open workday
 /// without a repository, a timer or a GPS.
@@ -46,6 +57,7 @@ RouteVisit _visit({
   required String status,
   double? lat,
   double? lng,
+  String? source,
 }) {
   return RouteVisit(
     routeId: _routeId,
@@ -54,6 +66,7 @@ RouteVisit _visit({
     storeCity: 'Moshupa',
     storeLat: lat,
     storeLng: lng,
+    storeGeocodeSource: source,
     geofenceRadiusM: 100,
     sequenceOrder: 1,
     visitClientGeneratedId: _visitClientId,
@@ -80,32 +93,65 @@ Future<void> _pump(WidgetTester tester, RouteVisit visit) async {
 }
 
 void main() {
-  testWidgets('offers to capture a location for a store that has none',
+  testWidgets('offers to place a store that has no location at all',
       (tester) async {
     await _pump(tester, _visit(status: 'checked_in'));
 
-    expect(find.text(_prompt), findsOneWidget);
+    expect(find.text(_blankPrompt), findsOneWidget);
     expect(
       find.widgetWithText(ElevatedButton, "Set it to where I'm standing"),
       findsOneWidget,
     );
   });
 
-  testWidgets('never offers to relocate a store that already has a point',
+  // The behaviour this file originally asserted the opposite of. A store whose
+  // point came from a name search has never been checked by anyone, and the rep
+  // in the doorway is the person who can settle it — offering only on stores
+  // with *no* coordinates hid the button on 194 of 209 stores, which is to say
+  // on every store that actually needed it.
+  testWidgets('offers to correct a store sitting on a geocoder’s guess',
       (tester) async {
     await _pump(
       tester,
-      _visit(status: 'checked_in', lat: -24.7701, lng: 25.4101),
+      _visit(
+        status: 'checked_in',
+        lat: -24.7701,
+        lng: 25.4101,
+        source: 'places',
+      ),
     );
 
-    expect(find.text(_prompt), findsNothing);
+    expect(find.text(_guessPrompt), findsOneWidget);
+    expect(
+      find.widgetWithText(ElevatedButton, "Move it to where I'm standing"),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('leaves alone a location another rep measured on site',
+      (tester) async {
+    await _pump(
+      tester,
+      _visit(
+        status: 'checked_in',
+        lat: -24.7701,
+        lng: 25.4101,
+        source: 'rep',
+      ),
+    );
+
+    expect(find.text(_blankPrompt), findsNothing);
+    expect(find.text(_guessPrompt), findsNothing);
+    // Check out is the only primary action left.
+    expect(find.widgetWithText(ElevatedButton, 'Check out'), findsOneWidget);
   });
 
   testWidgets('stays hidden until the rep has actually checked in',
       (tester) async {
     await _pump(tester, _visit(status: 'not_started'));
 
-    expect(find.text(_prompt), findsNothing);
+    expect(find.text(_blankPrompt), findsNothing);
+    expect(find.text(_guessPrompt), findsNothing);
     // The check-in button is still the thing to do first.
     expect(find.widgetWithText(ElevatedButton, 'Check in'), findsOneWidget);
   });
@@ -113,6 +159,7 @@ void main() {
   testWidgets('is gone once the rep has left the store', (tester) async {
     await _pump(tester, _visit(status: 'checked_out'));
 
-    expect(find.text(_prompt), findsNothing);
+    expect(find.text(_blankPrompt), findsNothing);
+    expect(find.text(_guessPrompt), findsNothing);
   });
 }

@@ -17,6 +17,14 @@ class RouteVisit {
   final String? storeState;
   final double? storeLat;
   final double? storeLng;
+  /// Where the store's coordinates came from: `places`, `geocoding`, `manual`,
+  /// `rep`, or null when it has none.
+  ///
+  /// The phone needs this to know whether the position is worth anything. A
+  /// point matched by name out of Google Places is a guess, and a guess is
+  /// exactly what a rep standing in the shop is qualified to replace — so the
+  /// offer to set it depends on this, not on whether coordinates exist.
+  final String? storeGeocodeSource;
   final int geofenceRadiusM;
   /// The stop's position in the day, set by the planner. This — not the clock —
   /// is what decides the order of the list; see [RouteRepository].
@@ -41,6 +49,7 @@ class RouteVisit {
     this.storeState,
     this.storeLat,
     this.storeLng,
+    this.storeGeocodeSource,
     required this.geofenceRadiusM,
     this.sequenceOrder,
     this.scheduledStartAt,
@@ -55,6 +64,17 @@ class RouteVisit {
   bool get isCheckedIn => status == 'checked_in';
   bool get isCheckedOut => status == 'checked_out';
   bool get isMissed => status == 'missed';
+
+  /// True when somebody stood in this shop and measured it.
+  ///
+  /// Everything else — a Places match, an address lookup, a point a manager
+  /// chose from a desk, or nothing at all — is a position nobody has verified
+  /// on the ground, and the server will let a rep replace it.
+  bool get hasVerifiedLocation => storeGeocodeSource == 'rep';
+
+  /// The store has a position, but one nobody has checked in person.
+  bool get hasGuessedLocation =>
+      storeLat != null && storeLng != null && !hasVerifiedLocation;
 
   /// True when nobody scheduled this — the rep started it themselves.
   bool get isUnscheduled => routeId == null;
@@ -75,6 +95,7 @@ class RouteVisit {
     String? storeState,
     double? storeLat,
     double? storeLng,
+    String? storeGeocodeSource,
     required int geofenceRadiusM,
   }) {
     return RouteVisit(
@@ -85,6 +106,7 @@ class RouteVisit {
       storeState: storeState,
       storeLat: storeLat,
       storeLng: storeLng,
+      storeGeocodeSource: storeGeocodeSource,
       geofenceRadiusM: geofenceRadiusM,
       visitClientGeneratedId: clientId,
       status: 'not_started',
@@ -106,6 +128,7 @@ class RouteVisit {
           'state': storeState,
           'lat': storeLat,
           'lng': storeLng,
+          'geocode_source': storeGeocodeSource,
           'geofence_radius_m': geofenceRadiusM,
         },
         'visits': [
@@ -126,6 +149,7 @@ class RouteVisit {
     DateTime? checkoutAt,
     double? storeLat,
     double? storeLng,
+    String? storeGeocodeSource,
   }) {
     return RouteVisit(
       routeId: routeId,
@@ -138,6 +162,7 @@ class RouteVisit {
       // captures one, and nothing on the phone may take it away again.
       storeLat: storeLat ?? this.storeLat,
       storeLng: storeLng ?? this.storeLng,
+      storeGeocodeSource: storeGeocodeSource ?? this.storeGeocodeSource,
       geofenceRadiusM: geofenceRadiusM,
       sequenceOrder: sequenceOrder,
       scheduledStartAt: scheduledStartAt,
@@ -167,6 +192,7 @@ class RouteVisit {
       storeState: store?['state'] as String?,
       storeLat: (store?['lat'] as num?)?.toDouble(),
       storeLng: (store?['lng'] as num?)?.toDouble(),
+      storeGeocodeSource: store?['geocode_source'] as String?,
       geofenceRadiusM: (store?['geofence_radius_m'] as num?)?.toInt() ?? 100,
       sequenceOrder: (map['sequence_order'] as num?)?.toInt(),
       scheduledStartAt: map['scheduled_start_at'] != null

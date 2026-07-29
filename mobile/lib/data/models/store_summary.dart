@@ -9,6 +9,9 @@ class StoreSummary {
   final String? state;
   final double? lat;
   final double? lng;
+  /// Provenance of [lat]/[lng] — see `RouteVisit.storeGeocodeSource`. Carried
+  /// so an unscheduled visit can offer to fix a guessed position too.
+  final String? geocodeSource;
   final int geofenceRadiusM;
 
   const StoreSummary({
@@ -19,6 +22,7 @@ class StoreSummary {
     this.state,
     this.lat,
     this.lng,
+    this.geocodeSource,
     required this.geofenceRadiusM,
   });
 
@@ -33,6 +37,7 @@ class StoreSummary {
         'state': state,
         'lat': lat,
         'lng': lng,
+        'geocode_source': geocodeSource,
         'geofence_radius_m': geofenceRadiusM,
       };
 
@@ -45,6 +50,7 @@ class StoreSummary {
       state: map['state'] as String?,
       lat: (map['lat'] as num?)?.toDouble(),
       lng: (map['lng'] as num?)?.toDouble(),
+      geocodeSource: map['geocode_source'] as String?,
       geofenceRadiusM: (map['geofence_radius_m'] as num?)?.toInt() ?? 100,
     );
   }

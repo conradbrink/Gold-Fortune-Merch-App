@@ -40,6 +40,7 @@ class _StorePickerScreenState extends ConsumerState<StorePickerScreen> {
       storeState: store.state,
       storeLat: store.lat,
       storeLng: store.lng,
+      storeGeocodeSource: store.geocodeSource,
       geofenceRadiusM: store.geofenceRadiusM,
     );
 

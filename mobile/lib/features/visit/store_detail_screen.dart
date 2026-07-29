@@ -189,7 +189,23 @@ class _StoreDetailScreenState extends ConsumerState<StoreDetailScreen> {
   /// this per store — the server will not let it be overwritten afterwards —
   /// so the dialog says what it is about to do and what it will cost if the
   /// rep is not actually in the shop.
-  Future<bool> _confirmStoreLocation(RouteVisit rv, double accuracyM) async {
+  Future<bool> _confirmStoreLocation(
+    RouteVisit rv,
+    double accuracyM,
+    double? movingBy,
+  ) async {
+    // How far the shop is about to move, when it already had a position. A rep
+    // agreeing to shift a shop 40 m is doing something different from one
+    // shifting it 3 km, and only the second is worth pausing over — saying the
+    // number lets them notice they are standing somewhere unexpected.
+    final movement = movingBy == null
+        ? ''
+        : movingBy >= 1000
+            ? 'That moves it about ${(movingBy / 1000).toStringAsFixed(1)}km '
+                'from where it currently sits.\n\n'
+            : 'That moves it about ${movingBy.round()}m from where it '
+                'currently sits.\n\n';
+
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -197,6 +213,7 @@ class _StoreDetailScreenState extends ConsumerState<StoreDetailScreen> {
         content: Text(
           'This will put ${rv.storeName} on the map where you are standing '
           'now, accurate to about ${accuracyM.round()}m.\n\n'
+          '$movement'
           'Every future visit to this shop is measured from that point, and it '
           "can't be changed from the app afterwards. Only do this if you are "
           'at the shop itself.',
@@ -244,8 +261,13 @@ class _StoreDetailScreenState extends ConsumerState<StoreDetailScreen> {
         return;
       }
 
+      final movingBy = rv.hasGuessedLocation
+          ? LocationService.distanceBetween(
+              rv.storeLat!, rv.storeLng!, position.latitude, position.longitude)
+          : null;
+
       if (!mounted) return;
-      if (!await _confirmStoreLocation(rv, position.accuracy)) return;
+      if (!await _confirmStoreLocation(rv, position.accuracy, movingBy)) return;
 
       // The check-in may still be sitting in the outbox — the server can only
       // judge this against a visit it has. Flushing first turns "not synced
@@ -265,6 +287,10 @@ class _StoreDetailScreenState extends ConsumerState<StoreDetailScreen> {
             rv.copyWith(
               storeLat: position.latitude,
               storeLng: position.longitude,
+              // Without the source the card would come straight back: the
+              // store now has coordinates either way, and it is the provenance
+              // that decides whether to keep asking.
+              storeGeocodeSource: 'rep',
             ),
           );
       ref.invalidate(todayRoutesProvider);
@@ -467,15 +493,25 @@ class _StoreDetailScreenState extends ConsumerState<StoreDetailScreen> {
                 ),
                 const SizedBox(height: 12),
               ],
-              // Nobody has ever put this shop on the map, and the rep is
-              // standing in it. Offered only while checked in: the server
-              // anchors the point to the check-in fix, and a rep who has left
-              // is no longer the right instrument.
+              // Nobody has stood in this shop and measured it, and the rep is
+              // standing in it now.
+              //
+              // The test is the *provenance* of the position, not whether one
+              // exists. Most stores here carry a point Google guessed from the
+              // shop's name, and a guess is exactly what someone on site can
+              // replace — an earlier version only offered this when the store
+              // had no coordinates at all, which hid the button on the 194
+              // stores that most needed it.
+              //
+              // Offered only while checked in: the server anchors the new point
+              // to the check-in fix, and a rep who has left is no longer the
+              // right instrument.
               if (rv.isCheckedIn &&
                   rv.visitClientGeneratedId != null &&
-                  (rv.storeLat == null || rv.storeLng == null)) ...[
+                  !rv.hasVerifiedLocation) ...[
                 _SetLocationCard(
                   busy: _locating,
+                  isCorrection: rv.hasGuessedLocation,
                   onPressed: _locating ? null : () => _setStoreLocation(rv),
                 ),
                 const SizedBox(height: 16),
@@ -637,9 +673,18 @@ class _FormsSection extends ConsumerWidget {
 /// until this shop has a point, the app cannot show it was visited from the
 /// right place, and the rep is the only person who can fix that.
 class _SetLocationCard extends StatelessWidget {
-  const _SetLocationCard({required this.busy, required this.onPressed});
+  const _SetLocationCard({
+    required this.busy,
+    required this.isCorrection,
+    required this.onPressed,
+  });
 
   final bool busy;
+
+  /// The store already has a position, it just isn't one anybody checked.
+  /// Worth saying plainly — "this shop is not on the map" would be wrong, and
+  /// a rep who can see a pin nearby would rightly ignore it.
+  final bool isCorrection;
   final VoidCallback? onPressed;
 
   @override
@@ -653,15 +698,17 @@ class _SetLocationCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Row(
+          Row(
             children: [
-              Icon(Icons.wrong_location_outlined,
+              const Icon(Icons.wrong_location_outlined,
                   size: 18, color: AppColors.navy),
-              SizedBox(width: 8),
+              const SizedBox(width: 8),
               Expanded(
                 child: Text(
-                  'This shop is not on the map',
-                  style: TextStyle(
+                  isCorrection
+                      ? 'This shop’s position is a guess'
+                      : 'This shop is not on the map',
+                  style: const TextStyle(
                     fontWeight: FontWeight.w600,
                     fontSize: 14,
                     color: AppColors.textPrimary,
@@ -671,11 +718,16 @@ class _SetLocationCard extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 6),
-          const Text(
-            'We have no location for it, so your visits here cannot be shown '
-            'against the right place. You are standing in it — mark it once '
-            'and it is fixed for everyone.',
-            style: TextStyle(fontSize: 12.5, color: AppColors.textPrimary),
+          Text(
+            isCorrection
+                ? 'Nobody has ever checked where it really is — the pin came '
+                    'from a name search, and those often land on the wrong '
+                    'branch. You are standing in the shop, so you can settle '
+                    'it. Do this once and it is right for everyone.'
+                : 'We have no location for it, so your visits here cannot be '
+                    'shown against the right place. You are standing in it — '
+                    'mark it once and it is fixed for everyone.',
+            style: const TextStyle(fontSize: 12.5, color: AppColors.textPrimary),
           ),
           const SizedBox(height: 12),
           SizedBox(
@@ -695,7 +747,11 @@ class _SetLocationCard extends StatelessWidget {
                     )
                   : const Icon(Icons.add_location_alt_outlined, size: 20),
               label: Text(
-                busy ? 'Getting your location…' : "Set it to where I'm standing",
+                busy
+                    ? 'Getting your location…'
+                    : isCorrection
+                        ? "Move it to where I'm standing"
+                        : "Set it to where I'm standing",
                 style: const TextStyle(fontSize: 14.5),
               ),
               style: ElevatedButton.styleFrom(
