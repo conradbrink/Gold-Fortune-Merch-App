@@ -144,6 +144,21 @@ class AppDatabase extends _$AppDatabase {
         .get();
   }
 
+  /// Client ids that still have queued work.
+  ///
+  /// A cached row carrying one of these holds local state the server has not
+  /// been told about yet, so a refresh must not overwrite it with the server's
+  /// older view. See `RouteRepository.fetchRoutesForDate`.
+  Future<Set<String>> pendingClientIds() async {
+    final query = selectOnly(outboxEntries, distinct: true)
+      ..addColumns([outboxEntries.clientGeneratedId]);
+    final rows = await query.get();
+    return rows
+        .map((r) => r.read(outboxEntries.clientGeneratedId))
+        .whereType<String>()
+        .toSet();
+  }
+
   Stream<int> watchPendingCount() {
     final countExp = outboxEntries.id.count();
     final query = selectOnly(outboxEntries)..addColumns([countExp]);
