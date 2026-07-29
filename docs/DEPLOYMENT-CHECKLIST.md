@@ -5,10 +5,15 @@ hurts most if skipped.
 
 ## Blocking — do not go live without these
 
-- [ ] **Set the three merchandiser passwords.** Supabase → Authentication →
-      Users → Reset password for Atang, Tshepo and Harry. Check first that
-      `@goldfortune.dev` mailboxes actually exist; if not, change each auth
-      user's email to one the rep can receive at, then reset.
+- [ ] **Re-create the three merchandisers.** Atang, Tshepo and Harry were
+      deleted on 29 July because their passwords were unknown. Re-add them from
+      **Representatives → Add rep**, which sets a password at creation — that
+      was always the right answer to the password problem, and it avoids relying
+      on `@goldfortune.dev` mailboxes that may not exist.
+- [ ] **Rebuild the call cycle.** Deleting those accounts cascaded away all 82
+      store assignments and 218 routes. The 209 stores and 18 products are
+      untouched. After re-inviting the reps: assign their stores, then
+      regenerate routes from the Schedule page.
 - [ ] **Enable leaked-password protection.** Supabase → Authentication →
       Policies. Checks new passwords against HaveIBeenPwned. Currently off, and
       the invite route only enforces a minimum of eight characters.
