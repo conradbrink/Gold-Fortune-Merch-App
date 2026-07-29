@@ -1,7 +1,13 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { AlertTriangle, ChevronDown, ChevronRight, Trash2 } from "lucide-react";
+import {
+  AlertTriangle,
+  ChevronDown,
+  ChevronRight,
+  RefreshCw,
+  Trash2,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import {
@@ -17,9 +23,12 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { createClient } from "@/lib/supabase/client";
 import {
   assignStore,
+  changeRepEmail,
   deleteRep,
   fetchDeleteImpact,
+  generatePassword,
   setRepActive,
+  setRepPassword,
   unassignStore,
   updateRep,
   type Assignment,
@@ -59,6 +68,13 @@ export function AssignStoresDialog({
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [busyStore, setBusyStore] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [fullName, setFullName] = useState("");
+  const [email, setEmail] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [savingEmail, setSavingEmail] = useState(false);
+  const [emailSaved, setEmailSaved] = useState(false);
+  const [savingPassword, setSavingPassword] = useState(false);
+  const [passwordSaved, setPasswordSaved] = useState(false);
   const [phone, setPhone] = useState("");
   const [jobTitle, setJobTitle] = useState("");
   const [savingDetails, setSavingDetails] = useState(false);
@@ -114,6 +130,11 @@ export function AssignStoresDialog({
 
   useEffect(() => {
     if (!open || !rep) return;
+    setFullName(rep.rep_name ?? "");
+    setEmail(rep.email ?? "");
+    setNewPassword("");
+    setEmailSaved(false);
+    setPasswordSaved(false);
     setPhone(rep.phone ?? "");
     setJobTitle(rep.job_title ?? "");
     setSavedDetails(false);
@@ -188,6 +209,22 @@ export function AssignStoresDialog({
               <Badge variant="destructive">Deactivated</Badge>
             )}
           </div>
+          {/* Editable here and nowhere else. The email is the sign-in
+              credential and only the admin API can move it, and the role is
+              server-controlled — but a misspelt name is an ordinary correction
+              a manager should not need help with. */}
+          <div className="space-y-1.5">
+            <Label htmlFor="rep-name">Full name</Label>
+            <Input
+              id="rep-name"
+              value={fullName}
+              placeholder="Kagiso Motlhabane"
+              onChange={(e) => {
+                setFullName(e.target.value);
+                setSavedDetails(false);
+              }}
+            />
+          </div>
           <div className="grid gap-3 sm:grid-cols-2">
             <div className="space-y-1.5">
               <Label htmlFor="rep-phone">Phone</Label>
@@ -214,21 +251,133 @@ export function AssignStoresDialog({
               />
             </div>
           </div>
+          {/* Email and password are the sign-in credentials, so both go through
+              /api/reps/[id] on the service role — auth.users is not writable
+              from the browser, and a profiles-only email change would leave the
+              rep signing in with an address the dashboard no longer shows. */}
+          <div className="space-y-1.5">
+            <Label htmlFor="rep-email">Email</Label>
+            <div className="flex gap-2">
+              <Input
+                id="rep-email"
+                type="email"
+                value={email}
+                placeholder="kagiso@example.com"
+                onChange={(e) => {
+                  setEmail(e.target.value);
+                  setEmailSaved(false);
+                }}
+              />
+              <Button
+                variant="outline"
+                disabled={
+                  savingEmail ||
+                  !rep ||
+                  !email.trim() ||
+                  email.trim().toLowerCase() === (rep?.email ?? "").toLowerCase()
+                }
+                onClick={async () => {
+                  if (!rep) return;
+                  setSavingEmail(true);
+                  setError(null);
+                  try {
+                    await changeRepEmail(rep.rep_id, email.trim());
+                    setEmailSaved(true);
+                    onChanged();
+                  } catch (e) {
+                    setError(e instanceof Error ? e.message : String(e));
+                  } finally {
+                    setSavingEmail(false);
+                  }
+                }}
+              >
+                {savingEmail ? "Saving…" : emailSaved ? "Changed" : "Change"}
+              </Button>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              This is what they sign in with. Changing it takes effect
+              immediately — tell them.
+            </p>
+          </div>
+
+          <div className="space-y-1.5">
+            <Label htmlFor="rep-new-password">Set a new password</Label>
+            <div className="flex gap-2">
+              <Input
+                id="rep-new-password"
+                type="text"
+                value={newPassword}
+                autoComplete="new-password"
+                placeholder="At least 8 characters"
+                onChange={(e) => {
+                  setNewPassword(e.target.value);
+                  setPasswordSaved(false);
+                }}
+              />
+              <Button
+                variant="outline"
+                size="icon"
+                title="Generate a password"
+                onClick={() => {
+                  setNewPassword(generatePassword());
+                  setPasswordSaved(false);
+                }}
+              >
+                <RefreshCw className="h-4 w-4" />
+              </Button>
+              <Button
+                variant="outline"
+                disabled={savingPassword || !rep || newPassword.length < 8}
+                onClick={async () => {
+                  if (!rep) return;
+                  setSavingPassword(true);
+                  setError(null);
+                  try {
+                    await setRepPassword(rep.rep_id, newPassword);
+                    setPasswordSaved(true);
+                  } catch (e) {
+                    setError(e instanceof Error ? e.message : String(e));
+                  } finally {
+                    setSavingPassword(false);
+                  }
+                }}
+              >
+                {savingPassword ? "Setting…" : passwordSaved ? "Set" : "Set"}
+              </Button>
+            </div>
+            {passwordSaved ? (
+              // Shown here and nowhere else: it is stored hashed, so this is the
+              // only moment it can be read.
+              <p className="text-xs text-emerald-700 dark:text-emerald-400">
+                Password changed. Give them{" "}
+                <span className="font-mono text-foreground">{newPassword}</span>{" "}
+                now — it cannot be looked up later.
+              </p>
+            ) : (
+              <p className="text-xs text-muted-foreground">
+                Replaces their current password. There is no way to look up the
+                old one.
+              </p>
+            )}
+          </div>
+
           <p className="text-xs text-muted-foreground">
-            {rep?.email ?? "—"}
             {rep?.joined_at &&
-              ` · joined ${new Date(rep.joined_at).toLocaleDateString()}`}
+              `Joined ${new Date(rep.joined_at).toLocaleDateString()}`}
           </p>
           <div className="flex flex-wrap items-center gap-2">
             <Button
               size="sm"
-              disabled={savingDetails || !rep}
+              // A blank name is not a correction, it is a rep who becomes
+              // "Unnamed rep" everywhere they appear.
+              disabled={savingDetails || !rep || !fullName.trim()}
               onClick={async () => {
                 if (!rep) return;
                 setSavingDetails(true);
                 setError(null);
                 try {
                   await updateRep(supabase, rep.rep_id, {
+                    full_name: fullName.trim(),
                     phone: phone.trim() || null,
                     job_title: jobTitle.trim() || null,
                   });

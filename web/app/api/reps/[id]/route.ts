@@ -1,5 +1,9 @@
-import { createClient as createAdminClient } from "@supabase/supabase-js";
+import {
+  createClient as createAdminClient,
+  type SupabaseClient,
+} from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/server";
+import { enforceRateLimit, LIMITS } from "@/lib/rate-limit";
 
 /**
  * Permanently delete a rep.
@@ -94,12 +98,82 @@ async function authorise(id: string) {
 }
 
 /**
- * Activate or deactivate a rep.
+ * Move a rep's sign-in address.
  *
- * Two things have to happen together. `profiles.is_active` gates RLS, so a
- * deactivated rep sees no data — but Supabase auth knows nothing about that
- * column, so they could still sign in and sit in an empty app. Banning the auth
- * user refuses the sign-in itself.
+ * Three copies have to agree: `auth.users.email` is the credential,
+ * `auth.identities` holds the email identity GoTrue actually authenticates
+ * against, and `profiles.email` is the mirror the dashboard reads. Only the
+ * admin API moves the first two together — writing `profiles.email` alone
+ * would change what the manager sees while the rep still signs in with the old
+ * address, which is worse than not offering this at all.
+ */
+async function changeEmail(admin: SupabaseClient, id: string, raw: string) {
+  const email = raw.trim().toLowerCase();
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    return Response.json({ error: "Enter a valid email address." }, { status: 400 });
+  }
+
+  const { data: before } = await admin.auth.admin.getUserById(id);
+  const previous = before?.user?.email ?? null;
+
+  const { error: authError } = await admin.auth.admin.updateUserById(id, {
+    email,
+    // The rep is handed their details in person; there is no inbox to confirm.
+    email_confirm: true,
+  });
+  if (authError) {
+    const taken = /already|registered|exists/i.test(authError.message);
+    return Response.json(
+      { error: taken ? "That email already has an account." : authError.message },
+      { status: taken ? 409 : 502 }
+    );
+  }
+
+  const { error: profileError } = await admin
+    .from("profiles")
+    .update({ email })
+    .eq("id", id);
+  if (profileError && previous) {
+    // Put the credential back rather than leave the login and the dashboard
+    // disagreeing about who this person is.
+    await admin.auth.admin.updateUserById(id, {
+      email: previous,
+      email_confirm: true,
+    });
+    return Response.json(
+      { error: `Email change rolled back: ${profileError.message}` },
+      { status: 500 }
+    );
+  }
+
+  return Response.json({ id, email });
+}
+
+/** Sets a new password. The value is never echoed back. */
+async function setPassword(admin: SupabaseClient, id: string, password: string) {
+  if (password.length < 8) {
+    return Response.json(
+      { error: "Password must be at least 8 characters." },
+      { status: 400 }
+    );
+  }
+
+  const { error } = await admin.auth.admin.updateUserById(id, { password });
+  if (error) {
+    return Response.json({ error: error.message }, { status: 502 });
+  }
+
+  return Response.json({ id, password_set: true });
+}
+
+/**
+ * Change one thing about a rep: whether they are active, their sign-in email,
+ * or their password.
+ *
+ * Deactivation is two things that have to happen together. `profiles.is_active`
+ * gates RLS, so a deactivated rep sees no data — but Supabase auth knows
+ * nothing about that column, so they could still sign in and sit in an empty
+ * app. Banning the auth user refuses the sign-in itself.
  */
 export async function PATCH(
   request: Request,
@@ -110,9 +184,41 @@ export async function PATCH(
     const guard = await authorise(id);
     if ("error" in guard) return guard.error;
 
-    const body = (await request.json()) as { is_active?: boolean };
+    // Cheap per call, but creating auth churn on someone else's account is
+    // worth a ceiling. The bucket was defined when the limiter was built and
+    // had never been wired to a route.
+    const gate = await enforceRateLimit(guard.supabase, LIMITS.repAdmin);
+    if (!gate.ok) return gate.response;
+
+    const body = (await request.json()) as {
+      is_active?: boolean;
+      email?: string;
+      password?: string;
+    };
+
+    // One operation per call, so a partial failure is never ambiguous about
+    // which half of the request took effect.
+    const asked = [body.is_active, body.email, body.password].filter(
+      (v) => v !== undefined
+    ).length;
+    if (asked !== 1) {
+      return Response.json(
+        { error: "Send exactly one of is_active, email or password." },
+        { status: 400 }
+      );
+    }
+
+    if (typeof body.email === "string") {
+      return changeEmail(guard.admin, id, body.email);
+    }
+    if (typeof body.password === "string") {
+      return setPassword(guard.admin, id, body.password);
+    }
     if (typeof body.is_active !== "boolean") {
-      return Response.json({ error: "is_active is required." }, { status: 400 });
+      return Response.json(
+        { error: "is_active must be true or false." },
+        { status: 400 }
+      );
     }
 
     const { error: profileError } = await guard.admin

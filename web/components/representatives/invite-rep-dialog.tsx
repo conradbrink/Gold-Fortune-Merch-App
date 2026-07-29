@@ -13,7 +13,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { createRep } from "@/lib/representatives";
+import { createRep, generatePassword } from "@/lib/representatives";
 
 /**
  * Add a rep with a starting password.
@@ -26,14 +26,6 @@ import { createRep } from "@/lib/representatives";
  * The password is shown once, on the success screen, and is never stored
  * client-side — if the manager loses it they reset it rather than look it up.
  */
-
-/** Avoids look-alike characters, since this gets read aloud or copied by hand. */
-function generatePassword(): string {
-  const alphabet = "abcdefghijkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789";
-  const bytes = new Uint32Array(12);
-  crypto.getRandomValues(bytes);
-  return Array.from(bytes, (b) => alphabet[b % alphabet.length]).join("");
-}
 
 export function InviteRepDialog({
   open,
