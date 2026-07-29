@@ -4,9 +4,10 @@ Audited 29 July 2026 against the live Supabase project `bvbgtsxasttjzlemumwy`
 (eu-west-3). Every finding below was **confirmed by exploiting it** inside a
 transaction that was then rolled back, not inferred from reading policy text.
 
-Status: **Phases 1, 2 and 6 complete. Five confirmed vulnerabilities fixed and
-re-tested** — four privilege/integrity holes and the absent rate limiting.
-The remaining phases are scoped in section 3.
+Status: **Phases 1, 2, 6, 7, 9 and 10 complete.** Six confirmed vulnerabilities
+fixed and re-tested, an audit trail added, and the exploits turned into a
+runnable regression suite — `supabase/tests/security_regression.sql`, 18 checks,
+all passing. Remaining work is scoped in section 3.
 
 ---
 
@@ -146,11 +147,9 @@ Tested and behaving correctly:
 
 | Finding | Detail |
 |---|---|
-| `visit-photos` bucket has no size or MIME limit | `files` has both. An authenticated rep could upload arbitrarily large files or executable types. |
 | Leaked-password protection disabled | Supabase Auth can check new passwords against HaveIBeenPwned. Dashboard toggle. |
 | Photo uploads and check-ins are still unthrottled | The paid routes are now limited; these are storage and row growth rather than a third-party bill, so lower priority. |
 | `visits_update` still allows a rep to change `status` freely | They can mark a visit `missed` or reopen a `checked_out` one. Lower impact now that the coordinates are frozen. |
-| No audit trail | Role changes, store reassignment and deactivation are not logged anywhere. |
 
 ### LOW — outstanding
 
@@ -161,6 +160,28 @@ Tested and behaving correctly:
   `set_store_location_from_visit` are worth re-reading whenever they change.
 - `rls_forced` is false on every table, so a future table owner bypasses RLS.
   Only relevant if application code ever connects as the owner; it does not.
+
+### MEDIUM — visit-photos accepted anything · FIXED
+
+The bucket had neither a size nor a MIME limit, while `files` had both. An
+authenticated rep could upload a multi-gigabyte file, or an executable, into
+storage the customer pays for. Now capped at **10 MB** and restricted to
+`image/jpeg, png, webp, heic, heif`. Still private, and the path policy already
+pinned uploads to `{org_id}/{auth.uid()}/…`.
+
+### MEDIUM — nothing recorded who changed a permission · FIXED
+
+`20260729180012_create_security_audit_log.sql` adds `security_events`, written
+by triggers rather than by application code — code that remembers to log is code
+that eventually forgets, and a trigger catches the service-role routes and
+direct SQL too. It records role, `is_active` and `org_id` changes, and store
+assignments (coverage decides which chain-audience files a rep can see, so it is
+a permission change as much as a scheduling one).
+
+Managers read their own organisation's trail. There is no INSERT, UPDATE or
+DELETE policy: an audit log a user can edit is not an audit log. The `via`
+field names the connection role, so a change made with the service key is
+distinguishable from one made by a signed-in manager.
 
 ## 3. Not yet done
 
