@@ -1,0 +1,1444 @@
+"use client";
+
+import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
+import {
+  Map,
+  List,
+  Upload,
+  Plus,
+  Store,
+  MoreHorizontal,
+  ExternalLink,
+  Pencil,
+  Trash2,
+  Archive,
+  AlertTriangle,
+  Check,
+  Building2,
+  MapPin,
+} from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { NativeSelect } from "@/components/ui/native-select";
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { ImportStoresButton } from "@/components/stores/import-dialog";
+import {
+  findSharedPoints,
+  geocodeState,
+  type GeocodeState,
+  type SharedPointStore,
+} from "@/lib/geocode";
+import {
+  GEOCODE_STATE_ORDER,
+  GEOCODE_STATE_STYLES,
+  GeocodePill,
+} from "@/components/stores/geocode-pill";
+import {
+  StoreLocationDialog,
+  type GeocodeCapture,
+} from "@/components/stores/store-location-dialog";
+// `components/dashboard/filter-bar.tsx` is deliberately NOT used here: its
+// "Add filter", "Clear" and "Apply" buttons have no onClick at all. It read as
+// decorative chrome next to the real filter row below, and with 200+ stores a
+// manager reasonably expects it to do something.
+import { PlacesMap } from "@/components/dashboard/places-map";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { createClient } from "@/lib/supabase/client";
+import {
+  assignStore,
+  fetchAssignments,
+  fetchOrgId,
+  unassignStore,
+  type Assignment,
+} from "@/lib/representatives";
+import { callRpc } from "@/lib/rpc";
+import { googleMapsUrl } from "@/lib/maps";
+import type { Tables } from "@/lib/supabase/types";
+
+type StoreRow = Tables<"stores">;
+type StoreGroup = Tables<"store_groups">;
+
+const emptyForm = {
+  name: "",
+  store_group_id: "",
+  address: "",
+  city: "",
+  state: "",
+  zip: "",
+};
+
+/** What a hard delete would cascade away — from `store_delete_impact`. */
+type StoreDeleteImpact = {
+  store_name: string | null;
+  visits: number;
+  submissions: number;
+  photos: number;
+  routes: number;
+  assignments: number;
+  reps: number;
+};
+
+/** Relative for recent visits, absolute once "12 weeks ago" stops being useful. */
+function formatLastVisit(iso: string | null | undefined): string {
+  if (!iso) return "Never visited";
+  const days = Math.floor((Date.now() - new Date(iso).getTime()) / 86_400_000);
+  if (days <= 0) return "Today";
+  if (days === 1) return "Yesterday";
+  if (days < 30) return `${days}d ago`;
+  return new Date(iso).toLocaleDateString();
+}
+
+export default function StoresPage() {
+  const supabase = createClient();
+  const [view, setView] = useState<"list" | "map">("list");
+  const [stores, setStores] = useState<StoreRow[]>([]);
+  const [groups, setGroups] = useState<StoreGroup[]>([]);
+  /**
+   * The raw assignment rows, not a derived summary.
+   *
+   * Keeping the ids means a rep can be unassigned from this page, and it lets
+   * assignment edits be applied to local state instead of triggering a reload —
+   * a full refetch swapped the table for a spinner and threw away the scroll
+   * position, which is unusable at 217 stores.
+   */
+  const [assignments, setAssignments] = useState<Assignment[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState("");
+  const [groupFilter, setGroupFilter] = useState("all");
+  // With 200+ stores across 45 towns, "which town" is the filter a manager
+  // actually reaches for — more than group, and far more than free text.
+  const [cityFilter, setCityFilter] = useState("all");
+  const [lastVisits, setLastVisits] = useState<Record<string, string>>({});
+  /** Reps available to assign inline from this page. */
+  const [reps, setReps] = useState<{ id: string; name: string }[]>([]);
+  const [orgId, setOrgId] = useState<string | null>(null);
+  const [busyStore, setBusyStore] = useState<string | null>(null);
+  const [rowError, setRowError] = useState<string | null>(null);
+  /** Non-null once a delete has been requested — holds what it would destroy. */
+  const [deleteTarget, setDeleteTarget] = useState<StoreRow | null>(null);
+  const [deleteImpact, setDeleteImpact] = useState<StoreDeleteImpact | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  /** The rep and visit behind each field-captured location, keyed by store. */
+  const [captures, setCaptures] = useState<Record<string, GeocodeCapture>>({});
+  /** Filter on where a location came from — "shared" cuts across the sources. */
+  const [provFilter, setProvFilter] = useState<GeocodeState | "all" | "shared">(
+    "all"
+  );
+  /** Non-null while the location-provenance dialog is open. */
+  const [locationTarget, setLocationTarget] = useState<StoreRow | null>(null);
+
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [form, setForm] = useState(emptyForm);
+  const [newGroupName, setNewGroupName] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  const [groupDialogOpen, setGroupDialogOpen] = useState(false);
+  const [editingGroupId, setEditingGroupId] = useState<string | null>(null);
+  const [editingGroupName, setEditingGroupName] = useState("");
+  const [groupBusy, setGroupBusy] = useState<string | null>(null);
+  /** Second click confirms — deleting un-groups every store in it. */
+  const [confirmDeleteGroup, setConfirmDeleteGroup] = useState<string | null>(
+    null
+  );
+  const [groupForm, setGroupForm] = useState("");
+
+  async function loadData() {
+    setLoading(true);
+
+    // Four independent reads, so they go together rather than in a queue.
+    // Sequentially these were four round trips before the table could paint,
+    // and on a Botswana connection that is the difference between the page
+    // feeling instant and feeling broken. None of them depends on another —
+    // only the capture lookup below does, because it needs to know whether any
+    // store has a capture at all.
+    const [groupRes, storeRes, assignmentRows, visitRes, repRes] =
+      await Promise.all([
+        supabase.from("store_groups").select("*").order("name"),
+        supabase.from("stores").select("*").order("name"),
+        // Reuses the representatives fetcher: store_assignments is missing from
+        // the generated types, so querying it off the typed client won't compile.
+        fetchAssignments(supabase),
+        // Aggregated in Postgres. `visits` is the fastest-growing table here, so
+        // the list must not download it to compute a maximum per row.
+        callRpc(supabase, "store_last_visit", {}),
+        // Names for the "Responsible" column.
+        supabase.from("profiles").select("id, full_name").eq("role", "rep"),
+      ]);
+
+    const groupRows = groupRes.data;
+    const storeRows = storeRes.data;
+    const repRows = repRes.data;
+
+    setGroups(groupRows ?? []);
+    setStores(storeRows ?? []);
+    setAssignments(assignmentRows);
+
+    const seen: Record<string, string> = {};
+    if (!visitRes.error) {
+      for (const r of (visitRes.data ?? []) as {
+        store_id: string;
+        last_visit_at: string | null;
+      }[]) {
+        if (r.last_visit_at) seen[r.store_id] = r.last_visit_at;
+      }
+    }
+    setLastVisits(seen);
+
+    // Who captured a location in the field, resolved through the visit it was
+    // taken during. Skipped entirely when no store has one — which is every
+    // store until reps start doing it — rather than asking Postgres for an
+    // empty set on every page load.
+    const byStore: Record<string, GeocodeCapture> = {};
+    if ((storeRows ?? []).some((s) => s.geocode_visit_id !== null)) {
+      const { data: captureRows } = await supabase.rpc("store_geocode_capture");
+      for (const r of captureRows ?? []) {
+        byStore[r.store_id] = {
+          visitId: r.visit_id,
+          // The RPC left-joins profiles and the generated types cannot express
+          // that, so these two are narrowed here rather than trusted.
+          repName: (r.rep_name as string | null) ?? null,
+          checkinAt: (r.visit_checkin_at as string | null) ?? null,
+        };
+      }
+    }
+    setCaptures(byStore);
+
+    // Plain objects, not Map: this file imports lucide's `Map` icon, which
+    // shadows the global constructor.
+    const nameById: Record<string, string> = {};
+    for (const r of (repRows ?? []) as { id: string; full_name: string | null }[]) {
+      nameById[r.id] = r.full_name ?? "Unnamed rep";
+    }
+    setReps(
+      Object.entries(nameById)
+        .map(([id, name]) => ({ id, name }))
+        .sort((a, b) => a.name.localeCompare(b.name))
+    );
+    setLoading(false);
+  }
+
+  useEffect(() => {
+    loadData();
+    fetchOrgId(supabase).then(setOrgId).catch(() => setOrgId(null));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  /**
+   * Runs a per-row mutation without reloading the page.
+   *
+   * The optimistic state goes in first so the row updates instantly, and is
+   * rolled back if the write fails. Nothing calls `loadData()` here — that
+   * would raise the loading flag, replace the table with a spinner and drop
+   * the manager back at the top of a 217-row list.
+   */
+  async function runOnRow(
+    storeId: string,
+    optimistic: () => void,
+    rollback: () => void,
+    write: () => Promise<void>
+  ) {
+    setBusyStore(storeId);
+    setRowError(null);
+    optimistic();
+    try {
+      await write();
+    } catch (e) {
+      rollback();
+      setRowError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusyStore(null);
+    }
+  }
+
+  /** Assign a rep in place — a trip to /representatives per store is untenable
+      across 217 of them. */
+  function assignRep(store: StoreRow, repId: string) {
+    if (!orgId) {
+      setRowError("Could not determine your organisation.");
+      return;
+    }
+    const before = assignments;
+    // A temporary id until the insert returns; only used as a React key and
+    // for rollback, never sent anywhere.
+    const optimisticRow: Assignment = {
+      id: `pending-${store.id}-${repId}`,
+      store_id: store.id,
+      rep_id: repId,
+      is_primary: false,
+    };
+    runOnRow(
+      store.id,
+      () => setAssignments((prev) => [...prev, optimisticRow]),
+      () => setAssignments(before),
+      async () => {
+        await assignStore(supabase, orgId, store.id, repId);
+        // Re-read just the assignments so the placeholder id becomes the real
+        // one — one small query, and the table never unmounts.
+        setAssignments(await fetchAssignments(supabase));
+      }
+    );
+  }
+
+  function unassignRep(store: StoreRow, assignmentId: string) {
+    const before = assignments;
+    runOnRow(
+      store.id,
+      () => setAssignments((prev) => prev.filter((a) => a.id !== assignmentId)),
+      () => setAssignments(before),
+      () => unassignStore(supabase, assignmentId)
+    );
+  }
+
+  /** Moves a store between groups, or out of one entirely with `null`. */
+  function setStoreGroup(store: StoreRow, groupId: string | null) {
+    if (store.store_group_id === groupId) return;
+    const before = stores;
+    runOnRow(
+      store.id,
+      () =>
+        setStores((prev) =>
+          prev.map((s) =>
+            s.id === store.id ? { ...s, store_group_id: groupId } : s
+          )
+        ),
+      () => setStores(before),
+      async () => {
+        const { error } = await supabase
+          .from("stores")
+          .update({ store_group_id: groupId })
+          .eq("id", store.id);
+        if (error) throw new Error(error.message);
+      }
+    );
+  }
+
+  /** Fetches the cost before the confirm step — never deletes on its own. */
+  async function requestDelete(store: StoreRow) {
+    setDeleteTarget(store);
+    setDeleteImpact(null);
+    setRowError(null);
+    const res = await callRpc(supabase, "store_delete_impact", {
+      p_store_id: store.id,
+    });
+    if (res.error) {
+      setRowError(res.error.message);
+      setDeleteTarget(null);
+      return;
+    }
+    setDeleteImpact(((res.data ?? []) as StoreDeleteImpact[])[0] ?? null);
+  }
+
+  async function confirmDelete() {
+    if (!deleteTarget) return;
+    setDeleting(true);
+    setRowError(null);
+    try {
+      const { error } = await supabase
+        .from("stores")
+        .delete()
+        .eq("id", deleteTarget.id);
+      if (error) throw new Error(error.message);
+      setDeleteTarget(null);
+      setDeleteImpact(null);
+      await loadData();
+    } catch (e) {
+      setRowError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setDeleting(false);
+    }
+  }
+
+  async function currentOrgId() {
+    const { data: userData } = await supabase.auth.getUser();
+    const { data: profileRow } = await supabase
+      .from("profiles")
+      .select("org_id")
+      .eq("id", userData.user!.id)
+      .single();
+    return profileRow!.org_id;
+  }
+
+  function openCreate() {
+    setEditingId(null);
+    setForm(emptyForm);
+    setNewGroupName("");
+    setDialogOpen(true);
+  }
+
+  function openEdit(store: StoreRow) {
+    setEditingId(store.id);
+    setForm({
+      name: store.name ?? "",
+      store_group_id: store.store_group_id ?? "",
+      address: store.address ?? "",
+      city: store.city ?? "",
+      state: store.state ?? "",
+      zip: store.zip ?? "",
+    });
+    setNewGroupName("");
+    setDialogOpen(true);
+  }
+
+  async function handleSave() {
+    setSaving(true);
+    const orgId = await currentOrgId();
+
+    // Allow creating a brand-new group inline from the store dialog.
+    let groupId: string | null = form.store_group_id || null;
+    if (form.store_group_id === "__new__") {
+      groupId = null;
+      if (newGroupName.trim()) {
+        const { data: created } = await supabase
+          .from("store_groups")
+          .insert({ org_id: orgId, name: newGroupName.trim() })
+          .select("id")
+          .single();
+        groupId = created?.id ?? null;
+      }
+    }
+
+    const payload = {
+      name: form.name,
+      store_group_id: groupId,
+      address: form.address,
+      city: form.city,
+      state: form.state,
+      zip: form.zip,
+    };
+
+    if (editingId) {
+      await supabase.from("stores").update(payload).eq("id", editingId);
+    } else {
+      await supabase.from("stores").insert({ ...payload, org_id: orgId });
+    }
+
+    setSaving(false);
+    setDialogOpen(false);
+    setEditingId(null);
+    setForm(emptyForm);
+    setNewGroupName("");
+    loadData();
+  }
+
+  async function handleCreateGroup() {
+    if (!groupForm.trim()) return;
+    setSaving(true);
+    const orgId = await currentOrgId();
+    await supabase
+      .from("store_groups")
+      .insert({ org_id: orgId, name: groupForm.trim() });
+    setSaving(false);
+    setGroupForm("");
+    loadData();
+  }
+
+  async function renameGroup(id: string, name: string) {
+    if (!name.trim()) return;
+    setGroupBusy(id);
+    setRowError(null);
+    try {
+      const { data, error } = await supabase
+        .from("store_groups")
+        .update({ name: name.trim() })
+        .eq("id", id)
+        .select("id");
+      if (error) throw new Error(error.message);
+      if ((data?.length ?? 0) === 0) {
+        throw new Error("That group could not be renamed — reload and retry.");
+      }
+      setEditingGroupId(null);
+      await loadData();
+    } catch (e) {
+      setRowError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setGroupBusy(null);
+    }
+  }
+
+  /**
+   * Deleting a group does not delete its stores.
+   *
+   * `stores.store_group_id` is `on delete set null`, so they survive and become
+   * ungrouped — which is why this is safe to offer inline, and why the count of
+   * what is about to be un-grouped is shown before the second click. Losing a
+   * chain grouping quietly would be hard to notice and tedious to rebuild.
+   */
+  async function deleteGroup(id: string) {
+    setGroupBusy(id);
+    setRowError(null);
+    try {
+      const { error } = await supabase
+        .from("store_groups")
+        .delete()
+        .eq("id", id);
+      if (error) throw new Error(error.message);
+      setConfirmDeleteGroup(null);
+      await loadData();
+    } catch (e) {
+      setRowError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setGroupBusy(null);
+    }
+  }
+
+  async function toggleActive(store: StoreRow) {
+    await supabase
+      .from("stores")
+      .update({ active: !store.active })
+      .eq("id", store.id);
+    loadData();
+  }
+
+  const groupName = (id: string | null) =>
+    groups.find((g) => g.id === id)?.name ?? "Ungrouped";
+
+  /** Assignments for one store, with rep names attached, for the row menu. */
+  const assignedByStore = useMemo(() => {
+    const nameById: Record<string, string> = {};
+    for (const r of reps) nameById[r.id] = r.name;
+    // Plain object, not Map: this file imports lucide's `Map` icon, which
+    // shadows the global constructor.
+    const byStore: Record<string, { id: string; repId: string; name: string }[]> = {};
+    for (const a of assignments) {
+      (byStore[a.store_id] ??= []).push({
+        id: a.id,
+        repId: a.rep_id,
+        name: nameById[a.rep_id] ?? "Unknown rep",
+      });
+    }
+    for (const list of Object.values(byStore)) {
+      list.sort((x, y) => x.name.localeCompare(y.name));
+    }
+    return byStore;
+  }, [assignments, reps]);
+
+  /** Towns present in the estate, for the filter. 45 of them after the import. */
+  const cities = useMemo(() => {
+    const seen: Record<string, true> = {};
+    for (const s of stores) if (s.city) seen[s.city] = true;
+    return Object.keys(seen).sort((a, b) => a.localeCompare(b));
+  }, [stores]);
+
+  const missingCity = stores.filter((s) => !s.city).length;
+
+  /** Active stores whose position is still a guess — nobody has stood in them.
+      Not a to-do list: reps settle these by visiting, and this is here so a
+      manager can see the estate correcting itself over the first call cycle. */
+  const unverified = useMemo(
+    () =>
+      stores.filter(
+        (s) =>
+          s.active &&
+          s.location_confirmed_at === null &&
+          s.geocode_source !== "rep"
+      ).length,
+    [stores]
+  );
+
+  /** Several stores on one coordinate — see `findSharedPoints` for why that
+      is a quieter and more misleading failure than having none. */
+  const sharedPoints = useMemo(
+    () => findSharedPoints(stores.filter((s) => s.active)),
+    [stores]
+  );
+
+  /** One derivation of location trust, shared by the pill, the filter and the
+      dialog, so the three can never disagree about a store. Plain objects, not
+      Map — lucide's `Map` icon shadows the constructor in this file. */
+  const stateById = useMemo(() => {
+    const byId: Record<string, GeocodeState> = {};
+    for (const s of stores) byId[s.id] = geocodeState(s);
+    return byId;
+  }, [stores]);
+
+  const stateCounts = useMemo(() => {
+    const counts: Record<string, number> = {};
+    for (const s of stores) {
+      const k = stateById[s.id];
+      counts[k] = (counts[k] ?? 0) + 1;
+    }
+    return counts;
+  }, [stores, stateById]);
+
+  /** Store ids sitting on a coordinate another store also claims. */
+  const sharedIds = useMemo(() => {
+    const ids: Record<string, true> = {};
+    for (const p of sharedPoints) for (const s of p.stores) ids[s.id] = true;
+    return ids;
+  }, [sharedPoints]);
+
+  /** The other stores on this store's point, and whether they all matched the
+      same listing — which is what separates a collapse from a coincidence. */
+  function sharedWith(store: StoreRow): {
+    others: SharedPointStore[];
+    sameResult: boolean;
+  } {
+    const point = sharedPoints.find((p) =>
+      p.stores.some((s) => s.id === store.id)
+    );
+    if (!point) return { others: [], sameResult: false };
+    return {
+      others: point.stores.filter((s) => s.id !== store.id),
+      sameResult: point.sameResult,
+    };
+  }
+
+  const filtered = stores
+    .filter((s) =>
+      groupFilter === "all" ? true : (s.store_group_id ?? "none") === groupFilter
+    )
+    .filter((s) =>
+      provFilter === "all"
+        ? true
+        : provFilter === "shared"
+          ? sharedIds[s.id] === true
+          : stateById[s.id] === provFilter
+    )
+    .filter((s) =>
+      cityFilter === "all"
+        ? true
+        : cityFilter === "none"
+          ? !s.city
+          : s.city === cityFilter
+    )
+    .filter((s) =>
+      `${s.name} ${s.address ?? ""} ${s.city ?? ""} ${groupName(s.store_group_id)}`
+        .toLowerCase()
+        .includes(search.toLowerCase())
+    );
+
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight text-foreground">
+            Stores
+          </h1>
+          <p className="text-sm text-muted-foreground">
+            Every store you service, organised by retail group.
+          </p>
+        </div>
+      </div>
+
+      {/* The one banner on this page, and the only thing standing between a
+          fresh import and reps working it.
+
+          The missing-location and shared-point banners that used to sit here
+          are gone: the review queue already surfaces both, as its top two
+          reasons, with the store in front of you and a map to fix it on. Three
+          banners saying overlapping things about the same problem taught a
+          manager to scroll past all of them. */}
+      {unverified > 0 && (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border bg-card px-3 py-2.5">
+          <p className="flex items-start gap-2 text-sm text-foreground">
+            <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+            <span>
+              <span className="font-semibold">{unverified}</span> store
+              {unverified === 1 ? "" : "s"} still on a guessed position. Each one
+              is settled the first time a rep checks in there and sets it from
+              inside the shop — nothing to do here unless one is flagged.
+            </span>
+          </p>
+          {/* `nativeButton={false}` because the render target is an anchor, not
+              a <button>. Without it Base UI logs an accessibility error — as
+              forms/page.tsx:187 still does. */}
+          <Button
+            size="sm"
+            nativeButton={false}
+            render={<Link href="/stores/review">Exceptions</Link>}
+          />
+        </div>
+      )}
+
+      <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+        <div className="w-full min-w-0 sm:w-auto sm:flex-1">
+          <Input
+            placeholder="Search stores by name, group or address"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
+        </div>
+        <div className="w-full sm:w-56">
+          <NativeSelect
+            value={groupFilter}
+            onChange={(e) => setGroupFilter(e.target.value)}
+            aria-label="Filter by store group"
+          >
+            <option value="all">All groups</option>
+            {groups.map((g) => (
+              <option key={g.id} value={g.id}>
+                {g.name}
+              </option>
+            ))}
+            <option value="none">Ungrouped</option>
+          </NativeSelect>
+        </div>
+        <div className="w-full sm:w-44">
+          <NativeSelect
+            value={cityFilter}
+            onChange={(e) => setCityFilter(e.target.value)}
+            aria-label="Filter by town"
+          >
+            <option value="all">All towns</option>
+            {cities.map((c) => (
+              <option key={c} value={c}>
+                {c}
+              </option>
+            ))}
+            {/* A store with no town will never be schedulable, so it needs to
+                be findable rather than buried among 200 that are fine. */}
+            {missingCity > 0 && (
+              <option value="none">No town ({missingCity})</option>
+            )}
+          </NativeSelect>
+        </div>
+        <div className="w-full sm:w-48">
+          <NativeSelect
+            value={provFilter}
+            onChange={(e) =>
+              setProvFilter(e.target.value as GeocodeState | "all" | "shared")
+            }
+            aria-label="Filter by where the location came from"
+          >
+            <option value="all">All sources</option>
+            {GEOCODE_STATE_ORDER.filter(
+              // A state nobody is in is noise in the list — but the selected
+              // one always stays, or the control blanks itself after a reload
+              // that empties it.
+              (st) => (stateCounts[st] ?? 0) > 0 || provFilter === st
+            ).map((st) => (
+              <option key={st} value={st}>
+                {GEOCODE_STATE_STYLES[st].label} ({stateCounts[st] ?? 0})
+              </option>
+            ))}
+            {sharedPoints.length > 0 && (
+              <option value="shared">
+                Shares a point ({Object.keys(sharedIds).length})
+              </option>
+            )}
+          </NativeSelect>
+        </div>
+        <Button
+          variant="outline"
+          size="sm"
+          className="gap-1.5"
+          onClick={() => setView(view === "list" ? "map" : "list")}
+        >
+          {view === "list" ? (
+            <>
+              <Map className="h-4 w-4" />
+              Show map
+            </>
+          ) : (
+            <>
+              <List className="h-4 w-4" />
+              Show list
+            </>
+          )}
+        </Button>
+        <ImportStoresButton onImported={loadData} />
+        <Button
+          variant="outline"
+          size="sm"
+          className="gap-1.5"
+          onClick={() => setGroupDialogOpen(true)}
+        >
+          <Building2 className="h-4 w-4" />
+          Groups
+        </Button>
+        <Button
+          size="sm"
+          className="gap-1.5 bg-primary text-primary-foreground hover:bg-primary/90"
+          onClick={openCreate}
+        >
+          <Plus className="h-4 w-4" />
+          New store
+        </Button>
+      </div>
+
+      <Dialog open={groupDialogOpen} onOpenChange={setGroupDialogOpen}>
+        <DialogContent className="max-h-[85vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Store groups</DialogTitle>
+          </DialogHeader>
+
+          <div className="flex items-end gap-2">
+            <div className="flex-1 space-y-1.5">
+              <Label htmlFor="group-name">Add a group</Label>
+              <Input
+                id="group-name"
+                placeholder="e.g. Choppies Retail Group"
+                value={groupForm}
+                onChange={(e) => setGroupForm(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && handleCreateGroup()}
+              />
+            </div>
+            <Button
+              onClick={handleCreateGroup}
+              disabled={saving || !groupForm.trim()}
+              className="bg-primary text-primary-foreground hover:bg-primary/90"
+            >
+              {saving ? "Saving…" : "Add"}
+            </Button>
+          </div>
+
+          {groups.length > 0 && (
+            <ul className="divide-y divide-border rounded-lg border border-border">
+              {groups.map((g) => {
+                const count = stores.filter(
+                  (s) => s.store_group_id === g.id
+                ).length;
+                const busy = groupBusy === g.id;
+
+                if (editingGroupId === g.id) {
+                  return (
+                    <li key={g.id} className="flex items-center gap-2 p-2">
+                      <Input
+                        value={editingGroupName}
+                        autoFocus
+                        onChange={(e) => setEditingGroupName(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter")
+                            renameGroup(g.id, editingGroupName);
+                          if (e.key === "Escape") setEditingGroupId(null);
+                        }}
+                      />
+                      <Button
+                        size="sm"
+                        disabled={busy || !editingGroupName.trim()}
+                        onClick={() => renameGroup(g.id, editingGroupName)}
+                      >
+                        {busy ? "Saving…" : "Save"}
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => setEditingGroupId(null)}
+                      >
+                        Cancel
+                      </Button>
+                    </li>
+                  );
+                }
+
+                if (confirmDeleteGroup === g.id) {
+                  return (
+                    <li
+                      key={g.id}
+                      className="flex flex-wrap items-center justify-between gap-2 p-2"
+                    >
+                      <p className="text-sm text-foreground">
+                        Delete <span className="font-medium">{g.name}</span>?
+                        {count > 0 ? (
+                          <span className="text-muted-foreground">
+                            {" "}
+                            {count} store{count === 1 ? "" : "s"} will become
+                            ungrouped — none are deleted.
+                          </span>
+                        ) : (
+                          <span className="text-muted-foreground">
+                            {" "}
+                            It has no stores.
+                          </span>
+                        )}
+                      </p>
+                      <div className="flex gap-2">
+                        <Button
+                          size="sm"
+                          variant="destructive"
+                          disabled={busy}
+                          onClick={() => deleteGroup(g.id)}
+                        >
+                          {busy ? "Deleting…" : "Delete"}
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => setConfirmDeleteGroup(null)}
+                        >
+                          Cancel
+                        </Button>
+                      </div>
+                    </li>
+                  );
+                }
+
+                return (
+                  <li
+                    key={g.id}
+                    className="flex items-center justify-between gap-2 px-3 py-2"
+                  >
+                    <span className="min-w-0 truncate text-sm text-foreground">
+                      {g.name}
+                      <span className="ml-2 text-xs text-muted-foreground">
+                        {count} store{count === 1 ? "" : "s"}
+                      </span>
+                    </span>
+                    <div className="flex shrink-0 gap-1">
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        className="h-8 w-8"
+                        aria-label={`Rename ${g.name}`}
+                        onClick={() => {
+                          setEditingGroupId(g.id);
+                          setEditingGroupName(g.name);
+                        }}
+                      >
+                        <Pencil className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        className="h-8 w-8 text-destructive"
+                        aria-label={`Delete ${g.name}`}
+                        onClick={() => setConfirmDeleteGroup(g.id)}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{editingId ? "Edit store" : "New store"}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="space-y-1.5">
+              <Label htmlFor="store-group">Store group</Label>
+              <NativeSelect
+                id="store-group"
+                value={form.store_group_id}
+                onChange={(e) =>
+                  setForm({ ...form, store_group_id: e.target.value })
+                }
+              >
+                <option value="">Ungrouped</option>
+                {groups.map((g) => (
+                  <option key={g.id} value={g.id}>
+                    {g.name}
+                  </option>
+                ))}
+                <option value="__new__">+ Create new group…</option>
+              </NativeSelect>
+            </div>
+            {form.store_group_id === "__new__" && (
+              <div className="space-y-1.5">
+                <Label htmlFor="new-group-name">New group name</Label>
+                <Input
+                  id="new-group-name"
+                  placeholder="e.g. Choppies Retail Group"
+                  value={newGroupName}
+                  onChange={(e) => setNewGroupName(e.target.value)}
+                />
+              </div>
+            )}
+            <div className="space-y-1.5">
+              <Label htmlFor="store-name">Store name</Label>
+              <Input
+                id="store-name"
+                placeholder="e.g. Choppies Gaborone Main"
+                value={form.name}
+                onChange={(e) => setForm({ ...form, name: e.target.value })}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="store-address">Address</Label>
+              <Input
+                id="store-address"
+                value={form.address}
+                onChange={(e) => setForm({ ...form, address: e.target.value })}
+              />
+            </div>
+            <div className="grid grid-cols-3 gap-3">
+              <div className="space-y-1.5">
+                <Label htmlFor="store-city">City</Label>
+                <Input
+                  id="store-city"
+                  value={form.city}
+                  onChange={(e) => setForm({ ...form, city: e.target.value })}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="store-state">State</Label>
+                <Input
+                  id="store-state"
+                  value={form.state}
+                  onChange={(e) => setForm({ ...form, state: e.target.value })}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="store-zip">Zip</Label>
+                <Input
+                  id="store-zip"
+                  value={form.zip}
+                  onChange={(e) => setForm({ ...form, zip: e.target.value })}
+                />
+              </div>
+            </div>
+            {form.name && (
+              <a
+                href={googleMapsUrl(form)}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1.5 text-sm text-primary hover:underline"
+              >
+                <ExternalLink className="h-3.5 w-3.5" />
+                Preview on Google Maps
+              </a>
+            )}
+          </div>
+          <DialogFooter>
+            <Button
+              onClick={handleSave}
+              disabled={saving || !form.name}
+              className="bg-primary text-primary-foreground hover:bg-primary/90"
+            >
+              {saving ? "Saving…" : editingId ? "Save changes" : "Create store"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={deleteTarget !== null}
+        onOpenChange={(o) => {
+          if (!o) {
+            setDeleteTarget(null);
+            setDeleteImpact(null);
+          }
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>
+              Delete {deleteImpact?.store_name ?? deleteTarget?.name ?? "store"}?
+            </DialogTitle>
+          </DialogHeader>
+
+          {!deleteImpact ? (
+            <p className="text-sm text-muted-foreground">
+              Checking what this would remove…
+            </p>
+          ) : (
+            <div className="space-y-2">
+              <p className="flex items-start gap-1.5 text-sm text-destructive">
+                <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                This cannot be undone.
+              </p>
+              {deleteImpact.visits + deleteImpact.routes + deleteImpact.assignments ===
+              0 ? (
+                <p className="text-sm text-foreground">
+                  Nothing else depends on this store — no visits, routes or rep
+                  assignments. Safe to remove.
+                </p>
+              ) : (
+                <p className="text-sm text-foreground">
+                  This also deletes {deleteImpact.visits} visit
+                  {deleteImpact.visits === 1 ? "" : "s"},{" "}
+                  {deleteImpact.submissions} audit
+                  {deleteImpact.submissions === 1 ? "" : "s"},{" "}
+                  {deleteImpact.photos} photo
+                  {deleteImpact.photos === 1 ? "" : "s"} and{" "}
+                  {deleteImpact.routes} scheduled route
+                  {deleteImpact.routes === 1 ? "" : "s"}
+                  {deleteImpact.reps > 0 &&
+                    `, and removes it from ${deleteImpact.reps} rep${deleteImpact.reps === 1 ? "'s" : "s'"} patch`}
+                  . Reports covering those dates will change.
+                </p>
+              )}
+              <p className="text-xs text-muted-foreground">
+                Deactivate instead if the store has simply closed — it keeps the
+                history and only stops new visits being scheduled.
+              </p>
+            </div>
+          )}
+
+          <DialogFooter>
+            <Button
+              variant="destructive"
+              disabled={deleting || !deleteImpact}
+              onClick={confirmDelete}
+            >
+              {deleting ? "Deleting…" : "Yes, delete permanently"}
+            </Button>
+            <Button variant="outline" onClick={() => setDeleteTarget(null)}>
+              Cancel
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {rowError && (
+        <p className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+          {rowError}
+        </p>
+      )}
+
+      {loading ? (
+        <div className="rounded-lg border border-border bg-card py-16 text-center text-sm text-muted-foreground">
+          Loading stores…
+        </div>
+      ) : view === "map" ? (
+        <PlacesMap places={filtered} />
+      ) : (
+        <div className="overflow-x-auto rounded-lg border border-border bg-card">
+          <Table>
+            <TableHeader>
+              <TableRow className="hover:bg-transparent">
+                <TableHead>Store</TableHead>
+                {/* Beside the name on purpose: the name links to the point on
+                    Google Maps, this says how much that point can be trusted. */}
+                <TableHead className="hidden md:table-cell">Location</TableHead>
+                {/* lg, not sm: the sidebar takes ~225px, so a "640px viewport"
+                    is a ~415px table. Breakpoints here have to be read against
+                    the container the table actually gets. */}
+                <TableHead className="hidden lg:table-cell">Group</TableHead>
+                <TableHead className="hidden md:table-cell">Last visited</TableHead>
+                <TableHead className="hidden xl:table-cell">Status</TableHead>
+                <TableHead>Responsible</TableHead>
+                <TableHead className="w-10" />
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {filtered.map((store) => (
+                <TableRow key={store.id}>
+                  {/* Bounded, not just min-width. An unbounded address pushed
+                      Group, Responsible and the actions menu outside the
+                      horizontal scroll viewport entirely — invisible rather
+                      than merely cramped, which reads as a missing feature. */}
+                  <TableCell className="min-w-[200px] max-w-[320px]">
+                    <div className="flex items-start gap-2.5">
+                      <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-accent text-accent-foreground">
+                        <Store className="h-4 w-4" />
+                      </div>
+                      <div className="min-w-0">
+                        <a
+                          href={googleMapsUrl(store)}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1.5 font-medium text-primary hover:underline"
+                        >
+                          {store.name}
+                          <ExternalLink className="h-3 w-3 shrink-0 opacity-70" />
+                        </a>
+
+                        <div
+                          className="truncate text-xs text-muted-foreground"
+                          title={
+                            [store.address, store.city, store.state, store.zip]
+                              .filter(Boolean)
+                              .join(", ") || undefined
+                          }
+                        >
+                          {[store.address, store.city, store.state, store.zip]
+                            .filter(Boolean)
+                            .join(", ") || (
+                            <span className="text-amber-700 dark:text-amber-400">
+                              No town — not schedulable
+                            </span>
+                          )}
+                        </div>
+                        {/* Mirrors whatever the breakpoints have hidden, so a
+                            narrow window loses layout, never information.
+
+                            Each fact hides at the width its own column
+                            appears, which is not one breakpoint: Group returns
+                            at lg and Status only at xl. Hiding the whole line
+                            at lg — as it used to — dropped Active/Inactive
+                            into a gap between 1024 and 1279px where neither
+                            the column nor the mirror showed it. */}
+                        <div className="truncate text-xs text-muted-foreground xl:hidden">
+                          <span className="lg:hidden">
+                            {groupName(store.store_group_id)}
+                            {" · "}
+                          </span>
+                          {store.active ? "Active" : "Inactive"}
+                          <span className="md:hidden">
+                            {" · "}
+                            {formatLastVisit(lastVisits[store.id])}
+                            {" · "}
+                            {GEOCODE_STATE_STYLES[stateById[store.id]].label}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  </TableCell>
+                  <TableCell className="hidden md:table-cell">
+                    <GeocodePill
+                      state={stateById[store.id]}
+                      accuracyM={store.geocode_accuracy_m}
+                      shared={sharedIds[store.id] === true}
+                      confirmed={store.location_confirmed_at !== null}
+                      onClick={() => setLocationTarget(store)}
+                    />
+                  </TableCell>
+                  <TableCell className="hidden text-sm lg:table-cell">
+                    {/* The group badge is the control, same as the rep name.
+                        Unlike reps this REPLACES rather than toggles — a store
+                        has a single store_group_id — so the current group is
+                        ticked and "Ungrouped" is an explicit way back out. */}
+                    <DropdownMenu>
+                      <DropdownMenuTrigger
+                        render={
+                          <button
+                            type="button"
+                            disabled={busyStore === store.id}
+                            className={
+                              store.store_group_id
+                                ? "inline-flex items-center gap-1.5 rounded-full bg-secondary px-2.5 py-1 text-xs font-medium text-secondary-foreground hover:bg-secondary/70 disabled:opacity-50"
+                                : "inline-flex items-center rounded-full border border-amber-500/50 bg-amber-500/10 px-2 py-0.5 text-xs font-medium text-amber-700 hover:bg-amber-500/20 disabled:opacity-50 dark:text-amber-400"
+                            }
+                          >
+                            {store.store_group_id ? (
+                              <>
+                                <Building2 className="h-3 w-3" />
+                                {groupName(store.store_group_id)}
+                              </>
+                            ) : (
+                              "Assign group"
+                            )}
+                          </button>
+                        }
+                      />
+                      <DropdownMenuContent
+                        align="start"
+                        className="max-h-72 overflow-y-auto"
+                      >
+                        {groups.length === 0 && (
+                          <DropdownMenuItem disabled>No groups yet</DropdownMenuItem>
+                        )}
+                        {groups.map((g) => (
+                          <DropdownMenuItem
+                            key={g.id}
+                            className="gap-2"
+                            onClick={() => setStoreGroup(store, g.id)}
+                          >
+                            <Check
+                              className={`h-3.5 w-3.5 ${
+                                store.store_group_id === g.id
+                                  ? "opacity-100"
+                                  : "opacity-0"
+                              }`}
+                            />
+                            {g.name}
+                          </DropdownMenuItem>
+                        ))}
+                        {store.store_group_id && (
+                          <DropdownMenuItem
+                            className="gap-2 text-muted-foreground"
+                            onClick={() => setStoreGroup(store, null)}
+                          >
+                            <Check className="h-3.5 w-3.5 opacity-0" />
+                            Ungrouped
+                          </DropdownMenuItem>
+                        )}
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </TableCell>
+                  <TableCell className="hidden whitespace-nowrap text-sm md:table-cell">
+                    {lastVisits[store.id] ? (
+                      <span className="text-foreground">
+                        {formatLastVisit(lastVisits[store.id])}
+                      </span>
+                    ) : (
+                      // "Never" is a fact worth showing plainly — after the
+                      // import this is most of the estate, and it is exactly
+                      // the list a manager needs to work through.
+                      <span className="text-muted-foreground">Never</span>
+                    )}
+                  </TableCell>
+                  <TableCell className="hidden text-sm xl:table-cell">
+                    <span
+                      className={
+                        store.active ? "text-emerald-700" : "text-muted-foreground"
+                      }
+                    >
+                      {store.active ? "Active" : "Inactive"}
+                    </span>
+                  </TableCell>
+                  <TableCell className="text-sm">
+                    {/* One menu whether or not anyone is assigned: the names
+                        are the control, so reassigning is a tap on the name
+                        rather than a trip to another page. A store can have
+                        more than one rep, so this toggles rather than
+                        replaces — ticked names are assigned. */}
+                    {store.active ? (
+                      <DropdownMenu>
+                        <DropdownMenuTrigger
+                          render={
+                            <button
+                              type="button"
+                              disabled={busyStore === store.id || !orgId}
+                              className={
+                                assignedByStore[store.id]?.length
+                                  ? "rounded px-1 py-0.5 text-left text-foreground hover:bg-muted disabled:opacity-50"
+                                  : "inline-flex items-center rounded-full border border-amber-500/50 bg-amber-500/10 px-2 py-0.5 text-xs font-medium text-amber-700 hover:bg-amber-500/20 disabled:opacity-50 dark:text-amber-400"
+                              }
+                            >
+                              {assignedByStore[store.id]?.length
+                                ? assignedByStore[store.id].map((a) => a.name).join(", ")
+                                : "Assign rep"}
+                            </button>
+                          }
+                        />
+                        <DropdownMenuContent
+                          align="start"
+                          className="max-h-72 overflow-y-auto"
+                        >
+                          {/* Assignment is deliberately *not* gated on the
+                              location being confirmed, though it was briefly.
+                              Reps are the ones who establish where a shop is,
+                              by visiting it — so requiring a confirmed location
+                              before anyone can be sent there is a deadlock:
+                              nobody can visit the store that needs visiting. */}
+                          {reps.length === 0 && (
+                            <DropdownMenuItem disabled>No reps yet</DropdownMenuItem>
+                          )}
+                          {reps.map((r) => {
+                            const mine = assignedByStore[store.id]?.find(
+                              (a) => a.repId === r.id
+                            );
+                            return (
+                              <DropdownMenuItem
+                                key={r.id}
+                                className="gap-2"
+                                onClick={() =>
+                                  mine
+                                    ? unassignRep(store, mine.id)
+                                    : assignRep(store, r.id)
+                                }
+                              >
+                                <Check
+                                  className={`h-3.5 w-3.5 ${mine ? "opacity-100" : "opacity-0"}`}
+                                />
+                                {r.name}
+                              </DropdownMenuItem>
+                            );
+                          })}
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    ) : (
+                      // A deactivated store is not expected to have an owner,
+                      // so prompting on one would be noise.
+                      <span className="text-muted-foreground">—</span>
+                    )}
+                  </TableCell>
+                  <TableCell>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger
+                        render={
+                          <Button variant="ghost" size="icon" className="h-8 w-8">
+                            <MoreHorizontal className="h-4 w-4" />
+                          </Button>
+                        }
+                      />
+                      <DropdownMenuContent align="end">
+                        {/* The pill is the usual way in, but the Location
+                            column is hidden below md — this keeps the detail
+                            reachable on a phone. */}
+                        <DropdownMenuItem
+                          onClick={() => setLocationTarget(store)}
+                          className="gap-2"
+                        >
+                          <MapPin className="h-4 w-4" />
+                          Location details
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          onClick={() => openEdit(store)}
+                          className="gap-2"
+                        >
+                          <Pencil className="h-4 w-4" />
+                          Edit store
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          onClick={() =>
+                            window.open(googleMapsUrl(store), "_blank")
+                          }
+                          className="gap-2"
+                        >
+                          <ExternalLink className="h-4 w-4" />
+                          Open in Google Maps
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          onClick={() => toggleActive(store)}
+                          className="gap-2"
+                        >
+                          <Archive className="h-4 w-4" />
+                          {store.active ? "Deactivate" : "Reactivate"}
+                        </DropdownMenuItem>
+                        {/* Distinct from Deactivate, and styled to say so —
+                            this one takes the store's whole visit history with
+                            it. The impact is fetched before anything is asked. */}
+                        <DropdownMenuItem
+                          onClick={() => requestDelete(store)}
+                          className="gap-2 text-destructive"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                          Delete permanently
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </TableCell>
+                </TableRow>
+              ))}
+              {filtered.length === 0 && (
+                <TableRow>
+                  <TableCell
+                    colSpan={7}
+                    className="py-10 text-center text-sm text-muted-foreground"
+                  >
+                    No stores found.
+                  </TableCell>
+                </TableRow>
+              )}
+            </TableBody>
+          </Table>
+        </div>
+      )}
+
+      <p className="text-xs text-muted-foreground">
+        {filtered.length} of {stores.length} stores across {groups.length} groups.
+      </p>
+
+      <StoreLocationDialog
+        store={locationTarget}
+        capture={locationTarget ? (captures[locationTarget.id] ?? null) : null}
+        sharedWith={locationTarget ? sharedWith(locationTarget).others : []}
+        sameResult={
+          locationTarget ? sharedWith(locationTarget).sameResult : false
+        }
+        onClose={() => setLocationTarget(null)}
+      />
+    </div>
+  );
+}
