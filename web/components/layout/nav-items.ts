@@ -7,7 +7,6 @@ import {
   Folder,
   BarChart3,
   Users,
-  Clock,
   FileText,
 } from "lucide-react";
 
@@ -20,6 +19,5 @@ export const navItems = [
   { href: "/files", label: "Files", icon: Folder },
   { href: "/reports", label: "Reports", icon: BarChart3 },
   { href: "/representatives", label: "Representatives", icon: Users },
-  { href: "/time-mileage", label: "Time & Mileage", icon: Clock },
   { href: "/forms", label: "Forms", icon: FileText },
 ];

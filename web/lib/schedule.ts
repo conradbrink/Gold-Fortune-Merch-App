@@ -623,7 +623,15 @@ export async function fetchDayBoard(
       .eq("scheduled_date", dateStr),
     supabase
       .from("visits")
-      .select("id, rep_id, store_id, status, checkin_at, checkout_at, duration_seconds, stores(name, city)")
+      // `stores!visits_store_id_fkey` names which of the two foreign keys
+      // between these tables to follow. There are two now: visits.store_id
+      // points at the store, and stores.geocode_visit_id points back at the
+      // visit a rep captured the location during. Without the constraint name
+      // PostgREST refuses the embed outright — "more than one relationship was
+      // found" — and the page dies rather than degrading.
+      .select(
+        "id, rep_id, store_id, status, checkin_at, checkout_at, duration_seconds, stores!visits_store_id_fkey(name, city)"
+      )
       .is("route_id", null)
       .gte("checkin_at", dayStart.toISOString())
       .lt("checkin_at", endOfDay(date).toISOString()),

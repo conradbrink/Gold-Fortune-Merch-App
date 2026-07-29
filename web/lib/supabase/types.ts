@@ -402,32 +402,41 @@ export type Database = {
         Row: {
           address: string | null
           created_at: string
+          default_visit_frequency: string
           id: string
           industry: string | null
           legal_name: string | null
           name: string
+          stores_per_day: number
           support_email: string | null
           website: string | null
+          working_days: number[]
         }
         Insert: {
           address?: string | null
           created_at?: string
+          default_visit_frequency?: string
           id?: string
           industry?: string | null
           legal_name?: string | null
           name: string
+          stores_per_day?: number
           support_email?: string | null
           website?: string | null
+          working_days?: number[]
         }
         Update: {
           address?: string | null
           created_at?: string
+          default_visit_frequency?: string
           id?: string
           industry?: string | null
           legal_name?: string | null
           name?: string
+          stores_per_day?: number
           support_email?: string | null
           website?: string | null
+          working_days?: number[]
         }
         Relationships: []
       }
@@ -495,6 +504,65 @@ export type Database = {
           },
         ]
       }
+      products: {
+        Row: {
+          active: boolean
+          brand: string | null
+          category: string | null
+          created_at: string
+          id: string
+          name: string
+          org_id: string
+          shrink_barcode: string | null
+          shrink_price_excl_vat: number | null
+          shrink_price_incl_vat: number | null
+          sku_code: string | null
+          unit_barcode: string | null
+          units_per_shrink: number | null
+          updated_at: string
+        }
+        Insert: {
+          active?: boolean
+          brand?: string | null
+          category?: string | null
+          created_at?: string
+          id?: string
+          name: string
+          org_id: string
+          shrink_barcode?: string | null
+          shrink_price_excl_vat?: number | null
+          shrink_price_incl_vat?: number | null
+          sku_code?: string | null
+          unit_barcode?: string | null
+          units_per_shrink?: number | null
+          updated_at?: string
+        }
+        Update: {
+          active?: boolean
+          brand?: string | null
+          category?: string | null
+          created_at?: string
+          id?: string
+          name?: string
+          org_id?: string
+          shrink_barcode?: string | null
+          shrink_price_excl_vat?: number | null
+          shrink_price_incl_vat?: number | null
+          sku_code?: string | null
+          unit_barcode?: string | null
+          units_per_shrink?: number | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "products_org_id_fkey"
+            columns: ["org_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       profiles: {
         Row: {
           created_at: string
@@ -539,6 +607,208 @@ export type Database = {
           },
         ]
       }
+      project_checks: {
+        Row: {
+          checked_at: string
+          client_generated_id: string
+          created_at: string
+          id: string
+          note: string | null
+          org_id: string
+          product_id: string
+          project_id: string
+          rep_id: string
+          status: string
+          store_id: string
+          visit_id: string | null
+        }
+        Insert: {
+          checked_at?: string
+          client_generated_id: string
+          created_at?: string
+          id?: string
+          note?: string | null
+          org_id: string
+          product_id: string
+          project_id: string
+          rep_id: string
+          status: string
+          store_id: string
+          visit_id?: string | null
+        }
+        Update: {
+          checked_at?: string
+          client_generated_id?: string
+          created_at?: string
+          id?: string
+          note?: string | null
+          org_id?: string
+          product_id?: string
+          project_id?: string
+          rep_id?: string
+          status?: string
+          store_id?: string
+          visit_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "project_checks_org_id_fkey"
+            columns: ["org_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "project_checks_product_id_fkey"
+            columns: ["product_id"]
+            isOneToOne: false
+            referencedRelation: "products"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "project_checks_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "project_checks_rep_id_fkey"
+            columns: ["rep_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "project_checks_store_id_fkey"
+            columns: ["store_id"]
+            isOneToOne: false
+            referencedRelation: "stores"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "project_checks_visit_id_fkey"
+            columns: ["visit_id"]
+            isOneToOne: false
+            referencedRelation: "visits"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      project_products: {
+        Row: {
+          product_id: string
+          project_id: string
+        }
+        Insert: {
+          product_id: string
+          project_id: string
+        }
+        Update: {
+          product_id?: string
+          project_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "project_products_product_id_fkey"
+            columns: ["product_id"]
+            isOneToOne: false
+            referencedRelation: "products"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "project_products_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      project_stores: {
+        Row: {
+          project_id: string
+          store_id: string
+        }
+        Insert: {
+          project_id: string
+          store_id: string
+        }
+        Update: {
+          project_id?: string
+          store_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "project_stores_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "project_stores_store_id_fkey"
+            columns: ["store_id"]
+            isOneToOne: false
+            referencedRelation: "stores"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      projects: {
+        Row: {
+          active: boolean
+          brief: string | null
+          created_at: string
+          created_by: string | null
+          ends_on: string
+          id: string
+          name: string
+          org_id: string
+          starts_on: string
+          updated_at: string
+        }
+        Insert: {
+          active?: boolean
+          brief?: string | null
+          created_at?: string
+          created_by?: string | null
+          ends_on: string
+          id?: string
+          name: string
+          org_id: string
+          starts_on: string
+          updated_at?: string
+        }
+        Update: {
+          active?: boolean
+          brief?: string | null
+          created_at?: string
+          created_by?: string | null
+          ends_on?: string
+          id?: string
+          name?: string
+          org_id?: string
+          starts_on?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "projects_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "projects_org_id_fkey"
+            columns: ["org_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       routes: {
         Row: {
           created_at: string
@@ -550,6 +820,7 @@ export type Database = {
           scheduled_end_at: string | null
           scheduled_start_at: string | null
           sequence_order: number | null
+          source: string
           store_id: string
         }
         Insert: {
@@ -562,6 +833,7 @@ export type Database = {
           scheduled_end_at?: string | null
           scheduled_start_at?: string | null
           sequence_order?: number | null
+          source?: string
           store_id: string
         }
         Update: {
@@ -574,6 +846,7 @@ export type Database = {
           scheduled_end_at?: string | null
           scheduled_start_at?: string | null
           sequence_order?: number | null
+          source?: string
           store_id?: string
         }
         Relationships: [
@@ -909,6 +1182,7 @@ export type Database = {
           end_lat: number | null
           end_lng: number | null
           ended_at: string | null
+          ended_by: string | null
           id: string
           org_id: string
           rep_id: string
@@ -925,6 +1199,7 @@ export type Database = {
           end_lat?: number | null
           end_lng?: number | null
           ended_at?: string | null
+          ended_by?: string | null
           id?: string
           org_id: string
           rep_id: string
@@ -941,6 +1216,7 @@ export type Database = {
           end_lat?: number | null
           end_lng?: number | null
           ended_at?: string | null
+          ended_by?: string | null
           id?: string
           org_id?: string
           rep_id?: string
@@ -950,6 +1226,13 @@ export type Database = {
           updated_at?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "workday_sessions_ended_by_fkey"
+            columns: ["ended_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "workday_sessions_org_id_fkey"
             columns: ["org_id"]
@@ -1041,6 +1324,7 @@ export type Database = {
         Args: { p_audience: string; p_file_id: string }
         Returns: boolean
       }
+      close_abandoned_workday: { Args: { p_session_id: string }; Returns: Json }
       compliance_trends: {
         Args: {
           p_bucket?: string
@@ -1103,6 +1387,7 @@ export type Database = {
           created: number
           first_date: string
           last_date: string
+          removed: number
           reps_covered: number
         }[]
       }
@@ -1135,6 +1420,36 @@ export type Database = {
           store_group: string
           store_id: string
           store_name: string
+        }[]
+      }
+      project_store_status: {
+        Args: { p_project_id: string }
+        Returns: {
+          answered: number
+          city: string
+          last_checked_at: string
+          not_running: number
+          not_stocked: number
+          rep_name: string
+          running: number
+          store_id: string
+          store_name: string
+        }[]
+      }
+      project_summaries: {
+        Args: never
+        Returns: {
+          active: boolean
+          brief: string
+          ends_on: string
+          last_checked_at: string
+          name: string
+          products: number
+          project_id: string
+          starts_on: string
+          stores: number
+          stores_checked: number
+          stores_running: number
         }[]
       }
       rep_delete_impact: {
@@ -1214,6 +1529,24 @@ export type Database = {
           visits: number
         }[]
       }
+      store_geocode_capture: {
+        Args: never
+        Returns: {
+          rep_id: string
+          rep_name: string
+          store_id: string
+          visit_checkin_at: string
+          visit_id: string
+        }[]
+      }
+      store_last_visit: {
+        Args: never
+        Returns: {
+          last_visit_at: string
+          store_id: string
+          visits_total: number
+        }[]
+      }
       store_location_drift: {
         Args: { p_min_median_m?: number; p_min_visits?: number }
         Returns: {
@@ -1232,22 +1565,21 @@ export type Database = {
           visits_considered: number
         }[]
       }
-      store_geocode_capture: {
-        Args: never
+      workday_trail: {
+        Args: { p_from: string; p_to: string }
         Returns: {
+          dropped_legs: number
+          duration_seconds: number
+          ended_at: string
+          legs: number
+          max_gap_seconds: number
           rep_id: string
           rep_name: string
-          store_id: string
-          visit_checkin_at: string
-          visit_id: string
-        }[]
-      }
-      store_last_visit: {
-        Args: never
-        Returns: {
-          last_visit_at: string
-          store_id: string
-          visits_total: number
+          reported_m: number
+          session_id: string
+          started_at: string
+          trail_m: number
+          worst_accuracy_m: number
         }[]
       }
     }

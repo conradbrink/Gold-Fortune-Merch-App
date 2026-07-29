@@ -98,7 +98,10 @@ function VisitsContent() {
       const { data: visitRows, error: visitsError } = await supabase
         .from("visits")
         .select(
-          "id, status, checkin_at, checkout_at, duration_seconds, stores(name), profiles(full_name), routes(scheduled_start_at, scheduled_end_at)"
+          // `stores!visits_store_id_fkey` — two foreign keys join these tables
+          // (visits.store_id, and stores.geocode_visit_id pointing back), so
+          // the embed has to say which one it means or PostgREST refuses it.
+          "id, status, checkin_at, checkout_at, duration_seconds, stores!visits_store_id_fkey(name), profiles(full_name), routes(scheduled_start_at, scheduled_end_at)"
         )
         .order("checkin_at", { ascending: false, nullsFirst: false });
       if (visitsError) throw visitsError;
