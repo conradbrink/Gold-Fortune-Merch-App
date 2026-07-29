@@ -177,7 +177,31 @@ Phases 3–11 of the brief are **not complete**. In priority order:
    OpenAI spend limits — all dashboard configuration.
 6. **Input validation review** (Phase 8) across the server routes.
 
-## 4. Credentials to rotate
+## 4. Provider-side controls — done 29 July
+
+Set by hand in the Google Cloud console for project **GF app merch**:
+
+- Per-day request quotas on Places, Geocoding and Maps JavaScript.
+- Key restrictions on `NEXT_PUBLIC_GOOGLE_MAPS_KEY` — HTTP referrers and an API
+  allowlist. This matters more than the quota: a quota caps what a stolen key
+  costs, a referrer restriction stops it working at all.
+
+Note the account is on the **$300 free trial**, which blocks quota editing until
+billing is activated. If any quota did not take, revisit it at activation — the
+app-level limiter is the ceiling that protects against the app itself, and the
+Google quota only covers a key used *outside* the app.
+
+Still to configure when billing is live:
+
+- **Google** — Billing → Budgets & alerts, email at 50/90/100%. No hard cap
+  exists; the per-day quotas are the hard stop.
+- **OpenAI** — platform.openai.com → Settings → Limits: monthly budget and
+  notification threshold. This one *does* stop serving at the cap. Use a
+  project-scoped key so the cap cannot be sidestepped.
+- **Supabase** — Settings → Billing: confirm **spend cap is on**, then usage
+  alerts for database size, egress and storage.
+
+## 5. Credentials to rotate
 
 None are known to have leaked. `web/.env.local` is gitignored and absent from
 git history. Rotate anyway if the laptop has ever been shared.
@@ -186,7 +210,7 @@ The **`NEXT_PUBLIC_GOOGLE_MAPS_KEY` is visible in the page source by design** �
 it must keep its HTTP-referrer restriction, and it should have a budget cap
 (Phase 11).
 
-## 5. Rollback
+## 6. Rollback
 
 `20260729171447_lock_privilege_and_gps_fields.sql` is reversible:
 
