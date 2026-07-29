@@ -6,7 +6,9 @@ import '../../core/location_service.dart';
 import '../../core/providers.dart';
 import '../../core/theme.dart';
 import '../../data/models/form_template.dart';
+import '../../data/models/promotion.dart';
 import '../../data/models/route_visit.dart';
+import '../../data/repositories/promotion_repository.dart';
 import '../../data/repositories/route_repository.dart';
 import '../../shared/widgets/status_badge.dart';
 import '../forms/form_fill_screen.dart';
@@ -108,19 +110,30 @@ class _StoreDetailScreenState extends ConsumerState<StoreDetailScreen> {
     }
   }
 
-  /// Asks the rep to confirm when they're leaving unusually fast, so a
-  /// mis-tap or a drive-by doesn't silently record as a completed visit.
-  Future<bool> _confirmShortVisit(Duration spent) async {
-    final minutes = spent.inMinutes;
-    final label = minutes < 1 ? 'less than a minute' : '$minutes min';
+  /// Asks the rep to confirm before a check-out that leaves something behind.
+  ///
+  /// One dialog for every reason, not one per reason. A rep leaving after two
+  /// minutes with promotions unanswered has two things worth saying, and two
+  /// modals back to back reads as a bug.
+  ///
+  /// Unanswered promotions warn rather than block. Forms block, and that is
+  /// right for them, but a promotion can be switched off by a manager at any
+  /// moment: a rep with a day-old cache and no signal would be held at the door
+  /// by a promotion that no longer exists, with answering falsely as the only
+  /// way out. Three identical buttons are also the easiest thing in this app to
+  /// falsify, and a check cannot be edited afterwards — a gate that turns
+  /// "missing" into "possibly false" makes the manager's report worse, because
+  /// missing is visible to them and false is not.
+  Future<bool> _confirmCheckOut(List<String> concerns) async {
+    if (concerns.isEmpty) return true;
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Check out already?'),
-        content: Text(
-          "You've only been at this store for $label. Short visits are "
-          'flagged for your manager.\n\nAre you sure you want to check out?',
-        ),
+        title: Text(concerns.length == 1 && concerns.first.startsWith("You've")
+            ? 'Check out already?'
+            : 'Check out without finishing?'),
+        content: Text('${concerns.join('\n\n')}\n\n'
+            'Are you sure you want to check out?'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
@@ -137,6 +150,26 @@ class _StoreDetailScreenState extends ConsumerState<StoreDetailScreen> {
     return confirmed ?? false;
   }
 
+  /// Promoted lines at this store with no answer recorded during this visit.
+  int _unansweredLines(RouteVisit rv) {
+    final promos = ref.read(livePromotionsProvider).value ?? const <Promotion>[];
+    final mine = PromotionRepository.forStore(promos, rv.storeId);
+    if (mine.isEmpty || rv.visitClientGeneratedId == null) return 0;
+    final answers = ref
+            .read(promotionAnswersProvider(
+                '${rv.storeId}|${rv.visitClientGeneratedId}'))
+            .value ??
+        const <String, PromotionAnswer>{};
+    var n = 0;
+    for (final p in mine) {
+      for (final product in p.products) {
+        final a = answers[PromotionAnswer.key(p.id, product.id)];
+        if (a == null || !a.thisVisit) n += 1;
+      }
+    }
+    return n;
+  }
+
   Future<void> _checkOut(RouteVisit rv) async {
     if (_busy) return;
     final profile = ref.read(profileProvider).value;
@@ -150,12 +183,30 @@ class _StoreDetailScreenState extends ConsumerState<StoreDetailScreen> {
     // check-out twice.
     setState(() => _busy = true);
     try {
+      final concerns = <String>[];
       if (rv.checkinAt != null) {
         final spent = DateTime.now().difference(rv.checkinAt!);
         if (spent < kMinimumVisitDuration) {
-          final proceed = await _confirmShortVisit(spent);
-          if (!proceed) return;
+          final minutes = spent.inMinutes;
+          final label = minutes < 1 ? 'less than a minute' : '$minutes min';
+          concerns.add(
+            "You've only been at this store for $label. Short visits are "
+            'flagged for your manager.',
+          );
         }
+      }
+      final unanswered = _unansweredLines(rv);
+      if (unanswered > 0) {
+        concerns.add(
+          '$unanswered promoted line${unanswered == 1 ? '' : 's'} '
+          "${unanswered == 1 ? 'has' : 'have'} not been answered. Your manager "
+          'will see this shop as unchecked for '
+          '${unanswered == 1 ? 'it' : 'them'}.',
+        );
+      }
+      if (concerns.isNotEmpty) {
+        final proceed = await _confirmCheckOut(concerns);
+        if (!proceed) return;
       }
 
       if (!mounted) return;
@@ -516,6 +567,18 @@ class _StoreDetailScreenState extends ConsumerState<StoreDetailScreen> {
                 ),
                 const SizedBox(height: 16),
               ],
+              // Above Forms deliberately. Forms block check-out and promotions
+              // do not, so putting promotions first means the rep passes them
+              // on the way to the thing that actually stops them leaving —
+              // compliance pressure without another gate.
+              if (rv.visitClientGeneratedId != null &&
+                  (rv.isCheckedIn || rv.isCheckedOut)) ...[
+                _PromotionsSection(
+                  storeId: rv.storeId,
+                  visitClientGeneratedId: rv.visitClientGeneratedId!,
+                  readOnly: rv.isCheckedOut,
+                ),
+              ],
               // Forms become available once the rep is on site.
               if (rv.visitClientGeneratedId != null && (rv.isCheckedIn || rv.isCheckedOut)) ...[
                 _FormsSection(
@@ -663,6 +726,302 @@ class _FormsSection extends ConsumerWidget {
           },
         ),
       ],
+    );
+  }
+}
+
+/// Promotions running at this store today, one tap per line.
+///
+/// Three answers, and the third is not a softer "no": a shop that has never
+/// carried the line is a ranging question for a buyer, not a compliance failure
+/// for anyone in the shop, and folding it into "not running" would send the
+/// wrong person after the wrong problem.
+class _PromotionsSection extends ConsumerStatefulWidget {
+  const _PromotionsSection({
+    required this.storeId,
+    required this.visitClientGeneratedId,
+    required this.readOnly,
+  });
+
+  final String storeId;
+  final String visitClientGeneratedId;
+  final bool readOnly;
+
+  @override
+  ConsumerState<_PromotionsSection> createState() => _PromotionsSectionState();
+}
+
+class _PromotionsSectionState extends ConsumerState<_PromotionsSection> {
+  String? _busyKey;
+
+  String get _answersKey => '${widget.storeId}|${widget.visitClientGeneratedId}';
+
+  Future<void> _answer(
+    Promotion promo,
+    PromotedProduct product,
+    String status, {
+    String? note,
+  }) async {
+    final profile = ref.read(profileProvider).value;
+    if (profile == null) return;
+    final key = PromotionAnswer.key(promo.id, product.id);
+    setState(() => _busyKey = key);
+    try {
+      await ref.read(promotionRepositoryProvider).recordAnswer(
+            orgId: profile.orgId,
+            repId: profile.id,
+            storeId: widget.storeId,
+            promotionId: promo.id,
+            productId: product.id,
+            status: status,
+            visitClientGeneratedId: widget.visitClientGeneratedId,
+            note: note,
+          );
+      ref.invalidate(promotionAnswersProvider(_answersKey));
+    } finally {
+      if (mounted) setState(() => _busyKey = null);
+    }
+  }
+
+  /// Five identical taps to state one fact punishes an honest rep, so the whole
+  /// promotion can be answered at once when the shop carries none of it.
+  Future<void> _markAllNotStocked(Promotion promo) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('None of these are stocked?'),
+        content: Text(
+          'This marks all ${promo.products.length} lines on "${promo.name}" as '
+          'not carried by this shop.\n\nThat tells your manager the promotion '
+          'was aimed at the wrong outlet — it is not counted against you.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Mark all'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    for (final p in promo.products) {
+      // A row each, with its own idempotency key, so the shape of the data is
+      // the same as if they had been tapped one at a time. The note is what
+      // lets a manager tell a bulk answer from five considered ones.
+      await _answer(promo, p, CheckStatus.notStocked,
+          note: 'Marked with the whole promotion');
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final promosAsync = ref.watch(livePromotionsProvider);
+    final all = promosAsync.value ?? const <Promotion>[];
+    final mine = PromotionRepository.forStore(all, widget.storeId);
+    if (mine.isEmpty) return const SizedBox.shrink();
+
+    final answers = ref.watch(promotionAnswersProvider(_answersKey)).value ??
+        const <String, PromotionAnswer>{};
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'Promotions',
+          style: TextStyle(
+            fontWeight: FontWeight.bold,
+            fontSize: 15,
+            color: AppColors.textPrimary,
+          ),
+        ),
+        const SizedBox(height: 8),
+        ...mine.map((promo) => _PromotionCard(
+              promo: promo,
+              answers: answers,
+              busyKey: _busyKey,
+              readOnly: widget.readOnly,
+              onAnswer: (product, status) => _answer(promo, product, status),
+              onNoneStocked: () => _markAllNotStocked(promo),
+            )),
+        const SizedBox(height: 16),
+      ],
+    );
+  }
+}
+
+class _PromotionCard extends StatelessWidget {
+  const _PromotionCard({
+    required this.promo,
+    required this.answers,
+    required this.busyKey,
+    required this.readOnly,
+    required this.onAnswer,
+    required this.onNoneStocked,
+  });
+
+  final Promotion promo;
+  final Map<String, PromotionAnswer> answers;
+  final String? busyKey;
+  final bool readOnly;
+  final void Function(PromotedProduct, String) onAnswer;
+  final VoidCallback onNoneStocked;
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      margin: const EdgeInsets.only(bottom: 10),
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Icon(Icons.local_offer_outlined,
+                    size: 18, color: AppColors.navy),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    promo.name,
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w600,
+                      fontSize: 14.5,
+                      color: AppColors.textPrimary,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            if (promo.brief != null && promo.brief!.isNotEmpty) ...[
+              const SizedBox(height: 4),
+              Text(
+                promo.brief!,
+                style: const TextStyle(
+                    fontSize: 12.5, color: AppColors.textMuted),
+              ),
+            ],
+            const Divider(height: 22),
+            ...promo.products.map((product) {
+              final key = PromotionAnswer.key(promo.id, product.id);
+              final answer = answers[key];
+              return Padding(
+                padding: const EdgeInsets.only(bottom: 12),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      product.name,
+                      style: const TextStyle(
+                        fontSize: 13.5,
+                        fontWeight: FontWeight.w500,
+                        color: AppColors.textPrimary,
+                      ),
+                    ),
+                    // An answer from an earlier visit is context, not a job
+                    // done — the rep is standing here again today.
+                    if (answer != null && !answer.thisVisit)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 2),
+                        child: Text(
+                          'Last time: ${_statusLabel(answer.status).toLowerCase()}',
+                          style: const TextStyle(
+                              fontSize: 11.5, color: AppColors.textMuted),
+                        ),
+                      ),
+                    const SizedBox(height: 6),
+                    Row(
+                      children: [
+                        for (final status in const [
+                          CheckStatus.running,
+                          CheckStatus.notRunning,
+                          CheckStatus.notStocked,
+                        ])
+                          Expanded(
+                            child: Padding(
+                              padding: const EdgeInsets.only(right: 6),
+                              child: _AnswerButton(
+                                label: _statusLabel(status),
+                                selected: answer?.thisVisit == true &&
+                                    answer?.status == status,
+                                // A re-tap records a new answer rather than
+                                // editing the old one, so a mis-tap is never
+                                // permanent.
+                                onPressed: readOnly || busyKey == key
+                                    ? null
+                                    : () => onAnswer(product, status),
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ],
+                ),
+              );
+            }),
+            if (!readOnly && promo.products.length > 1)
+              Align(
+                alignment: Alignment.centerLeft,
+                child: TextButton(
+                  onPressed: onNoneStocked,
+                  child: const Text(
+                    "This shop doesn't stock any of these",
+                    style: TextStyle(fontSize: 12.5),
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+String _statusLabel(String status) {
+  switch (status) {
+    case CheckStatus.running:
+      return 'Running';
+    case CheckStatus.notRunning:
+      return 'Not running';
+    default:
+      return "Don't stock";
+  }
+}
+
+class _AnswerButton extends StatelessWidget {
+  const _AnswerButton({
+    required this.label,
+    required this.selected,
+    required this.onPressed,
+  });
+
+  final String label;
+  final bool selected;
+  final VoidCallback? onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 38,
+      child: OutlinedButton(
+        onPressed: onPressed,
+        style: OutlinedButton.styleFrom(
+          backgroundColor: selected ? AppColors.navy : null,
+          foregroundColor: selected ? Colors.white : AppColors.textPrimary,
+          side: BorderSide(
+            color: selected ? AppColors.navy : AppColors.border,
+          ),
+          padding: EdgeInsets.zero,
+        ),
+        child: Text(
+          label,
+          textAlign: TextAlign.center,
+          style: const TextStyle(fontSize: 11.5),
+        ),
+      ),
     );
   }
 }

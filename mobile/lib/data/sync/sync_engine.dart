@@ -171,6 +171,30 @@ class SyncEngine {
         await _replayFormSubmission(data);
         break;
 
+      case OutboxType.promotionCheck:
+        // Resolve the visit if it has landed, and carry on without it if not.
+        //
+        // Deliberately NOT the `throw StateError` that form submissions use.
+        // The drain stops on the first failure to preserve ordering, so a check
+        // whose visit never syncs would hold back every entry behind it for
+        // eight attempts. `promotion_checks.visit_id` is nullable and neither
+        // report function reads it — the answer is about a store on a date, and
+        // it is worth more recorded without the visit than not recorded at all.
+        final visitClientId =
+            data.remove('visit_client_generated_id') as String?;
+        if (visitClientId != null) {
+          final visit = await _client
+              .from('visits')
+              .select('id')
+              .eq('client_generated_id', visitClientId)
+              .maybeSingle();
+          data['visit_id'] = visit?['id'];
+        }
+        await _client
+            .from('promotion_checks')
+            .upsert(data, onConflict: 'client_generated_id');
+        break;
+
       default:
         // Unknown type (e.g. written by a newer build). Drop rather than
         // block the queue forever.

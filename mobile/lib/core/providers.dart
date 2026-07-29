@@ -9,9 +9,11 @@ import '../data/models/profile.dart';
 import '../data/models/route_visit.dart';
 import '../data/models/store_summary.dart';
 import '../data/models/form_template.dart';
+import '../data/models/promotion.dart';
 import '../data/local/app_database.dart';
 import '../data/repositories/file_repository.dart';
 import '../data/repositories/form_repository.dart';
+import '../data/repositories/promotion_repository.dart';
 import '../data/repositories/route_repository.dart';
 import '../data/repositories/visit_repository.dart';
 import '../data/repositories/workday_repository.dart';
@@ -127,6 +129,33 @@ final formRepositoryProvider = Provider<FormRepository>((ref) {
 
 final formTemplatesProvider = FutureProvider<List<FormTemplate>>((ref) async {
   return ref.watch(formRepositoryProvider).fetchActiveTemplates();
+});
+
+final promotionRepositoryProvider = Provider<PromotionRepository>((ref) {
+  return PromotionRepository(
+    supabase,
+    ref.watch(appDatabaseProvider),
+    ref.watch(syncEngineProvider),
+  );
+});
+
+/// Every promotion live today, for the whole org. Fetched once and filtered per
+/// store in memory — see the note in `PromotionRepository.fetchLivePromotions`
+/// for why this is not a per-store query.
+final livePromotionsProvider = FutureProvider<List<Promotion>>((ref) async {
+  return ref.watch(promotionRepositoryProvider).fetchLivePromotions();
+});
+
+/// Answers already given at a store, keyed `promotionId:productId`. Keyed by
+/// "storeId|visitClientId" because whether an answer belongs to *this* visit is
+/// part of the result.
+final promotionAnswersProvider =
+    FutureProvider.family<Map<String, PromotionAnswer>, String>((ref, key) {
+  final parts = key.split('|');
+  return ref.watch(promotionRepositoryProvider).answersForStore(
+        storeId: parts[0],
+        visitClientGeneratedId: parts.length > 1 ? parts[1] : '',
+      );
 });
 
 /// Template IDs already submitted against a given visit.

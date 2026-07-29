@@ -11,4 +11,10 @@ class OutboxType {
   /// Composite: uploads any photos, then inserts the submission and all of
   /// its responses. Kept as one entry so a form never lands half-written.
   static const formSubmission = 'form_submission';
+
+  /// A rep's answer on one promoted line at one store: running, not running,
+  /// or the shop does not carry it. One entry per answer — unlike a form there
+  /// is nothing composite about it, and batching them would only mean a single
+  /// bad row could hold back the rest.
+  static const promotionCheck = 'promotion_check';
 }
