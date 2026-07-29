@@ -4,10 +4,13 @@ Audited 29 July 2026 against the live Supabase project `bvbgtsxasttjzlemumwy`
 (eu-west-3). Every finding below was **confirmed by exploiting it** inside a
 transaction that was then rolled back, not inferred from reading policy text.
 
-Status: **Phases 1, 2, 6, 7, 9 and 10 complete.** Six confirmed vulnerabilities
-fixed and re-tested, an audit trail added, and the exploits turned into a
-runnable regression suite — `supabase/tests/security_regression.sql`, 18 checks,
-all passing. Remaining work is scoped in section 3.
+Status: **all eleven phases worked through.** Seven confirmed vulnerabilities
+fixed and re-tested, an audit trail added, operator kill switches added, and the
+exploits turned into a runnable regression suite —
+`supabase/tests/security_regression.sql`, 18 checks, all passing. What remains
+is listed honestly in section 3; none of it is a known hole.
+
+Go-live steps are in `docs/DEPLOYMENT-CHECKLIST.md`.
 
 ---
 
@@ -182,6 +185,64 @@ Managers read their own organisation's trail. There is no INSERT, UPDATE or
 DELETE policy: an audit log a user can edit is not an audit log. The `via`
 field names the connection role, so a change made with the service key is
 distinguishable from one made by a signed-in manager.
+
+### Phases 3, 4, 5 and 8 — checked, largely already sound
+
+Verified rather than assumed. Every claim below was tested.
+
+**Server-controlled fields (Phase 3).** Swept every table for the fields the
+brief lists. Beyond `profiles`, which was the real hole, all of them were
+already manager-gated: `store_assignments`, `routes`, `files`, `products`,
+`promotions`, `form_templates` and `organizations` each require
+`current_role() = 'manager'`. Confirmed by attack as a rep — could not assign
+myself a store, create my own route, publish a file, create a product or a
+promotion, edit a form template, or change the org's capacity setting.
+Mass assignment was tested too: an insert carrying a foreign `org_id` is
+refused.
+
+**Auth and authorisation (Phase 4).** Every route derives identity from the
+verified token and refuses an org or role supplied in the body. `/api/reps/invite`
+hardcodes `role: "rep"`, takes the org from the caller's own profile, and rolls
+the auth user back if the profile insert fails.
+
+There is **no trigger on `auth.users`**, which is a load-bearing accident: a
+self-registered account gets no profile, so `current_org_id()` returns null and
+every policy denies it. If a "create a profile on signup" trigger is ever added,
+public signup becomes a way into an organisation and this must be revisited.
+
+The one gap is password strength — the invite route requires eight characters
+and nothing else, and Supabase's leaked-password check is off. See the checklist.
+
+**Secrets in artifacts (Phase 5).** Scanned the production build and the release
+APK for all four server secrets. All absent from `.next/static`, and the
+service-role key appears nowhere in `.next` at all. Absent from the APK.
+
+The APK does embed a Supabase publishable key, by design. Tested it in isolation
+against seven tables with no session: every one refused. It grants nothing.
+
+**Input validation (Phase 8).** No SQL injection surface — everything goes
+through PostgREST with parameterised queries. No webhooks, no redirects, no
+cross-origin API. Storage paths are built from ids the server controls, and the
+bucket policy pins them to `{org_id}/{auth.uid()}` regardless. Bodies are
+destructured field by field rather than spread, so there is no mass-assignment
+path. One nit: a failed `createUser` returns the provider's message verbatim,
+which could leak a little about the auth backend.
+
+### Emergency controls (Phase 11) · ADDED
+
+`service_flags` — a single global row with `geocoding_enabled` and
+`insights_enabled`, readable by any signed-in user so the UI can explain itself,
+writable only with the service role. The routes check it *before* consuming
+quota, so a disabled feature does not eat anyone's allowance.
+
+It is separate from rate limiting on purpose. The limiter caps what one user can
+spend; this stops a feature outright while a bill is being investigated, without
+taking the product down — reps keep checking in, submitting forms and uploading
+photos throughout, none of which costs anything per use.
+
+Both the SQL function and the TypeScript helper **fail open**. A kill switch
+that fails closed turns an unreadable table into an outage, which is the
+opposite of its purpose.
 
 ## 3. Not yet done
 

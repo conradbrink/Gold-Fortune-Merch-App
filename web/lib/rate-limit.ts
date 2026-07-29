@@ -103,3 +103,30 @@ export async function enforceRateLimit(
     ),
   };
 }
+
+/**
+ * Refuses when an operator has switched a paid feature off.
+ *
+ * Separate from the rate limiter: that caps what one user may spend, this stops
+ * the feature entirely while a bill is being investigated. Checked before the
+ * quota is consumed, so a disabled feature does not eat anyone's allowance.
+ */
+export async function requireFeature(
+  supabase: SupabaseClient,
+  feature: "geocoding" | "insights",
+  label: string
+): Promise<Verdict> {
+  const { data, error } = await supabase.rpc("service_flag", { p_name: feature });
+  // Fails open, matching the SQL function: a flag that cannot be read must not
+  // take the product down.
+  if (error) return { ok: true };
+  if (data !== false) return { ok: true };
+
+  return {
+    ok: false,
+    response: Response.json(
+      { error: `${label} is temporarily switched off. Try again later.` },
+      { status: 503, headers: { "Retry-After": "3600" } }
+    ),
+  };
+}

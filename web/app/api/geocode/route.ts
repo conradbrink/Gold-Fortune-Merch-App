@@ -1,5 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
-import { enforceRateLimit, LIMITS } from "@/lib/rate-limit";
+import { enforceRateLimit, requireFeature, LIMITS } from "@/lib/rate-limit";
 
 /**
  * Turns store addresses into coordinates.
@@ -161,6 +161,11 @@ export async function POST(request: Request) {
     // Charged per store, because Google is: 25 stores is 25 lookups, not one
     // request. Consumed before any call goes out, so an expensive batch cannot
     // slip through while the counter is still being written.
+    // Operator kill switch before quota, so a disabled feature does not eat
+    // anyone's hourly allowance.
+    const live = await requireFeature(supabase, "geocoding", "Address lookup");
+    if (!live.ok) return live.response;
+
     const gate = await enforceRateLimit(supabase, LIMITS.geocode, storeIds.length);
     if (!gate.ok) return gate.response;
 

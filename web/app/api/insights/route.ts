@@ -1,6 +1,6 @@
 import OpenAI from "openai";
 import { createClient } from "@/lib/supabase/server";
-import { enforceRateLimit, LIMITS } from "@/lib/rate-limit";
+import { enforceRateLimit, requireFeature, LIMITS } from "@/lib/rate-limit";
 import {
   fetchComplianceTrends,
   fetchCoverageGaps,
@@ -274,6 +274,9 @@ export async function POST(request: Request) {
     // One long completion over the whole estate per call, so this is the most
     // expensive thing a signed-in user can trigger. Charged before the prompt
     // is built, let alone sent.
+    const live = await requireFeature(supabase, "insights", "AI insights");
+    if (!live.ok) return live.response;
+
     const gate = await enforceRateLimit(supabase, LIMITS.insights);
     if (!gate.ok) return gate.response;
 
