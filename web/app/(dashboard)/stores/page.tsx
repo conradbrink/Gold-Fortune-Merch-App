@@ -167,28 +167,34 @@ export default function StoresPage() {
   async function loadData() {
     setLoading(true);
 
-    const { data: groupRows } = await supabase
-      .from("store_groups")
-      .select("*")
-      .order("name");
+    // Four independent reads, so they go together rather than in a queue.
+    // Sequentially these were four round trips before the table could paint,
+    // and on a Botswana connection that is the difference between the page
+    // feeling instant and feeling broken. None of them depends on another —
+    // only the capture lookup below does, because it needs to know whether any
+    // store has a capture at all.
+    const [groupRes, storeRes, assignmentRows, visitRes, repRes] =
+      await Promise.all([
+        supabase.from("store_groups").select("*").order("name"),
+        supabase.from("stores").select("*").order("name"),
+        // Reuses the representatives fetcher: store_assignments is missing from
+        // the generated types, so querying it off the typed client won't compile.
+        fetchAssignments(supabase),
+        // Aggregated in Postgres. `visits` is the fastest-growing table here, so
+        // the list must not download it to compute a maximum per row.
+        callRpc(supabase, "store_last_visit", {}),
+        // Names for the "Responsible" column.
+        supabase.from("profiles").select("id, full_name").eq("role", "rep"),
+      ]);
+
+    const groupRows = groupRes.data;
+    const storeRows = storeRes.data;
+    const repRows = repRes.data;
+
     setGroups(groupRows ?? []);
-
-    const { data: storeRows } = await supabase
-      .from("stores")
-      .select("*")
-      .order("name");
     setStores(storeRows ?? []);
-
-    // Which stores have an owner. A store nobody is responsible for is the
-    // gap worth prompting on — it will never appear on anyone's route.
-    // Reuses the representatives fetcher: store_assignments is missing from the
-    // stale generated types, so querying it off the typed client won't compile.
-    const assignmentRows = await fetchAssignments(supabase);
     setAssignments(assignmentRows);
 
-    // Aggregated in Postgres. `visits` is the fastest-growing table here, so
-    // the list must not download it to compute a maximum per row.
-    const visitRes = await callRpc(supabase, "store_last_visit", {});
     const seen: Record<string, string> = {};
     if (!visitRes.error) {
       for (const r of (visitRes.data ?? []) as {
@@ -219,12 +225,6 @@ export default function StoresPage() {
     }
     setCaptures(byStore);
 
-    // Names for the "Responsible" column. profiles is already readable org-wide,
-    // so this is one extra query rather than a join through the stale types.
-    const { data: repRows } = await supabase
-      .from("profiles")
-      .select("id, full_name")
-      .eq("role", "rep");
     // Plain objects, not Map: this file imports lucide's `Map` icon, which
     // shadows the global constructor.
     const nameById: Record<string, string> = {};
@@ -1169,9 +1169,19 @@ export default function StoresPage() {
                           )}
                         </div>
                         {/* Mirrors whatever the breakpoints have hidden, so a
-                            narrow window loses layout, never information. */}
-                        <div className="truncate text-xs text-muted-foreground lg:hidden">
-                          {groupName(store.store_group_id)} ·{" "}
+                            narrow window loses layout, never information.
+
+                            Each fact hides at the width its own column
+                            appears, which is not one breakpoint: Group returns
+                            at lg and Status only at xl. Hiding the whole line
+                            at lg — as it used to — dropped Active/Inactive
+                            into a gap between 1024 and 1279px where neither
+                            the column nor the mirror showed it. */}
+                        <div className="truncate text-xs text-muted-foreground xl:hidden">
+                          <span className="lg:hidden">
+                            {groupName(store.store_group_id)}
+                            {" · "}
+                          </span>
                           {store.active ? "Active" : "Inactive"}
                           <span className="md:hidden">
                             {" · "}
