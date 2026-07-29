@@ -607,7 +607,7 @@ export type Database = {
           },
         ]
       }
-      project_checks: {
+      promotion_checks: {
         Row: {
           checked_at: string
           client_generated_id: string
@@ -616,7 +616,7 @@ export type Database = {
           note: string | null
           org_id: string
           product_id: string
-          project_id: string
+          promotion_id: string
           rep_id: string
           status: string
           store_id: string
@@ -630,7 +630,7 @@ export type Database = {
           note?: string | null
           org_id: string
           product_id: string
-          project_id: string
+          promotion_id: string
           rep_id: string
           status: string
           store_id: string
@@ -644,7 +644,7 @@ export type Database = {
           note?: string | null
           org_id?: string
           product_id?: string
-          project_id?: string
+          promotion_id?: string
           rep_id?: string
           status?: string
           store_id?: string
@@ -652,42 +652,42 @@ export type Database = {
         }
         Relationships: [
           {
-            foreignKeyName: "project_checks_org_id_fkey"
+            foreignKeyName: "promotion_checks_org_id_fkey"
             columns: ["org_id"]
             isOneToOne: false
             referencedRelation: "organizations"
             referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "project_checks_product_id_fkey"
+            foreignKeyName: "promotion_checks_product_id_fkey"
             columns: ["product_id"]
             isOneToOne: false
             referencedRelation: "products"
             referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "project_checks_project_id_fkey"
-            columns: ["project_id"]
+            foreignKeyName: "promotion_checks_promotion_id_fkey"
+            columns: ["promotion_id"]
             isOneToOne: false
-            referencedRelation: "projects"
+            referencedRelation: "promotions"
             referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "project_checks_rep_id_fkey"
+            foreignKeyName: "promotion_checks_rep_id_fkey"
             columns: ["rep_id"]
             isOneToOne: false
             referencedRelation: "profiles"
             referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "project_checks_store_id_fkey"
+            foreignKeyName: "promotion_checks_store_id_fkey"
             columns: ["store_id"]
             isOneToOne: false
             referencedRelation: "stores"
             referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "project_checks_visit_id_fkey"
+            foreignKeyName: "promotion_checks_visit_id_fkey"
             columns: ["visit_id"]
             isOneToOne: false
             referencedRelation: "visits"
@@ -695,59 +695,59 @@ export type Database = {
           },
         ]
       }
-      project_products: {
+      promotion_products: {
         Row: {
           product_id: string
-          project_id: string
+          promotion_id: string
         }
         Insert: {
           product_id: string
-          project_id: string
+          promotion_id: string
         }
         Update: {
           product_id?: string
-          project_id?: string
+          promotion_id?: string
         }
         Relationships: [
           {
-            foreignKeyName: "project_products_product_id_fkey"
+            foreignKeyName: "promotion_products_product_id_fkey"
             columns: ["product_id"]
             isOneToOne: false
             referencedRelation: "products"
             referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "project_products_project_id_fkey"
-            columns: ["project_id"]
+            foreignKeyName: "promotion_products_promotion_id_fkey"
+            columns: ["promotion_id"]
             isOneToOne: false
-            referencedRelation: "projects"
+            referencedRelation: "promotions"
             referencedColumns: ["id"]
           },
         ]
       }
-      project_stores: {
+      promotion_stores: {
         Row: {
-          project_id: string
+          promotion_id: string
           store_id: string
         }
         Insert: {
-          project_id: string
+          promotion_id: string
           store_id: string
         }
         Update: {
-          project_id?: string
+          promotion_id?: string
           store_id?: string
         }
         Relationships: [
           {
-            foreignKeyName: "project_stores_project_id_fkey"
-            columns: ["project_id"]
+            foreignKeyName: "promotion_stores_promotion_id_fkey"
+            columns: ["promotion_id"]
             isOneToOne: false
-            referencedRelation: "projects"
+            referencedRelation: "promotions"
             referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "project_stores_store_id_fkey"
+            foreignKeyName: "promotion_stores_store_id_fkey"
             columns: ["store_id"]
             isOneToOne: false
             referencedRelation: "stores"
@@ -755,7 +755,7 @@ export type Database = {
           },
         ]
       }
-      projects: {
+      promotions: {
         Row: {
           active: boolean
           brief: string | null
@@ -794,14 +794,14 @@ export type Database = {
         }
         Relationships: [
           {
-            foreignKeyName: "projects_created_by_fkey"
+            foreignKeyName: "promotions_created_by_fkey"
             columns: ["created_by"]
             isOneToOne: false
             referencedRelation: "profiles"
             referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "projects_org_id_fkey"
+            foreignKeyName: "promotions_org_id_fkey"
             columns: ["org_id"]
             isOneToOne: false
             referencedRelation: "organizations"
@@ -1422,8 +1422,8 @@ export type Database = {
           store_name: string
         }[]
       }
-      project_store_status: {
-        Args: { p_project_id: string }
+      promotion_store_status: {
+        Args: { p_promotion_id: string }
         Returns: {
           answered: number
           city: string
@@ -1436,7 +1436,7 @@ export type Database = {
           store_name: string
         }[]
       }
-      project_summaries: {
+      promotion_summaries: {
         Args: never
         Returns: {
           active: boolean
@@ -1445,7 +1445,7 @@ export type Database = {
           last_checked_at: string
           name: string
           products: number
-          project_id: string
+          promotion_id: string
           starts_on: string
           stores: number
           stores_checked: number
