@@ -14,12 +14,29 @@ hurts most if skipped.
       the invite route only enforces a minimum of eight characters.
 - [ ] **Confirm the Supabase spend cap is on.** Settings → Billing. On by
       default for Free and Pro; verify rather than assume.
-- [ ] **Create a release signing keystore for Android.** The APK is currently
-      signed with Flutter's debug keys — `android/app/build.gradle.kts` still
-      carries the `TODO`. Play Store will reject it, and a debug-signed build
-      cannot later be updated by a properly signed one. The keystore is the
-      app's permanent identity: it is yours to create and to keep, and losing
-      it means never being able to update the app again.
+- [ ] **Create a release signing keystore for Android.** Gradle is wired for it
+      already; it needs the keystore and a `key.properties` beside it. Until
+      both exist the build falls back to debug keys and prints a warning saying
+      so. Play Store rejects a debug-signed build, and — worse — a listing
+      published with one can never be updated by a properly signed build.
+
+      `keytool` is not on the PATH on this machine; use the JDK bundled with
+      Android Studio:
+
+      ```bash
+      "/Applications/Android Studio.app/Contents/jbr/Contents/Home/bin/keytool" \
+        -genkeypair -v -keystore ~/gf-merch-release.jks \
+        -keyalg RSA -keysize 2048 -validity 10000 -alias gf-merch
+      ```
+
+      Then create `mobile/android/key.properties` (gitignored) with
+      `storePassword`, `keyPassword`, `keyAlias=gf-merch` and the absolute
+      `storeFile` path. Verify with `flutter build apk --release` — it must
+      print "Signing release with the keystore in android/key.properties".
+
+      **Back up the .jks and its password somewhere separate from this laptop.**
+      This is the one credential in the project that cannot be reset or
+      recovered. Losing it means never shipping another update.
 - [ ] **Run the security regression suite** and confirm 18/18:
       `supabase/tests/security_regression.sql`.
 
