@@ -71,44 +71,80 @@ export function PromotionDialog({
 
   useEffect(() => {
     if (!open) return;
+
+    // Cleared before anything is awaited, not after.
+    //
+    // The reset used to sit inside the async body, so a load that failed — or
+    // simply had not come back yet — left the *previous* promotion's name,
+    // dates and lines on screen while `promotionId` already pointed at a
+    // different row. Pressing Save then wrote the old promotion over the new
+    // one, or created a fresh promotion out of its values.
+    //
+    // It also leaves the form unsaveable until the load succeeds: Save is
+    // disabled on an empty name, so a failure cannot be written anywhere.
     setError(null);
     setQuery("");
+    setName("");
+    setBrief("");
+    setStartsOn(todayLocal());
+    setEndsOn(todayLocal());
+    setProductIds(new Set());
+    setStoreIds(new Set());
+    setInitialStores(new Set());
+    setInitialProducts(new Set());
+    setAnswered(new Set());
+    setStarted(false);
+    setExpanded(new Set());
+
+    // Opening B while A is still in flight must not let A's reply land on B's
+    // form, so every await is followed by a check that this run still owns it.
+    let cancelled = false;
+
     (async () => {
-      const [{ data: prod }, storeList] = await Promise.all([
-        supabase.from("products").select("*").eq("active", true).order("name"),
-        fetchStores(supabase),
-      ]);
-      setProducts((prod ?? []) as ProductRow[]);
-      setStores(storeList);
+      try {
+        const [{ data: prod, error: productsError }, storeList] =
+          await Promise.all([
+            supabase.from("products").select("*").eq("active", true).order("name"),
+            fetchStores(supabase),
+          ]);
+        if (cancelled) return;
+        if (productsError) throw new Error(productsError.message);
+        setProducts((prod ?? []) as ProductRow[]);
+        setStores(storeList);
 
-      if (!promotionId) {
-        setName("");
-        setBrief("");
-        setStartsOn(todayLocal());
-        setEndsOn(todayLocal());
-        setProductIds(new Set());
-        setStoreIds(new Set());
-        setInitialStores(new Set());
-        setInitialProducts(new Set());
-        setAnswered(new Set());
-        setStarted(false);
-        setExpanded(new Set());
-        return;
+        if (!promotionId) return;
+
+        const detail = await fetchPromotionDetail(supabase, promotionId);
+        if (cancelled) return;
+        if (!detail) {
+          // Deleted, or invisible to this caller. Saying so beats a blank form
+          // that reads as a promotion with no lines and no outlets.
+          throw new Error(
+            "That promotion could not be read. Close and reopen it, or refresh the list."
+          );
+        }
+        setName(detail.name);
+        setBrief(detail.brief ?? "");
+        setStartsOn(detail.starts_on);
+        setEndsOn(detail.ends_on);
+        setProductIds(new Set(detail.product_ids));
+        setStoreIds(new Set(detail.store_ids));
+        setInitialStores(new Set(detail.store_ids));
+        setInitialProducts(new Set(detail.product_ids));
+        setStarted(detail.starts_on <= todayLocal());
+
+        const answers = await answeredStoreIds(supabase, promotionId);
+        if (cancelled) return;
+        setAnswered(answers);
+      } catch (e) {
+        if (cancelled) return;
+        setError(e instanceof Error ? e.message : String(e));
       }
-
-      const detail = await fetchPromotionDetail(supabase, promotionId);
-      if (!detail) return;
-      setName(detail.name);
-      setBrief(detail.brief ?? "");
-      setStartsOn(detail.starts_on);
-      setEndsOn(detail.ends_on);
-      setProductIds(new Set(detail.product_ids));
-      setStoreIds(new Set(detail.store_ids));
-      setInitialStores(new Set(detail.store_ids));
-      setInitialProducts(new Set(detail.product_ids));
-      setStarted(detail.starts_on <= todayLocal());
-      setAnswered(await answeredStoreIds(supabase, promotionId));
     })();
+
+    return () => {
+      cancelled = true;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, promotionId]);
 
@@ -363,7 +399,9 @@ export function PromotionDialog({
         <DialogFooter>
           <Button
             onClick={save}
-            disabled={saving || !name.trim() || datesBackwards}
+            // `save()` refuses without an org, so without this the button was
+            // live and did nothing when clicked.
+            disabled={saving || !orgId || !name.trim() || datesBackwards}
             className="bg-primary text-primary-foreground hover:bg-primary/90"
           >
             {saving ? "Saving…" : promotionId ? "Save changes" : "Create promotion"}
