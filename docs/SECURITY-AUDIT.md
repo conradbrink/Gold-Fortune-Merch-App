@@ -4,8 +4,9 @@ Audited 29 July 2026 against the live Supabase project `bvbgtsxasttjzlemumwy`
 (eu-west-3). Every finding below was **confirmed by exploiting it** inside a
 transaction that was then rolled back, not inferred from reading policy text.
 
-Status: **Phase 1 and 2 complete. Two confirmed vulnerabilities fixed and
-re-tested.** Phases 3–11 are scoped at the end and not yet done.
+Status: **Phases 1, 2 and 6 complete. Five confirmed vulnerabilities fixed and
+re-tested** — four privilege/integrity holes and the absent rate limiting.
+The remaining phases are scoped in section 3.
 
 ---
 
@@ -87,47 +88,6 @@ value → null, are refused. `org_id`, `rep_id` and `store_id` are frozen too, s
 a visit cannot be reassigned after creation. `service_role` and direct SQL are
 exempt, so a genuine correction remains possible out of band.
 
-### Verified as SOUND — no action needed
-
-Tested and behaving correctly:
-
-- Anonymous callers get nothing. `anon` cannot even execute `current_org_id`,
-  so every policy short-circuits. Checked across `profiles`, `stores`, `visits`,
-  `location_pings`, `photos`, `organizations`, `products`, `promotions`.
-- A rep cannot read another rep's visits, GPS pings, or profile.
-- A rep cannot steal or reassign another rep's visit.
-- A rep cannot create a visit as another rep (`visits_insert` pins
-  `rep_id = auth.uid()`).
-- `location_pings` has only SELECT and INSERT policies — UPDATE and DELETE are
-  denied by default, so GPS pings are already immutable.
-- `visits` has no DELETE policy — visits cannot be deleted through the API.
-- `promotion_checks` has no UPDATE policy — a rep's answer cannot be edited,
-  only superseded.
-- RLS is enabled on all 22 public tables.
-- Both storage buckets are private.
-
-### MEDIUM — outstanding
-
-| Finding | Detail |
-|---|---|
-| `visit-photos` bucket has no size or MIME limit | `files` has both. An authenticated rep could upload arbitrarily large files or executable types. |
-| Leaked-password protection disabled | Supabase Auth can check new passwords against HaveIBeenPwned. Dashboard toggle. |
-| No rate limiting anywhere | Nothing throttles check-ins, photo uploads, geocoding, or the OpenAI plan critic. All four cost money or storage. |
-| `visits_update` still allows a rep to change `status` freely | They can mark a visit `missed` or reopen a `checked_out` one. Lower impact now that the coordinates are frozen. |
-| No audit trail | Role changes, store reassignment and deactivation are not logged anywhere. |
-
-### LOW — outstanding
-
-- Six SECURITY DEFINER functions are callable by `authenticated`. Reviewed:
-  all pin `search_path` and validate the caller. `current_org_id` and
-  `current_role` **must** be definer to read `profiles`. This is the advisor
-  being conservative, not a defect — but `close_abandoned_workday` and
-  `set_store_location_from_visit` are worth re-reading whenever they change.
-- `rls_forced` is false on every table, so a future table owner bypasses RLS.
-  Only relevant if application code ever connects as the owner; it does not.
-
----
-
 ### HIGH — no rate limiting on paid endpoints · FIXED
 
 Three routes reached a paid third party on behalf of a signed-in user with no
@@ -162,6 +122,45 @@ a second user got their own budget.
 One deliberate choice: if the limiter itself errors, the request is **allowed**
 and the failure logged. Losing the ability to count is a worse reason to take
 the product down than letting a few calls through uncounted.
+
+### Verified as SOUND — no action needed
+
+Tested and behaving correctly:
+
+- Anonymous callers get nothing. `anon` cannot even execute `current_org_id`,
+  so every policy short-circuits. Checked across `profiles`, `stores`, `visits`,
+  `location_pings`, `photos`, `organizations`, `products`, `promotions`.
+- A rep cannot read another rep's visits, GPS pings, or profile.
+- A rep cannot steal or reassign another rep's visit.
+- A rep cannot create a visit as another rep (`visits_insert` pins
+  `rep_id = auth.uid()`).
+- `location_pings` has only SELECT and INSERT policies — UPDATE and DELETE are
+  denied by default, so GPS pings are already immutable.
+- `visits` has no DELETE policy — visits cannot be deleted through the API.
+- `promotion_checks` has no UPDATE policy — a rep's answer cannot be edited,
+  only superseded.
+- RLS is enabled on all 22 public tables.
+- Both storage buckets are private.
+
+### MEDIUM — outstanding
+
+| Finding | Detail |
+|---|---|
+| `visit-photos` bucket has no size or MIME limit | `files` has both. An authenticated rep could upload arbitrarily large files or executable types. |
+| Leaked-password protection disabled | Supabase Auth can check new passwords against HaveIBeenPwned. Dashboard toggle. |
+| Photo uploads and check-ins are still unthrottled | The paid routes are now limited; these are storage and row growth rather than a third-party bill, so lower priority. |
+| `visits_update` still allows a rep to change `status` freely | They can mark a visit `missed` or reopen a `checked_out` one. Lower impact now that the coordinates are frozen. |
+| No audit trail | Role changes, store reassignment and deactivation are not logged anywhere. |
+
+### LOW — outstanding
+
+- Six SECURITY DEFINER functions are callable by `authenticated`. Reviewed:
+  all pin `search_path` and validate the caller. `current_org_id` and
+  `current_role` **must** be definer to read `profiles`. This is the advisor
+  being conservative, not a defect — but `close_abandoned_workday` and
+  `set_store_location_from_visit` are worth re-reading whenever they change.
+- `rls_forced` is false on every table, so a future table owner bypasses RLS.
+  Only relevant if application code ever connects as the owner; it does not.
 
 ## 3. Not yet done
 
