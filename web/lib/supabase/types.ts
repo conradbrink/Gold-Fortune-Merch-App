@@ -1422,6 +1422,16 @@ export type Database = {
           store_name: string
         }[]
       }
+      product_delete_impact: {
+        Args: { p_product_id: string }
+        Returns: {
+          checks: number
+          product_name: string
+          promotions: number
+          promotions_live: number
+          stores_answered: number
+        }[]
+      }
       promotion_store_status: {
         Args: { p_promotion_id: string }
         Returns: {
@@ -1449,6 +1459,7 @@ export type Database = {
           starts_on: string
           stores: number
           stores_checked: number
+          stores_not_stocked: number
           stores_running: number
         }[]
       }
