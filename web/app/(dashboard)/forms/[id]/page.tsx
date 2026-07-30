@@ -26,18 +26,24 @@ import {
 import { Card, CardContent } from "@/components/ui/card";
 import { createClient } from "@/lib/supabase/client";
 import type { Tables } from "@/lib/supabase/types";
+import {
+  fieldTypeLabels,
+  findMetric,
+  metricMismatch,
+  metricsForFieldType,
+} from "@/lib/metrics";
 
 type FormTemplate = Tables<"form_templates">;
 type FormField = Tables<"form_fields">;
 
-const fieldTypeLabels: Record<string, string> = {
-  text: "Text",
-  number: "Number",
-  photo: "Photo",
-  multiple_choice: "Multiple choice",
-  boolean: "Yes / No",
-  date: "Date",
-};
+/** The options a multiple-choice question offers, from the comma-separated input. */
+function parseOptions(raw: string): string[] {
+  return raw.split(",").map((o) => o.trim()).filter(Boolean);
+}
+
+function fieldOptions(field: FormField): string[] {
+  return Array.isArray(field.options) ? (field.options as string[]) : [];
+}
 
 export default function FormDetailPage() {
   const params = useParams<{ id: string }>();
@@ -50,12 +56,23 @@ export default function FormDetailPage() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [dragIndex, setDragIndex] = useState<number | null>(null);
+  const [addError, setAddError] = useState<string | null>(null);
+  const [rowError, setRowError] = useState<string | null>(null);
   const [newField, setNewField] = useState({
     label: "",
     field_type: "text",
     required: false,
     options: "",
+    metric_key: "",
   });
+
+  const emptyField = {
+    label: "",
+    field_type: "text",
+    required: false,
+    options: "",
+    metric_key: "",
+  };
 
   async function load() {
     setLoading(true);
@@ -82,24 +99,84 @@ export default function FormDetailPage() {
 
   async function handleAddField() {
     setSaving(true);
+    setAddError(null);
+    const parsed = parseOptions(newField.options);
     const options =
-      newField.field_type === "multiple_choice" && newField.options
-        ? newField.options.split(",").map((o) => o.trim()).filter(Boolean)
-        : null;
+      newField.field_type === "multiple_choice" && parsed.length ? parsed : null;
 
-    await supabase.from("form_fields").insert({
-      form_template_id: params.id,
-      label: newField.label,
-      field_type: newField.field_type,
-      required: newField.required,
-      options,
-      sort_order: fields.length,
-    });
+    // Select the inserted row back: a write PostgREST filters away answers
+    // with success and no rows, so nothing else would tell us it was refused.
+    const { data, error: insertError } = await supabase
+      .from("form_fields")
+      .insert({
+        form_template_id: params.id,
+        label: newField.label,
+        field_type: newField.field_type,
+        required: newField.required,
+        options,
+        metric_key: newField.metric_key || null,
+        sort_order: fields.length,
+      })
+      .select("id")
+      .maybeSingle();
 
     setSaving(false);
+    if (insertError || !data) {
+      setAddError(insertError?.message ?? "The field could not be added.");
+      return;
+    }
+
     setDialogOpen(false);
-    setNewField({ label: "", field_type: "text", required: false, options: "" });
+    setNewField(emptyField);
     load();
+  }
+
+  /**
+   * Changing the type can strand the metric — `in_stock` is only ever read
+   * from `value_boolean`, so a question that stops being Yes/No stops feeding
+   * it. Drop the link rather than keep one that silently measures nothing.
+   */
+  function handleNewFieldType(fieldType: string) {
+    const stillValid = metricsForFieldType(fieldType).some(
+      (m) => m.key === newField.metric_key
+    );
+    setNewField({
+      ...newField,
+      field_type: fieldType,
+      metric_key: stillValid ? newField.metric_key : "",
+    });
+  }
+
+  async function handleMetricChange(field: FormField, metricKey: string) {
+    setRowError(null);
+    const next = metricKey || null;
+    // Apply locally first so the select does not snap back while the round
+    // trip is in flight, then reconcile from what the database accepted.
+    setFields((prev) =>
+      prev.map((f) => (f.id === field.id ? { ...f, metric_key: next } : f))
+    );
+
+    const { data, error: updateError } = await supabase
+      .from("form_fields")
+      .update({ metric_key: next })
+      .eq("id", field.id)
+      .select("id, metric_key")
+      .maybeSingle();
+
+    if (updateError || !data) {
+      setRowError(
+        updateError?.message ??
+          "That change was not saved — you may not have permission to edit this form."
+      );
+      load();
+      return;
+    }
+
+    setFields((prev) =>
+      prev.map((f) =>
+        f.id === field.id ? { ...f, metric_key: data.metric_key } : f
+      )
+    );
   }
 
   async function handleDeleteField(id: string) {
@@ -195,7 +272,7 @@ export default function FormDetailPage() {
                 <NativeSelect
                   id="field-type"
                   value={newField.field_type}
-                  onChange={(e) => setNewField({ ...newField, field_type: e.target.value })}
+                  onChange={(e) => handleNewFieldType(e.target.value)}
                 >
                   {Object.entries(fieldTypeLabels).map(([value, label]) => (
                     <option key={value} value={value}>
@@ -215,6 +292,16 @@ export default function FormDetailPage() {
                   />
                 </div>
               )}
+              <MetricPicker
+                id="field-metric"
+                fieldType={newField.field_type}
+                value={newField.metric_key}
+                options={parseOptions(newField.options)}
+                usedBy={fields}
+                onChange={(metricKey) =>
+                  setNewField({ ...newField, metric_key: metricKey })
+                }
+              />
               <div className="flex items-center gap-2">
                 <Checkbox
                   id="field-required"
@@ -229,6 +316,9 @@ export default function FormDetailPage() {
               </div>
             </div>
             <DialogFooter>
+              {addError && (
+                <p className="mr-auto text-xs text-destructive">{addError}</p>
+              )}
               <Button
                 onClick={handleAddField}
                 disabled={saving || !newField.label}
@@ -240,6 +330,12 @@ export default function FormDetailPage() {
           </DialogContent>
         </Dialog>
       </div>
+
+      {rowError && (
+        <div className="rounded-lg border border-destructive/40 bg-destructive/5 px-3 py-2 text-xs text-destructive">
+          {rowError}
+        </div>
+      )}
 
       <div className="space-y-2">
         {fields.length === 0 && (
@@ -298,6 +394,23 @@ export default function FormDetailPage() {
                       Array.isArray(field.options) &&
                       ` — ${(field.options as string[]).join(", ")}`}
                   </div>
+                  <div
+                    className="mt-2 max-w-sm"
+                    // Excluded from the drag so the select opens on click
+                    // instead of the card picking the gesture up.
+                    draggable={false}
+                    onDragStart={(e) => e.stopPropagation()}
+                  >
+                    <MetricPicker
+                      id={`field-metric-${field.id}`}
+                      fieldType={field.field_type}
+                      value={field.metric_key ?? ""}
+                      options={fieldOptions(field)}
+                      usedBy={fields}
+                      currentFieldId={field.id}
+                      onChange={(metricKey) => handleMetricChange(field, metricKey)}
+                    />
+                  </div>
                 </div>
               </div>
               <Button
@@ -313,6 +426,99 @@ export default function FormDetailPage() {
           </Card>
         ))}
       </div>
+    </div>
+  );
+}
+
+/**
+ * Picks what a question measures.
+ *
+ * Deliberately a closed list. `metric_key` is free text in the column and the
+ * database only checks it against ten allowed values, so free text in the UI
+ * would let a manager type `stock` and watch the dashboard ignore it forever.
+ *
+ * The list is narrowed to the metrics this field type can actually reach — see
+ * `metricsForFieldType` — so a Yes/No question is never offered a metric read
+ * from a number.
+ */
+function MetricPicker({
+  id,
+  fieldType,
+  value,
+  options,
+  usedBy,
+  currentFieldId,
+  onChange,
+}: {
+  id: string;
+  fieldType: string;
+  value: string;
+  options: string[];
+  /** Every field on the template, to warn when a metric is shared. */
+  usedBy: FormField[];
+  currentFieldId?: string;
+  onChange: (metricKey: string) => void;
+}) {
+  const available = metricsForFieldType(fieldType);
+  const selected = findMetric(value);
+  const mismatch = metricMismatch(value, fieldType, options);
+
+  // A metric belongs to exactly one question per form — `form_fields_template_
+  // metric_idx` is a unique index on (form_template_id, metric_key). Offering a
+  // key another question already holds would produce a save that can only fail
+  // on a duplicate-key error, so the option is shown disabled and says who has
+  // it. Disabled rather than absent: "why can I not pick this?" needs an answer.
+  const heldBy = new Map<string, string>();
+  for (const f of usedBy) {
+    if (f.metric_key && f.id !== currentFieldId) heldBy.set(f.metric_key, f.label);
+  }
+
+  if (available.length === 0) {
+    return (
+      <p className="text-xs text-muted-foreground">
+        {selected
+          ? `Measures ${selected.label} — but a ${fieldTypeLabels[fieldType] ?? fieldType} answer cannot reach it.`
+          : "No analytics read this kind of answer."}
+      </p>
+    );
+  }
+
+  return (
+    <div className="space-y-1.5">
+      <Label htmlFor={id} className="text-xs">
+        Measures
+      </Label>
+      <NativeSelect id={id} value={value} onChange={(e) => onChange(e.target.value)}>
+        <option value="">Nothing — not on the dashboard</option>
+        {available.map((metric) => {
+          const taken = heldBy.get(metric.key);
+          return (
+            <option key={metric.key} value={metric.key} disabled={taken !== undefined}>
+              {metric.label}
+              {metric.feeds.length === 0 ? " (not charted yet)" : ""}
+              {taken ? ` — already measured by “${taken}”` : ""}
+            </option>
+          );
+        })}
+      </NativeSelect>
+
+      {mismatch && <p className="text-xs text-destructive">{mismatch}</p>}
+
+      {selected && !mismatch && (
+        <p className="text-xs text-muted-foreground">
+          {selected.feeds.length > 0
+            ? `Feeds ${selected.feeds.join(", ")}.`
+            : "Stored, but no dashboard card reads this metric yet."}
+          {selected.invertedNote ? ` ${selected.invertedNote}` : ""}
+        </p>
+      )}
+
+      {!selected && (
+        <p className="text-xs text-muted-foreground">
+          A question that measures nothing is still asked and still stored — it
+          just never appears on the dashboard.
+        </p>
+      )}
     </div>
   );
 }
