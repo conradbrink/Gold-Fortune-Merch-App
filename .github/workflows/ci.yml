@@ -97,6 +97,102 @@ jobs:
           TZ: UTC
         run: flutter test
 
+  dependencies:
+    name: Dependency audit
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - run: npm ci
+
+      - name: Block on critical advisories
+        # Gated at `critical`, not `high`, and that is a deliberate choice
+        # rather than laziness.
+        #
+        # As of 31 July 2026 the tree has 12 high advisories from three roots:
+        # brace-expansion and postcss (both reached only through the eslint and
+        # Tailwind build chains — they never ship to a user) and sharp, which
+        # Next uses for server-side image optimisation and is the only one with
+        # real runtime exposure.
+        #
+        # Gating at `high` would therefore fail every pull request from the
+        # first day, and a permanently red gate is one everybody learns to
+        # ignore — the same trap the lint step already fell into. Critical
+        # passes today, so this blocks on the things that genuinely must stop a
+        # merge, while the report below keeps the highs visible.
+        #
+        # Raise this to `high` once those three are resolved.
+        run: npm audit --audit-level=critical
+
+      - name: Report high and moderate advisories
+        if: always()
+        run: npm audit --audit-level=moderate || true
+
+  migrations:
+    name: Migration safety
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Need the base branch too, to see what the PR changes.
+          fetch-depth: 0
+
+      - name: Filenames are well formed and unique
+        run: |
+          set -euo pipefail
+          cd supabase/migrations
+          fail=0
+          for f in *.sql; do
+            if ! [[ "$f" =~ ^[0-9]{14}_[a-z0-9_]+\.sql$ ]]; then
+              echo "::error file=supabase/migrations/$f::Bad migration filename. Expected <14-digit version>_<snake_case_name>.sql"
+              fail=1
+            fi
+          done
+          dupes=$(ls *.sql | cut -c1-14 | sort | uniq -d)
+          if [ -n "$dupes" ]; then
+            echo "::error::Duplicate migration versions: $dupes"
+            fail=1
+          fi
+          echo "Checked $(ls *.sql | wc -l) migration files."
+          exit $fail
+
+      - name: Applied migrations must not be edited or deleted
+        # An applied migration is a historical record of what production ran.
+        # Editing one makes the repo disagree with the database *silently* —
+        # every environment built afterwards gets a schema nobody has run.
+        # New migrations are how the schema changes; old ones are immutable.
+        #
+        # Renames are reported, not blocked: correcting a filename to match the
+        # recorded version is a legitimate repair (see supabase/README.md), and
+        # it is visible in the PR diff for a human to judge.
+        if: github.event_name == 'pull_request'
+        run: |
+          set -euo pipefail
+          git fetch -q origin "${{ github.base_ref }}"
+          base="origin/${{ github.base_ref }}"
+          changed=$(git diff --name-status --diff-filter=MD "$base"...HEAD -- supabase/migrations || true)
+          if [ -n "$changed" ]; then
+            echo "::error::This pull request edits or deletes migrations that are already applied:"
+            echo "$changed"
+            echo "Add a new migration instead. See supabase/README.md."
+            exit 1
+          fi
+          renamed=$(git diff --name-status --diff-filter=R "$base"...HEAD -- supabase/migrations || true)
+          if [ -n "$renamed" ]; then
+            echo "::warning::This PR renames migration files — confirm they match the recorded versions:"
+            echo "$renamed"
+          fi
+          echo "No applied migration was edited or deleted."
+
   secrets:
     name: No secrets in the tree
     runs-on: ubuntu-latest
