@@ -23,9 +23,23 @@ Companion documents:
 | Database | **Supabase** project `bvbgtsxasttjzlemumwy` | Postgres 17, region **eu-west-3 (Paris)** |
 | Authentication | Supabase Auth, same project | Email + password |
 | Uploaded files | Supabase Storage, same project | Buckets `visit-photos`, `files`, `app-releases` — **all private** |
-| Android APK | Supabase Storage bucket `app-releases` | Served through `/api/app/android`, never a public URL |
-| Download page | `/download` on the web platform | Public by design |
-| Signing keystore | **Not yet created** — see `docs/RELEASE-ANDROID.md` | Must live outside the repo, backed up separately |
+| Android APK | Supabase Storage bucket `app-releases`, key `1.0.0/app-release.apk` | Served through `/api/app/android`, never a public URL |
+| Download page | <https://gold-fortune-merch-app-rnyn.vercel.app/download> | Public by design |
+| Signing keystore | `~/gf-merch-release.jks` on Conrad's Mac, password in his password manager | **Outside the repo.** Losing it means this app can never be updated again |
+
+## Current Android release
+
+| | |
+|---|---|
+| Version | **1.0.0** (versionCode **1**) |
+| Released | 30 July 2026 |
+| Size | 41.2 MB |
+| Package ID | `com.goldfortune.gf_merch_rep` — permanent |
+| Architectures | `arm64-v8a`, `armeabi-v7a` (no `x86_64` — see `RELEASE-ANDROID.md`) |
+| Signing certificate | `CN=Conrad Brink, O=Gold Fortune Distribution, C=BW` |
+| Certificate SHA-256 | `0b68016543e7fed5ed0433bf8e1c2ed50fdac2be66a96e3b40b4a45305b1f394` |
+| APK SHA-256 | `5f7899737c31d2661811eae9885224084fa9de631cd0105c5cb1a5cf5d663244` |
+| Forced-update floor | 1 (nobody is locked out) |
 
 **One organisation is active: Gold Fortune.** Every table is scoped by `org_id`
 and the multi-tenant structure is intact, so a second company can be added
@@ -153,8 +167,8 @@ installed cannot be downgraded, so the real fix is forward.
 |---|---|
 | ~~Web platform is not deployed~~ | **LIVE 30 July** at <https://gold-fortune-merch-app-rnyn.vercel.app> |
 | **No custom domain** | Still on the `.vercel.app` address. `DEPLOY-WEB.md` → "Connect a custom domain" |
-| **No signed APK exists** | The signing keystore has not been created. You hold the password — `RELEASE-ANDROID.md` Part 1 |
-| **No APK has been tested on a real device** | There are no physical Android handsets attached to this machine, only the `gf_pixel` emulator. I cannot honestly claim device testing, and have not |
+| ~~No signed APK exists~~ | **Published 30 July.** v1.0.0 (versionCode 1), 41.2 MB, signed `CN=Conrad Brink, O=Gold Fortune Distribution, C=BW` |
+| **No APK has been tested on a real device** | There are no physical Android handsets attached to this machine, only the `gf_pixel` emulator (Android 14). Installed and launched cleanly there from the live download URL, but that is **not** the same as a real handset and is not claimed as such |
 | **Database backups** | Free plan has none. Needs the Pro upgrade decision |
 | **Leaked-password protection** | **Pro-only.** Confirmed greyed out on the Free plan, 30 July. Authentication → Attack Protection. Comes with the Pro upgrade below, not separately |
 | ~~`main` is behind~~ | **Resolved 30 July** — PR #2 merged, `main` at `6f2de91`, CI green |

@@ -87,8 +87,19 @@ version: 1.1.0+2
 
 ```bash
 cd mobile
-flutter build apk --release --dart-define=GF_WEB_BASE_URL=https://<your-production-domain>
+flutter build apk --release \
+  --target-platform android-arm,android-arm64 \
+  --dart-define=GF_WEB_BASE_URL=https://<your-production-domain>
 ```
+
+⚠️ **`--target-platform android-arm,android-arm64` is required on the Supabase
+Free plan.** A universal APK bundles a third architecture, `x86_64`, and comes
+out at ~63 MB — over the **50 MB project-wide upload ceiling on Free**, which
+the bucket's own 200 MB limit cannot override. The upload fails with
+`413 EntityTooLarge`. Dropping `x86_64` gives ~41 MB and costs nothing real:
+`x86_64` is only used by Intel Android emulators, never by a phone. (Apple
+Silicon emulators are `arm64` and still work.) On Supabase Pro the ceiling
+rises and a universal APK is fine.
 
 ⚠️ **The `--dart-define` is not optional.** Without it the app falls back to
 the placeholder URL in `mobile/lib/core/env.dart`, and the in-app "Update"
@@ -117,10 +128,23 @@ strings build/app/outputs/flutter-apk/app-release.apk | grep -c "bvbgtsxasttjzle
 strings build/app/outputs/flutter-apk/app-release.apk | grep -ciE "localhost|10\.0\.2\.2" || echo "0 (good)"
 
 # Confirm the signature is the release key, not the debug key.
-"/Applications/Android Studio.app/Contents/jbr/Contents/Home/bin/keytool" -printcert -jarfile build/app/outputs/flutter-apk/app-release.apk
+export JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home"
+~/Library/Android/sdk/build-tools/36.0.0/apksigner verify --print-certs \
+  build/app/outputs/flutter-apk/app-release.apk
 ```
 
 The certificate owner must be the one you created, **not** `CN=Android Debug`.
+For this project it is `CN=Conrad Brink, O=Gold Fortune Distribution, C=BW`,
+SHA-256 `0b68016543e7fed5ed0433bf8e1c2ed50fdac2be66a96e3b40b4a45305b1f394`.
+**Every future release must show that same digest** — a different one means a
+different key, and Android will refuse the update.
+
+⚠️ **Do not use `keytool -printcert -jarfile` for this.** It answers
+"Not a signed jar file" on a correctly signed APK and it is easy to read that
+as "the signing failed". Modern AGP signs with **APK Signature Scheme v2 only**
+and omits the v1 JAR signature that `keytool` looks for, so there are no
+`META-INF/*.RSA` files to find. `apksigner` is the tool that understands v2.
+It also needs `JAVA_HOME` set, or it reports "Unable to locate a Java Runtime".
 
 ### 4. Upload and publish
 
@@ -225,3 +249,10 @@ be checked immediately after publishing.
 - [ ] Download page shows the right version, date and size
 - [ ] Installed over the previous version on a real handset — signed-in session
       and any unsynced visits survived
+
+⚠️ **A debug build cannot be upgraded to a release build.** They are signed with
+different keys, so Android refuses with
+`INSTALL_FAILED_UPDATE_INCOMPATIBLE: signatures do not match`. Anyone who has
+been running a development build must **uninstall it first**, which wipes their
+local data. This only affects development handsets — reps who only ever install
+from the download page upgrade normally and keep everything.
