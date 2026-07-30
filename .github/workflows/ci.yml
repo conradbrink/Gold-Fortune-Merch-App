@@ -19,6 +19,15 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
+# Least privilege for GITHUB_TOKEN, applied to every job in this file.
+#
+# Without this block the token inherits the repository default, which is wider
+# than anything here needs — these jobs only read code. A workflow that runs
+# `npm ci` is executing third-party install scripts, so the token it exposes to
+# them should be able to do as little as possible.
+permissions:
+  contents: read
+
 jobs:
   web:
     name: Web — typecheck, lint, build
