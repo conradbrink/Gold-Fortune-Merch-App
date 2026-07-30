@@ -105,8 +105,17 @@ export default function LeadsPage() {
     try {
       await setLeadStage(supabase, lead.id, stage);
     } catch (e) {
+      const message = e instanceof Error ? e.message : String(e);
       setLeads(before);
-      setError(e instanceof Error ? e.message : String(e));
+      // Whatever went wrong, this board disagrees with the database — a card
+      // that refuses to move and then sits there is worse than one that
+      // disappears because somebody else dealt with it. Re-read rather than
+      // leave the manager dragging at something that is not there.
+      //
+      // The message is set *after* the reload, because load() clears the
+      // banner: setting it first meant the card vanished with no explanation.
+      await load();
+      setError(message);
     } finally {
       setMoving(null);
     }

@@ -63,9 +63,21 @@ export async function setLeadStage(
     .eq("id", id)
     .select("id");
   if (error) throw new Error(error.message);
-  // An update refused by RLS matches no row and still reports success.
+
+  // An update that matches nothing still reports success, so a zero-row result
+  // has to be turned into a failure. Two very different things cause it — the
+  // lead was deleted while this board sat open, or RLS refused the write — and
+  // blaming permissions for a stale card sends you looking in the wrong place.
   if (!data || data.length === 0) {
-    throw new Error("The card did not move — you may not have permission.");
+    const { count } = await supabase
+      .from("leads")
+      .select("id", { count: "exact", head: true })
+      .eq("id", id);
+    throw new Error(
+      count === 0
+        ? "That lead no longer exists — the board has been refreshed."
+        : "That lead could not be moved. You may not have permission."
+    );
   }
 }
 
