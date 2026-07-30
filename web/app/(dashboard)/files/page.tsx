@@ -86,6 +86,9 @@ export default function FilesPage() {
     load();
     fetchOrgId(supabase).then(setOrgId).catch(() => setOrgId(null));
     supabase.auth.getUser().then(({ data }) => setUserId(data.user?.id ?? null));
+    // Seeded from `?q=` so the header search lands here already filtered.
+    const q = new URLSearchParams(window.location.search).get("q");
+    if (q) setQuery(q);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

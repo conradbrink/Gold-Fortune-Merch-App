@@ -9,10 +9,12 @@ import '../data/models/profile.dart';
 import '../data/models/route_visit.dart';
 import '../data/models/store_summary.dart';
 import '../data/models/form_template.dart';
+import '../data/models/lead.dart';
 import '../data/models/promotion.dart';
 import '../data/local/app_database.dart';
 import '../data/repositories/file_repository.dart';
 import '../data/repositories/form_repository.dart';
+import '../data/repositories/lead_repository.dart';
 import '../data/repositories/promotion_repository.dart';
 import '../data/repositories/route_repository.dart';
 import '../data/repositories/visit_repository.dart';
@@ -129,6 +131,19 @@ final formRepositoryProvider = Provider<FormRepository>((ref) {
 
 final formTemplatesProvider = FutureProvider<List<FormTemplate>>((ref) async {
   return ref.watch(formRepositoryProvider).fetchActiveTemplates();
+});
+
+final leadRepositoryProvider = Provider<LeadRepository>((ref) {
+  return LeadRepository(
+    ref.watch(appDatabaseProvider),
+    ref.watch(syncEngineProvider),
+  );
+});
+
+/// The rep's own sales calls, open ones first. Read from the local cache, so
+/// it is the same list with or without signal.
+final myLeadsProvider = FutureProvider<List<Lead>>((ref) async {
+  return ref.watch(leadRepositoryProvider).myLeads();
 });
 
 final promotionRepositoryProvider = Provider<PromotionRepository>((ref) {

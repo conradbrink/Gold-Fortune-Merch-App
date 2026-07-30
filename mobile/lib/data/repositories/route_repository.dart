@@ -39,6 +39,40 @@ int compareStops(RouteVisit a, RouteVisit b) {
   return a.storeName.toLowerCase().compareTo(b.storeName.toLowerCase());
 }
 
+/// Layers a check-in the server has not heard about yet back over its stop.
+///
+/// While a check-in sits in the outbox the server's copy of that route has no
+/// visit on it, so writing the fetched rows straight into the cache reverts the
+/// stop to "not started" — and a rep who taps Check in again mints a second
+/// client id and a duplicate visit. That is the exact failure
+/// `VisitRepository.checkIn` writes into the cache to prevent, and a refresh
+/// must not quietly undo it.
+///
+/// Only the visit fields are carried over, and only for stops whose client id
+/// still has queued work: the route and the store stay the server's to change,
+/// and once the entry drains the server's version is authoritative again.
+List<RouteVisit> mergeUnsyncedLocalState({
+  required List<RouteVisit> fromServer,
+  required Map<String, RouteVisit> cached,
+  required Set<String> pendingClientIds,
+}) {
+  if (pendingClientIds.isEmpty) return fromServer;
+
+  return fromServer.map((server) {
+    final local = cached[server.cacheKey];
+    final clientId = local?.visitClientGeneratedId;
+    if (local == null || clientId == null || !pendingClientIds.contains(clientId)) {
+      return server;
+    }
+    return server.copyWith(
+      status: local.status,
+      visitClientGeneratedId: clientId,
+      checkinAt: local.checkinAt,
+      checkoutAt: local.checkoutAt,
+    );
+  }).toList();
+}
+
 /// Month-to-date progress against the rep's schedule.
 class MonthlyCompletion {
   final int completed;
@@ -93,19 +127,40 @@ class RouteRepository {
           .map((r) => RouteVisit.fromMap(r as Map<String, dynamic>))
           .toList();
 
+      final merged = await _keepingUnsyncedLocalState(visits, dateStr);
+
       await _db.replaceCachedRoutes(
         dateStr,
-        visits
+        merged
             .map((v) => (cacheKey: v.cacheKey, payload: jsonEncode(v.toMap())))
             .toList(),
       );
 
       // Unscheduled visits live only on this device until they sync, so they
       // are merged in rather than coming back from the routes query.
-      return _withAdHoc(_sorted(visits), dateStr);
+      return _withAdHoc(_sorted(merged), dateStr);
     } catch (_) {
       return _cachedRoutes(dateStr);
     }
+  }
+
+  /// Loads what [mergeUnsyncedLocalState] needs, then applies it.
+  Future<List<RouteVisit>> _keepingUnsyncedLocalState(
+    List<RouteVisit> fromServer,
+    String dateStr,
+  ) async {
+    final pending = await _db.pendingClientIds();
+    if (pending.isEmpty) return fromServer;
+
+    return mergeUnsyncedLocalState(
+      fromServer: fromServer,
+      cached: {
+        for (final row in await _db.cachedRoutesForDate(dateStr))
+          row.cacheKey: RouteVisit.fromMap(
+              jsonDecode(row.payload) as Map<String, dynamic>),
+      },
+      pendingClientIds: pending,
+    );
   }
 
   Future<List<RouteVisit>> _withAdHoc(

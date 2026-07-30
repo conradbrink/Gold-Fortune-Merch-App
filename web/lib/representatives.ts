@@ -215,14 +215,31 @@ export async function fetchOrgId(supabase: SupabaseClient): Promise<string | nul
   return (data as { org_id: string } | null)?.org_id ?? null;
 }
 
-/** Edits the mutable profile fields. Email and role are deliberately not here. */
+/**
+ * Edits the mutable profile fields. Email and role are deliberately not here:
+ * the email is the sign-in credential and only the admin API can move it, and
+ * the role is server-controlled — `authenticated` holds UPDATE on exactly
+ * `full_name`, `phone` and `job_title`.
+ *
+ * Asks for the affected row. An update that matches nothing — a rep in another
+ * org, a deactivated caller whose `current_role()` has gone null — comes back
+ * from PostgREST as a success, and the dialog would say "Saved" over a write
+ * that never happened.
+ */
 export async function updateRep(
   supabase: SupabaseClient,
   repId: string,
   patch: { full_name?: string; phone?: string | null; job_title?: string | null }
 ): Promise<void> {
-  const { error } = await supabase.from("profiles").update(patch).eq("id", repId);
+  const { data, error } = await supabase
+    .from("profiles")
+    .update(patch)
+    .eq("id", repId)
+    .select("id");
   if (error) throw new Error(error.message);
+  if (!data || data.length === 0) {
+    throw new Error("Nothing was saved — you may not have permission to edit this rep.");
+  }
 }
 
 /**
@@ -257,6 +274,76 @@ export async function setRepActive(
         : `Request failed (${res.status}).`;
     throw new Error(message);
   }
+}
+
+/**
+ * A password that survives being read aloud or copied by hand — no look-alike
+ * characters. Shared by the add-rep dialog and the reset in Manage, so the two
+ * cannot drift apart on what counts as a safe alphabet.
+ */
+export function generatePassword(): string {
+  const alphabet = "abcdefghijkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+  const bytes = new Uint32Array(12);
+  crypto.getRandomValues(bytes);
+  return Array.from(bytes, (b) => alphabet[b % alphabet.length]).join("");
+}
+
+/** POST/PATCH against the rep API, unwrapping the error shape it returns. */
+async function callRepApi(
+  url: string,
+  init: RequestInit
+): Promise<Record<string, unknown>> {
+  const res = await fetch(url, init);
+  // Read as text first — an error page is HTML, and .json() on it throws a
+  // parse error that hides the real status.
+  const raw = await res.text();
+  let body: unknown;
+  try {
+    body = JSON.parse(raw);
+  } catch {
+    throw new Error(`Unexpected ${res.status} response from the rep endpoint.`);
+  }
+  if (!res.ok) {
+    const message =
+      typeof body === "object" && body !== null && "error" in body
+        ? String((body as { error: unknown }).error)
+        : `Request failed (${res.status}).`;
+    throw new Error(message);
+  }
+  return body as Record<string, unknown>;
+}
+
+/**
+ * Moves a rep's sign-in address.
+ *
+ * Server-side because only the service role can write `auth.users` — a
+ * `profiles.email` update from the browser would change the name on screen
+ * while the rep still signed in with the old address.
+ */
+export async function changeRepEmail(repId: string, email: string): Promise<void> {
+  await callRepApi(`/api/reps/${repId}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email }),
+  });
+}
+
+/**
+ * Sets a new password for a rep.
+ *
+ * There is no "look up their password" — it is stored hashed, so a lost one is
+ * replaced rather than recovered. The new value is shown to the manager once
+ * and never returned by the server.
+ */
+export async function setRepPassword(
+  repId: string,
+  password: string
+): Promise<void> {
+  await callRepApi(`/api/reps/${repId}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ password }),
+  });
 }
 
 export type DeleteImpact = {

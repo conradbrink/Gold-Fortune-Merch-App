@@ -1,10 +1,35 @@
 -- Security regression suite.
 --
--- Every check here corresponds to a hole that was open on 29 July 2026 and was
--- confirmed by exploiting it. They are written as attacks, not as assertions
--- about policy text, because the manager-escalation bug came from a policy that
--- read correctly for weeks: `profiles_update` said `id = auth.uid()`, which is
--- true and sounds right, and permitted a rep to set their own role.
+-- Every check here corresponds to a hole that was open on 29 or 30 July 2026, or
+-- to an invariant a new table has to hold. **26 checks** — 1-18 are the 29 July
+-- audit; 19-20 the `territory_reps` tenancy gap, 21-22 the per-user
+-- `dashboard_layouts`, 23-24 `territories_enforce_shape` ignoring dependents on
+-- UPDATE, and 25-26 the territory depth and tenancy invariants, all found in
+-- review on 30 July.
+--
+-- 25 and 26 are invariants about the *data*, not attacks: the races that could
+-- produce those states need two interleaved sessions to stage, which one
+-- connection cannot do (see `territory_reparent_race.sh`). They catch the result
+-- however it arose.
+--
+-- The checks are written as attacks, not as assertions about policy text, because
+-- the manager-escalation bug came from a policy that read correctly for weeks:
+-- `profiles_update` said `id = auth.uid()`, which is true and sounds right, and
+-- permitted a rep to set their own role.
+--
+-- Two rules the fixtures learned the hard way, both from false readings:
+--
+--   * **Create fixtures; never query tenant data for them.** A real saved layout
+--     collided with check 21's insert and was reported as a regression; a tenant
+--     with no root territory made check 20 skip itself in silence.
+--   * **Every attack gets a control** asserting the legitimate case still works —
+--     a lock that also breaks real use is one the next person removes in a hurry.
+--   * **A schema change can break the fixtures rather than the checks.** The
+--     country tier landed and this file stopped running at all: its territory
+--     fixtures had no country parent, so the suite aborted before check 19 and
+--     reported nothing. Every territory fixture now creates its own country.
+--     If this file raises anything other than PASSED or SECURITY REGRESSIONS,
+--     the suite is broken, not the database — fix it before trusting a green run.
 --
 -- HOW TO RUN
 --
@@ -21,6 +46,9 @@ do $$
 declare
   v_org uuid; v_mgr uuid; v_rep uuid; v_rep2 uuid; v_store uuid;
   v_visit uuid; v_n int; v_r jsonb; v_fail text := '';
+  v_other_org uuid; v_other_terr uuid; v_terr uuid;
+  v_shape_main uuid; v_shape_other uuid;
+  v_other_country uuid; v_own_country uuid;
 
 begin
   select id, org_id into v_mgr, v_org from public.profiles where role = 'manager' limit 1;
@@ -177,6 +205,248 @@ begin
   select count(*) into v_n from public.security_events
    where subject_id = v_rep2 and action = 'profile.permissions_changed';
   if v_n = 0 then v_fail := v_fail || '18. a role change left no audit trail' || E'\n'; end if;
+
+  ------------------------------------------------------------ territory scope
+
+  -- Confirmed by exploit on 30 July: `territory_reps` had no trigger proving
+  -- its `territory_id` and `rep_id` live in the organisation named by its
+  -- `org_id`, and the insert policy only checks the org_id *in the row*. Closed
+  -- by `20260730153000_enforce_territory_reps_org.sql`.
+  --
+  -- Run as the manager, because a rep cannot insert coverage at all.
+  -- Since the country tier (`20260730200000_add_country_tier.sql`) a territory
+  -- must sit inside a country, so both fixtures below need a country created
+  -- first. Without it these two inserts raise "A territory must sit inside a
+  -- country" and abort the whole suite before check 19 — which is exactly what
+  -- happened the first time this file was run after that migration landed.
+  insert into public.organizations (name) values ('Regression Foreign Org')
+    returning id into v_other_org;
+  insert into public.territories (org_id, name, level, parent_id)
+    values (v_other_org, 'Regression Foreign Country', 'country', null)
+    returning id into v_other_country;
+  insert into public.territories (org_id, name, level, parent_id)
+    values (v_other_org, 'Regression Foreign Territory', 'territory', v_other_country)
+    returning id into v_other_terr;
+  -- Created, not found. The header promises only a manager, two reps and a
+  -- store, so querying the estate for a root territory made check 20 skip itself
+  -- silently on a tenant that has none — a check that reports nothing is worse
+  -- than one that fails. The same reasoning applies to the country: the estate
+  -- has one, but borrowing it would make this check depend on tenant data.
+  insert into public.territories (org_id, name, level, parent_id)
+    values (v_org, 'Regression Own Country', 'country', null)
+    returning id into v_own_country;
+  insert into public.territories (org_id, name, level, parent_id)
+    values (v_org, 'Regression Own Territory', 'territory', v_own_country)
+    returning id into v_terr;
+
+  perform set_config('request.jwt.claims',
+    json_build_object('sub', v_mgr, 'role', 'authenticated')::text, true);
+  set local role authenticated;
+
+  -- 19. Coverage must not reach a territory in another organisation.
+  begin
+    insert into public.territory_reps (org_id, territory_id, rep_id)
+    values (v_org, v_other_terr, v_rep);
+    v_fail := v_fail || '19. a manager could cover another org''s territory' || E'\n';
+  exception when others then null; end;
+
+  -- 20. Legitimate coverage must still be insertable — see check 4.
+  begin
+    insert into public.territory_reps (org_id, territory_id, rep_id)
+    values (v_org, v_terr, v_rep);
+    get diagnostics v_n = row_count;
+    if v_n <> 1 then
+      v_fail := v_fail || '20. a manager could NOT assign coverage in their own org' || E'\n';
+    end if;
+  exception when others then
+    v_fail := v_fail || '20. a manager could NOT assign coverage in their own org: '
+              || sqlerrm || E'\n'; end;
+
+  --------------------------------------------------------- dashboard layouts
+
+  -- A saved dashboard layout is one person's, and `dashboard_layouts` is the
+  -- only table keyed on the user rather than the organisation — so being in the
+  -- same org must not be enough to reach it.
+  reset role;
+  -- Clear the fixture users' real rows first. `user_id` is the primary key, so
+  -- without this the insert below raises `duplicate key` the moment any of these
+  -- people has actually customised their dashboard: the check-21 insert is
+  -- outside a handler and would abort the entire suite reporting nothing, and
+  -- check 22's is inside one and would be reported as a regression that is not
+  -- there. Safe to delete — the whole file runs in a transaction that rolls back,
+  -- so their real layouts come straight back.
+  delete from public.dashboard_layouts where user_id in (v_mgr, v_rep, v_rep2);
+
+  insert into public.dashboard_layouts (user_id, org_id, widget_ids)
+  values (v_rep, v_org, array['oos_rate']);
+
+  perform set_config('request.jwt.claims',
+    json_build_object('sub', v_mgr, 'role', 'authenticated')::text, true);
+  set local role authenticated;
+
+  -- 21. Somebody else's layout is invisible, unwritable, and cannot be planted.
+  select count(*) into v_n from public.dashboard_layouts where user_id = v_rep;
+  if v_n > 0 then v_fail := v_fail || '21. could read another user''s dashboard layout' || E'\n'; end if;
+
+  update public.dashboard_layouts set widget_ids = array['hijacked'] where user_id = v_rep;
+  get diagnostics v_n = row_count;
+  if v_n > 0 then v_fail := v_fail || '21b. could edit another user''s dashboard layout' || E'\n'; end if;
+
+  begin
+    insert into public.dashboard_layouts (user_id, org_id, widget_ids)
+    values (v_rep2, v_org, array['oos_rate']);
+    v_fail := v_fail || '21c. could create a layout for another user' || E'\n';
+  exception when others then null; end;
+
+  -- 22. Your own must still save and read back — see check 4.
+  begin
+    insert into public.dashboard_layouts (user_id, org_id, widget_ids)
+    values (v_mgr, v_org, array['oos_rate','working_day']);
+    select count(*) into v_n from public.dashboard_layouts where user_id = v_mgr;
+    if v_n <> 1 then v_fail := v_fail || '22. could not read back own layout' || E'\n'; end if;
+  exception when others then
+    v_fail := v_fail || '22. could not save own layout: ' || sqlerrm || E'\n'; end;
+
+  ------------------------------------------------- territory shape under UPDATE
+
+  -- Confirmed by exploit on 30 July: `territories_enforce_shape` validated only
+  -- the row being written, so an UPDATE could create states the same triggers
+  -- refuse on INSERT — a main territory with 75 stores and a sub was turned into
+  -- a sub-territory, and a main was moved to another organisation leaving its
+  -- stores pointing across the tenancy line. Closed by
+  -- `20260730170000_territories_shape_guards_dependents.sql`.
+  --
+  -- Built self-contained rather than reusing the estate, so the check does not
+  -- depend on which territories happen to have dependents.
+  -- Three levels since the country tier: country → territory → sub. Fixtures are
+  -- built as that whole chain, created rather than found — the estate's own
+  -- country would do, but a check that depends on tenant data is the mistake
+  -- checks 20-23 already made twice.
+  reset role;
+  insert into public.territories (org_id, name, level, parent_id)
+    values (v_org, 'Regression Country', 'country', null)
+    returning id into v_shape_other;
+  insert into public.territories (org_id, name, level, parent_id)
+    values (v_org, 'Regression Territory', 'territory', v_shape_other)
+    returning id into v_shape_main;
+  insert into public.territories (org_id, name, level, parent_id)
+    values (v_org, 'Regression Sub', 'sub', v_shape_main);
+
+  perform set_config('request.jwt.claims',
+    json_build_object('sub', v_mgr, 'role', 'authenticated')::text, true);
+  set local role authenticated;
+
+  -- 23. A territory with a sub under it must not become a sub itself — that is
+  --     the state `stores_enforce_territory` refuses to create, arrived at
+  --     sideways. Note this is a *level* change: reparenting a territory between
+  --     countries is ordinary reorganisation and is allowed (see check 24).
+  begin
+    update public.territories set level = 'sub' where id = v_shape_main;
+    get diagnostics v_n = row_count;
+    if v_n > 0 then
+      v_fail := v_fail || '23. a territory with a sub could become a sub itself' || E'\n';
+    end if;
+  exception when others then null; end;
+
+  -- `v_other_org`, not a random uuid. With a random one the FK refuses the update
+  -- regardless, so this check passed even with the guard removed — verified by
+  -- disabling the trigger: random uuid still refused (23503, the foreign key),
+  -- real organisation accepted. A check that survives the deletion of the thing
+  -- it tests is not a check.
+  begin
+    update public.territories set org_id = v_other_org where id = v_shape_main;
+    get diagnostics v_n = row_count;
+    if v_n > 0 then
+      v_fail := v_fail || '23b. a territory with dependents could change organisation' || E'\n';
+    end if;
+  exception when others then null; end;
+
+  -- 24. Renaming and deactivating — the only updates the UI makes — must still
+  --     work, and so must moving a childless territory to another country, which
+  --     is what the guard was narrowed to allow. See check 4.
+  begin
+    update public.territories set name = 'Regression Territory renamed', active = false
+     where id = v_shape_main;
+    get diagnostics v_n = row_count;
+    if v_n <> 1 then
+      v_fail := v_fail || '24. a territory could NOT be renamed or deactivated' || E'\n';
+    end if;
+  exception when others then
+    v_fail := v_fail || '24. a territory could NOT be renamed or deactivated: '
+              || sqlerrm || E'\n'; end;
+
+  begin
+    insert into public.territories (org_id, name, level, parent_id)
+      values (v_org, 'Regression Country Two', 'country', null)
+      returning id into v_terr;
+    insert into public.territories (org_id, name, level, parent_id)
+      values (v_org, 'Regression Spare', 'territory', v_shape_other)
+      returning id into v_other_terr;
+    update public.territories set parent_id = v_terr where id = v_other_terr;
+    get diagnostics v_n = row_count;
+    if v_n <> 1 then
+      v_fail := v_fail || '24b. a childless territory could NOT move country' || E'\n';
+    end if;
+  exception when others then
+    v_fail := v_fail || '24b. a childless territory could NOT move country: '
+              || sqlerrm || E'\n'; end;
+
+  reset role;
+
+  -- 25. Every row sits under the right *kind* of parent.
+  --
+  -- Was "nothing is three levels deep", which the country tier made wrong —
+  -- three levels is now the design. The invariant that survived the change is
+  -- the one that was really being tested: a country has no parent, a territory
+  -- hangs off a country, a sub hangs off a territory. That catches a fourth
+  -- level, a skipped level and a cycle alike, because every one of them puts a
+  -- row under a parent of the wrong level.
+  --
+  -- An invariant rather than an attack, deliberately: a cycle can only be
+  -- committed by two transactions reparenting past each other, which no
+  -- single-connection test can stage (see `territory_reparent_race.sh`). This
+  -- catches the result however it arose.
+  select count(*) into v_n
+    from public.territories t
+    left join public.territories p on p.id = t.parent_id
+   where (t.level = 'country' and t.parent_id is not null)
+      or (t.level = 'territory' and coalesce(p.level, '') <> 'country')
+      or (t.level = 'sub' and coalesce(p.level, '') <> 'territory');
+  if v_n > 0 then
+    v_fail := v_fail || format(
+      '25. %s territory/ies sit under a parent of the wrong level (skipped level, fourth level or cycle)%s',
+      v_n, E'\n');
+  end if;
+
+  -- 25b. And no store is attached to anything but a territory. The country is
+  --      reached through the territory, so this is the other half of "a store is
+  --      never in two places".
+  select count(*) into v_n
+    from public.stores s
+    join public.territories t on t.id = s.territory_id
+   where t.level <> 'territory';
+  if v_n > 0 then
+    v_fail := v_fail || format(
+      '25b. %s store(s) are attached to a country or a sub rather than a territory%s',
+      v_n, E'\n');
+  end if;
+
+  -- 26. No sub-territory belongs to a different organisation than its parent.
+  --
+  -- The companion to 25, and for the same reason: a cross-org pair can be
+  -- committed by two transactions moving past each other (one reparenting, one
+  -- changing `org_id`), which needs two sessions to stage. This catches the
+  -- result, which is the thing that actually matters — a sub-territory on the
+  -- wrong side of the tenancy line.
+  select count(*) into v_n
+    from public.territories t
+    join public.territories p on p.id = t.parent_id
+   where t.org_id <> p.org_id;
+  if v_n > 0 then
+    v_fail := v_fail || format(
+      '26. %s sub-territory/ies belong to a different organisation than their parent%s',
+      v_n, E'\n');
+  end if;
 
   ------------------------------------------------------------------- verdict
 

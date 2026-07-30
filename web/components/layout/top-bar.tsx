@@ -2,14 +2,14 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import {
   Search,
-  Mail,
-  Bell,
   Settings,
   ChevronDown,
   LogOut,
   Menu,
+  X,
 } from "lucide-react";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
@@ -20,12 +20,15 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { createClient } from "@/lib/supabase/client";
+import { GlobalSearch } from "@/components/layout/global-search";
 
 export function TopBar({ onOpenNav }: { onOpenNav?: () => void }) {
   const router = useRouter();
   const supabase = createClient();
   const [label, setLabel] = useState("Gold Fortune User");
   const [initials, setInitials] = useState("GF");
+  /** Below `sm` the search box is hidden; this is what the button reveals. */
+  const [searchRevealed, setSearchRevealed] = useState(false);
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data }) => {
@@ -49,30 +52,48 @@ export function TopBar({ onOpenNav }: { onOpenNav?: () => void }) {
 
   return (
     <header className="flex h-16 shrink-0 items-center gap-3 border-b border-border bg-background px-4 sm:px-6">
+      {/* Hidden while the mobile search is open — the box needs the whole row. */}
       <Button
         variant="ghost"
         size="icon"
-        className="md:hidden"
+        className={searchRevealed ? "hidden" : "md:hidden"}
         onClick={onOpenNav}
         aria-label="Open navigation"
       >
         <Menu className="h-5 w-5" />
       </Button>
 
-      <div className="hidden min-w-0 flex-1 items-center gap-2 rounded-md border border-border bg-secondary/50 px-3 py-2 text-sm text-muted-foreground sm:flex sm:max-w-md">
-        <Search className="h-4 w-4 shrink-0" />
-        <span className="truncate">
-          Find places, reps, forms, files and products
-        </span>
-      </div>
+      <GlobalSearch revealed={searchRevealed} />
 
       <div className="ml-auto flex items-center gap-2 text-muted-foreground sm:gap-4">
-        <Button variant="ghost" size="icon" className="sm:hidden" aria-label="Search">
-          <Search className="h-5 w-5" />
+        <Button
+          variant="ghost"
+          size="icon"
+          className="sm:hidden"
+          aria-label={searchRevealed ? "Close search" : "Search"}
+          aria-expanded={searchRevealed}
+          onClick={() => setSearchRevealed((s) => !s)}
+        >
+          {searchRevealed ? <X className="h-5 w-5" /> : <Search className="h-5 w-5" />}
         </Button>
-        <Mail className="hidden h-5 w-5 lg:block" />
-        <Bell className="hidden h-5 w-5 lg:block" />
-        <Settings className="hidden h-5 w-5 lg:block" />
+        {/* Mail and Bell used to sit here as bare icons — not buttons, no
+            handler, nothing behind them. There is no mail and no notification
+            feature in this product, so they were an advertisement for something
+            that does not exist. Removed rather than wired to a placeholder.
+            Settings had the same problem but does have somewhere to go. */}
+        <Button
+          variant="ghost"
+          size="icon"
+          nativeButton={false}
+          className="hidden lg:inline-flex"
+          title="Company settings"
+          aria-label="Company settings"
+          render={
+            <Link href="/settings/company">
+              <Settings className="h-5 w-5" />
+            </Link>
+          }
+        />
         <div className="mx-1 hidden h-6 w-px bg-border lg:block" />
         <DropdownMenu>
           <DropdownMenuTrigger className="flex items-center gap-2 outline-none">

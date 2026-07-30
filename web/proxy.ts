@@ -32,7 +32,27 @@ export async function proxy(request: NextRequest) {
   const isLoginPage = request.nextUrl.pathname.startsWith("/login");
   const isRepNoticePage = request.nextUrl.pathname.startsWith("/rep-notice");
 
-  if (!user && !isLoginPage) {
+  // The APK download page is public, and has to be.
+  //
+  // A rep setting up a new handset cannot sign in to get the app, because
+  // signing in is what the app is for. Gating this page behind the session
+  // would make first-time installation impossible. Nothing on it is sensitive:
+  // an app name, a version, a size and a changelog. The APK bytes are served by
+  // a separate route from a private bucket.
+  const isDownloadPage = request.nextUrl.pathname.startsWith("/download");
+
+  // The password-reset pair.
+  //
+  // /forgot-password is reached with no session, by definition. /reset-password
+  // *does* carry one — the emailed link establishes a recovery session — which
+  // is why it also has to be exempt from the rep redirect below: a rep who
+  // forgot their password would otherwise be bounced to /rep-notice before they
+  // could set a new one, with no way through.
+  const isPasswordResetPage =
+    request.nextUrl.pathname.startsWith("/forgot-password") ||
+    request.nextUrl.pathname.startsWith("/reset-password");
+
+  if (!user && !isLoginPage && !isDownloadPage && !isPasswordResetPage) {
     const url = request.nextUrl.clone();
     url.pathname = "/login";
     return NextResponse.redirect(url);
@@ -44,7 +64,15 @@ export async function proxy(request: NextRequest) {
     return NextResponse.redirect(url);
   }
 
-  if (user && !isRepNoticePage && !isLoginPage) {
+  // Reps are bounced to /rep-notice everywhere except the download page —
+  // a signed-in rep fetching a newer APK is the update path working as intended.
+  if (
+    user &&
+    !isRepNoticePage &&
+    !isLoginPage &&
+    !isDownloadPage &&
+    !isPasswordResetPage
+  ) {
     const { data: profile } = await supabase
       .from("profiles")
       .select("role")

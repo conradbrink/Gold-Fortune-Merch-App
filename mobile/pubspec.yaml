@@ -49,6 +49,8 @@ dependencies:
   # Hands a downloaded document to the OS viewer — Flutter renders images
   # natively but has no built-in PDF or spreadsheet viewer.
   open_filex: ^4.7.0
+  package_info_plus: ^10.2.1
+  url_launcher: ^6.3.2
 
 dev_dependencies:
   flutter_test:

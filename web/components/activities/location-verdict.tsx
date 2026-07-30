@@ -1,4 +1,11 @@
-import { MapPin, MapPinOff, AlertTriangle, HelpCircle, Check } from "lucide-react";
+import {
+  MapPin,
+  MapPinOff,
+  AlertTriangle,
+  HelpCircle,
+  Check,
+  Handshake,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
 import { formatDistance, type Verdict } from "@/lib/activities";
 
@@ -46,6 +53,14 @@ export const VERDICT_STYLES: Record<Verdict, VerdictStyle> = {
     icon: HelpCircle,
     className: "bg-secondary text-muted-foreground",
     hint: "No GPS position was recorded for this event, so location cannot be confirmed.",
+  },
+  // Not a failure to verify — there is simply nothing to verify against. A
+  // prospect is not on the estate, so it has no geofence and no distance.
+  prospect: {
+    label: "Prospect",
+    icon: Handshake,
+    className: "bg-sky-50 text-sky-700 dark:bg-sky-950 dark:text-sky-300",
+    hint: "A sales call on a shop that is not a customer yet. Position recorded, but there is no store geofence to measure it against.",
   },
 };
 

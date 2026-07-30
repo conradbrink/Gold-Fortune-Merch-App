@@ -74,6 +74,18 @@ export default function RepresentativesPage() {
     load();
   }, [load]);
 
+  // Seeded from `?q=` so the header search can land on this page already
+  // filtered. Read from window rather than useSearchParams, which would force
+  // this page into a Suspense boundary for nothing.
+  // Suppressed rather than obeyed: the query string is browser-only state, so a
+  // lazy `useState` initialiser would read it on the client and not on the
+  // server and the two renders would disagree. One setState, on mount.
+  useEffect(() => {
+    const q = new URLSearchParams(window.location.search).get("q");
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (q) setQuery(q);
+  }, []);
+
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     if (!q) return reps;

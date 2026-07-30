@@ -1,7 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { LogIn, LogOut, Store as StoreIcon } from "lucide-react";
+import { Handshake, LogIn, LogOut, Store as StoreIcon } from "lucide-react";
+import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { NativeSelect } from "@/components/ui/native-select";
 import {
@@ -160,8 +161,11 @@ export default function ActivitiesPage() {
             Activities
           </h1>
           <p className="text-sm text-muted-foreground">
-            Every check-in and check-out across your team, with the store
-            location confirmed.
+            {/* A sales call has no store row and no geofence, so it has nothing
+                to confirm against — the old wording promised a verdict for every
+                row on the page, including the ones that cannot have one. */}
+            Every check-in, check-out and sales call across your team, with
+            location and store verification where there is a store to verify.
           </p>
         </div>
         <Button
@@ -268,24 +272,41 @@ export default function ActivitiesPage() {
               events.map((ev) => {
                 const when = formatWhen(ev.occurred_at);
                 const isIn = ev.kind === "check_in";
+                const isSales = ev.kind === "sales_visit";
                 return (
+                  // The dialog this opens is the only place the sales-call panel
+                  // and the form submission can be reached, and a click handler
+                  // on a `tr` gives no focus, no role and no Enter/Space — so
+                  // without these it could not be opened without a mouse.
                   <TableRow
                     key={ev.event_id}
                     onClick={() => setOpen(ev)}
-                    className="cursor-pointer"
-                    title="View this visit"
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        setOpen(ev);
+                      }
+                    }}
+                    tabIndex={0}
+                    role="button"
+                    className="cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ring"
+                    title={isSales ? "View this sales call" : "View this visit"}
                   >
                     <TableCell className="min-w-[190px]">
                       <div className="flex items-center gap-2.5">
                         <div
                           className={
                             "flex h-8 w-8 shrink-0 items-center justify-center rounded-full " +
-                            (isIn
-                              ? "bg-accent text-accent-foreground"
-                              : "bg-secondary text-secondary-foreground")
+                            (isSales
+                              ? "bg-sky-100 text-sky-700 dark:bg-sky-950 dark:text-sky-300"
+                              : isIn
+                                ? "bg-accent text-accent-foreground"
+                                : "bg-secondary text-secondary-foreground")
                           }
                         >
-                          {isIn ? (
+                          {isSales ? (
+                            <Handshake className="h-4 w-4" />
+                          ) : isIn ? (
                             <LogIn className="h-4 w-4" />
                           ) : (
                             <LogOut className="h-4 w-4" />
@@ -293,7 +314,15 @@ export default function ActivitiesPage() {
                         </div>
                         <div className="min-w-0">
                           <div className="truncate font-medium text-foreground">
-                            {isIn ? "Checked in" : "Checked out"}
+                            {/* "Sales call" everywhere: the page description,
+                                the row title attribute and the dialog's own
+                                panel heading all say call, and one thing with
+                                two names reads as two things. */}
+                            {isSales
+                              ? "Sales call"
+                              : isIn
+                                ? "Checked in"
+                                : "Checked out"}
                           </div>
                           <div className="truncate text-xs text-muted-foreground">
                             {ev.store_name}
@@ -392,55 +421,96 @@ function ActivityDialog({
           <>
             <p className="-mt-2 text-sm text-muted-foreground">
               {event.rep_name ?? "Unassigned"} ·{" "}
-              {event.kind === "check_in" ? "Checked in" : "Checked out"}{" "}
+              {event.kind === "sales_visit"
+                ? "Sales call"
+                : event.kind === "check_in"
+                  ? "Checked in"
+                  : "Checked out"}{" "}
               {formatWhen(event.occurred_at).date} at{" "}
               {formatWhen(event.occurred_at).time}
             </p>
 
-            <div className="rounded-lg border border-border p-3">
-              <div className="mb-2 flex items-center gap-2">
-                <StoreIcon className="h-4 w-4 text-muted-foreground" />
-                <span className="text-sm font-semibold">
-                  Location verification
-                </span>
-              </div>
-              <dl className="space-y-1.5 text-sm">
-                <Row label="Verdict">
-                  <LocationVerdict
-                    verdict={event.verdict}
-                    distanceM={event.distance_m}
-                  />
-                </Row>
-                <Row label="Distance from store">
-                  {formatDistance(event.distance_m)}
-                </Row>
-                <Row label="Store geofence">{event.geofence_radius_m} m</Row>
-                {event.accuracy_m !== null && (
-                  <Row label="GPS accuracy">
-                    ± {Math.round(event.accuracy_m)} m
+            {/* A prospect has no geofence, so the verification panel has
+                nothing to report and would show "—" against every row. The
+                Leads board is where this call's substance lives. */}
+            {event.kind === "sales_visit" ? (
+              <div className="rounded-lg border border-border p-3">
+                <div className="mb-2 flex items-center gap-2">
+                  <Handshake className="h-4 w-4 text-muted-foreground" />
+                  <span className="text-sm font-semibold">Sales call</span>
+                </div>
+                <dl className="space-y-1.5 text-sm">
+                  <Row label="Company">{event.store_name}</Row>
+                  <Row label="Position">
+                    <LocationVerdict
+                      verdict={event.verdict}
+                      distanceM={event.distance_m}
+                    />
                   </Row>
-                )}
-              </dl>
-              {event.verdict === "unknown" && (
+                </dl>
                 <p className="mt-2 text-xs text-muted-foreground">
-                  No position was recorded, so this visit cannot be confirmed
-                  either way.
+                  This shop is not on the estate, so there is no geofence to
+                  check the position against. The outcome and any follow-up are
+                  on the{" "}
+                  <Link href="/leads" className="underline">
+                    Leads board
+                  </Link>
+                  .
                 </p>
-              )}
-            </div>
-
-            {event.submission_id ? (
-              <section>
-                <h3 className="mb-1 text-sm font-semibold text-foreground">
-                  Submitted form
-                </h3>
-                <SubmissionDetail submissionId={event.submission_id} />
-              </section>
+              </div>
             ) : (
-              <p className="text-sm text-muted-foreground">
-                No form was submitted during this visit.
-              </p>
+              <div className="rounded-lg border border-border p-3">
+                <div className="mb-2 flex items-center gap-2">
+                  <StoreIcon className="h-4 w-4 text-muted-foreground" />
+                  <span className="text-sm font-semibold">
+                    Location verification
+                  </span>
+                </div>
+                <dl className="space-y-1.5 text-sm">
+                  <Row label="Verdict">
+                    <LocationVerdict
+                      verdict={event.verdict}
+                      distanceM={event.distance_m}
+                    />
+                  </Row>
+                  <Row label="Distance from store">
+                    {formatDistance(event.distance_m)}
+                  </Row>
+                  <Row label="Store geofence">
+                    {event.geofence_radius_m === null
+                      ? "—"
+                      : `${event.geofence_radius_m} m`}
+                  </Row>
+                  {event.accuracy_m !== null && (
+                    <Row label="GPS accuracy">
+                      ± {Math.round(event.accuracy_m)} m
+                    </Row>
+                  )}
+                </dl>
+                {event.verdict === "unknown" && (
+                  <p className="mt-2 text-xs text-muted-foreground">
+                    No position was recorded, so this visit cannot be confirmed
+                    either way.
+                  </p>
+                )}
+              </div>
             )}
+
+            {/* Forms belong to store visits. Saying "no form was submitted" on
+                a sales call would report a gap where no form was ever due. */}
+            {event.kind !== "sales_visit" &&
+              (event.submission_id ? (
+                <section>
+                  <h3 className="mb-1 text-sm font-semibold text-foreground">
+                    Submitted form
+                  </h3>
+                  <SubmissionDetail submissionId={event.submission_id} />
+                </section>
+              ) : (
+                <p className="text-sm text-muted-foreground">
+                  No form was submitted during this visit.
+                </p>
+              ))}
           </>
         )}
       </DialogContent>

@@ -17,4 +17,11 @@ class OutboxType {
   /// is nothing composite about it, and batching them would only mean a single
   /// bad row could hold back the rest.
   static const promotionCheck = 'promotion_check';
+
+  /// A sales call on a prospect. Split in two the same way a visit is: the
+  /// start inserts the row, the completion fills in what came of it. They
+  /// share the call's client id, so the drain will not replay the completion
+  /// without the start that created the row.
+  static const salesVisitStart = 'sales_visit_start';
+  static const salesVisitComplete = 'sales_visit_complete';
 }

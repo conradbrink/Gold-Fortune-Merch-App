@@ -13,6 +13,42 @@ import '../local/outbox_types.dart';
 /// forever. They stay visible to the rep as a sync problem.
 const kMaxAttempts = 8;
 
+/// The entries a drain may replay, oldest-first.
+///
+/// An entry that has exhausted [kMaxAttempts] is left behind rather than
+/// retried, so one poisoned row cannot block the queue forever. What it must
+/// not do is let the operations that *depended* on it carry on without it:
+/// every operation shares its subject's client id — a check-out carries its
+/// visit's, a workday end its session's — so anything queued behind a stalled
+/// entry for the same id is held back with it.
+///
+/// Replaying a check-out whose check-in never landed updates no row, which
+/// PostgREST reports as success, and the entry would then be deleted with the
+/// rep's check-out inside it.
+///
+/// [alreadyStalled] carries the ids of entries the caller filtered out before
+/// getting here. A drain asks the database to leave capped entries out of its
+/// window — otherwise they fill it — which means this function can no longer see
+/// them to work out what to hold back, so it is told instead.
+List<OutboxEntry> replayableEntries(
+  List<OutboxEntry> entries, {
+  Set<String> alreadyStalled = const {},
+}) {
+  final stalled = <String>{...alreadyStalled};
+  final replayable = <OutboxEntry>[];
+
+  for (final entry in entries) {
+    if (entry.attempts >= kMaxAttempts) {
+      stalled.add(entry.clientGeneratedId);
+      continue;
+    }
+    if (stalled.contains(entry.clientGeneratedId)) continue;
+    replayable.add(entry);
+  }
+
+  return replayable;
+}
+
 enum SyncState { idle, syncing, offline, error }
 
 class SyncStatus {
@@ -83,7 +119,11 @@ class SyncEngine {
     _running = true;
 
     try {
-      final entries = await _db.pendingEntries();
+      // The window excludes entries that have given up, so a backlog of them
+      // cannot crowd out newer work; their client ids come across separately so
+      // whatever was queued behind them is still held back.
+      final stalled = await _db.stalledClientIds(kMaxAttempts);
+      final entries = await _db.pendingEntries(maxAttempts: kMaxAttempts);
       if (entries.isEmpty) {
         await _emit(SyncState.idle);
         return;
@@ -91,8 +131,7 @@ class SyncEngine {
 
       await _emit(SyncState.syncing);
 
-      for (final entry in entries) {
-        if (entry.attempts >= kMaxAttempts) continue;
+      for (final entry in replayableEntries(entries, alreadyStalled: stalled)) {
         try {
           await _replay(entry);
           await _db.deleteEntry(entry.id);
@@ -127,10 +166,19 @@ class SyncEngine {
         break;
 
       case OutboxType.visitCheckOut:
-        await _client
+        // An update that matches no row is a success as far as PostgREST is
+        // concerned, and the caller would then delete this entry believing the
+        // check-out was written. Ask for the affected row: no row means the
+        // check-in has not landed, which is a reason to retry, not to discard
+        // the only record that the rep finished the call.
+        final visit = await _client
             .from('visits')
             .update(data['changes'] as Map<String, dynamic>)
-            .eq('client_generated_id', data['client_generated_id'] as String);
+            .eq('client_generated_id', data['client_generated_id'] as String)
+            .select('id');
+        if (visit.isEmpty) {
+          throw StateError('Check-in not synced yet; will retry.');
+        }
         break;
 
       case OutboxType.workdayStart:
@@ -140,10 +188,15 @@ class SyncEngine {
         break;
 
       case OutboxType.workdayEnd:
-        await _client
+        // Same silent-success hazard as the check-out above.
+        final session = await _client
             .from('workday_sessions')
             .update(data['changes'] as Map<String, dynamic>)
-            .eq('client_generated_id', data['client_generated_id'] as String);
+            .eq('client_generated_id', data['client_generated_id'] as String)
+            .select('id');
+        if (session.isEmpty) {
+          throw StateError('Workday start not synced yet; will retry.');
+        }
         break;
 
       case OutboxType.locationPing:
@@ -165,6 +218,28 @@ class SyncEngine {
         await _client
             .from('location_pings')
             .upsert(data, onConflict: 'client_generated_id');
+        break;
+
+      case OutboxType.salesVisitStart:
+        // Upsert on the idempotency key, so a retry after a lost ack cannot
+        // record the same call on the same prospect twice.
+        await _client
+            .from('leads')
+            .upsert(data, onConflict: 'client_generated_id');
+        break;
+
+      case OutboxType.salesVisitComplete:
+        // Same silent-success hazard as a check-out: an update matching no row
+        // is a success to PostgREST, and this entry would then be deleted with
+        // the outcome of the call inside it.
+        final lead = await _client
+            .from('leads')
+            .update(data['changes'] as Map<String, dynamic>)
+            .eq('client_generated_id', data['client_generated_id'] as String)
+            .select('id');
+        if (lead.isEmpty) {
+          throw StateError('Sales call not synced yet; will retry.');
+        }
         break;
 
       case OutboxType.formSubmission:

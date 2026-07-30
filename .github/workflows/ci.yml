@@ -1,0 +1,122 @@
+name: CI
+
+# The quality gate in front of `main`.
+#
+# Deployment itself is NOT done here — Vercel's GitHub integration builds and
+# promotes `main` on its own. That is deliberate: doing it here would mean
+# putting a Vercel deploy token into GitHub secrets, and the integration needs
+# no token at all. This workflow's job is to make sure what reaches `main` is
+# worth deploying. See docs/DEPLOY-WEB.md.
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+# A second push to the same branch makes the first run irrelevant.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  web:
+    name: Web — typecheck, lint, build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - run: npm ci
+
+      - name: Typecheck
+        run: npx tsc --noEmit
+
+      - name: Lint
+        # ⚠️ REPORTING ONLY, and this must not stay that way.
+        #
+        # The tree has 28 pre-existing lint errors — 25 of them
+        # `react-hooks/set-state-in-effect` — and they are on `main` too, not
+        # introduced by any one branch. Making this blocking today would mean
+        # CI is red from its first run, and a permanently red gate is one
+        # everybody learns to ignore, which is worse than not having it.
+        #
+        # It runs so the output is visible on every PR and the number can be
+        # watched. Delete this line once the count reaches zero; the fixes are
+        # per-file and several are genuine (a few sites read browser-only state
+        # and legitimately carry a scoped disable with a reason — see the notes
+        # in those files before "fixing" them).
+        continue-on-error: true
+        run: npm run lint
+
+      - name: Build
+        # Placeholder values only. `next build` needs these to exist because
+        # the Supabase client is constructed at module scope, but nothing in
+        # the build talks to the real project — and a CI run must never hold
+        # production credentials it does not need.
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: https://placeholder.supabase.co
+          NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: sb_publishable_ci_placeholder
+        run: npm run build
+
+  mobile:
+    name: Mobile — analyze and test
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: mobile
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          # Pinned to the version the app is developed against. Flutter's
+          # analyzer gains rules between releases, so "stable" would turn an
+          # unrelated Flutter upgrade into a red build on an untouched PR.
+          flutter-version: "3.44.8"
+          channel: stable
+          cache: true
+
+      - run: flutter pub get
+
+      - name: Analyze
+        run: flutter analyze
+
+      - name: Test
+        # TZ=UTC matches the CI assumption the localDate test is written
+        # against — see its comments. Do not remove without reading them.
+        env:
+          TZ: UTC
+        run: flutter test
+
+  secrets:
+    name: No secrets in the tree
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Scan tracked files for credentials
+        # Cheap, specific patterns rather than a general scanner: a service-role
+        # JWT, an OpenAI key, a Google API key, or a keystore committed by
+        # accident. Each of these has cost real projects a production incident.
+        run: |
+          set -euo pipefail
+          if git grep -nIE \
+              'service_role[^_a-z].*(eyJ[A-Za-z0-9_-]{20,})|sb_secret_[A-Za-z0-9]|sk-[A-Za-z0-9]{20,}|AIza[0-9A-Za-z_-]{35}' \
+              -- . ':!*.lock' ':!package-lock.json'; then
+            echo "::error::A credential-shaped string is committed. Rotate it, then remove it from the tree."
+            exit 1
+          fi
+          if git ls-files | grep -E '\.(jks|keystore)$|key\.properties$'; then
+            echo "::error::A signing keystore or its password file is committed. Rotate the key immediately."
+            exit 1
+          fi
+          echo "No credential-shaped strings found."
