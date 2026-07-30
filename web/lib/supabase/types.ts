@@ -334,6 +334,93 @@ export type Database = {
           },
         ]
       }
+      leads: {
+        Row: {
+          client_generated_id: string
+          company_name: string
+          completed_at: string | null
+          contact_name: string | null
+          contact_phone: string | null
+          created_at: string
+          end_lat: number | null
+          end_lng: number | null
+          follow_up_on: string | null
+          follow_up_required: boolean
+          id: string
+          notes: string | null
+          org_id: string
+          outcome: string | null
+          purpose: string
+          rep_id: string
+          stage: string
+          start_lat: number | null
+          start_lng: number | null
+          started_at: string
+          status: string
+        }
+        Insert: {
+          client_generated_id: string
+          company_name: string
+          completed_at?: string | null
+          contact_name?: string | null
+          contact_phone?: string | null
+          created_at?: string
+          end_lat?: number | null
+          end_lng?: number | null
+          follow_up_on?: string | null
+          follow_up_required?: boolean
+          id?: string
+          notes?: string | null
+          org_id: string
+          outcome?: string | null
+          purpose: string
+          rep_id: string
+          stage?: string
+          start_lat?: number | null
+          start_lng?: number | null
+          started_at?: string
+          status?: string
+        }
+        Update: {
+          client_generated_id?: string
+          company_name?: string
+          completed_at?: string | null
+          contact_name?: string | null
+          contact_phone?: string | null
+          created_at?: string
+          end_lat?: number | null
+          end_lng?: number | null
+          follow_up_on?: string | null
+          follow_up_required?: boolean
+          id?: string
+          notes?: string | null
+          org_id?: string
+          outcome?: string | null
+          purpose?: string
+          rep_id?: string
+          stage?: string
+          start_lat?: number | null
+          start_lng?: number | null
+          started_at?: string
+          status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "leads_org_id_fkey"
+            columns: ["org_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "leads_rep_id_fkey"
+            columns: ["rep_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       location_pings: {
         Row: {
           accuracy_m: number | null

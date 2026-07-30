@@ -1,6 +1,7 @@
 import {
   LayoutDashboard,
   ClipboardList,
+  Target,
   Store,
   Calendar,
   BadgePercent,
@@ -14,6 +15,7 @@ import {
 export const navItems = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard },
   { href: "/activities", label: "Activities", icon: ClipboardList },
+  { href: "/leads", label: "Leads", icon: Target },
   { href: "/stores", label: "Stores", icon: Store },
   { href: "/schedule", label: "Schedule", icon: Calendar },
   { href: "/promotions", label: "Promotions", icon: BadgePercent },
