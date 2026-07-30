@@ -271,10 +271,22 @@ export default function ActivitiesPage() {
                 const isIn = ev.kind === "check_in";
                 const isSales = ev.kind === "sales_visit";
                 return (
+                  // The dialog this opens is the only place the sales-call panel
+                  // and the form submission can be reached, and a click handler
+                  // on a `tr` gives no focus, no role and no Enter/Space — so
+                  // without these it could not be opened without a mouse.
                   <TableRow
                     key={ev.event_id}
                     onClick={() => setOpen(ev)}
-                    className="cursor-pointer"
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        setOpen(ev);
+                      }
+                    }}
+                    tabIndex={0}
+                    role="button"
+                    className="cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ring"
                     title={isSales ? "View this sales call" : "View this visit"}
                   >
                     <TableCell className="min-w-[190px]">

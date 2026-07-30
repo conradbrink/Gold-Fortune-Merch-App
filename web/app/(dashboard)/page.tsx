@@ -61,6 +61,15 @@ export default function InsightsDashboardPage() {
   const [layout, setLayout] = useState<string[]>(DEFAULT_LAYOUT);
   const [orgId, setOrgId] = useState<string | null>(null);
   const [customising, setCustomising] = useState(false);
+  /**
+   * Whether the saved layout has been read yet, either way.
+   *
+   * `layout` starts as the default, so Customise opened before the fetch settles
+   * would seed its draft from the default and Save would then write that over the
+   * layout the person actually has — losing their customisation to a fast click.
+   * The button waits.
+   */
+  const [layoutLoaded, setLayoutLoaded] = useState(false);
   const [savingLayout, setSavingLayout] = useState(false);
   const [layoutError, setLayoutError] = useState<string | null>(null);
 
@@ -170,6 +179,10 @@ export default function InsightsDashboardPage() {
             e instanceof Error ? e.message : String(e)
           }`
         );
+      } finally {
+        // Either way the question has been answered, and Customise may open. On
+        // failure that means editing the default, which the banner above says.
+        if (!cancelled) setLayoutLoaded(true);
       }
     })();
     return () => {
@@ -253,6 +266,10 @@ export default function InsightsDashboardPage() {
           variant="outline"
           size="sm"
           className="gap-1.5"
+          disabled={!layoutLoaded}
+          title={
+            layoutLoaded ? undefined : "Reading your saved layout…"
+          }
           onClick={() => setCustomising(true)}
         >
           <SlidersHorizontal className="h-4 w-4" />
