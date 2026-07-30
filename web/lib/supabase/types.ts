@@ -809,6 +809,27 @@ export type Database = {
           },
         ]
       }
+      rate_limits: {
+        Row: {
+          bucket: string
+          count: number
+          subject: string
+          window_start: string
+        }
+        Insert: {
+          bucket: string
+          count?: number
+          subject: string
+          window_start: string
+        }
+        Update: {
+          bucket?: string
+          count?: number
+          subject?: string
+          window_start?: string
+        }
+        Relationships: []
+      }
       routes: {
         Row: {
           created_at: string
@@ -879,6 +900,71 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      security_events: {
+        Row: {
+          action: string
+          actor_id: string | null
+          created_at: string
+          detail: Json | null
+          id: number
+          org_id: string | null
+          subject_id: string | null
+          subject_type: string
+        }
+        Insert: {
+          action: string
+          actor_id?: string | null
+          created_at?: string
+          detail?: Json | null
+          id?: never
+          org_id?: string | null
+          subject_id?: string | null
+          subject_type: string
+        }
+        Update: {
+          action?: string
+          actor_id?: string | null
+          created_at?: string
+          detail?: Json | null
+          id?: never
+          org_id?: string | null
+          subject_id?: string | null
+          subject_type?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "security_events_actor_id_fkey"
+            columns: ["actor_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      service_flags: {
+        Row: {
+          geocoding_enabled: boolean
+          id: boolean
+          insights_enabled: boolean
+          notice: string | null
+          updated_at: string
+        }
+        Insert: {
+          geocoding_enabled?: boolean
+          id?: boolean
+          insights_enabled?: boolean
+          notice?: string | null
+          updated_at?: string
+        }
+        Update: {
+          geocoding_enabled?: boolean
+          id?: boolean
+          insights_enabled?: boolean
+          notice?: string | null
+          updated_at?: string
+        }
+        Relationships: []
       }
       store_assignments: {
         Row: {
@@ -996,7 +1082,8 @@ export type Database = {
           place_code: string | null
           state: string | null
           store_group_id: string | null
-          territory: string | null
+          sub_territory_id: string | null
+          territory_id: string | null
           visit_frequency: string
           zip: string | null
         }
@@ -1021,7 +1108,8 @@ export type Database = {
           place_code?: string | null
           state?: string | null
           store_group_id?: string | null
-          territory?: string | null
+          sub_territory_id?: string | null
+          territory_id?: string | null
           visit_frequency?: string
           zip?: string | null
         }
@@ -1046,7 +1134,8 @@ export type Database = {
           place_code?: string | null
           state?: string | null
           store_group_id?: string | null
-          territory?: string | null
+          sub_territory_id?: string | null
+          territory_id?: string | null
           visit_frequency?: string
           zip?: string | null
         }
@@ -1077,6 +1166,108 @@ export type Database = {
             columns: ["store_group_id"]
             isOneToOne: false
             referencedRelation: "store_groups"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "stores_sub_territory_id_fkey"
+            columns: ["sub_territory_id"]
+            isOneToOne: false
+            referencedRelation: "territories"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "stores_territory_id_fkey"
+            columns: ["territory_id"]
+            isOneToOne: false
+            referencedRelation: "territories"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      territories: {
+        Row: {
+          active: boolean
+          created_at: string
+          id: string
+          name: string
+          org_id: string
+          parent_id: string | null
+        }
+        Insert: {
+          active?: boolean
+          created_at?: string
+          id?: string
+          name: string
+          org_id: string
+          parent_id?: string | null
+        }
+        Update: {
+          active?: boolean
+          created_at?: string
+          id?: string
+          name?: string
+          org_id?: string
+          parent_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "territories_org_id_fkey"
+            columns: ["org_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "territories_parent_id_fkey"
+            columns: ["parent_id"]
+            isOneToOne: false
+            referencedRelation: "territories"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      territory_reps: {
+        Row: {
+          created_at: string
+          id: string
+          org_id: string
+          rep_id: string
+          territory_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          org_id: string
+          rep_id: string
+          territory_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          org_id?: string
+          rep_id?: string
+          territory_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "territory_reps_org_id_fkey"
+            columns: ["org_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "territory_reps_rep_id_fkey"
+            columns: ["rep_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "territory_reps_territory_id_fkey"
+            columns: ["territory_id"]
+            isOneToOne: false
+            referencedRelation: "territories"
             referencedColumns: ["id"]
           },
         ]
@@ -1341,6 +1532,15 @@ export type Database = {
           submissions: number
         }[]
       }
+      consume_rate_limit: {
+        Args: {
+          p_bucket: string
+          p_cost?: number
+          p_limit: number
+          p_window_seconds: number
+        }
+        Returns: Json
+      }
       coverage_gaps: {
         Args: { p_from: string; p_to: string }
         Returns: {
@@ -1463,6 +1663,7 @@ export type Database = {
           stores_running: number
         }[]
       }
+      prune_rate_limits: { Args: never; Returns: number }
       rep_delete_impact: {
         Args: { p_rep_id: string }
         Returns: {
@@ -1519,6 +1720,7 @@ export type Database = {
           rep_name: string
         }[]
       }
+      service_flag: { Args: { p_name: string }; Returns: boolean }
       set_store_location_from_visit: {
         Args: {
           p_accuracy_m: number
