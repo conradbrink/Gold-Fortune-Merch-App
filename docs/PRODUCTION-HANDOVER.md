@@ -51,6 +51,11 @@ Two properties of the free tier matter for a system reps depend on:
    on **Pro ($25/month)**. Today the only backup is one you take by hand.
 2. **Free projects pause after ~7 days of inactivity.** A paused project means
    reps cannot sign in until someone restores it from the dashboard.
+3. **Leaked-password protection cannot be enabled.** It is Pro-only — confirmed
+   greyed out on this account, 30 July. Without it, a rep can choose a password
+   that already appears in a public breach dump and nothing objects. The only
+   floor today is the eight-character minimum in the invite route and the reset
+   page.
 
 **Recommendation: upgrade this project to Pro before go-live.** It is the
 single highest-value item on this page. Until then, "enable appropriate
@@ -151,7 +156,7 @@ installed cannot be downgraded, so the real fix is forward.
 | **No signed APK exists** | The signing keystore has not been created. You hold the password — `RELEASE-ANDROID.md` Part 1 |
 | **No APK has been tested on a real device** | There are no physical Android handsets attached to this machine, only the `gf_pixel` emulator. I cannot honestly claim device testing, and have not |
 | **Database backups** | Free plan has none. Needs the Pro upgrade decision |
-| **Leaked-password protection** | Supabase dashboard setting; no API for it. Authentication → Policies |
+| **Leaked-password protection** | **Pro-only.** Confirmed greyed out on the Free plan, 30 July. Authentication → Attack Protection. Comes with the Pro upgrade below, not separately |
 | ~~`main` is behind~~ | **Resolved 30 July** — PR #2 merged, `main` at `6f2de91`, CI green |
 | **Password reset not end-to-end tested** | Sending a real reset email is an outward-facing action I did not take unasked. The pages render and the invalid-link branch is untested in-browser because the test browser held a live session |
 | **Manager password still the seeded one** | `GoldFortune2026!` is in `docs/PROJECT-CONTEXT.md` and in git history. **Rotate it.** |
