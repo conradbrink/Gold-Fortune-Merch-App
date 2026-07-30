@@ -1,7 +1,9 @@
 -- Security regression suite.
 --
--- Every check here corresponds to a hole that was open on 29 July 2026 and was
--- confirmed by exploiting it. They are written as attacks, not as assertions
+-- Every check here corresponds to a hole that was open on 29 or 30 July 2026
+-- and was confirmed by exploiting it. **20 checks** — 1-18 are the 29 July
+-- audit, 19-20 the `territory_reps` tenancy gap found in review on 30 July.
+-- They are written as attacks, not as assertions
 -- about policy text, because the manager-escalation bug came from a policy that
 -- read correctly for weeks: `profiles_update` said `id = auth.uid()`, which is
 -- true and sounds right, and permitted a rep to set their own role.
@@ -21,6 +23,7 @@ do $$
 declare
   v_org uuid; v_mgr uuid; v_rep uuid; v_rep2 uuid; v_store uuid;
   v_visit uuid; v_n int; v_r jsonb; v_fail text := '';
+  v_other_org uuid; v_other_terr uuid; v_terr uuid;
 
 begin
   select id, org_id into v_mgr, v_org from public.profiles where role = 'manager' limit 1;
@@ -177,6 +180,48 @@ begin
   select count(*) into v_n from public.security_events
    where subject_id = v_rep2 and action = 'profile.permissions_changed';
   if v_n = 0 then v_fail := v_fail || '18. a role change left no audit trail' || E'\n'; end if;
+
+  ------------------------------------------------------------ territory scope
+
+  -- Confirmed by exploit on 30 July: `territory_reps` had no trigger proving
+  -- its `territory_id` and `rep_id` live in the organisation named by its
+  -- `org_id`, and the insert policy only checks the org_id *in the row*. Closed
+  -- by `20260730153000_enforce_territory_reps_org.sql`.
+  --
+  -- Run as the manager, because a rep cannot insert coverage at all.
+  insert into public.organizations (name) values ('Regression Foreign Org')
+    returning id into v_other_org;
+  insert into public.territories (org_id, name) values (v_other_org, 'Regression Foreign Territory')
+    returning id into v_other_terr;
+  select id into v_terr from public.territories
+   where org_id = v_org and parent_id is null limit 1;
+
+  perform set_config('request.jwt.claims',
+    json_build_object('sub', v_mgr, 'role', 'authenticated')::text, true);
+  set local role authenticated;
+
+  -- 19. Coverage must not reach a territory in another organisation.
+  begin
+    insert into public.territory_reps (org_id, territory_id, rep_id)
+    values (v_org, v_other_terr, v_rep);
+    v_fail := v_fail || '19. a manager could cover another org''s territory' || E'\n';
+  exception when others then null; end;
+
+  -- 20. Legitimate coverage must still be insertable — see check 4.
+  if v_terr is not null then
+    begin
+      insert into public.territory_reps (org_id, territory_id, rep_id)
+      values (v_org, v_terr, v_rep);
+      get diagnostics v_n = row_count;
+      if v_n <> 1 then
+        v_fail := v_fail || '20. a manager could NOT assign coverage in their own org' || E'\n';
+      end if;
+    exception when others then
+      v_fail := v_fail || '20. a manager could NOT assign coverage in their own org: '
+                || sqlerrm || E'\n'; end;
+  end if;
+
+  reset role;
 
   ------------------------------------------------------------------- verdict
 
