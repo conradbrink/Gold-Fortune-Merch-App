@@ -61,7 +61,12 @@ class _SalesVisitCompleteScreenState
         _notes.text = lead.notes ?? '';
         _followUp = lead.followUpRequired;
         if (lead.followUpOn != null) {
-          _followUpOn = DateTime.parse(lead.followUpOn!);
+          // tryParse, not parse: this runs inside setState, and a throw here
+          // skips the rebuild that `_loading = false` above was meant to cause —
+          // the spinner would stay up and retrying would hit the same date
+          // again. A date that cannot be read leaves the field empty, and the
+          // rep is asked for one before they can finish.
+          _followUpOn = DateTime.tryParse(lead.followUpOn!);
         }
       }
     });
