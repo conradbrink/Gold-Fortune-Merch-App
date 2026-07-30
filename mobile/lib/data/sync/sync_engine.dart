@@ -25,8 +25,16 @@ const kMaxAttempts = 8;
 /// Replaying a check-out whose check-in never landed updates no row, which
 /// PostgREST reports as success, and the entry would then be deleted with the
 /// rep's check-out inside it.
-List<OutboxEntry> replayableEntries(List<OutboxEntry> entries) {
-  final stalled = <String>{};
+///
+/// [alreadyStalled] carries the ids of entries the caller filtered out before
+/// getting here. A drain asks the database to leave capped entries out of its
+/// window — otherwise they fill it — which means this function can no longer see
+/// them to work out what to hold back, so it is told instead.
+List<OutboxEntry> replayableEntries(
+  List<OutboxEntry> entries, {
+  Set<String> alreadyStalled = const {},
+}) {
+  final stalled = <String>{...alreadyStalled};
   final replayable = <OutboxEntry>[];
 
   for (final entry in entries) {
@@ -111,7 +119,11 @@ class SyncEngine {
     _running = true;
 
     try {
-      final entries = await _db.pendingEntries();
+      // The window excludes entries that have given up, so a backlog of them
+      // cannot crowd out newer work; their client ids come across separately so
+      // whatever was queued behind them is still held back.
+      final stalled = await _db.stalledClientIds(kMaxAttempts);
+      final entries = await _db.pendingEntries(maxAttempts: kMaxAttempts);
       if (entries.isEmpty) {
         await _emit(SyncState.idle);
         return;
@@ -119,7 +131,7 @@ class SyncEngine {
 
       await _emit(SyncState.syncing);
 
-      for (final entry in replayableEntries(entries)) {
+      for (final entry in replayableEntries(entries, alreadyStalled: stalled)) {
         try {
           await _replay(entry);
           await _db.deleteEntry(entry.id);

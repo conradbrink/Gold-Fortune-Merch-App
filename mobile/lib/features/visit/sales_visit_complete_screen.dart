@@ -40,11 +40,21 @@ class _SalesVisitCompleteScreenState
   }
 
   Future<void> _load() async {
-    final lead =
-        await ref.read(leadRepositoryProvider).byClientId(widget.clientId);
+    // Reading the local cache can throw — a decode failure on a row written by
+    // an older build, or the database itself. Without this the screen kept its
+    // spinner forever and the rep had no way to see why.
+    Lead? lead;
+    String? failure;
+    try {
+      lead = await ref.read(leadRepositoryProvider).byClientId(widget.clientId);
+    } catch (e) {
+      failure = 'This sales call could not be opened: $e';
+    }
+
     if (!mounted) return;
     setState(() {
       _lead = lead;
+      _error = failure;
       _loading = false;
       if (lead != null) {
         _outcome.text = lead.outcome ?? '';
@@ -121,12 +131,32 @@ class _SalesVisitCompleteScreenState
     if (lead == null) {
       return Scaffold(
         appBar: AppBar(title: const Text('Sales visit')),
-        body: const Center(
+        body: Center(
           child: Padding(
-            padding: EdgeInsets.all(24),
-            child: Text(
-              'That visit is no longer on this device.',
-              textAlign: TextAlign.center,
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // A failed read and a genuinely absent visit both land here, and
+                // they call for different things from the rep — retry, or move on.
+                Text(
+                  _error ?? 'That visit is no longer on this device.',
+                  textAlign: TextAlign.center,
+                ),
+                if (_error != null) ...[
+                  const SizedBox(height: 12),
+                  OutlinedButton(
+                    onPressed: () {
+                      setState(() {
+                        _loading = true;
+                        _error = null;
+                      });
+                      _load();
+                    },
+                    child: const Text('Try again'),
+                  ),
+                ],
+              ],
             ),
           ),
         ),

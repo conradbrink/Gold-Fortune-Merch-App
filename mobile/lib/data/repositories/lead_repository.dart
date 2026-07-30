@@ -102,26 +102,39 @@ class LeadRepository {
       startLng: lng,
     );
 
-    final leads = await _cached()..add(lead);
-    await _save(leads);
+    // Cache and outbox in one transaction. Two reasons, both of which produce a
+    // record that looks fine on the phone and never reaches the server:
+    //
+    // - Order. `_save` before `enqueue` meant a failed enqueue left the call
+    //   listed locally with nothing queued to send it. The rep sees their work;
+    //   the office never does.
+    // - Atomicity. `_cached()` → mutate → `_save()` is a read-modify-write on
+    //   one JSON blob, and both this and `complete()` await a GPS fix first —
+    //   seconds during which the other can interleave and write back a list
+    //   taken before this lead existed. Drift serialises transactions, so
+    //   holding the read and the write inside one closes that.
+    await _db.transaction(() async {
+      await _db.enqueue(
+        entityType: OutboxType.salesVisitStart,
+        clientGeneratedId: lead.clientGeneratedId,
+        payload: jsonEncode({
+          'org_id': lead.orgId,
+          'rep_id': lead.repId,
+          'company_name': lead.companyName,
+          'purpose': lead.purpose,
+          'contact_name': lead.contactName,
+          'contact_phone': lead.contactPhone,
+          'started_at': lead.startedAt.toUtc().toIso8601String(),
+          'start_lat': lead.startLat,
+          'start_lng': lead.startLng,
+          'status': 'in_progress',
+          'client_generated_id': lead.clientGeneratedId,
+        }),
+      );
 
-    await _db.enqueue(
-      entityType: OutboxType.salesVisitStart,
-      clientGeneratedId: lead.clientGeneratedId,
-      payload: jsonEncode({
-        'org_id': lead.orgId,
-        'rep_id': lead.repId,
-        'company_name': lead.companyName,
-        'purpose': lead.purpose,
-        'contact_name': lead.contactName,
-        'contact_phone': lead.contactPhone,
-        'started_at': lead.startedAt.toUtc().toIso8601String(),
-        'start_lat': lead.startLat,
-        'start_lng': lead.startLng,
-        'status': 'in_progress',
-        'client_generated_id': lead.clientGeneratedId,
-      }),
-    );
+      final leads = await _cached()..add(lead);
+      await _save(leads);
+    });
 
     unawaited(_sync.sync());
     return lead;
@@ -159,33 +172,38 @@ class LeadRepository {
       status: 'completed',
     );
 
-    final leads = await _cached();
-    final index =
-        leads.indexWhere((l) => l.clientGeneratedId == lead.clientGeneratedId);
-    if (index >= 0) {
-      leads[index] = completed;
-    } else {
-      leads.add(completed);
-    }
-    await _save(leads);
+    // One transaction, outbox first — same reasoning as `start()`. A completed
+    // call that shows its outcome on the phone but queued nothing is the worst
+    // of the failure modes here, because nothing about it looks wrong.
+    await _db.transaction(() async {
+      await _db.enqueue(
+        entityType: OutboxType.salesVisitComplete,
+        clientGeneratedId: completed.clientGeneratedId,
+        payload: jsonEncode({
+          'client_generated_id': completed.clientGeneratedId,
+          'changes': {
+            'outcome': completed.outcome,
+            'notes': completed.notes,
+            'follow_up_required': completed.followUpRequired,
+            'follow_up_on': completed.followUpOn,
+            'completed_at': completed.completedAt!.toUtc().toIso8601String(),
+            'end_lat': completed.endLat,
+            'end_lng': completed.endLng,
+            'status': 'completed',
+          },
+        }),
+      );
 
-    await _db.enqueue(
-      entityType: OutboxType.salesVisitComplete,
-      clientGeneratedId: completed.clientGeneratedId,
-      payload: jsonEncode({
-        'client_generated_id': completed.clientGeneratedId,
-        'changes': {
-          'outcome': completed.outcome,
-          'notes': completed.notes,
-          'follow_up_required': completed.followUpRequired,
-          'follow_up_on': completed.followUpOn,
-          'completed_at': completed.completedAt!.toUtc().toIso8601String(),
-          'end_lat': completed.endLat,
-          'end_lng': completed.endLng,
-          'status': 'completed',
-        },
-      }),
-    );
+      final leads = await _cached();
+      final index =
+          leads.indexWhere((l) => l.clientGeneratedId == lead.clientGeneratedId);
+      if (index >= 0) {
+        leads[index] = completed;
+      } else {
+        leads.add(completed);
+      }
+      await _save(leads);
+    });
 
     unawaited(_sync.sync());
     return completed;

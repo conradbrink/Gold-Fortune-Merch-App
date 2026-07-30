@@ -157,6 +157,43 @@ void main() {
 
       expect(replayable.length, 2);
     });
+
+    // A drain now asks the database to leave capped entries out of the window,
+    // because enough of them collecting at the head of the queue would fill it
+    // and stop anything newer from ever being looked at. The consequence is that
+    // the check-in below is *not* in the list any more, so the only thing that
+    // can hold its check-out back is the caller saying so.
+    test('holds back an entry whose stalled parent is outside the window', () {
+      final replayable = replayableEntries(
+        [entry(OutboxType.visitCheckOut, 'visit-abc', id: 2, createdSecond: 1)],
+        alreadyStalled: {'visit-abc'},
+      );
+
+      expect(replayable, isEmpty);
+    });
+
+    test('unrelated work drains while another id is stalled out of view', () {
+      final replayable = replayableEntries(
+        [entry(OutboxType.promotionCheck, 'promo-xyz', id: 3)],
+        alreadyStalled: {'visit-abc'},
+      );
+
+      expect(replayable.map((e) => e.clientGeneratedId), ['promo-xyz']);
+    });
+
+    // The hold-back runs forwards through the queue, so reaching the cap holds
+    // back what was queued *after* that entry — never what already went before
+    // it. A check-in that is still fine must not be stranded by its own
+    // check-out having given up.
+    test('a later stalled entry does not strand the earlier one', () {
+      final replayable = replayableEntries([
+        entry(OutboxType.visitCheckIn, 'visit-abc', id: 1),
+        entry(OutboxType.visitCheckOut, 'visit-abc',
+            attempts: kMaxAttempts, id: 2, createdSecond: 1),
+      ]);
+
+      expect(replayable.map((e) => e.entityType), [OutboxType.visitCheckIn]);
+    });
   });
 }
 

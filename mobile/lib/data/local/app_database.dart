@@ -137,11 +137,38 @@ class AppDatabase extends _$AppDatabase {
 
   /// Oldest-first so operations replay in the order the rep performed them
   /// (a check-in must land before its check-out).
-  Future<List<OutboxEntry>> pendingEntries({int limit = 50}) {
-    return (select(outboxEntries)
-          ..orderBy([(t) => OrderingTerm.asc(t.createdAt)])
-          ..limit(limit))
-        .get();
+  ///
+  /// [maxAttempts] leaves out entries that have already exhausted their retries.
+  /// A drain must pass it: those entries are never deleted, so without it enough
+  /// of them collect at the head of the queue to fill the whole `limit` window,
+  /// and every newer operation behind them stops being looked at — the queue
+  /// wedges permanently rather than skipping the poison. Callers that want the
+  /// true backlog (the pending *count* the rep is shown) omit it.
+  Future<List<OutboxEntry>> pendingEntries({int limit = 50, int? maxAttempts}) {
+    final query = select(outboxEntries)
+      ..orderBy([(t) => OrderingTerm.asc(t.createdAt)])
+      ..limit(limit);
+    if (maxAttempts != null) {
+      query.where((t) => t.attempts.isSmallerThanValue(maxAttempts));
+    }
+    return query.get();
+  }
+
+  /// Client ids whose queued work has stopped being retried.
+  ///
+  /// Read separately from the drain window because the window no longer contains
+  /// those entries, and anything queued *behind* one shares its client id and
+  /// has to be held back with it. Without this a check-out could be replayed
+  /// after its check-in had been given up on.
+  Future<Set<String>> stalledClientIds(int maxAttempts) async {
+    final query = selectOnly(outboxEntries, distinct: true)
+      ..addColumns([outboxEntries.clientGeneratedId])
+      ..where(outboxEntries.attempts.isBiggerOrEqualValue(maxAttempts));
+    final rows = await query.get();
+    return rows
+        .map((r) => r.read(outboxEntries.clientGeneratedId))
+        .whereType<String>()
+        .toSet();
   }
 
   /// Client ids that still have queued work.
