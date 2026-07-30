@@ -16,6 +16,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { NativeSelect } from "@/components/ui/native-select";
+import { TerritoriesPanel } from "@/components/settings/territories-panel";
 import {
   Table,
   TableBody,
@@ -182,6 +183,7 @@ export default function CompanyProfilePage() {
         <TabsList>
           <TabsTrigger value="details">Company Details</TabsTrigger>
           <TabsTrigger value="team">Team Members</TabsTrigger>
+          <TabsTrigger value="territories">Territories</TabsTrigger>
           <TabsTrigger value="plan">Plan &amp; Billing</TabsTrigger>
         </TabsList>
 
@@ -433,6 +435,12 @@ export default function CompanyProfilePage() {
               </TableBody>
             </Table>
           </div>
+        </TabsContent>
+
+        {/* Mounted only when the tab is opened, so the tree and its store
+            counts are not fetched on every visit to Company Details. */}
+        <TabsContent value="territories" className="mt-4">
+          <TerritoriesPanel />
         </TabsContent>
 
         <TabsContent value="plan" className="mt-4 space-y-4">
