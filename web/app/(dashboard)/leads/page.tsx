@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { CalendarClock, MapPin, Phone, User } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -38,7 +38,16 @@ export default function LeadsPage() {
   const [moving, setMoving] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [repFilter, setRepFilter] = useState("all");
-  /** The card under the cursor, and the column it is currently over. */
+  /**
+   * The dragged card lives in a ref as well as in state.
+   *
+   * `dragover` fires before React has re-rendered from `dragstart`, so a
+   * handler that reads the state variable sees null on the first events and
+   * skips `preventDefault` — and a column that does not preventDefault is not
+   * a drop target, which is why dropping used to do nothing. The ref is set
+   * synchronously; the state exists only to drive the styling.
+   */
+  const draggingRef = useRef<string | null>(null);
   const [dragging, setDragging] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState<Stage | null>(null);
 
@@ -166,15 +175,18 @@ export default function LeadsPage() {
               <section
                 key={stage.value}
                 aria-label={stage.label}
-                // preventDefault on dragOver is what marks a element as a drop
-                // target; without it the browser refuses the drop silently.
+                // preventDefault is what marks an element as a drop target, and
+                // it has to happen on *every* dragover — skipping it even once
+                // leaves the browser showing a "no entry" cursor. dropEffect is
+                // set explicitly rather than left to the browser's default.
                 onDragOver={(e) => {
-                  if (!dragging) return;
+                  if (!draggingRef.current) return;
                   e.preventDefault();
-                  setDragOver(stage.value);
+                  e.dataTransfer.dropEffect = "move";
+                  setDragOver((s) => (s === stage.value ? s : stage.value));
                 }}
                 onDragLeave={(e) => {
-                  // Fires when crossing onto a child too, so only clear when
+                  // Also fires when crossing onto a child, so only clear when
                   // the pointer has genuinely left the column.
                   if (!e.currentTarget.contains(e.relatedTarget as Node)) {
                     setDragOver((s) => (s === stage.value ? null : s));
@@ -182,18 +194,22 @@ export default function LeadsPage() {
                 }}
                 onDrop={(e) => {
                   e.preventDefault();
+                  const id = e.dataTransfer.getData("text/plain") || draggingRef.current;
+                  draggingRef.current = null;
                   setDragOver(null);
-                  const id = e.dataTransfer.getData("text/plain") || dragging;
                   setDragging(null);
                   const lead = leads.find((l) => l.id === id);
                   // Dropping a card back where it started is not a move.
                   if (lead && lead.stage !== stage.value) move(lead, stage.value);
                 }}
-                className={
+                className={[
+                  // Always border-2: switching width on hover shifts every card
+                  // by a pixel, which reads as a flinch.
+                  "flex min-w-0 flex-col rounded-md border-2 transition-colors duration-150",
                   dragOver === stage.value
-                    ? "flex min-w-0 flex-col rounded-md border-2 border-primary bg-primary/5"
-                    : "flex min-w-0 flex-col rounded-md border border-border bg-muted/20"
-                }
+                    ? "border-dashed border-primary bg-primary/10"
+                    : "border-border bg-muted/20",
+                ].join(" ")}
               >
                 <header className="flex items-center justify-between gap-2 border-b border-border px-3 py-2">
                   <span className="text-sm font-medium text-foreground">
@@ -202,10 +218,12 @@ export default function LeadsPage() {
                   <Badge variant="secondary">{cards.length}</Badge>
                 </header>
 
-                <div className="space-y-2 p-2">
+                {/* min-h so an empty column is still a target you can hit —
+                    a 20px strip of text is not something you can drop onto. */}
+                <div className="min-h-28 flex-1 space-y-2 p-2">
                   {cards.length === 0 ? (
                     <p className="px-1 py-6 text-center text-xs text-muted-foreground">
-                      Nothing here.
+                      {dragOver === stage.value ? "Drop to move here" : "Nothing here."}
                     </p>
                   ) : (
                     cards.map((lead) => {
@@ -220,17 +238,25 @@ export default function LeadsPage() {
                           onDragStart={(e) => {
                             e.dataTransfer.setData("text/plain", lead.id);
                             e.dataTransfer.effectAllowed = "move";
-                            setDragging(lead.id);
+                            draggingRef.current = lead.id;
+                            // Deferred by a frame: the browser snapshots the
+                            // drag image straight after this handler, and
+                            // fading the card now makes it snapshot the faded
+                            // version — a ghost you can barely see.
+                            requestAnimationFrame(() => setDragging(lead.id));
                           }}
                           onDragEnd={() => {
+                            draggingRef.current = null;
                             setDragging(null);
                             setDragOver(null);
                           }}
-                          className={
+                          className={[
+                            "space-y-1.5 rounded-md border border-border bg-card p-2.5 shadow-sm",
+                            "transition-[opacity,box-shadow] duration-150",
                             dragging === lead.id
-                              ? "space-y-1.5 rounded-md border border-border bg-card p-2.5 opacity-40 shadow-sm"
-                              : "cursor-grab space-y-1.5 rounded-md border border-border bg-card p-2.5 shadow-sm active:cursor-grabbing"
-                          }
+                              ? "opacity-40"
+                              : "cursor-grab hover:shadow-md active:cursor-grabbing",
+                          ].join(" ")}
                         >
                           <p className="text-sm font-medium leading-tight text-foreground">
                             {lead.company_name}
