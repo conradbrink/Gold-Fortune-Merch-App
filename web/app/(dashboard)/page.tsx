@@ -199,6 +199,24 @@ export default function InsightsDashboardPage() {
     days,
   };
 
+  /**
+   * Whether a source actually has something to draw, which is not the same as
+   * its fetch having settled.
+   *
+   * An RPC that answers `null` counts as fulfilled, so it never reaches
+   * `failedSources` — and every card reading it would then render nothing,
+   * leaving a page of blank grid cells with no explanation. Readiness is judged
+   * on the data being there.
+   *
+   * `dayTimes` is the exception: it is an array, and empty is a legitimate answer
+   * (nobody worked in this period), which its card already says in words.
+   */
+  const sourceReady: Record<WidgetSource, boolean> = {
+    summary: data !== null,
+    dayTimes: !failedSources.has("dayTimes"),
+    operations: ops !== null,
+  };
+
   const cards = layout.map((id) => findWidget(id)).filter((w) => w !== undefined);
 
   return (
@@ -263,10 +281,10 @@ export default function InsightsDashboardPage() {
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
           {cards.map((widget) => (
             <div key={widget.id} className={SPAN_CLASS[widget.span]}>
-              {failedSources.has(widget.source) ? (
-                <UnavailableCard title={widget.title} />
-              ) : (
+              {sourceReady[widget.source] ? (
                 widget.render(widgetData)
+              ) : (
+                <UnavailableCard title={widget.title} />
               )}
             </div>
           ))}
