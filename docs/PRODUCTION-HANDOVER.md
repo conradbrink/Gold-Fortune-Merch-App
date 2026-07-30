@@ -152,7 +152,7 @@ installed cannot be downgraded, so the real fix is forward.
 | **No APK has been tested on a real device** | There are no physical Android handsets attached to this machine, only the `gf_pixel` emulator. I cannot honestly claim device testing, and have not |
 | **Database backups** | Free plan has none. Needs the Pro upgrade decision |
 | **Leaked-password protection** | Supabase dashboard setting; no API for it. Authentication → Policies |
-| **`main` is 38 commits behind** | PR #2 is still open. Auto-deploy from `main` today would ship none of this work |
+| ~~`main` is behind~~ | **Resolved 30 July** — PR #2 merged, `main` at `6f2de91`, CI green |
 | **Password reset not end-to-end tested** | Sending a real reset email is an outward-facing action I did not take unasked. The pages render and the invalid-link branch is untested in-browser because the test browser held a live session |
 | **Manager password still the seeded one** | `GoldFortune2026!` is in `docs/PROJECT-CONTEXT.md` and in git history. **Rotate it.** |
 
@@ -161,7 +161,8 @@ installed cannot be downgraded, so the real fix is forward.
 ## The order to finish in
 
 1. **Rotate the manager password.** It is published in the repo's history.
-2. **Land PR #2 into `main`.** Nothing else can auto-deploy until this happens.
+2. ~~Land PR #2 into `main`.~~ **Done 30 July.** `main` is at `6f2de91` with
+   all 40 commits and CI green. It is ready to be the production branch.
 3. **Decide on Supabase Pro.** Backups and no auto-pausing.
 4. **Create the Vercel project** and set the environment variables.
 5. **Enable leaked-password protection**, and confirm the spend caps.
