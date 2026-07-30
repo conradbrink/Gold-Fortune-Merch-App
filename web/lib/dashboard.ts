@@ -54,6 +54,37 @@ export function formatPct(rate: number | null): string {
   return rate === null ? "—" : `${Math.round(rate * 100)}%`;
 }
 
+/**
+ * The parts of the system that arrived after the original KPIs: the prospect
+ * pipeline, the territory structure, and how much of the estate stands on a
+ * position a rep actually measured.
+ */
+export type OperationsSummary = {
+  sales_visits: number;
+  leads_open: number;
+  leads_converted: number;
+  /** Not range-scoped — a follow-up owed last month is still owed. */
+  follow_ups_due: number;
+  follow_ups_overdue: number;
+  stores_confirmed: number;
+  stores_guessed: number;
+  stores_unplaced: number;
+  territories_main: number;
+  territories_sub: number;
+};
+
+export async function fetchOperationsSummary(
+  supabase: SupabaseClient,
+  range: DateRange
+): Promise<OperationsSummary> {
+  const { data, error } = await callRpc(supabase, "dashboard_operations", {
+    p_from: range.from.toISOString(),
+    p_to: range.to.toISOString(),
+  });
+  if (error) throw new Error(error.message);
+  return data as OperationsSummary;
+}
+
 /** One rep's working day, averaged over the days they actually worked. */
 export type RepDayTimes = {
   rep_id: string;

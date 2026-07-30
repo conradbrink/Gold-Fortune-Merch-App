@@ -16,17 +16,20 @@ import { UnitsTrendChart } from "@/components/dashboard/units-trend-chart";
 import { DateRangePicker } from "@/components/dashboard/date-range-picker";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { rangeDays, rangeForPreset, type DateRange } from "@/lib/date-range";
 import {
   companyDayTimes,
   deltaPct,
   fetchDashboardSummary,
+  fetchOperationsSummary,
   fetchRepDayTimes,
   formatDuration,
   formatPct,
   formatTimeOfDay,
   type DashboardSummary,
+  type OperationsSummary,
   type RepDayTimes,
 } from "@/lib/dashboard";
 
@@ -35,6 +38,7 @@ export default function InsightsDashboardPage() {
   const [range, setRange] = useState<DateRange>(() => rangeForPreset("30d"));
   const [data, setData] = useState<DashboardSummary | null>(null);
   const [dayTimes, setDayTimes] = useState<RepDayTimes[]>([]);
+  const [ops, setOps] = useState<OperationsSummary | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -47,16 +51,19 @@ export default function InsightsDashboardPage() {
       // The working-day figures are a second one because they answer a
       // different question — when people work, not what they did — and are
       // grouped per rep rather than over the whole org.
-      const [summary, times] = await Promise.all([
+      const [summary, times, operations] = await Promise.all([
         fetchDashboardSummary(supabase, range),
         fetchRepDayTimes(supabase, range),
+        fetchOperationsSummary(supabase, range),
       ]);
       setData(summary);
       setDayTimes(times);
+      setOps(operations);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
       setData(null);
       setDayTimes([]);
+      setOps(null);
     } finally {
       setLoading(false);
     }
@@ -170,6 +177,10 @@ export default function InsightsDashboardPage() {
             />
           </div>
 
+          {/* Directly under the headline tiles: when the team works is read as
+              often as what they did, and it was buried at the foot of the page. */}
+          <WorkingDay rows={dayTimes} />
+
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
             <Card className="lg:col-span-2">
               <CardHeader>
@@ -258,7 +269,7 @@ export default function InsightsDashboardPage() {
             />
           </div>
 
-          <WorkingDay rows={dayTimes} />
+          {ops && <PipelineAndCoverage ops={ops} storesActive={data.stores_active} />}
         </>
       ) : (
         !error && (
@@ -269,6 +280,124 @@ export default function InsightsDashboardPage() {
           </Card>
         )
       )}
+    </div>
+  );
+}
+
+/**
+ * The subsystems that arrived after the original KPIs.
+ *
+ * Deliberately three separate questions rather than one row of numbers:
+ * prospecting is about new business, territories about how the estate is
+ * organised, and confirmed positions about whether any geofence verdict on the
+ * Activities page can be believed.
+ */
+function PipelineAndCoverage({
+  ops,
+  storesActive,
+}: {
+  ops: OperationsSummary;
+  storesActive: number;
+}) {
+  const confirmedPct =
+    storesActive > 0 ? Math.round((ops.stores_confirmed / storesActive) * 100) : null;
+
+  return (
+    <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Prospecting</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-1.5 text-sm">
+          <Line label="Sales calls in this period" value={ops.sales_visits} />
+          <Line label="Open in the pipeline" value={ops.leads_open} />
+          <Line label="Converted" value={ops.leads_converted} />
+          {/* Overdue is called out on its own because it is the only figure
+              here that is somebody's fault rather than somebody's progress. */}
+          <Line
+            label="Follow-ups due"
+            value={ops.follow_ups_due}
+            tone={ops.follow_ups_overdue > 0 ? "bad" : undefined}
+            note={
+              ops.follow_ups_overdue > 0
+                ? `${ops.follow_ups_overdue} overdue`
+                : undefined
+            }
+          />
+          <Link
+            href="/leads"
+            className="inline-block pt-1 text-xs text-primary hover:underline"
+          >
+            Open the Leads board →
+          </Link>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Territories</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-1.5 text-sm">
+          <Line label="Main territories" value={ops.territories_main} />
+          <Line label="Sub-territories" value={ops.territories_sub} />
+          <Line
+            label="Stores with no territory"
+            value={ops.stores_unplaced}
+            tone={ops.stores_unplaced > 0 ? "bad" : undefined}
+          />
+          <Link
+            href="/territories"
+            className="inline-block pt-1 text-xs text-primary hover:underline"
+          >
+            Manage territories →
+          </Link>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Confirmed positions</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-1.5 text-sm">
+          <p className="text-2xl font-bold tabular-nums text-foreground">
+            {confirmedPct === null ? "—" : `${confirmedPct}%`}
+          </p>
+          <Line label="Measured by a rep on site" value={ops.stores_confirmed} />
+          <Line label="Still on a geocoder's guess" value={ops.stores_guessed} />
+          <p className="pt-1 text-xs text-muted-foreground">
+            Every &ldquo;at store&rdquo; verdict rests on this. A guessed pin can
+            put a rep off site while they stand in the shop.
+          </p>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+function Line({
+  label,
+  value,
+  note,
+  tone,
+}: {
+  label: string;
+  value: number;
+  note?: string;
+  tone?: "bad";
+}) {
+  return (
+    <div className="flex items-baseline justify-between gap-3">
+      <span className="text-muted-foreground">{label}</span>
+      <span
+        className={
+          tone === "bad"
+            ? "font-semibold tabular-nums text-destructive"
+            : "font-semibold tabular-nums text-foreground"
+        }
+      >
+        {value}
+        {note && <span className="ml-1 text-xs font-normal">({note})</span>}
+      </span>
     </div>
   );
 }
