@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { ChevronDown, ChevronUp, GripVertical, Plus, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -39,6 +39,17 @@ export function CustomiseDashboard({
   error: string | null;
 }) {
   const [draft, setDraft] = useState<string[]>(layout);
+  /**
+   * The row being dragged, held in a ref because `drop` must not depend on a
+   * re-render having happened since `dragstart`.
+   *
+   * Reading it from state works only because a real drag spends a few hundred
+   * milliseconds firing `dragover` in between, which is long enough for React to
+   * commit. Dispatching `dragstart` and `drop` back to back reorders nothing —
+   * verified, before this ref existed. The state copy is kept purely for the
+   * drag-opacity style, which is allowed to be a frame late.
+   */
+  const dragIndexRef = useRef<number | null>(null);
   const [dragIndex, setDragIndex] = useState<number | null>(null);
   /** Whether the draft has been taken from `layout` for the current opening. */
   const [seeded, setSeeded] = useState(open);
@@ -68,15 +79,16 @@ export function CustomiseDashboard({
   }
 
   function handleDrop(targetIndex: number) {
-    if (dragIndex === null || dragIndex === targetIndex) {
-      setDragIndex(null);
-      return;
-    }
-    const next = [...draft];
-    const [moved] = next.splice(dragIndex, 1);
-    next.splice(targetIndex, 0, moved);
+    const from = dragIndexRef.current;
+    dragIndexRef.current = null;
     setDragIndex(null);
-    setDraft(next);
+    if (from === null || from === targetIndex) return;
+    setDraft((prev) => {
+      const next = [...prev];
+      const [moved] = next.splice(from, 1);
+      next.splice(targetIndex, 0, moved);
+      return next;
+    });
   }
 
   return (
@@ -117,10 +129,16 @@ export function CustomiseDashboard({
               <div
                 key={id}
                 draggable
-                onDragStart={() => setDragIndex(index)}
+                onDragStart={() => {
+                  dragIndexRef.current = index;
+                  setDragIndex(index);
+                }}
                 onDragOver={(e) => e.preventDefault()}
                 onDrop={() => handleDrop(index)}
-                onDragEnd={() => setDragIndex(null)}
+                onDragEnd={() => {
+                  dragIndexRef.current = null;
+                  setDragIndex(null);
+                }}
                 className={`flex items-center gap-2 rounded-md border border-border bg-card px-2 py-1.5 ${
                   dragIndex === index ? "opacity-50" : ""
                 }`}

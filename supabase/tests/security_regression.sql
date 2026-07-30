@@ -1,9 +1,10 @@
 -- Security regression suite.
 --
 -- Every check here corresponds to a hole that was open on 29 or 30 July 2026, or
--- to an invariant a new table has to hold. **22 checks** — 1-18 are the 29 July
--- audit, 19-20 the `territory_reps` tenancy gap found in review on 30 July, and
--- 21-22 the per-user `dashboard_layouts` added the same day.
+-- to an invariant a new table has to hold. **24 checks** — 1-18 are the 29 July
+-- audit; 19-20 the `territory_reps` tenancy gap, 21-22 the per-user
+-- `dashboard_layouts`, and 23-24 `territories_enforce_shape` ignoring dependents
+-- on UPDATE, all found in review on 30 July.
 -- They are written as attacks, not as assertions
 -- about policy text, because the manager-escalation bug came from a policy that
 -- read correctly for weeks: `profiles_update` said `id = auth.uid()`, which is
@@ -25,6 +26,7 @@ declare
   v_org uuid; v_mgr uuid; v_rep uuid; v_rep2 uuid; v_store uuid;
   v_visit uuid; v_n int; v_r jsonb; v_fail text := '';
   v_other_org uuid; v_other_terr uuid; v_terr uuid;
+  v_shape_main uuid; v_shape_other uuid;
 
 begin
   select id, org_id into v_mgr, v_org from public.profiles where role = 'manager' limit 1;
@@ -228,6 +230,15 @@ begin
   -- only table keyed on the user rather than the organisation — so being in the
   -- same org must not be enough to reach it.
   reset role;
+  -- Clear the fixture users' real rows first. `user_id` is the primary key, so
+  -- without this the insert below raises `duplicate key` the moment any of these
+  -- people has actually customised their dashboard: the check-21 insert is
+  -- outside a handler and would abort the entire suite reporting nothing, and
+  -- check 22's is inside one and would be reported as a regression that is not
+  -- there. Safe to delete — the whole file runs in a transaction that rolls back,
+  -- so their real layouts come straight back.
+  delete from public.dashboard_layouts where user_id in (v_mgr, v_rep, v_rep2);
+
   insert into public.dashboard_layouts (user_id, org_id, widget_ids)
   values (v_rep, v_org, array['oos_rate']);
 
@@ -257,6 +268,59 @@ begin
     if v_n <> 1 then v_fail := v_fail || '22. could not read back own layout' || E'\n'; end if;
   exception when others then
     v_fail := v_fail || '22. could not save own layout: ' || sqlerrm || E'\n'; end;
+
+  ------------------------------------------------- territory shape under UPDATE
+
+  -- Confirmed by exploit on 30 July: `territories_enforce_shape` validated only
+  -- the row being written, so an UPDATE could create states the same triggers
+  -- refuse on INSERT — a main territory with 75 stores and a sub was turned into
+  -- a sub-territory, and a main was moved to another organisation leaving its
+  -- stores pointing across the tenancy line. Closed by
+  -- `20260730170000_territories_shape_guards_dependents.sql`.
+  --
+  -- Built self-contained rather than reusing the estate, so the check does not
+  -- depend on which territories happen to have dependents.
+  reset role;
+  insert into public.territories (org_id, name) values (v_org, 'Regression Main')
+    returning id into v_shape_main;
+  insert into public.territories (org_id, name, parent_id)
+    values (v_org, 'Regression Sub', v_shape_main);
+  select id into v_shape_other from public.territories
+   where org_id = v_org and parent_id is null and id <> v_shape_main limit 1;
+
+  perform set_config('request.jwt.claims',
+    json_build_object('sub', v_mgr, 'role', 'authenticated')::text, true);
+  set local role authenticated;
+
+  -- 23. A territory something depends on cannot be restructured out from under it.
+  begin
+    update public.territories set parent_id = v_shape_other where id = v_shape_main;
+    get diagnostics v_n = row_count;
+    if v_n > 0 then
+      v_fail := v_fail || '23. a main with a sub-territory could become a sub' || E'\n';
+    end if;
+  exception when others then null; end;
+
+  begin
+    update public.territories set org_id = gen_random_uuid() where id = v_shape_main;
+    get diagnostics v_n = row_count;
+    if v_n > 0 then
+      v_fail := v_fail || '23b. a main with dependents could change organisation' || E'\n';
+    end if;
+  exception when others then null; end;
+
+  -- 24. But renaming and deactivating — the only updates the UI makes — must
+  --     still work. See check 4.
+  begin
+    update public.territories set name = 'Regression Main renamed', active = false
+     where id = v_shape_main;
+    get diagnostics v_n = row_count;
+    if v_n <> 1 then
+      v_fail := v_fail || '24. a territory could NOT be renamed or deactivated' || E'\n';
+    end if;
+  exception when others then
+    v_fail := v_fail || '24. a territory could NOT be renamed or deactivated: '
+              || sqlerrm || E'\n'; end;
 
   reset role;
 

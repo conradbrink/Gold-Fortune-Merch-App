@@ -7,6 +7,7 @@ import { CustomiseDashboard } from "@/components/dashboard/customise-dashboard";
 import {
   DEFAULT_LAYOUT,
   WIDGET_IDS,
+  WIDGET_SOURCES,
   findWidget,
   type WidgetData,
   type WidgetSource,
@@ -133,18 +134,36 @@ export default function InsightsDashboardPage() {
     let cancelled = false;
     (async () => {
       try {
-        const [saved, org] = await Promise.all([
+        // Settled independently: these answer unrelated questions, and with
+        // `Promise.all` an org-lookup failure rejected the pair and forced the
+        // default layout even though the layout had been read perfectly well —
+        // the exact silent-revert-then-overwrite the catch below warns about.
+        const [saved, org] = await Promise.allSettled([
           fetchLayout(supabase),
           fetchOrgId(supabase),
         ]);
         if (cancelled) return;
-        setOrgId(org);
-        setLayout(reconcileLayout(saved, WIDGET_IDS, DEFAULT_LAYOUT));
+
+        // Only blocks saving, which `handleSaveLayout` reports if it comes to it.
+        if (org.status === "fulfilled") setOrgId(org.value);
+
+        if (saved.status === "fulfilled") {
+          setLayout(reconcileLayout(saved.value, WIDGET_IDS, DEFAULT_LAYOUT));
+        } else {
+          // The default is a safe thing to show, but say why it is what you are
+          // looking at — otherwise a customised dashboard silently reverts and
+          // the next save overwrites the real one.
+          setLayout(DEFAULT_LAYOUT);
+          setLayoutError(
+            `Your saved layout could not be read, so this is the default: ${
+              saved.reason instanceof Error
+                ? saved.reason.message
+                : String(saved.reason)
+            }`
+          );
+        }
       } catch (e) {
         if (cancelled) return;
-        // The default is a safe thing to show, but say why it is what you are
-        // looking at — otherwise a customised dashboard silently reverts and the
-        // next save overwrites the real one.
         setLayout(DEFAULT_LAYOUT);
         setLayoutError(
           `Your saved layout could not be read, so this is the default: ${
@@ -255,7 +274,9 @@ export default function InsightsDashboardPage() {
             {/* Cards whose own source arrived are still shown, so this must not
                 claim the whole dashboard is gone when it is not. */}
             <p className="font-medium text-destructive">
-              {failedSources.size === 3
+              {/* Against the number of sources the catalogue actually has, so
+                  the wording stays true if a fourth is ever added. */}
+              {failedSources.size === WIDGET_SOURCES.length
                 ? "Could not load the dashboard"
                 : "Part of the dashboard could not be loaded"}
             </p>

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import {
   ArrowLeft,
@@ -29,6 +29,7 @@ import type { Tables } from "@/lib/supabase/types";
 import {
   fieldTypeLabels,
   findMetric,
+  metricLabel,
   metricMismatch,
   metricsForFieldType,
 } from "@/lib/metrics";
@@ -73,6 +74,8 @@ export default function FormDetailPage() {
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [saving, setSaving] = useState(false);
+  /** Authoritative during a drag; the state copy only drives the opacity. */
+  const dragIndexRef = useRef<number | null>(null);
   const [dragIndex, setDragIndex] = useState<number | null>(null);
   const [addError, setAddError] = useState<string | null>(null);
   const [rowError, setRowError] = useState<string | null>(null);
@@ -227,14 +230,18 @@ export default function FormDetailPage() {
   }
 
   function handleDrop(targetIndex: number) {
-    if (dragIndex === null || dragIndex === targetIndex) {
-      setDragIndex(null);
-      return;
-    }
-    const next = [...fields];
-    const [moved] = next.splice(dragIndex, 1);
-    next.splice(targetIndex, 0, moved);
+    // From the ref, not from state: `drop` must not depend on a re-render having
+    // happened since `dragstart`. It works in practice only because a real drag
+    // spends a few hundred milliseconds firing `dragover` first, which is long
+    // enough for React to commit — dispatch the two events back to back and this
+    // reorders nothing.
+    const from = dragIndexRef.current;
+    dragIndexRef.current = null;
     setDragIndex(null);
+    if (from === null || from === targetIndex) return;
+    const next = [...fields];
+    const [moved] = next.splice(from, 1);
+    next.splice(targetIndex, 0, moved);
     persistOrder(next);
   }
 
@@ -498,12 +505,17 @@ function MetricPicker({
     if (f.metric_key && f.id !== currentFieldId) heldBy.set(f.metric_key, f.label);
   }
 
-  if (available.length === 0) {
+  // A key can be stored that this field type cannot reach: the type was changed
+  // out of band, or the key predates this catalogue. It still has to appear, or
+  // the select shows "Nothing" over a link that exists — misreporting the stored
+  // state, and warning about a value with no matching option. It also has to
+  // remain clearable, which is the only way to remove a dead link.
+  const unreachable = value !== "" && !available.some((m) => m.key === value);
+
+  if (available.length === 0 && !unreachable) {
     return (
       <p className="text-xs text-muted-foreground">
-        {selected
-          ? `Measures ${selected.label} — but a ${fieldTypeLabels[fieldType] ?? fieldType} answer cannot reach it.`
-          : "No analytics read this kind of answer."}
+        No analytics read this kind of answer.
       </p>
     );
   }
@@ -515,6 +527,12 @@ function MetricPicker({
       </Label>
       <NativeSelect id={id} value={value} onChange={(e) => onChange(e.target.value)}>
         <option value="">Nothing — not on the dashboard</option>
+        {unreachable && (
+          <option value={value}>
+            {metricLabel(value)} — cannot be read from a{" "}
+            {fieldTypeLabels[fieldType] ?? fieldType} answer
+          </option>
+        )}
         {available.map((metric) => {
           const taken = heldBy.get(metric.key);
           return (
@@ -538,7 +556,18 @@ function MetricPicker({
         </p>
       )}
 
-      {!selected && (
+      {/* A key that is stored but not in this catalogue — added to the database
+          constraint without being added here. Not "measures nothing": it measures
+          something nothing knows how to read, and setting it to Nothing is how
+          you clear it. */}
+      {!selected && unreachable && (
+        <p className="text-xs text-destructive">
+          This question is linked to “{value}”, which the analytics do not
+          recognise. Set it to Nothing to clear the link.
+        </p>
+      )}
+
+      {!selected && !unreachable && (
         <p className="text-xs text-muted-foreground">
           A question that measures nothing is still asked and still stored — it
           just never appears on the dashboard.

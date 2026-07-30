@@ -481,28 +481,24 @@ export const WIDGETS: WidgetDefinition[] = [
   },
 ];
 
+export const WIDGET_IDS = WIDGETS.map((w) => w.id);
+
 /**
  * The layout somebody sees before they have customised anything: the dashboard
  * exactly as it was when it was a fixed page.
+ *
+ * Derived rather than restated. It was a second hand-written list of the same
+ * fourteen ids, and a new widget added to `WIDGETS` but forgotten here would have
+ * been missing from every uncustomised dashboard with nothing to show it was
+ * meant to be there. `WIDGETS` is ordered to be read top to bottom for this
+ * reason — registry order *is* the default layout.
  */
-export const DEFAULT_LAYOUT: string[] = [
-  "visits_completed",
-  "store_coverage",
-  "oos_rate",
-  "planogram",
-  "working_day",
-  "visits_trend",
-  "coverage_donut",
-  "forms_submitted",
-  "missed_visits",
-  "active_reps",
-  "unscheduled_visits",
-  "prospecting",
-  "territories",
-  "confirmed_positions",
-];
+export const DEFAULT_LAYOUT: string[] = [...WIDGET_IDS];
 
-export const WIDGET_IDS = WIDGETS.map((w) => w.id);
+/** Every distinct source the catalogue depends on. */
+export const WIDGET_SOURCES: WidgetSource[] = [
+  ...new Set(WIDGETS.map((w) => w.source)),
+];
 
 const BY_ID = new Map(WIDGETS.map((w) => [w.id, w]));
 
