@@ -15,36 +15,71 @@ const COLLAPSED_KEY = "gf.sidebarCollapsed";
 export function SidebarContent({
   onNavigate,
   collapsed = false,
+  onToggleCollapse,
 }: {
   onNavigate?: () => void;
   collapsed?: boolean;
+  /** Omitted by the mobile drawer, which has a close button of its own. */
+  onToggleCollapse?: () => void;
 }) {
   const pathname = usePathname();
 
+  const toggle = onToggleCollapse && (
+    <button
+      type="button"
+      onClick={onToggleCollapse}
+      aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+      aria-expanded={!collapsed}
+      title={collapsed ? "Expand" : "Collapse"}
+      className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-sidebar-foreground/60 transition-colors hover:bg-sidebar-accent/60 hover:text-sidebar-accent-foreground"
+    >
+      {collapsed ? (
+        <PanelLeftOpen className="h-4 w-4" />
+      ) : (
+        <PanelLeftClose className="h-4 w-4" />
+      )}
+    </button>
+  );
+
   return (
     <>
+      {/* Collapsed there is no room for the mark and the control side by side
+          at 64px, so the control takes the header and the mark steps aside —
+          the tab already carries the branding. */}
       <div
         className={cn(
           "flex h-16 items-center gap-2",
           collapsed ? "justify-center px-2" : "px-5"
         )}
       >
-        <Image
-          src="/logo.png"
-          alt="Gold Fortune"
-          width={32}
-          height={32}
-          className="h-8 w-8 shrink-0 rounded-md object-cover"
-        />
         {!collapsed && (
-          <div className="flex flex-col leading-none">
-            <span className="text-sm font-bold tracking-tight text-sidebar-foreground">
+          <Image
+            src="/logo.png"
+            alt="Gold Fortune"
+            width={32}
+            height={32}
+            className="h-8 w-8 shrink-0 rounded-md object-cover"
+          />
+        )}
+        {!collapsed && (
+          <div className="flex min-w-0 flex-col leading-none">
+            <span className="truncate text-sm font-bold tracking-tight text-sidebar-foreground">
               Gold Fortune
             </span>
             <span className="text-[11px] font-medium text-muted-foreground">
               Merchandising
             </span>
           </div>
+        )}
+        {toggle && <div className={cn(!collapsed && "ml-auto")}>{toggle}</div>}
+        {collapsed && !toggle && (
+          <Image
+            src="/logo.png"
+            alt="Gold Fortune"
+            width={32}
+            height={32}
+            className="h-8 w-8 shrink-0 rounded-md object-cover"
+          />
         )}
       </div>
       <nav className="flex-1 space-y-0.5 overflow-y-auto px-3 py-2">
@@ -129,27 +164,7 @@ export function SidebarNav() {
         collapsed ? "w-16" : "w-56"
       )}
     >
-      <SidebarContent collapsed={collapsed} />
-      <div className="border-t border-sidebar-border p-2">
-        <button
-          type="button"
-          onClick={toggle}
-          aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
-          aria-expanded={!collapsed}
-          title={collapsed ? "Expand" : "Collapse"}
-          className={cn(
-            "flex w-full items-center gap-3 rounded-md py-2 text-sm font-medium text-sidebar-foreground/70 transition-colors hover:bg-sidebar-accent/60 hover:text-sidebar-accent-foreground",
-            collapsed ? "justify-center px-2" : "px-3"
-          )}
-        >
-          {collapsed ? (
-            <PanelLeftOpen className="h-4 w-4 shrink-0" />
-          ) : (
-            <PanelLeftClose className="h-4 w-4 shrink-0" />
-          )}
-          {!collapsed && "Collapse"}
-        </button>
-      </div>
+      <SidebarContent collapsed={collapsed} onToggleCollapse={toggle} />
     </aside>
   );
 }
