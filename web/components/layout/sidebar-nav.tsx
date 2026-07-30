@@ -171,7 +171,11 @@ export function SidebarNav() {
   // and React would complain about the mismatch.
   const [collapsed, setCollapsed] = useState(false);
 
+  // Suppressed, not obeyed — for the reason the comment above gives: reading
+  // localStorage during render is exactly the hydration mismatch this effect
+  // exists to avoid, so a lazy initialiser is not available here.
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setCollapsed(window.localStorage.getItem(COLLAPSED_KEY) === "true");
   }, []);
 

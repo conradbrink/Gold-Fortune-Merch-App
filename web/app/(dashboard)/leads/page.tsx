@@ -64,7 +64,12 @@ export default function LeadsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // The mount fetch. `load` sets `loading` synchronously, which the rule reports
+  // as an error, and it is right that this is not synchronising with an external
+  // system — but the first render is the skeleton either way, and there is no
+  // cascade. Suppressed here rather than left to fail a lint-gated build.
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     load();
   }, [load]);
 

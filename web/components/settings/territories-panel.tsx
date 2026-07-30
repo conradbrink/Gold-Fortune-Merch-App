@@ -90,7 +90,11 @@ export function TerritoriesPanel() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Mount fetch — same reasoning as the sibling pages: the panel has nothing
+  // external to synchronise with, the first render is the skeleton regardless,
+  // and a lint-gated build should not break over it.
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     load();
   }, [load]);
 

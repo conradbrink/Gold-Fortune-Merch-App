@@ -437,11 +437,18 @@ export function CoveragePlanner({ onChanged }: { onChanged?: () => void }) {
                   }}
                 >
                   <option value="">Out of any territory</option>
-                  {tree.map(({ main }) => (
-                    <option key={main.id} value={main.id}>
-                      {main.name}
-                    </option>
-                  ))}
+                  {/* Active only. Deactivating a territory means it "stops being
+                      offered for new work" (see setTerritoryActive), and moving
+                      stores into one is new work. The *filter* dropdown above
+                      still lists inactive territories, because stores already
+                      sitting in a retired one have to stay findable. */}
+                  {tree
+                    .filter(({ main }) => main.active)
+                    .map(({ main }) => (
+                      <option key={main.id} value={main.id}>
+                        {main.name}
+                      </option>
+                    ))}
                 </NativeSelect>
               </div>
 
@@ -458,7 +465,8 @@ export function CoveragePlanner({ onChanged }: { onChanged?: () => void }) {
                     <option value="">No sub-territory</option>
                     {tree
                       .find((t) => t.main.id === actionMain)
-                      ?.subs.map((sub) => (
+                      ?.subs.filter((sub) => sub.active)
+                      .map((sub) => (
                         <option key={sub.id} value={sub.id}>
                           {sub.name}
                         </option>

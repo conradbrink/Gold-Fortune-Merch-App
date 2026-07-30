@@ -60,14 +60,42 @@ void main() {
   });
 
   group('localDate', () {
-    test('reports the local day, not the UTC one', () {
+    test('reads the day off the value it was given', () {
       // Botswana is UTC+2, so anything before 02:00 local is the previous day
       // in UTC. A follow-up set late in the evening must not slide backwards.
-      final lateEvening = DateTime(2026, 7, 30, 23, 30);
-      expect(localDate(lateEvening), '2026-07-30');
+      expect(localDate(DateTime(2026, 7, 30, 23, 30)), '2026-07-30');
+      expect(localDate(DateTime(2026, 7, 30, 0, 30)), '2026-07-30');
+    });
 
-      final earlyMorning = DateTime(2026, 7, 30, 0, 30);
-      expect(localDate(earlyMorning), '2026-07-30');
+    // The test above was the only guard against the bug this function exists to
+    // prevent, and it only catches it in some timezones: on CAT+0200 a
+    // `toUtc()`-first implementation fails it, but under `TZ=UTC` — which is what
+    // CI runs — every assertion still passes, because in UTC no instant has a
+    // different local and UTC day. Both were verified by sabotaging the
+    // implementation and running it in each zone.
+    //
+    // So the divergence is asserted explicitly, on an instant chosen to straddle
+    // midnight whichever side of UTC the machine sits, and skipped rather than
+    // silently vacuous when there is no offset to straddle.
+    test('does not convert to UTC first', () {
+      final offset = DateTime.now().timeZoneOffset;
+      if (offset == Duration.zero) {
+        markTestSkipped(
+          'needs a non-UTC zone: in UTC the local and UTC day always agree',
+        );
+        return;
+      }
+
+      // Ahead of UTC, early morning is still yesterday there; behind it, late
+      // evening is already tomorrow.
+      final straddling = offset.isNegative
+          ? DateTime(2026, 7, 30, 23, 30)
+          : DateTime(2026, 7, 30, 0, 30);
+
+      // Proves the fixture really does straddle, so the assertion below means
+      // something rather than passing by coincidence.
+      expect(straddling.toUtc().day, isNot(30));
+      expect(localDate(straddling), '2026-07-30');
     });
 
     test('pads months and days', () {

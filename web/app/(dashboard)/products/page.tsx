@@ -101,8 +101,14 @@ export default function ProductsPage() {
   }, [load]);
 
   // Seeded from `?q=` so the header search lands here already filtered.
+  //
+  // After mount on purpose, and the rule is suppressed rather than obeyed: the
+  // query string is browser-only state, so a lazy `useState` initialiser would
+  // read it on the client and not on the server and the two renders would
+  // disagree. There is one setState, on mount, and no cascade.
   useEffect(() => {
     const q = new URLSearchParams(window.location.search).get("q");
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     if (q) setSearch(q);
   }, []);
 

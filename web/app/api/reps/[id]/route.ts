@@ -139,10 +139,26 @@ async function changeEmail(admin: SupabaseClient, id: string, raw: string) {
     // known. Gating the whole branch on `previous` reported a failed profile
     // write as success whenever `getUserById` came back empty.
     if (previous) {
-      await admin.auth.admin.updateUserById(id, {
+      const { error: rollbackError } = await admin.auth.admin.updateUserById(id, {
         email: previous,
         email_confirm: true,
       });
+      // "Rolled back" has to be true when it is said. If the compensating write
+      // failed too, the login and the dashboard now disagree — which is the whole
+      // thing this route exists to prevent — and the manager is the only one who
+      // can put it right, so they have to be told which address actually works.
+      if (rollbackError) {
+        return Response.json(
+          {
+            error:
+              `The profile could not be updated (${profileError.message}) and the ` +
+              `sign-in address could not be put back (${rollbackError.message}). ` +
+              `This rep now signs in with ${email} while the directory still shows ` +
+              `${previous}.`,
+          },
+          { status: 500 }
+        );
+      }
       return Response.json(
         { error: `Email change rolled back: ${profileError.message}` },
         { status: 500 }

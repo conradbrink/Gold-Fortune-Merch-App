@@ -75,6 +75,24 @@ class UnscheduledChooserScreen extends ConsumerWidget {
                 ],
               );
             },
+            // An unreadable cache must not look like "nothing is open". The
+            // whole point of this section is to stop a rep starting a second
+            // call on a shop they already have one open for, and collapsing to
+            // nothing is exactly how that would happen — silently.
+            error: (e, _) => Card(
+              margin: const EdgeInsets.only(top: 24),
+              child: ListTile(
+                leading: const Icon(Icons.error_outline, color: AppColors.danger),
+                title: const Text('Could not read your open calls'),
+                subtitle: const Text(
+                  'You may already have one open for this shop.',
+                ),
+                trailing: TextButton(
+                  onPressed: () => ref.invalidate(myLeadsProvider),
+                  child: const Text('Retry'),
+                ),
+              ),
+            ),
             orElse: () => const SizedBox.shrink(),
           ),
         ],

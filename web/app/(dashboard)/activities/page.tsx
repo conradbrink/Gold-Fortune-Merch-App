@@ -311,8 +311,12 @@ export default function ActivitiesPage() {
                         </div>
                         <div className="min-w-0">
                           <div className="truncate font-medium text-foreground">
+                            {/* "Sales call" everywhere: the page description,
+                                the row title attribute and the dialog's own
+                                panel heading all say call, and one thing with
+                                two names reads as two things. */}
                             {isSales
-                              ? "Sales visit"
+                              ? "Sales call"
                               : isIn
                                 ? "Checked in"
                                 : "Checked out"}
@@ -415,7 +419,7 @@ function ActivityDialog({
             <p className="-mt-2 text-sm text-muted-foreground">
               {event.rep_name ?? "Unassigned"} ·{" "}
               {event.kind === "sales_visit"
-                ? "Sales visit"
+                ? "Sales call"
                 : event.kind === "check_in"
                   ? "Checked in"
                   : "Checked out"}{" "}

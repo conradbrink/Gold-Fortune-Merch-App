@@ -351,7 +351,15 @@ export default function FormsPage() {
                 {busy ? "Deleting…" : "Delete permanently"}
               </Button>
             )}
-            <Button variant="outline" onClick={() => setPending(null)}>
+            {/* Disabled while the mutation is out: closing mid-request nulls
+                `pending`, and a failure afterwards would set `error` on a dialog
+                that is no longer open — so the manager would never learn the
+                removal did not happen. */}
+            <Button
+              variant="outline"
+              disabled={busy}
+              onClick={() => setPending(null)}
+            >
               Cancel
             </Button>
           </DialogFooter>
