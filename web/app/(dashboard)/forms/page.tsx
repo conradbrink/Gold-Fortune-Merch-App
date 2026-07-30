@@ -281,6 +281,11 @@ export default function FormsPage() {
       <Dialog
         open={pending !== null}
         onOpenChange={(o) => {
+          // Ignored while the mutation is out. Disabling the Cancel button shut
+          // one door and left Escape and the backdrop open — both land here, and
+          // clearing `pending` throws away the state a later failure needs to be
+          // reported on. Guard the state change, not the control.
+          if (busy) return;
           if (!o) {
             setPending(null);
             setError(null);

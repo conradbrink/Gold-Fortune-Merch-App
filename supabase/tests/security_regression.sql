@@ -1,19 +1,29 @@
 -- Security regression suite.
 --
 -- Every check here corresponds to a hole that was open on 29 or 30 July 2026, or
--- to an invariant a new table has to hold. **25 checks** — 1-18 are the 29 July
+-- to an invariant a new table has to hold. **26 checks** — 1-18 are the 29 July
 -- audit; 19-20 the `territory_reps` tenancy gap, 21-22 the per-user
 -- `dashboard_layouts`, 23-24 `territories_enforce_shape` ignoring dependents on
--- UPDATE, and 25 the territory-depth invariant, all found in review on 30 July.
+-- UPDATE, and 25-26 the territory depth and tenancy invariants, all found in
+-- review on 30 July.
 --
--- Two rules the fixtures learned the hard way, both from false readings: **create
--- fixtures, never query tenant data for them** (a real saved layout collided with
--- check 21's insert; a tenant with no root territory made check 20 skip itself),
--- and every attack gets a **control** asserting the legitimate case still works.
--- They are written as attacks, not as assertions
--- about policy text, because the manager-escalation bug came from a policy that
--- read correctly for weeks: `profiles_update` said `id = auth.uid()`, which is
--- true and sounds right, and permitted a rep to set their own role.
+-- 25 and 26 are invariants about the *data*, not attacks: the races that could
+-- produce those states need two interleaved sessions to stage, which one
+-- connection cannot do (see `territory_reparent_race.sh`). They catch the result
+-- however it arose.
+--
+-- The checks are written as attacks, not as assertions about policy text, because
+-- the manager-escalation bug came from a policy that read correctly for weeks:
+-- `profiles_update` said `id = auth.uid()`, which is true and sounds right, and
+-- permitted a rep to set their own role.
+--
+-- Two rules the fixtures learned the hard way, both from false readings:
+--
+--   * **Create fixtures; never query tenant data for them.** A real saved layout
+--     collided with check 21's insert and was reported as a regression; a tenant
+--     with no root territory made check 20 skip itself in silence.
+--   * **Every attack gets a control** asserting the legitimate case still works —
+--     a lock that also breaks real use is one the next person removes in a hurry.
 --
 -- HOW TO RUN
 --
@@ -349,6 +359,23 @@ begin
   if v_n > 0 then
     v_fail := v_fail || format(
       '25. %s territory/ies sit under a parent that is itself a sub-territory (cycle or three levels)%s',
+      v_n, E'\n');
+  end if;
+
+  -- 26. No sub-territory belongs to a different organisation than its parent.
+  --
+  -- The companion to 25, and for the same reason: a cross-org pair can be
+  -- committed by two transactions moving past each other (one reparenting, one
+  -- changing `org_id`), which needs two sessions to stage. This catches the
+  -- result, which is the thing that actually matters — a sub-territory on the
+  -- wrong side of the tenancy line.
+  select count(*) into v_n
+    from public.territories t
+    join public.territories p on p.id = t.parent_id
+   where t.org_id <> p.org_id;
+  if v_n > 0 then
+    v_fail := v_fail || format(
+      '26. %s sub-territory/ies belong to a different organisation than their parent%s',
       v_n, E'\n');
   end if;
 
