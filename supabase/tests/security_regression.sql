@@ -196,8 +196,12 @@ begin
     returning id into v_other_org;
   insert into public.territories (org_id, name) values (v_other_org, 'Regression Foreign Territory')
     returning id into v_other_terr;
-  select id into v_terr from public.territories
-   where org_id = v_org and parent_id is null limit 1;
+  -- Created, not found. The header promises only a manager, two reps and a
+  -- store, so querying the estate for a root territory made check 20 skip itself
+  -- silently on a tenant that has none — a check that reports nothing is worse
+  -- than one that fails.
+  insert into public.territories (org_id, name) values (v_org, 'Regression Own Territory')
+    returning id into v_terr;
 
   perform set_config('request.jwt.claims',
     json_build_object('sub', v_mgr, 'role', 'authenticated')::text, true);
@@ -211,18 +215,16 @@ begin
   exception when others then null; end;
 
   -- 20. Legitimate coverage must still be insertable — see check 4.
-  if v_terr is not null then
-    begin
-      insert into public.territory_reps (org_id, territory_id, rep_id)
-      values (v_org, v_terr, v_rep);
-      get diagnostics v_n = row_count;
-      if v_n <> 1 then
-        v_fail := v_fail || '20. a manager could NOT assign coverage in their own org' || E'\n';
-      end if;
-    exception when others then
-      v_fail := v_fail || '20. a manager could NOT assign coverage in their own org: '
-                || sqlerrm || E'\n'; end;
-  end if;
+  begin
+    insert into public.territory_reps (org_id, territory_id, rep_id)
+    values (v_org, v_terr, v_rep);
+    get diagnostics v_n = row_count;
+    if v_n <> 1 then
+      v_fail := v_fail || '20. a manager could NOT assign coverage in their own org' || E'\n';
+    end if;
+  exception when others then
+    v_fail := v_fail || '20. a manager could NOT assign coverage in their own org: '
+              || sqlerrm || E'\n'; end;
 
   --------------------------------------------------------- dashboard layouts
 
@@ -285,8 +287,12 @@ begin
     returning id into v_shape_main;
   insert into public.territories (org_id, name, parent_id)
     values (v_org, 'Regression Sub', v_shape_main);
-  select id into v_shape_other from public.territories
-   where org_id = v_org and parent_id is null and id <> v_shape_main limit 1;
+  -- Also created rather than found. With no second root in the estate this was
+  -- null, so check 23's update became `parent_id = null` — which the trigger
+  -- correctly allows, since nothing changes — and the check then reported the
+  -- vulnerability as present. A false alarm, from a fixture that was not there.
+  insert into public.territories (org_id, name) values (v_org, 'Regression Other Root')
+    returning id into v_shape_other;
 
   perform set_config('request.jwt.claims',
     json_build_object('sub', v_mgr, 'role', 'authenticated')::text, true);

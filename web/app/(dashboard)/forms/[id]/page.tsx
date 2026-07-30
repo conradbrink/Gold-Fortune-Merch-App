@@ -381,10 +381,19 @@ export default function FormDetailPage() {
           <Card
             key={field.id}
             draggable
-            onDragStart={() => setDragIndex(index)}
+            onDragStart={() => {
+              // The ref is what `handleDrop` reads; the state only drives the
+              // opacity. Setting one without the other is how this reorder
+              // became a silent no-op.
+              dragIndexRef.current = index;
+              setDragIndex(index);
+            }}
             onDragOver={(e) => e.preventDefault()}
             onDrop={() => handleDrop(index)}
-            onDragEnd={() => setDragIndex(null)}
+            onDragEnd={() => {
+              dragIndexRef.current = null;
+              setDragIndex(null);
+            }}
             className={dragIndex === index ? "opacity-50" : undefined}
           >
             <CardContent className="flex items-center justify-between gap-2 py-3">

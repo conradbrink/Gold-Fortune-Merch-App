@@ -161,8 +161,11 @@ export default function ActivitiesPage() {
             Activities
           </h1>
           <p className="text-sm text-muted-foreground">
-            Every check-in, check-out and sales call across your team, with the
-            store location confirmed.
+            {/* A sales call has no store row and no geofence, so it has nothing
+                to confirm against — the old wording promised a verdict for every
+                row on the page, including the ones that cannot have one. */}
+            Every check-in, check-out and sales call across your team, with
+            location and store verification where there is a store to verify.
           </p>
         </div>
         <Button

@@ -37,6 +37,27 @@ function sanitise(term: string): string {
 }
 
 /**
+ * A query that resolves whether it succeeded or not.
+ *
+ * PostgREST reports a refusal as `.error` on a resolved promise, but a transport
+ * failure rejects — and one rejection in a `Promise.all` loses every sibling
+ * result. Turning the rejection into the same `{ data, error }` shape keeps the
+ * results that did arrive and leaves one way to report the ones that did not.
+ */
+async function settled<T extends { data: unknown; error: unknown }>(
+  query: PromiseLike<T>
+): Promise<T | { data: null; error: { message: string } }> {
+  try {
+    return await query;
+  } catch (e) {
+    return {
+      data: null,
+      error: { message: e instanceof Error ? e.message : String(e) },
+    };
+  }
+}
+
+/**
  * @param revealed Shows the box below the `sm` breakpoint, where it is hidden by
  *   default because the header has no room for it. The top bar's mobile search
  *   button drives this — before it did, that button was inert.
@@ -77,32 +98,44 @@ export function GlobalSearch({ revealed = false }: { revealed?: boolean }) {
       setBusy(true);
       const like = `%${q}%`;
       try {
+        // Each source is settled on its own. `Promise.all` rejected the whole
+        // batch on one transport failure, and the catch below then cleared the
+        // hits — throwing away four sets of results that had arrived, and
+        // bypassing the partial-error row built for exactly this case. A refusal
+        // (`.error`) and a rejection now arrive in the same shape, so one code
+        // path reports both.
         const [stores, reps, products, forms, files] = await Promise.all([
-          supabase
-            .from("stores")
-            .select("id, name, city")
-            .eq("active", true)
-            .or(`name.ilike.${like},city.ilike.${like}`)
-            .limit(5),
-          supabase
-            .from("profiles")
-            .select("id, full_name, email")
-            // Reps only: a hit here navigates to /representatives?q=…, and the
-            // directory lists reps, so a manager match led to an empty page.
-            .eq("role", "rep")
-            .or(`full_name.ilike.${like},email.ilike.${like}`)
-            .limit(5),
-          supabase
-            .from("products")
-            .select("id, name, brand, sku_code")
-            .or(`name.ilike.${like},brand.ilike.${like},sku_code.ilike.${like}`)
-            .limit(5),
-          supabase
-            .from("form_templates")
-            .select("id, name")
-            .ilike("name", like)
-            .limit(5),
-          supabase.from("files").select("id, name").ilike("name", like).limit(5),
+          settled(
+            supabase
+              .from("stores")
+              .select("id, name, city")
+              .eq("active", true)
+              .or(`name.ilike.${like},city.ilike.${like}`)
+              .limit(5)
+          ),
+          settled(
+            supabase
+              .from("profiles")
+              .select("id, full_name, email")
+              // Reps only: a hit here navigates to /representatives?q=…, and the
+              // directory lists reps, so a manager match led to an empty page.
+              .eq("role", "rep")
+              .or(`full_name.ilike.${like},email.ilike.${like}`)
+              .limit(5)
+          ),
+          settled(
+            supabase
+              .from("products")
+              .select("id, name, brand, sku_code")
+              .or(`name.ilike.${like},brand.ilike.${like},sku_code.ilike.${like}`)
+              .limit(5)
+          ),
+          settled(
+            supabase.from("form_templates").select("id, name").ilike("name", like).limit(5)
+          ),
+          settled(
+            supabase.from("files").select("id, name").ilike("name", like).limit(5)
+          ),
         ]);
 
         const found: Hit[] = [
@@ -154,10 +187,10 @@ export function GlobalSearch({ revealed = false }: { revealed?: boolean }) {
         setHits(found);
         setActive(0);
       } catch (e) {
-        // A PostgREST *refusal* comes back as `.error` above; the whole
-        // `Promise.all` rejecting is something else — no network, mainly. Nothing
-        // awaits `run`, so without this the rejection went nowhere and the box
-        // just said "Nothing matches", which is a claim about the data.
+        // `settled` never rejects, so reaching here means something outside the
+        // queries went wrong. Still reported rather than swallowed: nothing
+        // awaits `run`, so without this the box would say "Nothing matches" —
+        // a claim about the data made without any.
         if (isStale()) return;
         setError(e instanceof Error ? e.message : String(e));
         setHits([]);
