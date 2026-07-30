@@ -19,7 +19,7 @@ Companion documents:
 | Thing | Where | Notes |
 |---|---|---|
 | Source code | `github.com/conradbrink/Gold-Fortune-Merch-App` | Private |
-| Web platform | **Vercel** — *not yet created* | Next.js 16, root directory `web` |
+| Web platform | **Vercel** — **LIVE** at <https://gold-fortune-merch-app-rnyn.vercel.app> | Next.js 16, root directory `web`, auto-deploys from `main` |
 | Database | **Supabase** project `bvbgtsxasttjzlemumwy` | Postgres 17, region **eu-west-3 (Paris)** |
 | Authentication | Supabase Auth, same project | Email + password |
 | Uploaded files | Supabase Storage, same project | Buckets `visit-photos`, `files`, `app-releases` — **all private** |
@@ -146,8 +146,8 @@ installed cannot be downgraded, so the real fix is forward.
 
 | Item | Blocked on |
 |---|---|
-| **Web platform is not deployed** | No Vercel account/token on this machine. Creating an account on your behalf is not something to do — see `DEPLOY-WEB.md` step 1 |
-| **No custom domain** | Follows the deployment |
+| ~~Web platform is not deployed~~ | **LIVE 30 July** at <https://gold-fortune-merch-app-rnyn.vercel.app> |
+| **No custom domain** | Still on the `.vercel.app` address. `DEPLOY-WEB.md` → "Connect a custom domain" |
 | **No signed APK exists** | The signing keystore has not been created. You hold the password — `RELEASE-ANDROID.md` Part 1 |
 | **No APK has been tested on a real device** | There are no physical Android handsets attached to this machine, only the `gf_pixel` emulator. I cannot honestly claim device testing, and have not |
 | **Database backups** | Free plan has none. Needs the Pro upgrade decision |
@@ -164,8 +164,12 @@ installed cannot be downgraded, so the real fix is forward.
 2. ~~Land PR #2 into `main`.~~ **Done 30 July.** `main` is at `6f2de91` with
    all 40 commits and CI green. It is ready to be the production branch.
 3. **Decide on Supabase Pro.** Backups and no auto-pausing.
-4. **Create the Vercel project** and set the environment variables.
-5. **Enable leaked-password protection**, and confirm the spend caps.
+4. ~~Create the Vercel project~~ — **done 30 July.** All 7 variables set, scoped
+   to Production only (one Supabase project means a Preview deployment would
+   otherwise write to live data).
+5. **Add the site URL to Supabase → Authentication → URL Configuration**, or
+   password-reset links are refused on arrival.
+6. **Enable leaked-password protection**, and confirm the spend caps.
 6. **Create the signing keystore**, back it up, and build the first APK.
 7. **Publish release 1.0.0** and confirm `/download` serves it.
 8. **Install it on a real phone**, sign in, complete and sync one visit.
