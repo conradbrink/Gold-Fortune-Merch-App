@@ -1,37 +1,52 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import {
-  Users,
-  Store,
-  ClipboardCheck,
-  MapPin,
-  XCircle,
-  PackageX,
-  LayoutGrid,
-} from "lucide-react";
-import { StatTile } from "@/components/dashboard/stat-tile";
-import { CoverageDonut } from "@/components/dashboard/coverage-donut";
-import { UnitsTrendChart } from "@/components/dashboard/units-trend-chart";
+import { SlidersHorizontal } from "lucide-react";
 import { DateRangePicker } from "@/components/dashboard/date-range-picker";
+import { CustomiseDashboard } from "@/components/dashboard/customise-dashboard";
+import {
+  DEFAULT_LAYOUT,
+  WIDGET_IDS,
+  findWidget,
+  type WidgetData,
+  type WidgetSource,
+} from "@/components/dashboard/widget-registry";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import Link from "next/link";
+import { Card, CardContent } from "@/components/ui/card";
 import { createClient } from "@/lib/supabase/client";
 import { rangeDays, rangeForPreset, type DateRange } from "@/lib/date-range";
 import {
-  companyDayTimes,
-  deltaPct,
   fetchDashboardSummary,
   fetchOperationsSummary,
   fetchRepDayTimes,
-  formatDuration,
-  formatPct,
-  formatTimeOfDay,
   type DashboardSummary,
   type OperationsSummary,
   type RepDayTimes,
 } from "@/lib/dashboard";
+import {
+  fetchLayout,
+  NO_SAVED_LAYOUT,
+  reconcileLayout,
+  resetLayout,
+  saveLayout,
+} from "@/lib/dashboard-layout";
+import { fetchOrgId } from "@/lib/representatives";
+
+/**
+ * The dashboard is composed, not fixed.
+ *
+ * Every card comes from the registry in `widget-registry.tsx`, and which ones
+ * appear — and in what order — is this user's own saved layout. The page itself
+ * knows only three things: how to fetch the sources, how wide a card asked to be,
+ * and what to render when a card's source did not arrive.
+ */
+
+/** Tailwind cannot see a computed class name, so the spans are spelled out. */
+const SPAN_CLASS: Record<1 | 2 | 4, string> = {
+  1: "sm:col-span-1",
+  2: "sm:col-span-2 lg:col-span-2",
+  4: "sm:col-span-2 lg:col-span-4",
+};
 
 export default function InsightsDashboardPage() {
   const supabase = createClient();
@@ -42,49 +57,66 @@ export default function InsightsDashboardPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  const [layout, setLayout] = useState<string[]>(DEFAULT_LAYOUT);
+  const [orgId, setOrgId] = useState<string | null>(null);
+  const [customising, setCustomising] = useState(false);
+  const [savingLayout, setSavingLayout] = useState(false);
+  const [layoutError, setLayoutError] = useState<string | null>(null);
+
+  /** Which sources failed, so a card can say so instead of rendering blank. */
+  const [failedSources, setFailedSources] = useState<Set<WidgetSource>>(new Set());
+
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      // One RPC. This page used to run seven sequential queries, two of which
-      // pulled entire tables to the browser to count distinct values in JS.
-      // The working-day figures are a second one because they answer a
+      // One RPC per source. This page used to run seven sequential queries, two
+      // of which pulled entire tables to the browser to count distinct values in
+      // JS. The working-day figures are a second one because they answer a
       // different question — when people work, not what they did — and are
       // grouped per rep rather than over the whole org.
-      // allSettled, not all: the two later RPCs answer secondary questions, and
-      // with `all` either one rejecting — an environment where those migrations
-      // have not run, a transient refusal — threw away the headline KPIs that
-      // had loaded perfectly well. Each section now fails on its own.
+      //
+      // allSettled, not all: with `all`, either of the two secondary RPCs
+      // rejecting — an environment where those migrations have not run, a
+      // transient refusal — threw away headline KPIs that had loaded perfectly
+      // well. Each source now fails on its own, and the cards that depend on it
+      // say why.
       const [summary, times, operations] = await Promise.allSettled([
         fetchDashboardSummary(supabase, range),
         fetchRepDayTimes(supabase, range),
         fetchOperationsSummary(supabase, range),
       ]);
 
-      // The summary *is* the page: without it there is nothing to degrade to.
-      if (summary.status === "rejected") throw summary.reason;
-      setData(summary.value);
+      const failed = new Set<WidgetSource>();
+      if (summary.status === "fulfilled") setData(summary.value);
+      else {
+        setData(null);
+        failed.add("summary");
+      }
+      if (times.status === "fulfilled") setDayTimes(times.value);
+      else {
+        setDayTimes([]);
+        failed.add("dayTimes");
+      }
+      if (operations.status === "fulfilled") setOps(operations.value);
+      else {
+        setOps(null);
+        failed.add("operations");
+      }
+      setFailedSources(failed);
 
-      setDayTimes(times.status === "fulfilled" ? times.value : []);
-      setOps(operations.status === "fulfilled" ? operations.value : null);
-
-      // Still reported rather than swallowed — a section quietly missing is how
-      // a broken RPC survives for weeks.
-      const degraded = [times, operations].find((r) => r.status === "rejected");
+      // Reported rather than swallowed — a section quietly missing is how a
+      // broken RPC survives for weeks.
+      const rejected = [summary, times, operations].find(
+        (r) => r.status === "rejected"
+      );
       setError(
-        degraded && degraded.status === "rejected"
-          ? `Some sections could not be loaded: ${
-              degraded.reason instanceof Error
-                ? degraded.reason.message
-                : String(degraded.reason)
-            }`
+        rejected && rejected.status === "rejected"
+          ? rejected.reason instanceof Error
+            ? rejected.reason.message
+            : String(rejected.reason)
           : null
       );
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
-      setData(null);
-      setDayTimes([]);
-      setOps(null);
     } finally {
       setLoading(false);
     }
@@ -95,31 +127,79 @@ export default function InsightsDashboardPage() {
     load();
   }, [load]);
 
+  // The layout does not depend on the date range, so it is fetched once rather
+  // than on every range change.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const [saved, org] = await Promise.all([
+          fetchLayout(supabase),
+          fetchOrgId(supabase),
+        ]);
+        if (cancelled) return;
+        setOrgId(org);
+        setLayout(reconcileLayout(saved, WIDGET_IDS, DEFAULT_LAYOUT));
+      } catch (e) {
+        if (cancelled) return;
+        // The default is a safe thing to show, but say why it is what you are
+        // looking at — otherwise a customised dashboard silently reverts and the
+        // next save overwrites the real one.
+        setLayout(DEFAULT_LAYOUT);
+        setLayoutError(
+          `Your saved layout could not be read, so this is the default: ${
+            e instanceof Error ? e.message : String(e)
+          }`
+        );
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  async function handleSaveLayout(widgetIds: string[]) {
+    if (!orgId) {
+      setLayoutError("Your organisation has not loaded yet. Try again in a moment.");
+      return;
+    }
+    setSavingLayout(true);
+    setLayoutError(null);
+    try {
+      await saveLayout(supabase, orgId, widgetIds);
+      setLayout(widgetIds);
+      setCustomising(false);
+    } catch (e) {
+      setLayoutError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setSavingLayout(false);
+    }
+  }
+
+  async function handleResetLayout() {
+    setSavingLayout(true);
+    setLayoutError(null);
+    try {
+      await resetLayout(supabase);
+      setLayout(DEFAULT_LAYOUT);
+      setCustomising(false);
+    } catch (e) {
+      setLayoutError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setSavingLayout(false);
+    }
+  }
+
   const days = rangeDays(range);
-  const deltaLabel = `vs previous ${days} days`;
+  const widgetData: WidgetData = {
+    summary: data,
+    dayTimes,
+    operations: ops,
+    days,
+  };
 
-  const cur = data?.current;
-  const prev = data?.previous;
-
-  const coveragePct =
-    data && data.stores_active > 0
-      ? Math.round((cur!.stores_covered / data.stores_active) * 100)
-      : null;
-
-  const formRate =
-    cur && cur.visits_completed > 0
-      ? Math.round((cur.submissions / cur.visits_completed) * 100)
-      : null;
-
-  const trend =
-    data?.series.map((p) => ({
-      // "Jul 14" reads better than an ISO date on a crowded axis.
-      label: new Date(p.day + "T00:00:00").toLocaleDateString("en-US", {
-        month: "short",
-        day: "numeric",
-      }),
-      value: p.completed,
-    })) ?? [];
+  const cards = layout.map((id) => findWidget(id)).filter((w) => w !== undefined);
 
   return (
     <div className="space-y-4">
@@ -132,19 +212,34 @@ export default function InsightsDashboardPage() {
             Live field performance across your Gold Fortune team.
           </p>
         </div>
+        <Button
+          variant="outline"
+          size="sm"
+          className="gap-1.5"
+          onClick={() => setCustomising(true)}
+        >
+          <SlidersHorizontal className="h-4 w-4" />
+          Customise
+        </Button>
       </div>
 
       <DateRangePicker value={range} onChange={setRange} />
 
+      {layoutError && (
+        <p className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+          {layoutError}
+        </p>
+      )}
+
       {error && (
         <Card>
           <CardContent className="py-8 text-center text-sm">
-            {/* The headline KPIs survive a secondary RPC failing, so this card
-                must not claim the whole dashboard is gone when it is not. */}
+            {/* Cards whose own source arrived are still shown, so this must not
+                claim the whole dashboard is gone when it is not. */}
             <p className="font-medium text-destructive">
-              {data
-                ? "Part of the dashboard could not be loaded"
-                : "Could not load the dashboard"}
+              {failedSources.size === 3
+                ? "Could not load the dashboard"
+                : "Part of the dashboard could not be loaded"}
             </p>
             <p className="mt-1 text-muted-foreground">{error}</p>
             <Button size="sm" variant="outline" className="mt-3" onClick={load}>
@@ -156,369 +251,55 @@ export default function InsightsDashboardPage() {
 
       {loading && !data ? (
         <SkeletonGrid />
-      ) : cur && prev && data ? (
-        <>
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            <StatTile
-              label="Visits Completed"
-              value={cur.visits_completed}
-              deltaPct={deltaPct(cur.visits_completed, prev.visits_completed)}
-              deltaLabel={deltaLabel}
-              icon={<ClipboardCheck className="h-5 w-5 opacity-80" />}
-              href="/visits"
-            />
-            <StatTile
-              label="Store Coverage"
-              value={coveragePct === null ? "—" : `${coveragePct}%`}
-              sublabel={`${cur.stores_covered} of ${data.stores_active} active stores visited`}
-              icon={<Store className="h-5 w-5 opacity-80" />}
-              tone="outline"
-            />
-            <StatTile
-              label="Out of Stock Rate"
-              value={formatPct(cur.oos_rate)}
-              deltaPct={
-                cur.oos_rate !== null && prev.oos_rate !== null
-                  ? deltaPct(cur.oos_rate * 1000, prev.oos_rate * 1000)
-                  : null
-              }
-              deltaLabel={deltaLabel}
-              // Down is good here, so the arrow colouring must flip.
-              invertDelta
-              icon={<PackageX className="h-5 w-5 opacity-80" />}
-              tone="outline"
-            />
-            <StatTile
-              label="Planogram Compliance"
-              value={formatPct(cur.planogram_rate)}
-              deltaPct={
-                cur.planogram_rate !== null && prev.planogram_rate !== null
-                  ? deltaPct(cur.planogram_rate * 1000, prev.planogram_rate * 1000)
-                  : null
-              }
-              deltaLabel={deltaLabel}
-              icon={<LayoutGrid className="h-5 w-5 opacity-80" />}
-              tone="outline"
-            />
-          </div>
-
-          {/* Directly under the headline tiles: when the team works is read as
-              often as what they did, and it was buried at the foot of the page. */}
-          <WorkingDay rows={dayTimes} />
-
-          <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-            <Card className="lg:col-span-2">
-              <CardHeader>
-                <CardTitle className="text-base">
-                  Visits completed — last {days} days
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <UnitsTrendChart data={trend} valueLabel="Completed" />
-                {trend.filter((t) => t.value > 0).length < 3 &&
-                  trend.length > 0 && (
-                    <p className="mt-2 text-xs text-muted-foreground">
-                      Only{" "}
-                      {trend.filter((t) => t.value > 0).length === 1
-                        ? "one day"
-                        : `${trend.filter((t) => t.value > 0).length} days`}{" "}
-                      of activity in this period — the trend will fill out as
-                      reps work.
-                    </p>
-                  )}
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-base">Store coverage</CardTitle>
-              </CardHeader>
-              <CardContent>
-                {coveragePct === null ? (
-                  <p className="py-10 text-center text-sm text-muted-foreground">
-                    No active stores yet.
-                  </p>
-                ) : (
-                  <>
-                    <CoverageDonut
-                      covered={coveragePct}
-                      notCovered={100 - coveragePct}
-                    />
-                    <p className="mt-2 text-center text-xs text-muted-foreground">
-                      {data.stores_active - cur.stores_covered} of{" "}
-                      {data.stores_active} active stores not yet visited in this
-                      period.
-                    </p>
-                  </>
-                )}
-              </CardContent>
-            </Card>
-          </div>
-
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            <StatTile
-              label="Forms Submitted"
-              value={cur.submissions}
-              sublabel={
-                formRate === null
-                  ? "No completed visits yet"
-                  : `${formRate}% of completed visits`
-              }
-              icon={<ClipboardCheck className="h-5 w-5 opacity-80" />}
-              tone="outline"
-              href="/visits?filter=with-forms"
-            />
-            <StatTile
-              label="Missed Visits"
-              value={cur.visits_missed}
-              deltaPct={deltaPct(cur.visits_missed, prev.visits_missed)}
-              deltaLabel={deltaLabel}
-              invertDelta
-              icon={<XCircle className="h-5 w-5 opacity-80" />}
-              tone="outline"
-            />
-            <StatTile
-              label="Active Reps"
-              value={cur.active_reps}
-              sublabel={`Avg visit ${formatDuration(cur.avg_duration_seconds)}`}
-              icon={<Users className="h-5 w-5 opacity-80" />}
-              tone="outline"
-            />
-            <StatTile
-              label="Unscheduled Visits"
-              value={cur.visits_unscheduled}
-              sublabel="Rep-initiated, outside the plan"
-              icon={<MapPin className="h-5 w-5 opacity-80" />}
-              tone="outline"
-              href="/activities"
-            />
-          </div>
-
-          {ops && <PipelineAndCoverage ops={ops} storesActive={data.stores_active} />}
-        </>
+      ) : cards.length === 0 ? (
+        <Card>
+          <CardContent className="py-10 text-center text-sm text-muted-foreground">
+            Your dashboard is empty. Use{" "}
+            <span className="font-medium text-foreground">Customise</span> to add
+            cards.
+          </CardContent>
+        </Card>
       ) : (
-        !error && (
-          <Card>
-            <CardContent className="py-10 text-center text-sm text-muted-foreground">
-              No activity in this period. Try widening the date range.
-            </CardContent>
-          </Card>
-        )
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          {cards.map((widget) => (
+            <div key={widget.id} className={SPAN_CLASS[widget.span]}>
+              {failedSources.has(widget.source) ? (
+                <UnavailableCard title={widget.title} />
+              ) : (
+                widget.render(widgetData)
+              )}
+            </div>
+          ))}
+        </div>
       )}
+
+      <CustomiseDashboard
+        open={customising}
+        onOpenChange={setCustomising}
+        layout={layout}
+        onSave={handleSaveLayout}
+        onReset={handleResetLayout}
+        saving={savingLayout}
+        error={layoutError}
+      />
     </div>
   );
 }
 
 /**
- * The subsystems that arrived after the original KPIs.
+ * A card whose source did not load.
  *
- * Deliberately three separate questions rather than one row of numbers:
- * prospecting is about new business, territories about how the estate is
- * organised, and confirmed positions about whether any geofence verdict on the
- * Activities page can be believed.
+ * Shown in place rather than dropped: a card silently missing from a layout the
+ * user arranged themselves reads as the dashboard losing their settings.
  */
-function PipelineAndCoverage({
-  ops,
-  storesActive,
-}: {
-  ops: OperationsSummary;
-  storesActive: number;
-}) {
-  const confirmedPct =
-    storesActive > 0 ? Math.round((ops.stores_confirmed / storesActive) * 100) : null;
-
+function UnavailableCard({ title }: { title: string }) {
   return (
-    <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Prospecting</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-1.5 text-sm">
-          <Line label="Sales calls in this period" value={ops.sales_visits} />
-          <Line label="Open in the pipeline" value={ops.leads_open} />
-          <Line label="Converted" value={ops.leads_converted} />
-          {/* Overdue is called out on its own because it is the only figure
-              here that is somebody's fault rather than somebody's progress. */}
-          <Line
-            label="Follow-ups due"
-            value={ops.follow_ups_due}
-            tone={ops.follow_ups_overdue > 0 ? "bad" : undefined}
-            note={
-              ops.follow_ups_overdue > 0
-                ? `${ops.follow_ups_overdue} overdue`
-                : undefined
-            }
-          />
-          <Link
-            href="/leads"
-            className="inline-block pt-1 text-xs text-primary hover:underline"
-          >
-            Open the Leads board →
-          </Link>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Territories</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-1.5 text-sm">
-          <Line label="Main territories" value={ops.territories_main} />
-          <Line label="Sub-territories" value={ops.territories_sub} />
-          <Line
-            label="Stores with no territory"
-            value={ops.stores_unplaced}
-            tone={ops.stores_unplaced > 0 ? "bad" : undefined}
-          />
-          <Link
-            href="/territories"
-            className="inline-block pt-1 text-xs text-primary hover:underline"
-          >
-            Manage territories →
-          </Link>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Confirmed positions</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-1.5 text-sm">
-          <p className="text-2xl font-bold tabular-nums text-foreground">
-            {confirmedPct === null ? "—" : `${confirmedPct}%`}
-          </p>
-          <Line label="Measured by a rep on site" value={ops.stores_confirmed} />
-          <Line label="Still on a geocoder's guess" value={ops.stores_guessed} />
-          <p className="pt-1 text-xs text-muted-foreground">
-            Every &ldquo;at store&rdquo; verdict rests on this. A guessed pin can
-            put a rep off site while they stand in the shop.
-          </p>
-        </CardContent>
-      </Card>
-    </div>
-  );
-}
-
-function Line({
-  label,
-  value,
-  note,
-  tone,
-}: {
-  label: string;
-  value: number;
-  note?: string;
-  tone?: "bad";
-}) {
-  return (
-    <div className="flex items-baseline justify-between gap-3">
-      <span className="text-muted-foreground">{label}</span>
-      <span
-        className={
-          tone === "bad"
-            ? "font-semibold tabular-nums text-destructive"
-            : "font-semibold tabular-nums text-foreground"
-        }
-      >
-        {value}
-        {note && <span className="ml-1 text-xs font-normal">({note})</span>}
-      </span>
-    </div>
-  );
-}
-
-/**
- * When the team starts and finishes.
- *
- * Derived from the day's evidence rather than from anything the rep types: the
- * first of the workday being opened, a check-in, or a sales call starting, and
- * the last of the same. A rep who forgets to press "start workday" still has a
- * start time, because they checked in somewhere.
- *
- * Times are local. The RPC converts before averaging — averaging the stored
- * UTC values and formatting afterwards would report every day two hours early.
- */
-function WorkingDay({ rows }: { rows: RepDayTimes[] }) {
-  const company = companyDayTimes(rows);
-
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="text-base">Working day</CardTitle>
-      </CardHeader>
-      <CardContent>
-        {company.days === 0 ? (
-          <p className="py-8 text-center text-sm text-muted-foreground">
-            No recorded activity in this period, so there is no day to measure.
-          </p>
-        ) : (
-          <>
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-              <div>
-                <p className="text-xs text-muted-foreground">
-                  Company average start
-                </p>
-                <p className="text-2xl font-bold tabular-nums text-foreground">
-                  {formatTimeOfDay(company.start)}
-                </p>
-              </div>
-              <div>
-                <p className="text-xs text-muted-foreground">
-                  Company average close
-                </p>
-                <p className="text-2xl font-bold tabular-nums text-foreground">
-                  {formatTimeOfDay(company.end)}
-                </p>
-              </div>
-              <div>
-                <p className="text-xs text-muted-foreground">Average length</p>
-                <p className="text-2xl font-bold tabular-nums text-foreground">
-                  {formatDuration(company.length ?? 0)}
-                </p>
-              </div>
-            </div>
-            <p className="mt-1 text-xs text-muted-foreground">
-              Across {company.days} rep-{company.days === 1 ? "day" : "days"},
-              weighted by days worked so a rep with one day does not count the
-              same as a rep with twenty.
-            </p>
-
-            <div className="mt-4 overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-border text-left text-xs text-muted-foreground">
-                    <th className="py-2 font-medium">Rep</th>
-                    <th className="py-2 text-right font-medium">Days</th>
-                    <th className="py-2 text-right font-medium">Starts</th>
-                    <th className="py-2 text-right font-medium">Closes</th>
-                    <th className="py-2 text-right font-medium">Length</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {rows.map((r) => (
-                    <tr key={r.rep_id} className="border-b border-border/60">
-                      <td className="py-2 text-foreground">
-                        {r.rep_name ?? "Unnamed rep"}
-                      </td>
-                      <td className="py-2 text-right tabular-nums text-muted-foreground">
-                        {r.days_worked}
-                      </td>
-                      <td className="py-2 text-right tabular-nums text-foreground">
-                        {formatTimeOfDay(r.avg_start_seconds)}
-                      </td>
-                      <td className="py-2 text-right tabular-nums text-foreground">
-                        {formatTimeOfDay(r.avg_end_seconds)}
-                      </td>
-                      <td className="py-2 text-right tabular-nums text-muted-foreground">
-                        {formatDuration(Number(r.avg_length_seconds ?? 0))}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </>
-        )}
+    <Card className="h-full border-dashed">
+      <CardContent className="flex h-full min-h-[124px] flex-col justify-center py-6 text-center">
+        <p className="text-sm font-medium text-foreground">{title}</p>
+        <p className="mt-1 text-xs text-muted-foreground">
+          Could not be loaded. Retry above.
+        </p>
       </CardContent>
     </Card>
   );

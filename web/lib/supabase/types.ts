@@ -14,6 +14,42 @@ export type Database = {
   }
   public: {
     Tables: {
+      dashboard_layouts: {
+        Row: {
+          org_id: string
+          updated_at: string
+          user_id: string
+          widget_ids: string[]
+        }
+        Insert: {
+          org_id: string
+          updated_at?: string
+          user_id: string
+          widget_ids: string[]
+        }
+        Update: {
+          org_id?: string
+          updated_at?: string
+          user_id?: string
+          widget_ids?: string[]
+        }
+        Relationships: [
+          {
+            foreignKeyName: "dashboard_layouts_org_id_fkey"
+            columns: ["org_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "dashboard_layouts_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: true
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       file_groups: {
         Row: {
           file_id: string

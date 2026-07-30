@@ -1,8 +1,9 @@
 -- Security regression suite.
 --
--- Every check here corresponds to a hole that was open on 29 or 30 July 2026
--- and was confirmed by exploiting it. **20 checks** — 1-18 are the 29 July
--- audit, 19-20 the `territory_reps` tenancy gap found in review on 30 July.
+-- Every check here corresponds to a hole that was open on 29 or 30 July 2026, or
+-- to an invariant a new table has to hold. **22 checks** — 1-18 are the 29 July
+-- audit, 19-20 the `territory_reps` tenancy gap found in review on 30 July, and
+-- 21-22 the per-user `dashboard_layouts` added the same day.
 -- They are written as attacks, not as assertions
 -- about policy text, because the manager-escalation bug came from a policy that
 -- read correctly for weeks: `profiles_update` said `id = auth.uid()`, which is
@@ -220,6 +221,42 @@ begin
       v_fail := v_fail || '20. a manager could NOT assign coverage in their own org: '
                 || sqlerrm || E'\n'; end;
   end if;
+
+  --------------------------------------------------------- dashboard layouts
+
+  -- A saved dashboard layout is one person's, and `dashboard_layouts` is the
+  -- only table keyed on the user rather than the organisation — so being in the
+  -- same org must not be enough to reach it.
+  reset role;
+  insert into public.dashboard_layouts (user_id, org_id, widget_ids)
+  values (v_rep, v_org, array['oos_rate']);
+
+  perform set_config('request.jwt.claims',
+    json_build_object('sub', v_mgr, 'role', 'authenticated')::text, true);
+  set local role authenticated;
+
+  -- 21. Somebody else's layout is invisible, unwritable, and cannot be planted.
+  select count(*) into v_n from public.dashboard_layouts where user_id = v_rep;
+  if v_n > 0 then v_fail := v_fail || '21. could read another user''s dashboard layout' || E'\n'; end if;
+
+  update public.dashboard_layouts set widget_ids = array['hijacked'] where user_id = v_rep;
+  get diagnostics v_n = row_count;
+  if v_n > 0 then v_fail := v_fail || '21b. could edit another user''s dashboard layout' || E'\n'; end if;
+
+  begin
+    insert into public.dashboard_layouts (user_id, org_id, widget_ids)
+    values (v_rep2, v_org, array['oos_rate']);
+    v_fail := v_fail || '21c. could create a layout for another user' || E'\n';
+  exception when others then null; end;
+
+  -- 22. Your own must still save and read back — see check 4.
+  begin
+    insert into public.dashboard_layouts (user_id, org_id, widget_ids)
+    values (v_mgr, v_org, array['oos_rate','working_day']);
+    select count(*) into v_n from public.dashboard_layouts where user_id = v_mgr;
+    if v_n <> 1 then v_fail := v_fail || '22. could not read back own layout' || E'\n'; end if;
+  exception when others then
+    v_fail := v_fail || '22. could not save own layout: ' || sqlerrm || E'\n'; end;
 
   reset role;
 
