@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import Image from "next/image";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -92,6 +93,13 @@ export default function LoginPage() {
           >
             {loading ? "Signing in…" : "Sign in"}
           </Button>
+
+          <Link
+            href="/forgot-password"
+            className="block text-center text-sm text-muted-foreground hover:underline"
+          >
+            Forgot your password?
+          </Link>
         </form>
 
         <p className="text-center text-xs text-muted-foreground">

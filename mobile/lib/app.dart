@@ -19,6 +19,7 @@ import 'features/visit/store_picker_screen.dart';
 import 'features/visit/unscheduled_chooser_screen.dart';
 import 'features/workday/day_plan_screen.dart';
 import 'features/workday/workday_summary_screen.dart';
+import 'shared/widgets/app_update_gate.dart';
 
 /// Bridges Supabase's auth stream into a [Listenable] so go_router
 /// re-evaluates its `redirect` callback on every sign-in/out/token event.
@@ -191,6 +192,10 @@ class GfMerchApp extends ConsumerWidget {
       debugShowCheckedModeBanner: false,
       theme: buildAppTheme(),
       routerConfig: router,
+      // Wraps every route, so a forced update cannot be walked around by
+      // navigating — including by staying on the login screen.
+      builder: (context, child) =>
+          AppUpdateGate(child: child ?? const SizedBox.shrink()),
     );
   }
 }

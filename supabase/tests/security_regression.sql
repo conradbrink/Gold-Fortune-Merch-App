@@ -24,6 +24,12 @@
 --     with no root territory made check 20 skip itself in silence.
 --   * **Every attack gets a control** asserting the legitimate case still works —
 --     a lock that also breaks real use is one the next person removes in a hurry.
+--   * **A schema change can break the fixtures rather than the checks.** The
+--     country tier landed and this file stopped running at all: its territory
+--     fixtures had no country parent, so the suite aborted before check 19 and
+--     reported nothing. Every territory fixture now creates its own country.
+--     If this file raises anything other than PASSED or SECURITY REGRESSIONS,
+--     the suite is broken, not the database — fix it before trusting a green run.
 --
 -- HOW TO RUN
 --
@@ -42,6 +48,7 @@ declare
   v_visit uuid; v_n int; v_r jsonb; v_fail text := '';
   v_other_org uuid; v_other_terr uuid; v_terr uuid;
   v_shape_main uuid; v_shape_other uuid;
+  v_other_country uuid; v_own_country uuid;
 
 begin
   select id, org_id into v_mgr, v_org from public.profiles where role = 'manager' limit 1;
@@ -207,15 +214,29 @@ begin
   -- by `20260730153000_enforce_territory_reps_org.sql`.
   --
   -- Run as the manager, because a rep cannot insert coverage at all.
+  -- Since the country tier (`20260730200000_add_country_tier.sql`) a territory
+  -- must sit inside a country, so both fixtures below need a country created
+  -- first. Without it these two inserts raise "A territory must sit inside a
+  -- country" and abort the whole suite before check 19 — which is exactly what
+  -- happened the first time this file was run after that migration landed.
   insert into public.organizations (name) values ('Regression Foreign Org')
     returning id into v_other_org;
-  insert into public.territories (org_id, name) values (v_other_org, 'Regression Foreign Territory')
+  insert into public.territories (org_id, name, level, parent_id)
+    values (v_other_org, 'Regression Foreign Country', 'country', null)
+    returning id into v_other_country;
+  insert into public.territories (org_id, name, level, parent_id)
+    values (v_other_org, 'Regression Foreign Territory', 'territory', v_other_country)
     returning id into v_other_terr;
   -- Created, not found. The header promises only a manager, two reps and a
   -- store, so querying the estate for a root territory made check 20 skip itself
   -- silently on a tenant that has none — a check that reports nothing is worse
-  -- than one that fails.
-  insert into public.territories (org_id, name) values (v_org, 'Regression Own Territory')
+  -- than one that fails. The same reasoning applies to the country: the estate
+  -- has one, but borrowing it would make this check depend on tenant data.
+  insert into public.territories (org_id, name, level, parent_id)
+    values (v_org, 'Regression Own Country', 'country', null)
+    returning id into v_own_country;
+  insert into public.territories (org_id, name, level, parent_id)
+    values (v_org, 'Regression Own Territory', 'territory', v_own_country)
     returning id into v_terr;
 
   perform set_config('request.jwt.claims',
