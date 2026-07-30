@@ -45,6 +45,24 @@ function fieldOptions(field: FormField): string[] {
   return Array.isArray(field.options) ? (field.options as string[]) : [];
 }
 
+/**
+ * A database error in words a manager can act on.
+ *
+ * `form_fields_template_metric_idx` is the one they can realistically hit: the
+ * picker disables a metric another question already holds, but two tabs open on
+ * the same form can still race it. "duplicate key value violates unique
+ * constraint" tells them nothing about what to do next.
+ */
+function describeWriteError(message: string, fallback: string): string {
+  if (message.includes("form_fields_template_metric_idx")) {
+    return "Another question on this form already measures that. Reload the form — it was probably changed in another tab.";
+  }
+  if (message.includes("form_fields_metric_key_check")) {
+    return "That is not a metric the analytics recognise.";
+  }
+  return message || fallback;
+}
+
 export default function FormDetailPage() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
@@ -122,7 +140,12 @@ export default function FormDetailPage() {
 
     setSaving(false);
     if (insertError || !data) {
-      setAddError(insertError?.message ?? "The field could not be added.");
+      setAddError(
+        describeWriteError(
+          insertError?.message ?? "",
+          "The field could not be added."
+        )
+      );
       return;
     }
 
@@ -165,8 +188,10 @@ export default function FormDetailPage() {
 
     if (updateError || !data) {
       setRowError(
-        updateError?.message ??
+        describeWriteError(
+          updateError?.message ?? "",
           "That change was not saved — you may not have permission to edit this form."
+        )
       );
       load();
       return;
