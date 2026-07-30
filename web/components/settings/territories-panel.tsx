@@ -526,6 +526,12 @@ export function TerritoriesPanel() {
             <Button
               variant="outline"
               onClick={() => {
+                // The same abandonment `onOpenChange` performs. Escape and the
+                // backdrop went through there and dropped the in-flight request;
+                // this button did not, so a fetch started before Cancel could
+                // still land and repopulate the dialog after it had been
+                // dismissed — or worse, against the next territory opened.
+                impactRequest.current = null;
                 setRemoving(null);
                 setImpact(null);
               }}

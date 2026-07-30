@@ -1,3 +1,11 @@
+-- ⚠️ SUPERSEDED by `20260730190000_lock_both_orgs_on_territory_move.sql`.
+--
+-- The lock below keys on `new.org_id` only, which does not serialise a *cross-org*
+-- move against a concurrent reparenting in the old organisation — they take
+-- different keys and never contend. Read 190000 for the current function; this
+-- file is left exactly as it was applied, because a migration that is edited
+-- after the fact stops describing what actually ran.
+--
 -- `territories_enforce_shape` reads the prospective parent to check it is not
 -- itself a sub-territory, and that read only sees committed rows. Two
 -- transactions reparenting in opposite directions therefore both pass:

@@ -48,6 +48,8 @@ export default function LeadsPage() {
    * synchronously; the state exists only to drive the styling.
    */
   const draggingRef = useRef<string | null>(null);
+  /** Newest move per lead id, so an older one cannot roll back or reload over it. */
+  const moveSeq = useRef(new Map<string, number>());
   const [dragging, setDragging] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState<Stage | null>(null);
 
@@ -98,6 +100,15 @@ export default function LeadsPage() {
   ).length;
 
   async function move(lead: Lead, stage: Stage) {
+    // Per-card sequence. Rolling back the one card fixed the cross-card damage,
+    // but not the same card moved twice: an older failure would revert to a stage
+    // the newer move has already replaced, and its `load()` would then publish
+    // the server's older view over the newer one still in flight. Only the newest
+    // move for a card may roll it back or reload.
+    const seq = (moveSeq.current.get(lead.id) ?? 0) + 1;
+    moveSeq.current.set(lead.id, seq);
+    const isLatest = () => moveSeq.current.get(lead.id) === seq;
+
     setMoving(lead.id);
     setError(null);
     // Moved locally first: the board is the manager's train of thought, and a
@@ -114,6 +125,7 @@ export default function LeadsPage() {
       await setLeadStage(supabase, lead.id, stage);
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e);
+      if (!isLatest()) return;
       setLeads((prev) =>
         prev.map((l) => (l.id === lead.id ? { ...l, stage: previousStage } : l))
       );
@@ -127,7 +139,8 @@ export default function LeadsPage() {
       await load();
       setError(message);
     } finally {
-      setMoving(null);
+      // Only the newest move for this card owns the disabled state.
+      if (isLatest()) setMoving(null);
     }
   }
 

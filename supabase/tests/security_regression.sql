@@ -322,8 +322,13 @@ begin
     end if;
   exception when others then null; end;
 
+  -- `v_other_org`, not a random uuid. With a random one the FK refuses the update
+  -- regardless, so this check passed even with the guard removed — verified by
+  -- disabling the trigger: random uuid still refused (23503, the foreign key),
+  -- real organisation accepted. A check that survives the deletion of the thing
+  -- it tests is not a check.
   begin
-    update public.territories set org_id = gen_random_uuid() where id = v_shape_main;
+    update public.territories set org_id = v_other_org where id = v_shape_main;
     get diagnostics v_n = row_count;
     if v_n > 0 then
       v_fail := v_fail || '23b. a main with dependents could change organisation' || E'\n';

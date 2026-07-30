@@ -108,8 +108,18 @@ if [ "$CYCLE" != "0" ]; then
   echo "FAIL: a reparenting cycle was committed — the advisory lock is not holding." >&2
   exit 1
 fi
-if [ "$PARENTED" = "2" ]; then
-  echo "FAIL: both territories were reparented; one should have been refused." >&2
+# Exactly one. Testing only for 2 would let PARENTED=0 pass, and zero means
+# *neither* update landed — a permissions problem, a typo'd id, a connection that
+# never opened. That is a broken harness reporting success, which is worse than a
+# failing one because it looks like evidence.
+if [ "$PARENTED" != "1" ]; then
+  echo "FAIL: expected exactly one of the two to be reparented, got $PARENTED." >&2
+  if [ "$PARENTED" = "0" ]; then
+    echo "       Neither update landed — the race was never staged. Check the" >&2
+    echo "       session logs above: this is a harness failure, not a passing test." >&2
+  else
+    echo "       Both were reparented; one should have been refused." >&2
+  fi
   exit 1
 fi
-echo "PASS: no cycle, and $PARENTED of the two was reparented."
+echo "PASS: no cycle, and exactly one of the two was reparented."

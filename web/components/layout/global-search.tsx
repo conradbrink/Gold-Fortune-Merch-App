@@ -131,7 +131,11 @@ export function GlobalSearch({ revealed = false }: { revealed?: boolean }) {
               .limit(5)
           ),
           settled(
-            supabase.from("form_templates").select("id, name").ilike("name", like).limit(5)
+            supabase
+              .from("form_templates")
+              .select("id, name, active")
+              .ilike("name", like)
+              .limit(5)
           ),
           settled(
             supabase.from("files").select("id, name").ilike("name", like).limit(5)
@@ -164,7 +168,11 @@ export function GlobalSearch({ revealed = false }: { revealed?: boolean }) {
             kind: "Form" as const,
             id: f.id,
             label: f.name,
-            detail: null,
+            // Archived forms stay searchable — the Forms list shows them with the
+            // same badge, and hiding them would make an archived form impossible
+            // to find in order to restore it. But a hit that does not say so
+            // implies reps are still filling it in.
+            detail: f.active ? null : "Archived",
             // The only one of the five with a page of its own.
             href: `/forms/${f.id}`,
           })),

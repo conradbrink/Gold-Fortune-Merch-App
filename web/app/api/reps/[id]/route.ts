@@ -219,7 +219,27 @@ export async function PATCH(
     const gate = await enforceRateLimit(guard.supabase, LIMITS.repAdmin);
     if (!gate.ok) return gate.response;
 
-    const body = (await request.json()) as {
+    // A malformed body is the caller's mistake, not the server's. Parsed
+    // defensively so it comes back as 400 with a reason rather than falling
+    // through to the outer catch as an opaque 500 — and so `body.is_active` is
+    // never read off `null`.
+    let parsed: unknown;
+    try {
+      parsed = await request.json();
+    } catch {
+      return Response.json(
+        { error: "The request body was not valid JSON." },
+        { status: 400 }
+      );
+    }
+    if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
+      return Response.json(
+        { error: "The request body must be a JSON object." },
+        { status: 400 }
+      );
+    }
+
+    const body = parsed as {
       is_active?: boolean;
       email?: string;
       password?: string;

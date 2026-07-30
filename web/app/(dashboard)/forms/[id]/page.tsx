@@ -175,6 +175,20 @@ export default function FormDetailPage() {
 
   async function handleMetricChange(field: FormField, metricKey: string) {
     setRowError(null);
+
+    // Checked here, not only in the picker. The select never offers an
+    // incompatible metric, but a `change` event carrying one still arrives at
+    // this handler — forcing a disabled option from the console is enough, which
+    // is exactly how the duplicate-key path got tested. The database has no
+    // opinion on whether a key can be *read* from this field type, so if this
+    // does not refuse it, nothing does, and the question silently measures
+    // nothing.
+    const mismatch = metricMismatch(metricKey, field.field_type, fieldOptions(field));
+    if (mismatch) {
+      setRowError(mismatch);
+      return;
+    }
+
     const next = metricKey || null;
     // Apply locally first so the select does not snap back while the round
     // trip is in flight, then reconcile from what the database accepted.
@@ -277,7 +291,19 @@ export default function FormDetailPage() {
 
       <div className="flex items-center justify-between">
         <h2 className="text-sm font-semibold text-foreground">Fields</h2>
-        <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+        <Dialog
+          open={dialogOpen}
+          onOpenChange={(open) => {
+            // Reopening starts clean. A failed add leaves its message behind, and
+            // showing yesterday's error over today's empty form reads as a fresh
+            // refusal of something not yet attempted.
+            if (open) {
+              setAddError(null);
+              setNewField(emptyField);
+            }
+            setDialogOpen(open);
+          }}
+        >
           <DialogTrigger
             render={
               <Button size="sm" className="gap-1.5 bg-primary text-primary-foreground hover:bg-primary/90">
