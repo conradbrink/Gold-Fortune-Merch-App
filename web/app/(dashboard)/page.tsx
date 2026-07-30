@@ -19,17 +19,22 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { createClient } from "@/lib/supabase/client";
 import { rangeDays, rangeForPreset, type DateRange } from "@/lib/date-range";
 import {
+  companyDayTimes,
   deltaPct,
   fetchDashboardSummary,
+  fetchRepDayTimes,
   formatDuration,
   formatPct,
+  formatTimeOfDay,
   type DashboardSummary,
+  type RepDayTimes,
 } from "@/lib/dashboard";
 
 export default function InsightsDashboardPage() {
   const supabase = createClient();
   const [range, setRange] = useState<DateRange>(() => rangeForPreset("30d"));
   const [data, setData] = useState<DashboardSummary | null>(null);
+  const [dayTimes, setDayTimes] = useState<RepDayTimes[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -39,10 +44,19 @@ export default function InsightsDashboardPage() {
     try {
       // One RPC. This page used to run seven sequential queries, two of which
       // pulled entire tables to the browser to count distinct values in JS.
-      setData(await fetchDashboardSummary(supabase, range));
+      // The working-day figures are a second one because they answer a
+      // different question — when people work, not what they did — and are
+      // grouped per rep rather than over the whole org.
+      const [summary, times] = await Promise.all([
+        fetchDashboardSummary(supabase, range),
+        fetchRepDayTimes(supabase, range),
+      ]);
+      setData(summary);
+      setDayTimes(times);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
       setData(null);
+      setDayTimes([]);
     } finally {
       setLoading(false);
     }
@@ -243,6 +257,8 @@ export default function InsightsDashboardPage() {
               href="/activities"
             />
           </div>
+
+          <WorkingDay rows={dayTimes} />
         </>
       ) : (
         !error && (
@@ -254,6 +270,103 @@ export default function InsightsDashboardPage() {
         )
       )}
     </div>
+  );
+}
+
+/**
+ * When the team starts and finishes.
+ *
+ * Derived from the day's evidence rather than from anything the rep types: the
+ * first of the workday being opened, a check-in, or a sales call starting, and
+ * the last of the same. A rep who forgets to press "start workday" still has a
+ * start time, because they checked in somewhere.
+ *
+ * Times are local. The RPC converts before averaging — averaging the stored
+ * UTC values and formatting afterwards would report every day two hours early.
+ */
+function WorkingDay({ rows }: { rows: RepDayTimes[] }) {
+  const company = companyDayTimes(rows);
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base">Working day</CardTitle>
+      </CardHeader>
+      <CardContent>
+        {company.days === 0 ? (
+          <p className="py-8 text-center text-sm text-muted-foreground">
+            No recorded activity in this period, so there is no day to measure.
+          </p>
+        ) : (
+          <>
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+              <div>
+                <p className="text-xs text-muted-foreground">
+                  Company average start
+                </p>
+                <p className="text-2xl font-bold tabular-nums text-foreground">
+                  {formatTimeOfDay(company.start)}
+                </p>
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground">
+                  Company average close
+                </p>
+                <p className="text-2xl font-bold tabular-nums text-foreground">
+                  {formatTimeOfDay(company.end)}
+                </p>
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground">Average length</p>
+                <p className="text-2xl font-bold tabular-nums text-foreground">
+                  {formatDuration(company.length ?? 0)}
+                </p>
+              </div>
+            </div>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Across {company.days} rep-{company.days === 1 ? "day" : "days"},
+              weighted by days worked so a rep with one day does not count the
+              same as a rep with twenty.
+            </p>
+
+            <div className="mt-4 overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-border text-left text-xs text-muted-foreground">
+                    <th className="py-2 font-medium">Rep</th>
+                    <th className="py-2 text-right font-medium">Days</th>
+                    <th className="py-2 text-right font-medium">Starts</th>
+                    <th className="py-2 text-right font-medium">Closes</th>
+                    <th className="py-2 text-right font-medium">Length</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {rows.map((r) => (
+                    <tr key={r.rep_id} className="border-b border-border/60">
+                      <td className="py-2 text-foreground">
+                        {r.rep_name ?? "Unnamed rep"}
+                      </td>
+                      <td className="py-2 text-right tabular-nums text-muted-foreground">
+                        {r.days_worked}
+                      </td>
+                      <td className="py-2 text-right tabular-nums text-foreground">
+                        {formatTimeOfDay(r.avg_start_seconds)}
+                      </td>
+                      <td className="py-2 text-right tabular-nums text-foreground">
+                        {formatTimeOfDay(r.avg_end_seconds)}
+                      </td>
+                      <td className="py-2 text-right tabular-nums text-muted-foreground">
+                        {formatDuration(Number(r.avg_length_seconds ?? 0))}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </>
+        )}
+      </CardContent>
+    </Card>
   );
 }
 
