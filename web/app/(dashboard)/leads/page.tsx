@@ -98,7 +98,10 @@ export default function LeadsPage() {
     // Moved locally first: the board is the manager's train of thought, and a
     // card that hesitates before jumping columns breaks it. Reverted below if
     // the write is refused.
-    const before = leads;
+    // This card's own stage, not a snapshot of the whole board: dragging is
+    // never disabled, so two moves can be in flight, and restoring the array
+    // from this closure would put the other card back where it no longer is.
+    const previousStage = lead.stage;
     setLeads((prev) =>
       prev.map((l) => (l.id === lead.id ? { ...l, stage } : l))
     );
@@ -106,7 +109,9 @@ export default function LeadsPage() {
       await setLeadStage(supabase, lead.id, stage);
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e);
-      setLeads(before);
+      setLeads((prev) =>
+        prev.map((l) => (l.id === lead.id ? { ...l, stage: previousStage } : l))
+      );
       // Whatever went wrong, this board disagrees with the database — a card
       // that refuses to move and then sits there is worse than one that
       // disappears because somebody else dealt with it. Re-read rather than
@@ -168,7 +173,10 @@ export default function LeadsPage() {
             <div key={s.value} className="h-40 animate-pulse rounded-md bg-muted/50" />
           ))}
         </div>
-      ) : leads.length === 0 ? (
+      ) : leads.length === 0 && !error ? (
+        // Only when the load succeeded and found nothing. A failed fetch also
+        // leaves `leads` empty, and "No leads yet" would then state as fact the
+        // one thing the page does not know: whether there are any.
         <div className="rounded-lg border border-border bg-card py-16 text-center">
           <p className="text-sm font-medium text-foreground">No leads yet.</p>
           <p className="mt-1 text-sm text-muted-foreground">
@@ -352,7 +360,10 @@ export default function LeadsPage() {
         </div>
       )}
 
-      {!loading && leads.length > 0 && (
+      {/* Also when the load failed and left the board empty — that is the case
+          where retrying is the whole point, and it used to be the one case with
+          no button to do it from. */}
+      {!loading && (leads.length > 0 || error) && (
         <Button variant="outline" size="sm" onClick={load}>
           Refresh
         </Button>

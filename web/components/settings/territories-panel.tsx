@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   AlertTriangle,
   ChevronDown,
@@ -67,6 +67,8 @@ export function TerritoriesPanel() {
 
   const [removing, setRemoving] = useState<Territory | null>(null);
   const [impact, setImpact] = useState<TerritoryImpact | null>(null);
+  /** The territory whose impact fetch is the one still wanted. */
+  const impactRequest = useRef<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -91,6 +93,35 @@ export function TerritoriesPanel() {
   useEffect(() => {
     load();
   }, [load]);
+
+  /**
+   * Opens the delete dialog and counts what the delete would take with it.
+   *
+   * Two things this must not do. It must not spin forever: `fetchTerritoryImpact`
+   * throws on any refused query, and the call sites used to `await` it inside a
+   * `() => void` prop, so the rejection went nowhere and the dialog sat on
+   * "Checking what this would affect…". And it must not show one territory's
+   * numbers under another's name — open Gaborone, change your mind, open Kasane,
+   * and a late reply would have populated the dialog with Gaborone's counts,
+   * which is what the manager would then click Delete against.
+   */
+  async function beginRemove(territory: Territory) {
+    setError(null);
+    setImpact(null);
+    setRemoving(territory);
+    impactRequest.current = territory.id;
+    try {
+      const next = await fetchTerritoryImpact(supabase, territory);
+      if (impactRequest.current !== territory.id) return;
+      setImpact(next);
+    } catch (e) {
+      if (impactRequest.current !== territory.id) return;
+      // Close the dialog: it has nothing to show, and the banner behind it
+      // says why.
+      setRemoving(null);
+      setError(e instanceof Error ? e.message : String(e));
+    }
+  }
 
   async function run(work: () => Promise<void>) {
     setBusy(true);
@@ -222,11 +253,7 @@ export function TerritoriesPanel() {
                     onToggleActive={() =>
                       run(() => setTerritoryActive(supabase, main.id, !main.active))
                     }
-                    onRemove={async () => {
-                      setImpact(null);
-                      setRemoving(main);
-                      setImpact(await fetchTerritoryImpact(supabase, main));
-                    }}
+                    onRemove={() => beginRemove(main)}
                   />
                 </div>
 
@@ -272,11 +299,7 @@ export function TerritoriesPanel() {
                             onToggleActive={() =>
                               run(() => setTerritoryActive(supabase, sub.id, !sub.active))
                             }
-                            onRemove={async () => {
-                              setImpact(null);
-                              setRemoving(sub);
-                              setImpact(await fetchTerritoryImpact(supabase, sub));
-                            }}
+                            onRemove={() => beginRemove(sub)}
                           />
                         </li>
                       ))
@@ -383,6 +406,9 @@ export function TerritoriesPanel() {
         open={removing !== null}
         onOpenChange={(o) => {
           if (!o) {
+            // Abandons any impact fetch still in flight, so its numbers cannot
+            // arrive after the dialog has been dismissed.
+            impactRequest.current = null;
             setRemoving(null);
             setImpact(null);
           }
@@ -390,7 +416,7 @@ export function TerritoriesPanel() {
       >
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>Delete {removing?.name}?</DialogTitle>
+            <DialogTitle>Delete {removing?.name ?? "territory"}?</DialogTitle>
           </DialogHeader>
 
           {impact === null ? (
@@ -449,7 +475,17 @@ export function TerritoriesPanel() {
           )}
 
           <DialogFooter>
-            {impact && impact.stores === 0 && impact.subTerritories === 0 ? (
+            {/* The same four counts the "Still in use" list above is built
+                from. Gating on stores and sub-territories alone offered
+                "Delete permanently" while the dialog was itself listing reps or
+                scheduled visits — and unlike stores, `territory_reps` is ON
+                DELETE CASCADE, so that delete would have gone through and taken
+                the coverage with it silently. */}
+            {impact &&
+            impact.stores === 0 &&
+            impact.subTerritories === 0 &&
+            impact.reps === 0 &&
+            impact.upcomingRoutes === 0 ? (
               <Button
                 variant="destructive"
                 disabled={busy}

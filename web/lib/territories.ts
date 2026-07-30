@@ -190,7 +190,12 @@ export async function fetchTerritoryImpact(
     supabase.from("territories").select("id").eq("parent_id", territory.id),
     supabase.from("territory_reps").select("id").eq("territory_id", territory.id),
   ]);
-  if (storeRows.error) throw new Error(storeRows.error.message);
+  // Every one of the three, not just the stores. A refused query leaves its
+  // `data` null, which the counts below would read as zero — and the panel
+  // offers "Delete permanently" precisely when the counts are zero. A failure
+  // has to look like a failure, never like an unused territory.
+  const failure = storeRows.error ?? subs.error ?? reps.error;
+  if (failure) throw new Error(failure.message);
 
   const storeIds = (storeRows.data ?? []).map((s) => (s as { id: string }).id);
 

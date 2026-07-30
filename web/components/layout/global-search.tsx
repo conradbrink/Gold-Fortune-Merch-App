@@ -36,7 +36,12 @@ function sanitise(term: string): string {
   return term.replace(/[,()%*\\]/g, " ").trim();
 }
 
-export function GlobalSearch() {
+/**
+ * @param revealed Shows the box below the `sm` breakpoint, where it is hidden by
+ *   default because the header has no room for it. The top bar's mobile search
+ *   button drives this — before it did, that button was inert.
+ */
+export function GlobalSearch({ revealed = false }: { revealed?: boolean }) {
   const router = useRouter();
   const supabase = createClient();
 
@@ -45,16 +50,30 @@ export function GlobalSearch() {
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [active, setActive] = useState(0);
+  const [error, setError] = useState<string | null>(null);
   const boxRef = useRef<HTMLDivElement>(null);
+  const runSeq = useRef(0);
 
   const run = useCallback(
     async (raw: string) => {
+      // Which run this is. The debounce stops a query per keystroke, but not two
+      // in flight: type, wait 200ms, type again while the first is still out,
+      // and whichever *returns* last wins. That is not necessarily the one whose
+      // term is in the box.
+      //
+      // Claimed before the length check, so that deleting back down to one
+      // character also retires a search still on the wire.
+      const runId = ++runSeq.current;
+      const isStale = () => runId !== runSeq.current;
+
       const q = sanitise(raw);
       if (q.length < 2) {
         setHits([]);
+        setError(null);
         setBusy(false);
         return;
       }
+
       setBusy(true);
       const like = `%${q}%`;
       try {
@@ -68,6 +87,9 @@ export function GlobalSearch() {
           supabase
             .from("profiles")
             .select("id, full_name, email")
+            // Reps only: a hit here navigates to /representatives?q=…, and the
+            // directory lists reps, so a manager match led to an empty page.
+            .eq("role", "rep")
             .or(`full_name.ilike.${like},email.ilike.${like}`)
             .limit(5),
           supabase
@@ -122,10 +144,19 @@ export function GlobalSearch() {
           })),
         ];
 
+        if (isStale()) return;
+
+        // A refused query used to arrive as `?? []` and read exactly like "no
+        // matches" — the one answer a search must not invent. Say the search
+        // failed instead, and still show whatever did come back.
+        const failed = [stores, reps, products, forms, files].find((r) => r.error);
+        setError(failed?.error?.message ?? null);
         setHits(found);
         setActive(0);
       } finally {
-        setBusy(false);
+        // Only the newest run owns the spinner; an older one finishing must not
+        // clear it while the current search is still out.
+        if (!isStale()) setBusy(false);
       }
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -133,11 +164,13 @@ export function GlobalSearch() {
   );
 
   // Debounced: five queries per keystroke would be five per keystroke.
+  //
+  // The empty-term case goes through `run` as well rather than clearing state
+  // here. `run("")` short-circuits on the length check — and, importantly, still
+  // claims a run id first, which retires any search already on the wire. Doing
+  // it in the effect body cleared the results without retiring anything, so a
+  // reply for the term the user had just deleted could repopulate the list.
   useEffect(() => {
-    if (term.trim() === "") {
-      setHits([]);
-      return;
-    }
     const timer = setTimeout(() => run(term), 200);
     return () => clearTimeout(timer);
   }, [term, run]);
@@ -155,13 +188,17 @@ export function GlobalSearch() {
     setOpen(false);
     setTerm("");
     setHits([]);
+    setError(null);
     router.push(hit.href);
   }
 
   return (
     <div
       ref={boxRef}
-      className="relative hidden min-w-0 flex-1 sm:block sm:max-w-md"
+      className={cn(
+        "relative min-w-0 flex-1 sm:block sm:max-w-md",
+        revealed ? "block" : "hidden"
+      )}
     >
       <div className="flex items-center gap-2 rounded-md border border-border bg-secondary/50 px-3 py-2 text-sm">
         <Search className="h-4 w-4 shrink-0 text-muted-foreground" />
@@ -200,6 +237,7 @@ export function GlobalSearch() {
             onClick={() => {
               setTerm("");
               setHits([]);
+              setError(null);
             }}
             className="shrink-0 text-muted-foreground hover:text-foreground"
           >
@@ -212,12 +250,23 @@ export function GlobalSearch() {
         <div className="absolute left-0 right-0 top-full z-50 mt-1 max-h-80 overflow-y-auto rounded-md border border-border bg-popover shadow-lg">
           {busy && hits.length === 0 ? (
             <p className="px-3 py-3 text-sm text-muted-foreground">Searching…</p>
+          ) : error && hits.length === 0 ? (
+            <p className="px-3 py-3 text-sm text-destructive">
+              The search could not be completed: {error}
+            </p>
           ) : hits.length === 0 ? (
             <p className="px-3 py-3 text-sm text-muted-foreground">
               Nothing matches &ldquo;{term.trim()}&rdquo;.
             </p>
           ) : (
             <ul>
+              {/* Some sources answered, at least one did not — say so above the
+                  results rather than let a partial list pass for the whole. */}
+              {error && (
+                <li className="border-b border-border px-3 py-2 text-xs text-destructive">
+                  Some results are missing: {error}
+                </li>
+              )}
               {hits.map((hit, i) => (
                 <li key={`${hit.kind}-${hit.id}`}>
                   <button

@@ -133,15 +133,28 @@ async function changeEmail(admin: SupabaseClient, id: string, raw: string) {
     .from("profiles")
     .update({ email })
     .eq("id", id);
-  if (profileError && previous) {
+  if (profileError) {
     // Put the credential back rather than leave the login and the dashboard
-    // disagreeing about who this person is.
-    await admin.auth.admin.updateUserById(id, {
-      email: previous,
-      email_confirm: true,
-    });
+    // disagreeing about who this person is — but only when the old address is
+    // known. Gating the whole branch on `previous` reported a failed profile
+    // write as success whenever `getUserById` came back empty.
+    if (previous) {
+      await admin.auth.admin.updateUserById(id, {
+        email: previous,
+        email_confirm: true,
+      });
+      return Response.json(
+        { error: `Email change rolled back: ${profileError.message}` },
+        { status: 500 }
+      );
+    }
     return Response.json(
-      { error: `Email change rolled back: ${profileError.message}` },
+      {
+        error:
+          `The sign-in address was changed to ${email}, but the profile could ` +
+          `not be updated and the previous address is unknown, so it could not ` +
+          `be put back: ${profileError.message}`,
+      },
       { status: 500 }
     );
   }

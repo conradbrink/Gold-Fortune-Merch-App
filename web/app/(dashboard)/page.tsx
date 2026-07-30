@@ -51,14 +51,35 @@ export default function InsightsDashboardPage() {
       // The working-day figures are a second one because they answer a
       // different question — when people work, not what they did — and are
       // grouped per rep rather than over the whole org.
-      const [summary, times, operations] = await Promise.all([
+      // allSettled, not all: the two later RPCs answer secondary questions, and
+      // with `all` either one rejecting — an environment where those migrations
+      // have not run, a transient refusal — threw away the headline KPIs that
+      // had loaded perfectly well. Each section now fails on its own.
+      const [summary, times, operations] = await Promise.allSettled([
         fetchDashboardSummary(supabase, range),
         fetchRepDayTimes(supabase, range),
         fetchOperationsSummary(supabase, range),
       ]);
-      setData(summary);
-      setDayTimes(times);
-      setOps(operations);
+
+      // The summary *is* the page: without it there is nothing to degrade to.
+      if (summary.status === "rejected") throw summary.reason;
+      setData(summary.value);
+
+      setDayTimes(times.status === "fulfilled" ? times.value : []);
+      setOps(operations.status === "fulfilled" ? operations.value : null);
+
+      // Still reported rather than swallowed — a section quietly missing is how
+      // a broken RPC survives for weeks.
+      const degraded = [times, operations].find((r) => r.status === "rejected");
+      setError(
+        degraded && degraded.status === "rejected"
+          ? `Some sections could not be loaded: ${
+              degraded.reason instanceof Error
+                ? degraded.reason.message
+                : String(degraded.reason)
+            }`
+          : null
+      );
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
       setData(null);
@@ -118,8 +139,12 @@ export default function InsightsDashboardPage() {
       {error && (
         <Card>
           <CardContent className="py-8 text-center text-sm">
+            {/* The headline KPIs survive a secondary RPC failing, so this card
+                must not claim the whole dashboard is gone when it is not. */}
             <p className="font-medium text-destructive">
-              Could not load the dashboard
+              {data
+                ? "Part of the dashboard could not be loaded"
+                : "Could not load the dashboard"}
             </p>
             <p className="mt-1 text-muted-foreground">{error}</p>
             <Button size="sm" variant="outline" className="mt-3" onClick={load}>
