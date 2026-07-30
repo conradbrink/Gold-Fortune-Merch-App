@@ -1312,6 +1312,7 @@ export type Database = {
           active: boolean
           created_at: string
           id: string
+          level: string
           name: string
           org_id: string
           parent_id: string | null
@@ -1320,6 +1321,7 @@ export type Database = {
           active?: boolean
           created_at?: string
           id?: string
+          level?: string
           name: string
           org_id: string
           parent_id?: string | null
@@ -1328,6 +1330,7 @@ export type Database = {
           active?: boolean
           created_at?: string
           id?: string
+          level?: string
           name?: string
           org_id?: string
           parent_id?: string | null

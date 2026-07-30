@@ -16,10 +16,21 @@ import type { Tables } from "@/lib/supabase/types";
 
 export type Territory = Tables<"territories">;
 
+/** country → territory → sub. Stated on the row, never inferred from depth. */
+export type TerritoryLevel = "country" | "territory" | "sub";
+
 export type TerritoryTree = {
+  /** A `level = 'territory'` row: the middle tier, and the one stores sit in. */
   main: Territory;
   subs: Territory[];
-  /** Stores sitting directly in the main, plus every store in its subs. */
+  /** Stores sitting directly in the territory, plus every store in its subs. */
+  stores: number;
+};
+
+export type CountryTree = {
+  country: Territory;
+  territories: TerritoryTree[];
+  /** Every store in every territory of this country. */
   stores: number;
 };
 
@@ -60,33 +71,50 @@ export async function fetchTerritories(
  */
 export async function fetchTerritoryTree(
   supabase: SupabaseClient
-): Promise<TerritoryTree[]> {
+): Promise<CountryTree[]> {
   const [territories, storeRows] = await Promise.all([
     fetchTerritories(supabase),
     supabase.from("stores").select("territory_id, sub_territory_id"),
   ]);
   if (storeRows.error) throw new Error(storeRows.error.message);
 
-  const perMain = new Map<string, number>();
+  // A store carries the territory it is in; a store in a sub carries both, so
+  // counting by `territory_id` alone already includes it exactly once.
+  const perTerritory = new Map<string, number>();
   for (const row of storeRows.data ?? []) {
-    const main = (row as { territory_id: string | null }).territory_id;
-    if (main) perMain.set(main, (perMain.get(main) ?? 0) + 1);
+    const id = (row as { territory_id: string | null }).territory_id;
+    if (id) perTerritory.set(id, (perTerritory.get(id) ?? 0) + 1);
   }
 
-  const mains = territories.filter((t) => t.parent_id === null);
-  const subsByParent = new Map<string, Territory[]>();
+  // Grouped by `level`, not by whether a parent is present. `parent_id === null`
+  // used to mean "main territory" and now means "country" — reading the level is
+  // what stops that distinction going wrong silently.
+  const byLevel = (level: TerritoryLevel) =>
+    territories.filter((t) => t.level === level);
+
+  const childrenOf = new Map<string, Territory[]>();
   for (const t of territories) {
-    if (t.parent_id === null) continue;
-    const list = subsByParent.get(t.parent_id) ?? [];
+    if (!t.parent_id) continue;
+    const list = childrenOf.get(t.parent_id) ?? [];
     list.push(t);
-    subsByParent.set(t.parent_id, list);
+    childrenOf.set(t.parent_id, list);
   }
 
-  return mains.map((main) => ({
-    main,
-    subs: subsByParent.get(main.id) ?? [],
-    stores: perMain.get(main.id) ?? 0,
-  }));
+  return byLevel("country").map((country) => {
+    const territoriesIn = (childrenOf.get(country.id) ?? [])
+      .filter((t) => t.level === "territory")
+      .map((main) => ({
+        main,
+        subs: (childrenOf.get(main.id) ?? []).filter((s) => s.level === "sub"),
+        stores: perTerritory.get(main.id) ?? 0,
+      }));
+
+    return {
+      country,
+      territories: territoriesIn,
+      stores: territoriesIn.reduce((total, t) => total + t.stores, 0),
+    };
+  });
 }
 
 /** Store counts per sub-territory, for the rows under an expanded main. */
@@ -111,11 +139,13 @@ export async function createTerritory(
   supabase: SupabaseClient,
   orgId: string,
   name: string,
-  parentId: string | null
+  parentId: string | null,
+  /** Stated, because the trigger checks it against the parent's level. */
+  level: TerritoryLevel
 ): Promise<Territory> {
   const { data, error } = await supabase
     .from("territories")
-    .insert({ org_id: orgId, name: name.trim(), parent_id: parentId })
+    .insert({ org_id: orgId, name: name.trim(), parent_id: parentId, level })
     .select("*")
     .single();
   // The unique index is per level and case-insensitive, so this is a duplicate

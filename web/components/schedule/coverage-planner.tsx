@@ -148,16 +148,21 @@ export function CoveragePlanner({ onChanged }: { onChanged?: () => void }) {
     return out;
   }, [assignments, reps]);
 
-  /** Mains, each with its own subs — the shape the dropdown and the toolbar
-      both read, so the nesting is derived once. */
+  /** Territories, each with its own subs — the shape the dropdown and the
+      toolbar both read, so the nesting is derived once.
+   *
+   * Selected by `level`, not by `parent_id === null`. Since the country tier a
+   * parentless row is a *country*, and a store goes in a territory — so
+   * filtering the old way would have offered countries as destinations and
+   * dropped every real territory. */
   const tree = useMemo(() => {
     const mains = territories
-      .filter((t) => t.parent_id === null)
+      .filter((t) => t.level === "territory")
       .sort((a, b) => a.name.localeCompare(b.name));
     return mains.map((main) => ({
       main,
       subs: territories
-        .filter((t) => t.parent_id === main.id)
+        .filter((t) => t.level === "sub" && t.parent_id === main.id)
         .sort((a, b) => a.name.localeCompare(b.name)),
     }));
   }, [territories]);

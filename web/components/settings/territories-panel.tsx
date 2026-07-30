@@ -44,14 +44,19 @@ import {
   setTerritoryActive,
   type Territory,
   type TerritoryImpact,
-  type TerritoryTree,
+  type CountryTree,
+  type TerritoryLevel,
 } from "@/lib/territories";
 
 /**
  * The organisation's own sales geography.
  *
+ * Three levels: country → territory → sub-territory. Stores sit in a
+ * *territory*; the country is what that territory belongs to, so a store is
+ * still only ever in one place.
+ *
  * Presented as the tree it is rather than a flat table: a sub-territory only
- * means anything underneath its main, and a manager reading this is asking
+ * means anything underneath its territory, and a manager reading this is asking
  * "what is Gaborone divided into", not "list 47 rows".
  *
  * Writes are manager-only in RLS. A rep reaching this tab sees the structure
@@ -61,7 +66,7 @@ import {
 export function TerritoriesPanel() {
   const supabase = createClient();
 
-  const [tree, setTree] = useState<TerritoryTree[]>([]);
+  const [tree, setTree] = useState<CountryTree[]>([]);
   const [subCounts, setSubCounts] = useState<Record<string, number>>({});
   const [orgId, setOrgId] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
@@ -69,8 +74,11 @@ export function TerritoriesPanel() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
-  /** Null = closed. `parent` null means a new main territory. */
-  const [adding, setAdding] = useState<{ parent: Territory | null } | null>(null);
+  /** Null = closed. `level` says what is being added; a country has no parent. */
+  const [adding, setAdding] = useState<{
+    parent: Territory | null;
+    level: TerritoryLevel;
+  } | null>(null);
   const [newName, setNewName] = useState("");
 
   const [renaming, setRenaming] = useState<Territory | null>(null);
@@ -168,19 +176,20 @@ export function TerritoriesPanel() {
         <div>
           <h2 className="text-lg font-semibold text-foreground">Territories</h2>
           <p className="text-sm text-muted-foreground">
-            {tree.length} main {tree.length === 1 ? "territory" : "territories"} ·
-            a main territory is a town or region, divided into sub-territories.
+            {tree.length} {tree.length === 1 ? "country" : "countries"} ·
+            a country holds territories — a town or region — and each of those can
+            be divided into sub-territories.
           </p>
         </div>
         <Button
           className="gap-1.5"
           onClick={() => {
             setNewName("");
-            setAdding({ parent: null });
+            setAdding({ parent: null, level: "country" });
           }}
         >
           <Plus className="h-4 w-4" />
-          Add main territory
+          Add country
         </Button>
       </div>
 
@@ -199,13 +208,93 @@ export function TerritoriesPanel() {
           </div>
         ) : tree.length === 0 ? (
           <p className="py-10 text-center text-sm text-muted-foreground">
-            No territories yet. Add the first town or region above.
+            No countries yet. Add the first one above.
           </p>
         ) : (
-          tree.map(({ main, subs, stores }) => {
-            const open = expanded.has(main.id);
+          tree.map(({ country, territories, stores: countryStores }) => {
+            const countryOpen = expanded.has(country.id);
             return (
-              <div key={main.id}>
+              <div key={country.id}>
+                <div className="flex items-center gap-2 bg-muted/40 px-3 py-2.5">
+                  <button
+                    type="button"
+                    onClick={() => toggle(country.id)}
+                    aria-label={countryOpen ? "Collapse" : "Expand"}
+                    aria-expanded={countryOpen}
+                    className="shrink-0 text-muted-foreground hover:text-foreground"
+                  >
+                    {countryOpen ? (
+                      <ChevronDown className="h-4 w-4" />
+                    ) : (
+                      <ChevronRight className="h-4 w-4" />
+                    )}
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => toggle(country.id)}
+                    className="min-w-0 flex-1 text-left"
+                  >
+                    <span
+                      className={
+                        country.active
+                          ? "text-sm font-semibold"
+                          : "text-sm font-semibold text-muted-foreground"
+                      }
+                    >
+                      {country.name}
+                    </span>
+                    {!country.active && (
+                      <Badge variant="outline" className="ml-2 font-normal">
+                        Inactive
+                      </Badge>
+                    )}
+                    <span className="ml-2 text-xs text-muted-foreground">
+                      {territories.length}{" "}
+                      {territories.length === 1 ? "territory" : "territories"}
+                      {" · "}
+                      {countryStores} {countryStores === 1 ? "store" : "stores"}
+                    </span>
+                  </button>
+
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="gap-1.5"
+                    onClick={() => {
+                      setNewName("");
+                      setAdding({ parent: country, level: "territory" });
+                      setExpanded((p) => new Set(p).add(country.id));
+                    }}
+                  >
+                    <Plus className="h-3.5 w-3.5" />
+                    Territory
+                  </Button>
+                  <RowActions
+                    territory={country}
+                    busy={busy}
+                    onRename={() => {
+                      setRenameTo(country.name);
+                      setRenaming(country);
+                    }}
+                    onToggleActive={() =>
+                      run(() => setTerritoryActive(supabase, country.id, !country.active))
+                    }
+                    onRemove={() => beginRemove(country)}
+                  />
+                </div>
+
+                {countryOpen && territories.length === 0 && (
+                  <p className="border-t border-border px-3 py-2 pl-11 text-sm text-muted-foreground">
+                    No territories in {country.name} yet.
+                  </p>
+                )}
+
+                {countryOpen &&
+                  territories.map(({ main, subs, stores }) => {
+                    const open = expanded.has(main.id);
+                    return (
+                      <div key={main.id} className="border-t border-border pl-4">
                 <div className="flex items-center gap-2 px-3 py-2.5">
                   <button
                     type="button"
@@ -251,7 +340,7 @@ export function TerritoriesPanel() {
                     className="gap-1.5"
                     onClick={() => {
                       setNewName("");
-                      setAdding({ parent: main });
+                      setAdding({ parent: main, level: "sub" });
                       setExpanded((p) => new Set(p).add(main.id));
                     }}
                   >
@@ -328,6 +417,9 @@ export function TerritoriesPanel() {
                 {open && (
                   <TerritoryStores main={main} subs={subs} onChanged={load} />
                 )}
+                      </div>
+                    );
+                  })}
               </div>
             );
           })
@@ -342,14 +434,18 @@ export function TerritoriesPanel() {
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>
-              {adding?.parent
-                ? `Add a sub-territory in ${adding.parent.name}`
-                : "Add a main territory"}
+              {adding?.level === "country"
+                ? "Add a country"
+                : adding?.level === "territory"
+                  ? `Add a territory in ${adding.parent?.name}`
+                  : `Add a sub-territory in ${adding?.parent?.name}`}
             </DialogTitle>
             <DialogDescription>
-              {adding?.parent
-                ? "A part of this territory a rep can be given on its own."
-                : "Normally a city, town or region."}
+              {adding?.level === "country"
+                ? "The top level. Everything else sits inside one."
+                : adding?.level === "territory"
+                  ? "Normally a city, town or region. Stores go in these."
+                  : "A part of this territory a rep can be given on its own."}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-1.5">
@@ -357,7 +453,13 @@ export function TerritoriesPanel() {
             <Input
               id="territory-name"
               value={newName}
-              placeholder={adding?.parent ? "Gaborone North" : "Gaborone"}
+              placeholder={
+                adding?.level === "country"
+                  ? "Botswana"
+                  : adding?.level === "territory"
+                    ? "Gaborone"
+                    : "Gaborone North"
+              }
               onChange={(e) => setNewName(e.target.value)}
             />
           </div>
@@ -371,7 +473,8 @@ export function TerritoriesPanel() {
                     supabase,
                     orgId,
                     newName,
-                    adding.parent?.id ?? null
+                    adding.parent?.id ?? null,
+                    adding.level
                   );
                 });
                 if (ok) setAdding(null);

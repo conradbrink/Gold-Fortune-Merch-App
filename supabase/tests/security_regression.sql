@@ -297,28 +297,33 @@ begin
   --
   -- Built self-contained rather than reusing the estate, so the check does not
   -- depend on which territories happen to have dependents.
+  -- Three levels since the country tier: country → territory → sub. Fixtures are
+  -- built as that whole chain, created rather than found — the estate's own
+  -- country would do, but a check that depends on tenant data is the mistake
+  -- checks 20-23 already made twice.
   reset role;
-  insert into public.territories (org_id, name) values (v_org, 'Regression Main')
-    returning id into v_shape_main;
-  insert into public.territories (org_id, name, parent_id)
-    values (v_org, 'Regression Sub', v_shape_main);
-  -- Also created rather than found. With no second root in the estate this was
-  -- null, so check 23's update became `parent_id = null` — which the trigger
-  -- correctly allows, since nothing changes — and the check then reported the
-  -- vulnerability as present. A false alarm, from a fixture that was not there.
-  insert into public.territories (org_id, name) values (v_org, 'Regression Other Root')
+  insert into public.territories (org_id, name, level, parent_id)
+    values (v_org, 'Regression Country', 'country', null)
     returning id into v_shape_other;
+  insert into public.territories (org_id, name, level, parent_id)
+    values (v_org, 'Regression Territory', 'territory', v_shape_other)
+    returning id into v_shape_main;
+  insert into public.territories (org_id, name, level, parent_id)
+    values (v_org, 'Regression Sub', 'sub', v_shape_main);
 
   perform set_config('request.jwt.claims',
     json_build_object('sub', v_mgr, 'role', 'authenticated')::text, true);
   set local role authenticated;
 
-  -- 23. A territory something depends on cannot be restructured out from under it.
+  -- 23. A territory with a sub under it must not become a sub itself — that is
+  --     the state `stores_enforce_territory` refuses to create, arrived at
+  --     sideways. Note this is a *level* change: reparenting a territory between
+  --     countries is ordinary reorganisation and is allowed (see check 24).
   begin
-    update public.territories set parent_id = v_shape_other where id = v_shape_main;
+    update public.territories set level = 'sub' where id = v_shape_main;
     get diagnostics v_n = row_count;
     if v_n > 0 then
-      v_fail := v_fail || '23. a main with a sub-territory could become a sub' || E'\n';
+      v_fail := v_fail || '23. a territory with a sub could become a sub itself' || E'\n';
     end if;
   exception when others then null; end;
 
@@ -331,14 +336,15 @@ begin
     update public.territories set org_id = v_other_org where id = v_shape_main;
     get diagnostics v_n = row_count;
     if v_n > 0 then
-      v_fail := v_fail || '23b. a main with dependents could change organisation' || E'\n';
+      v_fail := v_fail || '23b. a territory with dependents could change organisation' || E'\n';
     end if;
   exception when others then null; end;
 
-  -- 24. But renaming and deactivating — the only updates the UI makes — must
-  --     still work. See check 4.
+  -- 24. Renaming and deactivating — the only updates the UI makes — must still
+  --     work, and so must moving a childless territory to another country, which
+  --     is what the guard was narrowed to allow. See check 4.
   begin
-    update public.territories set name = 'Regression Main renamed', active = false
+    update public.territories set name = 'Regression Territory renamed', active = false
      where id = v_shape_main;
     get diagnostics v_n = row_count;
     if v_n <> 1 then
@@ -348,22 +354,59 @@ begin
     v_fail := v_fail || '24. a territory could NOT be renamed or deactivated: '
               || sqlerrm || E'\n'; end;
 
+  begin
+    insert into public.territories (org_id, name, level, parent_id)
+      values (v_org, 'Regression Country Two', 'country', null)
+      returning id into v_terr;
+    insert into public.territories (org_id, name, level, parent_id)
+      values (v_org, 'Regression Spare', 'territory', v_shape_other)
+      returning id into v_other_terr;
+    update public.territories set parent_id = v_terr where id = v_other_terr;
+    get diagnostics v_n = row_count;
+    if v_n <> 1 then
+      v_fail := v_fail || '24b. a childless territory could NOT move country' || E'\n';
+    end if;
+  exception when others then
+    v_fail := v_fail || '24b. a childless territory could NOT move country: '
+              || sqlerrm || E'\n'; end;
+
   reset role;
 
-  -- 25. No territory is its own ancestor, and none is three levels deep.
+  -- 25. Every row sits under the right *kind* of parent.
   --
-  -- An invariant rather than an attack, and deliberately about the *data* rather
-  -- than a permission: a cycle can only be committed by two transactions
-  -- reparenting past each other, which no single-connection test can stage (see
-  -- `territory_reparent_race.sh`). This catches the result however it arose —
-  -- the race, a direct SQL fix, a restore, a future trigger change.
+  -- Was "nothing is three levels deep", which the country tier made wrong —
+  -- three levels is now the design. The invariant that survived the change is
+  -- the one that was really being tested: a country has no parent, a territory
+  -- hangs off a country, a sub hangs off a territory. That catches a fourth
+  -- level, a skipped level and a cycle alike, because every one of them puts a
+  -- row under a parent of the wrong level.
+  --
+  -- An invariant rather than an attack, deliberately: a cycle can only be
+  -- committed by two transactions reparenting past each other, which no
+  -- single-connection test can stage (see `territory_reparent_race.sh`). This
+  -- catches the result however it arose.
   select count(*) into v_n
     from public.territories t
-    join public.territories p on p.id = t.parent_id
-   where p.parent_id is not null;
+    left join public.territories p on p.id = t.parent_id
+   where (t.level = 'country' and t.parent_id is not null)
+      or (t.level = 'territory' and coalesce(p.level, '') <> 'country')
+      or (t.level = 'sub' and coalesce(p.level, '') <> 'territory');
   if v_n > 0 then
     v_fail := v_fail || format(
-      '25. %s territory/ies sit under a parent that is itself a sub-territory (cycle or three levels)%s',
+      '25. %s territory/ies sit under a parent of the wrong level (skipped level, fourth level or cycle)%s',
+      v_n, E'\n');
+  end if;
+
+  -- 25b. And no store is attached to anything but a territory. The country is
+  --      reached through the territory, so this is the other half of "a store is
+  --      never in two places".
+  select count(*) into v_n
+    from public.stores s
+    join public.territories t on t.id = s.territory_id
+   where t.level <> 'territory';
+  if v_n > 0 then
+    v_fail := v_fail || format(
+      '25b. %s store(s) are attached to a country or a sub rather than a territory%s',
       v_n, E'\n');
   end if;
 
