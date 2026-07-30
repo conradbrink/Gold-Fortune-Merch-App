@@ -10,6 +10,34 @@ account lost, the schema would have gone with it.
 migration is applied). Filenames and ordering match the remote history exactly,
 so this directory is a faithful, replayable record.
 
+## ⚠️ The filename prefix is not decorative — it must equal the recorded version
+
+Applying a migration through the Supabase MCP server stamps it with **its own**
+timestamp, which is *not* the one you choose for the file. Writing the `.sql`
+with a hand-picked timestamp therefore produces a file the database has no
+record of, while the database holds a version with no matching file.
+
+This drifted silently: on 30 July 2026, **32 of 71 files** carried versions the
+database had never recorded. Nothing broke in production — every migration had
+been applied — but the consequences would have surfaced at the worst moment:
+
+- a staging project replayed from this directory would **not** reproduce
+  production, so "we tested it in staging" would have been false;
+- `supabase db push` would have tried to re-apply 32 already-applied migrations;
+- rolling a schema change back by migration history was not trustworthy.
+
+Corrected by renaming the files to the versions the database recorded — the
+database was not touched. Names matched 1:1 and the ordering was already
+identical, so the rename was purely cosmetic in git and made the two agree.
+
+**The rule:** after `apply_migration`, read the version back with
+`list_migrations` (or `select version, name from
+supabase_migrations.schema_migrations order by version desc limit 1`) and name
+the file with *that* value. Never invent the timestamp.
+
+**To check for drift at any time**, compare the two lists — every name should
+appear once on each side with the same prefix.
+
 ## Layout
 
 The table below covers the first 17; later migrations are named for what they
