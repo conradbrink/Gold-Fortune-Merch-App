@@ -100,6 +100,12 @@ export default function ProductsPage() {
     load();
   }, [load]);
 
+  // Seeded from `?q=` so the header search lands here already filtered.
+  useEffect(() => {
+    const q = new URLSearchParams(window.location.search).get("q");
+    if (q) setSearch(q);
+  }, []);
+
   // Options come from what is actually present, like the Stores page's town
   // filter — an empty dropdown is worse than no dropdown, and nothing on the
   // current price card fills `category`.

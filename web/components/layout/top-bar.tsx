@@ -20,6 +20,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { createClient } from "@/lib/supabase/client";
+import { GlobalSearch } from "@/components/layout/global-search";
 
 export function TopBar({ onOpenNav }: { onOpenNav?: () => void }) {
   const router = useRouter();
@@ -59,12 +60,7 @@ export function TopBar({ onOpenNav }: { onOpenNav?: () => void }) {
         <Menu className="h-5 w-5" />
       </Button>
 
-      <div className="hidden min-w-0 flex-1 items-center gap-2 rounded-md border border-border bg-secondary/50 px-3 py-2 text-sm text-muted-foreground sm:flex sm:max-w-md">
-        <Search className="h-4 w-4 shrink-0" />
-        <span className="truncate">
-          Find places, reps, forms, files and products
-        </span>
-      </div>
+      <GlobalSearch />
 
       <div className="ml-auto flex items-center gap-2 text-muted-foreground sm:gap-4">
         <Button variant="ghost" size="icon" className="sm:hidden" aria-label="Search">

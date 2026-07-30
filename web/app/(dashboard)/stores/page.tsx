@@ -242,6 +242,9 @@ export default function StoresPage() {
   useEffect(() => {
     loadData();
     fetchOrgId(supabase).then(setOrgId).catch(() => setOrgId(null));
+    // Seeded from `?q=` so the header search lands here already filtered.
+    const q = new URLSearchParams(window.location.search).get("q");
+    if (q) setSearch(q);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

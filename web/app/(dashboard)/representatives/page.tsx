@@ -74,6 +74,14 @@ export default function RepresentativesPage() {
     load();
   }, [load]);
 
+  // Seeded from `?q=` so the header search can land on this page already
+  // filtered. Read from window rather than useSearchParams, which would force
+  // this page into a Suspense boundary for nothing.
+  useEffect(() => {
+    const q = new URLSearchParams(window.location.search).get("q");
+    if (q) setQuery(q);
+  }, []);
+
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     if (!q) return reps;
