@@ -217,6 +217,28 @@ export async function fetchTerritoryImpact(
   };
 }
 
+/**
+ * Places a store in a territory, or moves it to another one.
+ *
+ * Both columns are written together because the trigger checks them as a pair:
+ * setting a main without clearing a sub that belongs elsewhere is exactly the
+ * disagreement it exists to refuse.
+ */
+export async function setStoreTerritory(
+  supabase: SupabaseClient,
+  storeId: string,
+  territoryId: string | null,
+  subTerritoryId: string | null
+): Promise<void> {
+  const { data, error } = await supabase
+    .from("stores")
+    .update({ territory_id: territoryId, sub_territory_id: subTerritoryId })
+    .eq("id", storeId)
+    .select("id");
+  if (error) throw new Error(error.message);
+  affected(data, "The store was not moved");
+}
+
 export async function deleteTerritory(
   supabase: SupabaseClient,
   id: string

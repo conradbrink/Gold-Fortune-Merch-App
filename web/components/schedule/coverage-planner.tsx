@@ -24,6 +24,11 @@ import {
   setStoreFrequency,
   type VisitFrequency,
 } from "@/lib/schedule";
+import {
+  fetchTerritories,
+  setStoreTerritory,
+  type Territory,
+} from "@/lib/territories";
 
 /**
  * Coverage: who covers which stores, and how often.
@@ -47,9 +52,17 @@ type StoreRow = {
   city: string | null;
   store_group_id: string | null;
   visit_frequency: VisitFrequency;
+  territory_id: string | null;
+  sub_territory_id: string | null;
 };
 
-type BulkAction = "assign" | "unassign" | "frequency" | "day" | "clear-day";
+type BulkAction =
+  | "assign"
+  | "unassign"
+  | "frequency"
+  | "day"
+  | "clear-day"
+  | "territory";
 
 export function CoveragePlanner({ onChanged }: { onChanged?: () => void }) {
   const supabase = createClient();
@@ -65,9 +78,14 @@ export function CoveragePlanner({ onChanged }: { onChanged?: () => void }) {
   const [progress, setProgress] = useState(0);
   const [done, setDone] = useState<string | null>(null);
 
+  const [territories, setTerritories] = useState<Territory[]>([]);
+
   const [query, setQuery] = useState("");
   const [groupFilter, setGroupFilter] = useState("all");
-  const [cityFilter, setCityFilter] = useState("all");
+  /** "all" · "none" · "main:<id>" · "sub:<id>". Replaced the town filter:
+      territories were seeded from the towns and are the thing that gets
+      planned, so two near-identical dropdowns would just compete. */
+  const [territoryFilter, setTerritoryFilter] = useState("all");
   const [freqFilter, setFreqFilter] = useState("all");
   const [repFilter, setRepFilter] = useState("all");
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -76,27 +94,34 @@ export function CoveragePlanner({ onChanged }: { onChanged?: () => void }) {
   const [actionRep, setActionRep] = useState("");
   const [actionFreq, setActionFreq] = useState<VisitFrequency>("monthly");
   const [actionDay, setActionDay] = useState("1");
+  const [actionMain, setActionMain] = useState("");
+  const [actionSub, setActionSub] = useState("");
 
   async function load() {
     setLoading(true);
     try {
-      const [storeRes, groupRes, repRows, assignmentRows, org] = await Promise.all([
-        supabase
-          .from("stores")
-          .select("id, name, city, store_group_id, visit_frequency")
-          .eq("active", true)
-          .order("name"),
-        supabase.from("store_groups").select("id, name").order("name"),
-        fetchRepDirectory(supabase),
-        fetchAssignments(supabase),
-        fetchOrgId(supabase),
-      ]);
+      const [storeRes, groupRes, repRows, assignmentRows, org, territoryRows] =
+        await Promise.all([
+          supabase
+            .from("stores")
+            .select(
+              "id, name, city, store_group_id, visit_frequency, territory_id, sub_territory_id"
+            )
+            .eq("active", true)
+            .order("name"),
+          supabase.from("store_groups").select("id, name").order("name"),
+          fetchRepDirectory(supabase),
+          fetchAssignments(supabase),
+          fetchOrgId(supabase),
+          fetchTerritories(supabase),
+        ]);
       if (storeRes.error) throw new Error(storeRes.error.message);
       setStores((storeRes.data ?? []) as StoreRow[]);
       setGroups((groupRes.data ?? []) as { id: string; name: string }[]);
       setReps(repRows.filter((r) => r.is_active));
       setAssignments(assignmentRows);
       setOrgId(org);
+      setTerritories(territoryRows);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -123,18 +148,40 @@ export function CoveragePlanner({ onChanged }: { onChanged?: () => void }) {
     return out;
   }, [assignments, reps]);
 
-  const cities = useMemo(() => {
-    const seen: Record<string, true> = {};
-    for (const s of stores) if (s.city) seen[s.city] = true;
-    return Object.keys(seen).sort((a, b) => a.localeCompare(b));
-  }, [stores]);
+  /** Mains, each with its own subs — the shape the dropdown and the toolbar
+      both read, so the nesting is derived once. */
+  const tree = useMemo(() => {
+    const mains = territories
+      .filter((t) => t.parent_id === null)
+      .sort((a, b) => a.name.localeCompare(b.name));
+    return mains.map((main) => ({
+      main,
+      subs: territories
+        .filter((t) => t.parent_id === main.id)
+        .sort((a, b) => a.name.localeCompare(b.name)),
+    }));
+  }, [territories]);
+
+  const territoryName = useMemo(() => {
+    const byId: Record<string, string> = {};
+    for (const t of territories) byId[t.id] = t.name;
+    return byId;
+  }, [territories]);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     return stores.filter((s) => {
       if (groupFilter !== "all" && (s.store_group_id ?? "none") !== groupFilter) return false;
-      if (cityFilter !== "all") {
-        if (cityFilter === "none" ? s.city !== null : s.city !== cityFilter) return false;
+      if (territoryFilter !== "all") {
+        // Choosing a main takes everything in it, sub-territories included —
+        // the sub is a subdivision of the main, not an alternative to it.
+        if (territoryFilter === "none") {
+          if (s.territory_id !== null) return false;
+        } else if (territoryFilter.startsWith("main:")) {
+          if (s.territory_id !== territoryFilter.slice(5)) return false;
+        } else if (s.sub_territory_id !== territoryFilter.slice(4)) {
+          return false;
+        }
       }
       if (freqFilter !== "all" && s.visit_frequency !== freqFilter) return false;
       if (repFilter !== "all") {
@@ -146,7 +193,7 @@ export function CoveragePlanner({ onChanged }: { onChanged?: () => void }) {
       if (q && !`${s.name} ${s.city ?? ""}`.toLowerCase().includes(q)) return false;
       return true;
     });
-  }, [stores, query, groupFilter, cityFilter, freqFilter, repFilter, repsByStore]);
+  }, [stores, query, groupFilter, territoryFilter, freqFilter, repFilter, repsByStore]);
 
   /** Selection is intersected with the filter so an action can never touch a
       store the manager cannot currently see. */
@@ -222,6 +269,17 @@ export function CoveragePlanner({ onChanged }: { onChanged?: () => void }) {
                   mine.map((m) => setAssignmentDay(supabase, m.assignmentId, null, null))
                 );
                 return;
+              case "territory":
+                // Places stores in a territory, and moves them out of whatever
+                // they were in. Choosing a sub implies its main, because the
+                // database refuses a sub without one.
+                await setStoreTerritory(
+                  supabase,
+                  s.id,
+                  actionMain || null,
+                  actionSub || null
+                );
+                return;
             }
           })
         );
@@ -280,12 +338,32 @@ export function CoveragePlanner({ onChanged }: { onChanged?: () => void }) {
           ))}
           <option value="none">Ungrouped</option>
         </NativeSelect>
-        <NativeSelect value={cityFilter} onChange={(e) => setCityFilter(e.target.value)} aria-label="Filter by town">
-          <option value="all">All towns</option>
-          {cities.map((c) => (
-            <option key={c} value={c}>{c}</option>
-          ))}
-          <option value="none">No town</option>
+        {/* Sub-territories sit inside their main rather than in a second
+            dropdown: they are a subdivision of it, so a list that nests says
+            what the structure is without needing to be explained. */}
+        <NativeSelect
+          value={territoryFilter}
+          onChange={(e) => setTerritoryFilter(e.target.value)}
+          aria-label="Filter by territory"
+        >
+          <option value="all">All territories</option>
+          {tree.map(({ main, subs }) =>
+            subs.length === 0 ? (
+              <option key={main.id} value={`main:${main.id}`}>
+                {main.name}
+              </option>
+            ) : (
+              <optgroup key={main.id} label={main.name}>
+                <option value={`main:${main.id}`}>All of {main.name}</option>
+                {subs.map((sub) => (
+                  <option key={sub.id} value={`sub:${sub.id}`}>
+                    {sub.name}
+                  </option>
+                ))}
+              </optgroup>
+            )
+          )}
+          <option value="none">No territory</option>
         </NativeSelect>
         <NativeSelect value={freqFilter} onChange={(e) => setFreqFilter(e.target.value)} aria-label="Filter by frequency">
           <option value="all">Any frequency</option>
@@ -338,8 +416,58 @@ export function CoveragePlanner({ onChanged }: { onChanged?: () => void }) {
               <option value="frequency">Set frequency</option>
               <option value="day">Set day</option>
               <option value="clear-day">Clear day</option>
+              <option value="territory">Move to territory</option>
             </NativeSelect>
           </div>
+
+          {action === "territory" && (
+            <>
+              <div className="w-44 space-y-1">
+                <Label htmlFor="bulk-territory" className="text-xs">
+                  Territory
+                </Label>
+                <NativeSelect
+                  id="bulk-territory"
+                  value={actionMain}
+                  onChange={(e) => {
+                    setActionMain(e.target.value);
+                    // The sub belonged to the old main, so it cannot survive
+                    // the change — the database would refuse the pair anyway.
+                    setActionSub("");
+                  }}
+                >
+                  <option value="">Out of any territory</option>
+                  {tree.map(({ main }) => (
+                    <option key={main.id} value={main.id}>
+                      {main.name}
+                    </option>
+                  ))}
+                </NativeSelect>
+              </div>
+
+              {(tree.find((t) => t.main.id === actionMain)?.subs.length ?? 0) > 0 && (
+                <div className="w-44 space-y-1">
+                  <Label htmlFor="bulk-sub-territory" className="text-xs">
+                    Sub-territory
+                  </Label>
+                  <NativeSelect
+                    id="bulk-sub-territory"
+                    value={actionSub}
+                    onChange={(e) => setActionSub(e.target.value)}
+                  >
+                    <option value="">No sub-territory</option>
+                    {tree
+                      .find((t) => t.main.id === actionMain)
+                      ?.subs.map((sub) => (
+                        <option key={sub.id} value={sub.id}>
+                          {sub.name}
+                        </option>
+                      ))}
+                  </NativeSelect>
+                </div>
+              )}
+            </>
+          )}
 
           {(action === "assign" || action === "unassign") && (
             <div className="w-44 space-y-1">
@@ -424,8 +552,17 @@ export function CoveragePlanner({ onChanged }: { onChanged?: () => void }) {
                   <div className="min-w-0 flex-1">
                     <p className="truncate text-sm text-foreground">{s.name}</p>
                     <p className="truncate text-xs text-muted-foreground">
-                      {s.city ?? "No town"} ·{" "}
-                      {FREQUENCIES.find((f) => f.value === s.visit_frequency)?.label}
+                      {/* Territory rather than town: it is what the filter and
+                          the plan are expressed in, and a store placed nowhere
+                          needs to be visible as such. */}
+                      {s.territory_id
+                        ? `${territoryName[s.territory_id] ?? "Unknown"}${
+                            s.sub_territory_id
+                              ? ` › ${territoryName[s.sub_territory_id] ?? "Unknown"}`
+                              : ""
+                          }`
+                        : "No territory"}{" "}
+                      · {FREQUENCIES.find((f) => f.value === s.visit_frequency)?.label}
                     </p>
                   </div>
                   <p className="shrink-0 text-xs text-muted-foreground">
