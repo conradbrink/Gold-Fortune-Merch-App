@@ -2,10 +2,9 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import {
   Search,
-  Mail,
-  Bell,
   Settings,
   ChevronDown,
   LogOut,
@@ -77,9 +76,24 @@ export function TopBar({ onOpenNav }: { onOpenNav?: () => void }) {
         >
           {searchRevealed ? <X className="h-5 w-5" /> : <Search className="h-5 w-5" />}
         </Button>
-        <Mail className="hidden h-5 w-5 lg:block" />
-        <Bell className="hidden h-5 w-5 lg:block" />
-        <Settings className="hidden h-5 w-5 lg:block" />
+        {/* Mail and Bell used to sit here as bare icons — not buttons, no
+            handler, nothing behind them. There is no mail and no notification
+            feature in this product, so they were an advertisement for something
+            that does not exist. Removed rather than wired to a placeholder.
+            Settings had the same problem but does have somewhere to go. */}
+        <Button
+          variant="ghost"
+          size="icon"
+          nativeButton={false}
+          className="hidden lg:inline-flex"
+          title="Company settings"
+          aria-label="Company settings"
+          render={
+            <Link href="/settings/company">
+              <Settings className="h-5 w-5" />
+            </Link>
+          }
+        />
         <div className="mx-1 hidden h-6 w-px bg-border lg:block" />
         <DropdownMenu>
           <DropdownMenuTrigger className="flex items-center gap-2 outline-none">

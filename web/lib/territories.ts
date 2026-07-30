@@ -225,6 +225,16 @@ export async function fetchTerritoryImpact(
 /**
  * Places a store in a territory, or moves it to another one.
  *
+ * **A store is never in two territories.** It carries one main and, optionally,
+ * one sub *of that same main* — so "adding" a store to a territory is always a
+ * move out of wherever it was. That is structural, not a convention: `stores` has
+ * exactly two territory columns, and `stores_enforce_territory` refuses the ways
+ * round it. Confirmed by attacking both:
+ *
+ *   - main A with a sub belonging to B → "ZZ Sub of B is not inside ZZ Main A."
+ *   - a sub with no main at all → "A store in a sub-territory must also carry
+ *     its main territory."
+ *
  * Both columns are written together because the trigger checks them as a pair:
  * setting a main without clearing a sub that belongs elsewhere is exactly the
  * disagreement it exists to refuse.
@@ -242,6 +252,70 @@ export async function setStoreTerritory(
     .select("id");
   if (error) throw new Error(error.message);
   affected(data, "The store was not moved");
+}
+
+/** A store as the territory panel needs it: where it is, and what it is called. */
+export type TerritoryStore = {
+  id: string;
+  name: string;
+  city: string | null;
+  territory_id: string | null;
+  sub_territory_id: string | null;
+};
+
+const STORE_COLUMNS = "id, name, city, territory_id, sub_territory_id";
+
+/**
+ * The stores inside a main territory — those sitting in it directly and those in
+ * any of its sub-territories.
+ *
+ * Fetched per territory when one is expanded rather than all at once: the estate
+ * is 209 stores across 47 territories, and loading every store to render a page
+ * that shows counts is the mistake the dashboard RPCs were written to undo.
+ */
+export async function fetchTerritoryStores(
+  supabase: SupabaseClient,
+  mainId: string
+): Promise<TerritoryStore[]> {
+  const { data, error } = await supabase
+    .from("stores")
+    .select(STORE_COLUMNS)
+    .eq("territory_id", mainId)
+    .order("name");
+  if (error) throw new Error(error.message);
+  return (data ?? []) as TerritoryStore[];
+}
+
+/**
+ * Stores that could be moved into a territory — everything *not* already in it.
+ *
+ * Deliberately not limited to stores with no territory at all. Every store in
+ * this estate already has one (they were seeded from the town), so a picker that
+ * only offered unplaced stores would always be empty and the feature would look
+ * broken. Moving a store between territories is the normal case; the current
+ * territory is shown against each so the move is made knowingly.
+ */
+export async function searchStoresOutside(
+  supabase: SupabaseClient,
+  mainId: string,
+  term: string,
+  limit = 25
+): Promise<TerritoryStore[]> {
+  let query = supabase.from("stores").select(STORE_COLUMNS).eq("active", true);
+
+  // `or(territory_id.is.null, territory_id.neq.X)` rather than a plain `neq`:
+  // PostgREST drops NULLs from a `neq`, which would hide exactly the stores that
+  // most need placing.
+  query = query.or(`territory_id.is.null,territory_id.neq.${mainId}`);
+
+  const trimmed = term.trim().replace(/[,()%*\\]/g, " ").trim();
+  if (trimmed) {
+    query = query.or(`name.ilike.%${trimmed}%,city.ilike.%${trimmed}%`);
+  }
+
+  const { data, error } = await query.order("name").limit(limit);
+  if (error) throw new Error(error.message);
+  return (data ?? []) as TerritoryStore[];
 }
 
 export async function deleteTerritory(

@@ -5,12 +5,22 @@ import {
   AlertTriangle,
   ChevronDown,
   ChevronRight,
+  Eye,
+  EyeOff,
+  MoreHorizontal,
   Pencil,
   Plus,
   Trash2,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import {
   Dialog,
   DialogContent,
@@ -23,6 +33,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { createClient } from "@/lib/supabase/client";
 import { fetchOrgId } from "@/lib/representatives";
+import { TerritoryStores } from "@/components/settings/territory-stores";
 import {
   createTerritory,
   deleteTerritory,
@@ -310,6 +321,13 @@ export function TerritoriesPanel() {
                     )}
                   </ul>
                 )}
+
+                {/* The stores themselves. Mounted only while expanded, so each
+                    territory's list is fetched when it is actually looked at
+                    rather than all 209 up front. */}
+                {open && (
+                  <TerritoryStores main={main} subs={subs} onChanged={load} />
+                )}
               </div>
             );
           })
@@ -558,36 +576,49 @@ function RowActions({
   onToggleActive: () => void;
   onRemove: () => void;
 }) {
+  // One overflow menu rather than a row of buttons. Three controls per row, on
+  // 47 mains plus their subs, made the list read as a wall of actions with the
+  // names — the thing you are actually scanning — competing for attention.
   return (
-    <div className="flex shrink-0 items-center gap-1">
-      <Button
-        size="icon"
-        variant="ghost"
-        disabled={busy}
-        title="Rename"
-        aria-label={`Rename ${territory.name}`}
-        onClick={onRename}
-      >
-        <Pencil className="h-3.5 w-3.5" />
-      </Button>
-      <Button
-        size="sm"
-        variant="ghost"
-        disabled={busy}
-        onClick={onToggleActive}
-      >
-        {territory.active ? "Deactivate" : "Reactivate"}
-      </Button>
-      <Button
-        size="icon"
-        variant="ghost"
-        disabled={busy}
-        title="Delete"
-        aria-label={`Delete ${territory.name}`}
-        onClick={onRemove}
-      >
-        <Trash2 className="h-3.5 w-3.5 text-destructive" />
-      </Button>
-    </div>
+    <DropdownMenu>
+      <DropdownMenuTrigger
+        render={
+          <Button
+            size="icon"
+            variant="ghost"
+            disabled={busy}
+            className="shrink-0"
+            title={`Actions for ${territory.name}`}
+            aria-label={`Actions for ${territory.name}`}
+          >
+            <MoreHorizontal className="h-4 w-4" />
+          </Button>
+        }
+      />
+      <DropdownMenuContent align="end" className="w-44">
+        <DropdownMenuItem onClick={onRename}>
+          <Pencil className="h-3.5 w-3.5" />
+          Rename
+        </DropdownMenuItem>
+        <DropdownMenuItem onClick={onToggleActive}>
+          {territory.active ? (
+            <>
+              <EyeOff className="h-3.5 w-3.5" />
+              Deactivate
+            </>
+          ) : (
+            <>
+              <Eye className="h-3.5 w-3.5" />
+              Reactivate
+            </>
+          )}
+        </DropdownMenuItem>
+        <DropdownMenuSeparator />
+        <DropdownMenuItem variant="destructive" onClick={onRemove}>
+          <Trash2 className="h-3.5 w-3.5" />
+          Delete
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
