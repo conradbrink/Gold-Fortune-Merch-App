@@ -13,7 +13,10 @@ import 'features/auth/manager_notice_screen.dart';
 import 'features/files/files_screen.dart';
 import 'features/route_today/route_today_screen.dart';
 import 'features/visit/store_detail_screen.dart';
+import 'features/visit/sales_visit_complete_screen.dart';
+import 'features/visit/sales_visit_start_screen.dart';
 import 'features/visit/store_picker_screen.dart';
+import 'features/visit/unscheduled_chooser_screen.dart';
 import 'features/workday/day_plan_screen.dart';
 import 'features/workday/workday_summary_screen.dart';
 
@@ -83,8 +86,29 @@ final routerProvider = Provider<GoRouter>((ref) {
         builder: (context, state) => const RouteTodayScreen(),
         routes: [
           GoRoute(
+            // The chooser, not the store picker. 'unscheduled/store' is the
+            // old destination, unchanged — a check-in at a shop already on the
+            // estate still goes through exactly the same screen.
             path: 'unscheduled',
-            builder: (context, state) => const StorePickerScreen(),
+            builder: (context, state) => const UnscheduledChooserScreen(),
+            routes: [
+              GoRoute(
+                path: 'store',
+                builder: (context, state) => const StorePickerScreen(),
+              ),
+              GoRoute(
+                path: 'sales',
+                builder: (context, state) => const SalesVisitStartScreen(),
+                routes: [
+                  GoRoute(
+                    path: ':clientId',
+                    builder: (context, state) => SalesVisitCompleteScreen(
+                      clientId: state.pathParameters['clientId']!,
+                    ),
+                  ),
+                ],
+              ),
+            ],
           ),
           GoRoute(
             path: 'day-plan',

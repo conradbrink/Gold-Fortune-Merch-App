@@ -208,6 +208,28 @@ class SyncEngine {
             .upsert(data, onConflict: 'client_generated_id');
         break;
 
+      case OutboxType.salesVisitStart:
+        // Upsert on the idempotency key, so a retry after a lost ack cannot
+        // record the same call on the same prospect twice.
+        await _client
+            .from('leads')
+            .upsert(data, onConflict: 'client_generated_id');
+        break;
+
+      case OutboxType.salesVisitComplete:
+        // Same silent-success hazard as a check-out: an update matching no row
+        // is a success to PostgREST, and this entry would then be deleted with
+        // the outcome of the call inside it.
+        final lead = await _client
+            .from('leads')
+            .update(data['changes'] as Map<String, dynamic>)
+            .eq('client_generated_id', data['client_generated_id'] as String)
+            .select('id');
+        if (lead.isEmpty) {
+          throw StateError('Sales call not synced yet; will retry.');
+        }
+        break;
+
       case OutboxType.formSubmission:
         await _replayFormSubmission(data);
         break;
