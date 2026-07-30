@@ -127,7 +127,7 @@ jobs:
         # Gated at `critical`, not `high`, and that is a deliberate choice
         # rather than laziness.
         #
-        # As of 31 July 2026 the tree has 12 high advisories from three roots:
+        # As of 30 July 2026 the tree has 12 high advisories from three roots:
         # brace-expansion and postcss (both reached only through the eslint and
         # Tailwind build chains — they never ship to a user) and sharp, which
         # Next uses for server-side image optimisation and is the only one with
@@ -180,22 +180,35 @@ jobs:
         # every environment built afterwards gets a schema nobody has run.
         # New migrations are how the schema changes; old ones are immutable.
         #
-        # Renames are reported, not blocked: correcting a filename to match the
-        # recorded version is a legitimate repair (see supabase/README.md), and
-        # it is visible in the PR diff for a human to judge.
+        # A pure rename is reported, not blocked: correcting a filename to match
+        # the recorded version is a legitimate repair (see supabase/README.md),
+        # and it is visible in the PR diff for a human to judge.
+        #
+        # `--find-renames=100%` is load-bearing, not tidiness. With git's default
+        # similarity detection, a file that is renamed *and edited* is reported
+        # as `R` — so an edited migration would slip past the MD filter below and
+        # be merely warned about, which is the exact hole this step exists to
+        # close. Requiring an exact match means anything whose content changed
+        # shows up as delete + add, and gets blocked.
         if: github.event_name == 'pull_request'
+        env:
+          # Passed through the environment rather than interpolated into the
+          # script. A `${{ }}` expression is substituted into the shell source
+          # before bash parses it, so a value containing shell metacharacters
+          # would be executed rather than read.
+          BASE_REF: ${{ github.base_ref }}
         run: |
           set -euo pipefail
-          git fetch -q origin "${{ github.base_ref }}"
-          base="origin/${{ github.base_ref }}"
-          changed=$(git diff --name-status --diff-filter=MD "$base"...HEAD -- supabase/migrations || true)
+          git fetch -q origin "$BASE_REF"
+          base="origin/$BASE_REF"
+          changed=$(git diff --name-status --find-renames=100% --diff-filter=MD "$base"...HEAD -- supabase/migrations || true)
           if [ -n "$changed" ]; then
             echo "::error::This pull request edits or deletes migrations that are already applied:"
             echo "$changed"
             echo "Add a new migration instead. See supabase/README.md."
             exit 1
           fi
-          renamed=$(git diff --name-status --diff-filter=R "$base"...HEAD -- supabase/migrations || true)
+          renamed=$(git diff --name-status --find-renames=100% --diff-filter=R "$base"...HEAD -- supabase/migrations || true)
           if [ -n "$renamed" ]; then
             echo "::warning::This PR renames migration files — confirm they match the recorded versions:"
             echo "$renamed"
