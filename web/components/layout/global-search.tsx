@@ -153,6 +153,14 @@ export function GlobalSearch({ revealed = false }: { revealed?: boolean }) {
         setError(failed?.error?.message ?? null);
         setHits(found);
         setActive(0);
+      } catch (e) {
+        // A PostgREST *refusal* comes back as `.error` above; the whole
+        // `Promise.all` rejecting is something else — no network, mainly. Nothing
+        // awaits `run`, so without this the rejection went nowhere and the box
+        // just said "Nothing matches", which is a claim about the data.
+        if (isStale()) return;
+        setError(e instanceof Error ? e.message : String(e));
+        setHits([]);
       } finally {
         // Only the newest run owns the spinner; an older one finishing must not
         // clear it while the current search is still out.
