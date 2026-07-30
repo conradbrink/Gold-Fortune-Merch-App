@@ -29,15 +29,53 @@ class StoreDetailScreen extends ConsumerStatefulWidget {
   ConsumerState<StoreDetailScreen> createState() => _StoreDetailScreenState();
 }
 
+/// How far through a visit a status is. A visit only ever moves forward.
+int visitProgress(String status) => switch (status) {
+      'checked_out' => 2,
+      'checked_in' => 1,
+      _ => 0,
+    };
+
+/// Picks between what this screen just did and what the day reports.
+///
+/// Never goes backwards. The fetched day is authoritative once it has caught
+/// up, but until it does, a check-in the rep has already made must not be
+/// replaced by a stale "not started" — that is what puts a live Check in
+/// button over an existing visit.
+RouteVisit? furtherAlong(RouteVisit? applied, RouteVisit? fetched) {
+  if (applied == null) return fetched;
+  if (fetched == null) return applied;
+  return visitProgress(applied.status) > visitProgress(fetched.status)
+      ? applied
+      : fetched;
+}
+
 class _StoreDetailScreenState extends ConsumerState<StoreDetailScreen> {
   bool _busy = false;
   bool _locating = false;
 
+  /// What this screen just did, held locally.
+  ///
+  /// Checking in writes the visit to the outbox and the local cache, then asks
+  /// the day to refetch. The refetch is not reliable enough to render from: on
+  /// a slow or loaded device it can come back before the write is visible, and
+  /// the screen then sits on "NOT STARTED" with a live Check in button over a
+  /// visit that already exists — observed lasting nineteen minutes, and a
+  /// second tap there mints a duplicate visit. The rep's own action is the one
+  /// thing this screen can be certain of, so it is remembered here and wins
+  /// until the fetched day catches up.
+  RouteVisit? _applied;
+
   RouteVisit? _find(List<RouteVisit> routes) {
+    RouteVisit? fetched;
     for (final r in routes) {
-      if (r.cacheKey == widget.visitKey) return r;
+      if (r.cacheKey == widget.visitKey) {
+        fetched = r;
+        break;
+      }
     }
-    return null;
+
+    return furtherAlong(_applied, fetched);
   }
 
   /// A missing profile means we're offline with no cached copy — tell the rep
@@ -83,6 +121,18 @@ class _StoreDetailScreenState extends ConsumerState<StoreDetailScreen> {
             routeVisit: rv,
             workdaySessionClientId: session.clientGeneratedId,
           );
+      // Render from what just happened, immediately — see `_applied`.
+      if (mounted) {
+        setState(() {
+          _applied = rv.copyWith(
+            status: 'checked_in',
+            visitClientGeneratedId: result.clientGeneratedId,
+            checkinAt: DateTime.now(),
+          );
+        });
+      }
+      // Still ask the day to catch up, for every other screen and for the
+      // fields this screen does not carry.
       ref.invalidate(todayRoutesProvider);
 
       if (!mounted) return;
@@ -217,6 +267,16 @@ class _StoreDetailScreenState extends ConsumerState<StoreDetailScreen> {
             routeVisit: rv,
             workdaySessionClientId: session?.clientGeneratedId,
           );
+      // Same reason as check-in: show the outcome of the tap straight away
+      // rather than waiting on a refetch that may not land.
+      if (mounted) {
+        setState(() {
+          _applied = rv.copyWith(
+            status: 'checked_out',
+            checkoutAt: DateTime.now(),
+          );
+        });
+      }
       ref.invalidate(todayRoutesProvider);
 
       if (!mounted) return;

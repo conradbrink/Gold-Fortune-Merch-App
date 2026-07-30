@@ -19,6 +19,7 @@ import 'package:gf_merch_rep/data/local/outbox_types.dart';
 import 'package:gf_merch_rep/data/models/route_visit.dart';
 import 'package:gf_merch_rep/data/repositories/route_repository.dart';
 import 'package:gf_merch_rep/data/sync/sync_engine.dart';
+import 'package:gf_merch_rep/features/visit/store_detail_screen.dart';
 
 RouteVisit serverStop(String routeId, {String storeName = 'Choppies Kgale'}) {
   return RouteVisit(
@@ -49,6 +50,7 @@ OutboxEntry entry(
 }
 
 void main() {
+  detailScreenTests();
   group('mergeUnsyncedLocalState', () {
     final checkedInLocally = serverStop('route-1').copyWith(
       status: 'checked_in',
@@ -154,6 +156,63 @@ void main() {
       ]);
 
       expect(replayable.length, 2);
+    });
+  });
+}
+
+// The store detail screen renders from whichever is further along: what the
+// rep just did, or what the refetched day reports. Getting this backwards is
+// what left a live "Check in" button sitting over a visit that already
+// existed — observed persisting for nineteen minutes on a loaded device, and
+// a second tap there mints a duplicate visit.
+
+RouteVisit stop({required String status, String? clientId}) => RouteVisit(
+      routeId: 'route-1',
+      storeId: 'store-1',
+      storeName: 'Caltex Kaunda',
+      geofenceRadiusM: 100,
+      sequenceOrder: 1,
+      status: status,
+      visitClientGeneratedId: clientId,
+    );
+
+void detailScreenTests() {
+  group('furtherAlong', () {
+    test('a local check-in beats a day that still says not started', () {
+      final chosen = furtherAlong(
+        stop(status: 'checked_in', clientId: 'visit-1'),
+        stop(status: 'not_started'),
+      );
+      expect(chosen!.status, 'checked_in');
+      expect(chosen.visitClientGeneratedId, 'visit-1');
+    });
+
+    test('the day wins once it has caught up and moved on', () {
+      // The rep checked in here; the day now reports the check-out that
+      // happened after. Holding the local copy would strand the screen.
+      final chosen = furtherAlong(
+        stop(status: 'checked_in', clientId: 'visit-1'),
+        stop(status: 'checked_out', clientId: 'visit-1'),
+      );
+      expect(chosen!.status, 'checked_out');
+    });
+
+    test('never goes backwards from checked out', () {
+      final chosen = furtherAlong(
+        stop(status: 'checked_out', clientId: 'visit-1'),
+        stop(status: 'not_started'),
+      );
+      expect(chosen!.status, 'checked_out');
+    });
+
+    test('with nothing applied yet the day is used as is', () {
+      expect(furtherAlong(null, stop(status: 'not_started'))!.status,
+          'not_started');
+    });
+
+    test('a stop missing from the day still renders what was applied', () {
+      expect(furtherAlong(stop(status: 'checked_in'), null)!.status,
+          'checked_in');
     });
   });
 }
