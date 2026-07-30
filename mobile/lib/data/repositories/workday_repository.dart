@@ -10,6 +10,9 @@ import '../local/app_database.dart';
 import '../local/outbox_types.dart';
 import '../models/workday_session.dart';
 import '../sync/sync_engine.dart';
+// `localDate` lives with leads because that is where the timezone bug was
+// first found; it is a general local-calendar-date helper, not lead-specific.
+import 'lead_repository.dart' show localDate;
 
 const _uuid = Uuid();
 
@@ -21,6 +24,14 @@ class WorkdayRepository {
   final SyncEngine _sync;
 
   static String _activeKey(String repId) => 'active_workday:$repId';
+
+  /// The local calendar date of the rep's last completed workday.
+  ///
+  /// Stored as `yyyy-mm-dd` in *local* time, never UTC. Botswana is UTC+2, so
+  /// a day closed at 21:00 is already tomorrow in UTC — recording the UTC date
+  /// would free the rep to start a second workday the same evening, which is
+  /// the exact thing this is here to prevent.
+  static String _closedKey(String repId) => 'workday_closed_on:$repId';
 
   /// The open workday, resilient to having no connection.
   ///
@@ -89,6 +100,54 @@ class WorkdayRepository {
 
   Future<void> clearActiveSession(String repId) =>
       _db.deleteValue(_activeKey(repId));
+
+  /// Whether this rep has already closed a workday today, and so must wait
+  /// until tomorrow before starting another.
+  ///
+  /// Answered from the local record first and only then from the server. That
+  /// order is deliberate: a rep who ends their day out of signal has a closed
+  /// day that the server does not know about yet, and asking the server first
+  /// would answer "no workday today" and let them start a second one. The
+  /// local record is written the moment the day is closed, before the outbox
+  /// has drained.
+  ///
+  /// A failure to reach the server is treated as "not closed" rather than
+  /// "closed": being wrongly blocked from working is worse for a rep standing
+  /// outside a shop than being wrongly allowed a second session, which a
+  /// manager can see and correct.
+  Future<bool> hasClosedWorkdayToday(String repId) async {
+    final today = localDate(DateTime.now());
+
+    if (await _db.getValue(_closedKey(repId)) == today) return true;
+
+    try {
+      final row = await _client
+          .from('workday_sessions')
+          .select('ended_at')
+          .eq('rep_id', repId)
+          .not('ended_at', 'is', null)
+          .order('ended_at', ascending: false)
+          .limit(1)
+          .maybeSingle();
+
+      final endedAt = row?['ended_at'] as String?;
+      if (endedAt == null) return false;
+
+      // `.toLocal()` before formatting, for the same UTC+2 reason as above.
+      final closedOn = localDate(DateTime.parse(endedAt).toLocal());
+      if (closedOn == today) {
+        // Cache it so the answer survives losing signal later in the day.
+        await _db.setValue(_closedKey(repId), closedOn);
+        return true;
+      }
+      return false;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  Future<void> _recordWorkdayClosed(String repId, DateTime endedAt) =>
+      _db.setValue(_closedKey(repId), localDate(endedAt));
 
   Future<WorkdaySession> startWorkday({
     required String orgId,
@@ -167,6 +226,10 @@ class WorkdayRepository {
     );
 
     await clearActiveSession(repId);
+    // Recorded here, not when the outbox drains: the rep may be closing their
+    // day with no signal, and the "one workday per day" rule has to hold from
+    // the moment they tap the button.
+    await _recordWorkdayClosed(repId, endedAt);
 
     unawaited(_sync.sync());
   }

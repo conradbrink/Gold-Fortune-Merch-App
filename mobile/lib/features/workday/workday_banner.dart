@@ -166,6 +166,10 @@ class _WorkdayBannerState extends ConsumerState<WorkdayBanner> {
 
     final session = workdayAsync.value;
     final active = session != null;
+    // The rep has already closed today's day. Distinct from "not started":
+    // there is nothing to start until tomorrow.
+    final finishedForToday = !active &&
+        ref.watch(workdayControllerProvider.notifier).isClosedForToday;
     // Only the user's own start/end shows a busy label; the provider's first
     // load just disables the button briefly.
     final isLoading = _pending;
@@ -196,8 +200,14 @@ class _WorkdayBannerState extends ConsumerState<WorkdayBanner> {
                   borderRadius: BorderRadius.circular(10),
                 ),
                 child: Icon(
-                  active ? Icons.play_circle_fill : Icons.schedule,
-                  color: active ? AppColors.success : AppColors.textMuted,
+                  active
+                      ? Icons.play_circle_fill
+                      : finishedForToday
+                          ? Icons.check_circle
+                          : Icons.schedule,
+                  color: active || finishedForToday
+                      ? AppColors.success
+                      : AppColors.textMuted,
                   size: 22,
                 ),
               ),
@@ -207,7 +217,11 @@ class _WorkdayBannerState extends ConsumerState<WorkdayBanner> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      active ? 'Workday in progress' : 'Workday not started',
+                      active
+                          ? 'Workday in progress'
+                          : finishedForToday
+                              ? 'Workday complete'
+                              : 'Workday not started',
                       style: const TextStyle(
                         fontWeight: FontWeight.w700,
                         fontSize: 14.5,
@@ -218,7 +232,10 @@ class _WorkdayBannerState extends ConsumerState<WorkdayBanner> {
                     Text(
                       active
                           ? 'Tracking your location every 20 min'
-                          : 'Start your day to begin tracking',
+                          : finishedForToday
+                              ? 'You have finished for today. Your next '
+                                  'workday can be started tomorrow.'
+                              : 'Start your day to begin tracking',
                       style: const TextStyle(
                         color: AppColors.textMuted,
                         fontSize: 12.5,
@@ -251,6 +268,10 @@ class _WorkdayBannerState extends ConsumerState<WorkdayBanner> {
               ],
             ),
           ],
+          // No button at all once the day is closed. A disabled Start button
+          // reads as "broken", and there is nothing the rep can do about it
+          // until tomorrow — the message above is the whole answer.
+          if (!finishedForToday) ...[
           const SizedBox(height: 14),
           SizedBox(
             width: double.infinity,
@@ -280,6 +301,7 @@ class _WorkdayBannerState extends ConsumerState<WorkdayBanner> {
                     label: Text(isLoading ? 'Starting…' : 'Start workday'),
                   ),
           ),
+          ],
         ],
       ),
     );

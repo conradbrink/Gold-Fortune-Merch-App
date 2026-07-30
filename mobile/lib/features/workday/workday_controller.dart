@@ -35,9 +35,24 @@ class WorkdayController extends AsyncNotifier<WorkdaySession?> {
       _startPingTimer();
     } else {
       _pingTimer?.cancel();
+      // Only worth asking when there is no open day: a rep with a session
+      // running is plainly not finished, and this would be a wasted request
+      // on every rebuild.
+      _closedToday = await repo.hasClosedWorkdayToday(user.id);
     }
     return session;
   }
+
+  bool _closedToday = false;
+
+  /// True once the rep has closed a workday today. The day cannot be restarted
+  /// until tomorrow — see `WorkdayRepository.hasClosedWorkdayToday`.
+  ///
+  /// Read by the banner rather than folded into the session state, because
+  /// "no open day" and "day already finished" are different things to show and
+  /// collapsing them would put a Start button in front of a rep who has
+  /// already gone home.
+  bool get isClosedForToday => _closedToday;
 
   void _startPingTimer() {
     _pingTimer?.cancel();
@@ -75,6 +90,17 @@ class WorkdayController extends AsyncNotifier<WorkdaySession?> {
     final profile = ref.read(profileProvider).value;
     if (profile == null) return;
 
+    // Guarded here as well as in the UI. Hiding the button is a UI state; this
+    // is the write, and the write is what needs preventing — a stale screen or
+    // a double tap must not be able to open a second day.
+    if (await ref
+        .read(workdayRepositoryProvider)
+        .hasClosedWorkdayToday(profile.id)) {
+      _closedToday = true;
+      ref.notifyListeners();
+      return;
+    }
+
     state = const AsyncLoading();
     state = await AsyncValue.guard(() async {
       final repo = ref.read(workdayRepositoryProvider);
@@ -104,6 +130,9 @@ class WorkdayController extends AsyncNotifier<WorkdaySession?> {
       );
       _pingTimer?.cancel();
       _lastPingPosition = null;
+      // Set immediately so the banner flips to "finished for today" on this
+      // frame, rather than only after the next rebuild re-reads it.
+      _closedToday = true;
       return null;
     });
   }
