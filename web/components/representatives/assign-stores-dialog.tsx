@@ -342,7 +342,7 @@ export function AssignStoresDialog({
                   }
                 }}
               >
-                {savingPassword ? "Setting…" : passwordSaved ? "Set" : "Set"}
+                {savingPassword ? "Setting…" : passwordSaved ? "Changed" : "Set"}
               </Button>
             </div>
             {passwordSaved ? (

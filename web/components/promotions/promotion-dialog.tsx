@@ -67,6 +67,15 @@ export function PromotionDialog({
   const [query, setQuery] = useState("");
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [saving, setSaving] = useState(false);
+  /**
+   * True while an existing promotion's detail is on its way.
+   *
+   * The reset above clears the form the instant the dialog opens, which leaves
+   * an editable empty form sitting there until the fetch lands — and then
+   * `setName(detail.name)` and the rest overwrite whatever was typed into it.
+   * Only an edit is affected: a new promotion has no detail to fetch.
+   */
+  const [loadingDetail, setLoadingDetail] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -95,6 +104,7 @@ export function PromotionDialog({
     setAnswered(new Set());
     setStarted(false);
     setExpanded(new Set());
+    setLoadingDetail(promotionId !== null);
 
     // Opening B while A is still in flight must not let A's reply land on B's
     // form, so every await is followed by a check that this run still owns it.
@@ -139,6 +149,10 @@ export function PromotionDialog({
       } catch (e) {
         if (cancelled) return;
         setError(e instanceof Error ? e.message : String(e));
+      } finally {
+        // Also on failure: leaving the form locked would make an unreadable
+        // promotion unrecoverable without closing the dialog.
+        if (!cancelled) setLoadingDetail(false);
       }
     })();
 
@@ -225,12 +239,19 @@ export function PromotionDialog({
           </p>
         )}
 
+        {loadingDetail && (
+          <p className="text-sm text-muted-foreground">
+            Loading this promotion…
+          </p>
+        )}
+
         <div className="space-y-3">
           <div className="space-y-1.5">
             <Label>Name</Label>
             <Input
               value={name}
               placeholder="e.g. August vape push"
+              disabled={loadingDetail}
               onChange={(e) => setName(e.target.value)}
             />
           </div>
@@ -239,6 +260,7 @@ export function PromotionDialog({
             <Input
               value={brief}
               placeholder="e.g. Gondola end display, shelf talkers on all facings"
+              disabled={loadingDetail}
               onChange={(e) => setBrief(e.target.value)}
             />
           </div>
@@ -248,6 +270,7 @@ export function PromotionDialog({
               <Input
                 type="date"
                 value={startsOn}
+                disabled={loadingDetail}
                 onChange={(e) => setStartsOn(e.target.value)}
               />
             </div>
@@ -256,6 +279,7 @@ export function PromotionDialog({
               <Input
                 type="date"
                 value={endsOn}
+                disabled={loadingDetail}
                 onChange={(e) => setEndsOn(e.target.value)}
               />
             </div>
@@ -401,7 +425,9 @@ export function PromotionDialog({
             onClick={save}
             // `save()` refuses without an org, so without this the button was
             // live and did nothing when clicked.
-            disabled={saving || !orgId || !name.trim() || datesBackwards}
+            disabled={
+              saving || loadingDetail || !orgId || !name.trim() || datesBackwards
+            }
             className="bg-primary text-primary-foreground hover:bg-primary/90"
           >
             {saving ? "Saving…" : promotionId ? "Save changes" : "Create promotion"}

@@ -10,6 +10,7 @@ import {
   ChevronDown,
   LogOut,
   Menu,
+  X,
 } from "lucide-react";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
@@ -27,6 +28,8 @@ export function TopBar({ onOpenNav }: { onOpenNav?: () => void }) {
   const supabase = createClient();
   const [label, setLabel] = useState("Gold Fortune User");
   const [initials, setInitials] = useState("GF");
+  /** Below `sm` the search box is hidden; this is what the button reveals. */
+  const [searchRevealed, setSearchRevealed] = useState(false);
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data }) => {
@@ -50,21 +53,29 @@ export function TopBar({ onOpenNav }: { onOpenNav?: () => void }) {
 
   return (
     <header className="flex h-16 shrink-0 items-center gap-3 border-b border-border bg-background px-4 sm:px-6">
+      {/* Hidden while the mobile search is open — the box needs the whole row. */}
       <Button
         variant="ghost"
         size="icon"
-        className="md:hidden"
+        className={searchRevealed ? "hidden" : "md:hidden"}
         onClick={onOpenNav}
         aria-label="Open navigation"
       >
         <Menu className="h-5 w-5" />
       </Button>
 
-      <GlobalSearch />
+      <GlobalSearch revealed={searchRevealed} />
 
       <div className="ml-auto flex items-center gap-2 text-muted-foreground sm:gap-4">
-        <Button variant="ghost" size="icon" className="sm:hidden" aria-label="Search">
-          <Search className="h-5 w-5" />
+        <Button
+          variant="ghost"
+          size="icon"
+          className="sm:hidden"
+          aria-label={searchRevealed ? "Close search" : "Search"}
+          aria-expanded={searchRevealed}
+          onClick={() => setSearchRevealed((s) => !s)}
+        >
+          {searchRevealed ? <X className="h-5 w-5" /> : <Search className="h-5 w-5" />}
         </Button>
         <Mail className="hidden h-5 w-5 lg:block" />
         <Bell className="hidden h-5 w-5 lg:block" />

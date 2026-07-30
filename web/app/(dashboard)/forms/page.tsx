@@ -289,10 +289,15 @@ export default function FormsPage() {
       >
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
+            {/* `pending` goes null the moment the dialog starts closing, while
+                the content is still mounted for the animation — long enough to
+                render "Delete undefined?" on the way out. */}
             <DialogTitle>
-              {pending && pending.submissions > 0
-                ? `Archive ${pending.name}?`
-                : `Delete ${pending?.name}?`}
+              {pending
+                ? pending.submissions > 0
+                  ? `Archive ${pending.name}?`
+                  : `Delete ${pending.name}?`
+                : "Remove form?"}
             </DialogTitle>
           </DialogHeader>
 

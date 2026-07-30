@@ -176,11 +176,12 @@ export function SidebarNav() {
   }, []);
 
   function toggle() {
-    setCollapsed((previous) => {
-      const next = !previous;
-      window.localStorage.setItem(COLLAPSED_KEY, String(next));
-      return next;
-    });
+    // Computed outside the updater. React may call an updater more than once
+    // for a single update — in StrictMode it does so deliberately — and a
+    // localStorage write inside one is a side effect that runs as many times.
+    const next = !collapsed;
+    setCollapsed(next);
+    window.localStorage.setItem(COLLAPSED_KEY, String(next));
   }
 
   return (
