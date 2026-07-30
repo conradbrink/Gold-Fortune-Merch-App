@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { SlidersHorizontal } from "lucide-react";
 import { DateRangePicker } from "@/components/dashboard/date-range-picker";
 import { CustomiseDashboard } from "@/components/dashboard/customise-dashboard";
@@ -75,8 +75,17 @@ export default function InsightsDashboardPage() {
 
   /** Which sources failed, so a card can say so instead of rendering blank. */
   const [failedSources, setFailedSources] = useState<Set<WidgetSource>>(new Set());
+  /** Identifies the newest load, so an older one cannot land on top of it. */
+  const loadSeq = useRef(0);
 
   const load = useCallback(async () => {
+    // Which load this is. Changing the range and pressing Retry can overlap, and
+    // whichever *returns* last was winning — so the page could sit showing
+    // figures for a range the picker no longer displays. Same guard as the global
+    // search; it belonged here too.
+    const runId = ++loadSeq.current;
+    const isStale = () => runId !== loadSeq.current;
+
     setLoading(true);
     setError(null);
     try {
@@ -96,6 +105,8 @@ export default function InsightsDashboardPage() {
         fetchRepDayTimes(supabase, range),
         fetchOperationsSummary(supabase, range),
       ]);
+
+      if (isStale()) return;
 
       const failed = new Set<WidgetSource>();
       if (summary.status === "fulfilled") setData(summary.value);
@@ -117,18 +128,29 @@ export default function InsightsDashboardPage() {
 
       // Reported rather than swallowed — a section quietly missing is how a
       // broken RPC survives for weeks.
+      //
+      // A source that *answers* `null` counts here too. Its cards go unavailable
+      // either way, and without an error there would be no banner and no Retry —
+      // the card would say "Retry above" pointing at nothing.
       const rejected = [summary, times, operations].find(
         (r) => r.status === "rejected"
       );
+      const answeredNothing =
+        (summary.status === "fulfilled" && summary.value === null) ||
+        (operations.status === "fulfilled" && operations.value === null);
       setError(
         rejected && rejected.status === "rejected"
           ? rejected.reason instanceof Error
             ? rejected.reason.message
             : String(rejected.reason)
-          : null
+          : answeredNothing
+            ? "Some figures came back empty. Retrying may help; if it does not, the report may not be available for this period."
+            : null
       );
     } finally {
-      setLoading(false);
+      // The newest load owns the spinner; an older one finishing must not clear
+      // it while the current one is still out.
+      if (!isStale()) setLoading(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [range.from, range.to]);
@@ -158,13 +180,18 @@ export default function InsightsDashboardPage() {
 
         if (saved.status === "fulfilled") {
           setLayout(reconcileLayout(saved.value, WIDGET_IDS, DEFAULT_LAYOUT));
+          // Only now is editing safe. `NO_SAVED_LAYOUT` counts as a successful
+          // read — it means this person has never customised, which is a fact,
+          // not a failure.
+          setLayoutLoaded(true);
         } else {
-          // The default is a safe thing to show, but say why it is what you are
-          // looking at — otherwise a customised dashboard silently reverts and
-          // the next save overwrites the real one.
+          // Show the default, and say so. But *do not* unlock Customise: the
+          // banner explains what you are looking at, it does not stop you saving
+          // the default over a layout that exists and simply could not be read.
+          // Explaining is not preventing.
           setLayout(DEFAULT_LAYOUT);
           setLayoutError(
-            `Your saved layout could not be read, so this is the default: ${
+            `Your saved layout could not be read, so this is the default. Customising is disabled until it can be read, so it is not overwritten: ${
               saved.reason instanceof Error
                 ? saved.reason.message
                 : String(saved.reason)
@@ -175,15 +202,14 @@ export default function InsightsDashboardPage() {
         if (cancelled) return;
         setLayout(DEFAULT_LAYOUT);
         setLayoutError(
-          `Your saved layout could not be read, so this is the default: ${
+          `Your saved layout could not be read, so this is the default. Customising is disabled until it can be read, so it is not overwritten: ${
             e instanceof Error ? e.message : String(e)
           }`
         );
-      } finally {
-        // Either way the question has been answered, and Customise may open. On
-        // failure that means editing the default, which the banner above says.
-        if (!cancelled) setLayoutLoaded(true);
       }
+      // No `finally` unlocking the button: it is set only on a fulfilled read,
+      // above. Unlocking here on failure as well was the whole bug — the gate
+      // closed the timing window and left the failure case wide open.
     })();
     return () => {
       cancelled = true;
@@ -192,6 +218,15 @@ export default function InsightsDashboardPage() {
   }, []);
 
   async function handleSaveLayout(widgetIds: string[]) {
+    // Guarded here as well as on the button. What is being written could be the
+    // default standing in for a layout that exists but was not read, and a
+    // disabled button is a UI state — this is the one that decides.
+    if (!layoutLoaded) {
+      setLayoutError(
+        "Your saved layout has not been read yet, so saving now could overwrite it. Try again in a moment."
+      );
+      return;
+    }
     if (!orgId) {
       setLayoutError("Your organisation has not loaded yet. Try again in a moment.");
       return;
