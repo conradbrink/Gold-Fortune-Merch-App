@@ -18,7 +18,7 @@ import 'package:sentry_flutter/sentry_flutter.dart';
 ///
 ///   * `sendDefaultPii = false` — no IP addresses, no device names, no
 ///     usernames attached automatically.
-///   * [_scrub] strips anything that looks like a credential from the payload
+///   * [scrub] strips anything that looks like a credential from the payload
 ///     before it leaves the device, including the Supabase key, bearer tokens
 ///     and anything under a key containing "password", "token" or "secret".
 ///   * GPS coordinates are never attached as context. Knowing *that* a
@@ -102,21 +102,28 @@ class Monitoring {
         options.replay.sessionSampleRate = 0.0;
         options.replay.onErrorSampleRate = 0.0;
 
-        options.beforeSend = _scrub;
+        options.beforeSend = scrub;
       },
       appRunner: runApp,
     );
   }
 
   /// Last line of defence before anything leaves the device.
-  static SentryEvent? _scrub(SentryEvent event, Hint hint) {
+  ///
+  /// Not private, so it can be tested directly. It is the only thing standing
+  /// between a rep's session token and a third party, and it had no coverage
+  /// at all until it was rewritten for the 9.x upgrade.
+  @visibleForTesting
+  static SentryEvent? scrub(SentryEvent event, Hint hint) {
     // Never report anything from a debug build to the shared issue stream.
     if (event.environment == 'development') return null;
 
     // Mutated in place rather than through `copyWith`, which 9.x deprecated.
-    // Same fields, same order, same result — this is the last thing standing
-    // between a rep's session token and a third party, so it is rewritten
-    // literally rather than restructured.
+    //
+    // One deliberate difference from the version this replaced: `queryString`
+    // is cleared whenever there is a request, not only when the URL happens to
+    // contain a `?`. It is a separate field and can carry parameters the URL
+    // does not, so the old condition left a way through.
     final request = event.request;
     if (request != null) {
       final headers = Map<String, String>.from(request.headers);
