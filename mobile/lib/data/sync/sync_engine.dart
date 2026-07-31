@@ -7,6 +7,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../local/app_database.dart';
 import '../local/outbox_types.dart';
+import '../../core/monitoring.dart';
 
 /// Entries that keep failing this many times are left in the queue but no
 /// longer retried automatically, so one poisoned row can't block the rest
@@ -139,8 +140,36 @@ class SyncEngine {
           // No network mid-drain: stop, keep everything queued, try later.
           await _emit(SyncState.offline);
           return;
-        } catch (e) {
-          await _db.recordFailure(entry.id, entry.attempts + 1, e.toString());
+        } catch (e, stack) {
+          final attempts = entry.attempts + 1;
+          await _db.recordFailure(entry.id, attempts, e.toString());
+
+          // The failure worth waking someone up for. An entry that has used up
+          // its attempts is work the rep believes is saved and which will now
+          // never reach the server unaided — a visit, a form, a photo. Until
+          // this existed, that was completely silent: the rep saw a pending
+          // count that stopped falling and nothing else.
+          //
+          // Only the entry type and its id are reported. Never the payload:
+          // it holds store data, GPS fixes and answers.
+          if (attempts >= kMaxAttempts) {
+            unawaited(Monitoring.report(
+              e,
+              stack,
+              feature: 'sync',
+              data: {
+                'entity_type': entry.entityType,
+                'attempts': attempts,
+                'given_up': true,
+              },
+            ));
+          } else {
+            Monitoring.event('sync.retry', data: {
+              'entity_type': entry.entityType,
+              'attempts': attempts,
+            });
+          }
+
           // Stop on first failure so ordering is preserved — a check-out
           // must not be replayed before its check-in succeeds.
           await _emit(SyncState.error, message: e.toString());
