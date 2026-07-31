@@ -10,6 +10,42 @@ account lost, the schema would have gone with it.
 migration is applied). Filenames and ordering match the remote history exactly,
 so this directory is a faithful, replayable record.
 
+## 🔴 This history is NOT replayable onto an empty database as it stands
+
+Discovered on **31 July 2026**, while rebuilding production after the original
+project was deleted in error — that is, at the exact moment it mattered.
+
+Two functions **widen their return type** using `create or replace function`,
+which Postgres refuses with `42P13: cannot change return type of existing
+function`:
+
+| function | widened in | added |
+|---|---|---|
+| `promotion_summaries()` | `20260729141843_fix_promotion_check_counting` | `stores_not_stocked` |
+| `generate_routes(int, boolean)` | `20260728184637_generate_routes_retracts_stale` | `removed` |
+
+Replaying the history stops there. It never showed up in normal use because
+each migration was applied to a database that already had the earlier version,
+and the drop was presumably done by hand at the time and never written into the
+file.
+
+**Until this is fixed properly**, a rebuild must drop each function immediately
+before the migration that redefines it:
+
+```sql
+drop function if exists public.generate_routes(int, boolean);   -- before 20260728184637
+drop function if exists public.promotion_summaries();           -- before 20260729141843
+```
+
+**The proper fix** is to add those `drop function if exists` lines into the two
+migration files. That means editing applied migrations, which CI otherwise
+blocks and which this README warns against — so it needs a deliberate, reviewed
+change rather than a quiet edit.
+
+**The lesson worth keeping:** the migration history is the disaster-recovery
+mechanism. An untested recovery mechanism is a hope. This one had never been
+replayed end to end, and the first time anyone tried, it failed.
+
 ## ⚠️ The filename prefix is not decorative — it must equal the recorded version
 
 Applying a migration through the Supabase MCP server stamps it with **its own**

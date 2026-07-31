@@ -35,15 +35,17 @@ Navy `#16224F`, gold `#E0B84B`, red for alerts/missed. Logo lives at
 ## 2. Supabase
 
 - **Project ref:** `rxtlnetlzmbqirqaalkw` (region eu-west-3)
-- **Org:** `xisdimcaejfxkmogsamf` ("Cons Org") — **Free plan**
+  ⚠️ Rebuilt 31 July 2026 after the original project (`bvbgtsxasttjzlemumwy`)
+  was deleted in error. Same schema, same region; the data was reconstructed.
+- **Org:** `xisdimcaejfxkmogsamf` ("Cons Org") — **Pro plan**
 - **URL:** `https://rxtlnetlzmbqirqaalkw.supabase.co`
-- **Publishable key:** `sb_publishable_ul9dGypnoGkwgddxEBVBYQ_Tlao-Lej`
+- **Publishable key:** `sb_publishable_BnVfT1ZntkQfCs92JUG6mA_uYEIjl7o`
   (safe in client code — RLS is the real boundary)
 
 Managed via the Supabase MCP server (`apply_migration`, `execute_sql`,
 `get_advisors`).
 
-**The schema is now versioned in the repo** at `supabase/migrations/` — all 17
+**The schema is now versioned in the repo** at `supabase/migrations/` — all 71
 applied migrations, reconstructed verbatim from
 `supabase_migrations.schema_migrations` so filenames and order match the remote
 history exactly. See `supabase/README.md` for how to apply them and for the
