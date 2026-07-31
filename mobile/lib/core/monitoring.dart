@@ -127,13 +127,7 @@ class Monitoring {
     final request = event.request;
     if (request != null) {
       final headers = Map<String, String>.from(request.headers);
-      headers.removeWhere((k, _) {
-        final key = k.toLowerCase();
-        return key == 'authorization' ||
-            key == 'apikey' ||
-            key.contains('token') ||
-            key.contains('secret');
-      });
+      headers.removeWhere((k, _) => _isSensitiveHeader(k));
       request.headers = headers;
       request.cookies = null;
 
@@ -147,6 +141,24 @@ class Monitoring {
     }
 
     return event;
+  }
+
+  /// Whether a *header* carries a credential.
+  ///
+  /// The name is normalised — lowercased, and punctuation removed — before
+  /// matching, because header names are spelled inconsistently and an exact
+  /// comparison missed two real ones: `X-Api-Key` is not the literal `apikey`,
+  /// and `Cookie` is a header in its own right, quite separate from
+  /// `SentryRequest.cookies`. Both were passing straight through.
+  static bool _isSensitiveHeader(String name) {
+    final k = name.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '');
+    return k.contains('authorization') ||
+        k.contains('apikey') ||
+        k.contains('token') ||
+        k.contains('secret') ||
+        k.contains('cookie') ||
+        k.contains('password') ||
+        k.contains('session');
   }
 
   static bool _isSensitiveKey(String key) {

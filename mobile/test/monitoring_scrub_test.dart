@@ -32,6 +32,11 @@ void main() {
         'apikey': 'sb_publishable_xxx',
         'X-Refresh-Token': 'refresh-me',
         'X-Client-Secret': 'hunter2',
+        // Both of these got through the first version of this function, which
+        // compared against the literal lowercase `apikey` and never looked at
+        // the Cookie *header* at all — only at SentryRequest.cookies.
+        'X-Api-Key': 'sb_secret_yyy',
+        'Cookie': 'sb-access-token=abc123; other=1',
         'Content-Type': 'application/json',
         'Accept': 'application/json',
       },
@@ -48,6 +53,12 @@ void main() {
     expect(headers.keys.map((k) => k.toLowerCase()),
         isNot(contains('x-client-secret')),
         reason: 'anything containing "secret" goes');
+    expect(headers.keys.map((k) => k.toLowerCase()),
+        isNot(contains('x-api-key')),
+        reason: 'hyphenated spellings are the same header as apikey');
+    expect(headers.keys.map((k) => k.toLowerCase()), isNot(contains('cookie')),
+        reason: 'the Cookie header is not SentryRequest.cookies and carries '
+            'the session just the same');
 
     // The point is to keep the event useful, not to empty it.
     expect(headers['Content-Type'], 'application/json');
@@ -56,6 +67,8 @@ void main() {
     // And nothing survives by value either.
     expect(headers.values.join(' '), isNot(contains('secret-token-value')));
     expect(headers.values.join(' '), isNot(contains('hunter2')));
+    expect(headers.values.join(' '), isNot(contains('sb_secret_yyy')));
+    expect(headers.values.join(' '), isNot(contains('sb-access-token')));
   });
 
   test('cookies are dropped', () {
