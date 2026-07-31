@@ -161,7 +161,11 @@ jobs:
           cd supabase/migrations
           fail=0
           for f in *.sql; do
-            if ! [[ "$f" =~ ^[0-9]{14}_[a-z0-9_]+\.sql$ ]]; then
+            # `[a-z0-9]+(_[a-z0-9]+)*` rather than `[a-z0-9_]+`: the latter also
+            # accepts `__double.sql` and `trailing_.sql`, which are not
+            # snake_case. Verified against all 71 existing files (none rejected)
+            # and against both bad forms (both rejected).
+            if ! [[ "$f" =~ ^[0-9]{14}_[a-z0-9]+(_[a-z0-9]+)*\.sql$ ]]; then
               echo "::error file=supabase/migrations/$f::Bad migration filename. Expected <14-digit version>_<snake_case_name>.sql"
               fail=1
             fi
