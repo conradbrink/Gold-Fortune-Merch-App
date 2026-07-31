@@ -34,9 +34,9 @@ Navy `#16224F`, gold `#E0B84B`, red for alerts/missed. Logo lives at
 
 ## 2. Supabase
 
-- **Project ref:** `bvbgtsxasttjzlemumwy` (region eu-west-3)
+- **Project ref:** `rxtlnetlzmbqirqaalkw` (region eu-west-3)
 - **Org:** `xisdimcaejfxkmogsamf` ("Cons Org") — **Free plan**
-- **URL:** `https://bvbgtsxasttjzlemumwy.supabase.co`
+- **URL:** `https://rxtlnetlzmbqirqaalkw.supabase.co`
 - **Publishable key:** `sb_publishable_ul9dGypnoGkwgddxEBVBYQ_Tlao-Lej`
   (safe in client code — RLS is the real boundary)
 

@@ -1,6 +1,6 @@
-# Minimal config so `supabase link --project-ref bvbgtsxasttjzlemumwy` works.
+# Minimal config so `supabase link --project-ref rxtlnetlzmbqirqaalkw` works.
 # The CLI is not installed on this machine — see README.md.
-project_id = "bvbgtsxasttjzlemumwy"
+project_id = "rxtlnetlzmbqirqaalkw"
 
 [db]
 major_version = 17

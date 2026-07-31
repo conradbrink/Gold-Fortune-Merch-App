@@ -6,11 +6,11 @@ before real merchandisers/managers start using this app.
 ## Supabase / Auth
 
 - [ ] **Enable leaked-password protection.** Currently disabled — it's a
-      Pro-plan feature and the project (`bvbgtsxasttjzlemumwy`, org "Cons
+      Pro-plan feature and the project (`rxtlnetlzmbqirqaalkw`, org "Cons
       Org") is on the Free plan. Once upgraded, enable it at
       Dashboard → Authentication → Providers → Email → "Prevent use of
       leaked passwords" (or
-      `https://supabase.com/dashboard/project/bvbgtsxasttjzlemumwy/auth/providers?provider=Email`).
+      `https://supabase.com/dashboard/project/rxtlnetlzmbqirqaalkw/auth/providers?provider=Email`).
       In the meantime, the Free-plan-available settings on that same page
       (minimum password length 8+, required character classes) are already
       a reasonable partial mitigation and cost nothing to enable now.

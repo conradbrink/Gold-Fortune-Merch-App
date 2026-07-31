@@ -124,7 +124,7 @@ cd mobile
 unzip -p build/app/outputs/flutter-apk/app-release.apk assets/flutter_assets/NOTICES >/dev/null && echo "APK readable"
 
 # The production Supabase URL must be in there, and localhost must not.
-strings build/app/outputs/flutter-apk/app-release.apk | grep -c "bvbgtsxasttjzlemumwy.supabase.co"
+strings build/app/outputs/flutter-apk/app-release.apk | grep -c "rxtlnetlzmbqirqaalkw.supabase.co"
 strings build/app/outputs/flutter-apk/app-release.apk | grep -ciE "localhost|10\.0\.2\.2" || echo "0 (good)"
 
 # Confirm the signature is the release key, not the debug key.

@@ -1,7 +1,7 @@
 # Database schema
 
 Until now the schema existed **only** inside the hosted Supabase project
-(`bvbgtsxasttjzlemumwy`) — every migration had been applied through the MCP
+(`rxtlnetlzmbqirqaalkw`) — every migration had been applied through the MCP
 server with nothing recorded in the repo. If that project were deleted or the
 account lost, the schema would have gone with it.
 
@@ -70,7 +70,7 @@ this directory:
 
 ```bash
 npm i -g supabase
-supabase link --project-ref bvbgtsxasttjzlemumwy
+supabase link --project-ref rxtlnetlzmbqirqaalkw
 supabase migration list          # compare local vs remote
 ```
 
