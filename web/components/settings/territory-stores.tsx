@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { MoreHorizontal, Plus, Search, X } from "lucide-react";
+import { GripVertical, MoreHorizontal, Plus, Search, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -9,10 +9,6 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuRadioGroup,
-  DropdownMenuRadioItem,
-  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import {
@@ -24,6 +20,7 @@ import {
 } from "@/components/ui/dialog";
 import { createClient } from "@/lib/supabase/client";
 import {
+  DRAG_TYPES,
   fetchTerritoryStores,
   searchStoresOutside,
   setStoreTerritory,
@@ -32,24 +29,22 @@ import {
 } from "@/lib/territories";
 
 /**
- * The stores inside one main territory, and the controls to move them.
+ * The stores inside one territory, and the controls to move them.
  *
  * The Territories page could say a territory held 75 stores and gave no way to
  * see which, or to put a store into one — the only path was the bulk action in
  * Schedule → Coverage, which is about *rep* coverage and is not where anybody
  * looks to answer "what is in Gaborone?".
  *
- * Loaded when a territory is expanded, not with the page: 209 stores across 47
+ * Loaded when a territory is expanded, not with the page: 209 stores across 27
  * territories, and fetching all of them to render counts is the mistake the
  * dashboard RPCs exist to undo.
  */
 export function TerritoryStores({
-  main,
-  subs,
+  territory,
   onChanged,
 }: {
-  main: Territory;
-  subs: Territory[];
+  territory: Territory;
   /** Refreshes the counts on the row above, which this changes. */
   onChanged: () => void;
 }) {
@@ -67,7 +62,7 @@ export function TerritoryStores({
     setLoading(true);
     setError(null);
     try {
-      setStores(await fetchTerritoryStores(supabase, main.id));
+      setStores(await fetchTerritoryStores(supabase, territory.id));
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
       setStores(null);
@@ -75,22 +70,18 @@ export function TerritoryStores({
       setLoading(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [main.id]);
+  }, [territory.id]);
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     load();
   }, [load]);
 
-  async function move(
-    store: TerritoryStore,
-    territoryId: string | null,
-    subTerritoryId: string | null
-  ) {
+  async function move(store: TerritoryStore, territoryId: string | null) {
     setMoving((prev) => new Set(prev).add(store.id));
     setError(null);
     try {
-      await setStoreTerritory(supabase, store.id, territoryId, subTerritoryId);
+      await setStoreTerritory(supabase, store.id, territoryId);
       await load();
       onChanged();
     } catch (e) {
@@ -117,7 +108,7 @@ export function TerritoryStores({
     <div className="border-t border-border bg-background/40 px-3 py-3 pl-11">
       <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
         <h4 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-          Stores in {main.name}
+          Stores in {territory.name}
         </h4>
         <div className="flex items-center gap-2">
           {(stores?.length ?? 0) > 8 && (
@@ -128,7 +119,7 @@ export function TerritoryStores({
                 onChange={(e) => setFilter(e.target.value)}
                 placeholder="Filter these stores"
                 className="h-8 w-48 pl-7 text-sm"
-                aria-label={`Filter stores in ${main.name}`}
+                aria-label={`Filter stores in ${territory.name}`}
               />
             </div>
           )}
@@ -153,7 +144,7 @@ export function TerritoryStores({
         </Button>
       ) : stores.length === 0 ? (
         <p className="py-3 text-sm text-muted-foreground">
-          No stores in {main.name} yet. Use <span className="font-medium">Add stores</span> to
+          No stores in {territory.name} yet. Use <span className="font-medium">Add stores</span> to
           put some here.
         </p>
       ) : visible.length === 0 ? (
@@ -165,23 +156,26 @@ export function TerritoryStores({
           {visible.map((store) => (
             <li
               key={store.id}
+              // Draggable onto any territory row in the panel above. The id
+              // travels under a store-specific MIME type so a region, which
+              // only takes territories, does not light up for it.
+              draggable={!moving.has(store.id)}
+              onDragStart={(e) => {
+                e.dataTransfer.setData(DRAG_TYPES.store, store.id);
+                e.dataTransfer.effectAllowed = "move";
+              }}
               className="flex flex-wrap items-center gap-2 rounded-md border border-border bg-card px-2.5 py-1.5"
             >
+              <GripVertical
+                className="h-3.5 w-3.5 shrink-0 cursor-grab text-muted-foreground/60"
+                aria-hidden
+              />
               <span className="min-w-0 flex-1">
                 <span className="text-sm text-foreground">{store.name}</span>
                 {store.city && (
                   <span className="ml-2 text-xs text-muted-foreground">{store.city}</span>
                 )}
               </span>
-
-              {/* The sub-territory it sits in, shown on the row rather than
-                  hidden in the menu — it is information, not an action. */}
-              {store.sub_territory_id && (
-                <span className="shrink-0 rounded bg-secondary px-1.5 py-0.5 text-xs text-secondary-foreground">
-                  {subs.find((s) => s.id === store.sub_territory_id)?.name ??
-                    "Sub-territory"}
-                </span>
-              )}
 
               <DropdownMenu>
                 <DropdownMenuTrigger
@@ -199,34 +193,12 @@ export function TerritoryStores({
                   }
                 />
                 <DropdownMenuContent align="end" className="w-52">
-                  {subs.length > 0 && (
-                    <>
-                      <DropdownMenuLabel>Sub-territory</DropdownMenuLabel>
-                      <DropdownMenuRadioGroup
-                        value={store.sub_territory_id ?? ""}
-                        onValueChange={(value) =>
-                          move(store, main.id, (value as string) || null)
-                        }
-                      >
-                        <DropdownMenuRadioItem value="">
-                          No sub-territory
-                        </DropdownMenuRadioItem>
-                        {subs.map((sub) => (
-                          <DropdownMenuRadioItem key={sub.id} value={sub.id}>
-                            {sub.name}
-                            {sub.active ? "" : " (inactive)"}
-                          </DropdownMenuRadioItem>
-                        ))}
-                      </DropdownMenuRadioGroup>
-                      <DropdownMenuSeparator />
-                    </>
-                  )}
                   <DropdownMenuItem
                     variant="destructive"
-                    onClick={() => move(store, null, null)}
+                    onClick={() => move(store, null)}
                   >
                     <X className="h-3.5 w-3.5" />
-                    Remove from {main.name}
+                    Remove from {territory.name}
                   </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
@@ -238,7 +210,7 @@ export function TerritoryStores({
       <AddStoresDialog
         open={adding}
         onOpenChange={setAdding}
-        main={main}
+        main={territory}
         onAdded={async () => {
           await load();
           onChanged();
@@ -329,7 +301,7 @@ function AddStoresDialog({
     try {
       // Sub cleared: a sub belongs to one main, so carrying the old one across
       // is the disagreement `stores_enforce_territory` refuses anyway.
-      await setStoreTerritory(supabase, store.id, main.id, null);
+      await setStoreTerritory(supabase, store.id, main.id);
       setResults((prev) => prev.filter((s) => s.id !== store.id));
       await onAdded();
     } catch (e) {
