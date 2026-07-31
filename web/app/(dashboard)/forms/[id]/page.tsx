@@ -99,6 +99,8 @@ export default function FormDetailPage() {
   const [addError, setAddError] = useState<string | null>(null);
   const [rowError, setRowError] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<FormField | null>(null);
+  /** The question whose impact fetch is the one still wanted. */
+  const impactRequest = useRef<string | null>(null);
   /** Null while the count is still being fetched, so the dialog can wait. */
   const [impact, setImpact] = useState<DeleteImpact | null>(null);
   const [deleting, setDeleting] = useState(false);
@@ -244,16 +246,29 @@ export default function FormDetailPage() {
     );
   }
 
-  /** Opens the confirmation and goes to find out what the delete would cost. */
+  /**
+   * Opens the confirmation and goes to find out what the delete would cost.
+   *
+   * The count must never appear under the wrong question. Open one, change
+   * your mind, open another, and a late reply from the first would otherwise
+   * write into the shared `impact` — leaving the second question's name above
+   * the first question's numbers, and "Delete and lose 4,213 answers" on a
+   * button that deletes something else entirely. The same guard, for the same
+   * reason, as `beginRemove` in the territories panel.
+   */
   async function askDeleteField(field: FormField) {
     setRowError(null);
     setDeleteTarget(field);
     setImpact(null);
+    impactRequest.current = field.id;
 
     const { data, error } = await supabase.rpc("form_field_delete_impact", {
       p_field_id: field.id,
     });
     const row = (data as DeleteImpact[] | null)?.[0] ?? null;
+
+    // Stale reply for a question the manager has already moved on from.
+    if (impactRequest.current !== field.id) return;
 
     // A failed count must not read as "nothing would be lost". Close the
     // dialog and say so rather than inviting a confirmation on no information.
@@ -289,6 +304,7 @@ export default function FormDetailPage() {
     }
 
     setDeleting(false);
+    impactRequest.current = null;
     setDeleteTarget(null);
     setImpact(null);
     load();
@@ -583,10 +599,23 @@ export default function FormDetailPage() {
               Checking what this would remove…
             </p>
           ) : impact.answers === 0 ? (
-            <p className="text-sm text-muted-foreground">
-              Nobody has answered this question yet, so nothing recorded is
-              lost. The reps will stop being asked it.
-            </p>
+            <div className="space-y-2 text-sm">
+              <p className="text-muted-foreground">
+                Nobody has answered this question yet, so nothing recorded is
+                lost. The reps will stop being asked it.
+              </p>
+              {/* An unanswered question can still be feeding a card. Saying
+                  "nothing is lost" and stopping there would be true of the
+                  history and wrong about the dashboard. */}
+              {impact.metric_key && (
+                <p>
+                  It is still the question behind the{" "}
+                  <strong>{metricLabel(impact.metric_key)}</strong> figure.
+                  Deleting it leaves that card with nothing to measure until
+                  another question is linked to it.
+                </p>
+              )}
+            </div>
           ) : (
             <div className="space-y-2 text-sm">
               <p>
