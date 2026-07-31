@@ -71,6 +71,15 @@ for testing changes, not for holding a copy of the business.
 It does not create the storage **objects**, only the buckets and their
 policies.
 
+**Metric keys will be null**, and the dashboard will look broken when it is
+not. Three migrations backfill `form_fields.metric_key` by matching existing
+rows; on an empty project they match nothing. Any form you build in staging
+afterwards therefore starts with no metric linked, so `dashboard_summary`
+returns null rates and `compliance_trends`, `perfect_store_score` and
+`oos_hotspots` return no metric data at all. Set the metric on each question
+in the form builder — that is what the picker is for — rather than concluding
+the reports are broken.
+
 Rep and manager accounts for staging have to be created in that project's
 auth, and each needs a `profiles` row written by hand: there is **no trigger**
 on `auth.users`, and `org_id` and `role` have no defaults, so an auth user
