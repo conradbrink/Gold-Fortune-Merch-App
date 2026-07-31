@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
+import * as Sentry from "@sentry/nextjs";
 import { ServiceMessage } from "@/components/service-message";
 
 /**
@@ -18,10 +19,13 @@ export default function ErrorPage({
   unstable_retry: () => void;
 }) {
   useEffect(() => {
-    // Vercel captures console.error from the client and the server into the
-    // runtime logs, so this is the monitoring hook until something richer is
-    // wired up. Logging the digest too is what ties this render to the
-    // server-side stack trace, which is the only place the real message lives.
+    // The digest ties this render to the server-side stack trace, which is the
+    // only place the real message lives — production withholds it from the
+    // browser on purpose. Sent as a tag so an issue can be matched to a
+    // support call where someone read the reference off the screen.
+    Sentry.captureException(error, {
+      tags: { boundary: "route", digest: error.digest ?? "none" },
+    });
     console.error("Unhandled error boundary", { digest: error.digest }, error);
   }, [error]);
 

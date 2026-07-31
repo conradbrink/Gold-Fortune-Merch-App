@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
+import * as Sentry from "@sentry/nextjs";
 import { ServiceMessage } from "@/components/service-message";
 import "./globals.css";
 
@@ -20,6 +21,12 @@ export default function GlobalError({
   unstable_retry: () => void;
 }) {
   useEffect(() => {
+    // The most severe case: the root layout itself failed, so nothing else
+    // rendered. Tagged separately because it is a different class of problem
+    // from a single route erroring.
+    Sentry.captureException(error, {
+      tags: { boundary: "global", digest: error.digest ?? "none" },
+    });
     console.error("Root layout failed", { digest: error.digest }, error);
   }, [error]);
 
