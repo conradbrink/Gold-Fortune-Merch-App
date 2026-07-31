@@ -2,9 +2,9 @@
 // in client code (mirrors what the web dashboard uses) — real access control
 // is enforced entirely by Postgres RLS, not by keeping this secret.
 class Env {
-  static const supabaseUrl = 'https://bvbgtsxasttjzlemumwy.supabase.co';
+  static const supabaseUrl = 'https://rxtlnetlzmbqirqaalkw.supabase.co';
   static const supabasePublishableKey =
-      'sb_publishable_ul9dGypnoGkwgddxEBVBYQ_Tlao-Lej';
+      'sb_publishable_BnVfT1ZntkQfCs92JUG6mA_uYEIjl7o';
 
   /// Base URL of the production web platform.
   ///

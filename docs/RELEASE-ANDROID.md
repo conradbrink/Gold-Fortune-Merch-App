@@ -124,8 +124,17 @@ cd mobile
 unzip -p build/app/outputs/flutter-apk/app-release.apk assets/flutter_assets/NOTICES >/dev/null && echo "APK readable"
 
 # The production Supabase URL must be in there, and localhost must not.
-strings build/app/outputs/flutter-apk/app-release.apk | grep -c "bvbgtsxasttjzlemumwy.supabase.co"
-strings build/app/outputs/flutter-apk/app-release.apk | grep -ciE "localhost|10\.0\.2\.2" || echo "0 (good)"
+# These EXIT NON-ZERO on failure rather than printing a count you might skim
+# past — a check that cannot fail is not a check.
+APK=build/app/outputs/flutter-apk/app-release.apk
+
+strings "$APK" | grep -q "rxtlnetlzmbqirqaalkw.supabase.co" \
+  && echo "✓ points at production" \
+  || { echo "✗ WRONG ENDPOINT — do not ship this"; exit 1; }
+
+strings "$APK" | grep -qiE "localhost|10\.0\.2\.2|127\.0\.0\.1" \
+  && { echo "✗ contains a development URL — do not ship this"; exit 1; } \
+  || echo "✓ no development URLs"
 
 # Confirm the signature is the release key, not the debug key.
 export JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home"

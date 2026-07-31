@@ -1,6 +1,6 @@
 # Security audit — GF Merchandising
 
-Audited 29 July 2026 against the live Supabase project `bvbgtsxasttjzlemumwy`
+Audited 29 July 2026 against the live Supabase project `bvbgtsxasttjzlemumwy` (deleted 31 July 2026; replaced by `rxtlnetlzmbqirqaalkw`)
 (eu-west-3). Every finding below was **confirmed by exploiting it** inside a
 transaction that was then rolled back, not inferred from reading policy text.
 

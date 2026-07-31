@@ -20,7 +20,7 @@ Companion documents:
 |---|---|---|
 | Source code | `github.com/conradbrink/Gold-Fortune-Merch-App` | Private |
 | Web platform | **Vercel** — **LIVE** at <https://gold-fortune-merch-app-rnyn.vercel.app> | Next.js 16, root directory `web`, auto-deploys from `main` |
-| Database | **Supabase** project `bvbgtsxasttjzlemumwy` | Postgres 17, region **eu-west-3 (Paris)** |
+| Database | **Supabase** project `rxtlnetlzmbqirqaalkw` | Postgres 17, region **eu-west-3 (Paris)** |
 | Authentication | Supabase Auth, same project | Email + password |
 | Uploaded files | Supabase Storage, same project | Buckets `visit-photos`, `files`, `app-releases` — **all private** |
 | Android APK | Supabase Storage bucket `app-releases`, key `1.0.0/app-release.apk` | Served through `/api/app/android`, never a public URL |
