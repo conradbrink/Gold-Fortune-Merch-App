@@ -101,6 +101,11 @@ class FormDraftStore {
 
   final AppDatabase _db;
 
+  /// Long enough to cover a rep who is interrupted and comes back after a
+  /// weekend, short enough that an abandoned visit does not keep its draft —
+  /// and the photo file it points at — on the handset indefinitely.
+  static const maxAge = Duration(days: 7);
+
   Future<FormDraft?> load({
     required String visitClientGeneratedId,
     required String templateId,
@@ -109,7 +114,22 @@ class FormDraftStore {
       visitClientGeneratedId: visitClientGeneratedId,
       templateId: templateId,
     ));
-    return FormDraft.decode(raw);
+
+    final draft = FormDraft.decode(raw);
+    final savedAt = draft?.savedAt;
+    if (draft == null ||
+        (savedAt != null && DateTime.now().difference(savedAt) > maxAge)) {
+      // Also clears the key when decoding failed, so a corrupt value is not
+      // re-read on every open.
+      if (raw != null) {
+        await clear(
+          visitClientGeneratedId: visitClientGeneratedId,
+          templateId: templateId,
+        );
+      }
+      return null;
+    }
+    return draft;
   }
 
   Future<void> save({

@@ -35,7 +35,6 @@ class _FormFillScreenState extends ConsumerState<FormFillScreen> {
   /// that a restored value is the field's initial value rather than something
   /// written over what the rep has already started typing.
   bool _restoring = true;
-  bool _restoredSomething = false;
 
   /// Held rather than read from `ref` on demand, because the last write
   /// happens in `dispose`, by which point reading a provider is no longer
@@ -67,17 +66,17 @@ class _FormFillScreenState extends ConsumerState<FormFillScreen> {
     final pendingFieldId = draft?.pendingPhotoFieldId;
     if (pendingFieldId != null) {
       await _recoverLostPhoto(pendingFieldId);
+      // Cleared whether or not anything came back. A marker left set outlives
+      // the capture it describes, and the next lost-data result — from some
+      // later, unrelated photo — would be filed against this field.
+      await _saveDraft(pendingPhotoFieldId: null);
     }
 
     if (!mounted) return;
-    setState(() {
-      _restoring = false;
-      _restoredSomething = _answers.values.any((a) => !a.isEmpty);
-    });
+    final restored = _answers.values.any((a) => !a.isEmpty);
+    setState(() => _restoring = false);
 
-    if (_restoredSomething) {
-      await _saveDraft(pendingPhotoFieldId: null);
-      if (!mounted) return;
+    if (restored) {
       ScaffoldMessenger.of(context)
         ..hideCurrentSnackBar()
         ..showSnackBar(const SnackBar(
@@ -141,12 +140,18 @@ class _FormFillScreenState extends ConsumerState<FormFillScreen> {
 
   Timer? _saveTimer;
 
+  /// Set once the form is on the queue and its draft has been deleted. After
+  /// that no write may happen, or the submitted form reappears as a draft the
+  /// rep can no longer open — the template shows as done.
+  bool _cleared = false;
+
   @override
   void dispose() {
     // A pending debounce would otherwise drop the last few characters typed
     // before the rep backed out of the form.
-    if (_saveTimer?.isActive ?? false) {
-      _saveTimer!.cancel();
+    final pending = _saveTimer?.isActive ?? false;
+    _saveTimer?.cancel();
+    if (pending && !_cleared) {
       unawaited(_saveDraft(pendingPhotoFieldId: null));
     }
     super.dispose();
@@ -187,17 +192,33 @@ class _FormFillScreenState extends ConsumerState<FormFillScreen> {
     // Copied out of the OS cache straight away rather than at submit time:
     // the rep still has a dozen fields to fill in, and Android is free to
     // empty that directory in the meantime.
+    final previous = _answerFor(field.id).photo;
     final saved = await ref
         .read(formRepositoryProvider)
         .persistCapturedPhoto(File(picked.path));
 
-    if (!mounted) return;
-    setState(() {
-      _answerFor(field.id)
-        ..photo = saved.file
-        ..photoClientId = saved.clientId;
-    });
+    // Recorded before the mounted check. The file is already on disk, so
+    // returning early here would leave a photo nothing refers to and lose the
+    // one the rep just took.
+    _answerFor(field.id)
+      ..photo = saved.file
+      ..photoClientId = saved.clientId;
     await _saveDraft(pendingPhotoFieldId: null);
+
+    // A retake would otherwise leave the old copy behind for ever — nothing
+    // refers to it once the answer points at the new one, and "Retake photo"
+    // has no limit.
+    if (previous != null && previous.path != saved.file.path) {
+      try {
+        await previous.delete();
+      } catch (_) {
+        // A leftover file wastes space; failing the capture would waste the
+        // rep's trip.
+      }
+    }
+
+    if (!mounted) return;
+    setState(() {});
   }
 
   Future<void> _submit() async {
@@ -224,6 +245,9 @@ class _FormFillScreenState extends ConsumerState<FormFillScreen> {
     }
 
     setState(() => _submitting = true);
+    // No draft write may land after the clear below, and a debounce started by
+    // the last thing typed would otherwise fire from dispose once this pops.
+    _saveTimer?.cancel();
     try {
       await ref.read(formRepositoryProvider).submitForm(
             orgId: profile.orgId,
@@ -238,6 +262,7 @@ class _FormFillScreenState extends ConsumerState<FormFillScreen> {
         visitClientGeneratedId: widget.visitClientGeneratedId,
         templateId: widget.template.id,
       );
+      _cleared = true;
       if (!mounted) return;
       Navigator.pop(context, true);
     } catch (e) {

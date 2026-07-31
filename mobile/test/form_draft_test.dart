@@ -77,6 +77,14 @@ const _template = FormTemplate(
 
 const _visitId = 'visit-abc';
 
+// Not covered here: that submitting clears the draft and that no debounced
+// write can resurrect it afterwards. Driving `_submit` needs a real
+// `FormRepository`, which needs a real `SupabaseClient` — and that keeps an
+// HttpClient and its timers alive past the end of the suite, which hangs the
+// run instead of failing it. A test that hangs CI is worse than this gap.
+// Covering it properly means a seam for the repository, which is a change to
+// production code and belongs in its own PR.
+
 void main() {
   late AppDatabase db;
 
@@ -88,15 +96,17 @@ void main() {
 
   tearDown(() => db.close());
 
-  Widget app() => ProviderScope(
-        overrides: [appDatabaseProvider.overrideWithValue(db)],
-        child: const MaterialApp(
-          home: FormFillScreen(
-            template: _template,
-            visitClientGeneratedId: _visitId,
-          ),
+  Widget app({FormTemplate template = _template}) {
+    return ProviderScope(
+      overrides: [appDatabaseProvider.overrideWithValue(db)],
+      child: MaterialApp(
+        home: FormFillScreen(
+          template: template,
+          visitClientGeneratedId: _visitId,
         ),
-      );
+      ),
+    );
+  }
 
   /// Fills in three answers of three different kinds.
   Future<void> fillSomeIn(WidgetTester tester) async {
