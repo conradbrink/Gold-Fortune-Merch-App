@@ -76,8 +76,14 @@ Consequences:
 - **Shared documents** are presumably held elsewhere too.
 - **Visit photos are not reproducible.** If lost, they are gone.
 
-Currently there are **0 visit photos**, so nothing is at risk *today*. That
-changes the moment reps start working.
+As at **31 July 2026** there were 0 visit photos, so nothing was at risk then.
+That changes the moment reps start working. Check the current number rather than
+trusting this sentence:
+
+```sql
+select count(*) as photo_files
+from storage.objects where bucket_id = 'visit-photos';
+```
 
 **Options, none yet implemented:**
 

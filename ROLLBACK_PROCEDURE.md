@@ -49,13 +49,27 @@ gh pr list --state merged --limit 5      # find the bad PR number
 gh pr revert <number>                     # opens a revert PR
 ```
 
-Or by hand:
+Or by hand. **Which command depends on how the PR was merged**, and getting it
+wrong wastes time during an incident:
 
 ```bash
 git checkout -b fix/revert-<thing> main
-git revert -m 1 <merge-commit-sha>
+
+# Check first — how many parents does the commit have?
+git rev-list --parents -n1 <sha> | wc -w
+#   2 words  = 1 parent  = squash or rebase merge  -> revert WITHOUT -m
+#   3 words  = 2 parents = a real merge commit     -> revert WITH -m 1
+
+git revert <sha>          # squash merge (what this repo uses)
+# git revert -m 1 <sha>   # only for a true merge commit
+
 git push -u origin fix/revert-<thing>
 ```
+
+⚠️ **This repository squash-merges**, so every commit on `main` has a single
+parent and `git revert <sha>` is the correct form. Using `-m 1` on one of them
+fails with *"mainline was specified but commit is not a merge"*. Verified
+against the current history.
 
 Then merge that revert PR through the normal process. Reverting is preferred
 over force-pushing: it keeps the history honest about what happened, and
@@ -68,13 +82,31 @@ install an older `versionCode` over a newer one. So:
 
 **For people who have not yet updated** — make the previous release current:
 
+Run this as a single block. It refuses to commit unless exactly one release was
+promoted:
+
 ```sql
-begin;
-update public.app_releases set is_current = false where platform = 'android';
-update public.app_releases set is_current = true
- where platform = 'android' and version_code = <previous code>;
-commit;
+do $$
+declare n int;
+begin
+  update public.app_releases set is_current = false where platform = 'android';
+  update public.app_releases set is_current = true
+   where platform = 'android' and version_code = <previous code>;
+  get diagnostics n = row_count;
+  if n <> 1 then
+    raise exception 'Expected to promote exactly 1 release, promoted %', n;
+  end if;
+end $$;
 ```
+
+*Verified 31 July 2026 against production with a deliberately wrong
+`version_code`: the block aborted, and 1.0.0 remained the current release.*
+
+⚠️ **Do not run the two bare updates on their own.** A wrong `version_code`
+matches nothing, the first update still clears every flag, and you are left
+with **no current release at all** — the download page then tells every rep
+"no release available yet", turning a bad version into no version. The guard
+above makes that impossible: the whole block aborts and nothing changes.
 
 The download page immediately serves the older APK again.
 
