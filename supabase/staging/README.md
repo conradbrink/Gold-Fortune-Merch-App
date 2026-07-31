@@ -25,6 +25,20 @@ python3 scripts/build-staging-schema.py
    **Every row of the second one must say `OK`** — the first only
    proves nothing is obviously missing.
 
+## ⚠️ The paste can corrupt non-ASCII characters
+
+Building staging on 31 July 2026, every en and em dash in the chunks arrived
+in the database as MacRoman mojibake (`–` became `‚Äì`) somewhere between the
+clipboard and the SQL editor — including inside two string literals users see.
+Counts don't notice this; the definition digests in `98_verify.sql` do, which
+is how it was caught.
+
+If the functions digest mismatches after a paste, do not retype anything.
+Transport the affected definitions as base64 and `execute
+convert_from(decode('…', 'base64'), 'UTF8')` inside a DO block — an ASCII-only
+payload no encoding layer can damage. Generate it from the live source of
+truth and have the script re-fingerprint the functions itself afterwards.
+
 ## If a chunk fails
 
 Each chunk is wrapped in `begin` / `commit`, so a failure *should* roll the

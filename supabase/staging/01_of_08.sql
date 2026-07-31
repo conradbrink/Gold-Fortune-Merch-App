@@ -33,7 +33,7 @@ alter table supabase_migrations.schema_migrations
   add column if not exists name text;
 
 -- ──────────────────────────────────────────────────────────────────────────
---  1/73  20260726144345_init_orgs_users.sql
+--  1/76  20260726144345_init_orgs_users.sql
 -- ──────────────────────────────────────────────────────────────────────────
 
 create table public.organizations (
@@ -91,7 +91,7 @@ on conflict (version) do nothing;
 
 
 -- ──────────────────────────────────────────────────────────────────────────
---  2/73  20260726144357_stores.sql
+--  2/76  20260726144357_stores.sql
 -- ──────────────────────────────────────────────────────────────────────────
 
 create table public.stores (
@@ -119,7 +119,7 @@ on conflict (version) do nothing;
 
 
 -- ──────────────────────────────────────────────────────────────────────────
---  3/73  20260726144416_routes_visits.sql
+--  3/76  20260726144416_routes_visits.sql
 -- ──────────────────────────────────────────────────────────────────────────
 
 create table public.routes (
@@ -173,7 +173,7 @@ on conflict (version) do nothing;
 
 
 -- ──────────────────────────────────────────────────────────────────────────
---  4/73  20260726144433_forms_photos.sql
+--  4/76  20260726144433_forms_photos.sql
 -- ──────────────────────────────────────────────────────────────────────────
 
 create table public.form_templates (
@@ -256,7 +256,7 @@ on conflict (version) do nothing;
 
 
 -- ──────────────────────────────────────────────────────────────────────────
---  5/73  20260726144458_rls_policies.sql
+--  5/76  20260726144458_rls_policies.sql
 -- ──────────────────────────────────────────────────────────────────────────
 
 alter table public.organizations enable row level security;
@@ -437,7 +437,7 @@ on conflict (version) do nothing;
 
 
 -- ──────────────────────────────────────────────────────────────────────────
---  6/73  20260726144511_storage_buckets.sql
+--  6/76  20260726144511_storage_buckets.sql
 -- ──────────────────────────────────────────────────────────────────────────
 
 insert into storage.buckets (id, name, public)
@@ -475,7 +475,7 @@ on conflict (version) do nothing;
 
 
 -- ──────────────────────────────────────────────────────────────────────────
---  7/73  20260726144612_harden_functions.sql
+--  7/76  20260726144612_harden_functions.sql
 -- ──────────────────────────────────────────────────────────────────────────
 
 create or replace function public.set_updated_at()
@@ -503,7 +503,7 @@ on conflict (version) do nothing;
 
 
 -- ──────────────────────────────────────────────────────────────────────────
---  8/73  20260726145151_optimize_rls_policies.sql
+--  8/76  20260726145151_optimize_rls_policies.sql
 -- ──────────────────────────────────────────────────────────────────────────
 
 -- Drop and recreate all policies wrapping auth.uid()/current_org_id()/current_role()
@@ -701,7 +701,7 @@ on conflict (version) do nothing;
 
 
 -- ──────────────────────────────────────────────────────────────────────────
---  9/73  20260726152920_routes_scheduled_time_window.sql
+--  9/76  20260726152920_routes_scheduled_time_window.sql
 -- ──────────────────────────────────────────────────────────────────────────
 
 alter table public.routes
@@ -714,7 +714,7 @@ on conflict (version) do nothing;
 
 
 -- ──────────────────────────────────────────────────────────────────────────
--- 10/73  20260726155028_organizations_details.sql
+-- 10/76  20260726155028_organizations_details.sql
 -- ──────────────────────────────────────────────────────────────────────────
 
 alter table public.organizations
@@ -730,7 +730,7 @@ on conflict (version) do nothing;
 
 
 -- ──────────────────────────────────────────────────────────────────────────
--- 11/73  20260726163602_store_groups.sql
+-- 11/76  20260726163602_store_groups.sql
 -- ──────────────────────────────────────────────────────────────────────────
 
 create table public.store_groups (
@@ -773,7 +773,7 @@ on conflict (version) do nothing;
 
 
 -- ──────────────────────────────────────────────────────────────────────────
--- 12/73  20260726173953_workday_sessions_and_location_pings.sql
+-- 12/76  20260726173953_workday_sessions_and_location_pings.sql
 -- ──────────────────────────────────────────────────────────────────────────
 
 -- A rep's workday: started when they tap "Start workday", ended on "End
@@ -860,7 +860,7 @@ on conflict (version) do nothing;
 
 
 -- ──────────────────────────────────────────────────────────────────────────
--- 13/73  20260727093100_create_store_assignments.sql
+-- 13/76  20260727093100_create_store_assignments.sql
 -- ──────────────────────────────────────────────────────────────────────────
 
 -- Which reps cover which stores. Many-to-many so a store can have cover reps
@@ -921,7 +921,7 @@ on conflict (version) do nothing;
 
 
 -- ──────────────────────────────────────────────────────────────────────────
--- 14/73  20260727095454_add_form_field_metric_key.sql
+-- 14/76  20260727095454_add_form_field_metric_key.sql
 -- ──────────────────────────────────────────────────────────────────────────
 
 -- Compliance KPIs need to know which field *means* "in stock" or "planogram ok".
@@ -959,7 +959,7 @@ on conflict (version) do nothing;
 
 
 -- ──────────────────────────────────────────────────────────────────────────
--- 15/73  20260727100648_create_dashboard_summary_rpc.sql
+-- 15/76  20260727100648_create_dashboard_summary_rpc.sql
 -- ──────────────────────────────────────────────────────────────────────────
 
 -- Replaces the dashboard's 7 sequential client queries with one call, two of
@@ -1080,7 +1080,7 @@ on conflict (version) do nothing;
 
 
 -- ──────────────────────────────────────────────────────────────────────────
--- 16/73  20260727121757_create_activity_feed_rpc.sql
+-- 16/76  20260727121757_create_activity_feed_rpc.sql
 -- ──────────────────────────────────────────────────────────────────────────
 
 -- Chronological feed of field activity, with a location verdict per event.

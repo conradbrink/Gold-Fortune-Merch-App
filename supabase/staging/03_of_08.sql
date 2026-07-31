@@ -18,7 +18,7 @@
 
 begin;
 -- ──────────────────────────────────────────────────────────────────────────
--- 26/73  20260727201311_coverage_gaps_uses_any_assignment.sql
+-- 26/76  20260727201311_coverage_gaps_uses_any_assignment.sql
 -- ──────────────────────────────────────────────────────────────────────────
 
 -- Assignment now means responsibility: if a store is assigned to a rep, that rep
@@ -112,7 +112,7 @@ on conflict (version) do nothing;
 
 
 -- ──────────────────────────────────────────────────────────────────────────
--- 27/73  20260727201409_add_rep_detail_columns.sql
+-- 27/76  20260727201409_add_rep_detail_columns.sql
 -- ──────────────────────────────────────────────────────────────────────────
 
 -- profiles carried only name/email/role, which is not enough to manage a field
@@ -196,7 +196,7 @@ on conflict (version) do nothing;
 
 
 -- ──────────────────────────────────────────────────────────────────────────
--- 28/73  20260727202504_create_rep_delete_impact_rpc.sql
+-- 28/76  20260727202504_create_rep_delete_impact_rpc.sql
 -- ──────────────────────────────────────────────────────────────────────────
 
 -- What a hard delete would destroy.
@@ -247,7 +247,7 @@ on conflict (version) do nothing;
 
 
 -- ──────────────────────────────────────────────────────────────────────────
--- 29/73  20260727203059_enforce_is_active_in_rls_helpers.sql
+-- 29/76  20260727203059_enforce_is_active_in_rls_helpers.sql
 -- ──────────────────────────────────────────────────────────────────────────
 
 -- is_active was cosmetic: Supabase auth does not know about the column, and
@@ -290,7 +290,7 @@ on conflict (version) do nothing;
 
 
 -- ──────────────────────────────────────────────────────────────────────────
--- 30/73  20260727211052_add_call_cycle.sql
+-- 30/76  20260727211052_add_call_cycle.sql
 -- ──────────────────────────────────────────────────────────────────────────
 
 -- Call cycle: how often a store is visited, and on which day of the rep's week.
@@ -343,7 +343,7 @@ on conflict (version) do nothing;
 
 
 -- ──────────────────────────────────────────────────────────────────────────
--- 31/73  20260727211122_create_generate_routes_rpc.sql
+-- 31/76  20260727211122_create_generate_routes_rpc.sql
 -- ──────────────────────────────────────────────────────────────────────────
 
 -- Materialises dated `routes` rows from the call cycle.
@@ -482,7 +482,7 @@ on conflict (version) do nothing;
 
 
 -- ──────────────────────────────────────────────────────────────────────────
--- 32/73  20260727214650_create_call_cycle_review_rpcs.sql
+-- 32/76  20260727214650_create_call_cycle_review_rpcs.sql
 -- ──────────────────────────────────────────────────────────────────────────
 
 -- What the AI plan critic reads.
@@ -740,7 +740,7 @@ on conflict (version) do nothing;
 
 
 -- ──────────────────────────────────────────────────────────────────────────
--- 33/73  20260728144922_create_store_last_visit_rpc.sql
+-- 33/76  20260728144922_create_store_last_visit_rpc.sql
 -- ──────────────────────────────────────────────────────────────────────────
 
 -- Last visit per store, for the Stores list.
@@ -782,7 +782,7 @@ on conflict (version) do nothing;
 
 
 -- ──────────────────────────────────────────────────────────────────────────
--- 34/73  20260728145421_create_store_delete_impact_rpc.sql
+-- 34/76  20260728145421_create_store_delete_impact_rpc.sql
 -- ──────────────────────────────────────────────────────────────────────────
 
 -- What deleting a store would destroy.
@@ -842,7 +842,7 @@ on conflict (version) do nothing;
 
 
 -- ──────────────────────────────────────────────────────────────────────────
--- 35/73  20260728170616_add_org_capacity_settings.sql
+-- 35/76  20260728170616_add_org_capacity_settings.sql
 -- ──────────────────────────────────────────────────────────────────────────
 
 -- How much work one rep-day holds, per organisation.
@@ -889,7 +889,7 @@ on conflict (version) do nothing;
 
 
 -- ──────────────────────────────────────────────────────────────────────────
--- 36/73  20260728184637_generate_routes_retracts_stale.sql
+-- 36/76  20260728184637_generate_routes_retracts_stale.sql
 -- ──────────────────────────────────────────────────────────────────────────
 
 -- Where a route came from, so re-generating can clean up after itself.
@@ -1075,7 +1075,7 @@ on conflict (version) do nothing;
 
 
 -- ──────────────────────────────────────────────────────────────────────────
--- 37/73  20260728190255_create_files.sql
+-- 37/76  20260728190255_create_files.sql
 -- ──────────────────────────────────────────────────────────────────────────
 
 -- Shared documents: planograms, price lists, notices.
@@ -1230,7 +1230,7 @@ on conflict (version) do nothing;
 
 
 -- ──────────────────────────────────────────────────────────────────────────
--- 38/73  20260728190322_create_files_bucket.sql
+-- 38/76  20260728190322_create_files_bucket.sql
 -- ──────────────────────────────────────────────────────────────────────────
 
 -- Private bucket for shared documents. Paths are org_id/file_id/filename.

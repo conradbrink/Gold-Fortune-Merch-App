@@ -37,7 +37,7 @@ expected (item, n) as (
     ('tables with RLS on', 30),
     ('storage buckets', 3),
     ('public storage buckets', 0),
-    ('migrations recorded', 73)
+    ('migrations recorded', 76)
 )
 select
   a.item,
@@ -75,7 +75,7 @@ with actual (item, digest) as (
 ),
 expected (item, digest) as (
   values
-    ('functions', '0d3267eecbff8f3f6ed3873efd91a55d'),
+    ('functions', 'cc322f141518027af698f11a5d6b7007'),
     ('columns', 'de65792cf23e5bcf1e0aea26a36366ee'),
     ('rls policies', '6dc453293ab8b25cbe2a26fb180f3b8c'),
     ('indexes', 'f8f64b2ab5420196757111f23bfc691c'),
