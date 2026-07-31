@@ -49,17 +49,18 @@ TABLES=(
 
 fail=0
 for t in "${TABLES[@]}"; do
-  code=$(curl -s -o "$OUT/$t.json" -w "%{http_code}" --max-time 120 \
-    -H "apikey: $SUPABASE_SERVICE_ROLE_KEY" \
-    -H "Authorization: Bearer $SUPABASE_SERVICE_ROLE_KEY" \
-    "$NEXT_PUBLIC_SUPABASE_URL/rest/v1/$t?select=*")
-  if [ "$code" != "200" ]; then
-    echo "  ✗ $t — HTTP $code"; fail=1; continue
+  # Paged, and it verifies the row count against what PostgREST reports it
+  # holds. A single unpaged request silently returns only the first page once a
+  # table passes the server's cap — see scripts/_export-table.py.
+  if n=$(python3 "$ROOT/scripts/_export-table.py" \
+          "$NEXT_PUBLIC_SUPABASE_URL" "$SUPABASE_SERVICE_ROLE_KEY" "$t" "$OUT/$t.json" 2>/tmp/gf_export_err); then
+    printf "  ✓ %-22s %6s rows\n" "$t" "$n"
+  else
+    printf "  ✗ %-22s %s\n" "$t" "$(cat /tmp/gf_export_err)"
+    fail=1
   fi
-  # A row count, so a silently-empty export is visible rather than reassuring.
-  n=$(python3 -c "import json,sys;print(len(json.load(open('$OUT/$t.json'))))" 2>/dev/null || echo "?")
-  printf "  ✓ %-22s %6s rows\n" "$t" "$n"
 done
+rm -f /tmp/gf_export_err
 
 # Storage. Supabase's own database backups do NOT include any of this — the
 # dashboard says so on the Backups page. Visit photos are evidence that a rep
@@ -131,7 +132,9 @@ Project:  $NEXT_PUBLIC_SUPABASE_URL
 Git:      $(cd "$ROOT" && git rev-parse --short HEAD 2>/dev/null || echo unknown)
 
 Tables:   ${#TABLES[@]}
-Files:    $(ls -1 "$OUT"/*.json | wc -l | tr -d ' ')
+Table files:   $(ls -1 "$OUT"/*.json | grep -vc "/storage-" || echo 0)
+Storage lists: $(ls -1 "$OUT"/storage-*.json 2>/dev/null | wc -l | tr -d ' ')
+Stored files:  $(find "$OUT/storage" -type f 2>/dev/null | wc -l | tr -d ' ')
 
 WHAT THIS DOES NOT CONTAIN
   * auth.users - passwords and identities live in Supabase's auth schema and
