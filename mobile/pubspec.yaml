@@ -51,7 +51,7 @@ dependencies:
   open_filex: ^4.7.0
   package_info_plus: ^10.2.1
   url_launcher: ^6.3.2
-  sentry_flutter: ^8.14.2
+  sentry_flutter: ^9.26.0
 
 dev_dependencies:
   flutter_test:
