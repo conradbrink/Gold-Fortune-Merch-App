@@ -1,7 +1,7 @@
+import 'package:flutter/foundation.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:sentry_flutter/sentry_flutter.dart';
 
-import 'env.dart';
 
 /// Crash and error reporting.
 ///
@@ -36,15 +36,40 @@ class Monitoring {
 
   /// Wraps app startup. Falls back to running the app unmonitored if Sentry
   /// cannot start — an error reporter that can prevent the app from launching
-  /// is worse than no error reporter.
+  /// is worse than no error reporter, and this promise was previously only in
+  /// the comment rather than in the code.
+  ///
+  /// ⚠️ The caller must have called `WidgetsFlutterBinding.ensureInitialized()`
+  /// first: reading the package version uses a platform channel, which does not
+  /// exist before the binding is up.
   static Future<void> init(Future<void> Function() runApp) async {
     if (!enabled) {
       await runApp();
       return;
     }
 
-    final info = await PackageInfo.fromPlatform();
+    final PackageInfo info;
+    try {
+      info = await PackageInfo.fromPlatform();
+    } catch (_) {
+      // Cannot even identify the build — start the app rather than block it.
+      await runApp();
+      return;
+    }
 
+    try {
+      await _start(info, runApp);
+    } catch (_) {
+      // Sentry failed to initialise. The rep's day matters more than the
+      // telemetry; `appRunner` may not have been reached, so run it here.
+      await runApp();
+    }
+  }
+
+  static Future<void> _start(
+    PackageInfo info,
+    Future<void> Function() runApp,
+  ) async {
     await SentryFlutter.init(
       (options) {
         options.dsn = _dsn;
@@ -52,8 +77,12 @@ class Monitoring {
         // "Which version was this?" is the first question about any field
         // report, and reps update at different times.
         options.release = 'gf-merch-rep@${info.version}+${info.buildNumber}';
-        options.environment =
-            Env.webBaseUrl.contains('vercel.app') ? 'production' : 'development';
+
+        // From the build mode, not from a URL. Deriving it from `webBaseUrl`
+        // meant a release build pointed at a staging domain would report as
+        // "development" and be dropped — losing exactly the reports a staging
+        // build exists to produce.
+        options.environment = kReleaseMode ? 'production' : 'development';
 
         options.sendDefaultPii = false;
 
@@ -94,20 +123,51 @@ class Monitoring {
       );
     }
 
+    // A query string carries recovery and access tokens on auth redirects.
+    // The path is what helps debugging; the parameters never are.
+    final url = event.request?.url;
+    if (url != null && url.contains('?')) {
+      event = event.copyWith(
+        request: event.request!.copyWith(
+          url: url.split('?').first,
+          queryString: null,
+        ),
+      );
+    }
+
     return event;
+  }
+
+  static bool _isSensitiveKey(String key) {
+    final k = key.toLowerCase();
+    return k.contains('password') ||
+        k.contains('token') ||
+        k.contains('secret') ||
+        k.contains('apikey') ||
+        k.contains('api_key') ||
+        k.contains('authorization') ||
+        k.contains('key');
+  }
+
+  /// Redacts sensitive keys **at every depth**.
+  ///
+  /// A shallow pass looked right and was not: a payload is nested, so
+  /// `{'body': {'access_token': …}}` sailed straight through the top-level
+  /// check. Lists are walked too, because a batch is a list of maps.
+  static Object? _scrubValue(Object? value) {
+    if (value is Map) {
+      return value.map<String, Object?>((k, v) {
+        final key = k.toString();
+        return MapEntry(key, _isSensitiveKey(key) ? '[redacted]' : _scrubValue(v));
+      });
+    }
+    if (value is List) return value.map(_scrubValue).toList();
+    return value;
   }
 
   static Map<String, dynamic>? _scrubMap(Map<String, dynamic>? map) {
     if (map == null) return null;
-    return map.map((k, v) {
-      final key = k.toLowerCase();
-      final sensitive = key.contains('password') ||
-          key.contains('token') ||
-          key.contains('secret') ||
-          key.contains('apikey') ||
-          key.contains('key');
-      return MapEntry(k, sensitive ? '[redacted]' : v);
-    });
+    return Map<String, dynamic>.from(_scrubValue(map) as Map);
   }
 
   /// Records a business event as a breadcrumb.
@@ -142,11 +202,12 @@ class Monitoring {
       stackTrace: stack,
       withScope: (scope) {
         if (feature != null) scope.setTag('feature', feature);
+        // One named context, not one per key. Setting a context per key
+        // floods the issue with single-value blocks and can collide with
+        // Sentry's own reserved context names.
         final scrubbed = _scrubMap(data);
-        if (scrubbed != null) {
-          for (final e in scrubbed.entries) {
-            scope.setContexts(e.key, e.value);
-          }
+        if (scrubbed != null && scrubbed.isNotEmpty) {
+          scope.setContexts('operation', scrubbed);
         }
       },
     );
