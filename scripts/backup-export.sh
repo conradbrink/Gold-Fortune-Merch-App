@@ -61,10 +61,21 @@ for t in "${TABLES[@]}"; do
   printf "  ✓ %-22s %6s rows\n" "$t" "$n"
 done
 
-# Storage objects: the metadata, plus the files themselves for the buckets that
-# cannot be regenerated. Supabase's own database backups do NOT include these.
+# Storage. Supabase's own database backups do NOT include any of this — the
+# dashboard says so on the Backups page. Visit photos are evidence that a rep
+# stood in a shop, and they cannot be regenerated from anything.
+#
+# Listings are recorded for every bucket. The *bytes* are downloaded only for
+# the buckets that cannot be rebuilt:
+#
+#   visit-photos  irreplaceable — downloaded
+#   files         uploaded documents, irreplaceable — downloaded
+#   app-releases  an APK is reproducible from a tagged commit plus the
+#                 keystore, and each one is ~40 MB. Listed, not downloaded.
 echo
 echo "Storage:"
+DOWNLOAD_BUCKETS=" visit-photos files "
+
 for b in visit-photos files app-releases; do
   code=$(curl -s -o "$OUT/storage-$b.json" -w "%{http_code}" --max-time 120 -X POST \
     -H "apikey: $SUPABASE_SERVICE_ROLE_KEY" \
@@ -72,8 +83,45 @@ for b in visit-photos files app-releases; do
     -H "Content-Type: application/json" \
     -d '{"prefix":"","limit":10000}' \
     "$NEXT_PUBLIC_SUPABASE_URL/storage/v1/object/list/$b")
-  n=$(python3 -c "import json;print(len(json.load(open('$OUT/storage-$b.json'))))" 2>/dev/null || echo "?")
+  if [ "$code" != "200" ]; then
+    echo "  ✗ $b — listing failed, HTTP $code"; fail=1; continue
+  fi
+  n=$(python3 -c "import json;print(len(json.load(open('$OUT/storage-$b.json'))))" 2>/dev/null || echo 0)
   printf "  ✓ %-22s %6s objects listed\n" "$b" "$n"
+
+  case "$DOWNLOAD_BUCKETS" in *" $b "*) ;; *) continue ;; esac
+  [ "$n" = "0" ] && continue
+
+  mkdir -p "$OUT/storage/$b"
+  got=0; missed=0
+
+  # The key list is produced into a temp file rather than piped straight into
+  # the loop. A heredoc nested inside a process substitution is what bash
+  # rejects with "ambiguous redirect", and it fails *quietly* — the loop simply
+  # never runs and the export reports "0 files downloaded", which reads like an
+  # empty bucket rather than a broken backup.
+  KEYS="$(mktemp)"
+  python3 "$ROOT/scripts/_list-storage-keys.py" \
+    "$NEXT_PUBLIC_SUPABASE_URL" "$SUPABASE_SERVICE_ROLE_KEY" "$b" > "$KEYS"
+
+  while IFS= read -r key; do
+    [ -z "$key" ] && continue
+    dest="$OUT/storage/$b/$key"
+    mkdir -p "$(dirname "$dest")"
+    dcode=$(curl -s -o "$dest" -w "%{http_code}" --max-time 300 \
+      -H "apikey: $SUPABASE_SERVICE_ROLE_KEY" \
+      "$NEXT_PUBLIC_SUPABASE_URL/storage/v1/object/$b/$key")
+    if [ "$dcode" = "200" ]; then got=$((got+1)); else rm -f "$dest"; missed=$((missed+1)); fi
+  done < "$KEYS"
+  rm -f "$KEYS"
+
+  if [ "$missed" -gt 0 ]; then
+    echo "    ✗ downloaded $got, FAILED $missed — this export is incomplete"; fail=1
+  elif [ "$got" = "0" ]; then
+    echo "    ✗ listed $n object(s) but downloaded NONE — the walk is broken"; fail=1
+  else
+    printf "    ↓ %s file(s) downloaded\n" "$got"
+  fi
 done
 
 cat > "$OUT/MANIFEST.txt" <<MANIFEST
@@ -89,8 +137,13 @@ WHAT THIS DOES NOT CONTAIN
   * auth.users - passwords and identities live in Supabase's auth schema and
     are not reachable over the REST API. Accounts must be recreated by hand
     after a restore. Keep the list of who exists somewhere else.
-  * The bytes of stored files. Only the object listings are here. Photos are
-    evidence and are not reproducible - see BACKUP_AND_RESTORE_PROCEDURE.md.
+  * The bytes of app-releases. An APK is reproducible from a tagged commit
+    plus the signing keystore, and each is ~40 MB. Listed, not downloaded.
+
+WHAT IT DOES CONTAIN
+  * Every business table as JSON.
+  * The actual FILES from visit-photos and files, under storage/ - these are
+    irreplaceable and are NOT in Supabase's own database backups.
 MANIFEST
 
 echo
