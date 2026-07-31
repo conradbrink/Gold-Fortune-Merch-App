@@ -81,6 +81,10 @@ class KeyValueEntries extends Table {
 class AppDatabase extends _$AppDatabase {
   AppDatabase() : super(_openConnection());
 
+  /// Lets a test run against an in-memory database instead of the handset's
+  /// file, so persistence can be asserted rather than assumed.
+  AppDatabase.forTesting(super.executor);
+
   @override
   int get schemaVersion => 4;
 

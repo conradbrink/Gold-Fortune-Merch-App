@@ -10,10 +10,52 @@ export type Database = {
   // Allows to automatically instantiate createClient with right options
   // instead of createClient<Database, { PostgrestVersion: 'XX' }>(URL, KEY)
   __InternalSupabase: {
-    PostgrestVersion: "14.5"
+    PostgrestVersion: "14.15"
   }
   public: {
     Tables: {
+      app_releases: {
+        Row: {
+          created_at: string
+          file_size_bytes: number
+          id: string
+          is_current: boolean
+          min_supported_version_code: number
+          notes: string[]
+          platform: string
+          release_date: string
+          storage_path: string
+          version_code: number
+          version_name: string
+        }
+        Insert: {
+          created_at?: string
+          file_size_bytes: number
+          id?: string
+          is_current?: boolean
+          min_supported_version_code?: number
+          notes?: string[]
+          platform?: string
+          release_date?: string
+          storage_path: string
+          version_code: number
+          version_name: string
+        }
+        Update: {
+          created_at?: string
+          file_size_bytes?: number
+          id?: string
+          is_current?: boolean
+          min_supported_version_code?: number
+          notes?: string[]
+          platform?: string
+          release_date?: string
+          storage_path?: string
+          version_code?: number
+          version_name?: string
+        }
+        Relationships: []
+      }
       dashboard_layouts: {
         Row: {
           org_id: string
@@ -1684,11 +1726,28 @@ export type Database = {
       }
       current_org_id: { Args: never; Returns: string }
       current_role: { Args: never; Returns: string }
+      dashboard_operations: {
+        Args: { p_from: string; p_to: string }
+        Returns: Json
+      }
       dashboard_summary: {
         Args: { p_from: string; p_to: string }
         Returns: Json
       }
       file_in_my_org: { Args: { p_file_id: string }; Returns: boolean }
+      form_field_delete_impact: {
+        Args: { p_field_id: string }
+        Returns: {
+          answers: number
+          field_label: string
+          first_answered_at: string
+          last_answered_at: string
+          metric_key: string
+          photos: number
+          stores_answered: number
+          submissions: number
+        }[]
+      }
       form_report: {
         Args: {
           p_from: string
@@ -1790,6 +1849,17 @@ export type Database = {
         }[]
       }
       prune_rate_limits: { Args: never; Returns: number }
+      rep_day_times: {
+        Args: { p_from: string; p_to: string }
+        Returns: {
+          avg_end_seconds: number
+          avg_length_seconds: number
+          avg_start_seconds: number
+          days_worked: number
+          rep_id: string
+          rep_name: string
+        }[]
+      }
       rep_delete_impact: {
         Args: { p_rep_id: string }
         Returns: {

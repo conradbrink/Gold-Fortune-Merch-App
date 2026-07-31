@@ -7,6 +7,7 @@ import {
   ChevronRight,
   Eye,
   EyeOff,
+  GripVertical,
   MoreHorizontal,
   Pencil,
   Plus,
@@ -37,10 +38,13 @@ import { TerritoryStores } from "@/components/settings/territory-stores";
 import {
   createTerritory,
   deleteTerritory,
-  fetchSubStoreCounts,
+  DRAG_TYPES,
+  fetchTerritoryStoreCounts,
   fetchTerritoryImpact,
   fetchTerritoryTree,
+  moveTerritory,
   renameTerritory,
+  setStoreTerritory,
   setTerritoryActive,
   type Territory,
   type TerritoryImpact,
@@ -51,13 +55,13 @@ import {
 /**
  * The organisation's own sales geography.
  *
- * Three levels: country → territory → sub-territory. Stores sit in a
- * *territory*; the country is what that territory belongs to, so a store is
- * still only ever in one place.
+ * Country → region → territory, and a store sits in a territory. A region is
+ * how the estate is run ("Greater Gaborone"); a territory is the round a rep
+ * drives ("Palapye"). A store is only ever in one place.
  *
- * Presented as the tree it is rather than a flat table: a sub-territory only
- * means anything underneath its territory, and a manager reading this is asking
- * "what is Gaborone divided into", not "list 47 rows".
+ * Presented as the tree it is rather than a flat table: a territory only means
+ * anything underneath its region, and a manager reading this is asking "what is
+ * Greater Gaborone made of", not "list 27 rows".
  *
  * Writes are manager-only in RLS. A rep reaching this tab sees the structure
  * and gets a refusal on any change, which is the honest outcome — the tab is
@@ -67,7 +71,7 @@ export function TerritoriesPanel() {
   const supabase = createClient();
 
   const [tree, setTree] = useState<CountryTree[]>([]);
-  const [subCounts, setSubCounts] = useState<Record<string, number>>({});
+  const [territoryCounts, setTerritoryCounts] = useState<Record<string, number>>({});
   const [orgId, setOrgId] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
@@ -95,11 +99,11 @@ export function TerritoriesPanel() {
     try {
       const [t, counts, org] = await Promise.all([
         fetchTerritoryTree(supabase),
-        fetchSubStoreCounts(supabase),
+        fetchTerritoryStoreCounts(supabase),
         fetchOrgId(supabase),
       ]);
       setTree(t);
-      setSubCounts(counts);
+      setTerritoryCounts(counts);
       setOrgId(org);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -170,6 +174,52 @@ export function TerritoriesPanel() {
     });
   }
 
+  /**
+   * Drag a store into a territory, or a territory into a region.
+   *
+   * The kind travels as the MIME type rather than in a shared variable,
+   * because the store rows are rendered by `TerritoryStores` and the drop
+   * targets by this component. `dataTransfer` is the only channel both sides
+   * share, and during `dragover` a browser will disclose the *types* on offer
+   * but not their values — so the type has to be what says whether a drop is
+   * allowed, or every row would light up for every drag.
+   */
+  const [dropTarget, setDropTarget] = useState<string | null>(null);
+
+  function allowDrop(
+    e: React.DragEvent,
+    accepts: "store" | "territory",
+    targetId: string
+  ) {
+    if (!e.dataTransfer.types.includes(DRAG_TYPES[accepts])) return;
+    // Only now: preventDefault is what marks this element as a valid target,
+    // so calling it unconditionally would accept a territory onto a territory.
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+    if (dropTarget !== targetId) setDropTarget(targetId);
+  }
+
+  async function handleDrop(
+    e: React.DragEvent,
+    accepts: "store" | "territory",
+    targetId: string
+  ) {
+    const id = e.dataTransfer.getData(DRAG_TYPES[accepts]);
+    if (!id) return;
+    e.preventDefault();
+    // Territories nest, so a drop on a territory would otherwise also fire on
+    // the region behind it.
+    e.stopPropagation();
+    setDropTarget(null);
+    if (id === targetId) return;
+
+    await run(() =>
+      accepts === "store"
+        ? setStoreTerritory(supabase, id, targetId)
+        : moveTerritory(supabase, id, targetId)
+    );
+  }
+
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -177,8 +227,9 @@ export function TerritoriesPanel() {
           <h2 className="text-lg font-semibold text-foreground">Territories</h2>
           <p className="text-sm text-muted-foreground">
             {tree.length} {tree.length === 1 ? "country" : "countries"} ·
-            a country holds territories — a town or region — and each of those can
-            be divided into sub-territories.
+            a country holds regions, a region holds territories, and the stores
+            sit in a territory. Drag a store into another territory, or a
+            territory into another region.
           </p>
         </div>
         <Button
@@ -211,7 +262,7 @@ export function TerritoriesPanel() {
             No countries yet. Add the first one above.
           </p>
         ) : (
-          tree.map(({ country, territories, stores: countryStores }) => {
+          tree.map(({ country, regions, stores: countryStores }) => {
             const countryOpen = expanded.has(country.id);
             return (
               <div key={country.id}>
@@ -250,8 +301,8 @@ export function TerritoriesPanel() {
                       </Badge>
                     )}
                     <span className="ml-2 text-xs text-muted-foreground">
-                      {territories.length}{" "}
-                      {territories.length === 1 ? "territory" : "territories"}
+                      {regions.length}{" "}
+                      {regions.length === 1 ? "region" : "regions"}
                       {" · "}
                       {countryStores} {countryStores === 1 ? "store" : "stores"}
                     </span>
@@ -263,12 +314,12 @@ export function TerritoriesPanel() {
                     className="gap-1.5"
                     onClick={() => {
                       setNewName("");
-                      setAdding({ parent: country, level: "territory" });
+                      setAdding({ parent: country, level: "region" });
                       setExpanded((p) => new Set(p).add(country.id));
                     }}
                   >
                     <Plus className="h-3.5 w-3.5" />
-                    Territory
+                    Region
                   </Button>
                   <RowActions
                     territory={country}
@@ -284,139 +335,202 @@ export function TerritoriesPanel() {
                   />
                 </div>
 
-                {countryOpen && territories.length === 0 && (
+                {countryOpen && regions.length === 0 && (
                   <p className="border-t border-border px-3 py-2 pl-11 text-sm text-muted-foreground">
-                    No territories in {country.name} yet.
+                    No regions in {country.name} yet.
                   </p>
                 )}
 
                 {countryOpen &&
-                  territories.map(({ main, subs, stores }) => {
-                    const open = expanded.has(main.id);
+                  regions.map(({ region, territories, stores }) => {
+                    const regionOpen = expanded.has(region.id);
                     return (
-                      <div key={main.id} className="border-t border-border pl-4">
-                <div className="flex items-center gap-2 px-3 py-2.5">
-                  <button
-                    type="button"
-                    onClick={() => toggle(main.id)}
-                    aria-label={open ? "Collapse" : "Expand"}
-                    aria-expanded={open}
-                    className="shrink-0 text-muted-foreground hover:text-foreground"
-                  >
-                    {open ? (
-                      <ChevronDown className="h-4 w-4" />
-                    ) : (
-                      <ChevronRight className="h-4 w-4" />
-                    )}
-                  </button>
+                      <div
+                        key={region.id}
+                        className={`border-t border-border pl-4 ${
+                          dropTarget === region.id ? "bg-primary/10" : ""
+                        }`}
+                        onDragOver={(e) => allowDrop(e, "territory", region.id)}
+                        onDragLeave={() => setDropTarget(null)}
+                        onDrop={(e) => handleDrop(e, "territory", region.id)}
+                      >
+                        <div className="flex items-center gap-2 px-3 py-2.5">
+                          <button
+                            type="button"
+                            onClick={() => toggle(region.id)}
+                            aria-label={regionOpen ? "Collapse" : "Expand"}
+                            aria-expanded={regionOpen}
+                            className="shrink-0 text-muted-foreground hover:text-foreground"
+                          >
+                            {regionOpen ? (
+                              <ChevronDown className="h-4 w-4" />
+                            ) : (
+                              <ChevronRight className="h-4 w-4" />
+                            )}
+                          </button>
 
-                  <button
-                    type="button"
-                    onClick={() => toggle(main.id)}
-                    className="min-w-0 flex-1 text-left"
-                  >
-                    <span
-                      className={
-                        main.active ? "text-sm font-medium" : "text-sm text-muted-foreground"
-                      }
-                    >
-                      {main.name}
-                    </span>
-                    {!main.active && (
-                      <Badge variant="outline" className="ml-2 font-normal">
-                        Inactive
-                      </Badge>
-                    )}
-                    <span className="ml-2 text-xs text-muted-foreground">
-                      {stores} {stores === 1 ? "store" : "stores"}
-                      {subs.length > 0 &&
-                        ` · ${subs.length} sub-${subs.length === 1 ? "territory" : "territories"}`}
-                    </span>
-                  </button>
-
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    className="gap-1.5"
-                    onClick={() => {
-                      setNewName("");
-                      setAdding({ parent: main, level: "sub" });
-                      setExpanded((p) => new Set(p).add(main.id));
-                    }}
-                  >
-                    <Plus className="h-3.5 w-3.5" />
-                    Sub
-                  </Button>
-                  <RowActions
-                    territory={main}
-                    busy={busy}
-                    onRename={() => {
-                      setRenameTo(main.name);
-                      setRenaming(main);
-                    }}
-                    onToggleActive={() =>
-                      run(() => setTerritoryActive(supabase, main.id, !main.active))
-                    }
-                    onRemove={() => beginRemove(main)}
-                  />
-                </div>
-
-                {open && (
-                  <ul className="border-t border-border bg-muted/20">
-                    {subs.length === 0 ? (
-                      <li className="px-3 py-2 pl-11 text-sm text-muted-foreground">
-                        No sub-territories. {main.name} is covered as one area.
-                      </li>
-                    ) : (
-                      subs.map((sub) => (
-                        <li
-                          key={sub.id}
-                          className="flex items-center gap-2 px-3 py-2 pl-11"
-                        >
-                          <span className="min-w-0 flex-1">
+                          <button
+                            type="button"
+                            onClick={() => toggle(region.id)}
+                            className="min-w-0 flex-1 text-left"
+                          >
                             <span
                               className={
-                                sub.active
-                                  ? "text-sm text-foreground"
+                                region.active
+                                  ? "text-sm font-medium"
                                   : "text-sm text-muted-foreground"
                               }
                             >
-                              {sub.name}
+                              {region.name}
                             </span>
-                            {!sub.active && (
+                            {!region.active && (
                               <Badge variant="outline" className="ml-2 font-normal">
                                 Inactive
                               </Badge>
                             )}
                             <span className="ml-2 text-xs text-muted-foreground">
-                              {subCounts[sub.id] ?? 0}{" "}
-                              {(subCounts[sub.id] ?? 0) === 1 ? "store" : "stores"}
+                              {territories.length}{" "}
+                              {territories.length === 1 ? "territory" : "territories"}
+                              {" · "}
+                              {stores} {stores === 1 ? "store" : "stores"}
                             </span>
-                          </span>
+                          </button>
+
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="gap-1.5"
+                            onClick={() => {
+                              setNewName("");
+                              setAdding({ parent: region, level: "territory" });
+                              setExpanded((p) => new Set(p).add(region.id));
+                            }}
+                          >
+                            <Plus className="h-3.5 w-3.5" />
+                            Territory
+                          </Button>
                           <RowActions
-                            territory={sub}
+                            territory={region}
                             busy={busy}
                             onRename={() => {
-                              setRenameTo(sub.name);
-                              setRenaming(sub);
+                              setRenameTo(region.name);
+                              setRenaming(region);
                             }}
                             onToggleActive={() =>
-                              run(() => setTerritoryActive(supabase, sub.id, !sub.active))
+                              run(() =>
+                                setTerritoryActive(supabase, region.id, !region.active)
+                              )
                             }
-                            onRemove={() => beginRemove(sub)}
+                            onRemove={() => beginRemove(region)}
                           />
-                        </li>
-                      ))
-                    )}
-                  </ul>
-                )}
+                        </div>
 
-                {/* The stores themselves. Mounted only while expanded, so each
-                    territory's list is fetched when it is actually looked at
-                    rather than all 209 up front. */}
-                {open && (
-                  <TerritoryStores main={main} subs={subs} onChanged={load} />
-                )}
+                        {regionOpen && territories.length === 0 && (
+                          <p className="border-t border-border px-3 py-2 pl-11 text-sm text-muted-foreground">
+                            No territories in {region.name} yet.
+                          </p>
+                        )}
+
+                        {regionOpen &&
+                          territories.map((territory) => {
+                            const open = expanded.has(territory.id);
+                            const count = territoryCounts[territory.id] ?? 0;
+                            return (
+                              <div
+                                key={territory.id}
+                                className={`border-t border-border pl-4 ${
+                                  dropTarget === territory.id ? "bg-primary/10" : ""
+                                }`}
+                                onDragOver={(e) => allowDrop(e, "store", territory.id)}
+                                onDragLeave={() => setDropTarget(null)}
+                                onDrop={(e) => handleDrop(e, "store", territory.id)}
+                              >
+                                <div
+                                  className="flex items-center gap-2 px-3 py-2"
+                                  draggable={!busy}
+                                  onDragStart={(e) => {
+                                    e.dataTransfer.setData(
+                                      DRAG_TYPES.territory,
+                                      territory.id
+                                    );
+                                    e.dataTransfer.effectAllowed = "move";
+                                  }}
+                                  onDragEnd={() => setDropTarget(null)}
+                                >
+                                  <button
+                                    type="button"
+                                    onClick={() => toggle(territory.id)}
+                                    aria-label={open ? "Collapse" : "Expand"}
+                                    aria-expanded={open}
+                                    className="shrink-0 text-muted-foreground hover:text-foreground"
+                                  >
+                                    {open ? (
+                                      <ChevronDown className="h-4 w-4" />
+                                    ) : (
+                                      <ChevronRight className="h-4 w-4" />
+                                    )}
+                                  </button>
+                                  <GripVertical
+                                    className="h-3.5 w-3.5 shrink-0 cursor-grab text-muted-foreground/60"
+                                    aria-hidden
+                                  />
+
+                                  <button
+                                    type="button"
+                                    onClick={() => toggle(territory.id)}
+                                    className="min-w-0 flex-1 text-left"
+                                  >
+                                    <span
+                                      className={
+                                        territory.active
+                                          ? "text-sm text-foreground"
+                                          : "text-sm text-muted-foreground"
+                                      }
+                                    >
+                                      {territory.name}
+                                    </span>
+                                    {!territory.active && (
+                                      <Badge variant="outline" className="ml-2 font-normal">
+                                        Inactive
+                                      </Badge>
+                                    )}
+                                    <span className="ml-2 text-xs text-muted-foreground">
+                                      {count} {count === 1 ? "store" : "stores"}
+                                    </span>
+                                  </button>
+
+                                  <RowActions
+                                    territory={territory}
+                                    busy={busy}
+                                    onRename={() => {
+                                      setRenameTo(territory.name);
+                                      setRenaming(territory);
+                                    }}
+                                    onToggleActive={() =>
+                                      run(() =>
+                                        setTerritoryActive(
+                                          supabase,
+                                          territory.id,
+                                          !territory.active
+                                        )
+                                      )
+                                    }
+                                    onRemove={() => beginRemove(territory)}
+                                  />
+                                </div>
+
+                                {/* Mounted only while expanded, so each territory's
+                                    list is fetched when it is actually looked at
+                                    rather than all 209 up front. */}
+                                {open && (
+                                  <TerritoryStores
+                                    territory={territory}
+                                    onChanged={load}
+                                  />
+                                )}
+                              </div>
+                            );
+                          })}
                       </div>
                     );
                   })}
@@ -436,16 +550,16 @@ export function TerritoriesPanel() {
             <DialogTitle>
               {adding?.level === "country"
                 ? "Add a country"
-                : adding?.level === "territory"
-                  ? `Add a territory in ${adding.parent?.name}`
-                  : `Add a sub-territory in ${adding?.parent?.name}`}
+                : adding?.level === "region"
+                  ? `Add a region in ${adding.parent?.name}`
+                  : `Add a territory in ${adding?.parent?.name}`}
             </DialogTitle>
             <DialogDescription>
               {adding?.level === "country"
                 ? "The top level. Everything else sits inside one."
-                : adding?.level === "territory"
-                  ? "Normally a city, town or region. Stores go in these."
-                  : "A part of this territory a rep can be given on its own."}
+                : adding?.level === "region"
+                  ? "A group of territories, the way the country is split for selling."
+                  : "The round a rep drives — normally a town. Stores go in these."}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-1.5">
@@ -456,9 +570,9 @@ export function TerritoriesPanel() {
               placeholder={
                 adding?.level === "country"
                   ? "Botswana"
-                  : adding?.level === "territory"
-                    ? "Gaborone"
-                    : "Gaborone North"
+                  : adding?.level === "region"
+                    ? "Central Botswana"
+                    : "Palapye"
               }
               onChange={(e) => setNewName(e.target.value)}
             />
@@ -551,7 +665,7 @@ export function TerritoriesPanel() {
           ) : (
             <div className="space-y-2 text-sm">
               {impact.stores > 0 ||
-              impact.subTerritories > 0 ||
+              impact.children > 0 ||
               impact.reps > 0 ||
               impact.upcomingRoutes > 0 ? (
                 <>
@@ -565,10 +679,10 @@ export function TerritoriesPanel() {
                         {impact.stores} {impact.stores === 1 ? "store" : "stores"}
                       </li>
                     )}
-                    {impact.subTerritories > 0 && (
+                    {impact.children > 0 && (
                       <li>
-                        {impact.subTerritories} sub-
-                        {impact.subTerritories === 1 ? "territory" : "territories"}
+                        {impact.children} sub-
+                        {impact.children === 1 ? "territory" : "territories"}
                       </li>
                     )}
                     {impact.reps > 0 && (
@@ -608,7 +722,7 @@ export function TerritoriesPanel() {
                 the coverage with it silently. */}
             {impact &&
             impact.stores === 0 &&
-            impact.subTerritories === 0 &&
+            impact.children === 0 &&
             impact.reps === 0 &&
             impact.upcomingRoutes === 0 ? (
               <Button

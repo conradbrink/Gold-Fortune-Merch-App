@@ -23,6 +23,12 @@ class FormAnswer {
   DateTime? date;
   File? photo;
 
+  /// Set once the photo has been copied somewhere durable, and it is the same
+  /// id the submission is queued under. Without it a draft restored after the
+  /// app was killed would re-copy a file it already owns, and the photo the
+  /// rep actually took would be filed under a second id.
+  String? photoClientId;
+
   bool get isEmpty =>
       text == null &&
       number == null &&
@@ -149,10 +155,15 @@ class FormRepository {
       };
 
       if (field.fieldType == 'photo' && answer.photo != null) {
-        // Copy out of the OS temp dir — that can be reclaimed before the
-        // queue drains, which would lose the evidence.
-        final photoClientId = _uuid.v4();
-        final saved = await _persistPhoto(answer.photo!, photoClientId);
+        // Normally the photo was already copied out of the OS temp dir the
+        // moment it was taken, so that a kill between capture and submit
+        // cannot lose it. Copying again here would file the same photo under
+        // a second id; the fallback only covers an answer that never went
+        // through capture.
+        final photoClientId = answer.photoClientId ?? _uuid.v4();
+        final saved = answer.photoClientId != null
+            ? answer.photo!
+            : await _persistPhoto(answer.photo!, photoClientId);
         row['local_photo_path'] = saved.path;
         row['photo_client_generated_id'] = photoClientId;
         row['photo_lat'] = photoPosition?.latitude;
@@ -180,6 +191,20 @@ class FormRepository {
     );
 
     unawaited(_sync.sync());
+  }
+
+  /// Copies a just-taken photo somewhere the OS will not reclaim, and returns
+  /// it with the id the submission will use.
+  ///
+  /// This runs at capture time rather than at submit time on purpose. The gap
+  /// between the two is where the app is most likely to be killed — the camera
+  /// has just been open — and `image_picker` hands back a file in a cache
+  /// directory that Android is free to empty.
+  Future<({File file, String clientId})> persistCapturedPhoto(
+      File source) async {
+    final clientId = _uuid.v4();
+    final file = await _persistPhoto(source, clientId);
+    return (file: file, clientId: clientId);
   }
 
   Future<File> _persistPhoto(File source, String clientId) async {

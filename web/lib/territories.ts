@@ -2,35 +2,49 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Tables } from "@/lib/supabase/types";
 
 /**
- * Territories — a two-level sales geography belonging to one organisation.
+ * Territories — the sales geography of one organisation.
  *
- * A main territory is normally a town or region; sub-territories divide one up
- * ("Gaborone" → "Gaborone North"). Every name belongs to an org and RLS keeps
- * it there, so nothing here filters by org: the policy already has.
+ * Country → region → territory, and a store sits in a territory. A region is
+ * how the estate is actually run ("Greater Gaborone"); a territory is the round
+ * a rep drives ("Palapye"). Every name belongs to an org and RLS keeps it
+ * there, so nothing here filters by org: the policy already has.
  *
- * The database enforces the shape (two levels, a sub inside its own main, a
- * store's pair agreeing). These helpers surface the refusals rather than trying
- * to re-check them, because a rule enforced twice eventually disagrees with
- * itself.
+ * The database enforces the shape — each tier under the right kind of parent, a
+ * store only ever in a territory. These helpers surface the refusals rather
+ * than trying to re-check them, because a rule enforced twice eventually
+ * disagrees with itself.
  */
 
 export type Territory = Tables<"territories">;
 
-/** country → territory → sub. Stated on the row, never inferred from depth. */
-export type TerritoryLevel = "country" | "territory" | "sub";
+/** country → region → territory. Stated on the row, never inferred from depth. */
+export type TerritoryLevel = "country" | "region" | "territory";
 
-export type TerritoryTree = {
-  /** A `level = 'territory'` row: the middle tier, and the one stores sit in. */
-  main: Territory;
-  subs: Territory[];
-  /** Stores sitting directly in the territory, plus every store in its subs. */
+/**
+ * Drag payload types, shared by the panel and the store list.
+ *
+ * A custom MIME type per kind, because `dataTransfer` withholds *values*
+ * during `dragover` and offers only the type list. Putting the kind in the
+ * type is therefore the only way a drop target can decide whether to accept
+ * before the drop happens — otherwise every row highlights for every drag.
+ */
+export const DRAG_TYPES = {
+  store: "application/x-gf-store",
+  territory: "application/x-gf-territory",
+} as const;
+
+export type RegionTree = {
+  region: Territory;
+  /** `level = 'territory'` rows: the deepest tier, and the one stores sit in. */
+  territories: Territory[];
+  /** Every store in every territory of this region. */
   stores: number;
 };
 
 export type CountryTree = {
   country: Territory;
-  territories: TerritoryTree[];
-  /** Every store in every territory of this country. */
+  regions: RegionTree[];
+  /** Every store in every region of this country. */
   stores: number;
 };
 
@@ -38,7 +52,8 @@ export type CountryTree = {
 export type TerritoryImpact = {
   name: string;
   stores: number;
-  subTerritories: number;
+  /** Rows directly beneath this one: a region's territories. */
+  children: number;
   reps: number;
   /** Routes still to come. Past ones are history and are not at risk. */
   upcomingRoutes: number;
@@ -74,12 +89,10 @@ export async function fetchTerritoryTree(
 ): Promise<CountryTree[]> {
   const [territories, storeRows] = await Promise.all([
     fetchTerritories(supabase),
-    supabase.from("stores").select("territory_id, sub_territory_id"),
+    supabase.from("stores").select("territory_id"),
   ]);
   if (storeRows.error) throw new Error(storeRows.error.message);
 
-  // A store carries the territory it is in; a store in a sub carries both, so
-  // counting by `territory_id` alone already includes it exactly once.
   const perTerritory = new Map<string, number>();
   for (const row of storeRows.data ?? []) {
     const id = (row as { territory_id: string | null }).territory_id;
@@ -87,8 +100,9 @@ export async function fetchTerritoryTree(
   }
 
   // Grouped by `level`, not by whether a parent is present. `parent_id === null`
-  // used to mean "main territory" and now means "country" — reading the level is
-  // what stops that distinction going wrong silently.
+  // means "country" — reading the level is what stops that going wrong silently
+  // as tiers are added, which is exactly what happened when the region tier went
+  // in and every "main = no parent" assumption quietly changed meaning.
   const byLevel = (level: TerritoryLevel) =>
     territories.filter((t) => t.level === level);
 
@@ -101,35 +115,43 @@ export async function fetchTerritoryTree(
   }
 
   return byLevel("country").map((country) => {
-    const territoriesIn = (childrenOf.get(country.id) ?? [])
-      .filter((t) => t.level === "territory")
-      .map((main) => ({
-        main,
-        subs: (childrenOf.get(main.id) ?? []).filter((s) => s.level === "sub"),
-        stores: perTerritory.get(main.id) ?? 0,
-      }));
+    const regions = (childrenOf.get(country.id) ?? [])
+      .filter((t) => t.level === "region")
+      .map((region) => {
+        const inRegion = (childrenOf.get(region.id) ?? []).filter(
+          (t) => t.level === "territory"
+        );
+        return {
+          region,
+          territories: inRegion,
+          stores: inRegion.reduce(
+            (total, t) => total + (perTerritory.get(t.id) ?? 0),
+            0
+          ),
+        };
+      });
 
     return {
       country,
-      territories: territoriesIn,
-      stores: territoriesIn.reduce((total, t) => total + t.stores, 0),
+      regions,
+      stores: regions.reduce((total, r) => total + r.stores, 0),
     };
   });
 }
 
-/** Store counts per sub-territory, for the rows under an expanded main. */
-export async function fetchSubStoreCounts(
+/** Store counts per territory, for the rows under an expanded region. */
+export async function fetchTerritoryStoreCounts(
   supabase: SupabaseClient
 ): Promise<Record<string, number>> {
   const { data, error } = await supabase
     .from("stores")
-    .select("sub_territory_id")
-    .not("sub_territory_id", "is", null);
+    .select("territory_id")
+    .not("territory_id", "is", null);
   if (error) throw new Error(error.message);
 
   const counts: Record<string, number> = {};
   for (const row of data ?? []) {
-    const id = (row as { sub_territory_id: string | null }).sub_territory_id;
+    const id = (row as { territory_id: string | null }).territory_id;
     if (id) counts[id] = (counts[id] ?? 0) + 1;
   }
   return counts;
@@ -181,6 +203,29 @@ export async function renameTerritory(
 }
 
 /**
+ * Moves a territory into another region.
+ *
+ * Only the parent changes, never the level — `territories_enforce_shape` blocks
+ * a level change while anything depends on the row, and a territory being
+ * dragged is exactly the row that has stores hanging off it. Moving it between
+ * regions is the ordinary reorganisation the trigger deliberately allows: the
+ * stores still point at the territory, so nothing is orphaned.
+ */
+export async function moveTerritory(
+  supabase: SupabaseClient,
+  territoryId: string,
+  regionId: string
+): Promise<void> {
+  const { data, error } = await supabase
+    .from("territories")
+    .update({ parent_id: regionId })
+    .eq("id", territoryId)
+    .select("id");
+  if (error) throw new Error(error.message);
+  affected(data, "The territory was not moved");
+}
+
+/**
  * Deactivating is the safe half of removal: the territory stops being offered
  * for new work, and every store and route already pointing at it is untouched.
  */
@@ -216,7 +261,7 @@ export async function fetchTerritoryImpact(
     supabase
       .from("stores")
       .select("id")
-      .or(`territory_id.eq.${territory.id},sub_territory_id.eq.${territory.id}`),
+      .eq("territory_id", territory.id),
     supabase.from("territories").select("id").eq("parent_id", territory.id),
     supabase.from("territory_reps").select("id").eq("territory_id", territory.id),
   ]);
@@ -246,7 +291,7 @@ export async function fetchTerritoryImpact(
   return {
     name: territory.name,
     stores: storeIds.length,
-    subTerritories: (subs.data ?? []).length,
+    children: (subs.data ?? []).length,
     reps: (reps.data ?? []).length,
     upcomingRoutes,
   };
@@ -255,29 +300,20 @@ export async function fetchTerritoryImpact(
 /**
  * Places a store in a territory, or moves it to another one.
  *
- * **A store is never in two territories.** It carries one main and, optionally,
- * one sub *of that same main* — so "adding" a store to a territory is always a
- * move out of wherever it was. That is structural, not a convention: `stores` has
- * exactly two territory columns, and `stores_enforce_territory` refuses the ways
- * round it. Confirmed by attacking both:
- *
- *   - main A with a sub belonging to B → "ZZ Sub of B is not inside ZZ Main A."
- *   - a sub with no main at all → "A store in a sub-territory must also carry
- *     its main territory."
- *
- * Both columns are written together because the trigger checks them as a pair:
- * setting a main without clearing a sub that belongs elsewhere is exactly the
- * disagreement it exists to refuse.
+ * **A store is never in two territories.** It carries exactly one, so "adding"
+ * a store to a territory is always a move out of wherever it was. That is
+ * structural rather than a convention: `stores_enforce_territory` refuses a
+ * territory that is not a `level = 'territory'` row, so a store cannot be
+ * parked on a region or a country to mean "somewhere in here".
  */
 export async function setStoreTerritory(
   supabase: SupabaseClient,
   storeId: string,
-  territoryId: string | null,
-  subTerritoryId: string | null
+  territoryId: string | null
 ): Promise<void> {
   const { data, error } = await supabase
     .from("stores")
-    .update({ territory_id: territoryId, sub_territory_id: subTerritoryId })
+    .update({ territory_id: territoryId })
     .eq("id", storeId)
     .select("id");
   if (error) throw new Error(error.message);
