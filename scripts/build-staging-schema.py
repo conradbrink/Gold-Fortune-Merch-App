@@ -61,6 +61,27 @@ CHUNK_TARGET_BYTES = 50_000
 #
 # Verified by checking, for every redefinition whose `returns` clause changed,
 # whether a `drop function` for that name appears earlier in the same file.
+# Data migrations that assume an estate to operate on. Replayed on an empty
+# project they raise rather than no-op — the region restructure begins by
+# looking up the country row and aborts the whole chunk when there is none.
+# The replacement turns "nothing to restructure" into a skip, and only the
+# skip: every schema statement in the migration still runs, so the definition
+# digests still match production. Keyed by file, exact-match on the guard, and
+# the generator fails loudly if the text ever drifts.
+EMPTY_DB_GUARDS = {
+    "20260731181954_restructure_territories_into_regions.sql": (
+        """  if v_country is null then
+    raise exception 'No country row to hang the regions off.';
+  end if;""",
+        """  if v_country is null then
+    -- An empty database has nothing to restructure. Real on staging, which
+    -- replays schema only; impossible in the production this ran against.
+    raise notice 'No country row - empty database, skipping the data moves.';
+    return;
+  end if;""",
+    ),
+}
+
 DROPS_BEFORE = {
     "20260729141843_fix_promotion_check_counting.sql": [
         # promotion_summaries gained `stores_not_stocked int` and is redefined
@@ -106,7 +127,7 @@ EXPECTED = [
     ("storage buckets", 3, "(select count(*) from storage.buckets)"),
     ("public storage buckets", 0,
      "(select count(*) from storage.buckets where public)"),
-    ("migrations recorded", 73,
+    ("migrations recorded", 76,
      "(select count(*) from supabase_migrations.schema_migrations)"),
 ]
 
@@ -166,7 +187,7 @@ def stamp(version: str, name: str) -> str:
 
 
 DIGESTS = [
-    ("functions", "0d3267eecbff8f3f6ed3873efd91a55d",
+    ("functions", "cc322f141518027af698f11a5d6b7007",
      "select md5(string_agg(pg_get_functiondef(p.oid), E'\\n'"
      " order by p.proname, pg_get_function_identity_arguments(p.oid)))"
      " from pg_proc p join pg_namespace n on n.oid=p.pronamespace"
@@ -327,6 +348,18 @@ def main() -> int:
             RULE,
             "",
         ]
+        guard = EMPTY_DB_GUARDS.get(path.name)
+        if guard is not None:
+            old, new_text = guard
+            if old not in body:
+                print(
+                    f"EMPTY_DB_GUARDS no longer matches {path.name} — "
+                    "the migration text drifted; fix the table.",
+                    file=sys.stderr,
+                )
+                raise SystemExit(1)
+            body = body.replace(old, new_text, 1)
+
         drops = DROPS_BEFORE.get(path.name)
         if drops:
             parts += [

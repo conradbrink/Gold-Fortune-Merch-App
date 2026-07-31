@@ -18,7 +18,7 @@
 
 begin;
 -- ──────────────────────────────────────────────────────────────────────────
--- 55/73  20260729152435_create_rate_limiter.sql
+-- 55/76  20260729152435_create_rate_limiter.sql
 -- ──────────────────────────────────────────────────────────────────────────
 
 -- Server-side rate limiting for the operations that cost money.
@@ -160,7 +160,7 @@ on conflict (version) do nothing;
 
 
 -- ──────────────────────────────────────────────────────────────────────────
--- 56/73  20260729160120_create_security_audit_log.sql
+-- 56/76  20260729160120_create_security_audit_log.sql
 -- ──────────────────────────────────────────────────────────────────────────
 
 -- An audit trail for the changes that decide who can see what.
@@ -313,7 +313,7 @@ on conflict (version) do nothing;
 
 
 -- ──────────────────────────────────────────────────────────────────────────
--- 57/73  20260729161113_create_service_flags.sql
+-- 57/76  20260729161113_create_service_flags.sql
 -- ──────────────────────────────────────────────────────────────────────────
 
 -- An off switch for the expensive features, separate from the app's own health.
@@ -397,7 +397,7 @@ on conflict (version) do nothing;
 
 
 -- ──────────────────────────────────────────────────────────────────────────
--- 58/73  20260730065510_create_territories.sql
+-- 58/76  20260730065510_create_territories.sql
 -- ──────────────────────────────────────────────────────────────────────────
 
 -- Territories: a per-organisation, two-level geography.
@@ -648,7 +648,7 @@ on conflict (version) do nothing;
 
 
 -- ──────────────────────────────────────────────────────────────────────────
--- 59/73  20260730072204_create_leads.sql
+-- 59/76  20260730072204_create_leads.sql
 -- ──────────────────────────────────────────────────────────────────────────
 
 -- Sales visits to prospects, and the pipeline they feed.
@@ -808,7 +808,7 @@ on conflict (version) do nothing;
 
 
 -- ──────────────────────────────────────────────────────────────────────────
--- 60/73  20260730090357_activity_feed_sales_visits.sql
+-- 60/76  20260730090357_activity_feed_sales_visits.sql
 -- ──────────────────────────────────────────────────────────────────────────
 
 -- Sales visits in the activity feed.
@@ -996,7 +996,7 @@ on conflict (version) do nothing;
 
 
 -- ──────────────────────────────────────────────────────────────────────────
--- 61/73  20260730101806_create_rep_day_times_rpc.sql
+-- 61/76  20260730101806_create_rep_day_times_rpc.sql
 -- ──────────────────────────────────────────────────────────────────────────
 
 -- When the team actually starts and finishes.
@@ -1090,7 +1090,7 @@ on conflict (version) do nothing;
 
 
 -- ──────────────────────────────────────────────────────────────────────────
--- 62/73  20260730103711_create_dashboard_operations_rpc.sql
+-- 62/76  20260730103711_create_dashboard_operations_rpc.sql
 -- ──────────────────────────────────────────────────────────────────────────
 
 -- Pipeline, territory and location-confidence counters for the dashboard.
@@ -1174,7 +1174,7 @@ on conflict (version) do nothing;
 
 
 -- ──────────────────────────────────────────────────────────────────────────
--- 63/73  20260730111627_enforce_territory_reps_org.sql
+-- 63/76  20260730111627_enforce_territory_reps_org.sql
 -- ──────────────────────────────────────────────────────────────────────────
 
 -- `territory_reps` was the one table in the territory structure with no proof
@@ -1243,7 +1243,7 @@ on conflict (version) do nothing;
 
 
 -- ──────────────────────────────────────────────────────────────────────────
--- 64/73  20260730111738_fix_leads_follow_up_index_predicate.sql
+-- 64/76  20260730111738_fix_leads_follow_up_index_predicate.sql
 -- ──────────────────────────────────────────────────────────────────────────
 
 -- `leads_follow_up_idx` was built for a query that was never written.

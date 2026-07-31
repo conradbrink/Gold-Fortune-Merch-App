@@ -18,7 +18,7 @@
 
 begin;
 -- ──────────────────────────────────────────────────────────────────────────
--- 65/73  20260730114524_create_dashboard_layouts.sql
+-- 65/76  20260730114524_create_dashboard_layouts.sql
 -- ──────────────────────────────────────────────────────────────────────────
 
 -- Which dashboard cards a person wants, and in what order.
@@ -91,7 +91,7 @@ on conflict (version) do nothing;
 
 
 -- ──────────────────────────────────────────────────────────────────────────
--- 66/73  20260730122631_territories_shape_guards_dependents.sql
+-- 66/76  20260730122631_territories_shape_guards_dependents.sql
 -- ──────────────────────────────────────────────────────────────────────────
 
 -- `territories_enforce_shape` validated the row being written and nothing that
@@ -177,7 +177,7 @@ on conflict (version) do nothing;
 
 
 -- ──────────────────────────────────────────────────────────────────────────
--- 67/73  20260730123329_bound_dashboard_layout_size.sql
+-- 67/76  20260730123329_bound_dashboard_layout_size.sql
 -- ──────────────────────────────────────────────────────────────────────────
 
 -- `dashboard_layouts` claimed its constraints stopped the row being used as free
@@ -216,7 +216,7 @@ on conflict (version) do nothing;
 
 
 -- ──────────────────────────────────────────────────────────────────────────
--- 68/73  20260730130413_serialize_territory_reparenting.sql
+-- 68/76  20260730130413_serialize_territory_reparenting.sql
 -- ──────────────────────────────────────────────────────────────────────────
 
 -- ⚠️ SUPERSEDED by `20260730190000_lock_both_orgs_on_territory_move.sql`.
@@ -329,7 +329,7 @@ on conflict (version) do nothing;
 
 
 -- ──────────────────────────────────────────────────────────────────────────
--- 69/73  20260730133209_lock_both_orgs_on_territory_move.sql
+-- 69/76  20260730133209_lock_both_orgs_on_territory_move.sql
 -- ──────────────────────────────────────────────────────────────────────────
 
 -- The advisory lock added in `20260730180000` used `new.org_id` only, which
@@ -431,7 +431,7 @@ on conflict (version) do nothing;
 
 
 -- ──────────────────────────────────────────────────────────────────────────
--- 70/73  20260730152523_add_country_tier.sql
+-- 70/76  20260730152523_add_country_tier.sql
 -- ──────────────────────────────────────────────────────────────────────────
 
 -- A third tier: country → territory → sub-territory.
@@ -735,7 +735,7 @@ on conflict (version) do nothing;
 
 
 -- ──────────────────────────────────────────────────────────────────────────
--- 71/73  20260730155919_create_app_releases.sql
+-- 71/76  20260730155919_create_app_releases.sql
 -- ──────────────────────────────────────────────────────────────────────────
 
 -- Android release manifest.
@@ -853,7 +853,7 @@ on conflict (version) do nothing;
 
 
 -- ──────────────────────────────────────────────────────────────────────────
--- 72/73  20260731175407_create_form_field_delete_impact_rpc.sql
+-- 72/76  20260731175407_create_form_field_delete_impact_rpc.sql
 -- ──────────────────────────────────────────────────────────────────────────
 
 -- What deleting a form question would destroy.

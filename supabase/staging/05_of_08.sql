@@ -18,7 +18,7 @@
 
 begin;
 -- ──────────────────────────────────────────────────────────────────────────
--- 49/73  20260729084849_create_products_and_projects.sql
+-- 49/76  20260729084849_create_products_and_projects.sql
 -- ──────────────────────────────────────────────────────────────────────────
 
 -- Products, promotions, and whether the promotion is actually running.
@@ -277,7 +277,7 @@ on conflict (version) do nothing;
 
 
 -- ──────────────────────────────────────────────────────────────────────────
--- 50/73  20260729085516_create_project_report_rpcs.sql
+-- 50/76  20260729085516_create_project_report_rpcs.sql
 -- ──────────────────────────────────────────────────────────────────────────
 
 -- What a promotion is doing, at two levels of zoom.
@@ -421,7 +421,7 @@ on conflict (version) do nothing;
 
 
 -- ──────────────────────────────────────────────────────────────────────────
--- 51/73  20260729090406_rename_projects_to_promotions.sql
+-- 51/76  20260729090406_rename_projects_to_promotions.sql
 -- ──────────────────────────────────────────────────────────────────────────
 
 -- "Projects" was the word on the sidebar; "Promotions" is the word for the
@@ -623,7 +623,7 @@ on conflict (version) do nothing;
 
 
 -- ──────────────────────────────────────────────────────────────────────────
--- 52/73  20260729141843_fix_promotion_check_counting.sql
+-- 52/76  20260729141843_fix_promotion_check_counting.sql
 -- ──────────────────────────────────────────────────────────────────────────
 
 -- This migration widens a function's return type, which
@@ -812,7 +812,7 @@ on conflict (version) do nothing;
 
 
 -- ──────────────────────────────────────────────────────────────────────────
--- 53/73  20260729142051_create_product_delete_impact_rpc.sql
+-- 53/76  20260729142051_create_product_delete_impact_rpc.sql
 -- ──────────────────────────────────────────────────────────────────────────
 
 -- What deleting a product would destroy.
@@ -871,7 +871,7 @@ on conflict (version) do nothing;
 
 
 -- ──────────────────────────────────────────────────────────────────────────
--- 54/73  20260729151556_lock_privilege_and_gps_fields.sql
+-- 54/76  20260729151556_lock_privilege_and_gps_fields.sql
 -- ──────────────────────────────────────────────────────────────────────────
 
 -- Two holes found by audit, both confirmed by exploiting them against the live
