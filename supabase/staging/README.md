@@ -18,8 +18,8 @@ python3 scripts/build-staging-schema.py
 1. Open the **staging** project's SQL editor. Check the project ref in the URL
    before you paste anything. Production is `rxtlnetlzmbqirqaalkw`; this must
    not be that.
-2. Paste `01_of_07.sql` in full, run it, wait for it to finish.
-3. Repeat for `02` through `07`, **in order**.
+2. Paste `01_of_08.sql` in full, run it, wait for it to finish.
+3. Repeat for `02` through `08`, **in order**.
 4. Run `98_verify.sql`. Every row must say `OK`.
 
 ## If a chunk fails
@@ -32,7 +32,7 @@ that already exists, which looks like a different problem and is not.
 Run `99_resume.sql` instead. It reports how many migrations landed and which
 was last, because every migration stamps itself into
 `supabase_migrations.schema_migrations` as it goes. Match `last_applied`
-against the `-- nn/71 <filename>` headers in the chunks and carry on from the
+against the `-- nn/73 <filename>` headers in the chunks and carry on from the
 next one, deleting from the chunk file the migrations that already applied.
 
 ## What the generator does that a plain concatenation does not
@@ -40,7 +40,7 @@ next one, deleting from the chunk file the migrations that already applied.
 **Inserts one `drop function`.** `promotion_summaries` widens its return type
 with `create or replace`, which Postgres refuses (42P13), and unlike the other
 four functions that widen theirs it does not drop itself first. Without that
-line the replay stops dead at migration 52 of 71.
+line the replay stops dead at migration 52 of 73.
 
 `supabase/README.md` names two outstanding cases. That is stale — the
 `generate_routes` workaround it describes is already in the migration file.
@@ -48,8 +48,8 @@ The check that matters is not whether the return type changed but whether a
 drop precedes the redefinition in the same file.
 
 **Records the migration history.** Each migration stamps its version and name,
-so staging ends up with the same 71 rows production has. Without this a later
-`supabase db push` would try to replay all 71 against a database that already
+so staging ends up with the same 73 rows production has. Without this a later
+`supabase db push` would try to replay all 73 against a database that already
 has them.
 
 **Cuts on migration boundaries**, so a chunk never fails part way through a

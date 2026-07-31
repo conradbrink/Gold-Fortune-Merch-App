@@ -71,9 +71,14 @@ DROPS_BEFORE = {
 # What production actually contains, read from rxtlnetlzmbqirqaalkw. The
 # verification script compares staging against these rather than asking anyone
 # to eyeball a number.
+#
+# Re-read these whenever migrations are added, or the check quietly measures
+# staging against a production that no longer exists. Everything except the
+# function and migration counts survived the region restructure unchanged —
+# it moved rows and rewrote triggers, and created no new object.
 EXPECTED = [
     ("tables", 30, "(select count(*) from pg_tables where schemaname='public')"),
-    ("functions", 43,
+    ("functions", 44,
      "(select count(*) from pg_proc p join pg_namespace n on n.oid=p.pronamespace"
      " where n.nspname='public')"),
     ("security definer functions", 15,
@@ -100,7 +105,7 @@ EXPECTED = [
     ("storage buckets", 3, "(select count(*) from storage.buckets)"),
     ("public storage buckets", 0,
      "(select count(*) from storage.buckets where public)"),
-    ("migrations recorded", 71,
+    ("migrations recorded", 73,
      "(select count(*) from supabase_migrations.schema_migrations)"),
 ]
 

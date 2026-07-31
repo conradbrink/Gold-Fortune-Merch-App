@@ -1,5 +1,5 @@
 -- ──────────────────────────────────────────────────────────────────────────
--- STAGING SCHEMA — CHUNK 2 OF 7
+-- STAGING SCHEMA — CHUNK 2 OF 8
 -- ──────────────────────────────────────────────────────────────────────────
 --
 -- Paste this whole file into the staging SQL editor and run it.
@@ -11,7 +11,7 @@
 -- ──────────────────────────────────────────────────────────────────────────
 
 -- ──────────────────────────────────────────────────────────────────────────
--- 17/71  20260727141220_fix_dashboard_coverage_denominator.sql
+-- 17/73  20260727141220_fix_dashboard_coverage_denominator.sql
 -- ──────────────────────────────────────────────────────────────────────────
 
 -- Coverage read 114% because the numerator counted every store with a visit
@@ -126,7 +126,7 @@ on conflict (version) do nothing;
 
 
 -- ──────────────────────────────────────────────────────────────────────────
--- 18/71  20260727144601_create_report_rpcs.sql
+-- 18/73  20260727144601_create_report_rpcs.sql
 -- ──────────────────────────────────────────────────────────────────────────
 
 -- Reports engine. Four aggregation RPCs so the browser never pulls
@@ -490,7 +490,7 @@ on conflict (version) do nothing;
 
 
 -- ──────────────────────────────────────────────────────────────────────────
--- 19/71  20260727144746_fix_form_report_number_buckets.sql
+-- 19/73  20260727144746_fix_form_report_number_buckets.sql
 -- ──────────────────────────────────────────────────────────────────────────
 
 -- The first cut emitted one bucket per distinct value, capped at 25. That is
@@ -660,7 +660,7 @@ on conflict (version) do nothing;
 
 
 -- ──────────────────────────────────────────────────────────────────────────
--- 20/71  20260727193617_add_oos_skus_and_pos_metric_keys.sql
+-- 20/73  20260727193617_add_oos_skus_and_pos_metric_keys.sql
 -- ──────────────────────────────────────────────────────────────────────────
 
 -- Two audit questions carry real signal but had no metric_key, so the only way
@@ -700,7 +700,7 @@ on conflict (version) do nothing;
 
 
 -- ──────────────────────────────────────────────────────────────────────────
--- 21/71  20260727193708_create_scorecard_rpcs.sql
+-- 21/73  20260727193708_create_scorecard_rpcs.sql
 -- ──────────────────────────────────────────────────────────────────────────
 
 -- Three reports that answer "which store do I fix first?" rather than
@@ -953,7 +953,7 @@ on conflict (version) do nothing;
 
 
 -- ──────────────────────────────────────────────────────────────────────────
--- 22/71  20260727193837_fix_oos_hotspots_sku_fanout.sql
+-- 22/73  20260727193837_fix_oos_hotspots_sku_fanout.sql
 -- ──────────────────────────────────────────────────────────────────────────
 
 -- The first cut joined `visits` back onto the per-store SKU tally, which fans
@@ -1065,7 +1065,7 @@ on conflict (version) do nothing;
 
 
 -- ──────────────────────────────────────────────────────────────────────────
--- 23/71  20260727194019_fix_schedule_adherence_route_fanout.sql
+-- 23/73  20260727194019_fix_schedule_adherence_route_fanout.sql
 -- ──────────────────────────────────────────────────────────────────────────
 
 -- `left join visits on v.route_id = ro.id` fans out when a route has more than
@@ -1142,7 +1142,7 @@ on conflict (version) do nothing;
 
 
 -- ──────────────────────────────────────────────────────────────────────────
--- 24/71  20260727195020_add_rep_score_to_scorecard.sql
+-- 24/73  20260727195020_add_rep_score_to_scorecard.sql
 -- ──────────────────────────────────────────────────────────────────────────
 
 -- An overall 0-100 rep score, the people-side counterpart to perfect_store_score.
@@ -1251,7 +1251,7 @@ on conflict (version) do nothing;
 
 
 -- ──────────────────────────────────────────────────────────────────────────
--- 25/71  20260727200143_create_rep_directory_rpc.sql
+-- 25/73  20260727200143_create_rep_directory_rpc.sql
 -- ──────────────────────────────────────────────────────────────────────────
 
 -- Rep directory for the Representatives page. One call rather than a query per

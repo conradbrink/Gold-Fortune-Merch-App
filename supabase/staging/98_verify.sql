@@ -29,7 +29,7 @@ with actual (item, n) as (
 expected (item, n) as (
   values
     ('tables', 30),
-    ('functions', 43),
+    ('functions', 44),
     ('security definer functions', 15),
     ('rls policies (public)', 82),
     ('rls policies (storage)', 7),
@@ -40,7 +40,7 @@ expected (item, n) as (
     ('tables with RLS on', 30),
     ('storage buckets', 3),
     ('public storage buckets', 0),
-    ('migrations recorded', 71)
+    ('migrations recorded', 73)
 )
 select
   a.item,

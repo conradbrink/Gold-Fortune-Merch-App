@@ -1,5 +1,5 @@
 -- ──────────────────────────────────────────────────────────────────────────
--- STAGING SCHEMA — CHUNK 4 OF 7
+-- STAGING SCHEMA — CHUNK 4 OF 8
 -- ──────────────────────────────────────────────────────────────────────────
 --
 -- Paste this whole file into the staging SQL editor and run it.
@@ -11,7 +11,7 @@
 -- ──────────────────────────────────────────────────────────────────────────
 
 -- ──────────────────────────────────────────────────────────────────────────
--- 39/71  20260728190554_fix_files_policy_recursion.sql
+-- 39/73  20260728190554_fix_files_policy_recursion.sql
 -- ──────────────────────────────────────────────────────────────────────────
 
 -- The policies in create_files were mutually recursive and Postgres refused
@@ -128,7 +128,7 @@ on conflict (version) do nothing;
 
 
 -- ──────────────────────────────────────────────────────────────────────────
--- 40/71  20260728195431_add_store_geocoding_provenance.sql
+-- 40/73  20260728195431_add_store_geocoding_provenance.sql
 -- ──────────────────────────────────────────────────────────────────────────
 
 -- Where a store's coordinates came from.
@@ -164,7 +164,7 @@ on conflict (version) do nothing;
 
 
 -- ──────────────────────────────────────────────────────────────────────────
--- 41/71  20260728202752_rep_captures_store_location.sql
+-- 41/73  20260728202752_rep_captures_store_location.sql
 -- ──────────────────────────────────────────────────────────────────────────
 
 -- Let a rep set a store's location from where they are standing.
@@ -358,7 +358,7 @@ on conflict (version) do nothing;
 
 
 -- ──────────────────────────────────────────────────────────────────────────
--- 42/71  20260728221554_create_store_geocode_capture_rpc.sql
+-- 42/73  20260728221554_create_store_geocode_capture_rpc.sql
 -- ──────────────────────────────────────────────────────────────────────────
 
 -- Who put a store on the map, and during which visit.
@@ -417,7 +417,7 @@ on conflict (version) do nothing;
 
 
 -- ──────────────────────────────────────────────────────────────────────────
--- 43/71  20260728223143_add_store_location_confirmation.sql
+-- 43/73  20260728223143_add_store_location_confirmation.sql
 -- ──────────────────────────────────────────────────────────────────────────
 
 -- A person has looked at this store's position and vouched for it.
@@ -461,7 +461,7 @@ on conflict (version) do nothing;
 
 
 -- ──────────────────────────────────────────────────────────────────────────
--- 44/71  20260728224851_rep_capture_confirms_location.sql
+-- 44/73  20260728224851_rep_capture_confirms_location.sql
 -- ──────────────────────────────────────────────────────────────────────────
 
 -- A rep standing in the shop is a confirmation, and the strongest one there is.
@@ -607,7 +607,7 @@ on conflict (version) do nothing;
 
 
 -- ──────────────────────────────────────────────────────────────────────────
--- 45/71  20260729062249_create_workday_trail_rpc.sql
+-- 45/73  20260729062249_create_workday_trail_rpc.sql
 -- ──────────────────────────────────────────────────────────────────────────
 
 -- What the GPS trail actually shows, as opposed to what the phone reported.
@@ -748,7 +748,7 @@ on conflict (version) do nothing;
 
 
 -- ──────────────────────────────────────────────────────────────────────────
--- 46/71  20260729074623_close_abandoned_workday.sql
+-- 46/73  20260729074623_close_abandoned_workday.sql
 -- ──────────────────────────────────────────────────────────────────────────
 
 -- Let a manager close a workday a rep never ended.
@@ -874,7 +874,7 @@ on conflict (version) do nothing;
 
 
 -- ──────────────────────────────────────────────────────────────────────────
--- 47/71  20260729080525_rep_fix_supersedes_a_guess.sql
+-- 47/73  20260729080525_rep_fix_supersedes_a_guess.sql
 -- ──────────────────────────────────────────────────────────────────────────
 
 -- A rep standing in the shop outranks anything that guessed at it.
@@ -1042,7 +1042,7 @@ on conflict (version) do nothing;
 
 
 -- ──────────────────────────────────────────────────────────────────────────
--- 48/71  20260729080754_create_store_location_drift_rpc.sql
+-- 48/73  20260729080754_create_store_location_drift_rpc.sql
 -- ──────────────────────────────────────────────────────────────────────────
 
 -- Does the store still seem to be where we think it is?
