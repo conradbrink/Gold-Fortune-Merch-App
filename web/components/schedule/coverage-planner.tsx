@@ -95,7 +95,6 @@ export function CoveragePlanner({ onChanged }: { onChanged?: () => void }) {
   const [actionFreq, setActionFreq] = useState<VisitFrequency>("monthly");
   const [actionDay, setActionDay] = useState("1");
   const [actionMain, setActionMain] = useState("");
-  const [actionSub, setActionSub] = useState("");
 
   async function load() {
     setLoading(true);
@@ -148,21 +147,20 @@ export function CoveragePlanner({ onChanged }: { onChanged?: () => void }) {
     return out;
   }, [assignments, reps]);
 
-  /** Territories, each with its own subs — the shape the dropdown and the
+  /** Regions, each with its territories — the shape the dropdown and the
       toolbar both read, so the nesting is derived once.
    *
-   * Selected by `level`, not by `parent_id === null`. Since the country tier a
-   * parentless row is a *country*, and a store goes in a territory — so
-   * filtering the old way would have offered countries as destinations and
-   * dropped every real territory. */
+   * Selected by `level`, never by `parent_id === null`: a parentless row is a
+   * *country*, and a store goes in a territory, so filtering the old way would
+   * offer countries as destinations and drop every real territory. */
   const tree = useMemo(() => {
-    const mains = territories
-      .filter((t) => t.level === "territory")
+    const regions = territories
+      .filter((t) => t.level === "region")
       .sort((a, b) => a.name.localeCompare(b.name));
-    return mains.map((main) => ({
-      main,
-      subs: territories
-        .filter((t) => t.level === "sub" && t.parent_id === main.id)
+    return regions.map((region) => ({
+      region,
+      territories: territories
+        .filter((t) => t.level === "territory" && t.parent_id === region.id)
         .sort((a, b) => a.name.localeCompare(b.name)),
     }));
   }, [territories]);
@@ -178,13 +176,18 @@ export function CoveragePlanner({ onChanged }: { onChanged?: () => void }) {
     return stores.filter((s) => {
       if (groupFilter !== "all" && (s.store_group_id ?? "none") !== groupFilter) return false;
       if (territoryFilter !== "all") {
-        // Choosing a main takes everything in it, sub-territories included —
-        // the sub is a subdivision of the main, not an alternative to it.
+        // A region takes every store in every territory under it; a territory
+        // takes its own.
         if (territoryFilter === "none") {
           if (s.territory_id !== null) return false;
-        } else if (territoryFilter.startsWith("main:")) {
-          if (s.territory_id !== territoryFilter.slice(5)) return false;
-        } else if (s.sub_territory_id !== territoryFilter.slice(4)) {
+        } else if (territoryFilter.startsWith("region:")) {
+          const inRegion = tree
+            .find((r) => r.region.id === territoryFilter.slice(7))
+            ?.territories.map((t) => t.id);
+          if (!inRegion || !s.territory_id || !inRegion.includes(s.territory_id)) {
+            return false;
+          }
+        } else if (s.territory_id !== territoryFilter.slice(2)) {
           return false;
         }
       }
@@ -198,7 +201,10 @@ export function CoveragePlanner({ onChanged }: { onChanged?: () => void }) {
       if (q && !`${s.name} ${s.city ?? ""}`.toLowerCase().includes(q)) return false;
       return true;
     });
-  }, [stores, query, groupFilter, territoryFilter, freqFilter, repFilter, repsByStore]);
+    // `tree` belongs here: filtering by region reads it to find which
+    // territories are inside, so leaving it out would keep filtering against
+    // the shape the page loaded with after a territory is dragged elsewhere.
+  }, [stores, query, groupFilter, territoryFilter, freqFilter, repFilter, repsByStore, tree]);
 
   /** Selection is intersected with the filter so an action can never touch a
       store the manager cannot currently see. */
@@ -278,12 +284,7 @@ export function CoveragePlanner({ onChanged }: { onChanged?: () => void }) {
                 // Places stores in a territory, and moves them out of whatever
                 // they were in. Choosing a sub implies its main, because the
                 // database refuses a sub without one.
-                await setStoreTerritory(
-                  supabase,
-                  s.id,
-                  actionMain || null,
-                  actionSub || null
-                );
+                await setStoreTerritory(supabase, s.id, actionMain || null);
                 return;
             }
           })
@@ -352,22 +353,16 @@ export function CoveragePlanner({ onChanged }: { onChanged?: () => void }) {
           aria-label="Filter by territory"
         >
           <option value="all">All territories</option>
-          {tree.map(({ main, subs }) =>
-            subs.length === 0 ? (
-              <option key={main.id} value={`main:${main.id}`}>
-                {main.name}
-              </option>
-            ) : (
-              <optgroup key={main.id} label={main.name}>
-                <option value={`main:${main.id}`}>All of {main.name}</option>
-                {subs.map((sub) => (
-                  <option key={sub.id} value={`sub:${sub.id}`}>
-                    {sub.name}
-                  </option>
-                ))}
-              </optgroup>
-            )
-          )}
+          {tree.map(({ region, territories: inRegion }) => (
+            <optgroup key={region.id} label={region.name}>
+              <option value={`region:${region.id}`}>All of {region.name}</option>
+              {inRegion.map((t) => (
+                <option key={t.id} value={`t:${t.id}`}>
+                  {t.name}
+                </option>
+              ))}
+            </optgroup>
+          ))}
           <option value="none">No territory</option>
         </NativeSelect>
         <NativeSelect value={freqFilter} onChange={(e) => setFreqFilter(e.target.value)} aria-label="Filter by frequency">
@@ -434,12 +429,7 @@ export function CoveragePlanner({ onChanged }: { onChanged?: () => void }) {
                 <NativeSelect
                   id="bulk-territory"
                   value={actionMain}
-                  onChange={(e) => {
-                    setActionMain(e.target.value);
-                    // The sub belonged to the old main, so it cannot survive
-                    // the change — the database would refuse the pair anyway.
-                    setActionSub("");
-                  }}
+                  onChange={(e) => setActionMain(e.target.value)}
                 >
                   <option value="">Out of any territory</option>
                   {/* Active only. Deactivating a territory means it "stops being
@@ -447,38 +437,20 @@ export function CoveragePlanner({ onChanged }: { onChanged?: () => void }) {
                       stores into one is new work. The *filter* dropdown above
                       still lists inactive territories, because stores already
                       sitting in a retired one have to stay findable. */}
-                  {tree
-                    .filter(({ main }) => main.active)
-                    .map(({ main }) => (
-                      <option key={main.id} value={main.id}>
-                        {main.name}
-                      </option>
-                    ))}
+                  {tree.map(({ region, territories: inRegion }) => (
+                    <optgroup key={region.id} label={region.name}>
+                      {inRegion
+                        .filter((t) => t.active)
+                        .map((t) => (
+                          <option key={t.id} value={t.id}>
+                            {t.name}
+                          </option>
+                        ))}
+                    </optgroup>
+                  ))}
                 </NativeSelect>
               </div>
 
-              {(tree.find((t) => t.main.id === actionMain)?.subs.length ?? 0) > 0 && (
-                <div className="w-44 space-y-1">
-                  <Label htmlFor="bulk-sub-territory" className="text-xs">
-                    Sub-territory
-                  </Label>
-                  <NativeSelect
-                    id="bulk-sub-territory"
-                    value={actionSub}
-                    onChange={(e) => setActionSub(e.target.value)}
-                  >
-                    <option value="">No sub-territory</option>
-                    {tree
-                      .find((t) => t.main.id === actionMain)
-                      ?.subs.filter((sub) => sub.active)
-                      .map((sub) => (
-                        <option key={sub.id} value={sub.id}>
-                          {sub.name}
-                        </option>
-                      ))}
-                  </NativeSelect>
-                </div>
-              )}
             </>
           )}
 
