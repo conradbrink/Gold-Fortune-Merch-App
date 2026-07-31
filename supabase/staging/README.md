@@ -20,14 +20,21 @@ python3 scripts/build-staging-schema.py
    not be that.
 2. Paste `01_of_08.sql` in full, run it, wait for it to finish.
 3. Repeat for `02` through `08`, **in order**.
-4. Run `98_verify.sql`. Every row must say `OK`.
+4. Run `98_verify.sql`. It runs two checks: a smoke test on object
+   counts, then a digest comparison over the definitions themselves.
+   **Every row of the second one must say `OK`** — the first only
+   proves nothing is obviously missing.
 
 ## If a chunk fails
 
-**Do not re-run it.** The Supabase SQL editor does not honour an outer
-`begin`, so a script that fails half way through has already applied
-everything before the failure — a blind re-run then fails on the first object
-that already exists, which looks like a different problem and is not.
+Each chunk is wrapped in `begin` / `commit`, so a failure *should* roll the
+whole chunk back. Do not rely on it: `supabase/README.md` records a 377 KB
+script that failed and had partly applied anyway, so the editor cannot be
+assumed to honour the transaction.
+
+**Either way, do not re-run a failed chunk blind.** A partly applied chunk
+re-run fails on the first object that already exists, which looks like a
+different problem and is not.
 
 Run `99_resume.sql` instead. It reports how many migrations landed and which
 was last, because every migration stamps itself into

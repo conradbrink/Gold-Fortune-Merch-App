@@ -6,10 +6,17 @@
 -- Covers 20260729084849_create_products_and_projects.sql
 --    .. through 20260729151556_lock_privilege_and_gps_fields.sql
 --
--- Run the chunks in order. If one fails, do NOT re-run it blind —
--- open 99_resume.sql and ask the database what actually landed.
+-- Run the chunks in order.
+--
+-- Wrapped in a transaction, so a statement that fails should take the
+-- whole chunk back out with it. That is a *should*: supabase/README.md
+-- records a 377 KB script that failed and had partly applied anyway,
+-- so the editor cannot be assumed to honour it. The per-migration
+-- stamps and 99_resume.sql are still the authority on what landed —
+-- check them rather than re-running blind.
 -- ──────────────────────────────────────────────────────────────────────────
 
+begin;
 -- ──────────────────────────────────────────────────────────────────────────
 -- 49/73  20260729084849_create_products_and_projects.sql
 -- ──────────────────────────────────────────────────────────────────────────
@@ -77,6 +84,7 @@ create unique index if not exists products_org_shrink_barcode_idx
   on public.products (org_id, shrink_barcode)
   where shrink_barcode is not null and shrink_barcode <> '';
 
+drop trigger if exists products_set_updated_at on public.products;
 create trigger products_set_updated_at
   before update on public.products
   for each row execute function public.set_updated_at();
@@ -106,6 +114,7 @@ alter table public.projects add constraint projects_dates_check
 create index if not exists projects_org_window_idx
   on public.projects (org_id, starts_on, ends_on);
 
+drop trigger if exists projects_set_updated_at on public.projects;
 create trigger projects_set_updated_at
   before update on public.projects
   for each row execute function public.set_updated_at();
@@ -990,6 +999,7 @@ end;
 $$;
 
 drop trigger if exists visits_freeze_recorded_position on public.visits;
+drop trigger if exists visits_freeze_recorded_position on public.visits;
 create trigger visits_freeze_recorded_position
   before update on public.visits
   for each row execute function public.freeze_recorded_position();
@@ -1000,3 +1010,5 @@ comment on function public.freeze_recorded_position is
 insert into supabase_migrations.schema_migrations (version, name)
 values ('20260729151556', 'lock_privilege_and_gps_fields')
 on conflict (version) do nothing;
+
+commit;

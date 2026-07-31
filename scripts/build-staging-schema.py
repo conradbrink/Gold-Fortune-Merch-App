@@ -39,6 +39,7 @@ Re-run it after adding migrations; it regenerates `supabase/staging/`.
 """
 
 import pathlib
+import re
 import sys
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
@@ -128,6 +129,34 @@ alter table supabase_migrations.schema_migrations
 """
 
 
+TRIGGER_RE = re.compile(
+    r"^create trigger\s+(\S+)\s*\n\s*(?:before|after|instead of)[\s\S]*?\bon\s+([\w.\"]+)",
+    re.IGNORECASE | re.MULTILINE,
+)
+
+
+def guard_triggers(sql: str) -> str:
+    """Makes `create trigger` survive a second run of the same chunk.
+
+    Everything else in these files is already re-runnable — `create table if
+    not exists`, `create index if not exists`, `drop constraint if exists`.
+    `create trigger` has no such form, so a chunk re-run after a partial
+    failure dies with 42710 on the first trigger it reaches, before it gets to
+    the stamp that would have told it the migration was already applied.
+    """
+    seen: list[tuple[str, str]] = []
+    for m in TRIGGER_RE.finditer(sql):
+        seen.append((m.group(1), m.group(2)))
+
+    for name, table in seen:
+        sql = sql.replace(
+            f"create trigger {name}",
+            f"drop trigger if exists {name} on {table};\ncreate trigger {name}",
+            1,
+        )
+    return sql
+
+
 def stamp(version: str, name: str) -> str:
     escaped = name.replace("'", "''")
     return (
@@ -136,42 +165,117 @@ def stamp(version: str, name: str) -> str:
     )
 
 
+DIGESTS = [
+    ("functions", "0d3267eecbff8f3f6ed3873efd91a55d",
+     "select md5(string_agg(pg_get_functiondef(p.oid), E'\\n'"
+     " order by p.proname, pg_get_function_identity_arguments(p.oid)))"
+     " from pg_proc p join pg_namespace n on n.oid=p.pronamespace"
+     " where n.nspname='public'"),
+    ("columns", "de65792cf23e5bcf1e0aea26a36366ee",
+     "select md5(string_agg(table_name||'.'||column_name||' '||data_type||' '||"
+     "coalesce(column_default,'-')||' '||is_nullable, E'\\n'"
+     " order by table_name, column_name))"
+     " from information_schema.columns where table_schema='public'"),
+    ("rls policies", "6dc453293ab8b25cbe2a26fb180f3b8c",
+     "select md5(string_agg(schemaname||'.'||tablename||'.'||policyname||' '||cmd||' '||"
+     "coalesce(qual,'-')||' '||coalesce(with_check,'-')||' '||array_to_string(roles,','), E'\\n'"
+     " order by schemaname, tablename, policyname))"
+     " from pg_policies where schemaname in ('public','storage')"),
+    ("indexes", "f8f64b2ab5420196757111f23bfc691c",
+     "select md5(string_agg(indexdef, E'\\n' order by indexname))"
+     " from pg_indexes where schemaname='public'"),
+    ("constraints", "f8ab861be664c33b4474805c2f2755bb",
+     "select md5(string_agg(conname||' '||pg_get_constraintdef(c.oid), E'\\n' order by conname))"
+     " from pg_constraint c join pg_namespace n on n.oid=c.connamespace"
+     " where n.nspname='public'"),
+    ("triggers", "caccd7b4d6bf76948074d670143163cb",
+     "select md5(string_agg(pg_get_triggerdef(t.oid), E'\\n' order by tgname))"
+     " from pg_trigger t join pg_class cl on cl.oid=t.tgrelid"
+     " join pg_namespace n on n.oid=cl.relnamespace"
+     " where n.nspname='public' and not t.tgisinternal"),
+]
+
+
 def build_verify() -> str:
-    actual_rows = ",\n".join(
+    """Two checks, and only the second one proves anything.
+
+    Counting objects is a smoke test: two schemas can agree on every count and
+    still differ in a column type, a default, a function body, a grant or an
+    RLS predicate — and an RLS predicate that differs is a data leak, not a
+    cosmetic difference. So the counts stay, labelled as what they are, and the
+    real comparison is a digest over the actual definitions.
+    """
+    count_rows = ",\n".join(
         f"    ('{label}', {expr})" for label, _, expr in EXPECTED
     )
-    expected_rows = ",\n".join(
+    count_expected = ",\n".join(
         f"    ('{label}', {n})" for label, n, _ in EXPECTED
+    )
+    digest_rows = ",\n".join(
+        f"    ('{label}', ({sql}))" for label, _, sql in DIGESTS
+    )
+    digest_expected = ",\n".join(
+        f"    ('{label}', '{h}')" for label, h, _ in DIGESTS
     )
     return f"""\
 {RULE}
--- Does staging match production?
+-- 1. SMOKE CHECK — object counts
 {RULE}
 --
--- Run this in the staging SQL editor once every chunk has been applied. Every
--- row must say OK. The expected numbers were read from production
--- (rxtlnetlzmbqirqaalkw) when this file was generated — regenerate it if the
--- schema has moved on since.
---
--- A mismatch is not a formality. It means "we tested it on staging" would be
--- a false statement, which is the entire reason staging exists.
+-- Cheap, and it proves only that nothing is obviously missing. Two schemas can
+-- match on every number here and still differ in a column type, a default, a
+-- function body, a grant, or an RLS predicate. Passing this is not equivalence;
+-- failing it means something is plainly wrong.
 
 with actual (item, n) as (
   values
-{actual_rows}
+{count_rows}
 ),
 expected (item, n) as (
   values
-{expected_rows}
+{count_expected}
 )
 select
   a.item,
-  e.n::bigint  as expected,
-  a.n::bigint  as actual,
+  e.n::bigint as expected,
+  a.n::bigint as actual,
   case when a.n = e.n then 'OK' else '*** MISMATCH ***' end as result
 from actual a
 join expected e using (item)
 order by (a.n = e.n), a.item;
+
+{RULE}
+-- 2. THE REAL CHECK — digests over the definitions themselves
+{RULE}
+--
+-- Every row must say OK. These hash what the objects actually *are*: full
+-- function bodies, every column with its type, default and nullability, every
+-- RLS policy with its USING and WITH CHECK expressions and the roles they
+-- apply to, every index, constraint and trigger definition.
+--
+-- A mismatch names the category, not the row. To find it, run the same
+-- `string_agg` without the `md5()` on both projects and diff the output.
+--
+-- Read from production (rxtlnetlzmbqirqaalkw) when this file was generated.
+-- Regenerate after every migration, or this measures staging against a
+-- production that no longer exists.
+
+with actual (item, digest) as (
+  values
+{digest_rows}
+),
+expected (item, digest) as (
+  values
+{digest_expected}
+)
+select
+  a.item,
+  case when a.digest = e.digest then 'OK' else '*** MISMATCH ***' end as result,
+  e.digest as expected,
+  a.digest as actual
+from actual a
+join expected e using (item)
+order by (a.digest = e.digest), a.item;
 """
 
 
@@ -232,7 +336,7 @@ def main() -> int:
                 *drops,
                 "",
             ]
-        parts += [body, "", stamp(version, name), ""]
+        parts += [guard_triggers(body), "", stamp(version, name), ""]
         blocks.append(("\n".join(parts), path.name))
 
     # Cut into chunks, only ever between migrations.
@@ -262,17 +366,26 @@ def main() -> int:
             f"-- Covers {first}",
             f"--    .. through {last}",
             "--",
-            "-- Run the chunks in order. If one fails, do NOT re-run it blind —",
-            "-- open 99_resume.sql and ask the database what actually landed.",
+            "-- Run the chunks in order.",
+            "--",
+            "-- Wrapped in a transaction, so a statement that fails should take the",
+            "-- whole chunk back out with it. That is a *should*: supabase/README.md",
+            "-- records a 377 KB script that failed and had partly applied anyway,",
+            "-- so the editor cannot be assumed to honour it. The per-migration",
+            "-- stamps and 99_resume.sql are still the authority on what landed —",
+            "-- check them rather than re-running blind.",
             RULE,
             "",
+            "begin;",
             "",
         ]
         if n == 1:
             header += [PRELUDE, ""]
 
         body = "\n".join(header) + "\n".join(text for text, _ in chunk)
-        (OUT / f"{n:02d}_of_{total:02d}.sql").write_text(body.rstrip() + "\n")
+        (OUT / f"{n:02d}_of_{total:02d}.sql").write_text(
+            body.rstrip() + "\n\ncommit;\n"
+        )
 
     (OUT / "98_verify.sql").write_text(build_verify())
     (OUT / "99_resume.sql").write_text(RESUME)

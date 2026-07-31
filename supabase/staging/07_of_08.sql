@@ -6,10 +6,17 @@
 -- Covers 20260730114524_create_dashboard_layouts.sql
 --    .. through 20260731175407_create_form_field_delete_impact_rpc.sql
 --
--- Run the chunks in order. If one fails, do NOT re-run it blind —
--- open 99_resume.sql and ask the database what actually landed.
+-- Run the chunks in order.
+--
+-- Wrapped in a transaction, so a statement that fails should take the
+-- whole chunk back out with it. That is a *should*: supabase/README.md
+-- records a 377 KB script that failed and had partly applied anyway,
+-- so the editor cannot be assumed to honour it. The per-migration
+-- stamps and 99_resume.sql are still the authority on what landed —
+-- check them rather than re-running blind.
 -- ──────────────────────────────────────────────────────────────────────────
 
+begin;
 -- ──────────────────────────────────────────────────────────────────────────
 -- 65/73  20260730114524_create_dashboard_layouts.sql
 -- ──────────────────────────────────────────────────────────────────────────
@@ -926,3 +933,5 @@ comment on function public.form_field_delete_impact is
 insert into supabase_migrations.schema_migrations (version, name)
 values ('20260731175407', 'create_form_field_delete_impact_rpc')
 on conflict (version) do nothing;
+
+commit;

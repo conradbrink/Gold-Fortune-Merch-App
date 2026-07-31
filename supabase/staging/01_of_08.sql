@@ -6,10 +6,17 @@
 -- Covers 20260726144345_init_orgs_users.sql
 --    .. through 20260727121757_create_activity_feed_rpc.sql
 --
--- Run the chunks in order. If one fails, do NOT re-run it blind —
--- open 99_resume.sql and ask the database what actually landed.
+-- Run the chunks in order.
+--
+-- Wrapped in a transaction, so a statement that fails should take the
+-- whole chunk back out with it. That is a *should*: supabase/README.md
+-- records a 377 KB script that failed and had partly applied anyway,
+-- so the editor cannot be assumed to honour it. The per-migration
+-- stamps and 99_resume.sql are still the authority on what landed —
+-- check them rather than re-running blind.
 -- ──────────────────────────────────────────────────────────────────────────
 
+begin;
 
 -- Records which migrations have been applied. A fresh project may already
 -- have this from Supabase; the alters cover a project that has it in an older
@@ -154,6 +161,7 @@ create index visits_org_rep_idx on public.visits(org_id, rep_id);
 create index visits_route_id_idx on public.visits(route_id);
 create index visits_store_id_idx on public.visits(store_id);
 
+drop trigger if exists visits_set_updated_at on public.visits;
 create trigger visits_set_updated_at
   before update on public.visits
   for each row
@@ -181,6 +189,7 @@ create table public.form_templates (
 
 create index form_templates_org_id_idx on public.form_templates(org_id);
 
+drop trigger if exists form_templates_set_updated_at on public.form_templates;
 create trigger form_templates_set_updated_at
   before update on public.form_templates
   for each row
@@ -789,6 +798,7 @@ create table public.workday_sessions (
 create index workday_sessions_org_rep_idx on public.workday_sessions(org_id, rep_id);
 create index workday_sessions_started_at_idx on public.workday_sessions(started_at desc);
 
+drop trigger if exists workday_sessions_set_updated_at on public.workday_sessions;
 create trigger workday_sessions_set_updated_at
   before update on public.workday_sessions
   for each row execute function public.set_updated_at();
@@ -1207,3 +1217,5 @@ $$;
 insert into supabase_migrations.schema_migrations (version, name)
 values ('20260727121757', 'create_activity_feed_rpc')
 on conflict (version) do nothing;
+
+commit;

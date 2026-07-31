@@ -6,10 +6,17 @@
 -- Covers 20260729152435_create_rate_limiter.sql
 --    .. through 20260730111738_fix_leads_follow_up_index_predicate.sql
 --
--- Run the chunks in order. If one fails, do NOT re-run it blind —
--- open 99_resume.sql and ask the database what actually landed.
+-- Run the chunks in order.
+--
+-- Wrapped in a transaction, so a statement that fails should take the
+-- whole chunk back out with it. That is a *should*: supabase/README.md
+-- records a 377 KB script that failed and had partly applied anyway,
+-- so the editor cannot be assumed to honour it. The per-migration
+-- stamps and 99_resume.sql are still the authority on what landed —
+-- check them rather than re-running blind.
 -- ──────────────────────────────────────────────────────────────────────────
 
+begin;
 -- ──────────────────────────────────────────────────────────────────────────
 -- 55/73  20260729152435_create_rate_limiter.sql
 -- ──────────────────────────────────────────────────────────────────────────
@@ -255,6 +262,7 @@ end;
 $$;
 
 drop trigger if exists profiles_log_security_change on public.profiles;
+drop trigger if exists profiles_log_security_change on public.profiles;
 create trigger profiles_log_security_change
   after update on public.profiles
   for each row execute function public.log_profile_security_change();
@@ -288,6 +296,7 @@ begin
 end;
 $$;
 
+drop trigger if exists store_assignments_log_change on public.store_assignments;
 drop trigger if exists store_assignments_log_change on public.store_assignments;
 create trigger store_assignments_log_change
   after insert or delete on public.store_assignments
@@ -470,6 +479,7 @@ begin
 end;
 $$;
 
+drop trigger if exists territories_shape on public.territories;
 create trigger territories_shape
 before insert or update on public.territories
 for each row execute function public.territories_enforce_shape();
@@ -552,6 +562,7 @@ begin
 end;
 $$;
 
+drop trigger if exists stores_territory_shape on public.stores;
 create trigger stores_territory_shape
 before insert or update of territory_id, sub_territory_id, org_id on public.stores
 for each row execute function public.stores_enforce_territory();
@@ -751,6 +762,7 @@ begin
 end;
 $$;
 
+drop trigger if exists leads_freeze_recorded_start on public.leads;
 create trigger leads_freeze_recorded_start
 before update on public.leads
 for each row execute function public.leads_freeze_start();
@@ -1220,6 +1232,7 @@ begin
 end;
 $$;
 
+drop trigger if exists territory_reps_org_shape on public.territory_reps;
 create trigger territory_reps_org_shape
 before insert or update of org_id, territory_id, rep_id on public.territory_reps
 for each row execute function public.territory_reps_enforce_org();
@@ -1256,3 +1269,5 @@ create index leads_follow_up_idx on public.leads (org_id, follow_up_on)
 insert into supabase_migrations.schema_migrations (version, name)
 values ('20260730111738', 'fix_leads_follow_up_index_predicate')
 on conflict (version) do nothing;
+
+commit;

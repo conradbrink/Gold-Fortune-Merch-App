@@ -6,10 +6,17 @@
 -- Covers 20260727201311_coverage_gaps_uses_any_assignment.sql
 --    .. through 20260728190322_create_files_bucket.sql
 --
--- Run the chunks in order. If one fails, do NOT re-run it blind —
--- open 99_resume.sql and ask the database what actually landed.
+-- Run the chunks in order.
+--
+-- Wrapped in a transaction, so a statement that fails should take the
+-- whole chunk back out with it. That is a *should*: supabase/README.md
+-- records a 377 KB script that failed and had partly applied anyway,
+-- so the editor cannot be assumed to honour it. The per-migration
+-- stamps and 99_resume.sql are still the authority on what landed —
+-- check them rather than re-running blind.
 -- ──────────────────────────────────────────────────────────────────────────
 
+begin;
 -- ──────────────────────────────────────────────────────────────────────────
 -- 26/73  20260727201311_coverage_gaps_uses_any_assignment.sql
 -- ──────────────────────────────────────────────────────────────────────────
@@ -1294,3 +1301,5 @@ create policy files_delete on storage.objects
 insert into supabase_migrations.schema_migrations (version, name)
 values ('20260728190322', 'create_files_bucket')
 on conflict (version) do nothing;
+
+commit;
