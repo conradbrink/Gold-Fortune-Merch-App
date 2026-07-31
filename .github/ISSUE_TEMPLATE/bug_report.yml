@@ -1,0 +1,141 @@
+name: Bug report
+description: Something in the website or the phone app is not working
+title: "[Bug] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        A partial report is much better than no report. Fill in what you can.
+
+        **If reps cannot work, or information is being lost, set severity to
+        Critical** — that changes how quickly we look at it.
+
+  - type: dropdown
+    id: severity
+    attributes:
+      label: How bad is it?
+      options:
+        - Critical — nobody can work, or data is being lost
+        - Major — an important feature is broken, but there is a way around it
+        - Minor — annoying, cosmetic, or rare
+    validations:
+      required: true
+
+  - type: dropdown
+    id: app
+    attributes:
+      label: Which app?
+      options:
+        - Phone app (Android)
+        - Website
+        - Both
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: App version
+      description: >-
+        Phone app: shown on the download page, e.g. 1.0.0.
+        Website: just say "website" and roughly when.
+      placeholder: "1.0.0"
+    validations:
+      required: true
+
+  - type: input
+    id: who
+    attributes:
+      label: Who it happened to
+      placeholder: "Atang (rep) / Conrad (manager)"
+
+  - type: input
+    id: when
+    attributes:
+      label: When
+      description: Time matters — it is how we find the exact request in the logs.
+      placeholder: "31 July, around 10am"
+
+  - type: input
+    id: device
+    attributes:
+      label: Device and Android version
+      description: "Settings → About phone. Website: which browser."
+      placeholder: "Samsung A14, Android 13 / Chrome on Windows"
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected to happen
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: What actually happened
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to make it happen again
+      placeholder: |
+        1. Signed in as a rep
+        2. Checked in at Baronnes Liquor Store
+        3. Took a photo
+        4. …
+    validations:
+      required: true
+
+  - type: dropdown
+    id: repeatable
+    attributes:
+      label: Does it happen every time?
+      options:
+        - Every time
+        - Sometimes
+        - Only happened once
+    validations:
+      required: true
+
+  - type: dropdown
+    id: dataloss
+    attributes:
+      label: Was any information lost or changed?
+      description: A visit that disappeared, a photo that did not save, a wrong number.
+      options:
+        - "No"
+        - "Yes — something was lost"
+        - "Yes — something showed the wrong value"
+        - Not sure
+    validations:
+      required: true
+
+  - type: dropdown
+    id: offline
+    attributes:
+      label: Was the phone offline?
+      description: >-
+        Offline and sync problems are the hardest class in this system, and this
+        is usually the whole diagnosis.
+      options:
+        - Not applicable / website
+        - "No — had signal throughout"
+        - "Yes — was offline when it happened"
+        - Was offline earlier, noticed after reconnecting
+        - Not sure
+
+  - type: textarea
+    id: screenshot
+    attributes:
+      label: Screenshot or recording
+      description: Drag it in. A 10-second recording is worth a page of description.
+
+  - type: textarea
+    id: anything_else
+    attributes:
+      label: Anything else
+      placeholder: "Had just updated the app / only at one store / …"
