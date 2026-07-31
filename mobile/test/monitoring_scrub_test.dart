@@ -29,13 +29,18 @@ void main() {
       url: 'https://example.test/v1/visits',
       headers: {
         'Authorization': 'Bearer secret-token-value',
-        'apikey': 'sb_publishable_xxx',
+        'apikey': 'not-a-real-key-1',
         'X-Refresh-Token': 'refresh-me',
         'X-Client-Secret': 'hunter2',
         // Both of these got through the first version of this function, which
         // compared against the literal lowercase `apikey` and never looked at
         // the Cookie *header* at all — only at SentryRequest.cookies.
-        'X-Api-Key': 'sb_secret_yyy',
+        //
+        // The values are deliberately nothing like a real key: the first
+        // attempt used `sb_secret_…`, and the repo's own secret scan failed
+        // the build for it. Correctly — a fixture should not be shaped like
+        // the thing it stands in for.
+        'X-Api-Key': 'not-a-real-key-2',
         'Cookie': 'sb-access-token=abc123; other=1',
         'Content-Type': 'application/json',
         'Accept': 'application/json',
@@ -67,7 +72,7 @@ void main() {
     // And nothing survives by value either.
     expect(headers.values.join(' '), isNot(contains('secret-token-value')));
     expect(headers.values.join(' '), isNot(contains('hunter2')));
-    expect(headers.values.join(' '), isNot(contains('sb_secret_yyy')));
+    expect(headers.values.join(' '), isNot(contains('not-a-real-key-2')));
     expect(headers.values.join(' '), isNot(contains('sb-access-token')));
   });
 
