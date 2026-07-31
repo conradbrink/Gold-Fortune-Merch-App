@@ -18,7 +18,7 @@ import 'package:sentry_flutter/sentry_flutter.dart';
 ///
 ///   * `sendDefaultPii = false` — no IP addresses, no device names, no
 ///     usernames attached automatically.
-///   * [_scrub] strips anything that looks like a credential from the payload
+///   * [scrub] strips anything that looks like a credential from the payload
 ///     before it leaves the device, including the Supabase key, bearer tokens
 ///     and anything under a key containing "password", "token" or "secret".
 ///   * GPS coordinates are never attached as context. Knowing *that* a
@@ -102,31 +102,32 @@ class Monitoring {
         options.replay.sessionSampleRate = 0.0;
         options.replay.onErrorSampleRate = 0.0;
 
-        options.beforeSend = _scrub;
+        options.beforeSend = scrub;
       },
       appRunner: runApp,
     );
   }
 
   /// Last line of defence before anything leaves the device.
-  static SentryEvent? _scrub(SentryEvent event, Hint hint) {
+  ///
+  /// Not private, so it can be tested directly. It is the only thing standing
+  /// between a rep's session token and a third party, and it had no coverage
+  /// at all until it was rewritten for the 9.x upgrade.
+  @visibleForTesting
+  static SentryEvent? scrub(SentryEvent event, Hint hint) {
     // Never report anything from a debug build to the shared issue stream.
     if (event.environment == 'development') return null;
 
     // Mutated in place rather than through `copyWith`, which 9.x deprecated.
-    // Same fields, same order, same result — this is the last thing standing
-    // between a rep's session token and a third party, so it is rewritten
-    // literally rather than restructured.
+    //
+    // One deliberate difference from the version this replaced: `queryString`
+    // is cleared whenever there is a request, not only when the URL happens to
+    // contain a `?`. It is a separate field and can carry parameters the URL
+    // does not, so the old condition left a way through.
     final request = event.request;
     if (request != null) {
       final headers = Map<String, String>.from(request.headers);
-      headers.removeWhere((k, _) {
-        final key = k.toLowerCase();
-        return key == 'authorization' ||
-            key == 'apikey' ||
-            key.contains('token') ||
-            key.contains('secret');
-      });
+      headers.removeWhere((k, _) => _isSensitiveHeader(k));
       request.headers = headers;
       request.cookies = null;
 
@@ -140,6 +141,24 @@ class Monitoring {
     }
 
     return event;
+  }
+
+  /// Whether a *header* carries a credential.
+  ///
+  /// The name is normalised — lowercased, and punctuation removed — before
+  /// matching, because header names are spelled inconsistently and an exact
+  /// comparison missed two real ones: `X-Api-Key` is not the literal `apikey`,
+  /// and `Cookie` is a header in its own right, quite separate from
+  /// `SentryRequest.cookies`. Both were passing straight through.
+  static bool _isSensitiveHeader(String name) {
+    final k = name.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '');
+    return k.contains('authorization') ||
+        k.contains('apikey') ||
+        k.contains('token') ||
+        k.contains('secret') ||
+        k.contains('cookie') ||
+        k.contains('password') ||
+        k.contains('session');
   }
 
   static bool _isSensitiveKey(String key) {
