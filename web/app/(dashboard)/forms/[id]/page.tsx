@@ -37,6 +37,25 @@ import {
 type FormTemplate = Tables<"form_templates">;
 type FormField = Tables<"form_fields">;
 
+/**
+ * What deleting a question would cascade away — from `form_field_delete_impact`.
+ *
+ * `form_responses.form_field_id` is ON DELETE CASCADE, so removing a question
+ * takes every answer ever given to it. Unlike a form, a single question cannot
+ * be deactivated, so the only choice is keep it or lose its history — which is
+ * why the number has to be on screen before anyone confirms.
+ */
+type DeleteImpact = {
+  field_label: string | null;
+  metric_key: string | null;
+  answers: number;
+  submissions: number;
+  stores_answered: number;
+  photos: number;
+  first_answered_at: string | null;
+  last_answered_at: string | null;
+};
+
 /** The options a multiple-choice question offers, from the comma-separated input. */
 function parseOptions(raw: string): string[] {
   return raw.split(",").map((o) => o.trim()).filter(Boolean);
@@ -79,6 +98,21 @@ export default function FormDetailPage() {
   const [dragIndex, setDragIndex] = useState<number | null>(null);
   const [addError, setAddError] = useState<string | null>(null);
   const [rowError, setRowError] = useState<string | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<FormField | null>(null);
+  /**
+   * Which impact lookup is still wanted.
+   *
+   * A counter rather than the question's id, because the id does not identify
+   * a *request*: open a question, dismiss it, open the same one again, and two
+   * lookups are in flight that an id comparison cannot tell apart — the first
+   * reply would be accepted, and a late failure would raise an error about a
+   * dialog already dismissed. Same approach as `runSeq` in the add-stores
+   * dialog.
+   */
+  const impactSeq = useRef(0);
+  /** Null while the count is still being fetched, so the dialog can wait. */
+  const [impact, setImpact] = useState<DeleteImpact | null>(null);
+  const [deleting, setDeleting] = useState(false);
   const [newField, setNewField] = useState({
     label: "",
     field_type: "text",
@@ -221,8 +255,72 @@ export default function FormDetailPage() {
     );
   }
 
-  async function handleDeleteField(id: string) {
-    await supabase.from("form_fields").delete().eq("id", id);
+  /**
+   * Opens the confirmation and goes to find out what the delete would cost.
+   *
+   * The count must never appear under the wrong question. Open one, change
+   * your mind, open another, and a late reply from the first would otherwise
+   * write into the shared `impact` — leaving the second question's name above
+   * the first question's numbers, and "Delete and lose 4,213 answers" on a
+   * button that deletes something else entirely. The same guard, for the same
+   * reason, as `beginRemove` in the territories panel.
+   */
+  async function askDeleteField(field: FormField) {
+    setRowError(null);
+    setDeleteTarget(field);
+    setImpact(null);
+    const seq = ++impactSeq.current;
+
+    const { data, error } = await supabase.rpc("form_field_delete_impact", {
+      p_field_id: field.id,
+    });
+    const row = (data as DeleteImpact[] | null)?.[0] ?? null;
+
+    // Superseded — the manager has moved on, or reopened this same question.
+    if (impactSeq.current !== seq) return;
+
+    // A failed count must not read as "nothing would be lost". Close the
+    // dialog and say so rather than inviting a confirmation on no information.
+    //
+    // A null `field_label` is the same situation wearing a disguise: the
+    // function is org-scoped, so a caller it cannot resolve the field for gets
+    // a row of zeroes rather than no row at all. Reading that as "no answers"
+    // would be a reassuring lie.
+    if (error || !row || row.field_label === null) {
+      setDeleteTarget(null);
+      setRowError(
+        "Could not work out what deleting that question would remove, so it has not been deleted. Try again."
+      );
+      return;
+    }
+    setImpact(row);
+  }
+
+  /** Closes the dialog and retires any lookup still in flight for it. */
+  function closeDeleteDialog() {
+    impactSeq.current += 1;
+    setDeleteTarget(null);
+    setImpact(null);
+  }
+
+  async function confirmDeleteField() {
+    if (!deleteTarget) return;
+    setDeleting(true);
+    const { data, error } = await supabase
+      .from("form_fields")
+      .delete()
+      .eq("id", deleteTarget.id)
+      .select("id");
+
+    if (error) {
+      setRowError(error.message);
+    } else if (!data || data.length === 0) {
+      // A delete blocked by RLS removes nothing and still reports success.
+      setRowError("Nothing was deleted — you may not have permission.");
+    }
+
+    setDeleting(false);
+    closeDeleteDialog();
     load();
   }
 
@@ -484,7 +582,7 @@ export default function FormDetailPage() {
                 variant="ghost"
                 size="icon"
                 className="h-8 w-8 shrink-0 text-muted-foreground hover:text-destructive"
-                onClick={() => handleDeleteField(field.id)}
+                onClick={() => askDeleteField(field)}
                 aria-label="Delete field"
               >
                 <Trash2 className="h-4 w-4" />
@@ -493,6 +591,102 @@ export default function FormDetailPage() {
           </Card>
         ))}
       </div>
+
+      <Dialog
+        open={deleteTarget !== null}
+        onOpenChange={(open) => {
+          if (!open && !deleting) closeDeleteDialog();
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>
+              Delete “{deleteTarget?.label}”?
+            </DialogTitle>
+          </DialogHeader>
+
+          {impact === null ? (
+            <p className="text-sm text-muted-foreground">
+              Checking what this would remove…
+            </p>
+          ) : impact.answers === 0 ? (
+            <div className="space-y-2 text-sm">
+              <p className="text-muted-foreground">
+                Nobody has answered this question yet, so nothing recorded is
+                lost. The reps will stop being asked it.
+              </p>
+              {/* An unanswered question can still be feeding a card. Saying
+                  "nothing is lost" and stopping there would be true of the
+                  history and wrong about the dashboard. */}
+              {impact.metric_key && (
+                <p>
+                  It is still the question behind the{" "}
+                  <strong>{metricLabel(impact.metric_key)}</strong> figure.
+                  Deleting it leaves that card with nothing to measure until
+                  another question is linked to it.
+                </p>
+              )}
+            </div>
+          ) : (
+            <div className="space-y-2 text-sm">
+              <p>
+                This question has <strong>{impact.answers}</strong> recorded
+                answer{impact.answers === 1 ? "" : "s"} from{" "}
+                <strong>{impact.stores_answered}</strong> outlet
+                {impact.stores_answered === 1 ? "" : "s"}
+                {impact.first_answered_at && impact.last_answered_at && (
+                  <>
+                    , between{" "}
+                    {new Date(impact.first_answered_at).toLocaleDateString()}{" "}
+                    and {new Date(impact.last_answered_at).toLocaleDateString()}
+                  </>
+                )}
+                .
+              </p>
+              {impact.photos > 0 && (
+                <p>
+                  <strong>{impact.photos}</strong> of those{" "}
+                  {impact.photos === 1 ? "is a photo" : "are photos"}, which
+                  nothing will point at afterwards.
+                </p>
+              )}
+              {impact.metric_key && (
+                <p>
+                  It is the question behind the{" "}
+                  <strong>{metricLabel(impact.metric_key)}</strong> figure.
+                  Deleting it empties that card.
+                </p>
+              )}
+              <p className="text-destructive">
+                Deleting the question deletes those answers permanently. Past
+                audits will read as though it was never asked. There is no
+                undo, and a backup taken afterwards will not contain them.
+              </p>
+            </div>
+          )}
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={closeDeleteDialog}
+              disabled={deleting}
+            >
+              Keep it
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={confirmDeleteField}
+              disabled={impact === null || deleting}
+            >
+              {deleting
+                ? "Deleting…"
+                : impact && impact.answers > 0
+                  ? `Delete and lose ${impact.answers} answer${impact.answers === 1 ? "" : "s"}`
+                  : "Delete question"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
