@@ -99,8 +99,17 @@ export default function FormDetailPage() {
   const [addError, setAddError] = useState<string | null>(null);
   const [rowError, setRowError] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<FormField | null>(null);
-  /** The question whose impact fetch is the one still wanted. */
-  const impactRequest = useRef<string | null>(null);
+  /**
+   * Which impact lookup is still wanted.
+   *
+   * A counter rather than the question's id, because the id does not identify
+   * a *request*: open a question, dismiss it, open the same one again, and two
+   * lookups are in flight that an id comparison cannot tell apart — the first
+   * reply would be accepted, and a late failure would raise an error about a
+   * dialog already dismissed. Same approach as `runSeq` in the add-stores
+   * dialog.
+   */
+  const impactSeq = useRef(0);
   /** Null while the count is still being fetched, so the dialog can wait. */
   const [impact, setImpact] = useState<DeleteImpact | null>(null);
   const [deleting, setDeleting] = useState(false);
@@ -260,15 +269,15 @@ export default function FormDetailPage() {
     setRowError(null);
     setDeleteTarget(field);
     setImpact(null);
-    impactRequest.current = field.id;
+    const seq = ++impactSeq.current;
 
     const { data, error } = await supabase.rpc("form_field_delete_impact", {
       p_field_id: field.id,
     });
     const row = (data as DeleteImpact[] | null)?.[0] ?? null;
 
-    // Stale reply for a question the manager has already moved on from.
-    if (impactRequest.current !== field.id) return;
+    // Superseded — the manager has moved on, or reopened this same question.
+    if (impactSeq.current !== seq) return;
 
     // A failed count must not read as "nothing would be lost". Close the
     // dialog and say so rather than inviting a confirmation on no information.
@@ -285,6 +294,13 @@ export default function FormDetailPage() {
       return;
     }
     setImpact(row);
+  }
+
+  /** Closes the dialog and retires any lookup still in flight for it. */
+  function closeDeleteDialog() {
+    impactSeq.current += 1;
+    setDeleteTarget(null);
+    setImpact(null);
   }
 
   async function confirmDeleteField() {
@@ -304,9 +320,7 @@ export default function FormDetailPage() {
     }
 
     setDeleting(false);
-    impactRequest.current = null;
-    setDeleteTarget(null);
-    setImpact(null);
+    closeDeleteDialog();
     load();
   }
 
@@ -581,10 +595,7 @@ export default function FormDetailPage() {
       <Dialog
         open={deleteTarget !== null}
         onOpenChange={(open) => {
-          if (!open && !deleting) {
-            setDeleteTarget(null);
-            setImpact(null);
-          }
+          if (!open && !deleting) closeDeleteDialog();
         }}
       >
         <DialogContent>
@@ -657,10 +668,7 @@ export default function FormDetailPage() {
           <DialogFooter>
             <Button
               variant="outline"
-              onClick={() => {
-                setDeleteTarget(null);
-                setImpact(null);
-              }}
+              onClick={closeDeleteDialog}
               disabled={deleting}
             >
               Keep it
