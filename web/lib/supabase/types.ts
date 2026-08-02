@@ -92,6 +92,287 @@ export type Database = {
           },
         ]
       }
+      delivery_documents: {
+        Row: {
+          created_at: string
+          dispatch_id: string | null
+          doc_type: string
+          file_name: string | null
+          id: string
+          mime_type: string | null
+          order_id: string
+          org_id: string
+          signed_at: string | null
+          signed_by_name: string | null
+          size_bytes: number | null
+          storage_path: string
+          uploaded_by: string | null
+        }
+        Insert: {
+          created_at?: string
+          dispatch_id?: string | null
+          doc_type: string
+          file_name?: string | null
+          id?: string
+          mime_type?: string | null
+          order_id: string
+          org_id: string
+          signed_at?: string | null
+          signed_by_name?: string | null
+          size_bytes?: number | null
+          storage_path: string
+          uploaded_by?: string | null
+        }
+        Update: {
+          created_at?: string
+          dispatch_id?: string | null
+          doc_type?: string
+          file_name?: string | null
+          id?: string
+          mime_type?: string | null
+          order_id?: string
+          org_id?: string
+          signed_at?: string | null
+          signed_by_name?: string | null
+          size_bytes?: number | null
+          storage_path?: string
+          uploaded_by?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "delivery_documents_dispatch_id_fkey"
+            columns: ["dispatch_id"]
+            isOneToOne: false
+            referencedRelation: "dispatches"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "delivery_documents_order_id_fkey"
+            columns: ["order_id"]
+            isOneToOne: false
+            referencedRelation: "orders"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "delivery_documents_org_id_fkey"
+            columns: ["org_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "delivery_documents_uploaded_by_fkey"
+            columns: ["uploaded_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      dispatch_lines: {
+        Row: {
+          batch_id: string | null
+          created_at: string
+          dispatch_id: string
+          id: string
+          order_allocation_id: string | null
+          order_line_id: string
+          org_id: string
+          qty: number
+          qty_delivered: number
+          qty_returned: number
+        }
+        Insert: {
+          batch_id?: string | null
+          created_at?: string
+          dispatch_id: string
+          id?: string
+          order_allocation_id?: string | null
+          order_line_id: string
+          org_id: string
+          qty: number
+          qty_delivered?: number
+          qty_returned?: number
+        }
+        Update: {
+          batch_id?: string | null
+          created_at?: string
+          dispatch_id?: string
+          id?: string
+          order_allocation_id?: string | null
+          order_line_id?: string
+          org_id?: string
+          qty?: number
+          qty_delivered?: number
+          qty_returned?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "dispatch_lines_batch_id_fkey"
+            columns: ["batch_id"]
+            isOneToOne: false
+            referencedRelation: "product_batches"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "dispatch_lines_dispatch_id_fkey"
+            columns: ["dispatch_id"]
+            isOneToOne: false
+            referencedRelation: "dispatches"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "dispatch_lines_order_allocation_id_fkey"
+            columns: ["order_allocation_id"]
+            isOneToOne: false
+            referencedRelation: "order_allocations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "dispatch_lines_order_line_id_fkey"
+            columns: ["order_line_id"]
+            isOneToOne: false
+            referencedRelation: "order_lines"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "dispatch_lines_org_id_fkey"
+            columns: ["org_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      dispatches: {
+        Row: {
+          carrier_name: string | null
+          created_at: string
+          delivered_at: string | null
+          delivered_by: string | null
+          dispatch_location_id: string
+          dispatch_number: string
+          dispatched_at: string
+          dispatched_by: string | null
+          driver_id: string | null
+          expected_delivery_on: string | null
+          failure_reason: string | null
+          id: string
+          notes: string | null
+          order_id: string
+          org_id: string
+          received_by_name: string | null
+          status: string
+          tracking_reference: string | null
+          transit_location_id: string
+          updated_at: string
+          vehicle_id: string | null
+        }
+        Insert: {
+          carrier_name?: string | null
+          created_at?: string
+          delivered_at?: string | null
+          delivered_by?: string | null
+          dispatch_location_id: string
+          dispatch_number: string
+          dispatched_at?: string
+          dispatched_by?: string | null
+          driver_id?: string | null
+          expected_delivery_on?: string | null
+          failure_reason?: string | null
+          id?: string
+          notes?: string | null
+          order_id: string
+          org_id: string
+          received_by_name?: string | null
+          status?: string
+          tracking_reference?: string | null
+          transit_location_id: string
+          updated_at?: string
+          vehicle_id?: string | null
+        }
+        Update: {
+          carrier_name?: string | null
+          created_at?: string
+          delivered_at?: string | null
+          delivered_by?: string | null
+          dispatch_location_id?: string
+          dispatch_number?: string
+          dispatched_at?: string
+          dispatched_by?: string | null
+          driver_id?: string | null
+          expected_delivery_on?: string | null
+          failure_reason?: string | null
+          id?: string
+          notes?: string | null
+          order_id?: string
+          org_id?: string
+          received_by_name?: string | null
+          status?: string
+          tracking_reference?: string | null
+          transit_location_id?: string
+          updated_at?: string
+          vehicle_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "dispatches_delivered_by_fkey"
+            columns: ["delivered_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "dispatches_dispatch_location_id_fkey"
+            columns: ["dispatch_location_id"]
+            isOneToOne: false
+            referencedRelation: "stock_locations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "dispatches_dispatched_by_fkey"
+            columns: ["dispatched_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "dispatches_driver_id_fkey"
+            columns: ["driver_id"]
+            isOneToOne: false
+            referencedRelation: "drivers"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "dispatches_order_id_fkey"
+            columns: ["order_id"]
+            isOneToOne: false
+            referencedRelation: "orders"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "dispatches_org_id_fkey"
+            columns: ["org_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "dispatches_transit_location_id_fkey"
+            columns: ["transit_location_id"]
+            isOneToOne: false
+            referencedRelation: "stock_locations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "dispatches_vehicle_id_fkey"
+            columns: ["vehicle_id"]
+            isOneToOne: false
+            referencedRelation: "vehicles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       document_counters: {
         Row: {
           doc_type: string
@@ -2967,6 +3248,20 @@ export type Database = {
         Args: { p_from: string; p_to: string }
         Returns: Json
       }
+      delivery_document_register: {
+        Args: {
+          p_dispatch_id?: string
+          p_doc_type: string
+          p_file_name?: string
+          p_mime_type?: string
+          p_order_id: string
+          p_signed_at?: string
+          p_signed_by_name?: string
+          p_size_bytes?: number
+          p_storage_path: string
+        }
+        Returns: Json
+      }
       file_in_my_org: { Args: { p_file_id: string }; Returns: boolean }
       form_field_delete_impact: {
         Args: { p_field_id: string }
@@ -3062,8 +3357,29 @@ export type Database = {
         }
         Returns: Json
       }
+      order_dispatch: {
+        Args: {
+          p_carrier_name?: string
+          p_driver_id?: string
+          p_expected_delivery_on?: string
+          p_notes?: string
+          p_order_id: string
+          p_tracking_reference?: string
+          p_vehicle_id?: string
+        }
+        Returns: Json
+      }
       order_hold: {
         Args: { p_order_id: string; p_reason: string }
+        Returns: Json
+      }
+      order_mark_delivered: {
+        Args: {
+          p_delivered_at?: string
+          p_dispatch_id: string
+          p_lines?: Json
+          p_received_by_name: string
+        }
         Returns: Json
       }
       order_mark_packed: {
@@ -3093,7 +3409,23 @@ export type Database = {
         Returns: Json
       }
       order_release_hold: { Args: { p_order_id: string }; Returns: Json }
+      order_return_undelivered: {
+        Args: { p_cancel?: boolean; p_dispatch_id: string; p_reason: string }
+        Returns: Json
+      }
       order_start_picking: { Args: { p_order_id: string }; Returns: Json }
+      orders_missing_pod: {
+        Args: { p_min_days?: number }
+        Returns: {
+          days_outstanding: number
+          delivered_at: string
+          driver_name: string
+          order_id: string
+          order_number: string
+          received_by_name: string
+          store_name: string
+        }[]
+      }
       perfect_store_score: {
         Args: { p_from: string; p_to: string }
         Returns: {

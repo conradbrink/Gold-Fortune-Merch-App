@@ -51,6 +51,7 @@ TABLES=(
   suppliers drivers vehicles stock_locations document_counters
   goods_receipts goods_receipt_lines
   orders order_lines order_allocations order_status_events
+  dispatches dispatch_lines delivery_documents
   product_batches product_location_settings
   stock_movements stock_balances
 )
@@ -77,15 +78,17 @@ rm -f /tmp/gf_export_err
 # Listings are recorded for every bucket. The *bytes* are downloaded only for
 # the buckets that cannot be rebuilt:
 #
-#   visit-photos  irreplaceable — downloaded
-#   files         uploaded documents, irreplaceable — downloaded
-#   app-releases  an APK is reproducible from a tagged commit plus the
-#                 keystore, and each one is ~40 MB. Listed, not downloaded.
+#   visit-photos     irreplaceable — downloaded
+#   files            uploaded documents, irreplaceable — downloaded
+#   fulfilment-docs  signed proofs of delivery. The only evidence a customer
+#                    ever received the goods — downloaded.
+#   app-releases     an APK is reproducible from a tagged commit plus the
+#                    keystore, and each one is ~40 MB. Listed, not downloaded.
 echo
 echo "Storage:"
-DOWNLOAD_BUCKETS=" visit-photos files "
+DOWNLOAD_BUCKETS=" visit-photos files fulfilment-docs "
 
-for b in visit-photos files app-releases; do
+for b in visit-photos files fulfilment-docs app-releases; do
   code=$(curl -s -o "$OUT/storage-$b.json" -w "%{http_code}" --max-time 120 -X POST \
     -H "apikey: $SUPABASE_SERVICE_ROLE_KEY" \
     -H "Authorization: Bearer $SUPABASE_SERVICE_ROLE_KEY" \
