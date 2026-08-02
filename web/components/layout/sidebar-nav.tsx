@@ -6,7 +6,8 @@ import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { Building2, PanelLeftClose, PanelLeftOpen } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { navGroups } from "@/components/layout/nav-items";
+import { visibleNavGroups } from "@/components/layout/nav-items";
+import { useCurrentRole } from "@/lib/use-current-role";
 
 /** Remembered across navigations and reloads — a width you have to re-set on
     every page is worse than no control at all. */
@@ -23,6 +24,10 @@ export function SidebarContent({
   onToggleCollapse?: () => void;
 }) {
   const pathname = usePathname();
+  const role = useCurrentRole();
+  // Empty until the role is known — see `useCurrentRole` for why this does not
+  // fall back to the manager menu.
+  const groups = role ? visibleNavGroups(role) : [];
 
   const toggle = onToggleCollapse && (
     <button
@@ -83,7 +88,7 @@ export function SidebarContent({
         )}
       </div>
       <nav className="flex-1 overflow-y-auto px-3 py-2">
-        {navGroups.map((group, index) => (
+        {groups.map((group, index) => (
           <div key={group.label ?? "standalone"} className={index > 0 ? "mt-4" : ""}>
             {/* Collapsed to icons there is no room for a heading, and a rule
                 separates the groups more clearly than truncated text would. */}
@@ -135,6 +140,10 @@ export function SidebarContent({
           </div>
         ))}
       </nav>
+      {/* The company profile is a manager's page — org details, capacity,
+          members. Offering it to a clerk would be a link straight back to
+          wherever they came from. */}
+      {role === "manager" && (
       <div className="border-t border-sidebar-border p-3">
         <Link
           href="/settings/company"
@@ -161,6 +170,7 @@ export function SidebarContent({
           )}
         </Link>
       </div>
+      )}
     </>
   );
 }

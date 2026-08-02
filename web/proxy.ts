@@ -1,5 +1,6 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
+import { canAccessPath, ROLE_HOME, type AppRole } from "@/lib/roles";
 
 export async function proxy(request: NextRequest) {
   let response = NextResponse.next({ request });
@@ -64,8 +65,19 @@ export async function proxy(request: NextRequest) {
     return NextResponse.redirect(url);
   }
 
-  // Reps are bounced to /rep-notice everywhere except the download page —
-  // a signed-in rep fetching a newer APK is the update path working as intended.
+  // Every signed-in request is checked against the role's allowlist, except the
+  // pages above that have to work regardless — the download page (a signed-in
+  // rep fetching a newer APK is the update path working as intended) and the
+  // password-reset pair.
+  //
+  // This used to ask "is this person a rep?" and bounce them to /rep-notice.
+  // That was a denylist with an open default, and it broke the moment a third
+  // role existed: a warehouse clerk is not a rep, so they fell through to the
+  // full manager shell — Reports, Representatives, Territories, Settings. RLS
+  // empties those grids and the API routes refuse anyone who is not a manager,
+  // so nothing leaked, but the clerk was handed a menu of pages that render
+  // blank. `canAccessPath` inverts it: permitted paths are named, and a role
+  // nobody has thought about yet is locked out rather than let in.
   if (
     user &&
     !isRepNoticePage &&
@@ -79,9 +91,23 @@ export async function proxy(request: NextRequest) {
       .eq("id", user.id)
       .single();
 
-    if (profile?.role === "rep") {
+    const role = profile?.role as AppRole | undefined;
+
+    // No profile row, or a role this build does not know about. Treated as a
+    // rep, which is the least-privileged destination and a dead end rather than
+    // a redirect loop. A signed-in user with no profile is a broken account,
+    // not a manager.
+    const effectiveRole: AppRole =
+      role === "manager" || role === "warehouse" || role === "rep"
+        ? role
+        : "rep";
+
+    if (!canAccessPath(effectiveRole, request.nextUrl.pathname)) {
       const url = request.nextUrl.clone();
-      url.pathname = "/rep-notice";
+      url.pathname = ROLE_HOME[effectiveRole];
+      // Guard against a home that is itself refused, which would redirect for
+      // ever. Only reachable if ROLE_HOME and the allowlist ever disagree.
+      if (url.pathname === request.nextUrl.pathname) return response;
       return NextResponse.redirect(url);
     }
   }
