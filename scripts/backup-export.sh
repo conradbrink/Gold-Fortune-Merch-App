@@ -52,6 +52,9 @@ TABLES=(
   goods_receipts goods_receipt_lines
   orders order_lines order_allocations order_status_events
   dispatches dispatch_lines delivery_documents
+  stock_transfers stock_transfer_lines
+  stock_adjustments stock_adjustment_lines
+  stocktakes stocktake_lines
   product_batches product_location_settings
   stock_movements stock_balances
 )

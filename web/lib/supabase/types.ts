@@ -2261,6 +2261,164 @@ export type Database = {
         }
         Relationships: []
       }
+      stock_adjustment_lines: {
+        Row: {
+          adjustment_id: string
+          batch_id: string | null
+          created_at: string
+          from_bucket: string | null
+          id: string
+          note: string | null
+          org_id: string
+          product_id: string
+          qty: number
+          to_bucket: string | null
+        }
+        Insert: {
+          adjustment_id: string
+          batch_id?: string | null
+          created_at?: string
+          from_bucket?: string | null
+          id?: string
+          note?: string | null
+          org_id: string
+          product_id: string
+          qty: number
+          to_bucket?: string | null
+        }
+        Update: {
+          adjustment_id?: string
+          batch_id?: string | null
+          created_at?: string
+          from_bucket?: string | null
+          id?: string
+          note?: string | null
+          org_id?: string
+          product_id?: string
+          qty?: number
+          to_bucket?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "stock_adjustment_lines_adjustment_id_fkey"
+            columns: ["adjustment_id"]
+            isOneToOne: false
+            referencedRelation: "stock_adjustments"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "stock_adjustment_lines_batch_id_fkey"
+            columns: ["batch_id"]
+            isOneToOne: false
+            referencedRelation: "product_batches"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "stock_adjustment_lines_org_id_fkey"
+            columns: ["org_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "stock_adjustment_lines_product_id_fkey"
+            columns: ["product_id"]
+            isOneToOne: false
+            referencedRelation: "products"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      stock_adjustments: {
+        Row: {
+          adjustment_number: string
+          created_at: string
+          created_by: string | null
+          decided_at: string | null
+          decided_by: string | null
+          decision_note: string | null
+          id: string
+          location_id: string
+          org_id: string
+          reason_code: string
+          reason_note: string | null
+          requested_at: string | null
+          requested_by: string | null
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          adjustment_number: string
+          created_at?: string
+          created_by?: string | null
+          decided_at?: string | null
+          decided_by?: string | null
+          decision_note?: string | null
+          id?: string
+          location_id: string
+          org_id: string
+          reason_code: string
+          reason_note?: string | null
+          requested_at?: string | null
+          requested_by?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          adjustment_number?: string
+          created_at?: string
+          created_by?: string | null
+          decided_at?: string | null
+          decided_by?: string | null
+          decision_note?: string | null
+          id?: string
+          location_id?: string
+          org_id?: string
+          reason_code?: string
+          reason_note?: string | null
+          requested_at?: string | null
+          requested_by?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "stock_adjustments_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "stock_adjustments_decided_by_fkey"
+            columns: ["decided_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "stock_adjustments_location_id_fkey"
+            columns: ["location_id"]
+            isOneToOne: false
+            referencedRelation: "stock_locations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "stock_adjustments_org_id_fkey"
+            columns: ["org_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "stock_adjustments_requested_by_fkey"
+            columns: ["requested_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       stock_balances: {
         Row: {
           batch_id: string | null
@@ -2527,6 +2685,363 @@ export type Database = {
             columns: ["to_location_id"]
             isOneToOne: false
             referencedRelation: "stock_locations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      stock_transfer_lines: {
+        Row: {
+          batch_id: string | null
+          created_at: string
+          id: string
+          notes: string | null
+          org_id: string
+          product_id: string
+          qty_received: number | null
+          qty_sent: number
+          transfer_id: string
+          variance_reason: string | null
+        }
+        Insert: {
+          batch_id?: string | null
+          created_at?: string
+          id?: string
+          notes?: string | null
+          org_id: string
+          product_id: string
+          qty_received?: number | null
+          qty_sent: number
+          transfer_id: string
+          variance_reason?: string | null
+        }
+        Update: {
+          batch_id?: string | null
+          created_at?: string
+          id?: string
+          notes?: string | null
+          org_id?: string
+          product_id?: string
+          qty_received?: number | null
+          qty_sent?: number
+          transfer_id?: string
+          variance_reason?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "stock_transfer_lines_batch_id_fkey"
+            columns: ["batch_id"]
+            isOneToOne: false
+            referencedRelation: "product_batches"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "stock_transfer_lines_org_id_fkey"
+            columns: ["org_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "stock_transfer_lines_product_id_fkey"
+            columns: ["product_id"]
+            isOneToOne: false
+            referencedRelation: "products"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "stock_transfer_lines_transfer_id_fkey"
+            columns: ["transfer_id"]
+            isOneToOne: false
+            referencedRelation: "stock_transfers"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      stock_transfers: {
+        Row: {
+          cancel_reason: string | null
+          created_at: string
+          created_by: string | null
+          dispatched_at: string | null
+          dispatched_by: string | null
+          from_location_id: string
+          id: string
+          notes: string | null
+          org_id: string
+          received_at: string | null
+          received_by: string | null
+          status: string
+          to_location_id: string
+          transfer_number: string
+          updated_at: string
+        }
+        Insert: {
+          cancel_reason?: string | null
+          created_at?: string
+          created_by?: string | null
+          dispatched_at?: string | null
+          dispatched_by?: string | null
+          from_location_id: string
+          id?: string
+          notes?: string | null
+          org_id: string
+          received_at?: string | null
+          received_by?: string | null
+          status?: string
+          to_location_id: string
+          transfer_number: string
+          updated_at?: string
+        }
+        Update: {
+          cancel_reason?: string | null
+          created_at?: string
+          created_by?: string | null
+          dispatched_at?: string | null
+          dispatched_by?: string | null
+          from_location_id?: string
+          id?: string
+          notes?: string | null
+          org_id?: string
+          received_at?: string | null
+          received_by?: string | null
+          status?: string
+          to_location_id?: string
+          transfer_number?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "stock_transfers_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "stock_transfers_dispatched_by_fkey"
+            columns: ["dispatched_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "stock_transfers_from_location_id_fkey"
+            columns: ["from_location_id"]
+            isOneToOne: false
+            referencedRelation: "stock_locations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "stock_transfers_org_id_fkey"
+            columns: ["org_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "stock_transfers_received_by_fkey"
+            columns: ["received_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "stock_transfers_to_location_id_fkey"
+            columns: ["to_location_id"]
+            isOneToOne: false
+            referencedRelation: "stock_locations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      stocktake_lines: {
+        Row: {
+          batch_id: string | null
+          counted_qty: number | null
+          created_at: string
+          id: string
+          line_status: string
+          note: string | null
+          org_id: string
+          product_id: string
+          recount_qty: number | null
+          stocktake_id: string
+          system_qty_at_open: number
+          system_qty_at_submit: number | null
+          updated_at: string
+          variance_qty: number | null
+          variance_reason: string | null
+        }
+        Insert: {
+          batch_id?: string | null
+          counted_qty?: number | null
+          created_at?: string
+          id?: string
+          line_status?: string
+          note?: string | null
+          org_id: string
+          product_id: string
+          recount_qty?: number | null
+          stocktake_id: string
+          system_qty_at_open: number
+          system_qty_at_submit?: number | null
+          updated_at?: string
+          variance_qty?: number | null
+          variance_reason?: string | null
+        }
+        Update: {
+          batch_id?: string | null
+          counted_qty?: number | null
+          created_at?: string
+          id?: string
+          line_status?: string
+          note?: string | null
+          org_id?: string
+          product_id?: string
+          recount_qty?: number | null
+          stocktake_id?: string
+          system_qty_at_open?: number
+          system_qty_at_submit?: number | null
+          updated_at?: string
+          variance_qty?: number | null
+          variance_reason?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "stocktake_lines_batch_id_fkey"
+            columns: ["batch_id"]
+            isOneToOne: false
+            referencedRelation: "product_batches"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "stocktake_lines_org_id_fkey"
+            columns: ["org_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "stocktake_lines_product_id_fkey"
+            columns: ["product_id"]
+            isOneToOne: false
+            referencedRelation: "products"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "stocktake_lines_stocktake_id_fkey"
+            columns: ["stocktake_id"]
+            isOneToOne: false
+            referencedRelation: "stocktakes"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      stocktakes: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          decided_at: string | null
+          decided_by: string | null
+          decision_note: string | null
+          freeze_movements: boolean
+          id: string
+          location_id: string
+          notes: string | null
+          org_id: string
+          scheduled_for: string | null
+          started_at: string | null
+          started_by: string | null
+          status: string
+          stocktake_number: string
+          stocktake_type: string
+          submitted_at: string | null
+          submitted_by: string | null
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          decided_at?: string | null
+          decided_by?: string | null
+          decision_note?: string | null
+          freeze_movements?: boolean
+          id?: string
+          location_id: string
+          notes?: string | null
+          org_id: string
+          scheduled_for?: string | null
+          started_at?: string | null
+          started_by?: string | null
+          status?: string
+          stocktake_number: string
+          stocktake_type: string
+          submitted_at?: string | null
+          submitted_by?: string | null
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          decided_at?: string | null
+          decided_by?: string | null
+          decision_note?: string | null
+          freeze_movements?: boolean
+          id?: string
+          location_id?: string
+          notes?: string | null
+          org_id?: string
+          scheduled_for?: string | null
+          started_at?: string | null
+          started_by?: string | null
+          status?: string
+          stocktake_number?: string
+          stocktake_type?: string
+          submitted_at?: string | null
+          submitted_by?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "stocktakes_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "stocktakes_decided_by_fkey"
+            columns: ["decided_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "stocktakes_location_id_fkey"
+            columns: ["location_id"]
+            isOneToOne: false
+            referencedRelation: "stock_locations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "stocktakes_org_id_fkey"
+            columns: ["org_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "stocktakes_started_by_fkey"
+            columns: ["started_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "stocktakes_submitted_by_fkey"
+            columns: ["submitted_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
             referencedColumns: ["id"]
           },
         ]
@@ -3559,6 +4074,14 @@ export type Database = {
         }
         Returns: Json
       }
+      stock_adjustment_decide: {
+        Args: { p_adjustment_id: string; p_approve: boolean; p_note?: string }
+        Returns: Json
+      }
+      stock_adjustment_submit: {
+        Args: { p_adjustment_id: string }
+        Returns: Json
+      }
       stock_balance_drift: {
         Args: never
         Returns: {
@@ -3569,6 +4092,50 @@ export type Database = {
           ledger: number
           location_id: string
           product_id: string
+        }[]
+      }
+      stock_transfer_dispatch: {
+        Args: { p_transfer_id: string }
+        Returns: Json
+      }
+      stock_transfer_receive: {
+        Args: { p_lines?: Json; p_transfer_id: string }
+        Returns: Json
+      }
+      stocktake_decide: {
+        Args: {
+          p_approve: boolean
+          p_note?: string
+          p_reconfirm_line_ids?: string[]
+          p_stocktake_id: string
+        }
+        Returns: Json
+      }
+      stocktake_open: {
+        Args: {
+          p_freeze?: boolean
+          p_location_id: string
+          p_product_ids?: string[]
+          p_stocktake_type?: string
+        }
+        Returns: Json
+      }
+      stocktake_submit: { Args: { p_stocktake_id: string }; Returns: Json }
+      stocktake_variance_report: {
+        Args: { p_stocktake_id: string }
+        Returns: {
+          batch_number: string
+          counted_qty: number
+          line_id: string
+          line_status: string
+          live_qty: number
+          moved_since_submit: boolean
+          product_id: string
+          product_name: string
+          system_qty_at_open: number
+          system_qty_at_submit: number
+          variance_qty: number
+          variance_reason: string
         }[]
       }
       store_delete_impact: {
