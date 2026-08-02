@@ -96,6 +96,10 @@ export const navGroups: NavGroup[] = [
         icon: Boxes,
         roles: ["manager", "warehouse"],
       },
+      // Manager-only: it ranks staff by fulfilment time and accuracy, which is
+      // management information about a clerk's colleagues. `canAccessPath`
+      // denies it for warehouse too, so this is not the only guard.
+      { href: "/warehouse/insights", label: "Warehouse insights", icon: BarChart3 },
     ],
   },
   {

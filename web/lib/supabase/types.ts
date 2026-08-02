@@ -3777,6 +3777,21 @@ export type Database = {
         }
         Returns: Json
       }
+      expiring_stock: {
+        Args: { p_location_id?: string; p_within_days?: number }
+        Returns: {
+          already_expired: boolean
+          batch_id: string
+          batch_number: string
+          days_until_expiry: number
+          expiry_date: string
+          location_id: string
+          location_name: string
+          product_id: string
+          product_name: string
+          qty_on_hand: number
+        }[]
+      }
       file_in_my_org: { Args: { p_file_id: string }; Returns: boolean }
       form_field_delete_impact: {
         Args: { p_field_id: string }
@@ -3830,6 +3845,21 @@ export type Database = {
       haversine_m: {
         Args: { lat1: number; lat2: number; lng1: number; lng2: number }
         Returns: number
+      }
+      low_stock_alerts: {
+        Args: { p_location_id?: string }
+        Returns: {
+          brand: string
+          location_id: string
+          location_name: string
+          min_stock_level: number
+          product_id: string
+          product_name: string
+          qty_available: number
+          recommended_order_qty: number
+          reorder_point: number
+          severity: string
+        }[]
       }
       next_document_number: {
         Args: { p_doc_type: string; p_org_id: string; p_prefix: string }
@@ -3941,6 +3971,17 @@ export type Database = {
           store_name: string
         }[]
       }
+      orders_pipeline_summary: {
+        Args: { p_from?: string; p_to?: string }
+        Returns: {
+          hours_waiting: number
+          oldest_created_at: string
+          orders: number
+          status: string
+          units: number
+          value_excl_vat: number
+        }[]
+      }
       perfect_store_score: {
         Args: { p_from: string; p_to: string }
         Returns: {
@@ -3963,6 +4004,20 @@ export type Database = {
           promotions: number
           promotions_live: number
           stores_answered: number
+        }[]
+      }
+      product_velocity: {
+        Args: { p_days?: number; p_location_id?: string }
+        Returns: {
+          avg_units_per_day: number
+          brand: string
+          days_of_stock_remaining: number
+          movement_class: string
+          product_id: string
+          product_name: string
+          qty_available: number
+          times_backordered: number
+          units_sold: number
         }[]
       }
       promotion_store_status: {
@@ -4082,6 +4137,14 @@ export type Database = {
         Args: { p_adjustment_id: string }
         Returns: Json
       }
+      stock_ageing: {
+        Args: { p_location_id?: string }
+        Returns: {
+          age_band: string
+          products: number
+          qty_on_hand: number
+        }[]
+      }
       stock_balance_drift: {
         Args: never
         Returns: {
@@ -4094,6 +4157,80 @@ export type Database = {
           product_id: string
         }[]
       }
+      stock_movement_history: {
+        Args: {
+          p_from?: string
+          p_location_id?: string
+          p_product_id: string
+          p_to?: string
+        }
+        Returns: {
+          actor_name: string
+          approved_by_name: string
+          batch_number: string
+          from_bucket: string
+          from_location: string
+          movement_id: number
+          net_change: number
+          note: string
+          occurred_at: string
+          qty: number
+          reason: string
+          reference: string
+          running_balance: number
+          to_bucket: string
+          to_location: string
+        }[]
+      }
+      stock_movement_summary: {
+        Args: { p_from?: string; p_location_id?: string; p_to?: string }
+        Returns: {
+          category: string
+          movements: number
+          units: number
+        }[]
+      }
+      stock_on_hand: {
+        Args: {
+          p_location_id?: string
+          p_only_below_min?: boolean
+          p_search?: string
+        }
+        Returns: {
+          brand: string
+          is_below_min: boolean
+          is_out_of_stock: boolean
+          location_id: string
+          location_name: string
+          min_stock_level: number
+          product_id: string
+          product_name: string
+          qty_available: number
+          qty_damaged: number
+          qty_expired: number
+          qty_in_transit: number
+          qty_on_hand: number
+          qty_promotional: number
+          qty_reserved: number
+          reorder_point: number
+          sku_code: string
+        }[]
+      }
+      stock_position_summary: {
+        Args: { p_location_id?: string }
+        Returns: {
+          products_below_min: number
+          products_out_of_stock: number
+          products_stocked: number
+          qty_available: number
+          qty_damaged: number
+          qty_expired: number
+          qty_in_transit: number
+          qty_on_hand: number
+          qty_promotional: number
+          qty_reserved: number
+        }[]
+      }
       stock_transfer_dispatch: {
         Args: { p_transfer_id: string }
         Returns: Json
@@ -4101,6 +4238,17 @@ export type Database = {
       stock_transfer_receive: {
         Args: { p_lines?: Json; p_transfer_id: string }
         Returns: Json
+      }
+      stock_valuation: {
+        Args: { p_location_id?: string }
+        Returns: {
+          last_unit_cost: number
+          product_id: string
+          product_name: string
+          qty_available: number
+          qty_on_hand: number
+          value_at_cost: number
+        }[]
       }
       stocktake_decide: {
         Args: {
@@ -4184,6 +4332,20 @@ export type Database = {
           store_id: string
           store_name: string
           visits_considered: number
+        }[]
+      }
+      warehouse_performance: {
+        Args: { p_from?: string; p_group_by?: string; p_to?: string }
+        Returns: {
+          avg_delivery_hours: number
+          avg_fulfilment_hours: number
+          bucket: string
+          fulfilment_accuracy: number
+          late_deliveries: number
+          orders_delivered: number
+          outstanding_pods: number
+          units_delivered: number
+          units_ordered: number
         }[]
       }
       workday_trail: {

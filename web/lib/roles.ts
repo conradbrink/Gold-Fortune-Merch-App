@@ -37,6 +37,16 @@ export type AppRole = "rep" | "manager" | "warehouse";
  */
 const WAREHOUSE_ALLOWED = ["/warehouse", "/orders", "/inventory"] as const;
 
+/**
+ * Carved back out of the allowlist above.
+ *
+ * `/warehouse/insights` ranks staff by fulfilment time and accuracy. That is
+ * management information about a clerk's colleagues, and it sits under the
+ * `/warehouse` prefix only because that is where it belongs in the navigation.
+ * Denials are checked first, so the prefix does not let it through.
+ */
+const WAREHOUSE_DENIED = ["/warehouse/insights"] as const;
+
 /** Where each role lands when it asks for the site root. */
 export const ROLE_HOME: Record<AppRole, string> = {
   rep: "/rep-notice",
@@ -61,5 +71,6 @@ export function canAccessPath(role: AppRole, pathname: string): boolean {
   if (role === "manager") return true;
   if (role === "rep") return false;
 
+  if (WAREHOUSE_DENIED.some((p) => matchesPrefix(pathname, p))) return false;
   return WAREHOUSE_ALLOWED.some((p) => matchesPrefix(pathname, p));
 }
