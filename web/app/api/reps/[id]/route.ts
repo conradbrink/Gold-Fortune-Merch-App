@@ -78,12 +78,17 @@ async function authorise(id: string) {
   const victim = target as { id: string; org_id: string; role: string } | null;
 
   if (!victim || victim.org_id !== caller.org_id) {
-    return { error: Response.json({ error: "Rep not found." }, { status: 404 }) };
+    return { error: Response.json({ error: "Account not found." }, { status: 404 }) };
   }
-  if (victim.role !== "rep") {
+  // Widened from 'rep' when the warehouse role arrived — deliberately, and
+  // deliberately no further. A manager may move or remove the accounts they
+  // create; `manager` stays out, so no manager can delete a peer or move a
+  // peer's sign-in address to one they control. That is the escalation this
+  // check exists to prevent, and it is the same line the invite route draws.
+  if (victim.role !== "rep" && victim.role !== "warehouse") {
     return {
       error: Response.json(
-        { error: "Only field reps can be changed here." },
+        { error: "Only field reps and warehouse staff can be changed here." },
         { status: 400 }
       ),
     };

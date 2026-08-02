@@ -66,8 +66,85 @@ export type ReorderRow = {
   is_batch_tracked: boolean;
 };
 
+export type StaffMember = {
+  id: string;
+  full_name: string;
+  email: string | null;
+  phone: string | null;
+  is_active: boolean;
+  created_at: string;
+};
+
 function fail(error: { message: string } | null) {
   if (error) throw new Error(error.message);
+}
+
+/**
+ * Everyone with a warehouse login.
+ *
+ * `rep_directory()` deliberately filters to reps, so warehouse staff have no
+ * RPC of their own — a plain select is enough, since `profiles_select` is
+ * org-wide and this page is manager-only.
+ */
+export async function fetchWarehouseStaff(supabase: Client): Promise<StaffMember[]> {
+  const { data, error } = await supabase
+    .from("profiles")
+    .select("id, full_name, email, phone, is_active, created_at")
+    .eq("role", "warehouse")
+    .order("full_name");
+  fail(error);
+  return (data ?? []) as StaffMember[];
+}
+
+/**
+ * Creates a warehouse login with a starting password.
+ *
+ * Goes through the route handler rather than the browser client, because
+ * creating an auth user needs the service-role key and that must never reach a
+ * bundle. The route refuses anything but `rep` and `warehouse`, so this cannot
+ * be turned into a way to mint a manager.
+ */
+export async function inviteWarehouseUser(input: {
+  email: string;
+  fullName: string;
+  password: string;
+}): Promise<void> {
+  const res = await fetch("/api/reps/invite", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      email: input.email,
+      full_name: input.fullName,
+      password: input.password,
+      role: "warehouse",
+    }),
+  });
+  // The route always answers with JSON, including on failure — but a proxy or a
+  // crash could still return HTML, and `res.json()` would then throw a parse
+  // error that says nothing useful.
+  const payload = await res.json().catch(() => null);
+  if (!res.ok) {
+    throw new Error(
+      (payload as { error?: string } | null)?.error ??
+        `Could not create the account (${res.status}).`
+    );
+  }
+}
+
+/** Suspends or restores a warehouse login. Bans the auth user too, not just RLS. */
+export async function setStaffActive(id: string, active: boolean): Promise<void> {
+  const res = await fetch(`/api/reps/${id}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ is_active: active }),
+  });
+  const payload = await res.json().catch(() => null);
+  if (!res.ok) {
+    throw new Error(
+      (payload as { error?: string } | null)?.error ??
+        `Could not update the account (${res.status}).`
+    );
+  }
 }
 
 export async function fetchSuppliersAll(supabase: Client): Promise<Supplier[]> {

@@ -33,6 +33,9 @@ import {
   fetchVehiclesAll,
   fetchLocationsAll,
   fetchReorderLevels,
+  fetchWarehouseStaff,
+  inviteWarehouseUser,
+  setStaffActive,
   saveSupplier,
   saveDriver,
   saveVehicle,
@@ -44,6 +47,7 @@ import {
   type Vehicle,
   type LocationRow,
   type ReorderRow,
+  type StaffMember,
 } from "@/lib/warehouse-settings";
 
 type Editing =
@@ -77,6 +81,15 @@ export default function WarehouseSettingsPage() {
   const [locations, setLocations] = useState<LocationRow[]>([]);
   const [reorder, setReorder] = useState<ReorderRow[]>([]);
   const [levels, setLevels] = useState<Record<string, ReorderRow>>({});
+  const [staff, setStaff] = useState<StaffMember[]>([]);
+
+  // The invite form. Kept out of `editing` because it is not editing anything —
+  // it creates an auth user through a route handler, and the password is a
+  // credential that should not sit in shared dialog state.
+  const [inviting, setInviting] = useState(false);
+  const [inviteName, setInviteName] = useState("");
+  const [inviteEmail, setInviteEmail] = useState("");
+  const [invitePassword, setInvitePassword] = useState("");
 
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -89,13 +102,14 @@ export default function WarehouseSettingsPage() {
   const [licenceCutoff, setLicenceCutoff] = useState<number | null>(null);
 
   const reload = useCallback(async () => {
-    const [org, s, d, v, l, r] = await Promise.all([
+    const [org, s, d, v, l, r, st] = await Promise.all([
       fetchOrgId(supabase),
       fetchSuppliersAll(supabase),
       fetchDriversAll(supabase),
       fetchVehiclesAll(supabase),
       fetchLocationsAll(supabase),
       fetchReorderLevels(supabase),
+      fetchWarehouseStaff(supabase),
     ]);
     setOrgId(org);
     setSuppliers(s);
@@ -104,6 +118,7 @@ export default function WarehouseSettingsPage() {
     setLocations(l);
     setReorder(r);
     setLevels(Object.fromEntries(r.map((x) => [x.product_id, x])));
+    setStaff(st);
     setLicenceCutoff(Date.now() + 30 * 24 * 60 * 60 * 1000);
   }, [supabase]);
 
@@ -177,6 +192,7 @@ export default function WarehouseSettingsPage() {
           <TabsTrigger value="vehicles">Vehicles</TabsTrigger>
           {isManager && <TabsTrigger value="locations">Locations</TabsTrigger>}
           {isManager && <TabsTrigger value="reorder">Reorder levels</TabsTrigger>}
+          {isManager && <TabsTrigger value="staff">Warehouse staff</TabsTrigger>}
         </TabsList>
 
         {/* ------------------------------------------------------ suppliers */}
@@ -577,9 +593,148 @@ export default function WarehouseSettingsPage() {
             </div>
           </TabsContent>
         )}
+        {/* ---------------------------------------------------------- staff */}
+        {isManager && (
+          <TabsContent value="staff" className="mt-4 space-y-3">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <p className="max-w-xl text-sm text-muted-foreground">
+                A warehouse login reaches the warehouse, orders and inventory screens
+                and nothing else — no visits, no GPS, no leads, no settings. Accounts
+                are created with a starting password and handed over directly; there is
+                no invitation email.
+              </p>
+              <Button
+                size="sm"
+                onClick={() => {
+                  setInviteName("");
+                  setInviteEmail("");
+                  setInvitePassword("");
+                  setInviting(true);
+                }}
+              >
+                <Plus className="mr-1.5 h-4 w-4" /> Add warehouse staff
+              </Button>
+            </div>
+            <div className="rounded-lg border border-border bg-card">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Name</TableHead>
+                    <TableHead>Sign-in email</TableHead>
+                    <TableHead>Phone</TableHead>
+                    <TableHead>Added</TableHead>
+                    <TableHead />
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {staff.length === 0 ? (
+                    <EmptyRow colSpan={5}>
+                      Nobody has a warehouse login yet.
+                    </EmptyRow>
+                  ) : (
+                    staff.map((m) => (
+                      <TableRow key={m.id} className={m.is_active ? undefined : "opacity-60"}>
+                        <TableCell className="font-medium">
+                          {m.full_name}
+                          {!m.is_active && (
+                            <Badge variant="outline" className="ml-2">
+                              suspended
+                            </Badge>
+                          )}
+                        </TableCell>
+                        <TableCell className="text-muted-foreground">
+                          {m.email ?? "—"}
+                        </TableCell>
+                        <TableCell className="text-muted-foreground">
+                          {m.phone ?? "—"}
+                        </TableCell>
+                        <TableCell className="text-muted-foreground">
+                          {new Date(m.created_at).toLocaleDateString()}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            disabled={busy}
+                            onClick={() =>
+                              run(
+                                () => setStaffActive(m.id, !m.is_active),
+                                m.is_active
+                                  ? "Suspended. They can no longer sign in."
+                                  : "Restored. They can sign in again."
+                              )
+                            }
+                          >
+                            {m.is_active ? "Suspend" : "Restore"}
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    ))
+                  )}
+                </TableBody>
+              </Table>
+            </div>
+          </TabsContent>
+        )}
       </Tabs>
 
       {/* --------------------------------------------------------- dialogs */}
+
+      <Dialog open={inviting} onOpenChange={(v) => !v && setInviting(false)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Add warehouse staff</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <Field label="Full name" value={inviteName} onChange={setInviteName} />
+            <Field label="Sign-in email" value={inviteEmail} onChange={setInviteEmail} />
+            <div>
+              <Label htmlFor="starting-password">Starting password</Label>
+              <Input
+                id="starting-password"
+                // Not a password field: the manager is about to read this out or
+                // write it down, and hiding it from the person choosing it helps
+                // nobody. It is typed once and never shown again.
+                value={invitePassword}
+                onChange={(e) => setInvitePassword(e.target.value)}
+                placeholder="At least 8 characters"
+              />
+              <p className="mt-1 text-xs text-muted-foreground">
+                Hand this over directly. It is not emailed and cannot be read back
+                afterwards — a forgotten one has to be reset.
+              </p>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setInviting(false)} disabled={busy}>
+              Cancel
+            </Button>
+            <Button
+              disabled={
+                busy ||
+                !inviteName.trim() ||
+                !inviteEmail.trim() ||
+                invitePassword.length < 8
+              }
+              onClick={() =>
+                run(async () => {
+                  await inviteWarehouseUser({
+                    email: inviteEmail,
+                    fullName: inviteName,
+                    password: invitePassword,
+                  });
+                  setInviting(false);
+                  // Cleared as soon as it has been used. There is no reason for a
+                  // credential to stay in component state after the request.
+                  setInvitePassword("");
+                }, `${inviteName.trim()} can now sign in.`)
+              }
+            >
+              {busy ? "Creating…" : "Create the account"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={editing !== null} onOpenChange={(v) => !v && setEditing(null)}>
         <DialogContent>

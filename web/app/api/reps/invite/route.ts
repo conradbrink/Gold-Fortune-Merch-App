@@ -3,7 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { enforceRateLimit, LIMITS } from "@/lib/rate-limit";
 
 /**
- * Create a field rep with a starting password.
+ * Create a field rep or a warehouse clerk, with a starting password.
  *
  * Deliberately not an email invite. Reps here often have no work email, and
  * Supabase rejects the org's own @goldfortune.dev addresses outright, so an
@@ -17,9 +17,26 @@ import { enforceRateLimit, LIMITS } from "@/lib/rate-limit";
  *
  * `proxy.ts` excludes /api from its matcher, so this handler authenticates the
  * caller itself rather than relying on a redirect.
+ *
+ * ---------------------------------------------------------------- the role
+ *
+ * `role` was added when the warehouse module arrived. The path still says
+ * "reps" because that is what it was; renaming it would break the one caller
+ * for no gain, and having a second copy of account creation is a far worse
+ * trade than an inaccurate URL. Account creation with the service key is the
+ * last code in this project that should exist twice.
+ *
+ * **'manager' is not accepted, on purpose.** Everything else here is a manager
+ * granting somebody less access than they have. Creating another manager is a
+ * manager granting their own level of access, which is the one action worth
+ * making somebody go to the Supabase dashboard for — where it is deliberate,
+ * attributable, and outside anything an XSS on this app could reach.
  */
 
 export const runtime = "nodejs";
+
+/** Roles a manager may create from the app. Deliberately excludes 'manager'. */
+const INVITABLE = new Set(["rep", "warehouse"]);
 
 export async function POST(request: Request) {
   try {
@@ -48,7 +65,7 @@ export async function POST(request: Request) {
     const caller = profile as { org_id: string; role: string } | null;
     if (caller?.role !== "manager") {
       return Response.json(
-        { error: "Only managers can invite reps." },
+        { error: "Only managers can create accounts." },
         { status: 403 }
       );
     }
@@ -64,11 +81,26 @@ export async function POST(request: Request) {
       email?: string;
       full_name?: string;
       password?: string;
+      role?: string;
     };
     const email = body.email?.trim().toLowerCase() ?? "";
     const fullName = body.full_name?.trim() ?? "";
     const password = body.password ?? "";
+    // Defaults to 'rep' so the existing caller, which sends no role, keeps
+    // behaving exactly as it did.
+    const role = body.role?.trim() || "rep";
 
+    if (!INVITABLE.has(role)) {
+      return Response.json(
+        {
+          error:
+            role === "manager"
+              ? "Managers cannot be created here. Add them in the Supabase dashboard."
+              : "Unknown role.",
+        },
+        { status: 400 }
+      );
+    }
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
       return Response.json({ error: "Enter a valid email address." }, { status: 400 });
     }
@@ -113,7 +145,7 @@ export async function POST(request: Request) {
     const { error: profileError } = await admin.from("profiles").insert({
       id: invited.user.id,
       org_id: caller.org_id,
-      role: "rep",
+      role,
       full_name: fullName,
       email,
     });
@@ -129,7 +161,7 @@ export async function POST(request: Request) {
       );
     }
 
-    return Response.json({ id: invited.user.id, email, full_name: fullName });
+    return Response.json({ id: invited.user.id, email, full_name: fullName, role });
   } catch (reason) {
     const message =
       reason instanceof Error ? reason.message : "Unexpected error sending invite.";
