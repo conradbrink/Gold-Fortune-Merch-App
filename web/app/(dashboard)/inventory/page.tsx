@@ -1,8 +1,10 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Search, CalendarClock } from "lucide-react";
+import Link from "next/link";
+import { Search, CalendarClock, ClipboardList, PackagePlus } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";
@@ -106,6 +108,18 @@ export default function InventoryPage() {
           <p className="text-sm text-muted-foreground">
             Stock on hand, by product and condition.
           </p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <Button
+            variant="outline"
+            nativeButton={false}
+            render={<Link href="/inventory/stocktakes" />}
+          >
+            <ClipboardList className="mr-1.5 h-4 w-4" /> Stocktakes
+          </Button>
+          <Button nativeButton={false} render={<Link href="/inventory/receive" />}>
+            <PackagePlus className="mr-1.5 h-4 w-4" /> Receive stock
+          </Button>
         </div>
         {locations.length > 1 && (
           <NativeSelect
