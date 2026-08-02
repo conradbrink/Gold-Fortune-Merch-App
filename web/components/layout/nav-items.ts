@@ -14,6 +14,7 @@ import {
   Warehouse,
   Boxes,
   ClipboardCheck,
+  Settings2,
 } from "lucide-react";
 import { canAccessPath, type AppRole } from "@/lib/roles";
 
@@ -107,6 +108,15 @@ export const navGroups: NavGroup[] = [
       // management information about a clerk's colleagues. `canAccessPath`
       // denies it for warehouse too, so this is not the only guard.
       { href: "/warehouse/insights", label: "Warehouse insights", icon: BarChart3 },
+      // Reachable by clerks on purpose: adding the driver who started this
+      // morning should not wait for a manager, and RLS already permits it. The
+      // manager-only tabs inside are gated by the page and by RLS.
+      {
+        href: "/warehouse/settings",
+        label: "Warehouse setup",
+        icon: Settings2,
+        roles: ["manager", "warehouse"],
+      },
     ],
   },
   {
