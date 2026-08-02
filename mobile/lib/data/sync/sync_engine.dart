@@ -271,6 +271,10 @@ class SyncEngine {
         }
         break;
 
+      case OutboxType.orderCreate:
+        await _replayOrder(data);
+        break;
+
       case OutboxType.formSubmission:
         await _replayFormSubmission(data);
         break;
@@ -309,6 +313,90 @@ class SyncEngine {
   /// Photos upload first so their real ids can be stitched into the
   /// responses. The whole thing keys off client_generated_id, so a partial
   /// replay resumes cleanly rather than duplicating.
+  /// Sends an order the rep took in a shop.
+  ///
+  /// Not an upsert, unlike almost everything else here, and the difference
+  /// matters. An order carries `order_number`, drawn from a gapless
+  /// per-organisation counter, and upserting on `client_generated_id` would
+  /// draw a fresh number on every retry — rewriting the reference the warehouse
+  /// and the shop have already been given, and burning numbers out of a
+  /// sequence whose whole point is that it has no gaps.
+  ///
+  /// So: look first. If the order is already there, the entry landed and only
+  /// the acknowledgement was lost; carry on to the lines rather than touching
+  /// the header. The same shape as `_uploadQueuedPhoto`'s did-this-already
+  /// check, for the same reason.
+  Future<void> _replayOrder(Map<String, dynamic> data) async {
+    final orgId = data['org_id'] as String;
+    final clientId = data['client_generated_id'] as String;
+
+    final existing = await _client
+        .from('orders')
+        .select('id')
+        .eq('client_generated_id', clientId)
+        .maybeSingle();
+
+    String orderId;
+    if (existing != null) {
+      orderId = existing['id'] as String;
+    } else {
+      // Drawn here, not on the phone. A number handed out while offline would
+      // arrive out of sequence, and two reps offline at once would collide.
+      final number = await _client.rpc(
+        'next_document_number',
+        params: {
+          'p_org_id': orgId,
+          'p_doc_type': 'order',
+          'p_prefix': 'SO',
+        },
+      );
+
+      final inserted = await _client
+          .from('orders')
+          .insert({
+            'org_id': orgId,
+            'order_number': number as String,
+            'store_id': data['store_id'],
+            'rep_id': data['rep_id'],
+            'source': 'rep_app',
+            'received_via': data['received_via'] ?? 'rep_visit',
+            'notes': data['notes'],
+            'client_generated_id': clientId,
+          })
+          .select('id')
+          .single();
+      orderId = inserted['id'] as String;
+    }
+
+    // Lines already present mean this entry landed completely. Checking the
+    // child rather than trusting the header is what makes a crash between the
+    // two recoverable instead of silent.
+    //
+    // The window between the two inserts is safe by construction rather than
+    // by luck: `order_lines_insert` only admits a line while its order is
+    // still `new`, and `order_confirm` refuses an order with no lines. So the
+    // warehouse cannot move an order out from under a half-written entry — the
+    // retry still finds it `new` and can finish the job.
+    final lines = (data['lines'] as List?) ?? const [];
+    if (lines.isEmpty) return;
+
+    final already = await _client
+        .from('order_lines')
+        .select('id')
+        .eq('order_id', orderId)
+        .limit(1);
+    if ((already as List).isNotEmpty) return;
+
+    await _client.from('order_lines').insert([
+      for (final raw in lines)
+        {
+          ...Map<String, dynamic>.from(raw as Map),
+          'org_id': orgId,
+          'order_id': orderId,
+        }
+    ]);
+  }
+
   Future<void> _replayFormSubmission(Map<String, dynamic> data) async {
     final orgId = data['org_id'] as String;
     final repId = data['rep_id'] as String;

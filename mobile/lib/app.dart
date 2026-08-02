@@ -158,8 +158,13 @@ final routerProvider = Provider<GoRouter>((ref) {
       // the rep UI load; RLS, not routing, is the real access boundary.
       if (role == null) return onManagerNotice ? '/' : null;
 
-      if (role == 'manager' && !onManagerNotice) return '/manager-notice';
-      if (role != 'manager' && onManagerNotice) return '/';
+      // Only a rep gets the rep UI. This used to read `role != 'manager'`,
+      // which was exact while there were two roles and became wrong the moment
+      // a third existed — a warehouse clerk would have been handed today's
+      // route and a check-in button, and `visits_insert` only pins the row to
+      // the caller, so the database would have accepted it.
+      if (role != 'rep' && !onManagerNotice) return '/manager-notice';
+      if (role == 'rep' && onManagerNotice) return '/';
       return null;
     },
   );
