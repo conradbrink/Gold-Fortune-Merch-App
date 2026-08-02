@@ -48,7 +48,8 @@ TABLES=(
   # Warehouse and inventory. stock_movements is the one that cannot be
   # reconstructed from anything else — stock_balances is derived from it, so a
   # restore that had the ledger could rebuild the balances, but not the reverse.
-  suppliers drivers vehicles stock_locations
+  suppliers drivers vehicles stock_locations document_counters
+  goods_receipts goods_receipt_lines
   product_batches product_location_settings
   stock_movements stock_balances
 )
