@@ -92,6 +92,66 @@ export type Database = {
           },
         ]
       }
+      drivers: {
+        Row: {
+          active: boolean
+          created_at: string
+          created_by: string | null
+          full_name: string
+          id: string
+          id_number: string | null
+          licence_expires_on: string | null
+          licence_number: string | null
+          notes: string | null
+          org_id: string
+          phone: string | null
+          updated_at: string
+        }
+        Insert: {
+          active?: boolean
+          created_at?: string
+          created_by?: string | null
+          full_name: string
+          id?: string
+          id_number?: string | null
+          licence_expires_on?: string | null
+          licence_number?: string | null
+          notes?: string | null
+          org_id: string
+          phone?: string | null
+          updated_at?: string
+        }
+        Update: {
+          active?: boolean
+          created_at?: string
+          created_by?: string | null
+          full_name?: string
+          id?: string
+          id_number?: string | null
+          licence_expires_on?: string | null
+          licence_number?: string | null
+          notes?: string | null
+          org_id?: string
+          phone?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "drivers_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "drivers_org_id_fkey"
+            columns: ["org_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       file_groups: {
         Row: {
           file_id: string
@@ -669,6 +729,122 @@ export type Database = {
           },
         ]
       }
+      product_batches: {
+        Row: {
+          batch_number: string
+          created_at: string
+          expiry_date: string | null
+          first_received_at: string
+          id: string
+          manufactured_on: string | null
+          org_id: string
+          product_id: string
+        }
+        Insert: {
+          batch_number: string
+          created_at?: string
+          expiry_date?: string | null
+          first_received_at?: string
+          id?: string
+          manufactured_on?: string | null
+          org_id: string
+          product_id: string
+        }
+        Update: {
+          batch_number?: string
+          created_at?: string
+          expiry_date?: string | null
+          first_received_at?: string
+          id?: string
+          manufactured_on?: string | null
+          org_id?: string
+          product_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "product_batches_org_id_fkey"
+            columns: ["org_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "product_batches_product_id_fkey"
+            columns: ["product_id"]
+            isOneToOne: false
+            referencedRelation: "products"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      product_location_settings: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          id: string
+          location_id: string
+          min_stock_level: number | null
+          org_id: string
+          product_id: string
+          reorder_point: number | null
+          reorder_qty: number | null
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          location_id: string
+          min_stock_level?: number | null
+          org_id: string
+          product_id: string
+          reorder_point?: number | null
+          reorder_qty?: number | null
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          location_id?: string
+          min_stock_level?: number | null
+          org_id?: string
+          product_id?: string
+          reorder_point?: number | null
+          reorder_qty?: number | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "product_location_settings_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "product_location_settings_location_id_fkey"
+            columns: ["location_id"]
+            isOneToOne: false
+            referencedRelation: "stock_locations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "product_location_settings_org_id_fkey"
+            columns: ["org_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "product_location_settings_product_id_fkey"
+            columns: ["product_id"]
+            isOneToOne: false
+            referencedRelation: "products"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       products: {
         Row: {
           active: boolean
@@ -676,13 +852,19 @@ export type Database = {
           category: string | null
           created_at: string
           id: string
+          is_batch_tracked: boolean
+          is_stock_tracked: boolean
+          min_stock_level: number | null
           name: string
           org_id: string
+          reorder_point: number | null
+          reorder_qty: number | null
           shrink_barcode: string | null
           shrink_price_excl_vat: number | null
           shrink_price_incl_vat: number | null
           sku_code: string | null
           unit_barcode: string | null
+          unit_of_measure: string
           units_per_shrink: number | null
           updated_at: string
         }
@@ -692,13 +874,19 @@ export type Database = {
           category?: string | null
           created_at?: string
           id?: string
+          is_batch_tracked?: boolean
+          is_stock_tracked?: boolean
+          min_stock_level?: number | null
           name: string
           org_id: string
+          reorder_point?: number | null
+          reorder_qty?: number | null
           shrink_barcode?: string | null
           shrink_price_excl_vat?: number | null
           shrink_price_incl_vat?: number | null
           sku_code?: string | null
           unit_barcode?: string | null
+          unit_of_measure?: string
           units_per_shrink?: number | null
           updated_at?: string
         }
@@ -708,13 +896,19 @@ export type Database = {
           category?: string | null
           created_at?: string
           id?: string
+          is_batch_tracked?: boolean
+          is_stock_tracked?: boolean
+          min_stock_level?: number | null
           name?: string
           org_id?: string
+          reorder_point?: number | null
+          reorder_qty?: number | null
           shrink_barcode?: string | null
           shrink_price_excl_vat?: number | null
           shrink_price_incl_vat?: number | null
           sku_code?: string | null
           unit_barcode?: string | null
+          unit_of_measure?: string
           units_per_shrink?: number | null
           updated_at?: string
         }
@@ -1131,6 +1325,276 @@ export type Database = {
         }
         Relationships: []
       }
+      stock_balances: {
+        Row: {
+          batch_id: string | null
+          id: string
+          location_id: string
+          org_id: string
+          product_id: string
+          qty_available: number
+          qty_damaged: number
+          qty_expired: number
+          qty_in_transit: number
+          qty_on_hand: number | null
+          qty_promotional: number
+          qty_reserved: number
+          updated_at: string
+        }
+        Insert: {
+          batch_id?: string | null
+          id?: string
+          location_id: string
+          org_id: string
+          product_id: string
+          qty_available?: number
+          qty_damaged?: number
+          qty_expired?: number
+          qty_in_transit?: number
+          qty_on_hand?: number | null
+          qty_promotional?: number
+          qty_reserved?: number
+          updated_at?: string
+        }
+        Update: {
+          batch_id?: string | null
+          id?: string
+          location_id?: string
+          org_id?: string
+          product_id?: string
+          qty_available?: number
+          qty_damaged?: number
+          qty_expired?: number
+          qty_in_transit?: number
+          qty_on_hand?: number | null
+          qty_promotional?: number
+          qty_reserved?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "stock_balances_batch_id_fkey"
+            columns: ["batch_id"]
+            isOneToOne: false
+            referencedRelation: "product_batches"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "stock_balances_location_id_fkey"
+            columns: ["location_id"]
+            isOneToOne: false
+            referencedRelation: "stock_locations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "stock_balances_org_id_fkey"
+            columns: ["org_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "stock_balances_product_id_fkey"
+            columns: ["product_id"]
+            isOneToOne: false
+            referencedRelation: "products"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      stock_locations: {
+        Row: {
+          active: boolean
+          address: string | null
+          code: string | null
+          created_at: string
+          created_by: string | null
+          id: string
+          is_default: boolean
+          name: string
+          org_id: string
+          rep_id: string | null
+          type: string
+          updated_at: string
+          vehicle_id: string | null
+        }
+        Insert: {
+          active?: boolean
+          address?: string | null
+          code?: string | null
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          is_default?: boolean
+          name: string
+          org_id: string
+          rep_id?: string | null
+          type: string
+          updated_at?: string
+          vehicle_id?: string | null
+        }
+        Update: {
+          active?: boolean
+          address?: string | null
+          code?: string | null
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          is_default?: boolean
+          name?: string
+          org_id?: string
+          rep_id?: string | null
+          type?: string
+          updated_at?: string
+          vehicle_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "stock_locations_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "stock_locations_org_id_fkey"
+            columns: ["org_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "stock_locations_rep_id_fkey"
+            columns: ["rep_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "stock_locations_vehicle_id_fkey"
+            columns: ["vehicle_id"]
+            isOneToOne: false
+            referencedRelation: "vehicles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      stock_movements: {
+        Row: {
+          actor_id: string | null
+          approved_by: string | null
+          batch_id: string | null
+          created_at: string
+          from_bucket: string | null
+          from_location_id: string | null
+          id: number
+          note: string | null
+          occurred_at: string
+          org_id: string
+          product_id: string
+          qty: number
+          reason: string
+          reference: string | null
+          source_doc_id: string | null
+          source_doc_type: string
+          source_line_id: string | null
+          to_bucket: string | null
+          to_location_id: string | null
+        }
+        Insert: {
+          actor_id?: string | null
+          approved_by?: string | null
+          batch_id?: string | null
+          created_at?: string
+          from_bucket?: string | null
+          from_location_id?: string | null
+          id?: never
+          note?: string | null
+          occurred_at?: string
+          org_id: string
+          product_id: string
+          qty: number
+          reason: string
+          reference?: string | null
+          source_doc_id?: string | null
+          source_doc_type: string
+          source_line_id?: string | null
+          to_bucket?: string | null
+          to_location_id?: string | null
+        }
+        Update: {
+          actor_id?: string | null
+          approved_by?: string | null
+          batch_id?: string | null
+          created_at?: string
+          from_bucket?: string | null
+          from_location_id?: string | null
+          id?: never
+          note?: string | null
+          occurred_at?: string
+          org_id?: string
+          product_id?: string
+          qty?: number
+          reason?: string
+          reference?: string | null
+          source_doc_id?: string | null
+          source_doc_type?: string
+          source_line_id?: string | null
+          to_bucket?: string | null
+          to_location_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "stock_movements_actor_id_fkey"
+            columns: ["actor_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "stock_movements_approved_by_fkey"
+            columns: ["approved_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "stock_movements_batch_id_fkey"
+            columns: ["batch_id"]
+            isOneToOne: false
+            referencedRelation: "product_batches"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "stock_movements_from_location_id_fkey"
+            columns: ["from_location_id"]
+            isOneToOne: false
+            referencedRelation: "stock_locations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "stock_movements_org_id_fkey"
+            columns: ["org_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "stock_movements_product_id_fkey"
+            columns: ["product_id"]
+            isOneToOne: false
+            referencedRelation: "products"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "stock_movements_to_location_id_fkey"
+            columns: ["to_location_id"]
+            isOneToOne: false
+            referencedRelation: "stock_locations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       store_assignments: {
         Row: {
           created_at: string
@@ -1349,6 +1813,66 @@ export type Database = {
           },
         ]
       }
+      suppliers: {
+        Row: {
+          account_ref: string | null
+          active: boolean
+          contact_name: string | null
+          created_at: string
+          created_by: string | null
+          email: string | null
+          id: string
+          name: string
+          notes: string | null
+          org_id: string
+          phone: string | null
+          updated_at: string
+        }
+        Insert: {
+          account_ref?: string | null
+          active?: boolean
+          contact_name?: string | null
+          created_at?: string
+          created_by?: string | null
+          email?: string | null
+          id?: string
+          name: string
+          notes?: string | null
+          org_id: string
+          phone?: string | null
+          updated_at?: string
+        }
+        Update: {
+          account_ref?: string | null
+          active?: boolean
+          contact_name?: string | null
+          created_at?: string
+          created_by?: string | null
+          email?: string | null
+          id?: string
+          name?: string
+          notes?: string | null
+          org_id?: string
+          phone?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "suppliers_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "suppliers_org_id_fkey"
+            columns: ["org_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       territories: {
         Row: {
           active: boolean
@@ -1436,6 +1960,60 @@ export type Database = {
             columns: ["territory_id"]
             isOneToOne: false
             referencedRelation: "territories"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      vehicles: {
+        Row: {
+          active: boolean
+          capacity_note: string | null
+          created_at: string
+          created_by: string | null
+          description: string | null
+          id: string
+          make_model: string | null
+          org_id: string
+          registration: string
+          updated_at: string
+        }
+        Insert: {
+          active?: boolean
+          capacity_note?: string | null
+          created_at?: string
+          created_by?: string | null
+          description?: string | null
+          id?: string
+          make_model?: string | null
+          org_id: string
+          registration: string
+          updated_at?: string
+        }
+        Update: {
+          active?: boolean
+          capacity_note?: string | null
+          created_at?: string
+          created_by?: string | null
+          description?: string | null
+          id?: string
+          make_model?: string | null
+          org_id?: string
+          registration?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "vehicles_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "vehicles_org_id_fkey"
+            columns: ["org_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
             referencedColumns: ["id"]
           },
         ]
@@ -1925,6 +2503,18 @@ export type Database = {
           p_visit_client_id: string
         }
         Returns: Json
+      }
+      stock_balance_drift: {
+        Args: never
+        Returns: {
+          batch_id: string
+          bucket: string
+          cached: number
+          drift: number
+          ledger: number
+          location_id: string
+          product_id: string
+        }[]
       }
       store_delete_impact: {
         Args: { p_store_id: string }
