@@ -50,6 +50,7 @@ TABLES=(
   # restore that had the ledger could rebuild the balances, but not the reverse.
   suppliers drivers vehicles stock_locations document_counters
   goods_receipts goods_receipt_lines
+  orders order_lines order_allocations order_status_events
   product_batches product_location_settings
   stock_movements stock_balances
 )

@@ -92,6 +92,35 @@ export type Database = {
           },
         ]
       }
+      document_counters: {
+        Row: {
+          doc_type: string
+          next_value: number
+          org_id: string
+          updated_at: string
+        }
+        Insert: {
+          doc_type: string
+          next_value?: number
+          org_id: string
+          updated_at?: string
+        }
+        Update: {
+          doc_type?: string
+          next_value?: number
+          org_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "document_counters_org_id_fkey"
+            columns: ["org_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       drivers: {
         Row: {
           active: boolean
@@ -472,6 +501,211 @@ export type Database = {
           },
         ]
       }
+      goods_receipt_lines: {
+        Row: {
+          batch_number: string | null
+          created_at: string
+          expiry_date: string | null
+          goods_receipt_id: string
+          id: string
+          manufactured_on: string | null
+          notes: string | null
+          org_id: string
+          product_id: string
+          qty_base: number | null
+          qty_damaged: number
+          qty_received: number
+          unit_cost: number | null
+          units_per_uom: number | null
+          uom: string
+        }
+        Insert: {
+          batch_number?: string | null
+          created_at?: string
+          expiry_date?: string | null
+          goods_receipt_id: string
+          id?: string
+          manufactured_on?: string | null
+          notes?: string | null
+          org_id: string
+          product_id: string
+          qty_base?: number | null
+          qty_damaged?: number
+          qty_received: number
+          unit_cost?: number | null
+          units_per_uom?: number | null
+          uom?: string
+        }
+        Update: {
+          batch_number?: string | null
+          created_at?: string
+          expiry_date?: string | null
+          goods_receipt_id?: string
+          id?: string
+          manufactured_on?: string | null
+          notes?: string | null
+          org_id?: string
+          product_id?: string
+          qty_base?: number | null
+          qty_damaged?: number
+          qty_received?: number
+          unit_cost?: number | null
+          units_per_uom?: number | null
+          uom?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "goods_receipt_lines_goods_receipt_id_fkey"
+            columns: ["goods_receipt_id"]
+            isOneToOne: false
+            referencedRelation: "goods_receipts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "goods_receipt_lines_org_id_fkey"
+            columns: ["org_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "goods_receipt_lines_product_id_fkey"
+            columns: ["product_id"]
+            isOneToOne: false
+            referencedRelation: "products"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      goods_receipts: {
+        Row: {
+          cancel_reason: string | null
+          cancelled_at: string | null
+          cancelled_by: string | null
+          created_at: string
+          created_by: string | null
+          grn_number: string
+          id: string
+          invoice_number: string | null
+          location_id: string
+          notes: string | null
+          org_id: string
+          posted_at: string | null
+          posted_by: string | null
+          receipt_type: string
+          received_at: string
+          received_by: string | null
+          source_order_id: string | null
+          status: string
+          supplier_id: string | null
+          supplier_name: string | null
+          updated_at: string
+        }
+        Insert: {
+          cancel_reason?: string | null
+          cancelled_at?: string | null
+          cancelled_by?: string | null
+          created_at?: string
+          created_by?: string | null
+          grn_number: string
+          id?: string
+          invoice_number?: string | null
+          location_id: string
+          notes?: string | null
+          org_id: string
+          posted_at?: string | null
+          posted_by?: string | null
+          receipt_type?: string
+          received_at?: string
+          received_by?: string | null
+          source_order_id?: string | null
+          status?: string
+          supplier_id?: string | null
+          supplier_name?: string | null
+          updated_at?: string
+        }
+        Update: {
+          cancel_reason?: string | null
+          cancelled_at?: string | null
+          cancelled_by?: string | null
+          created_at?: string
+          created_by?: string | null
+          grn_number?: string
+          id?: string
+          invoice_number?: string | null
+          location_id?: string
+          notes?: string | null
+          org_id?: string
+          posted_at?: string | null
+          posted_by?: string | null
+          receipt_type?: string
+          received_at?: string
+          received_by?: string | null
+          source_order_id?: string | null
+          status?: string
+          supplier_id?: string | null
+          supplier_name?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "goods_receipts_cancelled_by_fkey"
+            columns: ["cancelled_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "goods_receipts_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "goods_receipts_location_id_fkey"
+            columns: ["location_id"]
+            isOneToOne: false
+            referencedRelation: "stock_locations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "goods_receipts_org_id_fkey"
+            columns: ["org_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "goods_receipts_posted_by_fkey"
+            columns: ["posted_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "goods_receipts_received_by_fkey"
+            columns: ["received_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "goods_receipts_source_order_id_fkey"
+            columns: ["source_order_id"]
+            isOneToOne: false
+            referencedRelation: "orders"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "goods_receipts_supplier_id_fkey"
+            columns: ["supplier_id"]
+            isOneToOne: false
+            referencedRelation: "suppliers"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       leads: {
         Row: {
           client_generated_id: string
@@ -619,6 +853,427 @@ export type Database = {
             columns: ["workday_session_id"]
             isOneToOne: false
             referencedRelation: "workday_sessions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      order_allocations: {
+        Row: {
+          batch_id: string | null
+          created_at: string
+          id: string
+          location_id: string
+          order_id: string
+          order_line_id: string
+          org_id: string
+          qty_dispatched: number
+          qty_picked: number
+          qty_reserved: number
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          batch_id?: string | null
+          created_at?: string
+          id?: string
+          location_id: string
+          order_id: string
+          order_line_id: string
+          org_id: string
+          qty_dispatched?: number
+          qty_picked?: number
+          qty_reserved?: number
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          batch_id?: string | null
+          created_at?: string
+          id?: string
+          location_id?: string
+          order_id?: string
+          order_line_id?: string
+          org_id?: string
+          qty_dispatched?: number
+          qty_picked?: number
+          qty_reserved?: number
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "order_allocations_batch_id_fkey"
+            columns: ["batch_id"]
+            isOneToOne: false
+            referencedRelation: "product_batches"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "order_allocations_location_id_fkey"
+            columns: ["location_id"]
+            isOneToOne: false
+            referencedRelation: "stock_locations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "order_allocations_order_id_fkey"
+            columns: ["order_id"]
+            isOneToOne: false
+            referencedRelation: "orders"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "order_allocations_order_line_id_fkey"
+            columns: ["order_line_id"]
+            isOneToOne: false
+            referencedRelation: "order_lines"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "order_allocations_org_id_fkey"
+            columns: ["org_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      order_lines: {
+        Row: {
+          client_generated_id: string
+          created_at: string
+          id: string
+          line_status: string
+          order_id: string
+          org_id: string
+          product_id: string
+          qty_delivered: number
+          qty_dispatched: number
+          qty_ordered: number
+          qty_picked: number
+          qty_reserved: number
+          qty_returned: number
+          unit_price: number | null
+        }
+        Insert: {
+          client_generated_id: string
+          created_at?: string
+          id?: string
+          line_status?: string
+          order_id: string
+          org_id: string
+          product_id: string
+          qty_delivered?: number
+          qty_dispatched?: number
+          qty_ordered: number
+          qty_picked?: number
+          qty_reserved?: number
+          qty_returned?: number
+          unit_price?: number | null
+        }
+        Update: {
+          client_generated_id?: string
+          created_at?: string
+          id?: string
+          line_status?: string
+          order_id?: string
+          org_id?: string
+          product_id?: string
+          qty_delivered?: number
+          qty_dispatched?: number
+          qty_ordered?: number
+          qty_picked?: number
+          qty_reserved?: number
+          qty_returned?: number
+          unit_price?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "order_lines_order_id_fkey"
+            columns: ["order_id"]
+            isOneToOne: false
+            referencedRelation: "orders"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "order_lines_org_id_fkey"
+            columns: ["org_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "order_lines_product_id_fkey"
+            columns: ["product_id"]
+            isOneToOne: false
+            referencedRelation: "products"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      order_status_events: {
+        Row: {
+          actor_id: string | null
+          created_at: string
+          detail: Json | null
+          from_status: string | null
+          id: number
+          note: string | null
+          order_id: string
+          org_id: string
+          to_status: string
+        }
+        Insert: {
+          actor_id?: string | null
+          created_at?: string
+          detail?: Json | null
+          from_status?: string | null
+          id?: never
+          note?: string | null
+          order_id: string
+          org_id: string
+          to_status: string
+        }
+        Update: {
+          actor_id?: string | null
+          created_at?: string
+          detail?: Json | null
+          from_status?: string | null
+          id?: never
+          note?: string | null
+          order_id?: string
+          org_id?: string
+          to_status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "order_status_events_actor_id_fkey"
+            columns: ["actor_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "order_status_events_order_id_fkey"
+            columns: ["order_id"]
+            isOneToOne: false
+            referencedRelation: "orders"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "order_status_events_org_id_fkey"
+            columns: ["org_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      orders: {
+        Row: {
+          cancel_reason: string | null
+          cancelled_at: string | null
+          cancelled_by: string | null
+          client_generated_id: string
+          confirmed_at: string | null
+          confirmed_by: string | null
+          contact_name: string | null
+          contact_phone: string | null
+          created_at: string
+          created_by: string | null
+          delivered_at: string | null
+          delivered_by: string | null
+          dispatched_at: string | null
+          dispatched_by: string | null
+          fulfil_location_id: string | null
+          held_at: string | null
+          held_by: string | null
+          hold_reason: string | null
+          id: string
+          notes: string | null
+          on_hold: boolean
+          order_number: string
+          org_id: string
+          packed_at: string | null
+          packed_by: string | null
+          parent_order_id: string | null
+          picking_started_at: string | null
+          picking_started_by: string | null
+          pod_status: string
+          received_via: string
+          rep_id: string | null
+          required_by: string | null
+          source: string
+          status: string
+          store_id: string
+          updated_at: string
+        }
+        Insert: {
+          cancel_reason?: string | null
+          cancelled_at?: string | null
+          cancelled_by?: string | null
+          client_generated_id: string
+          confirmed_at?: string | null
+          confirmed_by?: string | null
+          contact_name?: string | null
+          contact_phone?: string | null
+          created_at?: string
+          created_by?: string | null
+          delivered_at?: string | null
+          delivered_by?: string | null
+          dispatched_at?: string | null
+          dispatched_by?: string | null
+          fulfil_location_id?: string | null
+          held_at?: string | null
+          held_by?: string | null
+          hold_reason?: string | null
+          id?: string
+          notes?: string | null
+          on_hold?: boolean
+          order_number: string
+          org_id: string
+          packed_at?: string | null
+          packed_by?: string | null
+          parent_order_id?: string | null
+          picking_started_at?: string | null
+          picking_started_by?: string | null
+          pod_status?: string
+          received_via?: string
+          rep_id?: string | null
+          required_by?: string | null
+          source: string
+          status?: string
+          store_id: string
+          updated_at?: string
+        }
+        Update: {
+          cancel_reason?: string | null
+          cancelled_at?: string | null
+          cancelled_by?: string | null
+          client_generated_id?: string
+          confirmed_at?: string | null
+          confirmed_by?: string | null
+          contact_name?: string | null
+          contact_phone?: string | null
+          created_at?: string
+          created_by?: string | null
+          delivered_at?: string | null
+          delivered_by?: string | null
+          dispatched_at?: string | null
+          dispatched_by?: string | null
+          fulfil_location_id?: string | null
+          held_at?: string | null
+          held_by?: string | null
+          hold_reason?: string | null
+          id?: string
+          notes?: string | null
+          on_hold?: boolean
+          order_number?: string
+          org_id?: string
+          packed_at?: string | null
+          packed_by?: string | null
+          parent_order_id?: string | null
+          picking_started_at?: string | null
+          picking_started_by?: string | null
+          pod_status?: string
+          received_via?: string
+          rep_id?: string | null
+          required_by?: string | null
+          source?: string
+          status?: string
+          store_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "orders_cancelled_by_fkey"
+            columns: ["cancelled_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "orders_confirmed_by_fkey"
+            columns: ["confirmed_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "orders_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "orders_delivered_by_fkey"
+            columns: ["delivered_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "orders_dispatched_by_fkey"
+            columns: ["dispatched_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "orders_fulfil_location_id_fkey"
+            columns: ["fulfil_location_id"]
+            isOneToOne: false
+            referencedRelation: "stock_locations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "orders_held_by_fkey"
+            columns: ["held_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "orders_org_id_fkey"
+            columns: ["org_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "orders_packed_by_fkey"
+            columns: ["packed_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "orders_parent_order_id_fkey"
+            columns: ["parent_order_id"]
+            isOneToOne: false
+            referencedRelation: "orders"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "orders_picking_started_by_fkey"
+            columns: ["picking_started_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "orders_rep_id_fkey"
+            columns: ["rep_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "orders_store_id_fkey"
+            columns: ["store_id"]
+            isOneToOne: false
+            referencedRelation: "stores"
             referencedColumns: ["id"]
           },
         ]
@@ -2354,9 +3009,21 @@ export type Database = {
           reps_covered: number
         }[]
       }
+      goods_receipt_cancel: {
+        Args: { p_goods_receipt_id: string; p_reason: string }
+        Returns: Json
+      }
+      goods_receipt_post: {
+        Args: { p_goods_receipt_id: string }
+        Returns: Json
+      }
       haversine_m: {
         Args: { lat1: number; lat2: number; lng1: number; lng2: number }
         Returns: number
+      }
+      next_document_number: {
+        Args: { p_doc_type: string; p_org_id: string; p_prefix: string }
+        Returns: string
       }
       oos_hotspots: {
         Args: { p_from: string; p_to: string }
@@ -2371,6 +3038,62 @@ export type Database = {
           top_skus: Json
         }[]
       }
+      order_availability_check: {
+        Args: { p_location_id?: string; p_order_id: string }
+        Returns: {
+          order_line_id: string
+          product_id: string
+          product_name: string
+          qty_already_reserved: number
+          qty_available: number
+          qty_ordered: number
+          qty_short: number
+        }[]
+      }
+      order_cancel: {
+        Args: { p_order_id: string; p_reason: string }
+        Returns: Json
+      }
+      order_confirm: {
+        Args: {
+          p_location_id?: string
+          p_order_id: string
+          p_shortfall_action?: string
+        }
+        Returns: Json
+      }
+      order_hold: {
+        Args: { p_order_id: string; p_reason: string }
+        Returns: Json
+      }
+      order_mark_packed: {
+        Args: { p_accept_short?: boolean; p_order_id: string }
+        Returns: Json
+      }
+      order_picking_list: {
+        Args: { p_order_id: string }
+        Returns: {
+          allocation_id: string
+          allocation_status: string
+          batch_id: string
+          batch_number: string
+          brand: string
+          expiry_date: string
+          location_name: string
+          order_line_id: string
+          product_id: string
+          product_name: string
+          qty_picked: number
+          qty_to_pick: number
+          unit_barcode: string
+        }[]
+      }
+      order_record_pick: {
+        Args: { p_lines: Json; p_order_id: string }
+        Returns: Json
+      }
+      order_release_hold: { Args: { p_order_id: string }; Returns: Json }
+      order_start_picking: { Args: { p_order_id: string }; Returns: Json }
       perfect_store_score: {
         Args: { p_from: string; p_to: string }
         Returns: {
