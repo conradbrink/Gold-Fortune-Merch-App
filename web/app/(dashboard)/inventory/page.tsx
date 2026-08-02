@@ -2,7 +2,14 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { Search, CalendarClock, ClipboardList, PackagePlus } from "lucide-react";
+import {
+  Search,
+  CalendarClock,
+  ClipboardList,
+  PackagePlus,
+  ArrowLeftRight,
+  SlidersHorizontal,
+} from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -110,6 +117,20 @@ export default function InventoryPage() {
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
+          <Button
+            variant="outline"
+            nativeButton={false}
+            render={<Link href="/inventory/adjustments" />}
+          >
+            <SlidersHorizontal className="mr-1.5 h-4 w-4" /> Adjustments
+          </Button>
+          <Button
+            variant="outline"
+            nativeButton={false}
+            render={<Link href="/inventory/transfers" />}
+          >
+            <ArrowLeftRight className="mr-1.5 h-4 w-4" /> Transfers
+          </Button>
           <Button
             variant="outline"
             nativeButton={false}
