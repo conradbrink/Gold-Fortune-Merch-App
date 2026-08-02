@@ -13,6 +13,7 @@ import {
   BarChart3,
   Warehouse,
   Boxes,
+  ClipboardCheck,
 } from "lucide-react";
 import { canAccessPath, type AppRole } from "@/lib/roles";
 
@@ -88,6 +89,12 @@ export const navGroups: NavGroup[] = [
         href: "/warehouse",
         label: "Warehouse",
         icon: Warehouse,
+        roles: ["manager", "warehouse"],
+      },
+      {
+        href: "/orders",
+        label: "Orders",
+        icon: ClipboardCheck,
         roles: ["manager", "warehouse"],
       },
       {
