@@ -32,6 +32,7 @@ import {
   fetchStocktake,
   fetchVarianceReport,
   saveCounts,
+  CountSaveError,
   submitStocktake,
   decideStocktake,
   VARIANCE_REASONS,
@@ -73,6 +74,10 @@ export default function StocktakeDetailPage() {
   const [counts, setCounts] = useState<Record<string, string>>({});
   const [reasons, setReasons] = useState<Record<string, string>>({});
   const [reconfirm, setReconfirm] = useState<Set<string>>(new Set());
+  // Lines a partial save could not write. Marked in the table, because a
+  // count of failures is not something a counter can act on with forty rows
+  // in front of them.
+  const [failedLines, setFailedLines] = useState<Set<string>>(new Set());
 
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -140,6 +145,24 @@ export default function StocktakeDetailPage() {
   const counting = head.status === "counting";
   const submitted = head.status === "submitted";
   const uncounted = lines.filter((l) => (counts[l.id] ?? "") === "").length;
+
+  /** Saves the sheet, remembering which lines failed so the table can say so. */
+  async function persistCounts() {
+    setFailedLines(new Set());
+    try {
+      await saveCounts(
+        supabase,
+        lines.map((l) => ({
+          id: l.id,
+          countedQty: counts[l.id] === "" ? null : Number(counts[l.id]),
+          varianceReason: reasons[l.id] || null,
+        }))
+      );
+    } catch (e) {
+      if (e instanceof CountSaveError) setFailedLines(new Set(e.failedLineIds));
+      throw e;
+    }
+  }
   const moved = variance.filter((v) => v.moved_since_submit);
   const withVariance = variance.filter((v) => v.variance_qty !== 0);
   const blockedIds = moved.filter((m) => m.variance_qty !== 0).map((m) => m.line_id);
@@ -180,20 +203,7 @@ export default function StocktakeDetailPage() {
             <>
               <Button
                 variant="outline"
-                onClick={() =>
-                  run(
-                    () =>
-                      saveCounts(
-                        supabase,
-                        lines.map((l) => ({
-                          id: l.id,
-                          countedQty: counts[l.id] === "" ? null : Number(counts[l.id]),
-                          varianceReason: reasons[l.id] || null,
-                        }))
-                      ),
-                    "Counts saved."
-                  )
-                }
+                onClick={() => run(persistCounts, "Counts saved.")}
                 disabled={busy}
               >
                 Save counts
@@ -201,14 +211,7 @@ export default function StocktakeDetailPage() {
               <Button
                 onClick={() =>
                   run(async () => {
-                    await saveCounts(
-                      supabase,
-                      lines.map((l) => ({
-                        id: l.id,
-                        countedQty: counts[l.id] === "" ? null : Number(counts[l.id]),
-                        varianceReason: reasons[l.id] || null,
-                      }))
-                    );
+                    await persistCounts();
                     await submitStocktake(supabase, id);
                   }, "Submitted. A manager can now approve it.")
                 }
@@ -313,8 +316,12 @@ export default function StocktakeDetailPage() {
                   lines.map((l) => {
                     const v = counts[l.id];
                     const differs = v !== "" && Number(v) !== l.system_qty_at_open;
+                    const didNotSave = failedLines.has(l.id);
                     return (
-                      <TableRow key={l.id}>
+                      <TableRow
+                        key={l.id}
+                        className={didNotSave ? "bg-destructive/10" : undefined}
+                      >
                         <TableCell>
                           <div className="font-medium">{l.product_name}</div>
                           {l.brand && (

@@ -128,6 +128,23 @@ export async function openStocktake(
  * this is a plain update per line rather than an RPC, and the database is what
  * stops it being anything more.
  */
+/**
+ * A partial save, carrying the lines that did not make it.
+ *
+ * The count alone is not actionable: told "3 of 40 failed", a counter has no
+ * way to find which three among forty rows, and the safe move is to key the
+ * whole sheet again. The ids are what let the screen point at them.
+ */
+export class CountSaveError extends Error {
+  constructor(
+    message: string,
+    readonly failedLineIds: string[]
+  ) {
+    super(message);
+    this.name = "CountSaveError";
+  }
+}
+
 export async function saveCounts(
   supabase: Client,
   counts: { id: string; countedQty: number | null; varianceReason: string | null }[]
@@ -158,9 +175,10 @@ export async function saveCounts(
   }
 
   if (failed.length > 0) {
-    throw new Error(
+    throw new CountSaveError(
       `${failed.length} of ${counts.length} counted lines did not save. ` +
-        `The rest were saved. Re-enter only the lines still showing no count.`
+        `The rest were saved. The lines that failed are marked in the table.`,
+      failed
     );
   }
 }

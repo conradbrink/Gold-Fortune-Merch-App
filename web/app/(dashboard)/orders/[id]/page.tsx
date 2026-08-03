@@ -802,11 +802,18 @@ export default function OrderDetailPage() {
                     orderId,
                     // A POD belongs to the consignment that actually arrived.
                     // An order that went out, came back and went out again has
-                    // more than one dispatch, and the first in the list is not
-                    // necessarily the delivered one.
+                    // more than one dispatch, and `dispatches[0]` could be the
+                    // failed or returned one — filing proof of delivery
+                    // against a consignment that demonstrably did not arrive
+                    // is worse than filing it against nothing.
+                    //
+                    // `in_transit` is still offered because a delivery note
+                    // legitimately exists before the delivery does. `failed`
+                    // and `returned` are never chosen, and no match means
+                    // null, which the column allows.
                     dispatchId:
                       detail.dispatches.find((d) => d.status === "delivered")?.id ??
-                      detail.dispatches[0]?.id ??
+                      detail.dispatches.find((d) => d.status === "in_transit")?.id ??
                       null,
                     docType,
                     file,

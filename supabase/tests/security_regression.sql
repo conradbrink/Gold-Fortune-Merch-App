@@ -60,6 +60,7 @@ declare
   v_other_org uuid; v_other_terr uuid; v_terr uuid;
   v_shape_main uuid; v_shape_other uuid;
   v_other_country uuid; v_own_country uuid;
+  v_other_region uuid; v_own_region uuid; v_shape_region uuid; v_err text;
   -- Warehouse module (checks 27-30).
   v_loc uuid; v_prod uuid;
   v_order_other uuid; v_order_own uuid; v_order_clerk uuid;
@@ -229,29 +230,47 @@ begin
   -- by `20260730153000_enforce_territory_reps_org.sql`.
   --
   -- Run as the manager, because a rep cannot insert coverage at all.
-  -- Since the country tier (`20260730200000_add_country_tier.sql`) a territory
-  -- must sit inside a country, so both fixtures below need a country created
-  -- first. Without it these two inserts raise "A territory must sit inside a
-  -- country" and abort the whole suite before check 19 — which is exactly what
-  -- happened the first time this file was run after that migration landed.
+  --
+  -- The tier list has changed twice and this fixture has had to change with it
+  -- both times, so state where it stands rather than the history: since
+  -- `20260731181954_restructure_territories_into_regions.sql` the tree is
+  -- **country → region → territory**, stores hang off the territory (the
+  -- deepest tier), and `'sub'` is gone from `territories_level_check`
+  -- altogether. `territories_enforce_shape` reads the expected parent off a
+  -- CASE — country: none, region: country, territory: region — so a territory
+  -- hung straight off a country now raises "<name> is a country, not a region"
+  -- and aborts the suite before check 19 ever runs.
+  --
+  -- That is not hypothetical: it is what this file did on 3 August, the first
+  -- time it was run against production after the regions migration of 31 July.
+  -- The suite had been silently unrunnable for three days. Whoever changes the
+  -- tiers again changes these four inserts, checks 23-24b and the invariant in
+  -- check 25 — and the cheapest way to find that out is to run the file.
   insert into public.organizations (name) values ('Regression Foreign Org')
     returning id into v_other_org;
   insert into public.territories (org_id, name, level, parent_id)
     values (v_other_org, 'Regression Foreign Country', 'country', null)
     returning id into v_other_country;
   insert into public.territories (org_id, name, level, parent_id)
-    values (v_other_org, 'Regression Foreign Territory', 'territory', v_other_country)
+    values (v_other_org, 'Regression Foreign Region', 'region', v_other_country)
+    returning id into v_other_region;
+  insert into public.territories (org_id, name, level, parent_id)
+    values (v_other_org, 'Regression Foreign Territory', 'territory', v_other_region)
     returning id into v_other_terr;
   -- Created, not found. The header promises only a manager, two reps and a
   -- store, so querying the estate for a root territory made check 20 skip itself
   -- silently on a tenant that has none — a check that reports nothing is worse
-  -- than one that fails. The same reasoning applies to the country: the estate
-  -- has one, but borrowing it would make this check depend on tenant data.
+  -- than one that fails. The same reasoning applies to the country and now the
+  -- region: the estate has both, but borrowing them would make this check depend
+  -- on tenant data.
   insert into public.territories (org_id, name, level, parent_id)
     values (v_org, 'Regression Own Country', 'country', null)
     returning id into v_own_country;
   insert into public.territories (org_id, name, level, parent_id)
-    values (v_org, 'Regression Own Territory', 'territory', v_own_country)
+    values (v_org, 'Regression Own Region', 'region', v_own_country)
+    returning id into v_own_region;
+  insert into public.territories (org_id, name, level, parent_id)
+    values (v_org, 'Regression Own Territory', 'territory', v_own_region)
     returning id into v_terr;
 
   perform set_config('request.jwt.claims',
