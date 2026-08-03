@@ -30,6 +30,24 @@ const blankLine = (): Draft => ({
 });
 
 /**
+ * The trade price on a product is per shrink, but a line is priced per base
+ * unit — the same unit `qty_ordered` counts in, and the same unit the shortage
+ * hint and the reservation work in. Dividing here is what stops a ten-unit line
+ * being charged at ten times the pack price.
+ *
+ * Null when the pack size is unknown, so the clerk is asked rather than given a
+ * figure derived from a missing factor.
+ */
+function unitPriceFor(p: {
+  units_per_shrink: number | null;
+  shrink_price_excl_vat: number | null;
+}): string | null {
+  if (p.shrink_price_excl_vat == null) return null;
+  if (p.units_per_shrink == null || p.units_per_shrink <= 0) return null;
+  return (p.shrink_price_excl_vat / p.units_per_shrink).toFixed(2);
+}
+
+/**
  * Keying an order that arrived by WhatsApp, email or telephone.
  *
  * Available stock is shown beside each line as it is chosen, because the clerk
@@ -45,7 +63,13 @@ export default function NewOrderPage() {
   const [orgId, setOrgId] = useState<string | null>(null);
   const [stores, setStores] = useState<{ id: string; name: string; city: string | null }[]>([]);
   const [products, setProducts] = useState<
-    { id: string; name: string; brand: string | null; shrink_price_excl_vat: number | null }[]
+    {
+      id: string;
+      name: string;
+      brand: string | null;
+      units_per_shrink: number | null;
+      shrink_price_excl_vat: number | null;
+    }[]
   >([]);
   const [stock, setStock] = useState<StockLine[]>([]);
 
@@ -261,6 +285,7 @@ export default function NewOrderPage() {
             const available = l.productId ? (availableFor.get(l.productId) ?? 0) : null;
             const wanted = Number(l.qty) || 0;
             const short = available !== null && wanted > available;
+            const chosen = products.find((p) => p.id === l.productId);
             return (
               <div key={l.key} className="grid gap-2 sm:grid-cols-[1fr_6rem_7rem_2.5rem]">
                 <div>
@@ -268,15 +293,14 @@ export default function NewOrderPage() {
                     value={l.productId}
                     onChange={(e) => {
                       const p = products.find((x) => x.id === e.target.value);
+                      const prefill = p ? unitPriceFor(p) : null;
                       update(l.key, {
                         productId: e.target.value,
                         // Prefill the trade price so the clerk does not retype
                         // it, but leave it editable — a negotiated price is
                         // exactly the kind of thing a phone order carries.
                         unitPrice:
-                          l.unitPrice === "" && p?.shrink_price_excl_vat != null
-                            ? String(p.shrink_price_excl_vat)
-                            : l.unitPrice,
+                          l.unitPrice === "" && prefill != null ? prefill : l.unitPrice,
                       });
                     }}
                     aria-label="Product"
@@ -300,6 +324,9 @@ export default function NewOrderPage() {
                       }
                     >
                       {available} available
+                      {chosen?.units_per_shrink
+                        ? ` · ${chosen.units_per_shrink} per shrink`
+                        : ""}
                       {short && ` — ${wanted - available} short of this order`}
                     </p>
                   )}
@@ -317,8 +344,8 @@ export default function NewOrderPage() {
                   step="0.01"
                   value={l.unitPrice}
                   onChange={(e) => update(l.key, { unitPrice: e.target.value })}
-                  placeholder="Price"
-                  aria-label="Unit price"
+                  placeholder="Per unit"
+                  aria-label="Price per unit"
                 />
                 <Button
                   variant="ghost"

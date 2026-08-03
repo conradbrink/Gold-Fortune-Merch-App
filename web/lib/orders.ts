@@ -253,7 +253,7 @@ export async function fetchPickingList(
 export async function fetchOrderableProducts(supabase: Client) {
   const { data, error } = await supabase
     .from("products")
-    .select("id, name, brand, sku_code, shrink_price_excl_vat")
+    .select("id, name, brand, sku_code, units_per_shrink, shrink_price_excl_vat")
     .eq("active", true)
     .eq("is_stock_tracked", true)
     .order("name");
@@ -263,6 +263,7 @@ export async function fetchOrderableProducts(supabase: Client) {
     name: string;
     brand: string | null;
     sku_code: string | null;
+    units_per_shrink: number | null;
     shrink_price_excl_vat: number | null;
   }[];
 }
