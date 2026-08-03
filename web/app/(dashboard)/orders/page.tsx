@@ -235,20 +235,25 @@ export default function OrdersPage() {
                     )}
                   </TableCell>
                   <TableCell>
-                    <Badge
-                      variant={
-                        o.status === "cancelled"
-                          ? "outline"
-                          : ACTIVE.has(o.status)
-                            ? "secondary"
-                            : "default"
-                      }
-                    >
-                      {STATUS_LABELS[o.status] ?? o.status}
-                    </Badge>
-                    {o.status === "delivered" && o.pod_status === "outstanding" && (
-                      <Badge variant="outline" className="ml-1.5 border-destructive/50 text-destructive">
-                        POD due
+                    {/* A delivery with no signed POD is not "delivered, plus a
+                        note" — it is goods out of the building with no proof
+                        anybody received them, and it stays loud until the
+                        document is filed. */}
+                    {o.status === "delivered" && o.pod_status === "outstanding" ? (
+                      <Badge className="border-transparent bg-destructive text-white">
+                        Delivered — no POD
+                      </Badge>
+                    ) : (
+                      <Badge
+                        variant={
+                          o.status === "cancelled"
+                            ? "outline"
+                            : ACTIVE.has(o.status)
+                              ? "secondary"
+                              : "default"
+                        }
+                      >
+                        {STATUS_LABELS[o.status] ?? o.status}
                       </Badge>
                     )}
                   </TableCell>
