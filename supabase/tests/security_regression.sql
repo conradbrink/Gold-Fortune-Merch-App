@@ -610,6 +610,14 @@ begin
           v_loc, gen_random_uuid())
   returning id into v_order_own;
 
+  -- The rep's own order needs a line for the same reason their own order needed
+  -- a row: 27b asserts another rep's lines are invisible, and an empty table is
+  -- invisible to everyone. Without this line existing and being readable, 27b
+  -- passes just as well when `order_lines_select` denies the whole world.
+  insert into public.order_lines (org_id, order_id, product_id, qty_ordered,
+                                  client_generated_id)
+  values (v_org, v_order_own, v_prod, 3, gen_random_uuid());
+
   insert into public.orders (org_id, order_number, store_id, source,
                              received_via, fulfil_location_id, client_generated_id)
   values (v_org, 'ORD-REGRESSION-3', v_store, 'warehouse_manual', 'whatsapp',
@@ -653,6 +661,22 @@ begin
   select count(*) into v_n from public.orders where id = v_order_own;
   if v_n <> 1 then
     v_fail := v_fail || '27d. a rep could NOT read their own order' || E'\n';
+  end if;
+
+  -- 27e/27f. The same positive control for both child tables, because each
+  --          carries its own policy and 27b/27c are silent filters. A policy
+  --          that denies everyone satisfies 27b and 27c perfectly; only these
+  --          two tell that apart from one scoped to the owner.
+  select count(*) into v_n from public.order_lines where order_id = v_order_own;
+  if v_n <> 1 then
+    v_fail := v_fail || '27e. a rep could NOT read their own order line' || E'\n';
+  end if;
+
+  -- The insert arm of `orders_log_status_change` writes a 'new' event for every
+  -- order, so this row exists for the same reason the other rep's did.
+  select count(*) into v_n from public.order_status_events where order_id = v_order_own;
+  if v_n < 1 then
+    v_fail := v_fail || '27f. a rep could NOT read their own order history' || E'\n';
   end if;
 
   ------------------------------------------------------ the warehouse clerk
