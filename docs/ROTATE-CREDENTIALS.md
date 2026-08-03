@@ -110,14 +110,33 @@ Set a **budget cap** while you are in there if there isn't one.
 - If you want a record of *when* rotation happened, put the date here. Never
   the values.
 
-## 5. While you are in the Vercel dashboard
+## 5. While you are in the Vercel dashboard — the failing previews
 
 Preview deployments have failed on every pull request for some time, including
-documentation-only ones, while production from `main` deploys fine. The build
-reads `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` at
-build time, and the pattern fits those variables being scoped to **Production**
-but not **Preview**.
+documentation-only ones, while production from `main` deploys fine.
 
-This has not been confirmed against a Vercel build log. Since you will be in
-the environment-variables screen anyway, it costs nothing to check whether each
-variable is ticked for Preview as well as Production.
+**The mechanism is reproduced.** Removing `NEXT_PUBLIC_SUPABASE_URL` and
+`NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` and running `npx next build` fails the
+same way every time:
+
+```
+Error: @supabase/ssr: Your project's URL and API key are required to
+create a Supabase client!
+Export encountered an error on /(dashboard)/inventory/adjustments/page
+⨯ Next.js build worker exited with code: 1
+```
+
+Next prerenders the dashboard pages at build time, and `createClient` needs
+both variables to exist while it does. A build environment without them cannot
+succeed, whatever is in the diff — which matches previews failing on
+documentation-only pull requests.
+
+So: **tick `NEXT_PUBLIC_SUPABASE_URL` and
+`NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` for the Preview environment**, not only
+Production. Both are public values — the publishable key ships in the page
+source by design — so there is no secret being widened here.
+
+One honest caveat: this reproduces *a* cause that produces exactly this
+symptom. Nobody has read the actual Vercel build log to confirm it is *the*
+cause. The log is one click from the environment-variables screen, so confirm
+it while you are there.
