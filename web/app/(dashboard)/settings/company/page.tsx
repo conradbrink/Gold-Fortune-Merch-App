@@ -58,6 +58,7 @@ export default function CompanyProfilePage() {
     website: "",
     address: "",
     support_email: "",
+    vat_rate: "",
   });
   /** Planning capacity. Kept separate: it saves with its own button, because
       it changes what the whole schedule is measured against. */
@@ -89,6 +90,7 @@ export default function CompanyProfilePage() {
         website: orgRow.website ?? "",
         address: orgRow.address ?? "",
         support_email: orgRow.support_email ?? "",
+        vat_rate: String(orgRow.vat_rate ?? 0),
       });
     }
 
@@ -152,6 +154,7 @@ export default function CompanyProfilePage() {
         website: form.website || null,
         address: form.address || null,
         support_email: form.support_email || null,
+        vat_rate: Number(form.vat_rate) || 0,
       })
       .eq("id", org.id);
     setSaving(false);
@@ -238,6 +241,24 @@ export default function CompanyProfilePage() {
                   value={form.support_email}
                   onChange={(e) => setForm({ ...form, support_email: e.target.value })}
                 />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="vat-rate">VAT rate (%)</Label>
+                <Input
+                  id="vat-rate"
+                  type="number"
+                  min={0}
+                  max={100}
+                  step="0.001"
+                  value={form.vat_rate}
+                  onChange={(e) => setForm({ ...form, vat_rate: e.target.value })}
+                />
+                <p className="text-xs text-muted-foreground">
+                  Applied to every order captured from now on. Orders already
+                  taken keep the rate they were captured at, so changing this
+                  never restates an invoice a customer is holding. 0 charges no
+                  VAT.
+                </p>
               </div>
               <div className="flex items-end gap-3 sm:col-span-2">
                 <Button

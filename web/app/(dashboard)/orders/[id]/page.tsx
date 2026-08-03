@@ -44,6 +44,7 @@ import {
   releaseHold,
   uploadDeliveryDocument,
   signedDocumentUrl,
+  orderTotals,
   type OrderDetail,
   type AvailabilityRow,
   type ShortfallAction,
@@ -366,6 +367,40 @@ export default function OrderDetailPage() {
                 ))}
               </TableBody>
             </Table>
+
+            {(() => {
+              // Priced at the rate frozen onto this order, not the
+              // organisation's current one, which may have moved since.
+              const t = orderTotals(
+                detail.lines.map((l) => ({
+                  qty: l.qty_ordered,
+                  unitPrice: l.unit_price == null ? 0 : Number(l.unit_price),
+                })),
+                Number(o.vat_rate ?? 0)
+              );
+              return (
+                <div className="mt-4 flex justify-end">
+                  <div className="w-56 space-y-0.5 text-right text-sm">
+                    <p className="text-muted-foreground">
+                      Subtotal
+                      <span className="ml-2 tabular-nums text-foreground">
+                        {t.subtotal.toFixed(2)}
+                      </span>
+                    </p>
+                    <p className="text-muted-foreground">
+                      VAT {Number(o.vat_rate ?? 0)}%
+                      <span className="ml-2 tabular-nums text-foreground">
+                        {t.vat.toFixed(2)}
+                      </span>
+                    </p>
+                    <p className="border-t border-border pt-1 font-medium">
+                      Total
+                      <span className="ml-2 tabular-nums">{t.total.toFixed(2)}</span>
+                    </p>
+                  </div>
+                </div>
+              );
+            })()}
           </CardContent>
         </Card>
 
@@ -377,7 +412,11 @@ export default function OrderDetailPage() {
             <CardContent className="space-y-1.5 text-sm">
               <Row label="Source" value={o.source === "rep_app" ? "Rep app" : "Keyed here"} />
               <Row label="Received via" value={o.received_via.replace("_", " ")} />
-              {detail.repName && <Row label="Rep" value={detail.repName} />}
+              {/* Always shown. "No rep" is a fact about the order — a shop
+                  that rang the office is nobody's call — and hiding the row
+                  makes it look like the screen forgot to load it. */}
+              <Row label="Rep" value={detail.repName ?? "No rep"} />
+              <Row label="Invoice" value={o.invoice_number ?? "Not yet raised"} />
               {o.contact_name && <Row label="Contact" value={o.contact_name} />}
               {o.contact_phone && <Row label="Phone" value={o.contact_phone} />}
               {o.required_by && <Row label="Required by" value={o.required_by} />}

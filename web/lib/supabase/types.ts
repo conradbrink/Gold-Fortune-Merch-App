@@ -1371,6 +1371,7 @@ export type Database = {
           held_by: string | null
           hold_reason: string | null
           id: string
+          invoice_number: string | null
           notes: string | null
           on_hold: boolean
           order_number: string
@@ -1388,6 +1389,7 @@ export type Database = {
           status: string
           store_id: string
           updated_at: string
+          vat_rate: number
         }
         Insert: {
           cancel_reason?: string | null
@@ -1409,6 +1411,7 @@ export type Database = {
           held_by?: string | null
           hold_reason?: string | null
           id?: string
+          invoice_number?: string | null
           notes?: string | null
           on_hold?: boolean
           order_number: string
@@ -1426,6 +1429,7 @@ export type Database = {
           status?: string
           store_id: string
           updated_at?: string
+          vat_rate?: number
         }
         Update: {
           cancel_reason?: string | null
@@ -1447,6 +1451,7 @@ export type Database = {
           held_by?: string | null
           hold_reason?: string | null
           id?: string
+          invoice_number?: string | null
           notes?: string | null
           on_hold?: boolean
           order_number?: string
@@ -1464,6 +1469,7 @@ export type Database = {
           status?: string
           store_id?: string
           updated_at?: string
+          vat_rate?: number
         }
         Relationships: [
           {
@@ -1570,6 +1576,7 @@ export type Database = {
           name: string
           stores_per_day: number
           support_email: string | null
+          vat_rate: number
           website: string | null
           working_days: number[]
         }
@@ -1583,6 +1590,7 @@ export type Database = {
           name: string
           stores_per_day?: number
           support_email?: string | null
+          vat_rate?: number
           website?: string | null
           working_days?: number[]
         }
@@ -1596,6 +1604,7 @@ export type Database = {
           name?: string
           stores_per_day?: number
           support_email?: string | null
+          vat_rate?: number
           website?: string | null
           working_days?: number[]
         }
@@ -4228,6 +4237,17 @@ export type Database = {
           qty_in_transit: number
           qty_on_hand: number
           qty_promotional: number
+          qty_reserved: number
+        }[]
+      }
+      stock_reservation_drift: {
+        Args: never
+        Returns: {
+          batch_id: string
+          drift: number
+          location_id: string
+          product_id: string
+          qty_allocated: number
           qty_reserved: number
         }[]
       }

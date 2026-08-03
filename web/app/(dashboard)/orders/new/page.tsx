@@ -16,6 +16,9 @@ import {
   createManualOrder,
   fetchOrderableProducts,
   fetchStoresForOrder,
+  fetchRepsForOrder,
+  fetchVatRate,
+  orderTotals,
   RECEIVED_VIA,
 } from "@/lib/orders";
 import { fetchStockOnHand, type StockLine } from "@/lib/warehouse";
@@ -72,6 +75,8 @@ export default function NewOrderPage() {
     }[]
   >([]);
   const [stock, setStock] = useState<StockLine[]>([]);
+  const [reps, setReps] = useState<{ id: string; full_name: string }[]>([]);
+  const [vatRate, setVatRate] = useState(0);
 
   const [storeId, setStoreId] = useState("");
   const [receivedVia, setReceivedVia] = useState<string>("whatsapp");
@@ -79,6 +84,8 @@ export default function NewOrderPage() {
   const [contactPhone, setContactPhone] = useState("");
   const [requiredBy, setRequiredBy] = useState("");
   const [notes, setNotes] = useState("");
+  const [repId, setRepId] = useState("");
+  const [invoiceNumber, setInvoiceNumber] = useState("");
   const [lines, setLines] = useState<Draft[]>([blankLine()]);
 
   const [loading, setLoading] = useState(true);
@@ -89,17 +96,21 @@ export default function NewOrderPage() {
     let cancelled = false;
     (async () => {
       try {
-        const [org, s, p, st] = await Promise.all([
+        const [org, s, p, st, r, vat] = await Promise.all([
           fetchOrgId(supabase),
           fetchStoresForOrder(supabase),
           fetchOrderableProducts(supabase),
           fetchStockOnHand(supabase, {}),
+          fetchRepsForOrder(supabase),
+          fetchVatRate(supabase),
         ]);
         if (cancelled) return;
         setOrgId(org);
         setStores(s);
         setProducts(p);
         setStock(st);
+        setReps(r);
+        setVatRate(vat);
         setError(null);
       } catch (e) {
         if (!cancelled) setError(e instanceof Error ? e.message : String(e));
@@ -124,11 +135,15 @@ export default function NewOrderPage() {
     setLines((prev) => prev.map((l) => (l.key === key ? { ...l, ...patch } : l)));
   }
 
-  const total = lines.reduce((sum, l) => {
-    const q = Number(l.qty) || 0;
-    const p = Number(l.unitPrice) || 0;
-    return sum + q * p;
-  }, 0);
+  // Line prices are VAT-exclusive, matching what the catalogue prefills, so
+  // the subtotal is the sum of them and VAT sits on top.
+  const totals = orderTotals(
+    lines.map((l) => ({
+      qty: Number(l.qty) || 0,
+      unitPrice: Number(l.unitPrice) || 0,
+    })),
+    vatRate
+  );
 
   const usedProducts = new Set(lines.map((l) => l.productId).filter(Boolean));
 
@@ -173,6 +188,8 @@ export default function NewOrderPage() {
         contactPhone,
         requiredBy: requiredBy || null,
         notes,
+        repId: repId || null,
+        invoiceNumber: invoiceNumber.trim() || null,
         lines: filled.map((l) => ({
           productId: l.productId,
           qty: Number(l.qty),
@@ -262,6 +279,33 @@ export default function NewOrderPage() {
               id="phone"
               value={contactPhone}
               onChange={(e) => setContactPhone(e.target.value)}
+            />
+          </div>
+          <div>
+            <Label htmlFor="rep">Rep responsible</Label>
+            <NativeSelect
+              id="rep"
+              value={repId}
+              onChange={(e) => setRepId(e.target.value)}
+              disabled={loading}
+            >
+              {/* An order with nobody attached is a real answer, not a missing
+                  one — a shop that rang the office is not any rep's call. */}
+              <option value="">No rep</option>
+              {reps.map((r) => (
+                <option key={r.id} value={r.id}>
+                  {r.full_name}
+                </option>
+              ))}
+            </NativeSelect>
+          </div>
+          <div>
+            <Label htmlFor="invoice">Invoice number</Label>
+            <Input
+              id="invoice"
+              value={invoiceNumber}
+              onChange={(e) => setInvoiceNumber(e.target.value)}
+              placeholder="As on QuickBooks — can be added later"
             />
           </div>
           <div className="sm:col-span-2">
@@ -390,12 +434,29 @@ export default function NewOrderPage() {
             >
               <Plus className="mr-1.5 h-4 w-4" /> Add a line
             </Button>
-            <p className="text-sm text-muted-foreground">
-              Order total{" "}
-              <span className="font-medium tabular-nums text-foreground">
-                {total.toFixed(2)}
-              </span>
-            </p>
+            <div className="space-y-0.5 text-right text-sm">
+              <p className="text-muted-foreground">
+                Subtotal{" "}
+                <span className="ml-2 tabular-nums text-foreground">
+                  {totals.subtotal.toFixed(2)}
+                </span>
+              </p>
+              <p className="text-muted-foreground">
+                VAT {vatRate}%{" "}
+                <span className="ml-2 tabular-nums text-foreground">
+                  {totals.vat.toFixed(2)}
+                </span>
+              </p>
+              <p className="border-t border-border pt-1 font-medium">
+                Total{" "}
+                <span className="ml-2 tabular-nums">{totals.total.toFixed(2)}</span>
+              </p>
+              {vatRate === 0 && (
+                <p className="text-xs text-amber-600 dark:text-amber-500">
+                  No VAT rate is set. A manager can set it in Settings → Company.
+                </p>
+              )}
+            </div>
           </div>
         </CardContent>
       </Card>

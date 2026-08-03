@@ -292,6 +292,58 @@ export async function fetchOrderableProducts(supabase: Client) {
   }[];
 }
 
+/**
+ * The sales reps an order can be attributed to.
+ *
+ * Only `role = 'rep'` and only active ones: a warehouse clerk is not whose
+ * account the shop is, and a rep who has left should not appear on new orders
+ * while still appearing on the old ones they took.
+ */
+export async function fetchRepsForOrder(supabase: Client) {
+  const { data, error } = await supabase
+    .from("profiles")
+    .select("id, full_name")
+    .eq("role", "rep")
+    .eq("is_active", true)
+    .order("full_name")
+    .limit(500);
+  fail(error);
+  return (data ?? []) as { id: string; full_name: string }[];
+}
+
+/**
+ * The organisation's VAT percentage, e.g. 14 for 14%.
+ *
+ * Read for display only. What an order is actually taxed at is the copy frozen
+ * onto the order when it was captured, not this.
+ */
+export async function fetchVatRate(supabase: Client): Promise<number> {
+  const { data, error } = await supabase
+    .from("organizations")
+    .select("vat_rate")
+    .limit(1)
+    .single();
+  fail(error);
+  return Number((data as { vat_rate: number } | null)?.vat_rate ?? 0);
+}
+
+/**
+ * Subtotal, VAT and total from VAT-exclusive line prices.
+ *
+ * One place, because three screens show these numbers and three
+ * implementations would eventually disagree by a cent.
+ */
+export function orderTotals(
+  lines: { qty: number; unitPrice: number | null }[],
+  vatRate: number
+) {
+  const subtotal = lines.reduce((n, l) => n + l.qty * (l.unitPrice ?? 0), 0);
+  // Rounded once, at the end, rather than per line: rounding each line and
+  // adding them up drifts from the invoice by a cent or two on a long order.
+  const vat = Math.round(subtotal * (vatRate / 100) * 100) / 100;
+  return { subtotal, vat, total: subtotal + vat };
+}
+
 export async function fetchStoresForOrder(supabase: Client) {
   const { data, error } = await supabase
     .from("stores")
@@ -346,6 +398,11 @@ export async function createManualOrder(
     contactPhone?: string;
     requiredBy?: string | null;
     notes?: string;
+    /** Whose account this is. Null is legitimate — plenty of orders arrive
+        from a shop with no rep attached to them. */
+    repId?: string | null;
+    /** The accounting system's invoice number, when it already exists. */
+    invoiceNumber?: string | null;
     lines: { productId: string; qty: number; unitPrice: number | null }[];
   }
 ): Promise<string> {
@@ -371,6 +428,8 @@ export async function createManualOrder(
       contact_phone: input.contactPhone || null,
       required_by: input.requiredBy || null,
       notes: input.notes || null,
+      rep_id: input.repId || null,
+      invoice_number: input.invoiceNumber || null,
       client_generated_id: crypto.randomUUID(),
     })
     .select("id")
