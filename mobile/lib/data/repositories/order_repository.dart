@@ -88,6 +88,9 @@ class OrderRepository {
     required String visitClientGeneratedId,
     required List<OrderDraftLine> lines,
     String? note,
+    String? contactName,
+    String? contactPhone,
+    String? requiredBy,
   }) async {
     if (lines.isEmpty) {
       throw ArgumentError('An order needs at least one line.');
@@ -102,18 +105,25 @@ class OrderRepository {
       'source': 'rep_app',
       'received_via': 'rep_visit',
       'notes': note,
+      'contact_name': contactName,
+      'contact_phone': contactPhone,
+      'required_by': requiredBy,
       'visit_client_generated_id': visitClientGeneratedId,
       // Converted out of the rep's shrinks and into the base units the
       // warehouse reserves in. This is the only place the two denominations
       // meet: everything above it is what the rep typed, everything below is
-      // what `order_confirm` will draw out of `stock_balances`. Both halves of
-      // the line move together — converting the quantity without the price
-      // would misstate the order by the pack size just as surely.
+      // what `order_confirm` will draw out of `stock_balances`.
+      //
+      // `unit_price` is sent as null on purpose. Customers sit on different
+      // pricing tiers, so the rep is not the one who knows the price — the
+      // warehouse sets it when it confirms, where the tier is known. A price
+      // quoted in the shop and then corrected on the invoice is worse than no
+      // price at all, because the shop believed the first one.
       'lines': lines
           .map((l) => {
                 'product_id': l.productId,
                 'qty_ordered': l.qtyOrderedBaseUnits,
-                'unit_price': l.unitPricePerBaseUnit,
+                'unit_price': null,
                 // Each line carries its own idempotency key, so a partially
                 // applied insert can be completed rather than duplicated.
                 'client_generated_id': _uuid.v4(),

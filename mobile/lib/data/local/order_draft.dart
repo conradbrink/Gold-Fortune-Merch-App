@@ -30,6 +30,16 @@ class OrderDraftLine {
   final int? unitsPerShrink;
 
   /// Trade price for one shrink, excluding VAT.
+  ///
+  /// **No longer set by this app, and deliberately still here.** Customers sit
+  /// on different pricing tiers, so a rep must not quote one — the warehouse
+  /// prices the order when it confirms, where the tier is known.
+  ///
+  /// The field survives because drafts written by the previous build are on
+  /// handsets right now and are decoded by `fromMap` below. Dropping it would
+  /// not merely lose the price: an order half-typed when the rep updates the
+  /// app would fail to decode and be dropped as corrupt, which is the one thing
+  /// this whole class exists to prevent.
   final double? unitPrice;
 
   /// `order_lines.qty_ordered`, in base units.
@@ -50,11 +60,15 @@ class OrderDraftLine {
 
   /// `order_lines.unit_price`, per base unit, to pair with the quantity above.
   ///
-  /// Null when the rep quoted no price, which the column allows. Rounded to the
-  /// two decimals the column stores, so a shrink price that does not divide
-  /// evenly leaves a few cents between this line and the price card — inherent
-  /// to holding a per-unit price in `numeric(12,2)`, and the same rounding the
-  /// warehouse's own capture screen does.
+  /// Returns null for every line this app now creates, because `unitPrice` is
+  /// no longer set — see the note on that field. Kept so a draft restored from
+  /// the previous build still converts rather than throwing, and because the
+  /// arithmetic is right and would only have to be rewritten if pricing ever
+  /// came back to the phone.
+  ///
+  /// Rounded to the two decimals the column stores, so a shrink price that does
+  /// not divide evenly leaves a few cents between this line and the price card
+  /// — inherent to holding a per-unit price in `numeric(12,2)`.
   double? get unitPricePerBaseUnit {
     final price = unitPrice;
     if (price == null) return null;
@@ -102,12 +116,30 @@ class OrderDraft {
     required this.storeId,
     required this.lines,
     this.note,
+    this.contactName,
+    this.contactPhone,
+    this.requiredBy,
     this.savedAt,
   });
 
   final String storeId;
   final List<OrderDraftLine> lines;
   final String? note;
+
+  /// Who in the shop placed the order, and on what number.
+  ///
+  /// `orders.contact_name` and `orders.contact_phone` have existed since the
+  /// orders migration and this app never sent them, so every rep order reached
+  /// the warehouse with nobody to ring about it. Held on the draft like
+  /// everything else, because a half-typed name is as worth keeping as a
+  /// half-typed line.
+  final String? contactName;
+  final String? contactPhone;
+
+  /// When the shop wants it, as `yyyy-MM-dd`. Optional: most orders have no
+  /// date attached and inventing one would be worse than leaving it open.
+  final String? requiredBy;
+
   final DateTime? savedAt;
 
   /// Keyed by the visit, not the store: a rep who visits the same shop twice in
@@ -119,6 +151,9 @@ class OrderDraft {
         'saved_at': (savedAt ?? DateTime.now()).toIso8601String(),
         'store_id': storeId,
         'note': note,
+        'contact_name': contactName,
+        'contact_phone': contactPhone,
+        'required_by': requiredBy,
         'lines': lines.map((l) => l.toMap()).toList(),
       });
 
@@ -135,6 +170,10 @@ class OrderDraft {
       return OrderDraft(
         storeId: map['store_id'] as String,
         note: map['note'] as String?,
+        // Absent from drafts written before contact details were captured.
+        contactName: map['contact_name'] as String?,
+        contactPhone: map['contact_phone'] as String?,
+        requiredBy: map['required_by'] as String?,
         savedAt: saved,
         lines: ((map['lines'] as List?) ?? const [])
             .map((l) => OrderDraftLine.fromMap(

@@ -337,6 +337,48 @@ export async function createStoreInline(
  * account the shop is, and a rep who has left should not appear on new orders
  * while still appearing on the old ones they took.
  */
+/**
+ * The per-unit trade price implied by a product's shrink price.
+ *
+ * The catalogue quotes per shrink; a line is priced per base unit — the same
+ * unit `qty_ordered` counts in. Dividing here is what stops a ten-unit line
+ * being charged at ten times the pack price.
+ *
+ * Null when the pack size is unknown, so the clerk is asked rather than handed
+ * a figure derived from a missing factor.
+ *
+ * Lives here rather than on the capture screen because two screens now need
+ * it: capture, and the order detail where the warehouse prices a rep's order.
+ */
+export function unitPriceFor(p: {
+  units_per_shrink: number | null;
+  shrink_price_excl_vat: number | null;
+}): string | null {
+  if (p.shrink_price_excl_vat == null) return null;
+  if (p.units_per_shrink == null || p.units_per_shrink <= 0) return null;
+  return (p.shrink_price_excl_vat / p.units_per_shrink).toFixed(2);
+}
+
+/**
+ * Sets the price on one order line.
+ *
+ * `order_lines` grants `update (qty_ordered, unit_price)` to `authenticated`
+ * and its policy only admits a line whose order is still `new`, so the window
+ * for this closes the moment the warehouse confirms — which is the right
+ * moment, because confirming is the promise.
+ */
+export async function setLinePrice(
+  supabase: Client,
+  lineId: string,
+  unitPrice: number | null
+) {
+  const { error } = await supabase
+    .from("order_lines")
+    .update({ unit_price: unitPrice })
+    .eq("id", lineId);
+  fail(error);
+}
+
 export async function fetchRepsForOrder(supabase: Client) {
   const { data, error } = await supabase
     .from("profiles")
