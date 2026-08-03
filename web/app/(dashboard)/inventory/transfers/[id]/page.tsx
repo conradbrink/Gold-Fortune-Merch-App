@@ -117,6 +117,15 @@ export default function TransferDetailPage() {
     return got < l.qty_sent && !reasons[l.id];
   });
 
+  // `min`/`max` on a number input are advisory, and this figure goes straight
+  // into the ledger: a fractional or negative count fails on a cast, and more
+  // received than was sent would create stock out of nothing. Refused here so
+  // the button explains itself rather than the RPC doing it afterwards.
+  const badQty = lines.find((l) => {
+    const got = Number(received[l.id]);
+    return !Number.isInteger(got) || got < 0 || got > l.qty_sent;
+  });
+
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -177,7 +186,7 @@ export default function TransferDetailPage() {
                   "Received."
                 )
               }
-              disabled={busy || missingReason}
+              disabled={busy || missingReason || badQty !== undefined}
             >
               {busy ? "Receiving…" : "Receive it"}
             </Button>
@@ -188,6 +197,12 @@ export default function TransferDetailPage() {
       <ErrorBanner message={error} />
       {notice && (
         <p className="rounded-lg border border-border bg-muted/40 p-2.5 text-sm">{notice}</p>
+      )}
+      {inTransit && badQty && (
+        <p className="rounded-lg border border-amber-500/40 bg-amber-500/5 p-2.5 text-sm text-amber-700 dark:text-amber-500">
+          {badQty.product_name} has a received quantity that is not a whole number
+          between 0 and the {badQty.qty_sent} sent.
+        </p>
       )}
       {inTransit && missingReason && (
         <p className="rounded-lg border border-amber-500/40 bg-amber-500/5 p-2.5 text-sm text-amber-700 dark:text-amber-500">
