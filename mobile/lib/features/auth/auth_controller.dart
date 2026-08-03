@@ -28,14 +28,15 @@ class AuthController extends AsyncNotifier<void> {
   /// `AsyncValue.guard`. Sentry FLUTTER-5 on 1.0.1+2 is that crash: level
   /// fatal, unhandled, from a rep tapping sign out with no bars.
   ///
-  /// Local scope first, so the session on this handset is cleared whatever the
-  /// server hears. A rep handing their phone over, or signing out to let a
-  /// colleague on, needs the session gone from *this* device; telling the
-  /// server is the part that can wait.
+  /// Global first, then local as the fallback — in that order, because when
+  /// the network is there the refresh token should genuinely be revoked, and
+  /// only a failure makes that impossible.
   ///
-  /// The global revoke is attempted afterwards and its failure swallowed. The
-  /// cost of not revoking is a refresh token that stays valid until it expires
-  /// on its own — worth it against an app that crashes instead of signing out.
+  /// When the global call fails the local sign-out still runs, so the session
+  /// leaves *this* handset either way. That is the part that matters to a rep
+  /// handing their phone over or signing out to let a colleague on. The cost is
+  /// a refresh token that stays valid until it expires on its own, which is a
+  /// better outcome than an app that crashes instead of signing out.
   Future<void> signOut() async {
     try {
       await supabase.auth.signOut(scope: SignOutScope.global);

@@ -232,14 +232,25 @@ export default function OrderDetailPage() {
     setNotice(null);
     try {
       const edits = detail!.lines
-        .map((l) => ({ id: l.id, raw: priceDraft[l.id] }))
+        .map((l) => ({ id: l.id, raw: priceDraft[l.id], name: l.product_name }))
         .filter((e) => e.raw !== undefined && e.raw !== "");
-      for (const e of edits) {
+
+      // Every price is checked before any is written. Validating inside the
+      // write loop meant a bad third line left the first two already saved,
+      // with the clerk shown only the error and no hint that half of it had
+      // gone through — the same half-saved state the stocktake counts had.
+      const priced = edits.map((e) => {
         const n = Number(e.raw);
         if (!Number.isFinite(n) || n < 0) {
-          throw new Error("A price has to be a number, and cannot be negative.");
+          throw new Error(
+            `${e.name}: a price has to be a number and cannot be negative. Nothing was saved.`
+          );
         }
-        await setLinePrice(supabase, e.id, n);
+        return { id: e.id, price: n };
+      });
+
+      for (const e of priced) {
+        await setLinePrice(supabase, e.id, e.price);
       }
       await reload();
       setPriceDraft({});

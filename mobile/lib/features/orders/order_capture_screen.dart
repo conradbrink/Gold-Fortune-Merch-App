@@ -39,6 +39,14 @@ class _OrderCaptureScreenState extends ConsumerState<OrderCaptureScreen> {
   final _contactName = TextEditingController();
   final _contactPhone = TextEditingController();
   final Map<String, int> _qty = {};
+
+  /// When the shop wants it, as `yyyy-MM-dd`, or null for "no date given".
+  ///
+  /// Held as a string rather than a DateTime because that is what
+  /// `orders.required_by` is and what the draft round-trips; converting at two
+  /// boundaries instead of one is how a date drifts by a day.
+  String? _requiredBy;
+
   bool _loading = true;
   bool _saving = false;
   String? _error;
@@ -73,6 +81,7 @@ class _OrderCaptureScreenState extends ConsumerState<OrderCaptureScreen> {
         _note.text = draft.note ?? '';
         _contactName.text = draft.contactName ?? '';
         _contactPhone.text = draft.contactPhone ?? '';
+        _requiredBy = draft.requiredBy;
       }
       _loading = false;
     });
@@ -86,6 +95,30 @@ class _OrderCaptureScreenState extends ConsumerState<OrderCaptureScreen> {
     }
   }
 
+  Future<void> _pickRequiredBy() async {
+    final now = DateTime.now();
+    final current = _requiredBy == null ? null : DateTime.tryParse(_requiredBy!);
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: current ?? now,
+      // Today at the earliest: a delivery cannot be wanted in the past, and
+      // `required_by` reads as a promise the warehouse works to.
+      firstDate: DateTime(now.year, now.month, now.day),
+      lastDate: now.add(const Duration(days: 365)),
+      helpText: 'When does the shop want it?',
+    );
+    if (picked == null) return;
+    setState(() {
+      // `yyyy-MM-dd`, which is what `orders.required_by` stores. Built by hand
+      // rather than with intl, because a locale-aware format here would send
+      // 03/08 to a column expecting 2026-08-03.
+      _requiredBy = '${picked.year.toString().padLeft(4, '0')}-'
+          '${picked.month.toString().padLeft(2, '0')}-'
+          '${picked.day.toString().padLeft(2, '0')}';
+    });
+    _persist();
+  }
+
   Future<void> _persist() async {
     final lines = _lines();
     final repo = ref.read(orderRepositoryProvider);
@@ -94,7 +127,11 @@ class _OrderCaptureScreenState extends ConsumerState<OrderCaptureScreen> {
     final phone = _contactPhone.text.trim();
     // A typed contact is worth keeping even with no lines yet — the rep may
     // have taken the name before the shopkeeper started listing products.
-    if (lines.isEmpty && note.isEmpty && name.isEmpty && phone.isEmpty) {
+    if (lines.isEmpty &&
+        note.isEmpty &&
+        name.isEmpty &&
+        phone.isEmpty &&
+        _requiredBy == null) {
       await repo.drafts.clear(widget.visitClientId);
       return;
     }
@@ -106,6 +143,7 @@ class _OrderCaptureScreenState extends ConsumerState<OrderCaptureScreen> {
         note: note.isEmpty ? null : note,
         contactName: name.isEmpty ? null : name,
         contactPhone: phone.isEmpty ? null : phone,
+        requiredBy: _requiredBy,
       ),
     );
   }
@@ -190,6 +228,7 @@ class _OrderCaptureScreenState extends ConsumerState<OrderCaptureScreen> {
                 _contactName.text.trim().isEmpty ? null : _contactName.text.trim(),
             contactPhone:
                 _contactPhone.text.trim().isEmpty ? null : _contactPhone.text.trim(),
+            requiredBy: _requiredBy,
           );
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -322,7 +361,23 @@ class _OrderCaptureScreenState extends ConsumerState<OrderCaptureScreen> {
                             ),
                           ],
                         ),
-                        const SizedBox(height: 10),
+                        const SizedBox(height: 6),
+                        // A picker, not a text field. A date typed one-handed
+                        // in a shop is a date entered wrong, and the format
+                        // the column wants is not the format a person writes.
+                        Align(
+                          alignment: Alignment.centerLeft,
+                          child: TextButton.icon(
+                            onPressed: _pickRequiredBy,
+                            icon: const Icon(Icons.event_outlined, size: 18),
+                            label: Text(
+                              _requiredBy == null
+                                  ? 'Wanted by (optional)'
+                                  : 'Wanted by $_requiredBy',
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 4),
                         TextField(
                           controller: _note,
                           onChanged: (_) => _persist(),
