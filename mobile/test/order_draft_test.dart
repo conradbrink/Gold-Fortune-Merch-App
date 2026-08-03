@@ -12,6 +12,7 @@
 // two objects can share a connection — the bytes never have to survive
 // anything.
 
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:drift/drift.dart' show driftRuntimeOptions;
@@ -252,6 +253,70 @@ void main() {
     expect(line.qty, 6);
     expect(line.unitsPerShrink, isNull);
     expect(() => line.qtyOrderedBaseUnits, throwsStateError);
+  });
+
+  // ---------------------------------------------- surviving the price removal
+  //
+  // Prices came off the rep app on 3 August: customers sit on different pricing
+  // tiers, so the warehouse sets the price when it confirms. The *fields* stayed
+  // on the model deliberately, because reps have drafts on their handsets right
+  // now that were written with prices in them. If those stopped decoding, a
+  // half-typed order would be dropped as corrupt on the very upgrade that was
+  // supposed to be an improvement.
+
+  test('a draft written by the old build, with prices, still opens', () async {
+    // Exactly the JSON the previous build wrote — note `unit_price` present on
+    // the line, and no contact fields at all.
+    const old = '{"saved_at":"__WHEN__","store_id":"store-1","note":"Before Friday",'
+        '"lines":[{"product_id":"p1","qty":3,"units_per_shrink":10,"unit_price":1595.0}]}';
+    await db.setValue(
+      OrderDraft.keyFor(visitId),
+      old.replaceAll('__WHEN__', DateTime.now().toIso8601String()),
+    );
+
+    final restored = await OrderDraftStore(db).load(visitId);
+
+    expect(restored, isNotNull, reason: 'an old draft must not decode as corrupt');
+    expect(restored!.storeId, 'store-1');
+    expect(restored.note, 'Before Friday');
+    expect(restored.lines.single.qty, 3, reason: 'still the shrinks the rep typed');
+    expect(restored.lines.single.unitsPerShrink, 10);
+    // The absent fields come back null rather than throwing.
+    expect(restored.contactName, isNull);
+    expect(restored.contactPhone, isNull);
+  });
+
+  test('a price on a restored draft is not sent to the warehouse', () async {
+    final repo = OrderRepository(
+      SupabaseClient('http://localhost:1', 'test-anon-key'),
+      db,
+      _SilentSync(db),
+    );
+
+    // A line carrying a price, as a restored old draft would.
+    await repo.submitOrder(
+      orgId: 'org-1',
+      repId: 'rep-1',
+      storeId: 'store-1',
+      visitClientGeneratedId: visitId,
+      contactName: 'Mma Dintwe',
+      contactPhone: '71234567',
+      lines: const [
+        OrderDraftLine(productId: 'p1', qty: 3, unitsPerShrink: 10, unitPrice: 1595.0),
+      ],
+    );
+
+    final payload = jsonDecode(
+      (await db.pendingEntries()).single.payload,
+    ) as Map<String, dynamic>;
+    final line = (payload['lines'] as List).single as Map<String, dynamic>;
+
+    // The quantity still converts; the price does not travel.
+    expect(line['qty_ordered'], 30);
+    expect(line['unit_price'], isNull,
+        reason: 'the warehouse prices the order, not the rep');
+    expect(payload['contact_name'], 'Mma Dintwe');
+    expect(payload['contact_phone'], '71234567');
   });
 
   test('submitting queues the order and clears the draft together', () async {

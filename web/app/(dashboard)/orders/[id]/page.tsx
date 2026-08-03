@@ -45,6 +45,9 @@ import {
   uploadDeliveryDocument,
   signedDocumentUrl,
   orderTotals,
+  setLinePrice,
+  unitPriceFor,
+  fetchOrderableProducts,
   type OrderDetail,
   type AvailabilityRow,
   type ShortfallAction,
@@ -83,6 +86,20 @@ export default function OrderDetailPage() {
     vehicles: { id: string; registration: string }[];
   }>({ drivers: [], vehicles: [] });
   const [orgId, setOrgId] = useState<string | null>(null);
+
+  /**
+   * Prices the warehouse is typing, keyed by line id.
+   *
+   * A rep's order arrives unpriced — customers sit on different pricing tiers,
+   * so the phone is the wrong place to decide. This is where the tier is known,
+   * and `order_lines` only accepts the edit while the order is still `new`,
+   * which is the right window: confirming is the promise.
+   */
+  const [priceDraft, setPriceDraft] = useState<Record<string, string>>({});
+  const [pricing, setPricing] = useState(false);
+  const [catalogue, setCatalogue] = useState<
+    { id: string; units_per_shrink: number | null; shrink_price_excl_vat: number | null }[]
+  >([]);
 
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -139,10 +156,14 @@ export default function OrderDetailPage() {
     let cancelled = false;
     (async () => {
       try {
-        const c = await fetchCarriers(supabase);
+        const [c, cat] = await Promise.all([
+          fetchCarriers(supabase),
+          fetchOrderableProducts(supabase),
+        ]);
         await reload();
         if (cancelled) return;
         setCarriers(c);
+        setCatalogue(cat);
         setError(null);
       } catch (e) {
         if (!cancelled) setError(e instanceof Error ? e.message : String(e));
@@ -191,6 +212,78 @@ export default function OrderDetailPage() {
 
   const o = detail.order;
   const short = availability.filter((a) => a.qty_short > 0);
+
+  // Only while the order is still `new`. `order_lines_insert`/`update` admit a
+  // line only in that state, so offering the box later would be offering an
+  // edit the database refuses.
+  const canPrice = o.status === "new";
+  const unpricedLines = detail.lines.filter((l) => l.unit_price == null).length;
+
+  /** The catalogue's per-unit price for a line, as a prefill. */
+  function suggested(productId: string): string {
+    const p = catalogue.find((c) => c.id === productId);
+    return p ? (unitPriceFor(p) ?? "") : "";
+  }
+
+  /** Saves every price typed, then reloads. */
+  async function savePrices() {
+    setPricing(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const edits = detail!.lines
+        .map((l) => ({ id: l.id, raw: priceDraft[l.id], name: l.product_name }))
+        .filter((e) => e.raw !== undefined && e.raw !== "");
+
+      // Every price is checked before any is written. Validating inside the
+      // write loop meant a bad third line left the first two already saved,
+      // with the clerk shown only the error and no hint that half of it had
+      // gone through — the same half-saved state the stocktake counts had.
+      const priced = edits.map((e) => {
+        const n = Number(e.raw);
+        if (!Number.isFinite(n) || n < 0) {
+          throw new Error(
+            `${e.name}: a price has to be a number and cannot be negative. Nothing was saved.`
+          );
+        }
+        return { id: e.id, price: n, name: e.name };
+      });
+
+      // Validated above, so nothing here fails on a bad number. What can still
+      // fail is the network, one line in — and there is no transaction across
+      // these writes, because `order_lines` is updated column by column under a
+      // grant rather than through an RPC. Making it atomic means a
+      // `security definer` RPC taking the whole array, which is a migration and
+      // is noted on the PR.
+      //
+      // Until then the partial state is reported rather than hidden: the same
+      // choice `saveCounts` makes, and for the same reason — a clerk told only
+      // "failed" retypes prices that are already saved.
+      const failed: string[] = [];
+      for (const e of priced) {
+        try {
+          await setLinePrice(supabase, e.id, e.price);
+        } catch {
+          failed.push(e.name);
+        }
+      }
+      if (failed.length > 0) {
+        throw new Error(
+          `${priced.length - failed.length} of ${priced.length} prices saved. ` +
+            `These did not: ${failed.join(", ")}. Re-enter only those.`
+        );
+      }
+      await reload();
+      setPriceDraft({});
+      setNotice(
+        edits.length === 1 ? "Price saved." : `${edits.length} prices saved.`
+      );
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setPricing(false);
+    }
+  }
   const openDispatch = detail.dispatches.find((d) => d.status === "in_transit");
 
   return (
@@ -330,6 +423,7 @@ export default function OrderDetailPage() {
                 <TableRow>
                   <TableHead>Product</TableHead>
                   <TableHead className="text-right">Ordered</TableHead>
+                  <TableHead className="text-right">Price/unit</TableHead>
                   <TableHead className="text-right">Reserved</TableHead>
                   <TableHead className="text-right">Picked</TableHead>
                   <TableHead className="text-right">Dispatched</TableHead>
@@ -347,6 +441,29 @@ export default function OrderDetailPage() {
                       )}
                     </TableCell>
                     <TableCell className="text-right tabular-nums">{l.qty_ordered}</TableCell>
+                    <TableCell className="text-right">
+                      {canPrice ? (
+                        <Input
+                          type="number"
+                          min={0}
+                          step="0.01"
+                          className="ml-auto h-8 w-24 text-right"
+                          aria-label={`Price per unit for ${l.product_name}`}
+                          placeholder={suggested(l.product_id) || "—"}
+                          value={
+                            priceDraft[l.id] ??
+                            (l.unit_price == null ? "" : String(l.unit_price))
+                          }
+                          onChange={(e) =>
+                            setPriceDraft((prev) => ({ ...prev, [l.id]: e.target.value }))
+                          }
+                        />
+                      ) : l.unit_price == null ? (
+                        <span className="text-muted-foreground">—</span>
+                      ) : (
+                        <span className="tabular-nums">{Number(l.unit_price).toFixed(2)}</span>
+                      )}
+                    </TableCell>
                     <TableCell className="text-right tabular-nums">{l.qty_reserved}</TableCell>
                     <TableCell className="text-right tabular-nums">{l.qty_picked}</TableCell>
                     <TableCell className="text-right tabular-nums">{l.qty_dispatched}</TableCell>
@@ -367,6 +484,35 @@ export default function OrderDetailPage() {
                 ))}
               </TableBody>
             </Table>
+
+            {canPrice && (
+              <div className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-border bg-muted/30 p-2.5">
+                <p className="text-sm text-muted-foreground">
+                  {unpricedLines > 0 ? (
+                    <>
+                      <span className="font-medium text-foreground">
+                        {unpricedLines} line{unpricedLines === 1 ? " has" : "s have"} no price.
+                      </span>{" "}
+                      {/* A rep never sets one: customers sit on different
+                          pricing tiers and the phone does not know which. The
+                          placeholder shows the catalogue price as a starting
+                          point, not an answer. */}
+                      Set them before confirming — a rep&rsquo;s order arrives unpriced.
+                    </>
+                  ) : (
+                    "Prices can be changed until this order is confirmed."
+                  )}
+                </p>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={savePrices}
+                  disabled={pricing || Object.keys(priceDraft).length === 0}
+                >
+                  {pricing ? "Saving…" : "Save prices"}
+                </Button>
+              </div>
+            )}
 
             {(() => {
               // Priced at the rate frozen onto this order, not the

@@ -361,6 +361,12 @@ class SyncEngine {
             'source': 'rep_app',
             'received_via': data['received_via'] ?? 'rep_visit',
             'notes': data['notes'],
+            // Columns that have existed since the orders migration and that
+            // this app never sent, so every rep order reached the warehouse
+            // with nobody to ring and no date to work to.
+            'contact_name': data['contact_name'],
+            'contact_phone': data['contact_phone'],
+            'required_by': data['required_by'],
             'client_generated_id': clientId,
           })
           .select('id')

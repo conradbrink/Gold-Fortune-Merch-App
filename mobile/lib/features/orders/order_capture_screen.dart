@@ -36,7 +36,17 @@ class OrderCaptureScreen extends ConsumerStatefulWidget {
 class _OrderCaptureScreenState extends ConsumerState<OrderCaptureScreen> {
   final _search = TextEditingController();
   final _note = TextEditingController();
+  final _contactName = TextEditingController();
+  final _contactPhone = TextEditingController();
   final Map<String, int> _qty = {};
+
+  /// When the shop wants it, as `yyyy-MM-dd`, or null for "no date given".
+  ///
+  /// Held as a string rather than a DateTime because that is what
+  /// `orders.required_by` is and what the draft round-trips; converting at two
+  /// boundaries instead of one is how a date drifts by a day.
+  String? _requiredBy;
+
   bool _loading = true;
   bool _saving = false;
   String? _error;
@@ -52,6 +62,8 @@ class _OrderCaptureScreenState extends ConsumerState<OrderCaptureScreen> {
   void dispose() {
     _search.dispose();
     _note.dispose();
+    _contactName.dispose();
+    _contactPhone.dispose();
     super.dispose();
   }
 
@@ -67,6 +79,9 @@ class _OrderCaptureScreenState extends ConsumerState<OrderCaptureScreen> {
           _qty[l.productId] = l.qty;
         }
         _note.text = draft.note ?? '';
+        _contactName.text = draft.contactName ?? '';
+        _contactPhone.text = draft.contactPhone ?? '';
+        _requiredBy = draft.requiredBy;
       }
       _loading = false;
     });
@@ -80,10 +95,55 @@ class _OrderCaptureScreenState extends ConsumerState<OrderCaptureScreen> {
     }
   }
 
+  Future<void> _pickRequiredBy() async {
+    final now = DateTime.now();
+    // Today at the earliest: a delivery cannot be wanted in the past, and
+    // `required_by` reads as a promise the warehouse works to.
+    final first = DateTime(now.year, now.month, now.day);
+    final last = first.add(const Duration(days: 365));
+
+    // Clamped into the range. A draft written yesterday for "tomorrow" is
+    // today; one written last week for a date since passed is behind `first`,
+    // and showDatePicker asserts rather than coping when `initialDate` falls
+    // outside — so restoring an old draft would crash the screen the rep is
+    // trying to use.
+    final restored = _requiredBy == null ? null : DateTime.tryParse(_requiredBy!);
+    var initial = restored ?? first;
+    if (initial.isBefore(first)) initial = first;
+    if (initial.isAfter(last)) initial = last;
+
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: initial,
+      firstDate: first,
+      lastDate: last,
+      helpText: 'When does the shop want it?',
+    );
+    if (picked == null) return;
+    setState(() {
+      // `yyyy-MM-dd`, which is what `orders.required_by` stores. Built by hand
+      // rather than with intl, because a locale-aware format here would send
+      // 03/08 to a column expecting 2026-08-03.
+      _requiredBy = '${picked.year.toString().padLeft(4, '0')}-'
+          '${picked.month.toString().padLeft(2, '0')}-'
+          '${picked.day.toString().padLeft(2, '0')}';
+    });
+    _persist();
+  }
+
   Future<void> _persist() async {
     final lines = _lines();
     final repo = ref.read(orderRepositoryProvider);
-    if (lines.isEmpty && _note.text.trim().isEmpty) {
+    final note = _note.text.trim();
+    final name = _contactName.text.trim();
+    final phone = _contactPhone.text.trim();
+    // A typed contact is worth keeping even with no lines yet — the rep may
+    // have taken the name before the shopkeeper started listing products.
+    if (lines.isEmpty &&
+        note.isEmpty &&
+        name.isEmpty &&
+        phone.isEmpty &&
+        _requiredBy == null) {
       await repo.drafts.clear(widget.visitClientId);
       return;
     }
@@ -92,7 +152,10 @@ class _OrderCaptureScreenState extends ConsumerState<OrderCaptureScreen> {
       OrderDraft(
         storeId: widget.storeId,
         lines: lines,
-        note: _note.text.trim().isEmpty ? null : _note.text.trim(),
+        note: note.isEmpty ? null : note,
+        contactName: name.isEmpty ? null : name,
+        contactPhone: phone.isEmpty ? null : phone,
+        requiredBy: _requiredBy,
       ),
     );
   }
@@ -106,7 +169,9 @@ class _OrderCaptureScreenState extends ConsumerState<OrderCaptureScreen> {
         productId: entry.key,
         qty: entry.value,
         unitsPerShrink: p?.unitsPerShrink,
-        unitPrice: p?.priceExclVat,
+        // No price from the phone. Customers sit on different pricing tiers,
+        // so the rep is not the one who knows it — the warehouse sets it when
+        // it confirms. See `OrderDraftLine.unitPrice` for why the field stays.
       ));
     }
     return out;
@@ -171,6 +236,11 @@ class _OrderCaptureScreenState extends ConsumerState<OrderCaptureScreen> {
             visitClientGeneratedId: widget.visitClientId,
             lines: lines,
             note: _note.text.trim().isEmpty ? null : _note.text.trim(),
+            contactName:
+                _contactName.text.trim().isEmpty ? null : _contactName.text.trim(),
+            contactPhone:
+                _contactPhone.text.trim().isEmpty ? null : _contactPhone.text.trim(),
+            requiredBy: _requiredBy,
           );
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -196,13 +266,6 @@ class _OrderCaptureScreenState extends ConsumerState<OrderCaptureScreen> {
         : _catalogue.where((p) => p.searchText.contains(term)).toList();
 
     final lineCount = _qty.values.where((q) => q > 0).length;
-    // Shrinks times the per-shrink price: both sides of this are the rep's own
-    // units, which is why the figure the shopkeeper is quoted does not change
-    // when the line is converted for the warehouse.
-    final total = _lines().fold<double>(
-      0,
-      (sum, l) => sum + l.qty * (l.unitPrice ?? 0),
-    );
 
     return Scaffold(
       appBar: AppBar(
@@ -283,6 +346,63 @@ class _OrderCaptureScreenState extends ConsumerState<OrderCaptureScreen> {
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
+                        Row(
+                          children: [
+                            Expanded(
+                              child: TextField(
+                                controller: _contactName,
+                                onChanged: (_) => _persist(),
+                                textCapitalization: TextCapitalization.words,
+                                decoration: const InputDecoration(
+                                  labelText: 'Who placed it',
+                                  isDense: true,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: TextField(
+                                controller: _contactPhone,
+                                onChanged: (_) => _persist(),
+                                keyboardType: TextInputType.phone,
+                                decoration: const InputDecoration(
+                                  labelText: 'Their phone',
+                                  isDense: true,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 6),
+                        // A picker, not a text field. A date typed one-handed
+                        // in a shop is a date entered wrong, and the format
+                        // the column wants is not the format a person writes.
+                        Row(
+                          children: [
+                            TextButton.icon(
+                              onPressed: _pickRequiredBy,
+                              icon: const Icon(Icons.event_outlined, size: 18),
+                              label: Text(
+                                _requiredBy == null
+                                    ? 'Wanted by (optional)'
+                                    : 'Wanted by $_requiredBy',
+                              ),
+                            ),
+                            // A date set by mistake has to be removable. The
+                            // picker has no "none", so clearing lives here.
+                            if (_requiredBy != null)
+                              IconButton(
+                                onPressed: () {
+                                  setState(() => _requiredBy = null);
+                                  _persist();
+                                },
+                                icon: const Icon(Icons.close, size: 18),
+                                tooltip: 'Clear the date',
+                                visualDensity: VisualDensity.compact,
+                              ),
+                          ],
+                        ),
+                        const SizedBox(height: 4),
                         TextField(
                           controller: _note,
                           onChanged: (_) => _persist(),
@@ -295,18 +415,9 @@ class _OrderCaptureScreenState extends ConsumerState<OrderCaptureScreen> {
                         Row(
                           children: [
                             Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    '$lineCount line${lineCount == 1 ? '' : 's'}',
-                                    style: Theme.of(context).textTheme.bodyMedium,
-                                  ),
-                                  Text(
-                                    'About ${total.toStringAsFixed(2)} excl. VAT',
-                                    style: Theme.of(context).textTheme.bodySmall,
-                                  ),
-                                ],
+                              child: Text(
+                                '$lineCount line${lineCount == 1 ? '' : 's'}',
+                                style: Theme.of(context).textTheme.bodyMedium,
                               ),
                             ),
                             FilledButton(
@@ -317,9 +428,8 @@ class _OrderCaptureScreenState extends ConsumerState<OrderCaptureScreen> {
                         ),
                         const SizedBox(height: 4),
                         Text(
-                          'Quantities are in shrinks and prices are trade, per '
-                          'shrink, excluding VAT. The warehouse confirms what is '
-                          'in stock.',
+                          'Quantities are in shrinks. The warehouse prices the '
+                          'order and confirms what is in stock.',
                           style: Theme.of(context).textTheme.bodySmall?.copyWith(
                                 color: AppColors.textMuted,
                               ),
@@ -348,11 +458,12 @@ class _ProductRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // No price. Customers sit on different pricing tiers, so a figure shown
+    // here would be quoted to a shopkeeper and then corrected on the invoice —
+    // worse than showing nothing, because the shop believed the first one.
     final subtitle = [
       if (product.brand != null) product.brand!,
       if (product.unitsPerShrink != null) '${product.unitsPerShrink} per shrink',
-      if (product.priceExclVat != null)
-        product.priceExclVat!.toStringAsFixed(2),
     ].join(' · ');
 
     // What the warehouse will actually be asked to reserve, spelled out as the

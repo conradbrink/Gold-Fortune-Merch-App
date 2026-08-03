@@ -20,6 +20,7 @@ import {
   fetchRepsForOrder,
   fetchVatRate,
   orderTotals,
+  unitPriceFor,
   RECEIVED_VIA,
 } from "@/lib/orders";
 import { fetchStockOnHand, type StockLine } from "@/lib/warehouse";
@@ -32,24 +33,6 @@ const blankLine = (): Draft => ({
   qty: "1",
   unitPrice: "",
 });
-
-/**
- * The trade price on a product is per shrink, but a line is priced per base
- * unit — the same unit `qty_ordered` counts in, and the same unit the shortage
- * hint and the reservation work in. Dividing here is what stops a ten-unit line
- * being charged at ten times the pack price.
- *
- * Null when the pack size is unknown, so the clerk is asked rather than given a
- * figure derived from a missing factor.
- */
-function unitPriceFor(p: {
-  units_per_shrink: number | null;
-  shrink_price_excl_vat: number | null;
-}): string | null {
-  if (p.shrink_price_excl_vat == null) return null;
-  if (p.units_per_shrink == null || p.units_per_shrink <= 0) return null;
-  return (p.shrink_price_excl_vat / p.units_per_shrink).toFixed(2);
-}
 
 /**
  * Keying an order that arrived by WhatsApp, email or telephone.
