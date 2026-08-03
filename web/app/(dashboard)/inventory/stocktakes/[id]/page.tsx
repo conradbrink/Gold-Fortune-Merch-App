@@ -144,6 +144,10 @@ export default function StocktakeDetailPage() {
   const withVariance = variance.filter((v) => v.variance_qty !== 0);
   const blockedIds = moved.filter((m) => m.variance_qty !== 0).map((m) => m.line_id);
   const allBlockedTicked = blockedIds.every((b) => reconfirm.has(b));
+  // What is still un-ticked, which is both the number the warning quotes and
+  // the number its verb has to agree with. Taking the count from one and the
+  // verb from the other produced "1 lines have moved".
+  const blockedOutstanding = blockedIds.filter((b) => !reconfirm.has(b)).length;
 
   return (
     <div className="space-y-6">
@@ -471,9 +475,10 @@ export default function StocktakeDetailPage() {
             </p>
             {dialog === "approve" && blockedIds.length > 0 && !allBlockedTicked && (
               <p className="rounded-lg border border-amber-500/40 bg-amber-500/5 p-2.5 text-sm text-amber-700 dark:text-amber-500">
-                {blockedIds.length - blockedIds.filter((b) => reconfirm.has(b)).length} line
-                {blockedIds.length === 1 ? " has" : "s have"} moved since the sheet was
-                handed in and has not been re-checked. Tick it in the table first, or the
+                {blockedOutstanding} line{blockedOutstanding === 1 ? " has" : "s have"} moved
+                since the sheet was handed in and{" "}
+                {blockedOutstanding === 1 ? "has" : "have"} not been re-checked. Tick{" "}
+                {blockedOutstanding === 1 ? "it" : "them"} in the table first, or the
                 database will refuse this.
               </p>
             )}

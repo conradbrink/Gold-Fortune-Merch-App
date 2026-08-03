@@ -6,16 +6,44 @@
 // wants the memory, so "held in State" is not a place an order can live.
 //
 // These tests do not simulate the kill with a method that hints at it. The
-// store is thrown away and a new one built against the same database, which is
-// what the rep actually gets after Android restarts the app.
+// database is closed outright and reopened over the same file, which is what
+// the rep actually gets after Android restarts the app. Keeping one in-memory
+// database open and building a second store against it would prove only that
+// two objects can share a connection — the bytes never have to survive
+// anything.
 
+import 'dart:io';
+
+import 'package:drift/drift.dart' show driftRuntimeOptions;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'package:gf_merch_rep/data/local/app_database.dart';
 import 'package:gf_merch_rep/data/local/order_draft.dart';
+import 'package:gf_merch_rep/data/local/outbox_types.dart';
+import 'package:gf_merch_rep/data/repositories/order_repository.dart';
+import 'package:gf_merch_rep/data/sync/sync_engine.dart';
+
+/// `submitOrder` ends with `unawaited(_sync.sync())`, which in a test would
+/// reach for the network. Overridden to do nothing so the test observes the
+/// enqueue-and-clear transaction and not a connection attempt.
+class _SilentSync extends SyncEngine {
+  _SilentSync(AppDatabase db)
+      : super(db, SupabaseClient('http://localhost:1', 'test-anon-key'));
+
+  @override
+  Future<void> sync() async {}
+}
 
 void main() {
+  // The restart test deliberately opens the same file twice. Drift warns about
+  // a second instance because two live databases over one executor would race
+  // — here the first is closed before the second is built, and the shared
+  // `db` below is a separate in-memory executor entirely. The warning does not
+  // apply, and leaving it printing would train the next reader to ignore it.
+  driftRuntimeOptions.dontWarnAboutMultipleDatabases = true;
+
   late AppDatabase db;
 
   setUp(() {
@@ -27,7 +55,17 @@ void main() {
   const visitId = 'visit-client-1';
 
   test('an order survives the app being killed mid-capture', () async {
-    await OrderDraftStore(db).save(
+    // A file, not memory, and genuinely closed and reopened. An in-memory
+    // database dies with the process it lives in, so building a second store
+    // against the *same open* handle proves only that two objects can read one
+    // connection — which is not what Android does to this app. The bytes have
+    // to survive the database itself going away.
+    final dir = await Directory.systemTemp.createTemp('gf_order_draft');
+    final file = File('${dir.path}/app.sqlite');
+    addTearDown(() async => dir.delete(recursive: true));
+
+    final first = AppDatabase.forTesting(NativeDatabase(file));
+    await OrderDraftStore(first).save(
       visitId,
       const OrderDraft(
         storeId: 'store-1',
@@ -38,10 +76,13 @@ void main() {
         ],
       ),
     );
+    // The process dies here.
+    await first.close();
 
-    // The process dies here. A completely new store against the same database
-    // is what comes back.
-    final recovered = await OrderDraftStore(db).load(visitId);
+    // And this is what the rep gets back: a new database over the same file.
+    final second = AppDatabase.forTesting(NativeDatabase(file));
+    addTearDown(() async => second.close());
+    final recovered = await OrderDraftStore(second).load(visitId);
 
     expect(recovered, isNotNull);
     expect(recovered!.storeId, 'store-1');
@@ -213,15 +254,41 @@ void main() {
     expect(() => line.qtyOrderedBaseUnits, throwsStateError);
   });
 
-  test('submitting clears the draft so it cannot be sent twice', () async {
-    final store = OrderDraftStore(db);
-    await store.save(
+  test('submitting queues the order and clears the draft together', () async {
+    // Through `submitOrder`, not through `clear`. Calling `clear` directly
+    // tested that `clear` clears — it would have gone on passing if submission
+    // stopped clearing the draft altogether, which is the bug that sends the
+    // shop two of everything.
+    final repo = OrderRepository(
+      SupabaseClient('http://localhost:1', 'test-anon-key'),
+      db,
+      _SilentSync(db),
+    );
+
+    await repo.drafts.save(
       visitId,
       const OrderDraft(storeId: 'store-1', lines: [
-        OrderDraftLine(productId: 'p1', qty: 2),
+        OrderDraftLine(productId: 'p1', qty: 2, unitsPerShrink: 6, unitPrice: 60),
       ]),
     );
-    await store.clear(visitId);
-    expect(await store.load(visitId), isNull);
+
+    final clientId = await repo.submitOrder(
+      orgId: 'org-1',
+      repId: 'rep-1',
+      storeId: 'store-1',
+      visitClientGeneratedId: visitId,
+      lines: const [
+        OrderDraftLine(productId: 'p1', qty: 2, unitsPerShrink: 6, unitPrice: 60),
+      ],
+    );
+
+    final queued = await db.pendingEntries();
+    expect(queued, hasLength(1));
+    expect(queued.single.entityType, OutboxType.orderCreate);
+    expect(queued.single.clientGeneratedId, clientId);
+
+    // Both halves, because they are one transaction: an order queued with the
+    // draft still sitting there is an order the rep can send a second time.
+    expect(await repo.drafts.load(visitId), isNull);
   });
 }

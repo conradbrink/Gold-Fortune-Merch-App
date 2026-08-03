@@ -156,6 +156,11 @@ export default function NewAdjustmentPage() {
     for (const l of filled) {
       const s = byKey.get(l.sourceKey);
       if (!s) return setError("One of the lines no longer matches the stock on hand.");
+      // A number input does not enforce `step`, and the ledger counts in whole
+      // units. Caught here so the clerk gets a sentence, not a cast error.
+      if (!Number.isInteger(Number(l.qty))) {
+        return setError(`${s.product_name} has a quantity that is not a whole number.`);
+      }
       const avail = availableInSource(s);
       if (avail !== null && Number(l.qty) > avail) {
         return setError(

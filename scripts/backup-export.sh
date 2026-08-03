@@ -159,8 +159,10 @@ WHAT THIS DOES NOT CONTAIN
 
 WHAT IT DOES CONTAIN
   * Every business table as JSON.
-  * The actual FILES from visit-photos and files, under storage/ - these are
-    irreplaceable and are NOT in Supabase's own database backups.
+  * The actual FILES from visit-photos, files and fulfilment-docs, under
+    storage/ - these are irreplaceable and are NOT in Supabase's own database
+    backups. fulfilment-docs holds the signed proofs of delivery, which are
+    the only evidence a customer ever received the goods.
 MANIFEST
 
 echo

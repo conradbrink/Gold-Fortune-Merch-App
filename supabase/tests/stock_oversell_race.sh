@@ -100,6 +100,52 @@ ACTOR=$(q "select id from public.profiles
   exit 1
 }
 
+# The trap goes on BEFORE the first insert, not after the fixtures are built.
+# `set -e` is active, so a failure part-way through the setup below would
+# otherwise exit the shell before the trap existed, and leave a probe product,
+# an opening_stock movement and a half-built order sitting in production —
+# where stock_movements is append-only and its foreign keys are ON DELETE
+# RESTRICT, so clearing it up by hand is genuinely awkward.
+#
+# Every id is therefore declared empty first, and cleanup skips whatever was
+# never assigned.
+PRODUCT=""; ORDER_A=""; ORDER_B=""
+
+# Per-run temporary logs. The fixed /tmp names were both guessable by another
+# user on a shared host and shared between concurrent runs of this script.
+LOG_DIR=$(mktemp -d "${TMPDIR:-/tmp}/oversell.XXXXXX")
+LOG_A="$LOG_DIR/session_a.log"
+LOG_B="$LOG_DIR/session_b.log"
+
+cleanup() {
+  # An `if`, not a `&&` chain: a false test as the first statement of the
+  # function would return non-zero and take the database clean-up below with
+  # it, which is the half that actually matters.
+  if [ -n "${LOG_DIR:-}" ]; then rm -rf "$LOG_DIR"; fi
+  [ -n "$PRODUCT$ORDER_A$ORDER_B" ] || return 0
+  # Deleting from stock_movements trips `stock_movements_immutable` for anyone
+  # who is not postgres/service_role/supabase_admin. DATABASE_URL is a direct
+  # postgres connection, so this is allowed — but the failure has to be visible
+  # rather than swallowed, or the script reports a clean exit while leaving the
+  # ledger dirty.
+  psql "$DATABASE_URL" -q -v ON_ERROR_STOP=1 <<SQL || echo "CLEANUP FAILED — remove the probe rows for product '$PRODUCT' by hand." >&2
+    delete from public.order_allocations
+     where order_id in (nullif('$ORDER_A','')::uuid, nullif('$ORDER_B','')::uuid);
+    delete from public.order_status_events
+     where order_id in (nullif('$ORDER_A','')::uuid, nullif('$ORDER_B','')::uuid);
+    delete from public.order_lines
+     where order_id in (nullif('$ORDER_A','')::uuid, nullif('$ORDER_B','')::uuid);
+    delete from public.orders
+     where id in (nullif('$ORDER_A','')::uuid, nullif('$ORDER_B','')::uuid);
+    -- Movements before balances before the product: the ledger's foreign keys
+    -- to products and locations are ON DELETE RESTRICT, on purpose.
+    delete from public.stock_movements where product_id = nullif('$PRODUCT','')::uuid;
+    delete from public.stock_balances  where product_id = nullif('$PRODUCT','')::uuid;
+    delete from public.products        where id = nullif('$PRODUCT','')::uuid;
+SQL
+}
+trap cleanup EXIT
+
 PRODUCT=$(q "insert into public.products (org_id, name)
              values ('$ORG', 'Oversell Race Probe') returning id")
 
@@ -126,25 +172,10 @@ done
 
 echo "created product=$PRODUCT order_a=$ORDER_A order_b=$ORDER_B (10 units available)"
 
-cleanup() {
-  psql "$DATABASE_URL" -q >/dev/null 2>&1 <<SQL || true
-    delete from public.order_allocations where order_id in ('$ORDER_A','$ORDER_B');
-    delete from public.order_status_events where order_id in ('$ORDER_A','$ORDER_B');
-    delete from public.order_lines where order_id in ('$ORDER_A','$ORDER_B');
-    delete from public.orders where id in ('$ORDER_A','$ORDER_B');
-    -- Movements before balances before the product: the ledger's foreign keys
-    -- to products and locations are ON DELETE RESTRICT, on purpose.
-    delete from public.stock_movements where product_id = '$PRODUCT';
-    delete from public.stock_balances where product_id = '$PRODUCT';
-    delete from public.products where id = '$PRODUCT';
-SQL
-}
-trap cleanup EXIT
-
 # Session B second in wall-clock terms but started first, holding back a second
 # so A is guaranteed to take the row lock first. B then blocks on it rather than
 # racing the read, which is the situation being tested.
-psql "$DATABASE_URL" -q -v ON_ERROR_STOP=0 >/tmp/oversell_b.log 2>&1 <<SQL &
+psql "$DATABASE_URL" -q -v ON_ERROR_STOP=0 >"$LOG_B" 2>&1 <<SQL &
 begin;
 select set_config('request.jwt.claims',
   json_build_object('sub','$ACTOR','role','authenticated')::text, true);
@@ -156,7 +187,7 @@ SQL
 B_PID=$!
 
 # Session A takes the lock, holds the transaction open past B's attempt, commits.
-psql "$DATABASE_URL" -q -v ON_ERROR_STOP=0 >/tmp/oversell_a.log 2>&1 <<SQL
+psql "$DATABASE_URL" -q -v ON_ERROR_STOP=0 >"$LOG_A" 2>&1 <<SQL
 begin;
 select set_config('request.jwt.claims',
   json_build_object('sub','$ACTOR','role','authenticated')::text, true);
@@ -168,8 +199,8 @@ SQL
 
 wait "$B_PID" || true
 
-echo "--- session A ---"; cat /tmp/oversell_a.log
-echo "--- session B ---"; cat /tmp/oversell_b.log
+echo "--- session A ---"; cat "$LOG_A"
+echo "--- session B ---"; cat "$LOG_B"
 
 CONFIRMED=$(q "select count(*) from public.orders
                 where id in ('$ORDER_A','$ORDER_B') and status = 'confirmed'")
@@ -216,7 +247,13 @@ fi
 # The loser should have been refused by order_confirm's own shortfall path, not
 # by the balance constraint. Both prevent the oversell; only the first means the
 # lock did its job.
-if grep -qi 'violates check constraint "stock_balances_non_negative"' /tmp/oversell_b.log; then
+# Both logs, not just B's. Which session loses is decided by wall-clock
+# timing — B sleeps a second to let A take the lock first, but on a loaded host
+# or a slow handshake B can still get there first and A becomes the loser. The
+# other assertions survive that because they count confirmed orders rather than
+# naming a winner; this one would not. Grepping only B would find nothing and
+# print PASS in exactly the case the script exists to catch.
+if grep -qi 'violates check constraint "stock_balances_non_negative"' "$LOG_A" "$LOG_B"; then
   echo "FAIL: the second order was stopped by the non-negative constraint, not" >&2
   echo "      by the reservation loop. The lock held but the blocked session did" >&2
   echo "      not re-read the row — the backstop caught what the mechanism" >&2

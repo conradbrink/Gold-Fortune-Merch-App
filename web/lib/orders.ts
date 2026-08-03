@@ -93,6 +93,39 @@ export async function fetchOrders(
 
   if (opts.status && opts.status !== "all") q = q.eq("status", opts.status);
 
+  // The search has to happen in the database, before the limit. Filtering the
+  // 200 rows that came back means an order older than the newest 200 can never
+  // be found by its own order number — the screen says "no orders" about an
+  // order that exists, which is worse than saying nothing.
+  //
+  // `order_number` and `contact_name` are columns here, so they go straight
+  // into an `.or()`. The store name lives on an embedded table and cannot, so
+  // the matching store ids are looked up first and folded into the same filter
+  // rather than dropped from the search.
+  const term = opts.search?.trim();
+  if (term) {
+    // PostgREST parses this filter as a comma-separated list with parenthesised
+    // groups, so those characters have to go or the query is malformed. `%` and
+    // `_` are ilike wildcards and would widen the match silently.
+    const safe = term.replace(/[%_,()\\]/g, "");
+    if (safe) {
+      const { data: storeHits, error: storeError } = await supabase
+        .from("stores")
+        .select("id")
+        .ilike("name", `%${safe}%`)
+        .limit(100);
+      fail(storeError);
+
+      const clauses = [
+        `order_number.ilike.%${safe}%`,
+        `contact_name.ilike.%${safe}%`,
+      ];
+      const storeIds = (storeHits ?? []).map((s) => s.id);
+      if (storeIds.length > 0) clauses.push(`store_id.in.(${storeIds.join(",")})`);
+      q = q.or(clauses.join(","));
+    }
+  }
+
   const { data, error } = await q;
   fail(error);
 
@@ -101,7 +134,7 @@ export async function fetchOrders(
     order_lines: { qty_ordered: number }[] | null;
   })[];
 
-  const mapped = rows.map((r) => {
+  return rows.map((r) => {
     // PostgREST returns an embedded to-one as an object or an array depending
     // on how it resolves the relationship; normalise rather than guess.
     const store = Array.isArray(r.stores) ? r.stores[0] : r.stores;
@@ -113,15 +146,6 @@ export async function fetchOrders(
       units: lines.reduce((n, l) => n + l.qty_ordered, 0),
     } as OrderListRow;
   });
-
-  const term = opts.search?.trim().toLowerCase();
-  if (!term) return mapped;
-  return mapped.filter(
-    (o) =>
-      o.order_number.toLowerCase().includes(term) ||
-      (o.store_name ?? "").toLowerCase().includes(term) ||
-      (o.contact_name ?? "").toLowerCase().includes(term)
-  );
 }
 
 export async function fetchOrderDetail(
@@ -484,7 +508,14 @@ export async function uploadDeliveryDocument(
     signedByName?: string;
   }
 ): Promise<void> {
-  const ext = input.file.name.split(".").pop()?.toLowerCase() || "bin";
+  // Whatever follows the last dot is not a file extension, it is caller input,
+  // and it is interpolated into the storage key below. A name carrying a `/`
+  // would put the object outside the `{org_id}/{order_id}` prefix the storage
+  // policy joins on — which is the prefix that makes another org's PODs
+  // unreachable. A browser file input will not produce one, but `File` is
+  // constructible and this function is exported.
+  const rawExt = input.file.name.split(".").pop()?.toLowerCase() ?? "";
+  const ext = /^[a-z0-9]{1,8}$/.test(rawExt) ? rawExt : "bin";
   const path = `${input.orgId}/${input.orderId}/${crypto.randomUUID()}.${ext}`;
 
   const { error: uploadError } = await supabase.storage

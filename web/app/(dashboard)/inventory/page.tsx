@@ -107,6 +107,10 @@ export default function InventoryPage() {
 
   const expiringSoon = expiring.filter((e) => Number(e.days_until_expiry) <= 30);
 
+  // Follows the Location column, which only appears with somewhere to choose
+  // between. A fixed span left the loading and empty rows one column too wide.
+  const columnCount = locations.length > 1 ? 9 : 8;
+
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-end justify-between gap-3">
@@ -231,6 +235,8 @@ export default function InventoryPage() {
 
       <div className="rounded-lg border border-border bg-card">
         <Table>
+          {/* The Location column only appears once there is more than one place
+              to hold stock, so the span of a full-width row has to follow it. */}
           <TableHeader>
             <TableRow>
               <TableHead>Product</TableHead>
@@ -246,9 +252,9 @@ export default function InventoryPage() {
           </TableHeader>
           <TableBody>
             {loading ? (
-              <EmptyRow colSpan={9}>Loading…</EmptyRow>
+              <EmptyRow colSpan={columnCount}>Loading…</EmptyRow>
             ) : visible.length === 0 ? (
-              <EmptyRow colSpan={9}>
+              <EmptyRow colSpan={columnCount}>
                 {search.trim() || onlyBelowMin
                   ? "Nothing matches those filters."
                   : "No stock recorded yet. Receive a delivery to get started."}

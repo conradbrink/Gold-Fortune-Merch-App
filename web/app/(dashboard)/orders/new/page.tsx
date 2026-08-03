@@ -294,13 +294,25 @@ export default function NewOrderPage() {
                     onChange={(e) => {
                       const p = products.find((x) => x.id === e.target.value);
                       const prefill = p ? unitPriceFor(p) : null;
+
+                      // Changing the product has to move the price with it.
+                      // Only re-prefilling an empty box meant that picking A,
+                      // taking its price, then switching the line to B left
+                      // A's price sitting there — the order saves at the wrong
+                      // figure and nothing on screen says so.
+                      //
+                      // A price the clerk typed themselves is theirs and is
+                      // kept: a negotiated price is exactly what a phone order
+                      // carries, and overwriting it would be worse.
+                      const previous = products.find((x) => x.id === l.productId);
+                      const previousPrefill = previous ? unitPriceFor(previous) : null;
+                      const untouched =
+                        l.unitPrice === "" || l.unitPrice === previousPrefill;
+
                       update(l.key, {
                         productId: e.target.value,
-                        // Prefill the trade price so the clerk does not retype
-                        // it, but leave it editable — a negotiated price is
-                        // exactly the kind of thing a phone order carries.
                         unitPrice:
-                          l.unitPrice === "" && prefill != null ? prefill : l.unitPrice,
+                          untouched && prefill != null ? prefill : l.unitPrice,
                       });
                     }}
                     aria-label="Product"

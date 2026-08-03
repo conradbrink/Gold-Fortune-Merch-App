@@ -176,6 +176,23 @@ export default function NewReceiptPage() {
         );
         return;
       }
+      // The `min` and `step` attributes on a number input are advisory —
+      // browsers do not enforce them for a typed or pasted value, so a
+      // fractional or negative quantity reaches the ledger, where quantities
+      // are integers. Refuse it here with a sentence instead of letting the
+      // insert fail on a type cast.
+      if (!Number.isInteger(Number(l.qtyReceived))) {
+        setError(`${p?.name ?? "One line"} has a received quantity that is not a whole number.`);
+        return;
+      }
+      if (l.qtyDamaged !== "" && !Number.isInteger(Number(l.qtyDamaged))) {
+        setError(`${p?.name ?? "One line"} has a damaged quantity that is not a whole number.`);
+        return;
+      }
+      if (Number(l.qtyDamaged) < 0) {
+        setError("A damaged quantity cannot be negative.");
+        return;
+      }
       if (Number(l.qtyDamaged) > Number(l.qtyReceived)) {
         setError("More damaged than received on one line.");
         return;

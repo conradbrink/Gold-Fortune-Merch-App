@@ -786,7 +786,14 @@ export default function WarehouseSettingsPage() {
             <Button
               disabled={busy}
               onClick={() => {
-                if (!editing || !orgId) return;
+                if (!editing) return;
+                // Returning silently here left the dialog open with the Save
+                // button apparently doing nothing at all, which reads as a
+                // broken button rather than a state the user can act on.
+                if (!orgId) {
+                  setError("Could not work out your organisation. Reload and try again.");
+                  return;
+                }
                 const row = editing.row as Record<string, string | undefined>;
                 run(() => {
                   switch (editing.kind) {

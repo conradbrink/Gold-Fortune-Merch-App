@@ -161,10 +161,10 @@ export default function AdjustmentDetailPage() {
           )}
           {isPending && role === "manager" && (
             <>
-              <Button onClick={() => setDialog("approve")} disabled={busy}>
+              <Button onClick={() => { setNote(""); setDialog("approve"); }} disabled={busy}>
                 Approve
               </Button>
-              <Button variant="outline" onClick={() => setDialog("reject")} disabled={busy}>
+              <Button variant="outline" onClick={() => { setNote(""); setDialog("reject"); }} disabled={busy}>
                 Reject
               </Button>
             </>
@@ -238,7 +238,15 @@ export default function AdjustmentDetailPage() {
 
       <Dialog
         open={dialog === "approve" || dialog === "reject"}
-        onOpenChange={(v) => !v && setDialog(null)}
+        onOpenChange={(v) => {
+          // The note is the reason for *this* decision. Left behind, a
+          // rejection reason typed and abandoned would be filed as the note on
+          // a later approval.
+          if (!v) {
+            setDialog(null);
+            setNote("");
+          }
+        }}
       >
         <DialogContent>
           <DialogHeader>

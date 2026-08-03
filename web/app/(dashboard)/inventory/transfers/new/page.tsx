@@ -43,7 +43,11 @@ export default function NewTransferPage() {
   const [lines, setLines] = useState<Draft[]>([blank()]);
 
   const [loading, setLoading] = useState(true);
-  const [loadingStock, setLoadingStock] = useState(false);
+  // True from the start. The first source fetch is kicked off as soon as a
+  // default `from` location is assigned, and starting at false meant the card
+  // asserted "there is no available stock at that location" during that first
+  // fetch — stating as fact something not yet known.
+  const [loadingStock, setLoadingStock] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -214,7 +218,10 @@ export default function NewTransferPage() {
           <CardTitle className="text-base">What is going</CardTitle>
         </CardHeader>
         <CardContent className="space-y-3">
-          {loadingStock ? (
+          {/* `fromId` is part of the test because the effect that clears
+              `loadingStock` returns early without a source location. Reading
+              the flag alone would spin for ever when no location exists. */}
+          {fromId && loadingStock ? (
             <p className="text-sm text-muted-foreground">Reading what is on the shelf…</p>
           ) : source.length === 0 ? (
             <p className="rounded-lg border border-amber-500/40 bg-amber-500/5 p-2.5 text-sm text-amber-700 dark:text-amber-500">

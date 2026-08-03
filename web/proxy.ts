@@ -85,11 +85,23 @@ export async function proxy(request: NextRequest) {
     !isDownloadPage &&
     !isPasswordResetPage
   ) {
-    const { data: profile } = await supabase
+    const { data: profile, error: profileError } = await supabase
       .from("profiles")
       .select("role")
       .eq("id", user.id)
       .single();
+
+    // A query that failed is not the same fact as a profile that is missing.
+    // Falling through to the `rep` default on a timeout or an RLS change would
+    // strand a manager on /rep-notice looking like a broken account, and the
+    // one thing they could not work out is that it was temporary. PGRST116 is
+    // "no rows", which genuinely is a broken account and is handled below.
+    if (profileError && profileError.code !== "PGRST116") {
+      return new NextResponse(
+        "Could not check your access just now. Reload in a moment.",
+        { status: 503 }
+      );
+    }
 
     const role = profile?.role as AppRole | undefined;
 

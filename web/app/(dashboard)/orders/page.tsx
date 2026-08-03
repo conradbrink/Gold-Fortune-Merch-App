@@ -44,8 +44,13 @@ export default function OrdersPage() {
     const s = params.get("status");
     // eslint-disable-next-line react-hooks/set-state-in-effect
     if (q) setSearch(q);
+    // Only a status this page actually offers. An unknown one from a stale or
+    // hand-edited link would leave the select showing nothing and the table
+    // empty, with no clue that the filter was the reason.
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    if (s) setStatus(s);
+    if (s && (s === "all" || (ORDER_STATUSES as readonly string[]).includes(s))) {
+      setStatus(s);
+    }
   }, []);
 
   useEffect(() => {

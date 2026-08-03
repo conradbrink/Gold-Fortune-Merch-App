@@ -132,12 +132,36 @@ export async function saveCounts(
   supabase: Client,
   counts: { id: string; countedQty: number | null; varianceReason: string | null }[]
 ) {
-  for (const c of counts) {
-    const { error } = await supabase
-      .from("stocktake_lines")
-      .update({ counted_qty: c.countedQty, variance_reason: c.varianceReason })
-      .eq("id", c.id);
-    fail(error);
+  // Sent in bounded batches rather than one at a time: a full count runs to
+  // hundreds of lines, and a round trip each made saving a sheet slow enough
+  // that a counter would reasonably think it had hung.
+  //
+  // This is still not atomic. A line that fails leaves the ones already sent
+  // saved, so the failure has to name them — a counter told only "save failed"
+  // would retype a sheet that is already half-written, and the half that was
+  // written is the half they cannot see.
+  const CHUNK = 20;
+  const failed: string[] = [];
+
+  for (let i = 0; i < counts.length; i += CHUNK) {
+    const batch = counts.slice(i, i + CHUNK);
+    const results = await Promise.all(
+      batch.map(async (c) => {
+        const { error } = await supabase
+          .from("stocktake_lines")
+          .update({ counted_qty: c.countedQty, variance_reason: c.varianceReason })
+          .eq("id", c.id);
+        return { id: c.id, error };
+      })
+    );
+    for (const r of results) if (r.error) failed.push(r.id);
+  }
+
+  if (failed.length > 0) {
+    throw new Error(
+      `${failed.length} of ${counts.length} counted lines did not save. ` +
+        `The rest were saved. Re-enter only the lines still showing no count.`
+    );
   }
 }
 

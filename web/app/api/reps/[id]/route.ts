@@ -316,6 +316,14 @@ export async function DELETE(
     const guard = await authorise(id);
     if ("error" in guard) return guard.error;
 
+    // The same limiter PATCH uses. This route is the more destructive of the
+    // two — a delete cascades the profile and its whole history, and none of
+    // it comes back — so it is the one that least deserved to be the
+    // unthrottled path. It became reachable for warehouse accounts too when
+    // `authorise` was widened, which is what made the gap worth closing now.
+    const gate = await enforceRateLimit(guard.supabase, LIMITS.repAdmin);
+    if (!gate.ok) return gate.response;
+
     // profiles.id references auth.users(id) on delete cascade, so removing the
     // auth user takes the profile and everything hanging off it.
     const { error } = await guard.admin.auth.admin.deleteUser(id);

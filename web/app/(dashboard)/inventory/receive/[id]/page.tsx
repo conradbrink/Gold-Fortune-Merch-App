@@ -75,13 +75,23 @@ export default function ReceiptDetailPage() {
     };
   }, [reload]);
 
-  async function run(fn: () => Promise<unknown>, success: string) {
+  /**
+   * `reload: false` is for the paths that destroy the thing being displayed.
+   * Discarding a draft deletes the row, so re-reading it afterwards fails on a
+   * `.single()` that finds nothing, and the screen shows an error about the
+   * record not existing at the exact moment that is the intended outcome.
+   */
+  async function run(
+    fn: () => Promise<unknown>,
+    success: string,
+    opts: { reload?: boolean } = {}
+  ) {
     setBusy(true);
     setError(null);
     setNotice(null);
     try {
       await fn();
-      await reload();
+      if (opts.reload !== false) await reload();
       setNotice(success);
       setDialog(null);
     } catch (e) {
@@ -282,10 +292,14 @@ export default function ReceiptDetailPage() {
                       () => cancelReceipt(supabase, id, reason),
                       "Reversed. The stock has been taken back out."
                     )
-                  : run(async () => {
-                      await deleteDraftReceipt(supabase, id);
-                      router.push("/inventory/receive");
-                    }, "Draft discarded.")
+                  : run(
+                      async () => {
+                        await deleteDraftReceipt(supabase, id);
+                        router.push("/inventory/receive");
+                      },
+                      "Draft discarded.",
+                      { reload: false }
+                    )
               }
               disabled={busy || (dialog === "cancel" && !reason.trim())}
             >

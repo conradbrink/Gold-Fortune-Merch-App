@@ -56,7 +56,12 @@ export function StatTile({
 export function ErrorBanner({ message }: { message: string | null }) {
   if (!message) return null;
   return (
-    <p className="rounded-lg border border-destructive/40 bg-destructive/10 p-2.5 text-sm text-destructive">
+    // The banner appears in place of anything happening, so a screen reader has
+    // to be told. Without this the action simply seems not to have worked.
+    <p
+      role="alert"
+      className="rounded-lg border border-destructive/40 bg-destructive/10 p-2.5 text-sm text-destructive"
+    >
       {message}
     </p>
   );

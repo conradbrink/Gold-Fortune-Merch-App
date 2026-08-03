@@ -399,10 +399,18 @@ export default function OrderDetailPage() {
                     type="button"
                     className="block w-full text-left text-primary hover:underline"
                     onClick={async () => {
+                      // The tab is opened on the click itself, then pointed at
+                      // the signed URL once it arrives. Opening it after the
+                      // await loses the user-activation token in Safari and
+                      // others, and the click then does nothing at all with
+                      // nothing on screen to explain why.
+                      const tab = window.open("", "_blank", "noopener,noreferrer");
                       try {
                         const url = await signedDocumentUrl(supabase, d.storage_path);
-                        window.open(url, "_blank", "noopener,noreferrer");
+                        if (tab) tab.location.href = url;
+                        else window.open(url, "_blank", "noopener,noreferrer");
                       } catch (e) {
+                        tab?.close();
                         setError(e instanceof Error ? e.message : String(e));
                       }
                     }}
@@ -611,12 +619,19 @@ export default function OrderDetailPage() {
             </Button>
             <Button
               onClick={() =>
-                run(
-                  () => markDelivered(supabase, openDispatch!.id, receivedBy),
-                  "Delivery recorded. The signed POD is now outstanding."
-                )
+                run(() => {
+                  // Not an assertion. `openDispatch` is derived from the order
+                  // on every render, and what is on screen is not proof it is
+                  // still in transit by the time the button is pressed.
+                  if (!openDispatch) {
+                    throw new Error(
+                      "This consignment is no longer in transit. Reload the order."
+                    );
+                  }
+                  return markDelivered(supabase, openDispatch.id, receivedBy);
+                }, "Delivery recorded. The signed POD is now outstanding.")
               }
-              disabled={busy || !receivedBy.trim()}
+              disabled={busy || !receivedBy.trim() || !openDispatch}
             >
               {busy ? "Saving…" : "Record delivery"}
             </Button>
@@ -662,14 +677,25 @@ export default function OrderDetailPage() {
             <Button
               onClick={() =>
                 run(
-                  () =>
-                    returnUndelivered(supabase, openDispatch!.id, reason, cancelAfterReturn),
+                  () => {
+                    if (!openDispatch) {
+                      throw new Error(
+                        "This consignment is no longer in transit. Reload the order."
+                      );
+                    }
+                    return returnUndelivered(
+                      supabase,
+                      openDispatch.id,
+                      reason,
+                      cancelAfterReturn
+                    );
+                  },
                   cancelAfterReturn
                     ? "Stock returned and the order cancelled."
                     : "Stock returned. The order is packed and ready to go out again."
                 )
               }
-              disabled={busy || !reason.trim()}
+              disabled={busy || !reason.trim() || !openDispatch}
             >
               {busy ? "Saving…" : "Record it"}
             </Button>
@@ -774,7 +800,14 @@ export default function OrderDetailPage() {
                   await uploadDeliveryDocument(supabase, {
                     orgId,
                     orderId,
-                    dispatchId: detail.dispatches[0]?.id ?? null,
+                    // A POD belongs to the consignment that actually arrived.
+                    // An order that went out, came back and went out again has
+                    // more than one dispatch, and the first in the list is not
+                    // necessarily the delivered one.
+                    dispatchId:
+                      detail.dispatches.find((d) => d.status === "delivered")?.id ??
+                      detail.dispatches[0]?.id ??
+                      null,
                     docType,
                     file,
                     signedByName: signedBy,
