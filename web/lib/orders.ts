@@ -25,6 +25,8 @@ export type OrderListRow = OrderRow & {
   store_name: string | null;
   line_count: number;
   units: number;
+  /** What the order is worth to the business, VAT included. */
+  total_incl_vat: number;
 };
 
 export type OrderDetail = {
@@ -87,7 +89,7 @@ export async function fetchOrders(
 ): Promise<OrderListRow[]> {
   let q = supabase
     .from("orders")
-    .select("*, stores(name), order_lines(qty_ordered)")
+    .select("*, stores(name), order_lines(qty_ordered, unit_price)")
     .order("created_at", { ascending: false })
     .limit(200);
 
@@ -131,7 +133,7 @@ export async function fetchOrders(
 
   const rows = (data ?? []) as unknown as (OrderRow & {
     stores: { name: string } | { name: string }[] | null;
-    order_lines: { qty_ordered: number }[] | null;
+    order_lines: { qty_ordered: number; unit_price: number | null }[] | null;
   })[];
 
   return rows.map((r) => {
@@ -144,6 +146,14 @@ export async function fetchOrders(
       store_name: store?.name ?? null,
       line_count: lines.length,
       units: lines.reduce((n, l) => n + l.qty_ordered, 0),
+      // At the rate frozen onto this order, not the organisation's current one.
+      total_incl_vat: orderTotals(
+        lines.map((l) => ({
+          qty: l.qty_ordered,
+          unitPrice: l.unit_price == null ? 0 : Number(l.unit_price),
+        })),
+        Number(r.vat_rate ?? 0)
+      ).total,
     } as OrderListRow;
   });
 }
@@ -290,6 +300,34 @@ export async function fetchOrderableProducts(supabase: Client) {
     units_per_shrink: number | null;
     shrink_price_excl_vat: number | null;
   }[];
+}
+
+/**
+ * Creates a store from the order-capture screen.
+ *
+ * Deliberately minimal — name and where it is. Everything else on a store
+ * (groups, territory, geocoding) is management data that the full Stores
+ * screen owns; an order should not be blocked on any of it.
+ *
+ * Whether the caller *may* do this is RLS's decision, not this function's:
+ * `stores_insert` names the roles. The screen shows the refusal as-is.
+ */
+export async function createStoreInline(
+  supabase: Client,
+  input: { orgId: string; name: string; city?: string | null; address?: string | null }
+) {
+  const { data, error } = await supabase
+    .from("stores")
+    .insert({
+      org_id: input.orgId,
+      name: input.name.trim(),
+      city: input.city?.trim() || null,
+      address: input.address?.trim() || null,
+    })
+    .select("id, name, city")
+    .single();
+  fail(error);
+  return data as { id: string; name: string; city: string | null };
 }
 
 /**

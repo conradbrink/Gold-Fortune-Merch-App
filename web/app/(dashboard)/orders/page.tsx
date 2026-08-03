@@ -189,20 +189,18 @@ export default function OrdersPage() {
           <TableHeader>
             <TableRow>
               <TableHead>Order</TableHead>
+              <TableHead>Captured</TableHead>
               <TableHead>Store</TableHead>
-              <TableHead>Source</TableHead>
               <TableHead>Status</TableHead>
               <TableHead>Next step</TableHead>
-              <TableHead className="text-right">Lines</TableHead>
-              <TableHead className="text-right">Units</TableHead>
-              <TableHead>Captured</TableHead>
+              <TableHead className="text-right">Value</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {loading ? (
-              <EmptyRow colSpan={8}>Loading…</EmptyRow>
+              <EmptyRow colSpan={6}>Loading…</EmptyRow>
             ) : visible.length === 0 ? (
-              <EmptyRow colSpan={8}>
+              <EmptyRow colSpan={6}>
                 {search.trim() || status !== "all" || podOnly
                   ? "No orders match those filters."
                   : "No orders yet. Capture one, or wait for a rep to send one in."}
@@ -227,16 +225,13 @@ export default function OrdersPage() {
                       </Badge>
                     )}
                   </TableCell>
+                  <TableCell className="whitespace-nowrap text-muted-foreground">
+                    {new Date(o.created_at).toLocaleDateString()}
+                  </TableCell>
                   <TableCell>
                     <div>{o.store_name ?? "—"}</div>
                     {o.contact_name && (
                       <div className="text-xs text-muted-foreground">{o.contact_name}</div>
-                    )}
-                  </TableCell>
-                  <TableCell className="text-muted-foreground">
-                    {o.source === "rep_app" ? "Rep app" : "Keyed"}
-                    {o.received_via !== "other" && (
-                      <span className="text-xs"> · {o.received_via.replace("_", " ")}</span>
                     )}
                   </TableCell>
                   <TableCell>
@@ -266,10 +261,11 @@ export default function OrdersPage() {
                   >
                     {nextStep(o)}
                   </TableCell>
-                  <TableCell className="text-right tabular-nums">{o.line_count}</TableCell>
-                  <TableCell className="text-right tabular-nums">{o.units}</TableCell>
-                  <TableCell className="text-muted-foreground">
-                    {new Date(o.created_at).toLocaleDateString()}
+                  {/* What the order is worth, VAT included. A line count and a
+                      unit count are facts about the paperwork; this is the
+                      number anybody actually asks about. */}
+                  <TableCell className="text-right font-medium tabular-nums">
+                    {o.total_incl_vat.toFixed(2)}
                   </TableCell>
                 </TableRow>
               ))

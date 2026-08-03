@@ -14,6 +14,7 @@ import { ErrorBanner } from "@/components/warehouse/stat-tile";
 import { fetchOrgId } from "@/lib/representatives";
 import {
   createManualOrder,
+  createStoreInline,
   fetchOrderableProducts,
   fetchStoresForOrder,
   fetchRepsForOrder,
@@ -86,6 +87,18 @@ export default function NewOrderPage() {
   const [notes, setNotes] = useState("");
   const [repId, setRepId] = useState("");
   const [invoiceNumber, setInvoiceNumber] = useState("");
+
+  // The store picker. 211 stores makes a plain <select> a scroll through the
+  // alphabet, so this is a search box over the same list. `storeQuery` is what
+  // has been typed; a selection writes the store's name into it, and typing
+  // anything afterwards clears the selection so the text and the choice can
+  // never disagree.
+  const [storeQuery, setStoreQuery] = useState("");
+  const [storeOpen, setStoreOpen] = useState(false);
+  const [addingStore, setAddingStore] = useState(false);
+  const [newStoreCity, setNewStoreCity] = useState("");
+  const [newStoreAddress, setNewStoreAddress] = useState("");
+  const [creatingStore, setCreatingStore] = useState(false);
   const [lines, setLines] = useState<Draft[]>([blankLine()]);
 
   const [loading, setLoading] = useState(true);
@@ -146,6 +159,52 @@ export default function NewOrderPage() {
   );
 
   const usedProducts = new Set(lines.map((l) => l.productId).filter(Boolean));
+
+  // Name or town, case-blind, capped so the list stays a list. The full set is
+  // already in memory — 211 stores is a couple of kilobytes — so this is a
+  // filter, not a query.
+  const storeMatches = useMemo(() => {
+    const q = storeQuery.trim().toLowerCase();
+    if (!q) return stores.slice(0, 8);
+    return stores
+      .filter(
+        (s) =>
+          s.name.toLowerCase().includes(q) ||
+          (s.city ?? "").toLowerCase().includes(q)
+      )
+      .slice(0, 8);
+  }, [stores, storeQuery]);
+
+  async function addStore() {
+    if (!orgId) return setError("Could not work out your organisation. Reload and try again.");
+    const name = storeQuery.trim();
+    if (!name) return setError("The store needs a name — type it in the search box.");
+    setCreatingStore(true);
+    setError(null);
+    try {
+      const created = await createStoreInline(supabase, {
+        orgId,
+        name,
+        city: newStoreCity,
+        address: newStoreAddress,
+      });
+      // Into the local list too, so it is findable again without a reload.
+      setStores((prev) =>
+        [...prev, { id: created.id, name: created.name, city: created.city }].sort((a, b) =>
+          a.name.localeCompare(b.name)
+        )
+      );
+      setStoreId(created.id);
+      setStoreQuery(created.name + (created.city ? ` — ${created.city}` : ""));
+      setAddingStore(false);
+      setNewStoreCity("");
+      setNewStoreAddress("");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setCreatingStore(false);
+    }
+  }
 
   async function save() {
     setError(null);
@@ -222,24 +281,106 @@ export default function NewOrderPage() {
           <CardTitle className="text-base">Customer</CardTitle>
         </CardHeader>
         <CardContent className="grid gap-4 sm:grid-cols-2">
-          <div className="sm:col-span-2">
+          <div className="relative sm:col-span-2">
             <Label htmlFor="store">Store</Label>
-            <NativeSelect
+            <Input
               id="store"
-              value={storeId}
-              onChange={(e) => setStoreId(e.target.value)}
+              value={storeQuery}
               disabled={loading}
-            >
-              <option value="">
-                {loading ? "Loading stores…" : "Choose a store"}
-              </option>
-              {stores.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.name}
-                  {s.city ? ` — ${s.city}` : ""}
-                </option>
-              ))}
-            </NativeSelect>
+              placeholder={loading ? "Loading stores…" : "Search by name or town"}
+              autoComplete="off"
+              onFocus={() => setStoreOpen(true)}
+              // Delayed so a click on a result lands before the list unmounts.
+              onBlur={() => setTimeout(() => setStoreOpen(false), 150)}
+              onChange={(e) => {
+                setStoreQuery(e.target.value);
+                setStoreOpen(true);
+                if (storeId) setStoreId("");
+              }}
+            />
+            {storeId && (
+              <p className="mt-1 text-xs text-muted-foreground">
+                Selected — typing again will change it.
+              </p>
+            )}
+            {storeOpen && !storeId && (
+              <div className="absolute z-10 mt-1 max-h-64 w-full overflow-y-auto rounded-lg border border-border bg-card shadow-md">
+                {storeMatches.map((m) => (
+                  <button
+                    key={m.id}
+                    type="button"
+                    className="block w-full px-3 py-2 text-left text-sm hover:bg-muted"
+                    onMouseDown={(e) => {
+                      // mousedown, not click: the input's blur fires first
+                      // otherwise and the list is gone before the click lands.
+                      e.preventDefault();
+                      setStoreId(m.id);
+                      setStoreQuery(m.name + (m.city ? ` — ${m.city}` : ""));
+                      setStoreOpen(false);
+                    }}
+                  >
+                    {m.name}
+                    {m.city && <span className="text-muted-foreground"> — {m.city}</span>}
+                  </button>
+                ))}
+                {storeMatches.length === 0 && storeQuery.trim() && (
+                  <p className="px-3 py-2 text-sm text-muted-foreground">
+                    No store matches &ldquo;{storeQuery.trim()}&rdquo;.
+                  </p>
+                )}
+                {storeQuery.trim() && (
+                  <button
+                    type="button"
+                    className="block w-full border-t border-border px-3 py-2 text-left text-sm font-medium text-primary hover:bg-muted"
+                    onMouseDown={(e) => {
+                      e.preventDefault();
+                      setAddingStore(true);
+                      setStoreOpen(false);
+                    }}
+                  >
+                    + Add &ldquo;{storeQuery.trim()}&rdquo; as a new store
+                  </button>
+                )}
+              </div>
+            )}
+            {addingStore && (
+              <div className="mt-2 space-y-2 rounded-lg border border-border bg-muted/30 p-3">
+                <p className="text-sm font-medium">
+                  New store: {storeQuery.trim()}
+                </p>
+                <div className="grid gap-2 sm:grid-cols-2">
+                  <Input
+                    value={newStoreCity}
+                    onChange={(e) => setNewStoreCity(e.target.value)}
+                    placeholder="Town / city"
+                    aria-label="Town or city"
+                  />
+                  <Input
+                    value={newStoreAddress}
+                    onChange={(e) => setNewStoreAddress(e.target.value)}
+                    placeholder="Address (optional)"
+                    aria-label="Address"
+                  />
+                </div>
+                <div className="flex gap-2">
+                  <Button size="sm" disabled={creatingStore} onClick={addStore}>
+                    {creatingStore ? "Adding…" : "Add store"}
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => setAddingStore(false)}
+                    disabled={creatingStore}
+                  >
+                    Cancel
+                  </Button>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Just enough to take the order. Groups, territory and the map
+                  pin live on the Stores screen.
+                </p>
+              </div>
+            )}
           </div>
           <div>
             <Label htmlFor="via">How did it arrive?</Label>
