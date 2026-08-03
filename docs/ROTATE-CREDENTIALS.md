@@ -30,6 +30,21 @@ Nothing else. Specifically:
 - **`scripts/backup-export.sh` needs no edit.** It reads `web/.env.local`
   (line 21), so it picks up whatever is there.
 
+## Progress, 3 Aug 2026
+
+| Key | State |
+|---|---|
+| `SUPABASE_SERVICE_ROLE_KEY` | new key created and set in Vercel; **old key not yet revoked** |
+| `OPENAI_API_KEY` | **not rotated** — Vercel still shows the 30 Jul value |
+| `GOOGLE_GEOCODING_API_KEY` | **not rotated** — 30 Jul |
+| `GOOGLE_PLACES_API_KEY` | **not rotated** — 30 Jul |
+| `NEXT_PUBLIC_GOOGLE_MAPS_KEY` | **not rotated** — 30 Jul |
+
+`NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` is not on the list and does not need to
+be: it is public by design and ships in the page source.
+
+Update this table as each one is finished, and delete it once they all are.
+
 ## The order that matters
 
 Create the new key → update Vercel → update `web/.env.local` → verify →
@@ -136,7 +151,8 @@ So: **tick `NEXT_PUBLIC_SUPABASE_URL` and
 Production. Both are public values — the publishable key ships in the page
 source by design — so there is no secret being widened here.
 
-One honest caveat: this reproduces *a* cause that produces exactly this
-symptom. Nobody has read the actual Vercel build log to confirm it is *the*
-cause. The log is one click from the environment-variables screen, so confirm
-it while you are there.
+**Confirmed from the dashboard on 3 Aug 2026.** Every variable in the project
+is scoped to **Production only** — including `NEXT_PUBLIC_SUPABASE_URL` and
+`NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`. The Preview environment therefore has
+neither, which is the reproduced failure exactly. Tick both for Preview (and
+Development, if `vercel dev` is used) and preview builds will succeed.
