@@ -12,6 +12,7 @@ import '../../data/repositories/promotion_repository.dart';
 import '../../data/repositories/route_repository.dart';
 import '../../shared/widgets/status_badge.dart';
 import '../forms/form_fill_screen.dart';
+import '../orders/order_capture_screen.dart';
 import '../workday/workday_controller.dart';
 
 /// Below this, a check-out is treated as suspiciously quick and the rep is
@@ -638,6 +639,37 @@ class _StoreDetailScreenState extends ConsumerState<StoreDetailScreen> {
                   visitClientGeneratedId: rv.visitClientGeneratedId!,
                   readOnly: rv.isCheckedOut,
                 ),
+              ],
+              // Taking an order is offered while the rep is on site and not
+              // after check-out, for the same reason a form is: it is a record
+              // of what happened during the call, and the call is over.
+              //
+              // It does not block check-out. Most visits produce no order, and
+              // a gate that fires on every stop to ask about something that
+              // usually is not there teaches people to dismiss gates.
+              if (rv.visitClientGeneratedId != null && rv.isCheckedIn) ...[
+                SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton.icon(
+                    // Navigator, not go_router — the same way the form screen
+                    // is opened from here. This is a step inside the visit that
+                    // comes back to it, not a destination anything deep-links
+                    // to.
+                    onPressed: () => Navigator.push<void>(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => OrderCaptureScreen(
+                          visitClientId: rv.visitClientGeneratedId!,
+                          storeId: rv.storeId,
+                          storeName: rv.storeName,
+                        ),
+                      ),
+                    ),
+                    icon: const Icon(Icons.receipt_long_outlined),
+                    label: const Text('Take an order'),
+                  ),
+                ),
+                const SizedBox(height: 16),
               ],
               // Forms become available once the rep is on site.
               if (rv.visitClientGeneratedId != null && (rv.isCheckedIn || rv.isCheckedOut)) ...[

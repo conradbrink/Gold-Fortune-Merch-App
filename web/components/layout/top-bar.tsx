@@ -21,10 +21,17 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { createClient } from "@/lib/supabase/client";
 import { GlobalSearch } from "@/components/layout/global-search";
+import { useCurrentRole } from "@/lib/use-current-role";
 
 export function TopBar({ onOpenNav }: { onOpenNav?: () => void }) {
   const router = useRouter();
   const supabase = createClient();
+  const role = useCurrentRole();
+  // Global search spans stores, reps, forms and files, and every result links
+  // to a page only a manager can open. Scoping it to the warehouse's own
+  // records is worth doing once there are orders to find; offering it now
+  // would be offering a box that only returns dead ends.
+  const isManager = role === "manager";
   const [label, setLabel] = useState("Gold Fortune User");
   const [initials, setInitials] = useState("GF");
   /** Below `sm` the search box is hidden; this is what the button reveals. */
@@ -63,38 +70,44 @@ export function TopBar({ onOpenNav }: { onOpenNav?: () => void }) {
         <Menu className="h-5 w-5" />
       </Button>
 
-      <GlobalSearch revealed={searchRevealed} />
+      {isManager && <GlobalSearch revealed={searchRevealed} />}
 
       <div className="ml-auto flex items-center gap-2 text-muted-foreground sm:gap-4">
-        <Button
-          variant="ghost"
-          size="icon"
-          className="sm:hidden"
-          aria-label={searchRevealed ? "Close search" : "Search"}
-          aria-expanded={searchRevealed}
-          onClick={() => setSearchRevealed((s) => !s)}
-        >
-          {searchRevealed ? <X className="h-5 w-5" /> : <Search className="h-5 w-5" />}
-        </Button>
+        {isManager && (
+          <Button
+            variant="ghost"
+            size="icon"
+            className="sm:hidden"
+            aria-label={searchRevealed ? "Close search" : "Search"}
+            aria-expanded={searchRevealed}
+            onClick={() => setSearchRevealed((s) => !s)}
+          >
+            {searchRevealed ? <X className="h-5 w-5" /> : <Search className="h-5 w-5" />}
+          </Button>
+        )}
         {/* Mail and Bell used to sit here as bare icons — not buttons, no
             handler, nothing behind them. There is no mail and no notification
             feature in this product, so they were an advertisement for something
             that does not exist. Removed rather than wired to a placeholder.
             Settings had the same problem but does have somewhere to go. */}
-        <Button
-          variant="ghost"
-          size="icon"
-          nativeButton={false}
-          className="hidden lg:inline-flex"
-          title="Company settings"
-          aria-label="Company settings"
-          render={
-            <Link href="/settings/company">
-              <Settings className="h-5 w-5" />
-            </Link>
-          }
-        />
-        <div className="mx-1 hidden h-6 w-px bg-border lg:block" />
+        {isManager && (
+          <>
+            <Button
+              variant="ghost"
+              size="icon"
+              nativeButton={false}
+              className="hidden lg:inline-flex"
+              title="Company settings"
+              aria-label="Company settings"
+              render={
+                <Link href="/settings/company">
+                  <Settings className="h-5 w-5" />
+                </Link>
+              }
+            />
+            <div className="mx-1 hidden h-6 w-px bg-border lg:block" />
+          </>
+        )}
         <DropdownMenu>
           <DropdownMenuTrigger className="flex items-center gap-2 outline-none">
             <Avatar className="h-7 w-7 shrink-0">

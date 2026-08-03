@@ -1,7 +1,7 @@
 class Profile {
   final String id;
   final String orgId;
-  final String role; // 'manager' | 'rep'
+  final String role; // 'manager' | 'rep' | 'warehouse'
   final String? fullName;
   final String? email;
 

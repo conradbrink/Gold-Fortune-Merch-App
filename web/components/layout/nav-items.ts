@@ -11,12 +11,27 @@ import {
   FileText,
   Folder,
   BarChart3,
+  Warehouse,
+  Boxes,
+  ClipboardCheck,
+  Settings2,
 } from "lucide-react";
+import { canAccessPath, type AppRole } from "@/lib/roles";
 
 export type NavItem = {
   href: string;
   label: string;
   icon: typeof LayoutDashboard;
+  /**
+   * Who is offered this destination. Omitted means managers only, which is what
+   * every item here was before a third role existed — so the default preserves
+   * the behaviour rather than silently widening it.
+   *
+   * This is presentation, not enforcement. `canAccessPath` in `lib/roles.ts`
+   * decides what is actually served, and the two are checked against each other
+   * by `visibleNavGroups` below.
+   */
+  roles?: AppRole[];
 };
 
 /**
@@ -66,6 +81,45 @@ export const navGroups: NavGroup[] = [
     ],
   },
   {
+    // The warehouse clerk's whole job, and the only group they see in full.
+    // It sits above Team because for a manager it is a daily operational
+    // question ("what is going out today?") rather than a reference one.
+    label: "Warehouse & Fulfilment",
+    items: [
+      {
+        href: "/warehouse",
+        label: "Warehouse",
+        icon: Warehouse,
+        roles: ["manager", "warehouse"],
+      },
+      {
+        href: "/orders",
+        label: "Orders",
+        icon: ClipboardCheck,
+        roles: ["manager", "warehouse"],
+      },
+      {
+        href: "/inventory",
+        label: "Inventory",
+        icon: Boxes,
+        roles: ["manager", "warehouse"],
+      },
+      // Manager-only: it ranks staff by fulfilment time and accuracy, which is
+      // management information about a clerk's colleagues. `canAccessPath`
+      // denies it for warehouse too, so this is not the only guard.
+      { href: "/warehouse/insights", label: "Warehouse insights", icon: BarChart3 },
+      // Reachable by clerks on purpose: adding the driver who started this
+      // morning should not wait for a manager, and RLS already permits it. The
+      // manager-only tabs inside are gated by the page and by RLS.
+      {
+        href: "/warehouse/settings",
+        label: "Warehouse setup",
+        icon: Settings2,
+        roles: ["manager", "warehouse"],
+      },
+    ],
+  },
+  {
     label: "Team",
     items: [{ href: "/representatives", label: "Representatives", icon: Users }],
   },
@@ -85,3 +139,26 @@ export const navGroups: NavGroup[] = [
 
 /** Flat list, for anything that only needs the destinations. */
 export const navItems: NavItem[] = navGroups.flatMap((g) => g.items);
+
+/**
+ * The groups this role should be shown, with empty groups dropped.
+ *
+ * The `roles` field says what we *intend* to offer; `canAccessPath` says what
+ * the proxy will actually serve. Requiring both means the two can never drift
+ * into offering a link that bounces: forget the allowlist entry and the item
+ * quietly disappears from the menu rather than becoming a dead end. Forget the
+ * `roles` field and the item is simply not offered, which is the safe default
+ * this file already takes.
+ */
+export function visibleNavGroups(role: AppRole): NavGroup[] {
+  return navGroups
+    .map((group) => ({
+      ...group,
+      items: group.items.filter(
+        (item) =>
+          (item.roles ?? ["manager"]).includes(role) &&
+          canAccessPath(role, item.href)
+      ),
+    }))
+    .filter((group) => group.items.length > 0);
+}

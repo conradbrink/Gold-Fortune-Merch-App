@@ -1,0 +1,418 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+
+import '../../core/providers.dart';
+import '../../core/theme.dart';
+import '../../data/local/order_draft.dart';
+import '../../data/models/catalogue_product.dart';
+
+/// Taking an order in the shop.
+///
+/// Every change is written to the draft on disk immediately. Android will kill
+/// this app whenever something else wants the memory, and an order is the worst
+/// thing in the product to lose — the shopkeeper has just read out twenty lines
+/// and will not do it again patiently.
+///
+/// No stock figures are shown. A rep can only read their own van's balance, and
+/// a warehouse number fetched at the depot this morning would be a lie by the
+/// afternoon. The warehouse checks availability when it confirms, under a lock,
+/// which is the only place the answer can be true.
+class OrderCaptureScreen extends ConsumerStatefulWidget {
+  const OrderCaptureScreen({
+    super.key,
+    required this.visitClientId,
+    required this.storeId,
+    required this.storeName,
+  });
+
+  final String visitClientId;
+  final String storeId;
+  final String storeName;
+
+  @override
+  ConsumerState<OrderCaptureScreen> createState() => _OrderCaptureScreenState();
+}
+
+class _OrderCaptureScreenState extends ConsumerState<OrderCaptureScreen> {
+  final _search = TextEditingController();
+  final _note = TextEditingController();
+  final Map<String, int> _qty = {};
+  bool _loading = true;
+  bool _saving = false;
+  String? _error;
+  List<CatalogueProduct> _catalogue = const [];
+
+  @override
+  void initState() {
+    super.initState();
+    _restore();
+  }
+
+  @override
+  void dispose() {
+    _search.dispose();
+    _note.dispose();
+    super.dispose();
+  }
+
+  Future<void> _restore() async {
+    final repo = ref.read(orderRepositoryProvider);
+    final catalogue = await repo.cachedCatalogue();
+    final draft = await repo.drafts.load(widget.visitClientId);
+    if (!mounted) return;
+    setState(() {
+      _catalogue = catalogue.isEmpty ? const [] : catalogue;
+      if (draft != null && draft.storeId == widget.storeId) {
+        for (final l in draft.lines) {
+          _qty[l.productId] = l.qty;
+        }
+        _note.text = draft.note ?? '';
+      }
+      _loading = false;
+    });
+
+    // Only if the cache was empty — the warm-up at the depot normally fills it,
+    // and a rep at a shop door should not be waiting on the network.
+    if (catalogue.isEmpty) {
+      final fresh = await repo.fetchCatalogue();
+      if (!mounted) return;
+      setState(() => _catalogue = fresh);
+    }
+  }
+
+  Future<void> _persist() async {
+    final lines = _lines();
+    final repo = ref.read(orderRepositoryProvider);
+    if (lines.isEmpty && _note.text.trim().isEmpty) {
+      await repo.drafts.clear(widget.visitClientId);
+      return;
+    }
+    await repo.drafts.save(
+      widget.visitClientId,
+      OrderDraft(
+        storeId: widget.storeId,
+        lines: lines,
+        note: _note.text.trim().isEmpty ? null : _note.text.trim(),
+      ),
+    );
+  }
+
+  List<OrderDraftLine> _lines() {
+    final out = <OrderDraftLine>[];
+    for (final entry in _qty.entries) {
+      if (entry.value <= 0) continue;
+      final p = _catalogue.where((x) => x.id == entry.key).firstOrNull;
+      out.add(OrderDraftLine(
+        productId: entry.key,
+        qty: entry.value,
+        unitsPerShrink: p?.unitsPerShrink,
+        unitPrice: p?.priceExclVat,
+      ));
+    }
+    return out;
+  }
+
+  void _setQty(String productId, int qty) {
+    setState(() {
+      if (qty <= 0) {
+        _qty.remove(productId);
+      } else {
+        _qty[productId] = qty;
+      }
+    });
+    // Awaited nowhere on purpose: the write is small and the next thing that
+    // happens may be the process being killed.
+    _persist();
+  }
+
+  Future<void> _submit() async {
+    final profile = ref.read(profileProvider).value;
+    if (profile == null) {
+      setState(() => _error = 'Could not read your profile. Try again in a moment.');
+      return;
+    }
+    final lines = _lines();
+    if (lines.isEmpty) {
+      setState(() => _error = 'Add at least one product.');
+      return;
+    }
+
+    // The warehouse reserves in base units, so a line whose pack size is not on
+    // record cannot be converted and must not be guessed at. Caught here, where
+    // the product can be named, rather than at the sync boundary hours later
+    // where the rep would never see it.
+    final unsized = lines.where((l) => (l.unitsPerShrink ?? 0) <= 0).toList();
+    if (unsized.isNotEmpty) {
+      final names = unsized
+          .map((l) =>
+              _catalogue.where((p) => p.id == l.productId).firstOrNull?.name)
+          .whereType<String>()
+          .toList();
+      setState(() => _error = names.length == unsized.length
+          ? 'No pack size on record for ${names.join(', ')}, so the order '
+              'cannot be sent. Take that line off to send the rest.'
+          // A restored draft naming products this phone no longer has. Giving
+          // the rep a bare id to puzzle over would help nobody.
+          : 'This order cannot be sent until the product list reaches this '
+              'phone. Open the app once where there is signal.');
+      return;
+    }
+
+    setState(() {
+      _saving = true;
+      _error = null;
+    });
+
+    try {
+      await ref.read(orderRepositoryProvider).submitOrder(
+            orgId: profile.orgId,
+            repId: profile.id,
+            storeId: widget.storeId,
+            visitClientGeneratedId: widget.visitClientId,
+            lines: lines,
+            note: _note.text.trim().isEmpty ? null : _note.text.trim(),
+          );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Order saved. It will reach the warehouse when you have signal.'),
+        ),
+      );
+      Navigator.of(context).pop();
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _saving = false;
+        _error = '$e';
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final term = _search.text.trim().toLowerCase();
+    final visible = term.isEmpty
+        ? _catalogue
+        : _catalogue.where((p) => p.searchText.contains(term)).toList();
+
+    final lineCount = _qty.values.where((q) => q > 0).length;
+    // Shrinks times the per-shrink price: both sides of this are the rep's own
+    // units, which is why the figure the shopkeeper is quoted does not change
+    // when the line is converted for the warehouse.
+    final total = _lines().fold<double>(
+      0,
+      (sum, l) => sum + l.qty * (l.unitPrice ?? 0),
+    );
+
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Take an order'),
+        bottom: PreferredSize(
+          preferredSize: const Size.fromHeight(28),
+          child: Padding(
+            padding: const EdgeInsets.only(left: 16, right: 16, bottom: 8),
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: Text(
+                widget.storeName,
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+            ),
+          ),
+        ),
+      ),
+      body: _loading
+          ? const Center(child: CircularProgressIndicator())
+          : Column(
+              children: [
+                if (_error != null)
+                  Container(
+                    width: double.infinity,
+                    color: Theme.of(context).colorScheme.errorContainer,
+                    padding: const EdgeInsets.all(12),
+                    child: Text(
+                      _error!,
+                      style: TextStyle(
+                        color: Theme.of(context).colorScheme.onErrorContainer,
+                      ),
+                    ),
+                  ),
+                if (_catalogue.isEmpty)
+                  const Padding(
+                    padding: EdgeInsets.all(24),
+                    child: Text(
+                      'No products have reached this phone yet. Open the app '
+                      'once with signal and they will be there next time.',
+                      textAlign: TextAlign.center,
+                    ),
+                  ),
+                Padding(
+                  padding: const EdgeInsets.all(12),
+                  child: TextField(
+                    controller: _search,
+                    onChanged: (_) => setState(() {}),
+                    decoration: const InputDecoration(
+                      prefixIcon: Icon(Icons.search),
+                      hintText: 'Search product, brand or code',
+                    ),
+                  ),
+                ),
+                Expanded(
+                  child: ListView.builder(
+                    itemCount: visible.length,
+                    itemBuilder: (context, i) {
+                      final p = visible[i];
+                      final qty = _qty[p.id] ?? 0;
+                      return _ProductRow(
+                        product: p,
+                        qty: qty,
+                        onChanged: (q) => _setQty(p.id, q),
+                      );
+                    },
+                  ),
+                ),
+                SafeArea(
+                  top: false,
+                  child: Container(
+                    decoration: BoxDecoration(
+                      border: Border(
+                        top: BorderSide(color: Theme.of(context).dividerColor),
+                      ),
+                    ),
+                    padding: const EdgeInsets.all(12),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        TextField(
+                          controller: _note,
+                          onChanged: (_) => _persist(),
+                          decoration: const InputDecoration(
+                            labelText: 'Note for the warehouse (optional)',
+                            isDense: true,
+                          ),
+                        ),
+                        const SizedBox(height: 10),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    '$lineCount line${lineCount == 1 ? '' : 's'}',
+                                    style: Theme.of(context).textTheme.bodyMedium,
+                                  ),
+                                  Text(
+                                    'About ${total.toStringAsFixed(2)} excl. VAT',
+                                    style: Theme.of(context).textTheme.bodySmall,
+                                  ),
+                                ],
+                              ),
+                            ),
+                            FilledButton(
+                              onPressed: _saving || lineCount == 0 ? null : _submit,
+                              child: Text(_saving ? 'Saving…' : 'Save order'),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          'Quantities are in shrinks and prices are trade, per '
+                          'shrink, excluding VAT. The warehouse confirms what is '
+                          'in stock.',
+                          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                color: AppColors.textMuted,
+                              ),
+                          textAlign: TextAlign.center,
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+    );
+  }
+}
+
+class _ProductRow extends StatelessWidget {
+  const _ProductRow({
+    required this.product,
+    required this.qty,
+    required this.onChanged,
+  });
+
+  final CatalogueProduct product;
+  final int qty;
+  final ValueChanged<int> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final subtitle = [
+      if (product.brand != null) product.brand!,
+      if (product.unitsPerShrink != null) '${product.unitsPerShrink} per shrink',
+      if (product.priceExclVat != null)
+        product.priceExclVat!.toStringAsFixed(2),
+    ].join(' · ');
+
+    // What the warehouse will actually be asked to reserve, spelled out as the
+    // rep counts. The same arithmetic the GRN screen shows on its own lines,
+    // and for the same reason: a pack size applied silently is a pack size
+    // nobody checks.
+    final per = product.unitsPerShrink ?? 0;
+    final ordered =
+        qty > 0 && per > 0 ? '$qty × $per = ${qty * per} units' : null;
+
+    return ListTile(
+      title: Text(product.name),
+      isThreeLine: subtitle.isNotEmpty && ordered != null,
+      subtitle: subtitle.isEmpty && ordered == null
+          ? null
+          : Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (subtitle.isNotEmpty) Text(subtitle),
+                if (ordered != null)
+                  Text(
+                    ordered,
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: AppColors.navy,
+                          fontWeight: FontWeight.w600,
+                        ),
+                  ),
+              ],
+            ),
+      trailing: SizedBox(
+        width: 132,
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.end,
+          children: [
+            IconButton(
+              // Big targets: this is used one-handed, standing up, often in
+              // poor light.
+              iconSize: 28,
+              onPressed: qty > 0 ? () => onChanged(qty - 1) : null,
+              icon: const Icon(Icons.remove_circle_outline),
+            ),
+            SizedBox(
+              width: 32,
+              child: Text(
+                '$qty',
+                textAlign: TextAlign.center,
+                style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                      fontWeight: qty > 0 ? FontWeight.bold : FontWeight.normal,
+                      color: qty > 0 ? AppColors.navy : AppColors.textMuted,
+                    ),
+              ),
+            ),
+            IconButton(
+              iconSize: 28,
+              onPressed: () => onChanged(qty + 1),
+              icon: const Icon(Icons.add_circle_outline),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
