@@ -293,12 +293,20 @@ replaced the same day.
 Nothing reached the repository: `web/.env.local` is gitignored
 (`web/.gitignore:34`), absent from git history, and CI's secret scan passes.
 
-Verified after rotation: all five new keys authenticate, the Maps key still
-carries its HTTP-referrer restriction, and production returns 200 from
-`/api/app/android` — the one public route that builds an admin client from the
-service key, and therefore the only non-destructive proof the *deployed* key
-works. `/reports` cannot show this: every dashboard page is a client component
-using the publishable key, so it renders whatever the server key is.
+Verified after rotation: all five new keys authenticate, and the Maps key still
+carries the HTTP-referrer restriction that is the only thing protecting a key
+which ships in the page source.
+
+Verified in **production**, not merely in `web/.env.local`:
+
+* `SUPABASE_SERVICE_ROLE_KEY` — `/api/app/android` returns 200. That is the one
+  public route which builds an admin client from the service key, so it is the
+  only non-destructive proof the *deployed* key works. `/reports` cannot show
+  this: every dashboard page is a client component using the publishable key,
+  so it renders whatever the server key is, or isn't.
+* `OPENAI_API_KEY` — the Manager briefing on `/reports` generates. It returned
+  `401 Incorrect API key` first, from a bad copy in Vercel rather than a bad
+  key; the local copy authenticated throughout.
 
 `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` was deliberately not rotated. It is
 public by design and ships in the page source; RLS is the boundary.
