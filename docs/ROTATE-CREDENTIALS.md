@@ -34,11 +34,15 @@ Nothing else. Specifically:
 
 | Key | State |
 |---|---|
-| `SUPABASE_SERVICE_ROLE_KEY` | new key created and set in Vercel; **old key not yet revoked** |
+| `SUPABASE_SERVICE_ROLE_KEY` | new key created, set in Vercel, production redeployed; **confirm the old key is revoked** |
 | `OPENAI_API_KEY` | **not rotated** — Vercel still shows the 30 Jul value |
 | `GOOGLE_GEOCODING_API_KEY` | **not rotated** — 30 Jul |
 | `GOOGLE_PLACES_API_KEY` | **not rotated** — 30 Jul |
 | `NEXT_PUBLIC_GOOGLE_MAPS_KEY` | **not rotated** — 30 Jul |
+
+The Preview-environment scoping described in §5 has been fixed: both
+`NEXT_PUBLIC_SUPABASE_*` variables are now set for Preview as well as
+Production.
 
 `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` is not on the list and does not need to
 be: it is public by design and ships in the page source.
