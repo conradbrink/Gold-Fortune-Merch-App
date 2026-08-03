@@ -1,13 +1,16 @@
 -- Security regression suite.
 --
 -- Every check here corresponds to a hole that was open on 29 or 30 July 2026, or
--- to an invariant a new table has to hold. **30 checks** — 1-18 are the 29 July
+-- to an invariant a new table has to hold. **31 checks** — 1-18 are the 29 July
 -- audit; 19-20 the `territory_reps` tenancy gap, 21-22 the per-user
 -- `dashboard_layouts`, 23-24 `territories_enforce_shape` ignoring dependents on
 -- UPDATE, and 25-26 the territory shape and tenancy invariants, all found in
 -- review on 30 July. 19-26 were rebuilt on 3 August for the country → region →
 -- territory tree; see the third fixture rule below for why that was owed. 27-30 are the warehouse module of 2 August: the third role
--- and the order/adjustment tables it brought with it.
+-- and the order/adjustment tables it brought with it. 31 is the 3 August
+-- `rep_id` grant: a rep must not be able to hand their own order to a
+-- colleague, and the thing stopping them is row visibility rather than any
+-- policy clause, so it is pinned before a policy rewrite loses it.
 --
 -- 25 and 26 are invariants about the *data*, not attacks: the races that could
 -- produce those states need two interleaved sessions to stage, which one
@@ -948,6 +951,44 @@ begin
     v_fail := v_fail || format(
       '30e. a manager could not approve their own adjustment: %s — deliberate per the migration; if that rule changed, change this check%s',
       sqlerrm, E'\n'); end;
+
+  reset role;
+
+  ------------------------------------------- 31. a rep cannot give an order away
+  --
+  -- `orders.rep_id` became updatable on 3 August so a manager could reattribute
+  -- an order taken over the phone. The worry was that this also let a rep hand
+  -- their own order to a colleague, because `orders_update`'s WITH CHECK tests
+  -- only the organisation. It does not: Postgres refuses an update that would
+  -- leave the row invisible to the updater, so a rep changing `rep_id` away
+  -- from themselves is rejected.
+  --
+  -- That protection is a consequence of how row visibility interacts with
+  -- UPDATE rather than something written down in a policy, which is exactly the
+  -- kind of thing that disappears quietly when a policy is next rewritten.
+  -- Pinned here so it cannot.
+
+  update public.profiles set role = 'rep', is_active = true where id = v_rep;
+
+  perform set_config('request.jwt.claims',
+    json_build_object('sub', v_rep, 'role', 'authenticated')::text, true);
+  set local role authenticated;
+
+  begin
+    update public.orders set rep_id = v_rep2 where id = v_order_own;
+    v_fail := v_fail || '31. a rep gave their own order away to another rep' || E'\n';
+  exception when others then
+    null; -- refused, which is the point
+  end;
+
+  -- 31b. And the legitimate edit in the same breath still works, so 31 is not
+  --      passing because reps have been locked out of their own orders.
+  update public.orders set notes = 'still mine to annotate' where id = v_order_own;
+  select count(*) into v_n from public.orders
+   where id = v_order_own and notes = 'still mine to annotate';
+  if v_n <> 1 then
+    v_fail := v_fail || '31b. a rep could NOT edit a note on their own order' || E'\n';
+  end if;
 
   reset role;
 
