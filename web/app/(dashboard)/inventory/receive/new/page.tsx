@@ -170,6 +170,15 @@ export default function NewReceiptPage() {
         );
         return;
       }
+      // This factor is multiplied by the received quantity at post time, so a
+      // fractional case size produces a fractional base quantity in a ledger
+      // that counts whole units.
+      if (l.uom === "case" && !Number.isInteger(Number(l.unitsPerUom))) {
+        setError(
+          `A case of ${p?.name ?? "that product"} has to hold a whole number of units.`
+        );
+        return;
+      }
       if (l.uom === "shrink" && !p?.units_per_shrink) {
         setError(
           `${p?.name ?? "That product"} has no pack size on record, so it cannot be received in shrinks.`

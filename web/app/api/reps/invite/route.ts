@@ -83,12 +83,17 @@ export async function POST(request: Request) {
       password?: string;
       role?: string;
     };
-    const email = body.email?.trim().toLowerCase() ?? "";
-    const fullName = body.full_name?.trim() ?? "";
-    const password = body.password ?? "";
+    // The cast above is a claim about this body, not a check on it. A caller
+    // sending {"role": 123} makes `.trim()` throw a TypeError, which the outer
+    // catch reports as a 500 with the raw message — the caller's own bad input
+    // presented as a server fault.
+    const str = (v: unknown) => (typeof v === "string" ? v : "");
+    const email = str(body.email).trim().toLowerCase();
+    const fullName = str(body.full_name).trim();
+    const password = str(body.password);
     // Defaults to 'rep' so the existing caller, which sends no role, keeps
     // behaving exactly as it did.
-    const role = body.role?.trim() || "rep";
+    const role = str(body.role).trim() || "rep";
 
     if (!INVITABLE.has(role)) {
       return Response.json(

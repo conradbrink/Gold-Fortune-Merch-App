@@ -57,6 +57,10 @@ export default function NewAdjustmentPage() {
   const [customFrom, setCustomFrom] = useState<string>("available");
   const [customTo, setCustomTo] = useState<string>("damaged");
   const [source, setSource] = useState<SourceStock[]>([]);
+  // True from the start, and cleared only when a fetch finishes. Without it the
+  // card below asserts "there is nothing at that location" during the very
+  // first read, which is a statement of fact about something not yet known.
+  const [loadingStock, setLoadingStock] = useState(true);
   const [lines, setLines] = useState<Draft[]>([blank()]);
 
   const [loading, setLoading] = useState(true);
@@ -101,6 +105,8 @@ export default function NewAdjustmentPage() {
         if (!cancelled) setSource(s);
       } catch (e) {
         if (!cancelled) setError(e instanceof Error ? e.message : String(e));
+      } finally {
+        if (!cancelled) setLoadingStock(false);
       }
     })();
     return () => {
@@ -129,6 +135,15 @@ export default function NewAdjustmentPage() {
 
   // "Found" stock arrives from nowhere, so there is no source bucket to draw
   // from and every balance row is a legitimate target.
+  //
+  // ⚠️ Known gap, deliberately not closed here. These choices come from
+  // `stock_balances`, so a `found` adjustment can only name a product that
+  // already has a balance row at this location — and the case `found` exists
+  // for is stock that is physically present and has never been received here,
+  // which by definition has no row. Closing it means offering the product
+  // catalogue for this reason code and letting the clerk name a batch that
+  // does not exist yet, which is a different screen rather than a smaller one.
+  // Recorded on the pull request.
   const choices = source.filter((s) => {
     if (!fromBucket) return true;
     const n = availableInSource(s);
@@ -223,7 +238,10 @@ export default function NewAdjustmentPage() {
               <NativeSelect
                 id="loc"
                 value={locationId}
-                onChange={(e) => setLocationId(e.target.value)}
+                onChange={(e) => {
+                  setLoadingStock(true);
+                  setLocationId(e.target.value);
+                }}
                 disabled={loading}
               >
                 {locations.map((l) => (
@@ -314,9 +332,18 @@ export default function NewAdjustmentPage() {
           <CardTitle className="text-base">Which stock</CardTitle>
         </CardHeader>
         <CardContent className="space-y-3">
-          {choices.length === 0 ? (
+          {locationId && loadingStock ? (
+            <p className="text-sm text-muted-foreground">Reading what is on the shelf…</p>
+          ) : choices.length === 0 ? (
             <p className="rounded-lg border border-amber-500/40 bg-amber-500/5 p-2.5 text-sm text-amber-700 dark:text-amber-500">
-              There is nothing in {fromBucket ?? "stock"} at that location to adjust.
+              {fromBucket
+                ? `There is nothing in ${fromBucket} stock at that location to adjust.`
+                : // A `found` adjustment has no source bucket, so "nothing in
+                  // stock" is not the condition blocking the user. What blocks
+                  // them is that this screen can only name products that
+                  // already have a balance row here — see the note by
+                  // `choices`.
+                  "This location has no stock on record yet, so there is nothing here to select."}
             </p>
           ) : (
             lines.map((l) => {

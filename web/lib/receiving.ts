@@ -196,7 +196,20 @@ export async function createReceipt(
       unit_cost: l.unitCost,
     }))
   );
-  fail(lineError);
+
+  // Three writes, no transaction: the number is drawn, the header is inserted,
+  // then the lines. A failure here would otherwise leave a draft with no lines
+  // and a document number spent on it — and `goods_receipt_post` refuses an
+  // empty note, so the row is unusable and can only be cleared by hand. The
+  // clerk retries and makes a second one.
+  //
+  // Deleting the header is the honest client-side approximation of a rollback.
+  // The proper fix is a `security definer` RPC that writes both in one
+  // transaction; that is a migration, and is noted on the PR.
+  if (lineError) {
+    await supabase.from("goods_receipts").delete().eq("id", receiptId);
+    fail(lineError);
+  }
 
   return receiptId;
 }

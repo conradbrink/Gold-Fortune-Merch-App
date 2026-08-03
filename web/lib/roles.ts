@@ -60,16 +60,42 @@ export const ROLE_HOME: Record<AppRole, string> = {
  * `startsWith` alone would let `/ordersomething` through on the strength of
  * `/orders`, and would match `/stores-archive` against `/stores`. The next
  * character has to be a separator or the end of the path.
+ *
+ * Exported because `proxy.ts` needs the same rule for its exemption list, and
+ * that list is the one place where a wrong match grants access rather than
+ * denying it.
  */
-function matchesPrefix(pathname: string, prefix: string): boolean {
+export function matchesPrefix(pathname: string, prefix: string): boolean {
   if (pathname === prefix) return true;
   return pathname.startsWith(prefix + "/");
+}
+
+/**
+ * The one place a role string from the database is checked.
+ *
+ * Derived from `ROLE_HOME` rather than written out again, so adding a role to
+ * `AppRole` fails to compile until it has a home — and every caller of this
+ * guard starts recognising it at the same moment. Two hand-written copies of
+ * the same triple would each silently treat a fourth role as unknown, in two
+ * different ways.
+ */
+export function isAppRole(value: unknown): value is AppRole {
+  return (
+    typeof value === "string" &&
+    Object.prototype.hasOwnProperty.call(ROLE_HOME, value)
+  );
 }
 
 /** Whether `role` may load `pathname`. */
 export function canAccessPath(role: AppRole, pathname: string): boolean {
   if (role === "manager") return true;
-  if (role === "rep") return false;
+  // A rep's only destination is their own notice page. Returning `false` for
+  // every path including that one made `ROLE_HOME.rep` a path its own role may
+  // not load — an invariant violated from the start, and harmless today only
+  // because `proxy.ts` exempts `/rep-notice` before it gets here. The loop
+  // guard in the proxy should be the thing that never fires, not the thing
+  // holding the arrangement together.
+  if (role === "rep") return matchesPrefix(pathname, ROLE_HOME.rep);
 
   if (WAREHOUSE_DENIED.some((p) => matchesPrefix(pathname, p))) return false;
   return WAREHOUSE_ALLOWED.some((p) => matchesPrefix(pathname, p));

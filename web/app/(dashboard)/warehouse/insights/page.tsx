@@ -318,7 +318,10 @@ export default function WarehouseInsightsPage() {
                 {ageing.map((a) => (
                   <li key={a.age_band} className="flex justify-between">
                     <span className={a.age_band === "unknown" ? "text-muted-foreground" : ""}>
-                      {a.age_band === "unknown" ? "Not batch-tracked" : a.age_band}
+                      {/* `unknown` is any batch with no first_received_at — stock with no
+                          batch at all, and batch-tracked stock whose receipt date was
+                          never set. Naming only the first states the wrong reason. */}
+                      {a.age_band === "unknown" ? "Age unknown" : a.age_band}
                     </span>
                     <span className="tabular-nums">
                       {a.qty_on_hand} units · {a.products} products

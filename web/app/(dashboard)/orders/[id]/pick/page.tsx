@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { Check } from "lucide-react";
+import { formatDateOnly } from "@/lib/format-date";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -178,7 +179,7 @@ export default function PickingPage() {
                         )}
                       </TableCell>
                       <TableCell className="text-muted-foreground">
-                        {r.expiry_date ? new Date(r.expiry_date).toLocaleDateString() : "—"}
+                        {formatDateOnly(r.expiry_date)}
                       </TableCell>
                       <TableCell className="text-muted-foreground">{r.location_name}</TableCell>
                       <TableCell className="text-right font-medium tabular-nums">

@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
+import { formatDateOnly } from "@/lib/format-date";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -207,7 +208,7 @@ export default function ReceiptDetailPage() {
                     )}
                   </TableCell>
                   <TableCell className="text-muted-foreground">
-                    {l.expiry_date ? new Date(l.expiry_date).toLocaleDateString() : "—"}
+                    {formatDateOnly(l.expiry_date)}
                   </TableCell>
                   <TableCell className="text-muted-foreground">
                     {l.uom}

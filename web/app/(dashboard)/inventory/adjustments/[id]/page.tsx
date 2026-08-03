@@ -255,6 +255,12 @@ export default function AdjustmentDetailPage() {
             </DialogTitle>
           </DialogHeader>
           <div className="space-y-3">
+            {/* Repeated inside the dialog because `run` leaves it open when the
+                decision is refused, and the banner on the page behind is under
+                the overlay — the clerk sees the button re-enable and nothing
+                else. A manager approving their own adjustment is refused by
+                the database, and that is the message they need to read. */}
+            <ErrorBanner message={error} />
             <p className="text-sm text-muted-foreground">
               {dialog === "approve"
                 ? `${totalUnits} unit${totalUnits === 1 ? "" : "s"} will move. This posts to the ledger and can only be undone by another adjustment.`

@@ -1,6 +1,12 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
-import { canAccessPath, ROLE_HOME, type AppRole } from "@/lib/roles";
+import {
+  canAccessPath,
+  isAppRole,
+  matchesPrefix,
+  ROLE_HOME,
+  type AppRole,
+} from "@/lib/roles";
 
 export async function proxy(request: NextRequest) {
   let response = NextResponse.next({ request });
@@ -30,8 +36,12 @@ export async function proxy(request: NextRequest) {
     data: { user },
   } = await supabase.auth.getUser();
 
-  const isLoginPage = request.nextUrl.pathname.startsWith("/login");
-  const isRepNoticePage = request.nextUrl.pathname.startsWith("/rep-notice");
+  // Segment-aware, like every other prefix test in this file. A bare
+  // `startsWith` would match /login-as-someone-else, and this list is the one
+  // place where a wrong match *grants* access rather than denying it: an
+  // exemption skips the role check entirely.
+  const isLoginPage = matchesPrefix(request.nextUrl.pathname, "/login");
+  const isRepNoticePage = matchesPrefix(request.nextUrl.pathname, "/rep-notice");
 
   // The APK download page is public, and has to be.
   //
@@ -40,7 +50,7 @@ export async function proxy(request: NextRequest) {
   // would make first-time installation impossible. Nothing on it is sensitive:
   // an app name, a version, a size and a changelog. The APK bytes are served by
   // a separate route from a private bucket.
-  const isDownloadPage = request.nextUrl.pathname.startsWith("/download");
+  const isDownloadPage = matchesPrefix(request.nextUrl.pathname, "/download");
 
   // The password-reset pair.
   //
@@ -50,8 +60,8 @@ export async function proxy(request: NextRequest) {
   // forgot their password would otherwise be bounced to /rep-notice before they
   // could set a new one, with no way through.
   const isPasswordResetPage =
-    request.nextUrl.pathname.startsWith("/forgot-password") ||
-    request.nextUrl.pathname.startsWith("/reset-password");
+    matchesPrefix(request.nextUrl.pathname, "/forgot-password") ||
+    matchesPrefix(request.nextUrl.pathname, "/reset-password");
 
   if (!user && !isLoginPage && !isDownloadPage && !isPasswordResetPage) {
     const url = request.nextUrl.clone();
@@ -109,10 +119,7 @@ export async function proxy(request: NextRequest) {
     // rep, which is the least-privileged destination and a dead end rather than
     // a redirect loop. A signed-in user with no profile is a broken account,
     // not a manager.
-    const effectiveRole: AppRole =
-      role === "manager" || role === "warehouse" || role === "rep"
-        ? role
-        : "rep";
+    const effectiveRole: AppRole = isAppRole(role) ? role : "rep";
 
     if (!canAccessPath(effectiveRole, request.nextUrl.pathname)) {
       const url = request.nextUrl.clone();

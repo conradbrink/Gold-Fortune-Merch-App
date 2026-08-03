@@ -118,6 +118,10 @@ export default function NewTransferPage() {
 
     const filled = lines.filter((l) => l.sourceKey && Number(l.qty) > 0);
     if (filled.length === 0) return setError("Add at least one line with a quantity.");
+    // Whole units, for the same reason every other quantity on this module is.
+    if (filled.some((l) => !Number.isInteger(Number(l.qty)))) {
+      return setError("Quantities are whole units. Round each line to a whole number.");
+    }
 
     for (const l of filled) {
       const s = byKey.get(l.sourceKey);

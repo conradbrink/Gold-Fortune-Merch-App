@@ -148,6 +148,13 @@ export default function NewOrderPage() {
       setError("Add at least one product with a quantity.");
       return;
     }
+    // `min`/`step` on a number input are advisory; a typed or pasted 1.5 gets
+    // through, and `order_lines.qty_ordered` is an integer column. Caught here
+    // so the clerk gets this sentence rather than a PostgREST cast error.
+    if (filled.some((l) => !Number.isInteger(Number(l.qty)))) {
+      setError("Quantities are whole units. Round each line to a whole number.");
+      return;
+    }
     // One line per product is a database constraint; catching it here gives a
     // sentence instead of a unique-violation.
     const ids = filled.map((l) => l.productId);

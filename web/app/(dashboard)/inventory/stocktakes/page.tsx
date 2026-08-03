@@ -231,6 +231,11 @@ export default function StocktakesPage() {
               handed in. The variance is measured against the second reading, so trade
               during the count is not counted twice.
             </p>
+            {/* The RPC refuses several real cases — a location that already has
+                an open count, most often. The dialog stays open on failure and
+                the page banner is behind the overlay, so without this the
+                button simply returns to "Start counting" unexplained. */}
+            <ErrorBanner message={error} />
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setOpen(false)} disabled={busy}>

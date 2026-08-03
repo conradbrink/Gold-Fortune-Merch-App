@@ -298,7 +298,17 @@ export async function createTransfer(
       qty_sent: l.qtySent,
     }))
   );
-  fail(lineError);
+
+  // No transaction spans these three writes — the number, the header, the
+  // lines — so a failed line insert would strand a draft with none, holding a
+  // document number nobody can use: `stock_transfer_dispatch` refuses an empty
+  // transfer, so the row can only be cleared by hand. Removing the header is
+  // the client-side approximation of the rollback this wants. The real fix is
+  // one `security definer` RPC, which is a migration.
+  if (lineError) {
+    await supabase.from("stock_transfers").delete().eq("id", transferId);
+    fail(lineError);
+  }
 
   return transferId;
 }
@@ -430,7 +440,14 @@ export async function createAdjustment(
       note: l.note,
     }))
   );
-  fail(lineError);
+
+  // Same shape as `createTransfer` above, and the same reasoning:
+  // `stock_adjustment_submit` refuses an adjustment with no lines, so a header
+  // left behind is unusable rather than merely untidy.
+  if (lineError) {
+    await supabase.from("stock_adjustments").delete().eq("id", adjustmentId);
+    fail(lineError);
+  }
 
   return adjustmentId;
 }

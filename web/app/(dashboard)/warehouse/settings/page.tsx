@@ -680,7 +680,17 @@ export default function WarehouseSettingsPage() {
 
       {/* --------------------------------------------------------- dialogs */}
 
-      <Dialog open={inviting} onOpenChange={(v) => !v && setInviting(false)}>
+      <Dialog
+        open={inviting}
+        onOpenChange={(v) => {
+          if (v) return;
+          setInviting(false);
+          // Cleared on every dismissal, not only on a successful create.
+          // Cancel, Escape and a click on the overlay all left the typed
+          // credential sitting in component state.
+          setInvitePassword("");
+        }}
+      >
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Add warehouse staff</DialogTitle>

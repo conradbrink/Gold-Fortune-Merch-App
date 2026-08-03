@@ -354,5 +354,17 @@ export async function saveReorderLevels(
       "The reorder point has to be at or above the minimum — the point is to reorder before the floor is breached."
     );
   }
+  // `min={0}` on a number input blocks the spinner and native validation, not
+  // a typed or pasted value. A negative minimum or reorder quantity is not
+  // stock data that means anything, and nothing downstream would question it.
+  for (const [name, value] of Object.entries(levels)) {
+    if (value != null && value < 0) {
+      throw new Error(`${name.replace(/_/g, " ")} cannot be negative.`);
+    }
+    if (value != null && !Number.isInteger(value)) {
+      throw new Error(`${name.replace(/_/g, " ")} has to be a whole number of units.`);
+    }
+  }
+
   return updateOne(supabase, "products", productId, levels);
 }

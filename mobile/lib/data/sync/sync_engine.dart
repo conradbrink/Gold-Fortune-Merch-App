@@ -380,21 +380,30 @@ class SyncEngine {
     final lines = (data['lines'] as List?) ?? const [];
     if (lines.isEmpty) return;
 
-    final already = await _client
-        .from('order_lines')
-        .select('id')
-        .eq('order_id', orderId)
-        .limit(1);
-    if ((already as List).isNotEmpty) return;
-
-    await _client.from('order_lines').insert([
-      for (final raw in lines)
-        {
-          ...Map<String, dynamic>.from(raw as Map),
-          'org_id': orgId,
-          'order_id': orderId,
-        }
-    ]);
+    // Upserted on each line's own idempotency key, not skipped wholesale
+    // because one line arrived.
+    //
+    // The previous check returned as soon as *any* line existed for the order,
+    // which reads as "this already landed" and is only true when the insert
+    // was all-or-nothing. A batch that half-applied left the order permanently
+    // short: the rep sees it sent, the retry finds a line and gives up, and the
+    // warehouse picks an order missing whatever did not make it. That is the
+    // silent one — nothing errors, the order is simply wrong.
+    //
+    // `order_lines.client_generated_id` is unique, and `submitOrder` mints one
+    // per line for exactly this. Conflicting on it lets a retry complete the
+    // set without duplicating what already arrived.
+    await _client.from('order_lines').upsert(
+      [
+        for (final raw in lines)
+          {
+            ...Map<String, dynamic>.from(raw as Map),
+            'org_id': orgId,
+            'order_id': orderId,
+          }
+      ],
+      onConflict: 'client_generated_id',
+    );
   }
 
   Future<void> _replayFormSubmission(Map<String, dynamic> data) async {
