@@ -5,12 +5,11 @@ before real merchandisers/managers start using this app.
 
 ## Supabase / Auth
 
-- [ ] 🔴 **Rotate the exposed API keys.** `web/.env.local` was printed
-      unredacted into an AI coding-session transcript on 3 Aug 2026, exposing
-      the Supabase service-role key, the OpenAI key and all three Google keys.
-      Nothing reached the repository, but a service-role key bypasses RLS
-      entirely. Procedure: `docs/ROTATE-CREDENTIALS.md`. This one is a blocker,
-      not a nice-to-have.
+- [x] **Rotate the exposed API keys.** Done 3 Aug 2026. `web/.env.local` had
+      been printed unredacted into an AI coding-session transcript, exposing the
+      Supabase service-role key, the OpenAI key and all three Google keys. All
+      five were replaced and verified the same day; see `docs/SECURITY-AUDIT.md`
+      §5. Nothing had reached the repository.
 - [ ] **Enable leaked-password protection.** Currently disabled — it's a
       Pro-plan feature and the project (`rxtlnetlzmbqirqaalkw`, org "Cons
       Org") is on the Free plan. Once upgraded, enable it at

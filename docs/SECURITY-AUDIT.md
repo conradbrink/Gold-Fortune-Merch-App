@@ -284,19 +284,27 @@ Still to configure when billing is live:
 
 ## 5. Credentials to rotate
 
-🔴 **Rotation is outstanding as of 3 Aug 2026.** The contents of
-`web/.env.local` were printed unredacted into an AI coding-session transcript,
-which exposed `SUPABASE_SERVICE_ROLE_KEY`, `OPENAI_API_KEY`,
-`GOOGLE_GEOCODING_API_KEY`, `GOOGLE_PLACES_API_KEY` and
-`NEXT_PUBLIC_GOOGLE_MAPS_KEY`. The transcript is not public, so this is an
-exposure rather than a known compromise — but a service-role key bypasses RLS
-entirely, so it should be treated as compromised until rotated.
+✅ **Rotated 3 Aug 2026.** The contents of `web/.env.local` had been printed
+unredacted into an AI coding-session transcript, exposing
+`SUPABASE_SERVICE_ROLE_KEY`, `OPENAI_API_KEY`, `GOOGLE_GEOCODING_API_KEY`,
+`GOOGLE_PLACES_API_KEY` and `NEXT_PUBLIC_GOOGLE_MAPS_KEY`. All five were
+replaced the same day.
 
 Nothing reached the repository: `web/.env.local` is gitignored
 (`web/.gitignore:34`), absent from git history, and CI's secret scan passes.
 
-The procedure is `docs/ROTATE-CREDENTIALS.md`. Update the date above when it
-has been done.
+Verified after rotation: all five new keys authenticate, the Maps key still
+carries its HTTP-referrer restriction, and production returns 200 from
+`/api/app/android` — the one public route that builds an admin client from the
+service key, and therefore the only non-destructive proof the *deployed* key
+works. `/reports` cannot show this: every dashboard page is a client component
+using the publishable key, so it renders whatever the server key is.
+
+`NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` was deliberately not rotated. It is
+public by design and ships in the page source; RLS is the boundary.
+
+The procedure, and what each check actually proves, is
+`docs/ROTATE-CREDENTIALS.md`.
 
 The **`NEXT_PUBLIC_GOOGLE_MAPS_KEY` is visible in the page source by design** —
 it must keep its HTTP-referrer restriction, and it should have a budget cap

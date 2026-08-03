@@ -36,19 +36,23 @@ Nothing else. Specifically:
 - **`scripts/backup-export.sh` needs no edit.** It reads `web/.env.local`
   (line 21), so it picks up whatever is there.
 
-## Progress, 3 Aug 2026
+## Done 3 Aug 2026
 
-| Key | State |
-|---|---|
-| `SUPABASE_SERVICE_ROLE_KEY` | new key created, set in Vercel, production redeployed; **confirm the old key is revoked** |
-| `OPENAI_API_KEY` | **not rotated** — Vercel still shows the 30 Jul value |
-| `GOOGLE_GEOCODING_API_KEY` | **not rotated** — 30 Jul |
-| `GOOGLE_PLACES_API_KEY` | **not rotated** — 30 Jul |
-| `NEXT_PUBLIC_GOOGLE_MAPS_KEY` | **not rotated** — 30 Jul |
+All five keys were rotated. Verified afterwards: every new key authenticates,
+the Maps key still carries its HTTP-referrer restriction, and production
+returns 200 from `/api/app/android`, which is the only non-destructive proof
+the *deployed* service key works.
 
-The Preview-environment scoping described in §5 has been fixed: both
-`NEXT_PUBLIC_SUPABASE_*` variables are now set for Preview as well as
-Production.
+Two things this round taught, kept because both cost time:
+
+- **A dashboard page is not a check on the server key.** The first version of
+  this runbook said to verify with `/reports`. Every dashboard page is a client
+  component using the publishable key, so it renders identically whether the
+  service key is right, wrong or absent — offered immediately before an
+  irreversible revoke. Use the `curl` in §1 step 5.
+- **Rotating and revoking are different days' work.** A new key that coexists
+  with the old one closes nothing. The exposure ends at the revoke, and
+  everything keeps working if you skip it, which is why it gets skipped.
 
 `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` is not on the list and does not need to
 be: it is public by design and ships in the page source.
