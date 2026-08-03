@@ -246,11 +246,32 @@ export default function OrderDetailPage() {
             `${e.name}: a price has to be a number and cannot be negative. Nothing was saved.`
           );
         }
-        return { id: e.id, price: n };
+        return { id: e.id, price: n, name: e.name };
       });
 
+      // Validated above, so nothing here fails on a bad number. What can still
+      // fail is the network, one line in — and there is no transaction across
+      // these writes, because `order_lines` is updated column by column under a
+      // grant rather than through an RPC. Making it atomic means a
+      // `security definer` RPC taking the whole array, which is a migration and
+      // is noted on the PR.
+      //
+      // Until then the partial state is reported rather than hidden: the same
+      // choice `saveCounts` makes, and for the same reason — a clerk told only
+      // "failed" retypes prices that are already saved.
+      const failed: string[] = [];
       for (const e of priced) {
-        await setLinePrice(supabase, e.id, e.price);
+        try {
+          await setLinePrice(supabase, e.id, e.price);
+        } catch {
+          failed.push(e.name);
+        }
+      }
+      if (failed.length > 0) {
+        throw new Error(
+          `${priced.length - failed.length} of ${priced.length} prices saved. ` +
+            `These did not: ${failed.join(", ")}. Re-enter only those.`
+        );
       }
       await reload();
       setPriceDraft({});

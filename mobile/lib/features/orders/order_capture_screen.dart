@@ -97,14 +97,26 @@ class _OrderCaptureScreenState extends ConsumerState<OrderCaptureScreen> {
 
   Future<void> _pickRequiredBy() async {
     final now = DateTime.now();
-    final current = _requiredBy == null ? null : DateTime.tryParse(_requiredBy!);
+    // Today at the earliest: a delivery cannot be wanted in the past, and
+    // `required_by` reads as a promise the warehouse works to.
+    final first = DateTime(now.year, now.month, now.day);
+    final last = first.add(const Duration(days: 365));
+
+    // Clamped into the range. A draft written yesterday for "tomorrow" is
+    // today; one written last week for a date since passed is behind `first`,
+    // and showDatePicker asserts rather than coping when `initialDate` falls
+    // outside — so restoring an old draft would crash the screen the rep is
+    // trying to use.
+    final restored = _requiredBy == null ? null : DateTime.tryParse(_requiredBy!);
+    var initial = restored ?? first;
+    if (initial.isBefore(first)) initial = first;
+    if (initial.isAfter(last)) initial = last;
+
     final picked = await showDatePicker(
       context: context,
-      initialDate: current ?? now,
-      // Today at the earliest: a delivery cannot be wanted in the past, and
-      // `required_by` reads as a promise the warehouse works to.
-      firstDate: DateTime(now.year, now.month, now.day),
-      lastDate: now.add(const Duration(days: 365)),
+      initialDate: initial,
+      firstDate: first,
+      lastDate: last,
       helpText: 'When does the shop want it?',
     );
     if (picked == null) return;
@@ -365,17 +377,30 @@ class _OrderCaptureScreenState extends ConsumerState<OrderCaptureScreen> {
                         // A picker, not a text field. A date typed one-handed
                         // in a shop is a date entered wrong, and the format
                         // the column wants is not the format a person writes.
-                        Align(
-                          alignment: Alignment.centerLeft,
-                          child: TextButton.icon(
-                            onPressed: _pickRequiredBy,
-                            icon: const Icon(Icons.event_outlined, size: 18),
-                            label: Text(
-                              _requiredBy == null
-                                  ? 'Wanted by (optional)'
-                                  : 'Wanted by $_requiredBy',
+                        Row(
+                          children: [
+                            TextButton.icon(
+                              onPressed: _pickRequiredBy,
+                              icon: const Icon(Icons.event_outlined, size: 18),
+                              label: Text(
+                                _requiredBy == null
+                                    ? 'Wanted by (optional)'
+                                    : 'Wanted by $_requiredBy',
+                              ),
                             ),
-                          ),
+                            // A date set by mistake has to be removable. The
+                            // picker has no "none", so clearing lives here.
+                            if (_requiredBy != null)
+                              IconButton(
+                                onPressed: () {
+                                  setState(() => _requiredBy = null);
+                                  _persist();
+                                },
+                                icon: const Icon(Icons.close, size: 18),
+                                tooltip: 'Clear the date',
+                                visualDensity: VisualDensity.compact,
+                              ),
+                          ],
                         ),
                         const SizedBox(height: 4),
                         TextField(

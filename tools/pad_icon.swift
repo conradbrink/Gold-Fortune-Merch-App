@@ -9,7 +9,7 @@ func die(_ msg: String) -> Never {
 
 let args = CommandLine.arguments
 guard args.count == 5 else {
-    die("usage: pad_icon <src.png> <dst.png> <canvasPx> <scale 0-1>\n" +
+    die("usage: pad_icon <src.png> <dst.png> <canvasPx> <scale, 0 exclusive to 1 inclusive>\n" +
         "  e.g. pad_icon assets/logo.png assets/logo_adaptive_foreground.png 1024 0.62")
 }
 let src = args[1], dst = args[2]
