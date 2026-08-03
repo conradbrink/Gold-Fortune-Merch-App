@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { Plus, Search } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
@@ -23,10 +24,41 @@ import { ORDER_STATUSES, STATUS_LABELS } from "@/lib/warehouse";
 /** Which statuses read as "needs somebody to do something". */
 const ACTIVE = new Set(["new", "confirmed", "picking", "packed", "dispatched"]);
 
+/**
+ * The next thing the warehouse has to do, said as an instruction.
+ *
+ * A status is a noun about the past — "packed" tells a clerk what already
+ * happened and leaves them to work out what that means for them now. This
+ * column is the verb, and it is the whole reason somebody opens this screen.
+ */
+function nextStep(o: OrderListRow): string {
+  if (o.on_hold) return "Release the hold";
+  switch (o.status) {
+    case "new":
+      return "Confirm and reserve";
+    case "confirmed":
+      return "Start picking";
+    case "picking":
+      return "Finish picking";
+    case "packed":
+      return "Dispatch";
+    case "dispatched":
+      return "Record the delivery";
+    case "delivered":
+      return o.pod_status === "outstanding" ? "Upload the signed POD" : "Nothing — done";
+    case "cancelled":
+      return "—";
+    default:
+      return "—";
+  }
+}
+
 export default function OrdersPage() {
   const supabase = createClient();
+  const router = useRouter();
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState("all");
+  const [podOnly, setPodOnly] = useState(false);
   const [orders, setOrders] = useState<OrderListRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -47,10 +79,13 @@ export default function OrdersPage() {
     // Only a status this page actually offers. An unknown one from a stale or
     // hand-edited link would leave the select showing nothing and the table
     // empty, with no clue that the filter was the reason.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     if (s && (s === "all" || (ORDER_STATUSES as readonly string[]).includes(s))) {
       setStatus(s);
     }
+    // The Outstanding PODs tile on the warehouse dashboard links here. Without
+    // it that queue is a number with nowhere to go.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (params.get("pod") === "outstanding") setPodOnly(true);
   }, []);
 
   // The term the *query* runs on, held a beat behind the box so typing does
@@ -86,15 +121,18 @@ export default function OrdersPage() {
   // rather than waiting on the debounce. The query above is what decides which
   // orders exist to filter; this only makes the wait feel shorter.
   const visible = useMemo(() => {
+    const base = podOnly
+      ? orders.filter((o) => o.status === "delivered" && o.pod_status === "outstanding")
+      : orders;
     const q = search.trim().toLowerCase();
-    if (!q) return orders;
-    return orders.filter(
+    if (!q) return base;
+    return base.filter(
       (o) =>
         o.order_number.toLowerCase().includes(q) ||
         (o.store_name ?? "").toLowerCase().includes(q) ||
         (o.contact_name ?? "").toLowerCase().includes(q)
     );
-  }, [orders, search]);
+  }, [orders, search, podOnly]);
 
   return (
     <div className="space-y-6">
@@ -135,6 +173,15 @@ export default function OrdersPage() {
             </option>
           ))}
         </NativeSelect>
+        {podOnly && (
+          <button
+            type="button"
+            onClick={() => setPodOnly(false)}
+            className="rounded-full border border-destructive/50 px-3 py-1 text-xs text-destructive hover:bg-destructive/5"
+          >
+            Outstanding PODs only · clear
+          </button>
+        )}
       </div>
 
       <div className="rounded-lg border border-border bg-card">
@@ -145,6 +192,7 @@ export default function OrdersPage() {
               <TableHead>Store</TableHead>
               <TableHead>Source</TableHead>
               <TableHead>Status</TableHead>
+              <TableHead>Next step</TableHead>
               <TableHead className="text-right">Lines</TableHead>
               <TableHead className="text-right">Units</TableHead>
               <TableHead>Captured</TableHead>
@@ -152,16 +200,20 @@ export default function OrdersPage() {
           </TableHeader>
           <TableBody>
             {loading ? (
-              <EmptyRow colSpan={7}>Loading…</EmptyRow>
+              <EmptyRow colSpan={8}>Loading…</EmptyRow>
             ) : visible.length === 0 ? (
-              <EmptyRow colSpan={7}>
-                {search.trim() || status !== "all"
+              <EmptyRow colSpan={8}>
+                {search.trim() || status !== "all" || podOnly
                   ? "No orders match those filters."
                   : "No orders yet. Capture one, or wait for a rep to send one in."}
               </EmptyRow>
             ) : (
               visible.map((o) => (
-                <TableRow key={o.id}>
+                <TableRow
+                  key={o.id}
+                  onClick={() => router.push(`/orders/${o.id}`)}
+                  className="cursor-pointer"
+                >
                   <TableCell>
                     <Link
                       href={`/orders/${o.id}`}
@@ -204,6 +256,15 @@ export default function OrdersPage() {
                         POD due
                       </Badge>
                     )}
+                  </TableCell>
+                  <TableCell
+                    className={
+                      ACTIVE.has(o.status) || (o.status === "delivered" && o.pod_status === "outstanding")
+                        ? "font-medium"
+                        : "text-muted-foreground"
+                    }
+                  >
+                    {nextStep(o)}
                   </TableCell>
                   <TableCell className="text-right tabular-nums">{o.line_count}</TableCell>
                   <TableCell className="text-right tabular-nums">{o.units}</TableCell>

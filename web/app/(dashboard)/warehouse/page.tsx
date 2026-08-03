@@ -94,27 +94,34 @@ export default function WarehousePage() {
       <ErrorBanner message={error} />
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        {/* Each tile opens the queue it counts. A number a clerk cannot press
+            tells them four orders need picking and leaves them to work out
+            which four. */}
         <StatTile
           label="New orders"
           value={count("new")}
           sub="waiting to be confirmed"
           tone={count("new") > 0 ? "warn" : "neutral"}
+          href="/orders?status=new"
         />
         <StatTile
           label="Awaiting picking"
           value={count("confirmed") + count("picking")}
           sub="confirmed and being picked"
+          href="/orders?status=confirmed"
         />
         <StatTile
           label="Awaiting dispatch"
           value={count("packed")}
           sub="packed and ready to go"
+          href="/orders?status=packed"
         />
         <StatTile
           label="Outstanding PODs"
           value={pods.length}
           sub="delivered, not yet signed for"
           tone={pods.length > 0 ? "bad" : "neutral"}
+          href="/orders?pod=outstanding"
         />
       </div>
 

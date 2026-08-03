@@ -1,5 +1,7 @@
 "use client";
 
+import Link from "next/link";
+
 import { cn } from "@/lib/utils";
 
 /**
@@ -15,23 +17,23 @@ export function StatTile({
   value,
   sub,
   tone = "neutral",
+  href,
 }: {
   label: string;
   value: string | number;
   sub?: string;
   tone?: "neutral" | "warn" | "bad";
+  /**
+   * Where the number goes when you press it.
+   *
+   * A queue count that cannot be opened is a dead end: it tells a clerk there
+   * are four orders waiting to be picked and leaves them to go and find which
+   * four. Optional, because plenty of tiles are genuinely just a figure.
+   */
+  href?: string;
 }) {
-  return (
-    <div
-      className={cn(
-        "rounded-lg border p-4",
-        tone === "bad"
-          ? "border-destructive/40 bg-destructive/5"
-          : tone === "warn"
-            ? "border-amber-500/40 bg-amber-500/5"
-            : "border-border bg-card"
-      )}
-    >
+  const body = (
+    <>
       <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
         {label}
       </p>
@@ -48,8 +50,27 @@ export function StatTile({
         {value}
       </p>
       {sub && <p className="mt-0.5 text-xs text-muted-foreground">{sub}</p>}
-    </div>
+    </>
   );
+
+  const shell = cn(
+    "block rounded-lg border p-4",
+    tone === "bad"
+      ? "border-destructive/40 bg-destructive/5"
+      : tone === "warn"
+        ? "border-amber-500/40 bg-amber-500/5"
+        : "border-border bg-card",
+    href && "transition-colors hover:border-foreground/25 hover:bg-muted/40"
+  );
+
+  if (href) {
+    return (
+      <Link href={href} className={shell}>
+        {body}
+      </Link>
+    );
+  }
+  return <div className={shell}>{body}</div>;
 }
 
 /** The inline error banner this app uses everywhere; there is no toast. */
