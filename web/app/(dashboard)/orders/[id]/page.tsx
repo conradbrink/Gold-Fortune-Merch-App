@@ -88,6 +88,23 @@ export default function OrderDetailPage() {
   const [notice, setNotice] = useState<string | null>(null);
   const [dialog, setDialog] = useState<DialogKind>(null);
 
+  /**
+   * Which of the two the shared cancel/hold dialog is showing.
+   *
+   * Held apart from `dialog` because the dialog stays mounted while it animates
+   * closed, by which point `dialog` is already null and every label inside it
+   * would fall through to its "hold" branch. Cancelling an order flashed "Put
+   * this order on hold" on the way out — naming the opposite action at the one
+   * moment the clerk is looking for confirmation that the right thing happened.
+   */
+  const [confirmKind, setConfirmKind] = useState<"cancel" | "hold">("cancel");
+
+  /** Opens the shared dialog, latching which of the two it is. */
+  function openConfirm(kind: "cancel" | "hold") {
+    setConfirmKind(kind);
+    setDialog(kind);
+  }
+
   // Dialog fields.
   const [shortfall, setShortfall] = useState<ShortfallAction>("reject");
   const [driverId, setDriverId] = useState("");
@@ -246,12 +263,12 @@ export default function OrderDetailPage() {
                 Release hold
               </Button>
             ) : (
-              <Button variant="outline" onClick={() => setDialog("hold")} disabled={busy}>
+              <Button variant="outline" onClick={() => openConfirm("hold")} disabled={busy}>
                 Hold
               </Button>
             ))}
           {!["delivered", "cancelled", "dispatched"].includes(o.status) && (
-            <Button variant="outline" onClick={() => setDialog("cancel")} disabled={busy}>
+            <Button variant="outline" onClick={() => openConfirm("cancel")} disabled={busy}>
               Cancel
             </Button>
           )}
@@ -710,12 +727,12 @@ export default function OrderDetailPage() {
         <DialogContent>
           <DialogHeader>
             <DialogTitle>
-              {dialog === "cancel" ? "Cancel this order" : "Put this order on hold"}
+              {confirmKind === "cancel" ? "Cancel this order" : "Put this order on hold"}
             </DialogTitle>
           </DialogHeader>
           <div className="space-y-3">
             <p className="text-sm text-muted-foreground">
-              {dialog === "cancel"
+              {confirmKind === "cancel"
                 ? "Any stock held for this order is released. This cannot be undone."
                 : "A hold freezes the order where it is. Nothing moves until it is released."}
             </p>
@@ -732,15 +749,15 @@ export default function OrderDetailPage() {
               onClick={() =>
                 run(
                   () =>
-                    dialog === "cancel"
+                    confirmKind === "cancel"
                       ? cancelOrder(supabase, orderId, reason)
                       : holdOrder(supabase, orderId, reason),
-                  dialog === "cancel" ? "Order cancelled." : "Order held."
+                  confirmKind === "cancel" ? "Order cancelled." : "Order held."
                 )
               }
               disabled={busy || !reason.trim()}
             >
-              {busy ? "Saving…" : dialog === "cancel" ? "Cancel the order" : "Hold it"}
+              {busy ? "Saving…" : confirmKind === "cancel" ? "Cancel the order" : "Hold it"}
             </Button>
           </DialogFooter>
         </DialogContent>

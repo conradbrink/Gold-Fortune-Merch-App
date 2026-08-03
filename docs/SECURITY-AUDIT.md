@@ -284,8 +284,19 @@ Still to configure when billing is live:
 
 ## 5. Credentials to rotate
 
-None are known to have leaked. `web/.env.local` is gitignored and absent from
-git history. Rotate anyway if the laptop has ever been shared.
+🔴 **Rotation is outstanding as of 3 Aug 2026.** The contents of
+`web/.env.local` were printed unredacted into an AI coding-session transcript,
+which exposed `SUPABASE_SERVICE_ROLE_KEY`, `OPENAI_API_KEY`,
+`GOOGLE_GEOCODING_API_KEY`, `GOOGLE_PLACES_API_KEY` and
+`NEXT_PUBLIC_GOOGLE_MAPS_KEY`. The transcript is not public, so this is an
+exposure rather than a known compromise — but a service-role key bypasses RLS
+entirely, so it should be treated as compromised until rotated.
+
+Nothing reached the repository: `web/.env.local` is gitignored
+(`web/.gitignore:34`), absent from git history, and CI's secret scan passes.
+
+The procedure is `docs/ROTATE-CREDENTIALS.md`. Update the date above when it
+has been done.
 
 The **`NEXT_PUBLIC_GOOGLE_MAPS_KEY` is visible in the page source by design** —
 it must keep its HTTP-referrer restriction, and it should have a budget cap
