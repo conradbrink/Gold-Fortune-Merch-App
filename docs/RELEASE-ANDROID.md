@@ -179,6 +179,12 @@ Both use the service-role key, because `app_releases` has no write policy —
 no signed-in user, manager included, can change what the fleet is told to
 install.
 
+⚠️ **Both the `apikey` and `Authorization` headers are required.** The keys
+were rotated to Supabase's newer `sb_secret_…` format on 3 August 2026, and
+Storage rejects those with `403 Invalid Compact JWS` when only `Authorization`
+is sent. The legacy JWT keys worked with `Authorization` alone, which is why
+this command did not need it before.
+
 ```bash
 cd "$(git rev-parse --show-toplevel)"
 set -a && . web/.env.local && set +a
@@ -189,6 +195,7 @@ APK=mobile/build/app/outputs/flutter-apk/app-release.apk
 SIZE=$(stat -f%z "$APK")
 
 curl -X POST "$NEXT_PUBLIC_SUPABASE_URL/storage/v1/object/app-releases/$VERSION/app-release.apk" \
+  -H "apikey: $SUPABASE_SERVICE_ROLE_KEY" \
   -H "Authorization: Bearer $SUPABASE_SERVICE_ROLE_KEY" \
   -H "Content-Type: application/vnd.android.package-archive" \
   --data-binary "@$APK"
