@@ -12,8 +12,14 @@ offers.
 
 ## Before you start: what holds a copy
 
-Only **two** places hold values. This was verified against the tree, not
-assumed:
+Only **two** places hold a *copy* you have to go and change. This was verified
+against the tree, not assumed.
+
+The provider is the third holder and behaves differently: Supabase, OpenAI and
+Google each keep the authoritative record, and that is where a key is created
+and revoked rather than edited. A copy updated everywhere below still leaves
+the old key working until it is revoked at the provider — which is the step
+people skip, because everything appears to work without it.
 
 | Where | What |
 |---|---|
@@ -82,9 +88,33 @@ Keys:
 3. Update `SUPABASE_SERVICE_ROLE_KEY` in `web/.env.local`.
 4. Redeploy production so the running instance picks it up. An env-var change
    alone does not restart it.
-5. Verify: sign in and load `/reports`, then run `./scripts/backup-export.sh`
-   and confirm it completes rather than 401s.
-6. **Then** revoke the old secret key in the same dashboard.
+5. Verify **production**, with a request that actually uses the server key:
+
+   ```bash
+   curl -s -o /dev/null -w '%{http_code}\n' \
+     https://gold-fortune-merch-app-rnyn.vercel.app/api/app/android
+   ```
+
+   `200` means the deployed instance built its admin client and read from
+   Supabase storage — which is only possible with a working
+   `SUPABASE_SERVICE_ROLE_KEY`. `503` means the variable is missing. `502`
+   means the key works but the release file is absent, which is a different
+   fault and still proves the key.
+
+   ⚠️ Do **not** verify with `/reports`. Every dashboard page is a client
+   component using the browser client and the *publishable* key, so it renders
+   perfectly while the server key is wrong or missing. The only server paths
+   that touch the service key are `/api/reps/invite`, `/api/reps/[id]` — both
+   destructive — and `/api/app/android`, which is a harmless read and public.
+
+6. Optionally also run `./scripts/backup-export.sh`. That checks the copy in
+   `web/.env.local`, which is a *different* copy from the one Vercel holds —
+   useful, but not a production check.
+7. **Then** revoke the old secret key in the same dashboard.
+
+Until step 7 the old key is still live and still bypasses RLS: creating a
+replacement does not weaken it. Keep the overlap to minutes, not days, and do
+not treat the exposure as closed until the old key is gone.
 
 `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` does **not** need rotating. It is public
 by design — it ships in the page source, and RLS is the real boundary. Leave it
@@ -150,13 +180,13 @@ both variables to exist while it does. A build environment without them cannot
 succeed, whatever is in the diff — which matches previews failing on
 documentation-only pull requests.
 
-So: **tick `NEXT_PUBLIC_SUPABASE_URL` and
-`NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` for the Preview environment**, not only
-Production. Both are public values — the publishable key ships in the page
-source by design — so there is no secret being widened here.
+**Diagnosed and fixed on 3 Aug 2026.** The dashboard showed every variable in
+the project scoped to **Production only**, including both of the two the build
+reads — so the Preview environment had neither, which is the reproduced failure
+exactly. `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`
+were then ticked for Preview, and the next pull-request build went green.
 
-**Confirmed from the dashboard on 3 Aug 2026.** Every variable in the project
-is scoped to **Production only** — including `NEXT_PUBLIC_SUPABASE_URL` and
-`NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`. The Preview environment therefore has
-neither, which is the reproduced failure exactly. Tick both for Preview (and
-Development, if `vercel dev` is used) and preview builds will succeed.
+Kept here because the failure took weeks to explain and the same symptom will
+return the moment a new build-time `NEXT_PUBLIC_*` variable is added for
+Production alone. Both values are public — the publishable key ships in the
+page source by design — so scoping them to Preview widens no secret.
