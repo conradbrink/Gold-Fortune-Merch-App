@@ -269,7 +269,9 @@ be checked immediately after publishing.
 - [ ] Built with `--release` **and both** `--dart-define`s
       (`GF_WEB_BASE_URL`, `SENTRY_DSN`)
 - [ ] Build printed "Signing release with the keystore"
-- [ ] `keytool -printcert -jarfile` shows the production certificate
+- [ ] `apksigner verify --print-certs` shows SHA-256
+      `0b68016543e7fed5ed0433bf8e1c2ed50fdac2be66a96e3b40b4a45305b1f394`
+      (not `keytool -printcert -jarfile` — see Part 2 step 3)
 - [ ] No `localhost` in the APK
 - [ ] APK uploaded to the `app-releases` bucket
 - [ ] `app_releases` row inserted, old row's `is_current` cleared, in one transaction
