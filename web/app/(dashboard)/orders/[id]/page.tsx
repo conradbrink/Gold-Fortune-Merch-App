@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import { AlertTriangle, FileUp, History, Truck } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
@@ -72,6 +72,7 @@ type DialogKind =
 export default function OrderDetailPage() {
   const supabase = createClient();
   const params = useParams<{ id: string }>();
+  const router = useRouter();
   const orderId = params.id;
 
   const [detail, setDetail] = useState<OrderDetail | null>(null);
@@ -153,13 +154,23 @@ export default function OrderDetailPage() {
     };
   }, [supabase, reload]);
 
-  /** Runs an action, then reloads. Errors from the database are shown verbatim. */
-  async function run(fn: () => Promise<unknown>, success: string) {
+  /**
+   * Runs an action, then reloads. Errors from the database are shown verbatim.
+   *
+   * `goTo` is for the transitions whose whole point is the screen that follows
+   * them. Navigating instead of reloading skips a render of a page the user is
+   * about to leave.
+   */
+  async function run(fn: () => Promise<unknown>, success: string, goTo?: string) {
     setBusy(true);
     setError(null);
     setNotice(null);
     try {
       await fn();
+      if (goTo) {
+        router.push(goTo);
+        return;
+      }
       await reload();
       setNotice(success);
       setDialog(null);
@@ -213,7 +224,17 @@ export default function OrderDetailPage() {
           )}
           {o.status === "confirmed" && (
             <Button
-              onClick={() => run(() => startPicking(supabase, orderId), "Picking started.")}
+              onClick={() =>
+                run(
+                  () => startPicking(supabase, orderId),
+                  "Picking started.",
+                  // Straight to the list. Pressing "Start picking" and being
+                  // shown a second button that opens the picking list is two
+                  // clicks for one intention, and the picker is standing in
+                  // the aisle holding a phone.
+                  `/orders/${orderId}/pick`
+                )
+              }
               disabled={busy}
             >
               Start picking
@@ -360,7 +381,22 @@ export default function OrderDetailPage() {
               {o.contact_name && <Row label="Contact" value={o.contact_name} />}
               {o.contact_phone && <Row label="Phone" value={o.contact_phone} />}
               {o.required_by && <Row label="Required by" value={o.required_by} />}
-              <Row label="POD" value={o.pod_status.replace("_", " ")} />
+              <Row
+                label="POD"
+                value={
+                  // Every delivery sets this to `outstanding` and filing the
+                  // document sets it to `received`; nothing ever chooses
+                  // `not_required`, which is only the column default before a
+                  // delivery has happened. Printing it raw told the reader a
+                  // signature would not be needed, which is the opposite of
+                  // the rule.
+                  o.pod_status === "received"
+                    ? "Received"
+                    : o.pod_status === "outstanding"
+                      ? "Outstanding"
+                      : "Required on delivery"
+                }
+              />
               {o.hold_reason && <Row label="Hold reason" value={o.hold_reason} />}
               {o.cancel_reason && <Row label="Cancelled" value={o.cancel_reason} />}
               {o.notes && <Row label="Notes" value={o.notes} />}
