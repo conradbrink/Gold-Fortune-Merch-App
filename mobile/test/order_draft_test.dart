@@ -108,6 +108,111 @@ void main() {
     expect(await db.getValue(OrderDraft.keyFor(visitId)), isNull);
   });
 
+  // ------------------------------------------------- shrinks vs base units
+  //
+  // The rep orders in shrinks; the warehouse reserves in base units. Getting
+  // this wrong is silent in both directions — the order saves, the money looks
+  // right, and the shop is short by a factor of the pack size — so the
+  // arithmetic is pinned down here rather than left to be noticed on a
+  // delivery.
+
+  test('a line is sent in the base units the warehouse reserves in', () {
+    // Three shrinks of a ten-pack is thirty units, at a tenth of the shrink
+    // price. The line is worth the same either way round: 3 × 1595 = 4785,
+    // and 30 × 159.50 = 4785.
+    const line = OrderDraftLine(
+      productId: 'elf-12000',
+      qty: 3,
+      unitsPerShrink: 10,
+      unitPrice: 1595.00,
+    );
+
+    expect(line.qty, 3, reason: 'what the rep typed stays in shrinks');
+    expect(line.qtyOrderedBaseUnits, 30);
+    expect(line.unitPricePerBaseUnit, 159.50);
+    expect(line.qtyOrderedBaseUnits * line.unitPricePerBaseUnit!, 4785.00);
+  });
+
+  test('a line with no price on record sends no price, not a zero', () {
+    const line = OrderDraftLine(
+      productId: 'black-cherry-11mg',
+      qty: 2,
+      unitsPerShrink: 5,
+    );
+
+    expect(line.qtyOrderedBaseUnits, 10);
+    // Zero would read as given away free rather than as not yet priced.
+    expect(line.unitPricePerBaseUnit, isNull);
+  });
+
+  test('a line with no pack size refuses rather than guessing at one', () {
+    // Treating a missing factor as 1 would reserve a tenth of what the shop
+    // asked for, and nothing downstream would question it.
+    const line = OrderDraftLine(productId: 'p1', qty: 4, unitPrice: 100);
+
+    expect(() => line.qtyOrderedBaseUnits, throwsStateError);
+    expect(() => line.unitPricePerBaseUnit, throwsStateError);
+  });
+
+  test('a shrink price that does not divide evenly rounds to the cent', () {
+    // `order_lines.unit_price` is numeric(12,2), so a price per unit cannot
+    // carry a third decimal. 129.03 over five is 25.806, and the line is worth
+    // two cents more than the price card as a result. Recorded so the
+    // difference is a known rounding rather than a surprise on an invoice.
+    const line = OrderDraftLine(
+      productId: 'zyn',
+      qty: 1,
+      unitsPerShrink: 5,
+      unitPrice: 129.03,
+    );
+
+    expect(line.unitPricePerBaseUnit, 25.81);
+    // closeTo, not equals: five times 25.81 is 129.04999999999998 in binary
+    // floating point. The database does the real arithmetic in numeric.
+    expect(
+      line.qtyOrderedBaseUnits * line.unitPricePerBaseUnit!,
+      closeTo(129.05, 0.001),
+    );
+  });
+
+  test('a restored draft comes back in shrinks, not converted units', () async {
+    // The counter on the capture screen is fed straight from this. Storing the
+    // converted figure would show a rep who ordered 3 shrinks a 30 they never
+    // keyed, and a second save would convert it again.
+    await OrderDraftStore(db).save(
+      visitId,
+      const OrderDraft(storeId: 'store-1', lines: [
+        OrderDraftLine(
+          productId: 'p1',
+          qty: 3,
+          unitsPerShrink: 10,
+          unitPrice: 1595.00,
+        ),
+      ]),
+    );
+
+    final line = (await OrderDraftStore(db).load(visitId))!.lines.single;
+    expect(line.qty, 3);
+    expect(line.unitsPerShrink, 10);
+    expect(line.unitPrice, 1595.00);
+    expect(line.qtyOrderedBaseUnits, 30);
+  });
+
+  test('a draft written before the fix restores without a stale factor', () {
+    // Older builds wrote no pack size. It must come back null so the capture
+    // screen refills it from the live catalogue, rather than defaulting to
+    // something that would quietly convert wrongly.
+    final line = OrderDraftLine.fromMap({
+      'product_id': 'p1',
+      'qty': 6,
+      'unit_price': 198.75,
+    });
+
+    expect(line.qty, 6);
+    expect(line.unitsPerShrink, isNull);
+    expect(() => line.qtyOrderedBaseUnits, throwsStateError);
+  });
+
   test('submitting clears the draft so it cannot be sent twice', () async {
     final store = OrderDraftStore(db);
     await store.save(

@@ -103,11 +103,17 @@ class OrderRepository {
       'received_via': 'rep_visit',
       'notes': note,
       'visit_client_generated_id': visitClientGeneratedId,
+      // Converted out of the rep's shrinks and into the base units the
+      // warehouse reserves in. This is the only place the two denominations
+      // meet: everything above it is what the rep typed, everything below is
+      // what `order_confirm` will draw out of `stock_balances`. Both halves of
+      // the line move together — converting the quantity without the price
+      // would misstate the order by the pack size just as surely.
       'lines': lines
           .map((l) => {
                 'product_id': l.productId,
-                'qty_ordered': l.qty,
-                'unit_price': l.unitPrice,
+                'qty_ordered': l.qtyOrderedBaseUnits,
+                'unit_price': l.unitPricePerBaseUnit,
                 // Each line carries its own idempotency key, so a partially
                 // applied insert can be completed rather than duplicated.
                 'client_generated_id': _uuid.v4(),

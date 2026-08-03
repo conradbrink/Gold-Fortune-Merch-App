@@ -105,6 +105,7 @@ class _OrderCaptureScreenState extends ConsumerState<OrderCaptureScreen> {
       out.add(OrderDraftLine(
         productId: entry.key,
         qty: entry.value,
+        unitsPerShrink: p?.unitsPerShrink,
         unitPrice: p?.priceExclVat,
       ));
     }
@@ -133,6 +134,27 @@ class _OrderCaptureScreenState extends ConsumerState<OrderCaptureScreen> {
     final lines = _lines();
     if (lines.isEmpty) {
       setState(() => _error = 'Add at least one product.');
+      return;
+    }
+
+    // The warehouse reserves in base units, so a line whose pack size is not on
+    // record cannot be converted and must not be guessed at. Caught here, where
+    // the product can be named, rather than at the sync boundary hours later
+    // where the rep would never see it.
+    final unsized = lines.where((l) => (l.unitsPerShrink ?? 0) <= 0).toList();
+    if (unsized.isNotEmpty) {
+      final names = unsized
+          .map((l) =>
+              _catalogue.where((p) => p.id == l.productId).firstOrNull?.name)
+          .whereType<String>()
+          .toList();
+      setState(() => _error = names.length == unsized.length
+          ? 'No pack size on record for ${names.join(', ')}, so the order '
+              'cannot be sent. Take that line off to send the rest.'
+          // A restored draft naming products this phone no longer has. Giving
+          // the rep a bare id to puzzle over would help nobody.
+          : 'This order cannot be sent until the product list reaches this '
+              'phone. Open the app once where there is signal.');
       return;
     }
 
@@ -174,13 +196,12 @@ class _OrderCaptureScreenState extends ConsumerState<OrderCaptureScreen> {
         : _catalogue.where((p) => p.searchText.contains(term)).toList();
 
     final lineCount = _qty.values.where((q) => q > 0).length;
+    // Shrinks times the per-shrink price: both sides of this are the rep's own
+    // units, which is why the figure the shopkeeper is quoted does not change
+    // when the line is converted for the warehouse.
     final total = _lines().fold<double>(
       0,
-      (sum, l) =>
-          sum +
-          l.qty *
-              (_catalogue.where((p) => p.id == l.productId).firstOrNull?.priceExclVat ??
-                  0),
+      (sum, l) => sum + l.qty * (l.unitPrice ?? 0),
     );
 
     return Scaffold(
@@ -296,8 +317,9 @@ class _OrderCaptureScreenState extends ConsumerState<OrderCaptureScreen> {
                         ),
                         const SizedBox(height: 4),
                         Text(
-                          'Prices are trade, per shrink, excluding VAT. The warehouse '
-                          'confirms what is in stock.',
+                          'Quantities are in shrinks and prices are trade, per '
+                          'shrink, excluding VAT. The warehouse confirms what is '
+                          'in stock.',
                           style: Theme.of(context).textTheme.bodySmall?.copyWith(
                                 color: AppColors.textMuted,
                               ),
@@ -333,9 +355,33 @@ class _ProductRow extends StatelessWidget {
         product.priceExclVat!.toStringAsFixed(2),
     ].join(' · ');
 
+    // What the warehouse will actually be asked to reserve, spelled out as the
+    // rep counts. The same arithmetic the GRN screen shows on its own lines,
+    // and for the same reason: a pack size applied silently is a pack size
+    // nobody checks.
+    final per = product.unitsPerShrink ?? 0;
+    final ordered =
+        qty > 0 && per > 0 ? '$qty × $per = ${qty * per} units' : null;
+
     return ListTile(
       title: Text(product.name),
-      subtitle: subtitle.isEmpty ? null : Text(subtitle),
+      isThreeLine: subtitle.isNotEmpty && ordered != null,
+      subtitle: subtitle.isEmpty && ordered == null
+          ? null
+          : Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (subtitle.isNotEmpty) Text(subtitle),
+                if (ordered != null)
+                  Text(
+                    ordered,
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: AppColors.navy,
+                          fontWeight: FontWeight.w600,
+                        ),
+                  ),
+              ],
+            ),
       trailing: SizedBox(
         width: 132,
         child: Row(
