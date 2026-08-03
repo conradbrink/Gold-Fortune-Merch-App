@@ -53,11 +53,21 @@ export default function OrdersPage() {
     }
   }, []);
 
+  // The term the *query* runs on, held a beat behind the box so typing does
+  // not fire a request per keystroke. Without this the server-side search in
+  // `fetchOrders` is never reached and the 200-row limit is still the real
+  // horizon, which was the whole point of moving the filter into the query.
+  const [queryTerm, setQueryTerm] = useState("");
+  useEffect(() => {
+    const t = setTimeout(() => setQueryTerm(search), 300);
+    return () => clearTimeout(t);
+  }, [search]);
+
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
-        const rows = await fetchOrders(supabase, { status });
+        const rows = await fetchOrders(supabase, { status, search: queryTerm });
         if (cancelled) return;
         setOrders(rows);
         setError(null);
@@ -70,8 +80,11 @@ export default function OrdersPage() {
     return () => {
       cancelled = true;
     };
-  }, [supabase, status]);
+  }, [supabase, status, queryTerm]);
 
+  // Kept over the rows already fetched, so the table narrows on the keystroke
+  // rather than waiting on the debounce. The query above is what decides which
+  // orders exist to filter; this only makes the wait feel shorter.
   const visible = useMemo(() => {
     const q = search.trim().toLowerCase();
     if (!q) return orders;

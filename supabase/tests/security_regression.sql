@@ -4,8 +4,9 @@
 -- to an invariant a new table has to hold. **30 checks** — 1-18 are the 29 July
 -- audit; 19-20 the `territory_reps` tenancy gap, 21-22 the per-user
 -- `dashboard_layouts`, 23-24 `territories_enforce_shape` ignoring dependents on
--- UPDATE, and 25-26 the territory depth and tenancy invariants, all found in
--- review on 30 July. 27-30 are the warehouse module of 2 August: the third role
+-- UPDATE, and 25-26 the territory shape and tenancy invariants, all found in
+-- review on 30 July. 19-26 were rebuilt on 3 August for the country → region →
+-- territory tree; see the third fixture rule below for why that was owed. 27-30 are the warehouse module of 2 August: the third role
 -- and the order/adjustment tables it brought with it.
 --
 -- 25 and 26 are invariants about the *data*, not attacks: the races that could
@@ -25,12 +26,22 @@
 --     with no root territory made check 20 skip itself in silence.
 --   * **Every attack gets a control** asserting the legitimate case still works —
 --     a lock that also breaks real use is one the next person removes in a hurry.
---   * **A schema change can break the fixtures rather than the checks.** The
---     country tier landed and this file stopped running at all: its territory
---     fixtures had no country parent, so the suite aborted before check 19 and
---     reported nothing. Every territory fixture now creates its own country.
---     If this file raises anything other than PASSED or SECURITY REGRESSIONS,
---     the suite is broken, not the database — fix it before trusting a green run.
+--   * **A schema change can break the fixtures rather than the checks.** This
+--     has now happened twice, to the same block. The country tier landed and the
+--     suite aborted before check 19, reporting nothing. Then the regions
+--     restructure of 31 July (`20260731181954_…`) put a **region** between
+--     country and territory and removed `'sub'` from the level constraint
+--     altogether — and the file went on claiming country → territory → sub for
+--     three days, unrunnable and unnoticed, until it was first run against
+--     production on 3 August. If this file raises anything other than PASSED or
+--     SECURITY REGRESSIONS, the suite is broken, not the database — fix it
+--     before trusting a green run, and do not assume a file that has not been
+--     run lately still runs at all.
+--     ⚠️ The second failure was the worse kind: check 25 had been left asserting
+--     that a territory hangs off a country, so the first thing it would have
+--     done, once reachable, is report all 27 of the estate's territories as
+--     misparented. **When the tiers change, the fixtures AND the invariants move
+--     together** — a stale invariant does not go quiet, it cries wolf.
 --
 -- And the rule those three add up to: **a probe that passes for the wrong reason
 -- is worse than one that fails**, because it is counted as coverage. So a check
@@ -60,7 +71,7 @@ declare
   v_other_org uuid; v_other_terr uuid; v_terr uuid;
   v_shape_main uuid; v_shape_other uuid;
   v_other_country uuid; v_own_country uuid;
-  v_other_region uuid; v_own_region uuid; v_shape_region uuid; v_err text;
+  v_other_region uuid; v_own_region uuid; v_shape_region uuid;
   -- Warehouse module (checks 27-30).
   v_loc uuid; v_prod uuid;
   v_order_other uuid; v_order_own uuid; v_order_clerk uuid;
@@ -351,90 +362,142 @@ begin
   -- `20260730170000_territories_shape_guards_dependents.sql`.
   --
   -- Built self-contained rather than reusing the estate, so the check does not
-  -- depend on which territories happen to have dependents.
-  -- Three levels since the country tier: country → territory → sub. Fixtures are
-  -- built as that whole chain, created rather than found — the estate's own
-  -- country would do, but a check that depends on tenant data is the mistake
-  -- checks 20-23 already made twice.
+  -- depend on which territories happen to have dependents. The chain is the
+  -- current one — country → region → territory — created rather than found, for
+  -- the reason given at check 19.
+  --
+  -- The dependent is now the *region*: it is the tier that has children under it
+  -- and can be demoted, which is what the old 'sub' fixture was for. Nothing can
+  -- be a sub any more, so the old version of this check tested a state the CHECK
+  -- constraint already makes unreachable.
   reset role;
   insert into public.territories (org_id, name, level, parent_id)
     values (v_org, 'Regression Country', 'country', null)
     returning id into v_shape_other;
   insert into public.territories (org_id, name, level, parent_id)
-    values (v_org, 'Regression Territory', 'territory', v_shape_other)
-    returning id into v_shape_main;
+    values (v_org, 'Regression Region', 'region', v_shape_other)
+    returning id into v_shape_region;
   insert into public.territories (org_id, name, level, parent_id)
-    values (v_org, 'Regression Sub', 'sub', v_shape_main);
+    values (v_org, 'Regression Territory', 'territory', v_shape_region)
+    returning id into v_shape_main;
 
   perform set_config('request.jwt.claims',
     json_build_object('sub', v_mgr, 'role', 'authenticated')::text, true);
   set local role authenticated;
 
-  -- 23. A territory with a sub under it must not become a sub itself — that is
+  -- 23. A region with a territory under it must not be demoted to a territory —
   --     the state `stores_enforce_territory` refuses to create, arrived at
-  --     sideways. Note this is a *level* change: reparenting a territory between
-  --     countries is ordinary reorganisation and is allowed (see check 24).
+  --     sideways. This is a *level* change: reparenting a childless territory
+  --     between regions is ordinary reorganisation and is allowed (check 24b).
+  --
+  --     🔴 The message is matched, not just the refusal, and this is the whole
+  --     reason the check is worth having. Two guards would refuse this update and
+  --     only one of them is under test:
+  --
+  --       * `territories_enforce_shape`'s dependents block, which is the guard —
+  --         "Cannot restructure % while % child territory/ies …";
+  --       * the expected-parent check further down the same function, which would
+  --         refuse a 'territory' whose parent is a country anyway, with
+  --         "<name> is a country, not a region".
+  --
+  --     So `exception when others then null` — what this check used to do —
+  --     passes just as happily with the dependents guard deleted. That is the
+  --     failure mode this file exists to avoid, and it was sitting inside the
+  --     check written to catch it.
   begin
-    update public.territories set level = 'sub' where id = v_shape_main;
+    update public.territories set level = 'territory' where id = v_shape_region;
     get diagnostics v_n = row_count;
     if v_n > 0 then
-      v_fail := v_fail || '23. a territory with a sub could become a sub itself' || E'\n';
-    end if;
-  exception when others then null; end;
-
-  -- `v_other_org`, not a random uuid. With a random one the FK refuses the update
-  -- regardless, so this check passed even with the guard removed — verified by
-  -- disabling the trigger: random uuid still refused (23503, the foreign key),
-  -- real organisation accepted. A check that survives the deletion of the thing
-  -- it tests is not a check.
-  begin
-    update public.territories set org_id = v_other_org where id = v_shape_main;
-    get diagnostics v_n = row_count;
-    if v_n > 0 then
-      v_fail := v_fail || '23b. a territory with dependents could change organisation' || E'\n';
-    end if;
-  exception when others then null; end;
-
-  -- 24. Renaming and deactivating — the only updates the UI makes — must still
-  --     work, and so must moving a childless territory to another country, which
-  --     is what the guard was narrowed to allow. See check 4.
-  begin
-    update public.territories set name = 'Regression Territory renamed', active = false
-     where id = v_shape_main;
-    get diagnostics v_n = row_count;
-    if v_n <> 1 then
-      v_fail := v_fail || '24. a territory could NOT be renamed or deactivated' || E'\n';
+      v_fail := v_fail || '23. a region with a territory under it could be demoted' || E'\n';
     end if;
   exception when others then
-    v_fail := v_fail || '24. a territory could NOT be renamed or deactivated: '
+    if sqlerrm not like 'Cannot restructure%' then
+      v_fail := v_fail || format(
+        '23. the demotion was refused, but by "%s" rather than by the dependents guard%s',
+        sqlerrm, E'\n');
+    end if;
+  end;
+
+  -- 23b. `v_other_org`, not a random uuid. With a random one the FK refuses the
+  --      update regardless, so this check passed even with the guard removed —
+  --      verified by disabling the trigger: random uuid still refused (23503, the
+  --      foreign key), real organisation accepted. A check that survives the
+  --      deletion of the thing it tests is not a check. The message is matched
+  --      for the same reason as 23: the parent-organisation check two branches
+  --      down would refuse this too, with a different sentence.
+  begin
+    update public.territories set org_id = v_other_org where id = v_shape_region;
+    get diagnostics v_n = row_count;
+    if v_n > 0 then
+      v_fail := v_fail || '23b. a region with dependents could change organisation' || E'\n';
+    end if;
+  exception when others then
+    if sqlerrm not like 'Cannot restructure%' then
+      v_fail := v_fail || format(
+        '23b. the organisation move was refused, but by "%s" rather than by the dependents guard%s',
+        sqlerrm, E'\n');
+    end if;
+  end;
+
+  -- 24. Renaming and deactivating — the only updates the UI makes — must still
+  --     work, and they must work on a row that *has* dependents: the guard only
+  --     fires on a level or organisation change, and a version that fired on
+  --     every update would break the rename the UI actually performs. See
+  --     check 4.
+  begin
+    update public.territories set name = 'Regression Region renamed', active = false
+     where id = v_shape_region;
+    get diagnostics v_n = row_count;
+    if v_n <> 1 then
+      v_fail := v_fail || '24. a region could NOT be renamed or deactivated' || E'\n';
+    end if;
+  exception when others then
+    v_fail := v_fail || '24. a region could NOT be renamed or deactivated: '
               || sqlerrm || E'\n'; end;
 
+  -- 24b. And a childless territory must still be able to move between regions,
+  --      which is what the guard was narrowed to allow — the reorganisation the
+  --      drag-and-drop UI performs. `v_terr` and `v_other_terr` are spent by now
+  --      (checks 19-20 are done with them) and are reused as scratch.
+  --
+  --      Note the guard is not even consulted here: its UPDATE branch fires only
+  --      on a level or organisation change, and this changes neither. What must
+  --      hold is that the expected-parent check accepts the new parent, so the
+  --      move goes to a *region* — moving it under a country would be refused,
+  --      and rightly.
   begin
     insert into public.territories (org_id, name, level, parent_id)
-      values (v_org, 'Regression Country Two', 'country', null)
+      values (v_org, 'Regression Region Two', 'region', v_shape_other)
       returning id into v_terr;
     insert into public.territories (org_id, name, level, parent_id)
-      values (v_org, 'Regression Spare', 'territory', v_shape_other)
+      values (v_org, 'Regression Spare', 'territory', v_shape_region)
       returning id into v_other_terr;
     update public.territories set parent_id = v_terr where id = v_other_terr;
     get diagnostics v_n = row_count;
     if v_n <> 1 then
-      v_fail := v_fail || '24b. a childless territory could NOT move country' || E'\n';
+      v_fail := v_fail || '24b. a childless territory could NOT move region' || E'\n';
     end if;
   exception when others then
-    v_fail := v_fail || '24b. a childless territory could NOT move country: '
+    v_fail := v_fail || '24b. a childless territory could NOT move region: '
               || sqlerrm || E'\n'; end;
 
   reset role;
 
   -- 25. Every row sits under the right *kind* of parent.
   --
-  -- Was "nothing is three levels deep", which the country tier made wrong —
-  -- three levels is now the design. The invariant that survived the change is
-  -- the one that was really being tested: a country has no parent, a territory
-  -- hangs off a country, a sub hangs off a territory. That catches a fourth
-  -- level, a skipped level and a cycle alike, because every one of them puts a
-  -- row under a parent of the wrong level.
+  -- Rewritten twice now, once per tier change, and the second time it was
+  -- 🔴 **wrong in the false-alarm direction** — it still read "a territory hangs
+  -- off a country" after the regions migration, so had it been reachable it
+  -- would have reported all 27 of the estate's territories as misparented. A
+  -- check that cries wolf about the whole estate gets switched off by the next
+  -- person in a hurry, which costs more than the check was ever worth.
+  --
+  -- The invariant that survives both changes is the shape itself: a country has
+  -- no parent, a region hangs off a country, a territory hangs off a region.
+  -- That catches a skipped level, a fourth level and a cycle alike, because
+  -- every one of them puts a row under a parent of the wrong kind. The final
+  -- clause catches a level nobody has thought of — including `'sub'`, were the
+  -- CHECK constraint ever loosened to allow one back.
   --
   -- An invariant rather than an attack, deliberately: a cycle can only be
   -- committed by two transactions reparenting past each other, which no
@@ -443,34 +506,51 @@ begin
   select count(*) into v_n
     from public.territories t
     left join public.territories p on p.id = t.parent_id
-   where (t.level = 'country' and t.parent_id is not null)
-      or (t.level = 'territory' and coalesce(p.level, '') <> 'country')
-      or (t.level = 'sub' and coalesce(p.level, '') <> 'territory');
+   where (t.level = 'country'   and t.parent_id is not null)
+      or (t.level = 'region'    and coalesce(p.level, '') <> 'country')
+      or (t.level = 'territory' and coalesce(p.level, '') <> 'region')
+      or t.level not in ('country', 'region', 'territory');
   if v_n > 0 then
     v_fail := v_fail || format(
-      '25. %s territory/ies sit under a parent of the wrong level (skipped level, fourth level or cycle)%s',
+      '25. %s territory/ies sit under a parent of the wrong level (skipped level, fourth level, unknown level or cycle)%s',
       v_n, E'\n');
   end if;
 
-  -- 25b. And no store is attached to anything but a territory. The country is
-  --      reached through the territory, so this is the other half of "a store is
-  --      never in two places".
+  -- 25b. And no store is attached to anything but a territory — now the deepest
+  --      tier. The country and region are reached through it, so this is the
+  --      other half of "a store is never in two places".
   select count(*) into v_n
     from public.stores s
     join public.territories t on t.id = s.territory_id
    where t.level <> 'territory';
   if v_n > 0 then
     v_fail := v_fail || format(
-      '25b. %s store(s) are attached to a country or a sub rather than a territory%s',
+      '25b. %s store(s) are attached to a country or a region rather than a territory%s',
       v_n, E'\n');
   end if;
 
-  -- 26. No sub-territory belongs to a different organisation than its parent.
+  -- 25c. `stores.sub_territory_id` was kept as a column when the sub tier was
+  --      removed — deliberately, because every row is null and dropping it would
+  --      be irreversible on the only copy of the estate. `stores_enforce_territory`
+  --      refuses to write one, so this asserts the column is still empty: it is
+  --      the check that notices if that trigger is ever weakened, which is the
+  --      only way a store could go back to being in two places at once.
+  select count(*) into v_n from public.stores where sub_territory_id is not null;
+  if v_n > 0 then
+    v_fail := v_fail || format(
+      '25c. %s store(s) carry a sub_territory_id, a tier that no longer exists%s',
+      v_n, E'\n');
+  end if;
+
+  -- 26. No row belongs to a different organisation than its parent — at any
+  --     tier. Worded for the tree rather than for one level of it, so the next
+  --     tier change leaves it correct: it compares every child with its parent,
+  --     whatever the two happen to be called this month.
   --
   -- The companion to 25, and for the same reason: a cross-org pair can be
   -- committed by two transactions moving past each other (one reparenting, one
   -- changing `org_id`), which needs two sessions to stage. This catches the
-  -- result, which is the thing that actually matters — a sub-territory on the
+  -- result, which is the thing that actually matters — part of the tree on the
   -- wrong side of the tenancy line.
   select count(*) into v_n
     from public.territories t
@@ -478,7 +558,7 @@ begin
    where t.org_id <> p.org_id;
   if v_n > 0 then
     v_fail := v_fail || format(
-      '26. %s sub-territory/ies belong to a different organisation than their parent%s',
+      '26. %s territory/ies belong to a different organisation than their parent%s',
       v_n, E'\n');
   end if;
 

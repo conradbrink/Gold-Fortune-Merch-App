@@ -152,11 +152,19 @@ export default function StocktakeDetailPage() {
     try {
       await saveCounts(
         supabase,
-        lines.map((l) => ({
-          id: l.id,
-          countedQty: counts[l.id] === "" ? null : Number(counts[l.id]),
-          varianceReason: reasons[l.id] || null,
-        }))
+        lines.map((l) => {
+          const countedQty = counts[l.id] === "" ? null : Number(counts[l.id]);
+          // A reason belongs to a variance. Picking one, then correcting the
+          // count back to what the system said, hides the select but leaves
+          // the reason in state — and a zero-variance line would be filed
+          // explaining a discrepancy that no longer exists.
+          const differs = countedQty !== null && countedQty !== l.system_qty_at_open;
+          return {
+            id: l.id,
+            countedQty,
+            varianceReason: differs ? reasons[l.id] || null : null,
+          };
+        })
       );
     } catch (e) {
       if (e instanceof CountSaveError) setFailedLines(new Set(e.failedLineIds));

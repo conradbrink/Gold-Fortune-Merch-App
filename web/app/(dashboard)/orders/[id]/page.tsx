@@ -805,16 +805,14 @@ export default function OrderDetailPage() {
                     // more than one dispatch, and `dispatches[0]` could be the
                     // failed or returned one — filing proof of delivery
                     // against a consignment that demonstrably did not arrive
-                    // is worse than filing it against nothing.
+                    // is worse than filing it against nothing. No delivered
+                    // dispatch means null, which the column allows.
                     //
-                    // `in_transit` is still offered because a delivery note
-                    // legitimately exists before the delivery does. `failed`
-                    // and `returned` are never chosen, and no match means
-                    // null, which the column allows.
+                    // This dialog only opens on a delivered order, so there is
+                    // no in-transit case to handle here. Uploading a delivery
+                    // note before the delivery is a separate change.
                     dispatchId:
-                      detail.dispatches.find((d) => d.status === "delivered")?.id ??
-                      detail.dispatches.find((d) => d.status === "in_transit")?.id ??
-                      null,
+                      detail.dispatches.find((d) => d.status === "delivered")?.id ?? null,
                     docType,
                     file,
                     signedByName: signedBy,
