@@ -386,19 +386,40 @@ class SyncEngine {
     final lines = (data['lines'] as List?) ?? const [];
     if (lines.isEmpty) return;
 
-    // Upserted on each line's own idempotency key, not skipped wholesale
-    // because one line arrived.
+    // Resolved line by line on each one's own idempotency key, not skipped
+    // wholesale because one line arrived.
     //
-    // The previous check returned as soon as *any* line existed for the order,
+    // The original check returned as soon as *any* line existed for the order,
     // which reads as "this already landed" and is only true when the insert
     // was all-or-nothing. A batch that half-applied left the order permanently
     // short: the rep sees it sent, the retry finds a line and gives up, and the
     // warehouse picks an order missing whatever did not make it. That is the
     // silent one — nothing errors, the order is simply wrong.
     //
-    // `order_lines.client_generated_id` is unique, and `submitOrder` mints one
-    // per line for exactly this. Conflicting on it lets a retry complete the
-    // set without duplicating what already arrived.
+    // Asking which keys are already there and inserting only the rest, rather
+    // than upserting the lot. An upsert says the same thing far more neatly and
+    // is what this did until it reached real handsets: PostgREST compiles one
+    // into `insert ... on conflict do update set <every column sent>`, Postgres
+    // demands UPDATE privilege on all of those columns, and `order_lines`
+    // grants it on `qty_ordered` and `unit_price` alone — on purpose, so that
+    // nothing but the fulfilment RPCs can move a line's stock figures. Every
+    // rep order between 1.1.3 shipping and 05.08 therefore arrived with no
+    // lines at all: header in, 42501 on the lines, retried until it gave up.
+    //
+    // So: still an upsert, but one that resolves a conflict by *ignoring* it.
+    // `ignoreDuplicates` maps to `Prefer: resolution=ignore-duplicates`, which
+    // PostgREST compiles to `on conflict do nothing` — and Postgres asks for no
+    // UPDATE privilege at all to do nothing. Verified against production in a
+    // rolled-back transaction with the four columns revoked, which is the state
+    // this code has to survive:
+    //
+    //     first=[OK]  retry=[OK (no duplicate)]  do_update_without_grant=[42501]
+    //
+    // A read-then-insert would also have worked and was written first, but it
+    // asks the same question in two round trips and leaves a window between
+    // them: `client_generated_id` is unique across the whole table, so a
+    // concurrent drain could insert between the look and the write and turn a
+    // retry into a hard failure. One statement has no window.
     await _client.from('order_lines').upsert(
       [
         for (final raw in lines)
@@ -409,6 +430,7 @@ class SyncEngine {
           }
       ],
       onConflict: 'client_generated_id',
+      ignoreDuplicates: true,
     );
   }
 

@@ -379,6 +379,142 @@ export async function setLinePrice(
   fail(error);
 }
 
+/**
+ * Corrections to an order the warehouse has not confirmed yet.
+ *
+ * Everything below is bounded by `status = 'new'`, and that boundary is the
+ * database's rather than this screen's: `order_lines_insert`, `_update` and
+ * `_delete` each require the order to still be `new`, and the column grants
+ * limit an update to `qty_ordered` and `unit_price`. So a stale tab cannot
+ * rewrite an order that has since been confirmed — the write is refused rather
+ * than racing.
+ *
+ * The cut-off is `confirmed` and not something later because confirming is what
+ * reserves stock. After it, a quantity is not a number on a form; it is a
+ * promise to a shop and a hold on the shelf, and changing it means unwinding
+ * the reservation through the ledger. A wrong order past that point is
+ * cancelled or credited, which leaves a record of what happened.
+ */
+export async function setLineQty(
+  supabase: Client,
+  lineId: string,
+  qty: number
+) {
+  if (!Number.isInteger(qty) || qty < 1) {
+    throw new Error("A quantity has to be a whole number, one or more.");
+  }
+  const { error } = await supabase
+    .from("order_lines")
+    .update({ qty_ordered: qty })
+    .eq("id", lineId);
+  fail(error);
+}
+
+export async function removeOrderLine(supabase: Client, lineId: string) {
+  const { error } = await supabase.from("order_lines").delete().eq("id", lineId);
+  fail(error);
+}
+
+/**
+ * Adds a product to an order that is still open.
+ *
+ * `order_lines` is unique on (order_id, product_id), so a product already on
+ * the order is refused here with something a person can act on, rather than
+ * left to surface as a constraint violation naming an index.
+ */
+export async function addOrderLine(
+  supabase: Client,
+  input: {
+    orgId: string;
+    orderId: string;
+    productId: string;
+    qty: number;
+    unitPrice: number | null;
+  }
+) {
+  if (!Number.isInteger(input.qty) || input.qty < 1) {
+    throw new Error("A quantity has to be a whole number, one or more.");
+  }
+
+  const { data: existing, error: existingError } = await supabase
+    .from("order_lines")
+    .select("id")
+    .eq("order_id", input.orderId)
+    .eq("product_id", input.productId)
+    .maybeSingle();
+  fail(existingError);
+  if (existing) {
+    throw new Error(
+      "That product is already on this order. Change its quantity instead."
+    );
+  }
+
+  const { error } = await supabase.from("order_lines").insert({
+    org_id: input.orgId,
+    order_id: input.orderId,
+    product_id: input.productId,
+    qty_ordered: input.qty,
+    unit_price: input.unitPrice,
+    client_generated_id: crypto.randomUUID(),
+  });
+  fail(error);
+}
+
+/**
+ * The details around the order: who to ring, when the shop wants it, and why.
+ *
+ * Not the store. Moving an order to a different shop is not a correction, it is
+ * a different order — and `orders.store_id` is what every downstream document
+ * points at. Cancel and re-capture says what happened; a silent reassignment
+ * does not.
+ */
+/**
+ * Today through 365 days ahead, as local dates.
+ *
+ * The same window the rep app's date picker allows (`firstDate` today,
+ * `lastDate` +365). A shop cannot ask for goods last Tuesday, and a date two
+ * years out is a typo — usually the year. Kept in step with the phone on
+ * purpose: the same order can be corrected from either, and a rule that holds
+ * on one and not the other is a rule nobody can rely on.
+ */
+export function requiredByRange(today = new Date()) {
+  const iso = (d: Date) =>
+    `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-` +
+    `${String(d.getDate()).padStart(2, "0")}`;
+  const first = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  const last = new Date(first);
+  last.setDate(last.getDate() + 365);
+  return { min: iso(first), max: iso(last) };
+}
+
+export async function updateOrderDetails(
+  supabase: Client,
+  orderId: string,
+  fields: {
+    contact_name: string | null;
+    contact_phone: string | null;
+    required_by: string | null;
+    notes: string | null;
+  }
+) {
+  if (fields.required_by) {
+    const { min, max } = requiredByRange();
+    // String comparison is exact for `YYYY-MM-DD` and sidesteps parsing a bare
+    // date as UTC midnight, which shifts the day either side of the boundary.
+    if (fields.required_by < min || fields.required_by > max) {
+      throw new Error(
+        `A wanted-by date has to be between ${min} and ${max}. Nothing was saved.`
+      );
+    }
+  }
+
+  const { error } = await supabase
+    .from("orders")
+    .update({ ...fields, updated_at: new Date().toISOString() })
+    .eq("id", orderId);
+  fail(error);
+}
+
 export async function fetchRepsForOrder(supabase: Client) {
   const { data, error } = await supabase
     .from("profiles")

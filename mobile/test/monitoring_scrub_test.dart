@@ -117,4 +117,33 @@ void main() {
     expect(out, isNotNull);
     expect(out!.request, isNull);
   });
+  // A rep driving through a gap in the coverage is not a crash. gotrue's auto
+  // refresh has nobody to catch it, so it lands on PlatformDispatcher.onError
+  // and Sentry files it as fatal — ten times in two days off one handset,
+  // directly above the failure that had stopped the whole field team.
+  test('a token refresh that will be retried is not reported', () {
+    final event = eventWith(null);
+    event.exceptions = [
+      SentryException(
+        type: 'AuthRetryableFetchException',
+        value: 'ClientException with SocketException: Software caused '
+            'connection abort',
+      ),
+    ];
+    expect(Monitoring.scrub(event, Hint()), isNull);
+  });
+
+  test('a refresh that cannot recover still reports', () {
+    // Non-retryable: the rep is about to be signed out and dropped back onto
+    // the day's list of shops. That is worth waking someone up for.
+    final event = eventWith(null);
+    event.exceptions = [
+      SentryException(
+        type: 'AuthApiException',
+        value: 'Invalid Refresh Token: Refresh Token Not Found',
+      ),
+    ];
+    expect(Monitoring.scrub(event, Hint()), isNotNull);
+  });
+
 }

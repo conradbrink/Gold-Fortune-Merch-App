@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 // `supabase_client.dart` pulls in.
 import 'package:supabase_flutter/supabase_flutter.dart' show SignOutScope;
 
+import '../../core/interrupted_location.dart';
 import '../../core/supabase_client.dart';
 
 class AuthController extends AsyncNotifier<void> {
@@ -38,6 +39,10 @@ class AuthController extends AsyncNotifier<void> {
   /// a refresh token that stays valid until it expires on its own, which is a
   /// better outcome than an app that crashes instead of signing out.
   Future<void> signOut() async {
+    // Deliberate, unlike the session losses InterruptedLocation exists for.
+    // Whoever signs in next must land on their own day, not in the last rep's
+    // shop with a half-typed order on screen.
+    InterruptedLocation.expectSignOut();
     try {
       await supabase.auth.signOut(scope: SignOutScope.global);
     } catch (_) {

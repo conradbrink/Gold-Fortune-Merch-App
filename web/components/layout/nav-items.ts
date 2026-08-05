@@ -11,6 +11,7 @@ import {
   FileText,
   Folder,
   BarChart3,
+  TrendingUp,
   Warehouse,
   Boxes,
   ClipboardCheck,
@@ -133,7 +134,14 @@ export const navGroups: NavGroup[] = [
   },
   {
     label: "Insights",
-    items: [{ href: "/reports", label: "Reports", icon: BarChart3 }],
+    items: [
+      // Manager-only by the default above, and deliberately: this is revenue by
+      // rep, which is management information about a colleague in the same way
+      // `/warehouse/insights` is. `WAREHOUSE_ALLOWED` does not list it either,
+      // so the proxy refuses it as well as the menu hiding it.
+      { href: "/sales", label: "Sales", icon: TrendingUp },
+      { href: "/reports", label: "Reports", icon: BarChart3 },
+    ],
   },
 ];
 

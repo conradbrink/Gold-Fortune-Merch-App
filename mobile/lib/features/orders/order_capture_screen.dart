@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../core/providers.dart';
 import '../../core/theme.dart';
@@ -23,11 +24,17 @@ class OrderCaptureScreen extends ConsumerStatefulWidget {
     required this.visitClientId,
     required this.storeId,
     required this.storeName,
+    required this.visitKey,
   });
 
   final String visitClientId;
   final String storeId;
   final String storeName;
+
+  /// Where leaving this screen goes back to. Held rather than popped, because
+  /// this is a route now (`/visit/:key/order`) and not an imperative push —
+  /// see the comment on the button that opens it.
+  final String visitKey;
 
   @override
   ConsumerState<OrderCaptureScreen> createState() => _OrderCaptureScreenState();
@@ -145,8 +152,10 @@ class _OrderCaptureScreenState extends ConsumerState<OrderCaptureScreen> {
         phone.isEmpty &&
         _requiredBy == null) {
       await repo.drafts.clear(widget.visitClientId);
+      ref.invalidate(orderDraftProvider(widget.visitClientId));
       return;
     }
+    ref.invalidate(orderDraftProvider(widget.visitClientId));
     await repo.drafts.save(
       widget.visitClientId,
       OrderDraft(
@@ -248,7 +257,8 @@ class _OrderCaptureScreenState extends ConsumerState<OrderCaptureScreen> {
           content: Text('Order saved. It will reach the warehouse when you have signal.'),
         ),
       );
-      Navigator.of(context).pop();
+      ref.invalidate(orderDraftProvider(widget.visitClientId));
+      context.go('/visit/${widget.visitKey}');
     } catch (e) {
       if (!mounted) return;
       setState(() {
