@@ -155,7 +155,6 @@ class _OrderCaptureScreenState extends ConsumerState<OrderCaptureScreen> {
       ref.invalidate(orderDraftProvider(widget.visitClientId));
       return;
     }
-    ref.invalidate(orderDraftProvider(widget.visitClientId));
     await repo.drafts.save(
       widget.visitClientId,
       OrderDraft(
@@ -167,6 +166,12 @@ class _OrderCaptureScreenState extends ConsumerState<OrderCaptureScreen> {
         requiredBy: _requiredBy,
       ),
     );
+    // After the write, as the clear branch above already does. Invalidating
+    // first lets a listener refetch while the old draft is still on disk, and
+    // nothing fires again afterwards — so the store screen's "Order in
+    // progress · N products" line could sit one edit behind what the rep
+    // typed. Sent by CodeRabbit outside the diff on PR #19, after the merge.
+    ref.invalidate(orderDraftProvider(widget.visitClientId));
   }
 
   List<OrderDraftLine> _lines() {
