@@ -43,16 +43,16 @@ class _Harness {
       initialLocation: '/',
       refreshListenable: _RefreshStream(auth.stream),
       routes: [
-        GoRoute(path: '/login', builder: (_, __) => const Text('LOGIN')),
+        GoRoute(path: '/login', builder: (_, _) => const Text('LOGIN')),
         GoRoute(
           path: '/',
-          builder: (_, __) => const Text('STORES'),
+          builder: (_, _) => const Text('STORES'),
           routes: [
             GoRoute(
               path: 'visit/:key',
-              builder: (_, __) => const _StoreScreen(),
+              builder: (_, _) => const _StoreScreen(),
               routes: [
-                GoRoute(path: 'order', builder: (_, __) => const _OrderScreen()),
+                GoRoute(path: 'order', builder: (_, _) => const _OrderScreen()),
               ],
             ),
           ],
