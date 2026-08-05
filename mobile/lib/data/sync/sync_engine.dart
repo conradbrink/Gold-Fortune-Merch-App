@@ -406,31 +406,32 @@ class SyncEngine {
     // rep order between 1.1.3 shipping and 05.08 therefore arrived with no
     // lines at all: header in, 42501 on the lines, retried until it gave up.
     //
-    // So: an insert of what is genuinely missing. It needs no UPDATE grant, it
-    // completes a half-applied batch just as an upsert would, and it cannot be
-    // re-broken by tightening the column grants back down.
-    final wanted = [
-      for (final raw in lines) Map<String, dynamic>.from(raw as Map)
-    ];
-    final present = await _client
-        .from('order_lines')
-        .select('client_generated_id')
-        .inFilter(
-          'client_generated_id',
-          [for (final line in wanted) line['client_generated_id'] as String],
-        );
-    final landed = {
-      for (final row in present) row['client_generated_id'] as String
-    };
-
-    final missing = [
-      for (final line in wanted)
-        if (!landed.contains(line['client_generated_id'] as String))
-          {...line, 'org_id': orgId, 'order_id': orderId}
-    ];
-    if (missing.isEmpty) return;
-
-    await _client.from('order_lines').insert(missing);
+    // So: still an upsert, but one that resolves a conflict by *ignoring* it.
+    // `ignoreDuplicates` maps to `Prefer: resolution=ignore-duplicates`, which
+    // PostgREST compiles to `on conflict do nothing` — and Postgres asks for no
+    // UPDATE privilege at all to do nothing. Verified against production in a
+    // rolled-back transaction with the four columns revoked, which is the state
+    // this code has to survive:
+    //
+    //     first=[OK]  retry=[OK (no duplicate)]  do_update_without_grant=[42501]
+    //
+    // A read-then-insert would also have worked and was written first, but it
+    // asks the same question in two round trips and leaves a window between
+    // them: `client_generated_id` is unique across the whole table, so a
+    // concurrent drain could insert between the look and the write and turn a
+    // retry into a hard failure. One statement has no window.
+    await _client.from('order_lines').upsert(
+      [
+        for (final raw in lines)
+          {
+            ...Map<String, dynamic>.from(raw as Map),
+            'org_id': orgId,
+            'order_id': orderId,
+          }
+      ],
+      onConflict: 'client_generated_id',
+      ignoreDuplicates: true,
+    );
   }
 
   Future<void> _replayFormSubmission(Map<String, dynamic> data) async {

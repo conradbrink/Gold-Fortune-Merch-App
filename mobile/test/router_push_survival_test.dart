@@ -166,6 +166,30 @@ void main() {
     expect(find.text('STORES'), findsNothing);
   });
 
+  test('the first interruption is the one returned to', () {
+    // `remember` is `??=`. The redirect runs again on the way to /login, and
+    // again on arrival, so a last-writer-wins version would replace the order
+    // the rep was typing with the login screen they never asked for.
+    InterruptedLocation.remember('/visit/abc/order');
+    InterruptedLocation.remember('/login');
+    InterruptedLocation.remember('/');
+    expect(InterruptedLocation.take(), '/visit/abc/order');
+    expect(InterruptedLocation.take(), isNull);
+  });
+
+  test('a live session cancels an expected sign-out', () {
+    // AuthController.signOut catches both attempts, so the session can survive
+    // the request. Without this the flag would latch for the rest of the
+    // process and every later accidental loss would go unrecorded.
+    InterruptedLocation.expectSignOut();
+    InterruptedLocation.remember('/visit/abc/order');
+    expect(InterruptedLocation.location, isNull, reason: 'suppressed, correctly');
+
+    InterruptedLocation.noteSessionAlive();
+    InterruptedLocation.remember('/visit/abc/order');
+    expect(InterruptedLocation.location, '/visit/abc/order');
+  });
+
   testWidgets('signing out deliberately does not drop the next rep into the '
       'last one\'s shop', (tester) async {
     final h = _Harness();

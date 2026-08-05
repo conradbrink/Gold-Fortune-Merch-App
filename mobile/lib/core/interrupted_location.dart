@@ -42,6 +42,19 @@ class InterruptedLocation {
     _location ??= location;
   }
 
+  /// A session is alive and the rep is somewhere in the app.
+  ///
+  /// This is what stops [expectSignOut] latching for the rest of the process.
+  /// `AuthController.signOut` catches both of its attempts, so a sign-out can
+  /// fail with the session still in place: the router never reaches `/login`,
+  /// [take] never runs, and every later *accidental* session loss would go
+  /// unrecorded — route recovery silently off for the rest of the day, on the
+  /// handsets that need it most. Called on the ordinary navigation path, where
+  /// a live session is proof the sign-out did not happen.
+  static void noteSessionAlive() {
+    _deliberate = false;
+  }
+
   /// Takes the remembered location, leaving nothing behind.
   ///
   /// Called when a session exists again, which is also the moment a deliberate

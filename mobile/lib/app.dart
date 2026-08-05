@@ -174,6 +174,10 @@ final routerProvider = Provider<GoRouter>((ref) {
       }
       if (loggingIn) return InterruptedLocation.take() ?? '/';
 
+      // A live session anywhere but the login screen means no sign-out is in
+      // progress, whatever was expected. See InterruptedLocation.
+      InterruptedLocation.noteSessionAlive();
+
       final role = await resolveRole(session.user.id);
       final onManagerNotice = state.matchedLocation == '/manager-notice';
 
