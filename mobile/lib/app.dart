@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import 'core/interrupted_location.dart';
 import 'core/providers.dart';
 import 'core/supabase_client.dart';
 import 'core/theme.dart';
@@ -11,6 +12,7 @@ import 'data/local/app_database.dart';
 import 'features/auth/login_screen.dart';
 import 'features/auth/manager_notice_screen.dart';
 import 'features/files/files_screen.dart';
+import 'features/orders/order_capture_route.dart';
 import 'features/route_today/route_today_screen.dart';
 import 'features/visit/store_detail_screen.dart';
 import 'features/visit/sales_visit_complete_screen.dart';
@@ -138,6 +140,24 @@ final routerProvider = Provider<GoRouter>((ref) {
             builder: (context, state) => StoreDetailScreen(
               visitKey: state.pathParameters['key']!,
             ),
+            routes: [
+              GoRoute(
+                // A route rather than the `Navigator.push` this used to be.
+                // An imperative push is invisible to go_router, so anything
+                // that rebuilt the stack — a session blip, a redirect —
+                // discarded a half-typed order without trace. As a route it
+                // is part of the match list, and it is what
+                // InterruptedLocation has to have in order to return anyone
+                // to it.
+                //
+                // The visit is resolved from the day rather than passed in
+                // `extra`, which does not survive being restored.
+                path: 'order',
+                builder: (context, state) => OrderCaptureRoute(
+                  visitKey: state.pathParameters['key']!,
+                ),
+              ),
+            ],
           ),
         ],
       ),
@@ -147,9 +167,12 @@ final routerProvider = Provider<GoRouter>((ref) {
       final loggingIn = state.matchedLocation == '/login';
 
       if (session == null) {
-        return loggingIn ? null : '/login';
+        if (loggingIn) return null;
+        // Not necessarily a sign-out. See InterruptedLocation.
+        InterruptedLocation.remember(state.uri.toString());
+        return '/login';
       }
-      if (loggingIn) return '/';
+      if (loggingIn) return InterruptedLocation.take() ?? '/';
 
       final role = await resolveRole(session.user.id);
       final onManagerNotice = state.matchedLocation == '/manager-notice';

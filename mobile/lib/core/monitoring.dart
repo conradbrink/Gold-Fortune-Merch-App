@@ -118,6 +118,8 @@ class Monitoring {
     // Never report anything from a debug build to the shared issue stream.
     if (event.environment == 'development') return null;
 
+    if (_isRetryableNetworkNoise(event)) return null;
+
     // Mutated in place rather than through `copyWith`, which 9.x deprecated.
     //
     // One deliberate difference from the version this replaced: `queryString`
@@ -141,6 +143,30 @@ class Monitoring {
     }
 
     return event;
+  }
+
+  /// A token refresh that failed for want of a network, and will be retried.
+  ///
+  /// Reported as **fatal** and unhandled, which is neither: gotrue's auto
+  /// refresh runs on a timer with nobody to catch it, so the exception reaches
+  /// `PlatformDispatcher.onError` and Sentry files a crash for a rep driving
+  /// through a gap in the coverage. Ten of these came off one handset in two
+  /// days (FLUTTER-1) while the failure that actually stopped the field team —
+  /// every order arriving with no lines on it — sat one row below them.
+  ///
+  /// Dropped rather than downgraded. It is retryable by construction and the
+  /// SDK retries it; there is no version of this event anyone acts on. A
+  /// refresh that genuinely cannot recover arrives as a *non*-retryable
+  /// `AuthApiException`, which still comes through — that one means a rep is
+  /// about to be signed out, and is worth knowing about.
+  ///
+  /// Matched on the type name rather than the class so this file keeps no
+  /// dependency on gotrue, and so it can be tested without one.
+  static bool _isRetryableNetworkNoise(SentryEvent event) {
+    for (final exception in event.exceptions ?? const <SentryException>[]) {
+      if (exception.type == 'AuthRetryableFetchException') return true;
+    }
+    return false;
   }
 
   /// Whether a *header* carries a credential.

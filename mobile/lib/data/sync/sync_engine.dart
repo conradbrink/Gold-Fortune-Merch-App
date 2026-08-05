@@ -386,30 +386,51 @@ class SyncEngine {
     final lines = (data['lines'] as List?) ?? const [];
     if (lines.isEmpty) return;
 
-    // Upserted on each line's own idempotency key, not skipped wholesale
-    // because one line arrived.
+    // Resolved line by line on each one's own idempotency key, not skipped
+    // wholesale because one line arrived.
     //
-    // The previous check returned as soon as *any* line existed for the order,
+    // The original check returned as soon as *any* line existed for the order,
     // which reads as "this already landed" and is only true when the insert
     // was all-or-nothing. A batch that half-applied left the order permanently
     // short: the rep sees it sent, the retry finds a line and gives up, and the
     // warehouse picks an order missing whatever did not make it. That is the
     // silent one — nothing errors, the order is simply wrong.
     //
-    // `order_lines.client_generated_id` is unique, and `submitOrder` mints one
-    // per line for exactly this. Conflicting on it lets a retry complete the
-    // set without duplicating what already arrived.
-    await _client.from('order_lines').upsert(
-      [
-        for (final raw in lines)
-          {
-            ...Map<String, dynamic>.from(raw as Map),
-            'org_id': orgId,
-            'order_id': orderId,
-          }
-      ],
-      onConflict: 'client_generated_id',
-    );
+    // Asking which keys are already there and inserting only the rest, rather
+    // than upserting the lot. An upsert says the same thing far more neatly and
+    // is what this did until it reached real handsets: PostgREST compiles one
+    // into `insert ... on conflict do update set <every column sent>`, Postgres
+    // demands UPDATE privilege on all of those columns, and `order_lines`
+    // grants it on `qty_ordered` and `unit_price` alone — on purpose, so that
+    // nothing but the fulfilment RPCs can move a line's stock figures. Every
+    // rep order between 1.1.3 shipping and 05.08 therefore arrived with no
+    // lines at all: header in, 42501 on the lines, retried until it gave up.
+    //
+    // So: an insert of what is genuinely missing. It needs no UPDATE grant, it
+    // completes a half-applied batch just as an upsert would, and it cannot be
+    // re-broken by tightening the column grants back down.
+    final wanted = [
+      for (final raw in lines) Map<String, dynamic>.from(raw as Map)
+    ];
+    final present = await _client
+        .from('order_lines')
+        .select('client_generated_id')
+        .inFilter(
+          'client_generated_id',
+          [for (final line in wanted) line['client_generated_id'] as String],
+        );
+    final landed = {
+      for (final row in present) row['client_generated_id'] as String
+    };
+
+    final missing = [
+      for (final line in wanted)
+        if (!landed.contains(line['client_generated_id'] as String))
+          {...line, 'org_id': orgId, 'order_id': orderId}
+    ];
+    if (missing.isEmpty) return;
+
+    await _client.from('order_lines').insert(missing);
   }
 
   Future<void> _replayFormSubmission(Map<String, dynamic> data) async {
