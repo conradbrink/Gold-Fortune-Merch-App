@@ -379,6 +379,112 @@ export async function setLinePrice(
   fail(error);
 }
 
+/**
+ * Corrections to an order the warehouse has not confirmed yet.
+ *
+ * Everything below is bounded by `status = 'new'`, and that boundary is the
+ * database's rather than this screen's: `order_lines_insert`, `_update` and
+ * `_delete` each require the order to still be `new`, and the column grants
+ * limit an update to `qty_ordered` and `unit_price`. So a stale tab cannot
+ * rewrite an order that has since been confirmed — the write is refused rather
+ * than racing.
+ *
+ * The cut-off is `confirmed` and not something later because confirming is what
+ * reserves stock. After it, a quantity is not a number on a form; it is a
+ * promise to a shop and a hold on the shelf, and changing it means unwinding
+ * the reservation through the ledger. A wrong order past that point is
+ * cancelled or credited, which leaves a record of what happened.
+ */
+export async function setLineQty(
+  supabase: Client,
+  lineId: string,
+  qty: number
+) {
+  if (!Number.isInteger(qty) || qty < 1) {
+    throw new Error("A quantity has to be a whole number, one or more.");
+  }
+  const { error } = await supabase
+    .from("order_lines")
+    .update({ qty_ordered: qty })
+    .eq("id", lineId);
+  fail(error);
+}
+
+export async function removeOrderLine(supabase: Client, lineId: string) {
+  const { error } = await supabase.from("order_lines").delete().eq("id", lineId);
+  fail(error);
+}
+
+/**
+ * Adds a product to an order that is still open.
+ *
+ * `order_lines` is unique on (order_id, product_id), so a product already on
+ * the order is refused here with something a person can act on, rather than
+ * left to surface as a constraint violation naming an index.
+ */
+export async function addOrderLine(
+  supabase: Client,
+  input: {
+    orgId: string;
+    orderId: string;
+    productId: string;
+    qty: number;
+    unitPrice: number | null;
+  }
+) {
+  if (!Number.isInteger(input.qty) || input.qty < 1) {
+    throw new Error("A quantity has to be a whole number, one or more.");
+  }
+
+  const { data: existing, error: existingError } = await supabase
+    .from("order_lines")
+    .select("id")
+    .eq("order_id", input.orderId)
+    .eq("product_id", input.productId)
+    .maybeSingle();
+  fail(existingError);
+  if (existing) {
+    throw new Error(
+      "That product is already on this order. Change its quantity instead."
+    );
+  }
+
+  const { error } = await supabase.from("order_lines").insert({
+    org_id: input.orgId,
+    order_id: input.orderId,
+    product_id: input.productId,
+    qty_ordered: input.qty,
+    unit_price: input.unitPrice,
+    client_generated_id: crypto.randomUUID(),
+  });
+  fail(error);
+}
+
+/**
+ * The details around the order: who to ring, when the shop wants it, and why.
+ *
+ * Not the store. Moving an order to a different shop is not a correction, it is
+ * a different order — and `orders.store_id` is what every downstream document
+ * points at. Cancel and re-capture says what happened; a silent reassignment
+ * does not.
+ */
+export async function updateOrderDetails(
+  supabase: Client,
+  orderId: string,
+  fields: {
+    contact_name: string | null;
+    contact_phone: string | null;
+    required_by: string | null;
+    notes: string | null;
+  }
+) {
+  const { error } = await supabase
+    .from("orders")
+    .update({ ...fields, updated_at: new Date().toISOString() })
+    .eq("id", orderId);
+  fail(error);
+}
+
 export async function fetchRepsForOrder(supabase: Client) {
   const { data, error } = await supabase
     .from("profiles")

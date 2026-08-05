@@ -46,6 +46,10 @@ import {
   signedDocumentUrl,
   orderTotals,
   setLinePrice,
+  setLineQty,
+  removeOrderLine,
+  addOrderLine,
+  updateOrderDetails,
   unitPriceFor,
   fetchOrderableProducts,
   type OrderDetail,
@@ -98,7 +102,14 @@ export default function OrderDetailPage() {
   const [priceDraft, setPriceDraft] = useState<Record<string, string>>({});
   const [pricing, setPricing] = useState(false);
   const [catalogue, setCatalogue] = useState<
-    { id: string; units_per_shrink: number | null; shrink_price_excl_vat: number | null }[]
+    {
+      id: string;
+      // Carried since the add-a-product control existed; `fetchOrderableProducts`
+      // always selected it and this type simply did not say so.
+      name: string;
+      units_per_shrink: number | null;
+      shrink_price_excl_vat: number | null;
+    }[]
   >([]);
 
   const [loading, setLoading] = useState(true);
@@ -123,6 +134,23 @@ export default function OrderDetailPage() {
     setConfirmKind(kind);
     setDialog(kind);
   }
+
+  // Corrections while the order is still `new`. Quantities ride along with the
+  // prices rather than getting a button of their own: a clerk fixing an order a
+  // shop has just changed on the phone is doing one job, and two save buttons
+  // over one table is two chances to walk away with half of it saved.
+  const [qtyDraft, setQtyDraft] = useState<Record<string, string>>({});
+  const [addProductId, setAddProductId] = useState("");
+  const [addQty, setAddQty] = useState("");
+  const [adding, setAdding] = useState(false);
+  const [editingDetails, setEditingDetails] = useState(false);
+  const [detailsDraft, setDetailsDraft] = useState({
+    contact_name: "",
+    contact_phone: "",
+    required_by: "",
+    notes: "",
+  });
+  const [savingDetails, setSavingDetails] = useState(false);
 
   // Dialog fields.
   const [shortfall, setShortfall] = useState<ShortfallAction>("reject");
@@ -273,15 +301,119 @@ export default function OrderDetailPage() {
             `These did not: ${failed.join(", ")}. Re-enter only those.`
         );
       }
+      // Quantities, on the same all-or-nothing validation and the same
+      // report-what-landed failure handling.
+      const qtyEdits = detail!.lines
+        .map((l) => ({ id: l.id, raw: qtyDraft[l.id], name: l.product_name }))
+        .filter((e) => e.raw !== undefined && e.raw !== "")
+        .map((e) => {
+          const n = Number(e.raw);
+          if (!Number.isInteger(n) || n < 1) {
+            throw new Error(
+              `${e.name}: a quantity has to be a whole number, one or more. ` +
+                `To take the line off the order, remove it. Nothing was saved.`
+            );
+          }
+          return { id: e.id, qty: n, name: e.name };
+        });
+
+      const qtyFailed: string[] = [];
+      for (const e of qtyEdits) {
+        try {
+          await setLineQty(supabase, e.id, e.qty);
+        } catch {
+          qtyFailed.push(e.name);
+        }
+      }
+      if (qtyFailed.length > 0) {
+        throw new Error(
+          `${qtyEdits.length - qtyFailed.length} of ${qtyEdits.length} ` +
+            `quantities saved. These did not: ${qtyFailed.join(", ")}.`
+        );
+      }
+
       await reload();
       setPriceDraft({});
-      setNotice(
-        edits.length === 1 ? "Price saved." : `${edits.length} prices saved.`
-      );
+      setQtyDraft({});
+      const changes = edits.length + qtyEdits.length;
+      setNotice(changes === 1 ? "Change saved." : `${changes} changes saved.`);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
       setPricing(false);
+    }
+  }
+
+  /** Puts a product the shop asked for late onto an order still open. */
+  async function addLine() {
+    setAdding(true);
+    setError(null);
+    setNotice(null);
+    try {
+      if (!orgId) throw new Error("Still loading. Try again in a moment.");
+      const qty = Number(addQty);
+      const product = catalogue.find((c) => c.id === addProductId);
+      if (!product) throw new Error("Pick a product first.");
+      await addOrderLine(supabase, {
+        orgId,
+        orderId,
+        productId: addProductId,
+        qty,
+        // Prefilled from the catalogue so the line is not born unpriced, and
+        // still editable in the table above like every other price.
+        unitPrice: unitPriceFor(product) == null ? null : Number(unitPriceFor(product)),
+      });
+      await reload();
+      setAddProductId("");
+      setAddQty("");
+      setNotice(`${product.name} added.`);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setAdding(false);
+    }
+  }
+
+  async function removeLine(lineId: string, name: string) {
+    setError(null);
+    setNotice(null);
+    try {
+      await removeOrderLine(supabase, lineId);
+      await reload();
+      setNotice(`${name} taken off the order.`);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    }
+  }
+
+  function startEditingDetails() {
+    setDetailsDraft({
+      contact_name: o.contact_name ?? "",
+      contact_phone: o.contact_phone ?? "",
+      required_by: o.required_by ?? "",
+      notes: o.notes ?? "",
+    });
+    setEditingDetails(true);
+  }
+
+  async function saveDetails() {
+    setSavingDetails(true);
+    setError(null);
+    setNotice(null);
+    try {
+      await updateOrderDetails(supabase, orderId, {
+        contact_name: detailsDraft.contact_name.trim() || null,
+        contact_phone: detailsDraft.contact_phone.trim() || null,
+        required_by: detailsDraft.required_by || null,
+        notes: detailsDraft.notes.trim() || null,
+      });
+      await reload();
+      setEditingDetails(false);
+      setNotice("Order details saved.");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setSavingDetails(false);
     }
   }
   const openDispatch = detail.dispatches.find((d) => d.status === "in_transit");
@@ -440,7 +572,23 @@ export default function OrderDetailPage() {
                         <div className="text-xs text-muted-foreground">{l.brand}</div>
                       )}
                     </TableCell>
-                    <TableCell className="text-right tabular-nums">{l.qty_ordered}</TableCell>
+                    <TableCell className="text-right">
+                      {canPrice ? (
+                        <Input
+                          type="number"
+                          min={1}
+                          step="1"
+                          className="ml-auto h-8 w-20 text-right"
+                          aria-label={`Quantity ordered of ${l.product_name}`}
+                          value={qtyDraft[l.id] ?? String(l.qty_ordered)}
+                          onChange={(e) =>
+                            setQtyDraft((prev) => ({ ...prev, [l.id]: e.target.value }))
+                          }
+                        />
+                      ) : (
+                        <span className="tabular-nums">{l.qty_ordered}</span>
+                      )}
+                    </TableCell>
                     <TableCell className="text-right">
                       {canPrice ? (
                         <Input
@@ -479,6 +627,19 @@ export default function OrderDetailPage() {
                       <Badge variant={l.line_status === "fulfilled" ? "default" : "outline"}>
                         {l.line_status}
                       </Badge>
+                      {/* Only while `new`, where the badge says `pending` for
+                          every line and carries nothing. Once anything is
+                          reserved this column is the only place the line's own
+                          progress is shown, so it keeps the space. */}
+                      {canPrice && (
+                        <button
+                          type="button"
+                          onClick={() => removeLine(l.id, l.product_name)}
+                          className="ml-2 text-xs text-destructive hover:underline"
+                        >
+                          Remove
+                        </button>
+                      )}
                     </TableCell>
                   </TableRow>
                 ))}
@@ -500,16 +661,65 @@ export default function OrderDetailPage() {
                       Set them before confirming — a rep&rsquo;s order arrives unpriced.
                     </>
                   ) : (
-                    "Prices can be changed until this order is confirmed."
+                    "Quantities and prices can be changed until this order is confirmed. After that, stock is reserved against it."
                   )}
                 </p>
                 <Button
                   size="sm"
                   variant="outline"
                   onClick={savePrices}
-                  disabled={pricing || Object.keys(priceDraft).length === 0}
+                  disabled={
+                    pricing ||
+                    (Object.keys(priceDraft).length === 0 &&
+                      Object.keys(qtyDraft).length === 0)
+                  }
                 >
-                  {pricing ? "Saving…" : "Save prices"}
+                  {pricing ? "Saving…" : "Save changes"}
+                </Button>
+              </div>
+            )}
+
+            {canPrice && (
+              <div className="mt-2 flex flex-wrap items-end gap-2 rounded-lg border border-dashed border-border p-2.5">
+                <div className="min-w-56 flex-1">
+                  <label className="mb-1 block text-xs text-muted-foreground">
+                    Add a product the shop asked for
+                  </label>
+                  <NativeSelect
+                    value={addProductId}
+                    onChange={(e) => setAddProductId(e.target.value)}
+                    aria-label="Product to add"
+                  >
+                    <option value="">Choose a product…</option>
+                    {catalogue
+                      .filter((c) => !detail.lines.some((l) => l.product_id === c.id))
+                      .map((c) => (
+                        <option key={c.id} value={c.id}>
+                          {c.name}
+                        </option>
+                      ))}
+                  </NativeSelect>
+                </div>
+                <div className="w-28">
+                  <label className="mb-1 block text-xs text-muted-foreground">
+                    Units
+                  </label>
+                  <Input
+                    type="number"
+                    min={1}
+                    step="1"
+                    value={addQty}
+                    onChange={(e) => setAddQty(e.target.value)}
+                    aria-label="Units to add"
+                  />
+                </div>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={addLine}
+                  disabled={adding || !addProductId || !addQty}
+                >
+                  {adding ? "Adding…" : "Add to order"}
                 </Button>
               </div>
             )}
@@ -585,6 +795,70 @@ export default function OrderDetailPage() {
               {o.hold_reason && <Row label="Hold reason" value={o.hold_reason} />}
               {o.cancel_reason && <Row label="Cancelled" value={o.cancel_reason} />}
               {o.notes && <Row label="Notes" value={o.notes} />}
+
+              {/* The columns `orders` grants an update on, and no others. The
+                  store is deliberately not among them: moving an order to a
+                  different shop is a different order, and every document
+                  downstream points at this one. */}
+              {canPrice && !editingDetails && (
+                <button
+                  type="button"
+                  onClick={startEditingDetails}
+                  className="pt-1 text-xs text-primary hover:underline"
+                >
+                  Edit contact, date and notes
+                </button>
+              )}
+
+              {canPrice && editingDetails && (
+                <div className="space-y-2 border-t border-border pt-2">
+                  <Input
+                    value={detailsDraft.contact_name}
+                    onChange={(e) =>
+                      setDetailsDraft((d) => ({ ...d, contact_name: e.target.value }))
+                    }
+                    placeholder="Contact name"
+                    aria-label="Contact name"
+                  />
+                  <Input
+                    value={detailsDraft.contact_phone}
+                    onChange={(e) =>
+                      setDetailsDraft((d) => ({ ...d, contact_phone: e.target.value }))
+                    }
+                    placeholder="Contact phone"
+                    aria-label="Contact phone"
+                  />
+                  <Input
+                    type="date"
+                    value={detailsDraft.required_by}
+                    onChange={(e) =>
+                      setDetailsDraft((d) => ({ ...d, required_by: e.target.value }))
+                    }
+                    aria-label="Required by"
+                  />
+                  <Input
+                    value={detailsDraft.notes}
+                    onChange={(e) =>
+                      setDetailsDraft((d) => ({ ...d, notes: e.target.value }))
+                    }
+                    placeholder="Notes"
+                    aria-label="Notes"
+                  />
+                  <div className="flex gap-2">
+                    <Button size="sm" onClick={saveDetails} disabled={savingDetails}>
+                      {savingDetails ? "Saving…" : "Save"}
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => setEditingDetails(false)}
+                      disabled={savingDetails}
+                    >
+                      Cancel
+                    </Button>
+                  </div>
+                </div>
+              )}
             </CardContent>
           </Card>
 

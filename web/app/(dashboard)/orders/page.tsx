@@ -25,6 +25,51 @@ import { ORDER_STATUSES, STATUS_LABELS } from "@/lib/warehouse";
 const ACTIVE = new Set(["new", "confirmed", "picking", "packed", "dispatched"]);
 
 /**
+ * The three questions anybody opening this screen is actually asking, in the
+ * order they matter: what still has to go out, what has gone out with nothing
+ * to prove it, and what is finished.
+ *
+ * Seven statuses is the truth of the lifecycle and the right thing for the
+ * order detail to show. It is the wrong thing for a list: `confirmed`,
+ * `picking` and `packed` differ by which clerk is holding it, and to the person
+ * scanning this page they are one bucket — not yet delivered.
+ *
+ * Cancelled is a stage of its own rather than a filter, and it renders last and
+ * only when it has rows. It is not work, but an order that vanished off the
+ * screen entirely is the kind of thing people ring up about.
+ */
+type Stage = "to_deliver" | "needs_pod" | "fulfilled" | "cancelled";
+
+const STAGES: { key: Stage; title: string; blurb: string; loud?: boolean }[] = [
+  {
+    key: "to_deliver",
+    title: "New — needs to be delivered",
+    blurb: "Captured, confirmed, being picked, packed, or on the road.",
+  },
+  {
+    key: "needs_pod",
+    title: "Delivered — needs POD",
+    blurb:
+      "The goods are with the shop and nothing on file proves anyone received them.",
+    loud: true,
+  },
+  {
+    key: "fulfilled",
+    title: "Delivered and fulfilled",
+    blurb: "Signed for, or no proof required. Nothing outstanding.",
+  },
+  { key: "cancelled", title: "Cancelled", blurb: "Called off before delivery." },
+];
+
+function stageOf(o: OrderListRow): Stage {
+  if (o.status === "cancelled") return "cancelled";
+  if (o.status === "delivered") {
+    return o.pod_status === "outstanding" ? "needs_pod" : "fulfilled";
+  }
+  return "to_deliver";
+}
+
+/**
  * The next thing the warehouse has to do, said as an instruction.
  *
  * A status is a noun about the past — "packed" tells a clerk what already
@@ -184,29 +229,67 @@ export default function OrdersPage() {
         )}
       </div>
 
-      <div className="rounded-lg border border-border bg-card">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Order</TableHead>
-              <TableHead>Captured</TableHead>
-              <TableHead>Store</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead>Next step</TableHead>
-              <TableHead className="text-right">Value</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {loading ? (
+      {loading ? (
+        <div className="rounded-lg border border-border bg-card">
+          <Table>
+            <TableBody>
               <EmptyRow colSpan={6}>Loading…</EmptyRow>
-            ) : visible.length === 0 ? (
+            </TableBody>
+          </Table>
+        </div>
+      ) : visible.length === 0 ? (
+        <div className="rounded-lg border border-border bg-card">
+          <Table>
+            <TableBody>
               <EmptyRow colSpan={6}>
                 {search.trim() || status !== "all" || podOnly
                   ? "No orders match those filters."
                   : "No orders yet. Capture one, or wait for a rep to send one in."}
               </EmptyRow>
-            ) : (
-              visible.map((o) => (
+            </TableBody>
+          </Table>
+        </div>
+      ) : (
+        STAGES.map((stage) => {
+          const rows = visible.filter((o) => stageOf(o) === stage.key);
+          // An empty stage still says its name — "nothing waiting on a POD" is
+          // information. Cancelled is the exception: it is not work, so it
+          // appears only when there is something in it.
+          if (rows.length === 0 && stage.key === "cancelled") return null;
+
+          return (
+            <section key={stage.key} className="space-y-2">
+              <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+                <h2
+                  className={`text-base font-semibold ${
+                    stage.loud && rows.length > 0 ? "text-destructive" : ""
+                  }`}
+                >
+                  {stage.title}
+                </h2>
+                <span className="text-sm text-muted-foreground tabular-nums">
+                  {rows.length}
+                </span>
+                <span className="text-xs text-muted-foreground">{stage.blurb}</span>
+              </div>
+
+              <div className="rounded-lg border border-border bg-card">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Order</TableHead>
+                      <TableHead>Captured</TableHead>
+                      <TableHead>Store</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead>Next step</TableHead>
+                      <TableHead className="text-right">Value</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {rows.length === 0 ? (
+                      <EmptyRow colSpan={6}>Nothing here.</EmptyRow>
+                    ) : (
+                      rows.map((o) => (
                 <TableRow
                   key={o.id}
                   onClick={() => router.push(`/orders/${o.id}`)}
@@ -273,11 +356,15 @@ export default function OrdersPage() {
                     {o.total_incl_vat.toFixed(2)}
                   </TableCell>
                 </TableRow>
-              ))
-            )}
-          </TableBody>
-        </Table>
-      </div>
+                      ))
+                    )}
+                  </TableBody>
+                </Table>
+              </div>
+            </section>
+          );
+        })
+      )}
     </div>
   );
 }
