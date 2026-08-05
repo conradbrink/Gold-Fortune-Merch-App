@@ -468,6 +468,25 @@ export async function addOrderLine(
  * points at. Cancel and re-capture says what happened; a silent reassignment
  * does not.
  */
+/**
+ * Today through 365 days ahead, as local dates.
+ *
+ * The same window the rep app's date picker allows (`firstDate` today,
+ * `lastDate` +365). A shop cannot ask for goods last Tuesday, and a date two
+ * years out is a typo — usually the year. Kept in step with the phone on
+ * purpose: the same order can be corrected from either, and a rule that holds
+ * on one and not the other is a rule nobody can rely on.
+ */
+export function requiredByRange(today = new Date()) {
+  const iso = (d: Date) =>
+    `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-` +
+    `${String(d.getDate()).padStart(2, "0")}`;
+  const first = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  const last = new Date(first);
+  last.setDate(last.getDate() + 365);
+  return { min: iso(first), max: iso(last) };
+}
+
 export async function updateOrderDetails(
   supabase: Client,
   orderId: string,
@@ -478,6 +497,17 @@ export async function updateOrderDetails(
     notes: string | null;
   }
 ) {
+  if (fields.required_by) {
+    const { min, max } = requiredByRange();
+    // String comparison is exact for `YYYY-MM-DD` and sidesteps parsing a bare
+    // date as UTC midnight, which shifts the day either side of the boundary.
+    if (fields.required_by < min || fields.required_by > max) {
+      throw new Error(
+        `A wanted-by date has to be between ${min} and ${max}. Nothing was saved.`
+      );
+    }
+  }
+
   const { error } = await supabase
     .from("orders")
     .update({ ...fields, updated_at: new Date().toISOString() })

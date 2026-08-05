@@ -91,8 +91,17 @@ export function periodsFor(now: Date) {
     month: { from: monthStart, to: now, label: "This month" },
     monthBefore: {
       from: addMonths(monthStart, -1),
+      // Clamped to the last instant of the prior month. Months are not the same
+      // length, so carrying the elapsed time across can land past the end of a
+      // shorter one: on 31 March, a month's worth of elapsed time added to
+      // 1 February reaches 3 March, and "last month" would quietly include the
+      // first days of this one and flatter the comparison.
       to: new Date(
-        addMonths(monthStart, -1).getTime() + (now.getTime() - monthStart.getTime())
+        Math.min(
+          addMonths(monthStart, -1).getTime() +
+            (now.getTime() - monthStart.getTime()),
+          monthStart.getTime() - 1
+        )
       ),
       label: "Same point last month",
     },
@@ -148,19 +157,6 @@ export function byRep(sales: Sale[], period?: Period) {
  * the moment for the RPC — and by then the questions will have settled.
  */
 export async function fetchSales(supabase: Client): Promise<Sale[]> {
-  const { data, error } = await supabase
-    .from("orders")
-    .select(
-      "id, order_number, delivered_at, rep_id, vat_rate, " +
-        "stores(name), profiles!orders_rep_id_fkey(full_name), " +
-        "order_lines(qty_delivered, qty_returned, unit_price)"
-    )
-    .eq("status", "delivered")
-    .not("delivered_at", "is", null)
-    .order("delivered_at", { ascending: false })
-    .limit(2000);
-  fail(error);
-
   type Row = {
     id: string;
     order_number: string;
@@ -174,10 +170,40 @@ export async function fetchSales(supabase: Client): Promise<Sale[]> {
       | null;
   };
 
+  // Paged to exhaustion rather than capped.
+  //
+  // A single `.limit()` silently discarded everything past the newest N and
+  // labelled the result "All time" — a figure that is wrong in the one
+  // direction nobody checks, quietly under-reporting as the business grows.
+  // Ordered by `delivered_at` *and* `id` because ties are not hypothetical:
+  // several orders are marked delivered in the same second when a driver
+  // closes a run, and an unstable sort can repeat or skip rows across pages.
+  const PAGE = 1000;
+  const rows: Row[] = [];
+  for (let from = 0; ; from += PAGE) {
+    const { data, error } = await supabase
+      .from("orders")
+      .select(
+        "id, order_number, delivered_at, rep_id, vat_rate, " +
+          "stores(name), profiles!orders_rep_id_fkey(full_name), " +
+          "order_lines(qty_delivered, qty_returned, unit_price)"
+      )
+      .eq("status", "delivered")
+      .not("delivered_at", "is", null)
+      .order("delivered_at", { ascending: false })
+      .order("id", { ascending: false })
+      .range(from, from + PAGE - 1);
+    fail(error);
+
+    const page = (data ?? []) as unknown as Row[];
+    rows.push(...page);
+    if (page.length < PAGE) break;
+  }
+
   const one = <T,>(v: T | T[] | null): T | null =>
     Array.isArray(v) ? (v[0] ?? null) : v;
 
-  return ((data ?? []) as unknown as Row[]).map((r) => {
+  return rows.map((r) => {
     const rate = Number(r.vat_rate ?? 0);
     let units = 0;
     let net = 0;

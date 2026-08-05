@@ -50,6 +50,7 @@ import {
   removeOrderLine,
   addOrderLine,
   updateOrderDetails,
+  requiredByRange,
   unitPriceFor,
   fetchOrderableProducts,
   type OrderDetail,
@@ -277,6 +278,35 @@ export default function OrderDetailPage() {
         return { id: e.id, price: n, name: e.name };
       });
 
+      // Quantities are validated *here*, before any price is written, not
+      // after. Validating them below the price loop meant a rejected quantity
+      // produced "Nothing was saved" over prices that had already gone in —
+      // the exact half-saved state the all-or-nothing check above exists to
+      // prevent, reintroduced by adding a second field to the same button.
+      //
+      // A box the clerk emptied is rejected rather than skipped. Treating it as
+      // "no edit" reads as deleting the line to the person who cleared it, and
+      // silently keeping the old number is the worst of the three answers.
+      const qtyEdits = detail!.lines
+        .map((l) => ({ id: l.id, raw: qtyDraft[l.id], name: l.product_name }))
+        .filter((e) => e.raw !== undefined)
+        .map((e) => {
+          const n = Number(e.raw);
+          if (e.raw!.trim() === "" || !Number.isInteger(n) || n < 1) {
+            throw new Error(
+              `${e.name}: a quantity has to be a whole number, one or more. ` +
+                `To take the line off the order, remove it. Nothing was saved.`
+            );
+          }
+          return { id: e.id, qty: n, name: e.name };
+        })
+        // An unchanged number is not an edit. Typing over a 5 with a 5 should
+        // not spend a write or be counted in "3 changes saved".
+        .filter((e) => {
+          const line = detail!.lines.find((l) => l.id === e.id);
+          return line == null || line.qty_ordered !== e.qty;
+        });
+
       // Validated above, so nothing here fails on a bad number. What can still
       // fail is the network, one line in — and there is no transaction across
       // these writes, because `order_lines` is updated column by column under a
@@ -301,22 +331,6 @@ export default function OrderDetailPage() {
             `These did not: ${failed.join(", ")}. Re-enter only those.`
         );
       }
-      // Quantities, on the same all-or-nothing validation and the same
-      // report-what-landed failure handling.
-      const qtyEdits = detail!.lines
-        .map((l) => ({ id: l.id, raw: qtyDraft[l.id], name: l.product_name }))
-        .filter((e) => e.raw !== undefined && e.raw !== "")
-        .map((e) => {
-          const n = Number(e.raw);
-          if (!Number.isInteger(n) || n < 1) {
-            throw new Error(
-              `${e.name}: a quantity has to be a whole number, one or more. ` +
-                `To take the line off the order, remove it. Nothing was saved.`
-            );
-          }
-          return { id: e.id, qty: n, name: e.name };
-        });
-
       const qtyFailed: string[] = [];
       for (const e of qtyEdits) {
         try {
@@ -828,8 +842,14 @@ export default function OrderDetailPage() {
                     placeholder="Contact phone"
                     aria-label="Contact phone"
                   />
+                  {/* The same window the rep app's picker allows, so the
+                      same order cannot take a date from one screen that the
+                      other would refuse. `updateOrderDetails` checks it again
+                      — this is the courtesy, that is the rule. */}
                   <Input
                     type="date"
+                    min={requiredByRange().min}
+                    max={requiredByRange().max}
                     value={detailsDraft.required_by}
                     onChange={(e) =>
                       setDetailsDraft((d) => ({ ...d, required_by: e.target.value }))
