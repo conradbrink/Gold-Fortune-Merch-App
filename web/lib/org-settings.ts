@@ -36,6 +36,29 @@ export const DEFAULT_ORG_SETTINGS: OrgSettings = {
   defaultVisitFrequency: "monthly",
 };
 
+/**
+ * The company's own name, for the chrome that displays it.
+ *
+ * Null when it has not loaded or is not set, and callers are expected to render
+ * nothing rather than a placeholder: the sidebar carried the literal string
+ * "Gold Fortune Inc." for months, which is a different company's name the moment
+ * this is deployed for anyone else, and was never what Settings → Company said.
+ *
+ * `name` and not `legal_name` — the settings screen treats the first as what the
+ * business is called and the second as what it is registered as.
+ */
+export async function fetchOrgName(
+  supabase: SupabaseClient
+): Promise<string | null> {
+  const { data, error } = await supabase
+    .from("organizations")
+    .select("name")
+    .limit(1)
+    .maybeSingle();
+  if (error || !data) return null;
+  return (data as { name: string | null }).name?.trim() || null;
+}
+
 /** RLS scopes `organizations` to the caller's own org, so no filter is needed. */
 export async function fetchOrgSettings(
   supabase: SupabaseClient

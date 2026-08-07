@@ -11,6 +11,7 @@ import {
   FileText,
   Folder,
   BarChart3,
+  Gauge,
   TrendingUp,
   Warehouse,
   Boxes,
@@ -78,7 +79,10 @@ export const navGroups: NavGroup[] = [
       // because of its URL, but it ranks staff by fulfilment time and
       // accuracy — which is the same kind of thing as Sales, and not the
       // day-to-day "what is going out today?" the rest of that group answers.
-      { href: "/warehouse/insights", label: "Warehouse insights", icon: BarChart3 },
+      // Its own icon rather than Reports' bar chart: the two sat adjacent with
+      // the same glyph, which read as one entry duplicated. A gauge also says
+      // what it is — fulfilment speed and accuracy, not another report.
+      { href: "/warehouse/insights", label: "Warehouse insights", icon: Gauge },
     ],
   },
   {

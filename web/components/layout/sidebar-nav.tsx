@@ -7,6 +7,8 @@ import { usePathname } from "next/navigation";
 import { Building2, ChevronDown, PanelLeftClose, PanelLeftOpen } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { activeHref, visibleNavGroups } from "@/components/layout/nav-items";
+import { createClient } from "@/lib/supabase/client";
+import { fetchOrgName } from "@/lib/org-settings";
 import { useCurrentRole } from "@/lib/use-current-role";
 
 /** Remembered across navigations and reloads — a width you have to re-set on
@@ -47,11 +49,50 @@ export function SidebarContent({
    */
   const [closed, setClosed] = useState<string[]>([]);
 
+  /**
+   * Whether storage has been read yet. Nothing is written before it has.
+   *
+   * Two bugs were caught here by clicking, neither by reading:
+   *
+   * 1. Computing the next list from `closed` read it from that render's
+   *    closure, so folding two headings before React re-rendered wrote the
+   *    second over the first and silently lost a fold. The updater in
+   *    `toggleGroup` always sees the current value instead.
+   * 2. Persisting on every change of `closed` then broke *reloading*: in
+   *    development React mounts twice, and the second mount fired the write with
+   *    the empty starting value, overwriting what had just been read back from
+   *    storage. Folds survived until you refreshed, and then half came undone.
+   *
+   * Hence a flag rather than a ref holding the live list: a ref mutated in a
+   * handler that an effect also assigns is what `react-hooks/immutability`
+   * refuses, and syncing one during render is what `react-hooks/refs` refuses.
+   */
+  const [hydrated, setHydrated] = useState(false);
+
+  /**
+   * The company's own name for the footer, or null until it arrives.
+   *
+   * Fetched only for a manager, because the footer it feeds is manager-only and
+   * a clerk asking for a row they are shown nothing of is a query for nothing.
+   */
+  const [orgName, setOrgName] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (role !== "manager") return;
+    let cancelled = false;
+    (async () => {
+      const name = await fetchOrgName(createClient());
+      if (!cancelled) setOrgName(name);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [role]);
+
   useEffect(() => {
     const raw = window.localStorage.getItem(GROUPS_KEY);
-    if (!raw) return;
     try {
-      const parsed: unknown = JSON.parse(raw);
+      const parsed: unknown = raw ? JSON.parse(raw) : null;
       // Anything else in the key is somebody else's data or a bad write, and a
       // menu that throws on load is worse than a menu that opens everything.
       if (Array.isArray(parsed)) {
@@ -61,14 +102,21 @@ export function SidebarContent({
     } catch {
       // Ignore: unparseable means unfolded.
     }
+    // Raised on every path, including "nothing stored" and "stored rubbish" —
+    // leaving it down in those cases would mean a fold made in this session was
+    // never written at all.
+    setHydrated(true);
   }, []);
 
+  useEffect(() => {
+    if (!hydrated) return;
+    window.localStorage.setItem(GROUPS_KEY, JSON.stringify(closed));
+  }, [closed, hydrated]);
+
   function toggleGroup(label: string) {
-    const next = closed.includes(label)
-      ? closed.filter((l) => l !== label)
-      : [...closed, label];
-    setClosed(next);
-    window.localStorage.setItem(GROUPS_KEY, JSON.stringify(next));
+    setClosed((prev) =>
+      prev.includes(label) ? prev.filter((l) => l !== label) : [...prev, label]
+    );
   }
 
   const toggle = onToggleCollapse && (
@@ -159,7 +207,11 @@ export function SidebarContent({
                       isClosed && "-rotate-90"
                     )}
                   />
-                  <span className="truncate">{group.label}</span>
+                  {/* Not truncated: the chevron costs ~18px and "Warehouse &
+                      Fulfilment" is the longest heading, which clipped to
+                      "WAREHOUSE & FULFILME…". Wrapping is the lesser evil —
+                      a heading that cannot be read is not a heading. */}
+                  <span className="text-left leading-tight">{group.label}</span>
                   {/* Folded away, the highlighted item cannot be seen, and the
                       reader loses the answer to "where am I". A dot on the
                       heading keeps it. */}
@@ -230,8 +282,13 @@ export function SidebarContent({
             <Building2 className="h-4 w-4" />
           </div>
           {!collapsed && (
-            <div className="flex flex-col leading-tight">
-              <span>Gold Fortune Inc.</span>
+            <div className="flex min-w-0 flex-col leading-tight">
+              {/* The real company name, from Settings → Company. This was the
+                  literal string "Gold Fortune Inc." — not what that screen says,
+                  and somebody else's name entirely the day this is deployed for
+                  another business. Nothing is shown until it loads, rather than
+                  a placeholder that would be wrong for a moment on every page. */}
+              {orgName && <span className="truncate">{orgName}</span>}
               <span className="text-[11px] font-normal text-muted-foreground">
                 Company profile
               </span>
