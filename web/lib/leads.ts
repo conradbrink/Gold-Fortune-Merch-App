@@ -108,10 +108,14 @@ export async function deleteLead(
   // PostgREST, so RLS refusing the write is indistinguishable from a card that
   // was already gone unless the two are told apart here.
   if (!data || data.length === 0) {
-    const { count } = await supabase
+    const { count, error: countError } = await supabase
       .from("leads")
       .select("id", { count: "exact", head: true })
       .eq("id", id);
+    // Raised rather than folded into the count test below. A failed count
+    // leaves `count` null, which reads as "the row is still there" and would
+    // blame the manager's permissions for what is actually a network error.
+    if (countError) throw new Error(countError.message);
     throw new Error(
       count === 0
         ? "That lead had already been deleted — the board has been refreshed."

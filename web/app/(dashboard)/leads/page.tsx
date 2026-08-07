@@ -124,8 +124,12 @@ export default function LeadsPage() {
     setError(null);
     try {
       await deleteLead(supabase, deleteTarget.id);
-      setDeleteTarget(null);
+      // Closed after the reload, not before it. Closing first hands the board
+      // back while the refetch is still in flight, and `load()` publishes a
+      // snapshot taken before any move made in that window — which would put an
+      // optimistically moved card back where it started.
       await load();
+      setDeleteTarget(null);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
