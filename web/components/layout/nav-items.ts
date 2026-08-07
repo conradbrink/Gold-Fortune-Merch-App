@@ -11,6 +11,7 @@ import {
   FileText,
   Folder,
   BarChart3,
+  Gauge,
   TrendingUp,
   Warehouse,
   Boxes,
@@ -60,6 +61,31 @@ export const navGroups: NavGroup[] = [
     items: [{ href: "/", label: "Dashboard", icon: LayoutDashboard }],
   },
   {
+    // Directly under Dashboard, because it answers the same question at the
+    // same altitude: the dashboard is today, this is the trend behind it. It
+    // used to sit last, below Resources, which put the reporting a manager
+    // opens daily underneath the files they open monthly.
+    //
+    // Manager-only throughout, by the `roles` default. Every item here is
+    // management information about a colleague — revenue by rep, fulfilment
+    // time by clerk — and `canAccessPath` refuses all three for the other
+    // roles, so the menu hiding them is the second guard rather than the only
+    // one.
+    label: "Insights",
+    items: [
+      { href: "/sales", label: "Sales", icon: TrendingUp },
+      { href: "/reports", label: "Reports", icon: BarChart3 },
+      // Moved out of Warehouse & Fulfilment. It reads as warehouse work
+      // because of its URL, but it ranks staff by fulfilment time and
+      // accuracy — which is the same kind of thing as Sales, and not the
+      // day-to-day "what is going out today?" the rest of that group answers.
+      // Its own icon rather than Reports' bar chart: the two sat adjacent with
+      // the same glyph, which read as one entry duplicated. A gauge also says
+      // what it is — fulfilment speed and accuracy, not another report.
+      { href: "/warehouse/insights", label: "Warehouse insights", icon: Gauge },
+    ],
+  },
+  {
     label: "Sales & Coverage",
     items: [
       { href: "/leads", label: "Leads", icon: Target },
@@ -105,10 +131,6 @@ export const navGroups: NavGroup[] = [
         icon: Boxes,
         roles: ["manager", "warehouse"],
       },
-      // Manager-only: it ranks staff by fulfilment time and accuracy, which is
-      // management information about a clerk's colleagues. `canAccessPath`
-      // denies it for warehouse too, so this is not the only guard.
-      { href: "/warehouse/insights", label: "Warehouse insights", icon: BarChart3 },
       // Reachable by clerks on purpose: adding the driver who started this
       // morning should not wait for a manager, and RLS already permits it. The
       // manager-only tabs inside are gated by the page and by RLS.
@@ -132,21 +154,33 @@ export const navGroups: NavGroup[] = [
       { href: "/files", label: "Files", icon: Folder },
     ],
   },
-  {
-    label: "Insights",
-    items: [
-      // Manager-only by the default above, and deliberately: this is revenue by
-      // rep, which is management information about a colleague in the same way
-      // `/warehouse/insights` is. `WAREHOUSE_ALLOWED` does not list it either,
-      // so the proxy refuses it as well as the menu hiding it.
-      { href: "/sales", label: "Sales", icon: TrendingUp },
-      { href: "/reports", label: "Reports", icon: BarChart3 },
-    ],
-  },
 ];
 
 /** Flat list, for anything that only needs the destinations. */
 export const navItems: NavItem[] = navGroups.flatMap((g) => g.items);
+
+/**
+ * The one destination that counts as "where you are", or null.
+ *
+ * Longest match wins, and that is the whole point: `/warehouse/insights` starts
+ * with `/warehouse`, so a plain `startsWith` per item lights up two entries at
+ * once. That was survivable while both sat in the same group and merely looked
+ * untidy; with Insights lifted to the top it would highlight in two separate
+ * groups and claim you are in two places.
+ *
+ * `/` is matched exactly, or it prefixes every path in the app.
+ */
+export function activeHref(pathname: string): string | null {
+  let best: string | null = null;
+  for (const item of navItems) {
+    const hit =
+      item.href === "/"
+        ? pathname === "/"
+        : pathname === item.href || pathname.startsWith(`${item.href}/`);
+    if (hit && (best === null || item.href.length > best.length)) best = item.href;
+  }
+  return best;
+}
 
 /**
  * The groups this role should be shown, with empty groups dropped.
