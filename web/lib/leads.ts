@@ -81,6 +81,45 @@ export async function setLeadStage(
   }
 }
 
+/**
+ * Deletes a lead outright. Manager-only, by RLS.
+ *
+ * For the card that should never have existed — a mistyped company, a
+ * duplicate, a test row. A real call that went nowhere belongs in 'Lost'; this
+ * is for the ones where no call happened at all.
+ *
+ * ⚠️ Deleting an `in_progress` lead can be undone by the rep's own phone, which
+ * replays a sales call by upserting on `client_generated_id`, and can stall
+ * that phone's outbox if the *completion* has not synced yet. The dialog warns
+ * before this is called; see the migration for the full reasoning.
+ */
+export async function deleteLead(
+  supabase: SupabaseClient,
+  id: string
+): Promise<void> {
+  const { data, error } = await supabase
+    .from("leads")
+    .delete()
+    .eq("id", id)
+    .select("id");
+  if (error) throw new Error(error.message);
+
+  // Same trap as setLeadStage: a delete matching no row is a success to
+  // PostgREST, so RLS refusing the write is indistinguishable from a card that
+  // was already gone unless the two are told apart here.
+  if (!data || data.length === 0) {
+    const { count } = await supabase
+      .from("leads")
+      .select("id", { count: "exact", head: true })
+      .eq("id", id);
+    throw new Error(
+      count === 0
+        ? "That lead had already been deleted — the board has been refreshed."
+        : "That lead could not be deleted. Only a manager can delete a lead."
+    );
+  }
+}
+
 /** Local date, because a follow-up due "today" is due in Botswana, not in UTC. */
 export function localToday(): string {
   const d = new Date();
