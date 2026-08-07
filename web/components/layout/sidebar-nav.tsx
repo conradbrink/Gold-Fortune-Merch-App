@@ -4,14 +4,18 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { usePathname } from "next/navigation";
-import { Building2, PanelLeftClose, PanelLeftOpen } from "lucide-react";
+import { Building2, ChevronDown, PanelLeftClose, PanelLeftOpen } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { visibleNavGroups } from "@/components/layout/nav-items";
+import { activeHref, visibleNavGroups } from "@/components/layout/nav-items";
 import { useCurrentRole } from "@/lib/use-current-role";
 
 /** Remembered across navigations and reloads — a width you have to re-set on
     every page is worse than no control at all. */
 const COLLAPSED_KEY = "gf.sidebarCollapsed";
+
+/** Which groups are folded shut. Same reasoning as the width: a menu you have
+    to re-fold on every page is worse than one that does not fold. */
+const GROUPS_KEY = "gf.navGroupsClosed";
 
 export function SidebarContent({
   onNavigate,
@@ -28,6 +32,44 @@ export function SidebarContent({
   // Empty until the role is known — see `useCurrentRole` for why this does not
   // fall back to the manager menu.
   const groups = role ? visibleNavGroups(role) : [];
+  const current = activeHref(pathname);
+
+  /**
+   * The groups the reader has folded shut, by label.
+   *
+   * Closed rather than open is what gets stored, so a group added later starts
+   * open without needing a migration — the absence of a key means "not folded",
+   * which is the state a new group should arrive in.
+   *
+   * Starts empty and corrects itself after mount, for the same hydration reason
+   * the width does: reading localStorage during render makes the server and the
+   * client disagree about what is on screen.
+   */
+  const [closed, setClosed] = useState<string[]>([]);
+
+  useEffect(() => {
+    const raw = window.localStorage.getItem(GROUPS_KEY);
+    if (!raw) return;
+    try {
+      const parsed: unknown = JSON.parse(raw);
+      // Anything else in the key is somebody else's data or a bad write, and a
+      // menu that throws on load is worse than a menu that opens everything.
+      if (Array.isArray(parsed)) {
+        // eslint-disable-next-line react-hooks/set-state-in-effect
+        setClosed(parsed.filter((x): x is string => typeof x === "string"));
+      }
+    } catch {
+      // Ignore: unparseable means unfolded.
+    }
+  }, []);
+
+  function toggleGroup(label: string) {
+    const next = closed.includes(label)
+      ? closed.filter((l) => l !== label)
+      : [...closed, label];
+    setClosed(next);
+    window.localStorage.setItem(GROUPS_KEY, JSON.stringify(next));
+  }
 
   const toggle = onToggleCollapse && (
     <button
@@ -88,7 +130,15 @@ export function SidebarContent({
         )}
       </div>
       <nav className="flex-1 overflow-y-auto px-3 py-2">
-        {groups.map((group, index) => (
+        {groups.map((group, index) => {
+          // Folding only exists in the expanded sidebar. At 64px there is no
+          // heading to click and no label to read, so the icons stay visible
+          // and the stored state is simply not consulted — a group that
+          // vanished when the sidebar narrowed would look like lost navigation.
+          const foldable = group.label !== null && !collapsed;
+          const isClosed = foldable && closed.includes(group.label!);
+          const holdsCurrent = group.items.some((i) => i.href === current);
+          return (
           <div key={group.label ?? "standalone"} className={index > 0 ? "mt-4" : ""}>
             {/* Collapsed to icons there is no room for a heading, and a rule
                 separates the groups more clearly than truncated text would. */}
@@ -96,16 +146,34 @@ export function SidebarContent({
               (collapsed ? (
                 <div className="mx-2 mb-2 border-t border-sidebar-border" />
               ) : (
-                <p className="px-3 pb-1 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-                  {group.label}
-                </p>
+                <button
+                  type="button"
+                  onClick={() => toggleGroup(group.label!)}
+                  aria-expanded={!isClosed}
+                  aria-controls={`nav-group-${index}`}
+                  className="flex w-full items-center gap-1.5 rounded-md px-3 py-1 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground transition-colors hover:bg-sidebar-accent/40 hover:text-sidebar-accent-foreground"
+                >
+                  <ChevronDown
+                    className={cn(
+                      "h-3 w-3 shrink-0 transition-transform duration-150",
+                      isClosed && "-rotate-90"
+                    )}
+                  />
+                  <span className="truncate">{group.label}</span>
+                  {/* Folded away, the highlighted item cannot be seen, and the
+                      reader loses the answer to "where am I". A dot on the
+                      heading keeps it. */}
+                  {isClosed && holdsCurrent && (
+                    <span
+                      aria-hidden
+                      className="ml-auto h-1.5 w-1.5 shrink-0 rounded-full bg-sidebar-accent-foreground/70"
+                    />
+                  )}
+                </button>
               ))}
-            <div className="space-y-0.5">
+            <div id={`nav-group-${index}`} hidden={isClosed} className="space-y-0.5">
               {group.items.map((item) => {
-                const active =
-                  item.href === "/"
-                    ? pathname === "/"
-                    : pathname.startsWith(item.href);
+                const active = item.href === current;
                 const Icon = item.icon;
                 return (
                   <Link
@@ -138,7 +206,8 @@ export function SidebarContent({
               })}
             </div>
           </div>
-        ))}
+          );
+        })}
       </nav>
       {/* The company profile is a manager's page — org details, capacity,
           members. Offering it to a clerk would be a link straight back to
