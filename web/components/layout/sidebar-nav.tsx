@@ -4,14 +4,20 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { usePathname } from "next/navigation";
-import { Building2, PanelLeftClose, PanelLeftOpen } from "lucide-react";
+import { Building2, ChevronDown, PanelLeftClose, PanelLeftOpen } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { visibleNavGroups } from "@/components/layout/nav-items";
+import { activeHref, visibleNavGroups } from "@/components/layout/nav-items";
+import { createClient } from "@/lib/supabase/client";
+import { fetchOrgName } from "@/lib/org-settings";
 import { useCurrentRole } from "@/lib/use-current-role";
 
 /** Remembered across navigations and reloads — a width you have to re-set on
     every page is worse than no control at all. */
 const COLLAPSED_KEY = "gf.sidebarCollapsed";
+
+/** Which groups are folded shut. Same reasoning as the width: a menu you have
+    to re-fold on every page is worse than one that does not fold. */
+const GROUPS_KEY = "gf.navGroupsClosed";
 
 export function SidebarContent({
   onNavigate,
@@ -28,6 +34,90 @@ export function SidebarContent({
   // Empty until the role is known — see `useCurrentRole` for why this does not
   // fall back to the manager menu.
   const groups = role ? visibleNavGroups(role) : [];
+  const current = activeHref(pathname);
+
+  /**
+   * The groups the reader has folded shut, by label.
+   *
+   * Closed rather than open is what gets stored, so a group added later starts
+   * open without needing a migration — the absence of a key means "not folded",
+   * which is the state a new group should arrive in.
+   *
+   * Starts empty and corrects itself after mount, for the same hydration reason
+   * the width does: reading localStorage during render makes the server and the
+   * client disagree about what is on screen.
+   */
+  const [closed, setClosed] = useState<string[]>([]);
+
+  /**
+   * Whether storage has been read yet. Nothing is written before it has.
+   *
+   * Two bugs were caught here by clicking, neither by reading:
+   *
+   * 1. Computing the next list from `closed` read it from that render's
+   *    closure, so folding two headings before React re-rendered wrote the
+   *    second over the first and silently lost a fold. The updater in
+   *    `toggleGroup` always sees the current value instead.
+   * 2. Persisting on every change of `closed` then broke *reloading*: in
+   *    development React mounts twice, and the second mount fired the write with
+   *    the empty starting value, overwriting what had just been read back from
+   *    storage. Folds survived until you refreshed, and then half came undone.
+   *
+   * Hence a flag rather than a ref holding the live list: a ref mutated in a
+   * handler that an effect also assigns is what `react-hooks/immutability`
+   * refuses, and syncing one during render is what `react-hooks/refs` refuses.
+   */
+  const [hydrated, setHydrated] = useState(false);
+
+  /**
+   * The company's own name for the footer, or null until it arrives.
+   *
+   * Fetched only for a manager, because the footer it feeds is manager-only and
+   * a clerk asking for a row they are shown nothing of is a query for nothing.
+   */
+  const [orgName, setOrgName] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (role !== "manager") return;
+    let cancelled = false;
+    (async () => {
+      const name = await fetchOrgName(createClient());
+      if (!cancelled) setOrgName(name);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [role]);
+
+  useEffect(() => {
+    const raw = window.localStorage.getItem(GROUPS_KEY);
+    try {
+      const parsed: unknown = raw ? JSON.parse(raw) : null;
+      // Anything else in the key is somebody else's data or a bad write, and a
+      // menu that throws on load is worse than a menu that opens everything.
+      if (Array.isArray(parsed)) {
+        // eslint-disable-next-line react-hooks/set-state-in-effect
+        setClosed(parsed.filter((x): x is string => typeof x === "string"));
+      }
+    } catch {
+      // Ignore: unparseable means unfolded.
+    }
+    // Raised on every path, including "nothing stored" and "stored rubbish" —
+    // leaving it down in those cases would mean a fold made in this session was
+    // never written at all.
+    setHydrated(true);
+  }, []);
+
+  useEffect(() => {
+    if (!hydrated) return;
+    window.localStorage.setItem(GROUPS_KEY, JSON.stringify(closed));
+  }, [closed, hydrated]);
+
+  function toggleGroup(label: string) {
+    setClosed((prev) =>
+      prev.includes(label) ? prev.filter((l) => l !== label) : [...prev, label]
+    );
+  }
 
   const toggle = onToggleCollapse && (
     <button
@@ -88,7 +178,15 @@ export function SidebarContent({
         )}
       </div>
       <nav className="flex-1 overflow-y-auto px-3 py-2">
-        {groups.map((group, index) => (
+        {groups.map((group, index) => {
+          // Folding only exists in the expanded sidebar. At 64px there is no
+          // heading to click and no label to read, so the icons stay visible
+          // and the stored state is simply not consulted — a group that
+          // vanished when the sidebar narrowed would look like lost navigation.
+          const foldable = group.label !== null && !collapsed;
+          const isClosed = foldable && closed.includes(group.label!);
+          const holdsCurrent = group.items.some((i) => i.href === current);
+          return (
           <div key={group.label ?? "standalone"} className={index > 0 ? "mt-4" : ""}>
             {/* Collapsed to icons there is no room for a heading, and a rule
                 separates the groups more clearly than truncated text would. */}
@@ -96,16 +194,38 @@ export function SidebarContent({
               (collapsed ? (
                 <div className="mx-2 mb-2 border-t border-sidebar-border" />
               ) : (
-                <p className="px-3 pb-1 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-                  {group.label}
-                </p>
+                <button
+                  type="button"
+                  onClick={() => toggleGroup(group.label!)}
+                  aria-expanded={!isClosed}
+                  aria-controls={`nav-group-${index}`}
+                  className="flex w-full items-center gap-1.5 rounded-md px-3 py-1 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground transition-colors hover:bg-sidebar-accent/40 hover:text-sidebar-accent-foreground"
+                >
+                  <ChevronDown
+                    className={cn(
+                      "h-3 w-3 shrink-0 transition-transform duration-150",
+                      isClosed && "-rotate-90"
+                    )}
+                  />
+                  {/* Not truncated: the chevron costs ~18px and "Warehouse &
+                      Fulfilment" is the longest heading, which clipped to
+                      "WAREHOUSE & FULFILME…". Wrapping is the lesser evil —
+                      a heading that cannot be read is not a heading. */}
+                  <span className="text-left leading-tight">{group.label}</span>
+                  {/* Folded away, the highlighted item cannot be seen, and the
+                      reader loses the answer to "where am I". A dot on the
+                      heading keeps it. */}
+                  {isClosed && holdsCurrent && (
+                    <span
+                      aria-hidden
+                      className="ml-auto h-1.5 w-1.5 shrink-0 rounded-full bg-sidebar-accent-foreground/70"
+                    />
+                  )}
+                </button>
               ))}
-            <div className="space-y-0.5">
+            <div id={`nav-group-${index}`} hidden={isClosed} className="space-y-0.5">
               {group.items.map((item) => {
-                const active =
-                  item.href === "/"
-                    ? pathname === "/"
-                    : pathname.startsWith(item.href);
+                const active = item.href === current;
                 const Icon = item.icon;
                 return (
                   <Link
@@ -138,7 +258,8 @@ export function SidebarContent({
               })}
             </div>
           </div>
-        ))}
+          );
+        })}
       </nav>
       {/* The company profile is a manager's page — org details, capacity,
           members. Offering it to a clerk would be a link straight back to
@@ -161,8 +282,13 @@ export function SidebarContent({
             <Building2 className="h-4 w-4" />
           </div>
           {!collapsed && (
-            <div className="flex flex-col leading-tight">
-              <span>Gold Fortune Inc.</span>
+            <div className="flex min-w-0 flex-col leading-tight">
+              {/* The real company name, from Settings → Company. This was the
+                  literal string "Gold Fortune Inc." — not what that screen says,
+                  and somebody else's name entirely the day this is deployed for
+                  another business. Nothing is shown until it loads, rather than
+                  a placeholder that would be wrong for a moment on every page. */}
+              {orgName && <span className="truncate">{orgName}</span>}
               <span className="text-[11px] font-normal text-muted-foreground">
                 Company profile
               </span>
