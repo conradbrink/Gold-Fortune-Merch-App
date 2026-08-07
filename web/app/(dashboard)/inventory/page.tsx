@@ -29,10 +29,13 @@ import {
   fetchLocations,
   fetchStockOnHand,
   fetchStockPosition,
+  fetchValuation,
+  totalValuation,
   fetchExpiring,
   type StockLocation,
   type StockLine,
   type StockPosition,
+  type ValuationRow,
   type ExpiringBatch,
 } from "@/lib/warehouse";
 
@@ -55,6 +58,7 @@ export default function InventoryPage() {
   const [lines, setLines] = useState<StockLine[]>([]);
   const [position, setPosition] = useState<StockPosition | null>(null);
   const [expiring, setExpiring] = useState<ExpiringBatch[]>([]);
+  const [valuation, setValuation] = useState<ValuationRow[]>([]);
   const [search, setSearch] = useState("");
   const [onlyBelowMin, setOnlyBelowMin] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -68,17 +72,19 @@ export default function InventoryPage() {
     (async () => {
       try {
         const loc = locationId || null;
-        const [locs, rows, pos, exp] = await Promise.all([
+        const [locs, rows, pos, exp, val] = await Promise.all([
           fetchLocations(supabase),
           fetchStockOnHand(supabase, { locationId: loc, onlyBelowMin }),
           fetchStockPosition(supabase, loc),
           fetchExpiring(supabase, 90, loc),
+          fetchValuation(supabase, loc),
         ]);
         if (cancelled) return;
         setLocations(locs);
         setLines(rows);
         setPosition(pos);
         setExpiring(exp);
+        setValuation(val);
         setError(null);
       } catch (e) {
         if (!cancelled) setError(e instanceof Error ? e.message : String(e));
@@ -90,6 +96,8 @@ export default function InventoryPage() {
       cancelled = true;
     };
   }, [supabase, locationId, onlyBelowMin]);
+
+  const stockValue = useMemo(() => totalValuation(valuation), [valuation]);
 
   // Filtered in the browser rather than re-querying on every keystroke. The
   // RPC takes a search term too, and the page uses it on reload; this keeps
@@ -180,6 +188,34 @@ export default function InventoryPage() {
           tone={Number(position?.qty_expired ?? 0) > 0 ? "bad" : "neutral"}
         />
         <StatTile label="Promotional" value={Number(position?.qty_promotional ?? 0)} />
+      </div>
+
+      {/* Money, kept off the unit tiles above on purpose: six counts in units
+          and a seventh in pula would read as a seventh count. Follows the
+          location filter, because "what is this warehouse worth" is the
+          question being asked. */}
+      <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1 rounded-lg border bg-card px-4 py-3">
+        <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+          Stock at cost
+        </span>
+        <span className="text-2xl font-semibold tabular-nums">
+          {stockValue.total.toLocaleString(undefined, {
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2,
+          })}
+        </span>
+        {stockValue.productsWithoutCost > 0 && (
+          <span className="text-xs text-amber-600">
+            {stockValue.productsWithoutCost} product
+            {stockValue.productsWithoutCost === 1 ? " has" : "s have"} no cost
+            recorded and {stockValue.productsWithoutCost === 1 ? "is" : "are"} not
+            counted.{" "}
+            <Link href="/products" className="text-primary hover:underline">
+              Set unit costs
+            </Link>
+            .
+          </span>
+        )}
       </div>
 
       {expiringSoon.length > 0 && (

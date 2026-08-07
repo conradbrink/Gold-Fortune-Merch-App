@@ -23,6 +23,22 @@ const blank = (): Draft => ({ key: crypto.randomUUID(), sourceKey: "", qty: "1" 
 const keyOf = (s: SourceStock) => `${s.product_id}::${s.batch_id ?? "none"}`;
 
 /**
+ * What a location is holding of something it cannot send.
+ *
+ * Only the buckets that are actually carrying units, so the label reads
+ * "100 expired" rather than "0 damaged, 100 expired, 0 promotional".
+ */
+const heldElsewhere = (s: SourceStock) =>
+  [
+    [s.qty_expired, "expired"],
+    [s.qty_damaged, "damaged"],
+    [s.qty_promotional, "promotional"],
+  ]
+    .filter(([n]) => Number(n) > 0)
+    .map(([n, label]) => `${n} ${label}`)
+    .join(", ");
+
+/**
  * Sending stock somewhere else.
  *
  * Lines are chosen from what is actually on the shelf at the source, batch by
@@ -40,6 +56,13 @@ export default function NewTransferPage() {
   const [toId, setToId] = useState("");
   const [notes, setNotes] = useState("");
   const [source, setSource] = useState<SourceStock[]>([]);
+  // Held at the source but not transferable — every unit sitting in the
+  // expired, damaged or promotional buckets. Kept apart from `source` so it can
+  // never be picked, and kept at all because silently dropping these rows is
+  // what made the list look like it was missing products: eight ZYN lines are
+  // written off as expired, so the select showed 15 of 23 with nothing on
+  // screen to explain the other eight.
+  const [blocked, setBlocked] = useState<SourceStock[]>([]);
   const [lines, setLines] = useState<Draft[]>([blank()]);
 
   const [loading, setLoading] = useState(true);
@@ -91,9 +114,18 @@ export default function NewTransferPage() {
         const s = await fetchSourceStock(supabase, fromId);
         if (cancelled) return;
         setSource(s.filter((x) => x.qty_available > 0));
+        // A row with nothing in any bucket is not "held back", it is simply
+        // not there — listing it would be noise rather than an explanation.
+        setBlocked(s.filter((x) => x.qty_available === 0 && heldElsewhere(x) !== ""));
         setLines([blank()]);
       } catch (e) {
-        if (!cancelled) setError(e instanceof Error ? e.message : String(e));
+        if (cancelled) return;
+        // Same reasoning as the select's own handler: a failed reload must not
+        // leave another location's shelf on screen as if it were this one's.
+        setSource([]);
+        setBlocked([]);
+        setLines([blank()]);
+        setError(e instanceof Error ? e.message : String(e));
       } finally {
         if (!cancelled) setLoadingStock(false);
       }
@@ -104,6 +136,7 @@ export default function NewTransferPage() {
   }, [supabase, fromId]);
 
   const byKey = useMemo(() => new Map(source.map((s) => [keyOf(s), s])), [source]);
+  const blockedProducts = new Set(blocked.map((x) => x.product_id)).size;
   const used = new Set(lines.map((l) => l.sourceKey).filter(Boolean));
 
   function update(key: string, patch: Partial<Draft>) {
@@ -181,6 +214,15 @@ export default function NewTransferPage() {
               value={fromId}
               onChange={(e) => {
                 setLoadingStock(true);
+                // Cleared here, not only when the reload lands: these rows
+                // belong to the location being left, and if the fetch for the
+                // new one fails they would otherwise stay on screen — and
+                // save() could pair their product and batch ids with the new
+                // location. The ledger would refuse that transfer, but the
+                // clerk should not get far enough to find out.
+                setSource([]);
+                setBlocked([]);
+                setLines([blank()]);
                 setFromId(e.target.value);
               }}
               disabled={loading}
@@ -228,9 +270,26 @@ export default function NewTransferPage() {
           {fromId && loadingStock ? (
             <p className="text-sm text-muted-foreground">Reading what is on the shelf…</p>
           ) : source.length === 0 ? (
-            <p className="rounded-lg border border-amber-500/40 bg-amber-500/5 p-2.5 text-sm text-amber-700 dark:text-amber-500">
-              There is no available stock at that location to transfer.
-            </p>
+            <div className="rounded-lg border border-amber-500/40 bg-amber-500/5 p-2.5 text-sm text-amber-700 dark:text-amber-500">
+              <p>There is no available stock at that location to transfer.</p>
+              {blocked.length > 0 && (
+                <p className="mt-1">
+                  {/* Counted by product, not by row — a batch-tracked product
+                      can hold several written-off batches, and "3 products"
+                      for one product three times would be wrong. Each entry
+                      names its batch so two batches of the same product stay
+                      distinguishable. */}
+                  {blockedProducts === 1 ? "One product is" : `${blockedProducts} products are`}{" "}
+                  held here but written off, so cannot be sent:{" "}
+                  {blocked
+                    .map(
+                      (x) =>
+                        `${x.product_name}${x.batch_number ? ` · ${x.batch_number}` : ""} (${heldElsewhere(x)})`
+                    )
+                    .join(", ")}.
+                </p>
+              )}
+            </div>
           ) : (
             lines.map((l) => {
               const s = l.sourceKey ? byKey.get(l.sourceKey) : null;
@@ -256,6 +315,20 @@ export default function NewTransferPage() {
                             {` — ${x.qty_available} available`}
                           </option>
                         ))}
+                      {/* Shown, greyed, never selectable. The clerk asked for
+                          these by name; the answer is "it is here but written
+                          off", which is only an answer if they can see it. */}
+                      {blocked.length > 0 && (
+                        <optgroup label="Held here, not transferable">
+                          {blocked.map((x) => (
+                            <option key={keyOf(x)} value={keyOf(x)} disabled>
+                              {x.product_name}
+                              {x.batch_number ? ` · ${x.batch_number}` : ""}
+                              {` — 0 available (${heldElsewhere(x)})`}
+                            </option>
+                          ))}
+                        </optgroup>
+                      )}
                     </NativeSelect>
                     {over && s && (
                       <p className="mt-1 text-xs text-destructive">

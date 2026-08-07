@@ -922,6 +922,20 @@ export default function OrderDetailPage() {
               <CardTitle className="text-base">Documents</CardTitle>
             </CardHeader>
             <CardContent className="space-y-2 text-sm">
+              {/* The rule this states is already enforced — the orders list
+                  derives its stage from `pod_status`, so an order sits in
+                  "Delivered — needs POD" and cannot reach "Delivered and
+                  fulfilled" until the trigger on `delivery_documents` flips it
+                  to `received`. It was enforced silently, which is why it read
+                  as missing: the screen never said the delivery was unfinished
+                  or what would finish it. */}
+              {o.pod_status === "outstanding" && (
+                <p className="rounded-lg border border-amber-500/40 bg-amber-500/5 p-2.5 text-amber-700 dark:text-amber-500">
+                  This delivery is not finished. It stays under{" "}
+                  <strong>Delivered — needs POD</strong> until a signed proof of
+                  delivery is filed here, and only then counts as fulfilled.
+                </p>
+              )}
               {detail.documents.length === 0 ? (
                 <p className="text-muted-foreground">Nothing filed yet.</p>
               ) : (
@@ -936,11 +950,26 @@ export default function OrderDetailPage() {
                       // await loses the user-activation token in Safari and
                       // others, and the click then does nothing at all with
                       // nothing on screen to explain why.
-                      const tab = window.open("", "_blank", "noopener,noreferrer");
+                      //
+                      // ⚠️ No `noopener` here, and that is the whole point.
+                      // `window.open` returns **null** whenever noopener is
+                      // asked for — per spec, the handle is exactly what
+                      // noopener withholds. The blank tab still opened, so the
+                      // old code left the user staring at `about:blank` while
+                      // its fallback `window.open(url)` ran after the await
+                      // with the activation token already spent, and was
+                      // swallowed by the popup blocker. The reference is
+                      // needed to navigate the tab, so take it and sever the
+                      // back-link by hand instead.
+                      const tab = window.open("", "_blank");
+                      if (tab) tab.opener = null;
                       try {
                         const url = await signedDocumentUrl(supabase, d.storage_path);
                         if (tab) tab.location.href = url;
-                        else window.open(url, "_blank", "noopener,noreferrer");
+                        // Popup blocked outright: fall back to navigating this
+                        // tab, which needs no activation token. Better than a
+                        // dead click with nothing on screen.
+                        else window.location.href = url;
                       } catch (e) {
                         tab?.close();
                         setError(e instanceof Error ? e.message : String(e));

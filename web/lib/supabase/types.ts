@@ -1809,6 +1809,8 @@ export type Database = {
           shrink_price_incl_vat: number | null
           sku_code: string | null
           unit_barcode: string | null
+          unit_cost_excl_vat: number | null
+          unit_cost_incl_vat: number | null
           unit_of_measure: string
           units_per_shrink: number | null
           updated_at: string
@@ -1831,6 +1833,8 @@ export type Database = {
           shrink_price_incl_vat?: number | null
           sku_code?: string | null
           unit_barcode?: string | null
+          unit_cost_excl_vat?: number | null
+          unit_cost_incl_vat?: number | null
           unit_of_measure?: string
           units_per_shrink?: number | null
           updated_at?: string
@@ -1853,6 +1857,8 @@ export type Database = {
           shrink_price_incl_vat?: number | null
           sku_code?: string | null
           unit_barcode?: string | null
+          unit_cost_excl_vat?: number | null
+          unit_cost_incl_vat?: number | null
           unit_of_measure?: string
           units_per_shrink?: number | null
           updated_at?: string
