@@ -89,7 +89,8 @@ version: 1.1.0+2
 cd mobile
 flutter build apk --release \
   --target-platform android-arm,android-arm64 \
-  --dart-define=GF_WEB_BASE_URL=https://<your-production-domain>
+  --dart-define=GF_WEB_BASE_URL=https://<your-production-domain> \
+  --dart-define=SENTRY_DSN=<the DSN from Sentry>
 ```
 
 ⚠️ **`--target-platform android-arm,android-arm64` is required on the Supabase
@@ -101,9 +102,25 @@ the bucket's own 200 MB limit cannot override. The upload fails with
 Silicon emulators are `arm64` and still work.) On Supabase Pro the ceiling
 rises and a universal APK is fine.
 
-⚠️ **The `--dart-define` is not optional.** Without it the app falls back to
+⚠️ **`GF_WEB_BASE_URL` is not optional.** Without it the app falls back to
 the placeholder URL in `mobile/lib/core/env.dart`, and the in-app "Update"
 button sends reps to a domain that may not be yours.
+
+⚠️ **`SENTRY_DSN` is not optional either, and it fails silently.** Without it
+`String.fromEnvironment` returns an empty string, `Monitoring.enabled` in
+`mobile/lib/core/monitoring.dart` is false, and the app builds, installs and
+runs perfectly — with no crash reporting whatsoever. Nothing warns you. The
+first you learn of it is a rep's crash in the field that left no trace, which
+is the situation this app had until 31 July 2026. The empty default is
+deliberate — a developer build must not post to the production issue stream —
+so the only thing standing between a release and an unmonitored fleet is
+remembering this line.
+
+The DSN comes from Sentry itself, not from this repo: org `gf-merchandising` →
+the rep app's project → **Settings → Client Keys (DSN)**. It is not a secret of
+the same order as the service-role key — a DSN only allows posting events in —
+but it is deliberately not written down here. Pass it on the command line, from
+your password manager.
 
 The build prints which key it used. It must say:
 
@@ -162,6 +179,12 @@ Both use the service-role key, because `app_releases` has no write policy —
 no signed-in user, manager included, can change what the fleet is told to
 install.
 
+⚠️ **Both the `apikey` and `Authorization` headers are required.** The keys
+were rotated to Supabase's newer `sb_secret_…` format on 3 August 2026, and
+Storage rejects those with `403 Invalid Compact JWS` when only `Authorization`
+is sent. The legacy JWT keys worked with `Authorization` alone, which is why
+this command did not need it before.
+
 ```bash
 cd "$(git rev-parse --show-toplevel)"
 set -a && . web/.env.local && set +a
@@ -172,6 +195,7 @@ APK=mobile/build/app/outputs/flutter-apk/app-release.apk
 SIZE=$(stat -f%z "$APK")
 
 curl -X POST "$NEXT_PUBLIC_SUPABASE_URL/storage/v1/object/app-releases/$VERSION/app-release.apk" \
+  -H "apikey: $SUPABASE_SERVICE_ROLE_KEY" \
   -H "Authorization: Bearer $SUPABASE_SERVICE_ROLE_KEY" \
   -H "Content-Type: application/vnd.android.package-archive" \
   --data-binary "@$APK"
@@ -249,7 +273,8 @@ be checked immediately after publishing.
 
 - [ ] `versionCode` increased in `pubspec.yaml`
 - [ ] `flutter analyze` and `flutter test` clean
-- [ ] Built with `--release` **and** `--dart-define=GF_WEB_BASE_URL=...`
+- [ ] Built with `--release` **and both** `--dart-define`s
+      (`GF_WEB_BASE_URL`, `SENTRY_DSN`)
 - [ ] Build printed "Signing release with the keystore"
 - [ ] `apksigner verify --print-certs` shows SHA-256
       `0b68016543e7fed5ed0433bf8e1c2ed50fdac2be66a96e3b40b4a45305b1f394`

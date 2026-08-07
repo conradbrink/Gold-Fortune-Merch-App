@@ -45,6 +45,18 @@ TABLES=(
   routes visits photos leads
   workday_sessions location_pings
   app_releases dashboard_layouts service_flags security_events
+  # Warehouse and inventory. stock_movements is the one that cannot be
+  # reconstructed from anything else — stock_balances is derived from it, so a
+  # restore that had the ledger could rebuild the balances, but not the reverse.
+  suppliers drivers vehicles stock_locations document_counters
+  goods_receipts goods_receipt_lines
+  orders order_lines order_allocations order_status_events
+  dispatches dispatch_lines delivery_documents
+  stock_transfers stock_transfer_lines
+  stock_adjustments stock_adjustment_lines
+  stocktakes stocktake_lines
+  product_batches product_location_settings
+  stock_movements stock_balances
 )
 
 fail=0
@@ -69,15 +81,17 @@ rm -f /tmp/gf_export_err
 # Listings are recorded for every bucket. The *bytes* are downloaded only for
 # the buckets that cannot be rebuilt:
 #
-#   visit-photos  irreplaceable — downloaded
-#   files         uploaded documents, irreplaceable — downloaded
-#   app-releases  an APK is reproducible from a tagged commit plus the
-#                 keystore, and each one is ~40 MB. Listed, not downloaded.
+#   visit-photos     irreplaceable — downloaded
+#   files            uploaded documents, irreplaceable — downloaded
+#   fulfilment-docs  signed proofs of delivery. The only evidence a customer
+#                    ever received the goods — downloaded.
+#   app-releases     an APK is reproducible from a tagged commit plus the
+#                    keystore, and each one is ~40 MB. Listed, not downloaded.
 echo
 echo "Storage:"
-DOWNLOAD_BUCKETS=" visit-photos files "
+DOWNLOAD_BUCKETS=" visit-photos files fulfilment-docs "
 
-for b in visit-photos files app-releases; do
+for b in visit-photos files fulfilment-docs app-releases; do
   code=$(curl -s -o "$OUT/storage-$b.json" -w "%{http_code}" --max-time 120 -X POST \
     -H "apikey: $SUPABASE_SERVICE_ROLE_KEY" \
     -H "Authorization: Bearer $SUPABASE_SERVICE_ROLE_KEY" \
@@ -145,8 +159,10 @@ WHAT THIS DOES NOT CONTAIN
 
 WHAT IT DOES CONTAIN
   * Every business table as JSON.
-  * The actual FILES from visit-photos and files, under storage/ - these are
-    irreplaceable and are NOT in Supabase's own database backups.
+  * The actual FILES from visit-photos, files and fulfilment-docs, under
+    storage/ - these are irreplaceable and are NOT in Supabase's own database
+    backups. fulfilment-docs holds the signed proofs of delivery, which are
+    the only evidence a customer ever received the goods.
 MANIFEST
 
 echo

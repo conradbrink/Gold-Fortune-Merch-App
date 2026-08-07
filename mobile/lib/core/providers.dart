@@ -11,10 +11,13 @@ import '../data/models/store_summary.dart';
 import '../data/models/form_template.dart';
 import '../data/models/lead.dart';
 import '../data/models/promotion.dart';
+import '../data/models/catalogue_product.dart';
 import '../data/local/app_database.dart';
+import '../data/local/order_draft.dart';
 import '../data/repositories/file_repository.dart';
 import '../data/repositories/form_repository.dart';
 import '../data/repositories/lead_repository.dart';
+import '../data/repositories/order_repository.dart';
 import '../data/repositories/promotion_repository.dart';
 import '../data/repositories/route_repository.dart';
 import '../data/repositories/visit_repository.dart';
@@ -144,6 +147,33 @@ final leadRepositoryProvider = Provider<LeadRepository>((ref) {
 /// it is the same list with or without signal.
 final myLeadsProvider = FutureProvider<List<Lead>>((ref) async {
   return ref.watch(leadRepositoryProvider).myLeads();
+});
+
+final orderRepositoryProvider = Provider<OrderRepository>((ref) {
+  return OrderRepository(
+    supabase,
+    ref.watch(appDatabaseProvider),
+    ref.watch(syncEngineProvider),
+  );
+});
+
+/// The order a rep has started but not sent, for one visit.
+///
+/// Exists so the store screen can *say* the draft is there. It always was —
+/// `_persist` writes on every tap — but nothing on screen admitted it, so a rep
+/// whose app was reclaimed by Android mid-order had no way to tell a lost order
+/// from a saved one, and re-keyed it from the shopkeeper.
+final orderDraftProvider =
+    FutureProvider.family<OrderDraft?, String>((ref, visitClientId) async {
+  return ref.watch(orderRepositoryProvider).drafts.load(visitClientId);
+});
+
+/// The orderable catalogue, warmed at the depot along with forms and
+/// promotions. A rep at a shop door reads it from the cache and never waits on
+/// the network — see `OrderRepository.fetchCatalogue`.
+final catalogueProductsProvider =
+    FutureProvider<List<CatalogueProduct>>((ref) async {
+  return ref.watch(orderRepositoryProvider).fetchCatalogue();
 });
 
 final promotionRepositoryProvider = Provider<PromotionRepository>((ref) {

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 
 import '../../core/location_service.dart';
@@ -639,6 +640,20 @@ class _StoreDetailScreenState extends ConsumerState<StoreDetailScreen> {
                   readOnly: rv.isCheckedOut,
                 ),
               ],
+              // Taking an order is offered while the rep is on site and not
+              // after check-out, for the same reason a form is: it is a record
+              // of what happened during the call, and the call is over.
+              //
+              // It does not block check-out. Most visits produce no order, and
+              // a gate that fires on every stop to ask about something that
+              // usually is not there teaches people to dismiss gates.
+              if (rv.visitClientGeneratedId != null && rv.isCheckedIn) ...[
+                _OrderButton(
+                  visitKey: widget.visitKey,
+                  visitClientId: rv.visitClientGeneratedId!,
+                ),
+                const SizedBox(height: 16),
+              ],
               // Forms become available once the rep is on site.
               if (rv.visitClientGeneratedId != null && (rv.isCheckedIn || rv.isCheckedOut)) ...[
                 _FormsSection(
@@ -692,6 +707,72 @@ class _StoreDetailScreenState extends ConsumerState<StoreDetailScreen> {
           );
         },
       ),
+    );
+  }
+}
+
+/// The way into order capture, and — when there is one — proof that the order
+/// the rep already started is still here.
+///
+/// The proof is the point. Android reclaims this app on a 1 GB handset while
+/// the rep is in the shop, and the order screen goes with it; the draft on disk
+/// survives, but nothing said so, so the rep believed the order was gone and
+/// asked the shopkeeper to list it again. A line of text is the whole fix.
+class _OrderButton extends ConsumerWidget {
+  const _OrderButton({required this.visitKey, required this.visitClientId});
+
+  final String visitKey;
+  final String visitClientId;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final theme = Theme.of(context);
+    final draft = ref.watch(orderDraftProvider(visitClientId)).maybeWhen(
+          data: (value) => value,
+          // While it loads, and if it fails, offer the plain button. Never a
+          // spinner: the rep is standing at a counter.
+          orElse: () => null,
+        );
+    final lines = draft?.lines.length ?? 0;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (lines > 0)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: Row(
+              children: [
+                Icon(Icons.save_outlined,
+                    size: 18, color: theme.colorScheme.primary),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'Order in progress · $lines '
+                    '${lines == 1 ? 'product' : 'products'} saved on this phone',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.primary,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        // `go`, not `Navigator.push` and not `push`. An imperative push is
+        // invisible to the router: the redirect that runs when a session blinks
+        // sees `/visit/:key` and has no idea the rep is inside an order, so it
+        // returns them to the shop and the typing goes. `go` puts the order in
+        // the location itself. The page stack is unchanged — `order` is a child
+        // route of `visit/:key`, so back still lands on the shop.
+        OutlinedButton.icon(
+          onPressed: () => context.go('/visit/$visitKey/order'),
+          icon: Icon(lines > 0
+              ? Icons.edit_note_outlined
+              : Icons.receipt_long_outlined),
+          label: Text(lines > 0 ? 'Continue this order' : 'Take an order'),
+        ),
+      ],
     );
   }
 }

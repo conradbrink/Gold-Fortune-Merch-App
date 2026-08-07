@@ -284,8 +284,35 @@ Still to configure when billing is live:
 
 ## 5. Credentials to rotate
 
-None are known to have leaked. `web/.env.local` is gitignored and absent from
-git history. Rotate anyway if the laptop has ever been shared.
+✅ **Rotated 3 Aug 2026.** The contents of `web/.env.local` had been printed
+unredacted into an AI coding-session transcript, exposing
+`SUPABASE_SERVICE_ROLE_KEY`, `OPENAI_API_KEY`, `GOOGLE_GEOCODING_API_KEY`,
+`GOOGLE_PLACES_API_KEY` and `NEXT_PUBLIC_GOOGLE_MAPS_KEY`. All five were
+replaced the same day.
+
+Nothing reached the repository: `web/.env.local` is gitignored
+(`web/.gitignore:34`), absent from git history, and CI's secret scan passes.
+
+Verified after rotation: all five new keys authenticate, and the Maps key still
+carries the HTTP-referrer restriction that is the only thing protecting a key
+which ships in the page source.
+
+Verified in **production**, not merely in `web/.env.local`:
+
+* `SUPABASE_SERVICE_ROLE_KEY` — `/api/app/android` returns 200. That is the one
+  public route which builds an admin client from the service key, so it is the
+  only non-destructive proof the *deployed* key works. `/reports` cannot show
+  this: every dashboard page is a client component using the publishable key,
+  so it renders whatever the server key is, or isn't.
+* `OPENAI_API_KEY` — the Manager briefing on `/reports` generates. It returned
+  `401 Incorrect API key` first, from a bad copy in Vercel rather than a bad
+  key; the local copy authenticated throughout.
+
+`NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` was deliberately not rotated. It is
+public by design and ships in the page source; RLS is the boundary.
+
+The procedure, and what each check actually proves, is
+`docs/ROTATE-CREDENTIALS.md`.
 
 The **`NEXT_PUBLIC_GOOGLE_MAPS_KEY` is visible in the page source by design** —
 it must keep its HTTP-referrer restriction, and it should have a budget cap

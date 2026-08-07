@@ -271,6 +271,10 @@ class SyncEngine {
         }
         break;
 
+      case OutboxType.orderCreate:
+        await _replayOrder(data);
+        break;
+
       case OutboxType.formSubmission:
         await _replayFormSubmission(data);
         break;
@@ -309,6 +313,127 @@ class SyncEngine {
   /// Photos upload first so their real ids can be stitched into the
   /// responses. The whole thing keys off client_generated_id, so a partial
   /// replay resumes cleanly rather than duplicating.
+  /// Sends an order the rep took in a shop.
+  ///
+  /// Not an upsert, unlike almost everything else here, and the difference
+  /// matters. An order carries `order_number`, drawn from a gapless
+  /// per-organisation counter, and upserting on `client_generated_id` would
+  /// draw a fresh number on every retry — rewriting the reference the warehouse
+  /// and the shop have already been given, and burning numbers out of a
+  /// sequence whose whole point is that it has no gaps.
+  ///
+  /// So: look first. If the order is already there, the entry landed and only
+  /// the acknowledgement was lost; carry on to the lines rather than touching
+  /// the header. The same shape as `_uploadQueuedPhoto`'s did-this-already
+  /// check, for the same reason.
+  Future<void> _replayOrder(Map<String, dynamic> data) async {
+    final orgId = data['org_id'] as String;
+    final clientId = data['client_generated_id'] as String;
+
+    final existing = await _client
+        .from('orders')
+        .select('id')
+        .eq('client_generated_id', clientId)
+        .maybeSingle();
+
+    String orderId;
+    if (existing != null) {
+      orderId = existing['id'] as String;
+    } else {
+      // Drawn here, not on the phone. A number handed out while offline would
+      // arrive out of sequence, and two reps offline at once would collide.
+      final number = await _client.rpc(
+        'next_document_number',
+        params: {
+          'p_org_id': orgId,
+          'p_doc_type': 'order',
+          'p_prefix': 'SO',
+        },
+      );
+
+      final inserted = await _client
+          .from('orders')
+          .insert({
+            'org_id': orgId,
+            'order_number': number as String,
+            'store_id': data['store_id'],
+            'rep_id': data['rep_id'],
+            'source': 'rep_app',
+            'received_via': data['received_via'] ?? 'rep_visit',
+            'notes': data['notes'],
+            // Columns that have existed since the orders migration and that
+            // this app never sent, so every rep order reached the warehouse
+            // with nobody to ring and no date to work to.
+            'contact_name': data['contact_name'],
+            'contact_phone': data['contact_phone'],
+            'required_by': data['required_by'],
+            'client_generated_id': clientId,
+          })
+          .select('id')
+          .single();
+      orderId = inserted['id'] as String;
+    }
+
+    // Lines already present mean this entry landed completely. Checking the
+    // child rather than trusting the header is what makes a crash between the
+    // two recoverable instead of silent.
+    //
+    // The window between the two inserts is safe by construction rather than
+    // by luck: `order_lines_insert` only admits a line while its order is
+    // still `new`, and `order_confirm` refuses an order with no lines. So the
+    // warehouse cannot move an order out from under a half-written entry — the
+    // retry still finds it `new` and can finish the job.
+    final lines = (data['lines'] as List?) ?? const [];
+    if (lines.isEmpty) return;
+
+    // Resolved line by line on each one's own idempotency key, not skipped
+    // wholesale because one line arrived.
+    //
+    // The original check returned as soon as *any* line existed for the order,
+    // which reads as "this already landed" and is only true when the insert
+    // was all-or-nothing. A batch that half-applied left the order permanently
+    // short: the rep sees it sent, the retry finds a line and gives up, and the
+    // warehouse picks an order missing whatever did not make it. That is the
+    // silent one — nothing errors, the order is simply wrong.
+    //
+    // Asking which keys are already there and inserting only the rest, rather
+    // than upserting the lot. An upsert says the same thing far more neatly and
+    // is what this did until it reached real handsets: PostgREST compiles one
+    // into `insert ... on conflict do update set <every column sent>`, Postgres
+    // demands UPDATE privilege on all of those columns, and `order_lines`
+    // grants it on `qty_ordered` and `unit_price` alone — on purpose, so that
+    // nothing but the fulfilment RPCs can move a line's stock figures. Every
+    // rep order between 1.1.3 shipping and 05.08 therefore arrived with no
+    // lines at all: header in, 42501 on the lines, retried until it gave up.
+    //
+    // So: still an upsert, but one that resolves a conflict by *ignoring* it.
+    // `ignoreDuplicates` maps to `Prefer: resolution=ignore-duplicates`, which
+    // PostgREST compiles to `on conflict do nothing` — and Postgres asks for no
+    // UPDATE privilege at all to do nothing. Verified against production in a
+    // rolled-back transaction with the four columns revoked, which is the state
+    // this code has to survive:
+    //
+    //     first=[OK]  retry=[OK (no duplicate)]  do_update_without_grant=[42501]
+    //
+    // A read-then-insert would also have worked and was written first, but it
+    // asks the same question in two round trips and leaves a window between
+    // them: `client_generated_id` is unique across the whole table, so a
+    // concurrent drain could insert between the look and the write and turn a
+    // retry into a hard failure. One statement has no window.
+    await _client.from('order_lines').upsert(
+      [
+        for (final raw in lines)
+          {
+            ...Map<String, dynamic>.from(raw as Map),
+            'org_id': orgId,
+            'order_id': orderId,
+          }
+      ],
+      onConflict: 'client_generated_id',
+      ignoreDuplicates: true,
+    );
+  }
+
   Future<void> _replayFormSubmission(Map<String, dynamic> data) async {
     final orgId = data['org_id'] as String;
     final repId = data['rep_id'] as String;

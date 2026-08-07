@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import 'core/interrupted_location.dart';
 import 'core/providers.dart';
 import 'core/supabase_client.dart';
 import 'core/theme.dart';
@@ -11,6 +12,7 @@ import 'data/local/app_database.dart';
 import 'features/auth/login_screen.dart';
 import 'features/auth/manager_notice_screen.dart';
 import 'features/files/files_screen.dart';
+import 'features/orders/order_capture_route.dart';
 import 'features/route_today/route_today_screen.dart';
 import 'features/visit/store_detail_screen.dart';
 import 'features/visit/sales_visit_complete_screen.dart';
@@ -138,6 +140,24 @@ final routerProvider = Provider<GoRouter>((ref) {
             builder: (context, state) => StoreDetailScreen(
               visitKey: state.pathParameters['key']!,
             ),
+            routes: [
+              GoRoute(
+                // A route rather than the `Navigator.push` this used to be.
+                // An imperative push is invisible to go_router, so anything
+                // that rebuilt the stack — a session blip, a redirect —
+                // discarded a half-typed order without trace. As a route it
+                // is part of the match list, and it is what
+                // InterruptedLocation has to have in order to return anyone
+                // to it.
+                //
+                // The visit is resolved from the day rather than passed in
+                // `extra`, which does not survive being restored.
+                path: 'order',
+                builder: (context, state) => OrderCaptureRoute(
+                  visitKey: state.pathParameters['key']!,
+                ),
+              ),
+            ],
           ),
         ],
       ),
@@ -147,9 +167,16 @@ final routerProvider = Provider<GoRouter>((ref) {
       final loggingIn = state.matchedLocation == '/login';
 
       if (session == null) {
-        return loggingIn ? null : '/login';
+        if (loggingIn) return null;
+        // Not necessarily a sign-out. See InterruptedLocation.
+        InterruptedLocation.remember(state.uri.toString());
+        return '/login';
       }
-      if (loggingIn) return '/';
+      if (loggingIn) return InterruptedLocation.take() ?? '/';
+
+      // A live session anywhere but the login screen means no sign-out is in
+      // progress, whatever was expected. See InterruptedLocation.
+      InterruptedLocation.noteSessionAlive();
 
       final role = await resolveRole(session.user.id);
       final onManagerNotice = state.matchedLocation == '/manager-notice';
@@ -158,8 +185,13 @@ final routerProvider = Provider<GoRouter>((ref) {
       // the rep UI load; RLS, not routing, is the real access boundary.
       if (role == null) return onManagerNotice ? '/' : null;
 
-      if (role == 'manager' && !onManagerNotice) return '/manager-notice';
-      if (role != 'manager' && onManagerNotice) return '/';
+      // Only a rep gets the rep UI. This used to read `role != 'manager'`,
+      // which was exact while there were two roles and became wrong the moment
+      // a third existed — a warehouse clerk would have been handed today's
+      // route and a check-in button, and `visits_insert` only pins the row to
+      // the caller, so the database would have accepted it.
+      if (role != 'rep' && !onManagerNotice) return '/manager-notice';
+      if (role == 'rep' && onManagerNotice) return '/';
       return null;
     },
   );

@@ -40,9 +40,10 @@ class ManagerNoticeScreen extends ConsumerWidget {
                 ),
                 const SizedBox(height: 8),
                 const Text(
-                  'Manager accounts manage stores, schedules, and forms from '
-                  'the Gold Fortune Merchandising web dashboard. This mobile '
-                  'app is for field reps.',
+                  'Managers and warehouse staff work from the Gold Fortune '
+                  'Merchandising web dashboard — stores, schedules and forms '
+                  'for one, orders and stock for the other. This mobile app is '
+                  'for field reps.',
                   textAlign: TextAlign.center,
                   style: TextStyle(color: AppColors.textMuted, fontSize: 14),
                 ),

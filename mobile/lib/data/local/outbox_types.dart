@@ -24,4 +24,16 @@ class OutboxType {
   /// without the start that created the row.
   static const salesVisitStart = 'sales_visit_start';
   static const salesVisitComplete = 'sales_visit_complete';
+
+  /// Composite: the order header and every line, as one entry.
+  ///
+  /// Kept together for the reason a form submission is — an order that landed
+  /// with half its lines is worse than one that has not landed at all, because
+  /// the warehouse would pick it and nobody would know what was missing.
+  ///
+  /// The order *number* is drawn during the replay, not when the rep taps save.
+  /// It comes from a gapless per-organisation counter on the server, and a
+  /// number handed out on a phone that is offline for two days would arrive
+  /// out of sequence — or twice, if two reps were offline at once.
+  static const orderCreate = 'order_create';
 }

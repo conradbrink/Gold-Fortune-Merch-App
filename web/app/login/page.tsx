@@ -103,8 +103,9 @@ export default function LoginPage() {
         </form>
 
         <p className="text-center text-xs text-muted-foreground">
-          Manager accounts create rep accounts from Company Profile → Team
-          Members. There is no public sign-up.
+          Managers create rep accounts from Company Profile → Team Members and
+          warehouse accounts from Warehouse settings → Warehouse staff. Both are
+          handed a starting password — no invitation email, no public sign-up.
         </p>
       </div>
     </div>

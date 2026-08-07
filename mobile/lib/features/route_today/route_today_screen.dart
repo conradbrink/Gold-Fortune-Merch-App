@@ -26,6 +26,9 @@ class RouteTodayScreen extends ConsumerWidget {
     // Same reasoning for the store list, which the unscheduled-visit picker
     // needs and which is otherwise only fetched once that screen is opened.
     ref.watch(storesProvider);
+    // And the orderable catalogue. A rep taking an order at a shop door has a
+    // customer waiting; the products have to already be on the phone.
+    ref.watch(catalogueProductsProvider);
 
     return Scaffold(
       appBar: AppBar(
