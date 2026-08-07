@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { NativeSelect } from "@/components/ui/native-select";
@@ -288,7 +289,8 @@ export default function WarehouseInsightsPage() {
           <CardContent className="space-y-2">
             <p className="text-3xl font-semibold tabular-nums">{money(value.total)}</p>
             <p className="text-xs text-muted-foreground">
-              At the last cost paid per product.
+              At the last cost paid per product, or its unit cost excl. VAT
+              where nothing has been received yet.
               {value.productsWithoutCost > 0 && (
                 <>
                   {" "}
@@ -297,7 +299,11 @@ export default function WarehouseInsightsPage() {
                     {value.productsWithoutCost === 1 ? " has" : "s have"} no cost on
                     record and {value.productsWithoutCost === 1 ? "is" : "are"} not in
                     this total.
-                  </span>
+                  </span>{" "}
+                  <Link href="/products" className="text-primary hover:underline">
+                    Set costs on Products
+                  </Link>
+                  .
                 </>
               )}
             </p>

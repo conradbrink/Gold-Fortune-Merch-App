@@ -51,6 +51,8 @@ const emptyForm = {
   units_per_shrink: "",
   shrink_price_excl_vat: "",
   shrink_price_incl_vat: "",
+  unit_cost_excl_vat: "",
+  unit_cost_incl_vat: "",
   sku_code: "",
 };
 
@@ -162,6 +164,10 @@ export default function ProductsPage() {
         p.shrink_price_excl_vat === null ? "" : String(p.shrink_price_excl_vat),
       shrink_price_incl_vat:
         p.shrink_price_incl_vat === null ? "" : String(p.shrink_price_incl_vat),
+      unit_cost_excl_vat:
+        p.unit_cost_excl_vat === null ? "" : String(p.unit_cost_excl_vat),
+      unit_cost_incl_vat:
+        p.unit_cost_incl_vat === null ? "" : String(p.unit_cost_incl_vat),
       sku_code: p.sku_code ?? "",
     });
     setDialogOpen(true);
@@ -185,6 +191,8 @@ export default function ProductsPage() {
       units_per_shrink: num(form.units_per_shrink),
       shrink_price_excl_vat: num(form.shrink_price_excl_vat),
       shrink_price_incl_vat: num(form.shrink_price_incl_vat),
+      unit_cost_excl_vat: num(form.unit_cost_excl_vat),
+      unit_cost_incl_vat: num(form.unit_cost_incl_vat),
       sku_code: blank(form.sku_code),
     };
     try {
@@ -526,6 +534,21 @@ export default function ProductsPage() {
                 label="Shrink price incl. VAT"
                 value={form.shrink_price_incl_vat}
                 onChange={(v) => setForm({ ...form, shrink_price_incl_vat: v })}
+              />
+              {/* Cost, and the labels say "unit" for the same reason the prices
+                  above say "shrink": these are per sellable unit, and the two
+                  conventions sit four lines apart. Stock is valued on the excl
+                  figure — supplier VAT is reclaimed, so it is not part of what
+                  the stock is worth. */}
+              <Field
+                label="Unit cost excl. VAT"
+                value={form.unit_cost_excl_vat}
+                onChange={(v) => setForm({ ...form, unit_cost_excl_vat: v })}
+              />
+              <Field
+                label="Unit cost incl. VAT"
+                value={form.unit_cost_incl_vat}
+                onChange={(v) => setForm({ ...form, unit_cost_incl_vat: v })}
               />
             </div>
           </div>
