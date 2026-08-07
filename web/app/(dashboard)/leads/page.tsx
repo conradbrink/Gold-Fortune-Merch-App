@@ -1,13 +1,21 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { CalendarClock, MapPin, Phone, User } from "lucide-react";
+import { CalendarClock, MapPin, Phone, Trash2, User } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { createClient } from "@/lib/supabase/client";
 import {
+  deleteLead,
   fetchLeads,
   localToday,
   setLeadStage,
@@ -52,6 +60,9 @@ export default function LeadsPage() {
   const moveSeq = useRef(new Map<string, number>());
   const [dragging, setDragging] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState<Stage | null>(null);
+  /** The card the confirm dialog is about, and null when it is closed. */
+  const [deleteTarget, setDeleteTarget] = useState<Lead | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -98,6 +109,33 @@ export default function LeadsPage() {
   const overdue = visible.filter(
     (l) => l.follow_up_required && l.follow_up_on && l.follow_up_on < today
   ).length;
+
+  /**
+   * Deletes the card the dialog is about, then reloads.
+   *
+   * Not optimistic, unlike `move`. A card that slides to another column and
+   * slides back is a visible correction; a card that vanishes and reappears
+   * reads as the board being broken, and the one thing a manager must trust
+   * about a delete is whether it happened.
+   */
+  async function remove() {
+    if (!deleteTarget) return;
+    setDeleting(true);
+    setError(null);
+    try {
+      await deleteLead(supabase, deleteTarget.id);
+      // Closed after the reload, not before it. Closing first hands the board
+      // back while the refetch is still in flight, and `load()` publishes a
+      // snapshot taken before any move made in that window — which would put an
+      // optimistically moved card back where it started.
+      await load();
+      setDeleteTarget(null);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setDeleting(false);
+    }
+  }
 
   async function move(lead: Lead, stage: Stage) {
     // Per-card sequence. Rolling back the one card fixed the cross-card damage,
@@ -354,19 +392,34 @@ export default function LeadsPage() {
                             {lead.status === "in_progress" && " · in progress"}
                           </p>
 
-                          <NativeSelect
-                            aria-label={`Stage for ${lead.company_name}`}
-                            className="h-7 text-xs"
-                            value={lead.stage}
-                            disabled={moving === lead.id}
-                            onChange={(e) => move(lead, e.target.value as Stage)}
-                          >
-                            {STAGES.map((s) => (
-                              <option key={s.value} value={s.value}>
-                                {s.label}
-                              </option>
-                            ))}
-                          </NativeSelect>
+                          <div className="flex items-center gap-1">
+                            <NativeSelect
+                              aria-label={`Stage for ${lead.company_name}`}
+                              className="h-7 flex-1 text-xs"
+                              value={lead.stage}
+                              disabled={moving === lead.id}
+                              onChange={(e) => move(lead, e.target.value as Stage)}
+                            >
+                              {STAGES.map((s) => (
+                                <option key={s.value} value={s.value}>
+                                  {s.label}
+                                </option>
+                              ))}
+                            </NativeSelect>
+                            {/* Deleting is the rare action and 'Lost' is the
+                                ordinary one, so it is an icon beside the stage
+                                picker rather than a button competing with it. */}
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-7 w-7 shrink-0 text-muted-foreground hover:text-destructive"
+                              aria-label={`Delete ${lead.company_name}`}
+                              disabled={moving === lead.id}
+                              onClick={() => setDeleteTarget(lead)}
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </Button>
+                          </div>
                         </article>
                       );
                     })
@@ -386,6 +439,58 @@ export default function LeadsPage() {
           Refresh
         </Button>
       )}
+
+      <Dialog
+        open={deleteTarget !== null}
+        onOpenChange={(open) => !open && !deleting && setDeleteTarget(null)}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete this lead?</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 text-sm">
+            <p>
+              <strong>{deleteTarget?.company_name}</strong> and everything
+              recorded on the call — the purpose, the outcome, the notes, the
+              contact and any position recorded — are removed for good. This
+              cannot be undone.
+            </p>
+            <p className="text-muted-foreground">
+              If the call really happened and went nowhere, move it to{" "}
+              <strong>Lost</strong> instead: that keeps the record of the work.
+            </p>
+            {/* The one case that can come back on its own, and the rep never
+                sees why. Shown only for `in_progress`, because a lead the
+                server holds as completed has both outbox entries acknowledged
+                and gone. */}
+            {deleteTarget?.status === "in_progress" && (
+              <p className="rounded-lg border border-amber-500/40 bg-amber-500/5 p-2.5 text-amber-700 dark:text-amber-500">
+                This call is still in progress. If the rep&apos;s phone is
+                holding it unsent, deleting it now can either recreate the card
+                when the phone next syncs, or leave that phone retrying for ever
+                on a call it cannot finish. Safer to wait until it shows as
+                completed.
+              </p>
+            )}
+          </div>
+          <DialogFooter>
+            <Button
+              variant="destructive"
+              onClick={remove}
+              disabled={deleting}
+            >
+              {deleting ? "Deleting…" : "Delete lead"}
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => setDeleteTarget(null)}
+              disabled={deleting}
+            >
+              Cancel
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
