@@ -119,7 +119,13 @@ export default function NewTransferPage() {
         setBlocked(s.filter((x) => x.qty_available === 0 && heldElsewhere(x) !== ""));
         setLines([blank()]);
       } catch (e) {
-        if (!cancelled) setError(e instanceof Error ? e.message : String(e));
+        if (cancelled) return;
+        // Same reasoning as the select's own handler: a failed reload must not
+        // leave another location's shelf on screen as if it were this one's.
+        setSource([]);
+        setBlocked([]);
+        setLines([blank()]);
+        setError(e instanceof Error ? e.message : String(e));
       } finally {
         if (!cancelled) setLoadingStock(false);
       }
@@ -130,6 +136,7 @@ export default function NewTransferPage() {
   }, [supabase, fromId]);
 
   const byKey = useMemo(() => new Map(source.map((s) => [keyOf(s), s])), [source]);
+  const blockedProducts = new Set(blocked.map((x) => x.product_id)).size;
   const used = new Set(lines.map((l) => l.sourceKey).filter(Boolean));
 
   function update(key: string, patch: Partial<Draft>) {
@@ -207,6 +214,15 @@ export default function NewTransferPage() {
               value={fromId}
               onChange={(e) => {
                 setLoadingStock(true);
+                // Cleared here, not only when the reload lands: these rows
+                // belong to the location being left, and if the fetch for the
+                // new one fails they would otherwise stay on screen — and
+                // save() could pair their product and batch ids with the new
+                // location. The ledger would refuse that transfer, but the
+                // clerk should not get far enough to find out.
+                setSource([]);
+                setBlocked([]);
+                setLines([blank()]);
                 setFromId(e.target.value);
               }}
               disabled={loading}
@@ -258,9 +274,19 @@ export default function NewTransferPage() {
               <p>There is no available stock at that location to transfer.</p>
               {blocked.length > 0 && (
                 <p className="mt-1">
-                  {blocked.length === 1 ? "One product is" : `${blocked.length} products are`}{" "}
+                  {/* Counted by product, not by row — a batch-tracked product
+                      can hold several written-off batches, and "3 products"
+                      for one product three times would be wrong. Each entry
+                      names its batch so two batches of the same product stay
+                      distinguishable. */}
+                  {blockedProducts === 1 ? "One product is" : `${blockedProducts} products are`}{" "}
                   held here but written off, so cannot be sent:{" "}
-                  {blocked.map((x) => `${x.product_name} (${heldElsewhere(x)})`).join(", ")}.
+                  {blocked
+                    .map(
+                      (x) =>
+                        `${x.product_name}${x.batch_number ? ` · ${x.batch_number}` : ""} (${heldElsewhere(x)})`
+                    )
+                    .join(", ")}.
                 </p>
               )}
             </div>

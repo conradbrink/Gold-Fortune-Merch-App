@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useId, useMemo, useState } from "react";
 import { MoreHorizontal, Package, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -175,6 +175,26 @@ export default function ProductsPage() {
 
   async function save() {
     if (!form.name.trim() || !orgId) return;
+    // Number("abc") is NaN and an overflow is Infinity, and JSON serialises
+    // both as null — so before this check, a typo in any numeric field would
+    // silently CLEAR the stored value rather than fail. Checked for every
+    // numeric field, not just the new costs: the shrink prices had the same
+    // hole.
+    const numericFields: [string, string][] = [
+      ["Units per shrink", form.units_per_shrink],
+      ["Shrink price excl. VAT", form.shrink_price_excl_vat],
+      ["Shrink price incl. VAT", form.shrink_price_incl_vat],
+      ["Unit cost excl. VAT", form.unit_cost_excl_vat],
+      ["Unit cost incl. VAT", form.unit_cost_incl_vat],
+    ];
+    for (const [label, v] of numericFields) {
+      if (v.trim() === "") continue;
+      const n = Number(v);
+      if (!Number.isFinite(n) || n < 0) {
+        setError(`${label} must be a number of zero or more.`);
+        return;
+      }
+    }
     setSaving(true);
     setError(null);
     // Empty strings must become null, or a blank barcode would collide with
@@ -581,10 +601,14 @@ function Field({
   value: string;
   onChange: (v: string) => void;
 }) {
+  // Label and input were siblings with no htmlFor/id pairing, so a screen
+  // reader had no accessible name for the input and clicking the label did
+  // not focus it.
+  const id = useId();
   return (
     <div className="space-y-1.5">
-      <Label>{label}</Label>
-      <Input value={value} onChange={(e) => onChange(e.target.value)} />
+      <Label htmlFor={id}>{label}</Label>
+      <Input id={id} value={value} onChange={(e) => onChange(e.target.value)} />
       {hint && <p className="text-xs text-muted-foreground">{hint}</p>}
     </div>
   );
