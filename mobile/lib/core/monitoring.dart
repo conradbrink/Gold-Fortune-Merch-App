@@ -162,12 +162,28 @@ class Monitoring {
   ///
   /// Matched on the type name rather than the class so this file keeps no
   /// dependency on gotrue, and so it can be tested without one.
+  ///
+  /// The type alone was not enough. go_router catches whatever a redirect
+  /// throws and rethrows it wrapped in a `GoException` whose message quotes the
+  /// original — so the event carries **one** exception, typed `GoException`,
+  /// and the type match could not see the auth failure inside it. Ten of those
+  /// came off the handsets in a day, still fatal, still unhandled
+  /// (FLUTTER-2), while the unwrapped form this was written for went quiet the
+  /// moment it shipped. The message is checked as well for that reason.
+  ///
+  /// Reading the message is loose in general and exact enough here: an error
+  /// that names `AuthRetryableFetchException` in its text *is* a token refresh
+  /// that failed for want of a network, whatever layer wrapped it, and the
+  /// layer above does not change what anyone would do about it — nothing.
   static bool _isRetryableNetworkNoise(SentryEvent event) {
     for (final exception in event.exceptions ?? const <SentryException>[]) {
-      if (exception.type == 'AuthRetryableFetchException') return true;
+      if (exception.type == _retryableAuthFailure) return true;
+      if (exception.value?.contains(_retryableAuthFailure) ?? false) return true;
     }
     return false;
   }
+
+  static const _retryableAuthFailure = 'AuthRetryableFetchException';
 
   /// Whether a *header* carries a credential.
   ///

@@ -195,18 +195,50 @@ class SyncEngine {
         break;
 
       case OutboxType.visitCheckOut:
+        final checkOutId = data['client_generated_id'] as String;
+
         // An update that matches no row is a success as far as PostgREST is
         // concerned, and the caller would then delete this entry believing the
         // check-out was written. Ask for the affected row: no row means the
         // check-in has not landed, which is a reason to retry, not to discard
         // the only record that the rep finished the call.
+        //
+        // Restricted to a visit that is not already checked out. `checkOut`
+        // stamps `DateTime.now()` at enqueue and `enqueue` is a plain insert,
+        // so a rep who checks out twice — after process death loses the local
+        // state, which the 1 GB handsets do — queues a second entry carrying a
+        // *later* time. Sent unfiltered, that update walks into the guard in
+        // `20260729151556_lock_privilege_and_gps_fields`, which refuses to let
+        // a recorded check-out time change. The refusal is permanent: it will
+        // still be there in eight attempts' time, and the drain stops on first
+        // failure to preserve ordering, so everything the rep does afterwards
+        // sits behind an entry that can never land (Sentry FLUTTER-6, A).
         final visit = await _client
             .from('visits')
             .update(data['changes'] as Map<String, dynamic>)
-            .eq('client_generated_id', data['client_generated_id'] as String)
+            .eq('client_generated_id', checkOutId)
+            .isFilter('checkout_at', null)
             .select('id');
+
         if (visit.isEmpty) {
-          throw StateError('Check-in not synced yet; will retry.');
+          // Nothing was updated, and the two reasons need opposite handling.
+          // Ask which one it is rather than guessing from the absence.
+          final existing = await _client
+              .from('visits')
+              .select('id')
+              .eq('client_generated_id', checkOutId)
+              .maybeSingle();
+
+          if (existing == null) {
+            throw StateError('Check-in not synced yet; will retry.');
+          }
+
+          // The visit exists and already carries a check-out. The recorded
+          // time is the one that stands — that is what the guard is for — so
+          // this entry is *satisfied*, not failed. Returning normally lets the
+          // caller delete it, which is the difference between a queue that
+          // drains and one that wedges behind a write the database will refuse
+          // for as long as the row exists.
         }
         break;
 
