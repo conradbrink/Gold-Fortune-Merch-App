@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { AlertTriangle, FileUp, History, Truck } from "lucide-react";
@@ -28,7 +28,7 @@ import {
 } from "@/components/ui/table";
 import { ErrorBanner } from "@/components/warehouse/stat-tile";
 import { fetchOrgId } from "@/lib/representatives";
-import { STATUS_LABELS } from "@/lib/warehouse";
+import { STATUS_LABELS, fetchLocations, type StockLocation } from "@/lib/warehouse";
 import {
   fetchOrderDetail,
   fetchAvailability,
@@ -85,7 +85,38 @@ export default function OrderDetailPage() {
   const orderId = params.id;
 
   const [detail, setDetail] = useState<OrderDetail | null>(null);
-  const [availability, setAvailability] = useState<AvailabilityRow[]>([]);
+  /**
+   * The last availability check, tagged with the location it was made at.
+   *
+   * Tagged rather than bare, because the clerk can change warehouse: rows
+   * counted at Gaborone say nothing about Maun, and showing them under the new
+   * name would be the screen inventing stock. Anything whose tag does not match
+   * the current choice is treated as not yet checked.
+   */
+  const [availability, setAvailability] = useState<{
+    locationId: string;
+    rows: AvailabilityRow[];
+  } | null>(null);
+  /**
+   * Why the pre-confirm check could not be made, if it could not.
+   *
+   * Kept apart from the page's error banner on purpose. This check is advisory
+   * — `order_confirm` counts the shelf again under a row lock — so a failed
+   * check must not read as a failed action, and must not stop the clerk
+   * confirming.
+   */
+  const [availabilityError, setAvailabilityError] = useState<string | null>(null);
+  /** Newest check, so a slow one cannot land on top of a newer one. */
+  const availabilitySeq = useRef(0);
+  const [locations, setLocations] = useState<StockLocation[]>([]);
+  /**
+   * Which location the order will be fulfilled from.
+   *
+   * Seeded from the order if it already names one, otherwise the default
+   * warehouse — the same fallback `order_confirm` applies, so the screen and
+   * the database agree before anybody touches the picker.
+   */
+  const [fulfilFrom, setFulfilFrom] = useState("");
   const [carriers, setCarriers] = useState<{
     drivers: { id: string; full_name: string }[];
     vehicles: { id: string; registration: string }[];
@@ -174,25 +205,35 @@ export default function OrderDetailPage() {
     ]);
     setDetail(d);
     setOrgId(org);
-    if (d.order.status === "new") {
-      setAvailability(await fetchAvailability(supabase, orderId));
-    } else {
-      setAvailability([]);
-    }
+    return d;
   }, [supabase, orderId]);
 
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
-        const [c, cat] = await Promise.all([
+        const [c, cat, locs] = await Promise.all([
           fetchCarriers(supabase),
           fetchOrderableProducts(supabase),
+          fetchLocations(supabase),
         ]);
-        await reload();
+        const d = await reload();
         if (cancelled) return;
         setCarriers(c);
         setCatalogue(cat);
+        setLocations(locs);
+        // A location the order names but the picker cannot offer — retired
+        // since — falls back to the default rather than being held in state
+        // invisibly: a native select with no matching option displays the
+        // first one, and confirming would then reserve somewhere the clerk
+        // was never shown.
+        const named = d.order.fulfil_location_id;
+        setFulfilFrom(
+          (named && locs.some((l) => l.id === named) ? named : null) ??
+            locs.find((l) => l.is_default)?.id ??
+            locs[0]?.id ??
+            ""
+        );
         setError(null);
       } catch (e) {
         if (!cancelled) setError(e instanceof Error ? e.message : String(e));
@@ -204,6 +245,36 @@ export default function OrderDetailPage() {
       cancelled = true;
     };
   }, [supabase, reload]);
+
+  /**
+   * What the availability check is about: these lines, at this location.
+   *
+   * Availability is derived from both rather than fetched alongside the order,
+   * so adding a product, correcting a quantity and switching warehouse all
+   * re-check it — and no call site has to remember to. Empty once the order is
+   * past `new`, because after confirming the question is what was reserved,
+   * not what is on the shelf.
+   */
+  const linesKey =
+    detail?.order.status === "new"
+      ? detail.lines.map((l) => `${l.id}:${l.qty_ordered}`).join(",")
+      : "";
+
+  useEffect(() => {
+    if (!linesKey || !fulfilFrom) return;
+    const runId = ++availabilitySeq.current;
+    (async () => {
+      try {
+        const rows = await fetchAvailability(supabase, orderId, fulfilFrom);
+        if (runId !== availabilitySeq.current) return;
+        setAvailability({ locationId: fulfilFrom, rows });
+        setAvailabilityError(null);
+      } catch (e) {
+        if (runId !== availabilitySeq.current) return;
+        setAvailabilityError(e instanceof Error ? e.message : String(e));
+      }
+    })();
+  }, [supabase, orderId, linesKey, fulfilFrom]);
 
   /**
    * Runs an action, then reloads. Errors from the database are shown verbatim.
@@ -240,7 +311,23 @@ export default function OrderDetailPage() {
   }
 
   const o = detail.order;
-  const short = availability.filter((a) => a.qty_short > 0);
+  const fulfilName = locations.find((l) => l.id === fulfilFrom)?.name ?? null;
+  /** Only rows counted at the location now chosen. See `availability`. */
+  const stockHere = availability?.locationId === fulfilFrom ? availability.rows : null;
+  const short = (stockHere ?? []).filter((a) => a.qty_short > 0);
+  /**
+   * A check is on its way and there is no answer yet.
+   *
+   * Conditioned on exactly what the effect above needs to run, so a case it
+   * skips — an order with no lines, nowhere to fulfil from — reads as "nothing
+   * to check" rather than spinning forever.
+   */
+  const checkingStock =
+    o.status === "new" &&
+    detail.lines.length > 0 &&
+    fulfilFrom !== "" &&
+    stockHere === null &&
+    availabilityError === null;
 
   // Only while the order is still `new`. `order_lines_insert`/`update` admit a
   // line only in that state, so offering the box later would be offering an
@@ -541,11 +628,22 @@ export default function OrderDetailPage() {
         <p className="rounded-lg border border-border bg-muted/40 p-2.5 text-sm">{notice}</p>
       )}
 
+      {o.status === "new" && availabilityError && (
+        <p className="rounded-lg border border-border bg-muted/40 p-2.5 text-sm text-muted-foreground">
+          Stock could not be checked{fulfilName ? ` at ${fulfilName}` : ""}:{" "}
+          {availabilityError}. Confirming counts it again, so this is worth a
+          retry rather than a worry.
+        </p>
+      )}
+
       {o.status === "new" && short.length > 0 && (
         <div className="rounded-lg border border-amber-500/40 bg-amber-500/5 p-3">
           <p className="flex items-center gap-2 text-sm font-medium text-amber-700 dark:text-amber-500">
             <AlertTriangle className="h-4 w-4" /> Not enough stock for {short.length} line
             {short.length === 1 ? "" : "s"}
+            {/* Named only when there is somewhere else it could have come
+                from. On a one-warehouse organisation the name is noise. */}
+            {locations.length > 1 && fulfilName ? ` at ${fulfilName}` : ""}
           </p>
           <ul className="mt-1.5 space-y-0.5 text-sm text-muted-foreground">
             {short.map((s) => (
@@ -790,6 +888,12 @@ export default function OrderDetailPage() {
               {o.contact_name && <Row label="Contact" value={o.contact_name} />}
               {o.contact_phone && <Row label="Phone" value={o.contact_phone} />}
               {o.required_by && <Row label="Required by" value={o.required_by} />}
+              {/* Set by confirming, so absent on a new order — there is no
+                  answer yet, and naming the default here would look like a
+                  decision that has been taken. */}
+              {detail.fulfilLocationName && (
+                <Row label="Fulfilled from" value={detail.fulfilLocationName} />
+              )}
               <Row
                 label="POD"
                 value={
@@ -1027,14 +1131,68 @@ export default function OrderDetailPage() {
             <DialogTitle>Confirm and reserve stock</DialogTitle>
           </DialogHeader>
           <div className="space-y-3">
-            {short.length > 0 ? (
+            {/* Hidden while there is only one place stock can be: nobody should
+                be asked to choose between one thing. It appears by itself the
+                day a second warehouse is opened. */}
+            {locations.length > 1 && (
+              <div>
+                <Label htmlFor="fulfil-from">Fulfil from</Label>
+                <NativeSelect
+                  id="fulfil-from"
+                  value={fulfilFrom}
+                  onChange={(e) => setFulfilFrom(e.target.value)}
+                  disabled={busy}
+                >
+                  {locations.map((l) => (
+                    <option key={l.id} value={l.id}>
+                      {l.name}
+                      {l.type !== "warehouse" ? ` (${l.type})` : ""}
+                    </option>
+                  ))}
+                </NativeSelect>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  The stock comes off this location and the picking list sends the
+                  picker there. It cannot be changed once the order is confirmed —
+                  the reservation is against this shelf.
+                </p>
+              </div>
+            )}
+
+            {availabilityError ? (
               <p className="text-sm text-muted-foreground">
-                {short.length} line{short.length === 1 ? " is" : "s are"} short. Choose what
-                should happen.
+                Stock could not be checked{fulfilName ? ` at ${fulfilName}` : ""}, so
+                what follows is unknown rather than fine. Confirming counts it
+                properly and will refuse what is not there.
               </p>
+            ) : checkingStock ? (
+              <p className="text-sm text-muted-foreground">
+                Checking stock{fulfilName ? ` at ${fulfilName}` : ""}…
+              </p>
+            ) : short.length > 0 ? (
+              <div className="space-y-1.5">
+                <p className="text-sm text-muted-foreground">
+                  {short.length} line{short.length === 1 ? " is" : "s are"} short
+                  {fulfilName ? ` at ${fulfilName}` : ""}. Choose what should happen
+                  {locations.length > 1 ? ", or fulfil from somewhere else" : ""}.
+                </p>
+                {/* Listed here as well as on the banner behind this dialog,
+                    because switching warehouse changes the answer and the
+                    clerk is looking at this box when they do it. */}
+                <ul className="text-sm text-muted-foreground">
+                  {short.map((s) => (
+                    <li key={s.order_line_id}>
+                      {s.product_name}: {s.qty_available} of {s.qty_ordered} —{" "}
+                      <span className="text-amber-700 dark:text-amber-500">
+                        {s.qty_short} short
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
             ) : (
               <p className="text-sm text-muted-foreground">
-                Everything on this order is in stock. Confirming holds it against this order.
+                Everything on this order is in stock{fulfilName ? ` at ${fulfilName}` : ""}.
+                Confirming holds it against this order.
               </p>
             )}
             <div>
@@ -1058,8 +1216,15 @@ export default function OrderDetailPage() {
             <Button
               onClick={() =>
                 run(
-                  () => confirmOrder(supabase, orderId, shortfall),
-                  "Order confirmed and stock reserved."
+                  // Passed explicitly rather than left to the RPC's own
+                  // fallback: the clerk is looking at a named warehouse and
+                  // the reservation has to be made where they were told it
+                  // would be. Empty only when there is no location at all, in
+                  // which case `order_confirm` says so plainly.
+                  () => confirmOrder(supabase, orderId, shortfall, fulfilFrom || null),
+                  fulfilName
+                    ? `Order confirmed and stock reserved at ${fulfilName}.`
+                    : "Order confirmed and stock reserved."
                 )
               }
               disabled={busy}
