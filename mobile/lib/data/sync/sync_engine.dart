@@ -50,6 +50,20 @@ List<OutboxEntry> replayableEntries(
   return replayable;
 }
 
+/// Whether a queued check-out has already been recorded on the visit, and can
+/// therefore be dropped from the outbox instead of retried forever.
+///
+/// Only true when the row is there **and** carries a `checkout_at`. The two
+/// conditions are separate on purpose: a visit can be readable and still refuse
+/// the update — a policy narrower on update than on select does exactly that,
+/// and PostgREST reports the refusal as an empty result rather than an error.
+/// Treating "the row exists" as "the check-out landed" would delete the only
+/// record that the rep finished the call.
+///
+/// [visit] is the row as PostgREST returns it, or null when there is none.
+bool checkOutAlreadyRecorded(Map<String, dynamic>? visit) =>
+    visit != null && visit['checkout_at'] != null;
+
 enum SyncState { idle, syncing, offline, error }
 
 class SyncStatus {
@@ -221,11 +235,11 @@ class SyncEngine {
             .select('id');
 
         if (visit.isEmpty) {
-          // Nothing was updated, and the two reasons need opposite handling.
-          // Ask which one it is rather than guessing from the absence.
+          // Nothing was updated, and the reasons need opposite handling. Ask
+          // which one it is rather than guessing from the absence.
           final existing = await _client
               .from('visits')
-              .select('id')
+              .select('id, checkout_at')
               .eq('client_generated_id', checkOutId)
               .maybeSingle();
 
@@ -233,12 +247,23 @@ class SyncEngine {
             throw StateError('Check-in not synced yet; will retry.');
           }
 
-          // The visit exists and already carries a check-out. The recorded
-          // time is the one that stands — that is what the guard is for — so
-          // this entry is *satisfied*, not failed. Returning normally lets the
-          // caller delete it, which is the difference between a queue that
-          // drains and one that wedges behind a write the database will refuse
-          // for as long as the row exists.
+          // The row being *visible* is not the same as the update having been
+          // applied. A policy whose USING clause is narrower than the one on
+          // select refuses the write while the row still reads back fine, and
+          // PostgREST reports that refusal as an empty result rather than an
+          // error. Deleting here on the strength of "the visit exists" would
+          // throw away the only record that the rep finished the call — the
+          // exact loss the affected-row check above was added to prevent.
+          if (!checkOutAlreadyRecorded(existing)) {
+            throw StateError('Check-out was not applied; will retry.');
+          }
+
+          // A check-out is genuinely on the row. The recorded time is the one
+          // that stands — that is what the guard is for — so this entry is
+          // *satisfied*, not failed. Returning normally lets the caller delete
+          // it, which is the difference between a queue that drains and one
+          // that wedges behind a write the database will refuse for as long as
+          // the row exists.
         }
         break;
 

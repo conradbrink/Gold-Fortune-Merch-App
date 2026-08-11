@@ -252,4 +252,37 @@ void detailScreenTests() {
           'checked_in');
     });
   });
+
+  // What to do when a check-out replay updates no row. Three causes, and
+  // getting them wrong costs either a wedged queue or a rep's lost work.
+  group('checkOutAlreadyRecorded', () {
+    test('no visit at all is the check-in not having landed', () {
+      // Retryable, and must stay so: this entry is the only record the rep
+      // finished the call.
+      expect(checkOutAlreadyRecorded(null), isFalse);
+    });
+
+    test('a visit still open means the update was refused, not applied', () {
+      // The row reads back fine and the check-out is not on it — a policy
+      // narrower on update than on select does this, and PostgREST reports it
+      // as an empty result rather than an error. Retry; never delete.
+      expect(
+        checkOutAlreadyRecorded({'id': 'visit-1', 'checkout_at': null}),
+        isFalse,
+      );
+    });
+
+    test('a visit already checked out means the entry is satisfied', () {
+      // The recorded time is the one that stands, so a second check-out is
+      // redundant rather than pending. Dropping it is what stops the queue
+      // wedging behind a write the guard will refuse forever.
+      expect(
+        checkOutAlreadyRecorded({
+          'id': 'visit-1',
+          'checkout_at': '2026-08-11T12:10:07.839Z',
+        }),
+        isTrue,
+      );
+    });
+  });
 }
