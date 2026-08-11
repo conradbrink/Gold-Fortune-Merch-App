@@ -1186,11 +1186,17 @@ export default function OrderDetailPage() {
             {/* Nowhere to fulfil from at all. Falling through to the branches
                 below would report everything in stock on the strength of a
                 check that never ran — reassuring, and about nothing.
-                `order_confirm` refuses this case in the same words. */}
+
+                Empty means the list came back empty, not that no default is
+                set: the seeding falls through to the first location when none
+                is flagged default. So the instruction is to have a location at
+                all, and it names where — "set a default warehouse" is not
+                something a clerk can act on when there is no warehouse to
+                set. */}
             {fulfilFrom === "" ? (
               <p className="text-sm text-muted-foreground">
-                There is nowhere to fulfil this order from. Set a default
-                warehouse before confirming.
+                There is no active location to fulfil this order from. A manager
+                adds or reactivates one under Warehouse setup → Locations.
               </p>
             ) : checkFailure ? (
               <p className="text-sm text-muted-foreground">
