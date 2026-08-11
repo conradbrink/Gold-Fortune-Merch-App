@@ -146,4 +146,35 @@ void main() {
     expect(Monitoring.scrub(event, Hint()), isNotNull);
   });
 
+  // The same noise wearing go_router's coat. The redirect runs while the
+  // session is being refreshed, go_router catches whatever it throws and
+  // rethrows it wrapped, and the event that arrives carries **one** exception
+  // typed `GoException` — so a match on the type alone let ten fatals a day
+  // through after the unwrapped form had gone quiet (FLUTTER-2).
+  test('the same failure wrapped by go_router is not reported either', () {
+    final event = eventWith(null);
+    event.exceptions = [
+      SentryException(
+        type: 'GoException',
+        value: 'GoException: Exception during redirect: '
+            'AuthRetryableFetchException(message: ClientException with '
+            'SocketException: Connection refused, statusCode: null)',
+      ),
+    ];
+    expect(Monitoring.scrub(event, Hint()), isNull);
+  });
+
+  test('an unrelated wrapped failure still reports', () {
+    // The message check must not become a way for real errors to disappear:
+    // only the one named cause is noise.
+    final event = eventWith(null);
+    event.exceptions = [
+      SentryException(
+        type: 'GoException',
+        value: 'GoException: Exception during redirect: '
+            'StateError(Bad state: no visit for that key)',
+      ),
+    ];
+    expect(Monitoring.scrub(event, Hint()), isNotNull);
+  });
 }
