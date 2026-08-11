@@ -34,6 +34,15 @@ export type OrderDetail = {
   storeName: string | null;
   storeAddress: string | null;
   repName: string | null;
+  /**
+   * The warehouse the stock is reserved at, named.
+   *
+   * Read from the order's own join rather than looked up against the list of
+   * locations the picker offers, because that list is active locations only —
+   * an order fulfilled from a warehouse since retired still has to be able to
+   * say where its stock came from.
+   */
+  fulfilLocationName: string | null;
   lines: (OrderLineRow & { product_name: string; brand: string | null })[];
   events: {
     id: number;
@@ -165,7 +174,9 @@ export async function fetchOrderDetail(
   const [orderRes, linesRes, eventsRes, dispatchRes, docsRes] = await Promise.all([
     supabase
       .from("orders")
-      .select("*, stores(name, address), profiles!orders_rep_id_fkey(full_name)")
+      .select(
+        "*, stores(name, address), profiles!orders_rep_id_fkey(full_name), stock_locations(name)"
+      )
       .eq("id", orderId)
       .single(),
     supabase
@@ -203,6 +214,7 @@ export async function fetchOrderDetail(
   const orderRaw = orderRes.data as unknown as OrderRow & {
     stores: { name: string; address: string | null } | { name: string; address: string | null }[] | null;
     profiles: { full_name: string } | { full_name: string }[] | null;
+    stock_locations: { name: string } | { name: string }[] | null;
   };
   const store = one(orderRaw.stores);
   const rep = one(orderRaw.profiles);
@@ -212,6 +224,7 @@ export async function fetchOrderDetail(
     storeName: store?.name ?? null,
     storeAddress: store?.address ?? null,
     repName: rep?.full_name ?? null,
+    fulfilLocationName: one(orderRaw.stock_locations)?.name ?? null,
     lines: ((linesRes.data ?? []) as unknown as (OrderLineRow & {
       products: { name: string; brand: string | null } | { name: string; brand: string | null }[] | null;
     })[]).map((l) => {
