@@ -28,6 +28,7 @@ import {
 import { ErrorBanner } from "@/components/warehouse/stat-tile";
 import { useCurrentRole } from "@/lib/use-current-role";
 import {
+  ADJUSTMENT_REASONS,
   fetchAdjustment,
   submitAdjustment,
   decideAdjustment,
@@ -140,9 +141,23 @@ export default function AdjustmentDetailPage() {
             </Badge>
           </h1>
           <p className="text-sm text-muted-foreground">
-            {head.reason_code.replace("_", " ")} · {locationName}
+            {/* The list's own label, not the raw code: "promotional issue" is
+                not what anybody calls it, and this line is what a manager reads
+                before deciding. */}
+            {ADJUSTMENT_REASONS.find((r) => r.value === head.reason_code)?.label ??
+              head.reason_code.replace(/_/g, " ")}{" "}
+            · {locationName}
             {head.reason_note ? ` · ${head.reason_note}` : ""}
           </p>
+          {/* Who took it, on its own line rather than appended to the one
+              above. Approving is the moment this fact matters, and a manager
+              scanning a run-on sentence is how it gets missed. */}
+          {head.issued_to_name && (
+            <p className="mt-0.5 text-sm">
+              <span className="text-muted-foreground">Issued to</span>{" "}
+              <span className="font-medium">{head.issued_to_name}</span>
+            </p>
+          )}
         </div>
 
         <div className="flex flex-wrap gap-2">

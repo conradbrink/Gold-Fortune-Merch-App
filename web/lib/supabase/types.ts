@@ -2353,6 +2353,7 @@ export type Database = {
           decided_by: string | null
           decision_note: string | null
           id: string
+          issued_to_name: string | null
           location_id: string
           org_id: string
           reason_code: string
@@ -2370,6 +2371,7 @@ export type Database = {
           decided_by?: string | null
           decision_note?: string | null
           id?: string
+          issued_to_name?: string | null
           location_id: string
           org_id: string
           reason_code: string
@@ -2387,6 +2389,7 @@ export type Database = {
           decided_by?: string | null
           decision_note?: string | null
           id?: string
+          issued_to_name?: string | null
           location_id?: string
           org_id?: string
           reason_code?: string

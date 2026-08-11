@@ -80,11 +80,18 @@ export const ADJUSTMENT_REASONS = [
     hint: "Past its date",
   },
   {
+    value: "promotional_issue",
+    label: "Issued for a promotion",
+    from: "available",
+    to: null,
+    hint: "Handed out — gone from stock. Say who took it.",
+  },
+  {
     value: "promotional",
-    label: "Promotional",
+    label: "Set aside for a promotion",
     from: "available",
     to: "promotional",
-    hint: "Set aside for a promotion or giveaway",
+    hint: "Still ours, not sellable. Use this only when the promotion has not happened yet",
   },
   {
     value: "missing",
@@ -395,6 +402,13 @@ export async function createAdjustment(
     locationId: string;
     reasonCode: string;
     reasonNote: string | null;
+    /**
+     * Who physically took the stock. Required by the database for
+     * `promotional_issue` and ignored for every other reason, so it is passed
+     * through rather than validated here — `stock_adjustments_issue_attributed`
+     * is the rule, and it holds for callers this function knows nothing about.
+     */
+    issuedToName?: string | null;
     lines: {
       productId: string;
       batchId: string | null;
@@ -421,6 +435,7 @@ export async function createAdjustment(
       location_id: input.locationId,
       reason_code: input.reasonCode,
       reason_note: input.reasonNote,
+      issued_to_name: input.issuedToName?.trim() || null,
     })
     .select("id")
     .single();

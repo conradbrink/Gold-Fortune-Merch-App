@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { Plus } from "lucide-react";
+import { Gift, Plus } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -55,13 +55,26 @@ export default function AdjustmentsPage() {
           </Link>
           <h1 className="mt-1 text-2xl font-semibold tracking-tight">Stock adjustments</h1>
           <p className="text-sm text-muted-foreground">
-            Damage, expiry, breakage and losses. A manager approves before the balance
-            changes.
+            Damage, expiry, losses, and stock given away for promotions. A manager
+            approves before the balance changes.
           </p>
         </div>
-        <Button nativeButton={false} render={<Link href="/inventory/adjustments/new" />}>
-          <Plus className="mr-1.5 h-4 w-4" /> Raise an adjustment
-        </Button>
+        <div className="flex flex-wrap gap-2">
+          {/* Its own button rather than a line in the reason list, because
+              giving stock away is a routine job with its own name, and a clerk
+              doing it should not have to know it is filed as an "adjustment".
+              It lands on the same form with the reason already chosen. */}
+          <Button
+            variant="outline"
+            nativeButton={false}
+            render={<Link href="/inventory/adjustments/new?reason=promotional_issue" />}
+          >
+            <Gift className="mr-1.5 h-4 w-4" /> Book out promo stock
+          </Button>
+          <Button nativeButton={false} render={<Link href="/inventory/adjustments/new" />}>
+            <Plus className="mr-1.5 h-4 w-4" /> Raise an adjustment
+          </Button>
+        </div>
       </div>
 
       <ErrorBanner message={error} />
