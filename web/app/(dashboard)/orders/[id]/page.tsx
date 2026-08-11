@@ -58,6 +58,13 @@ import {
   type ShortfallAction,
 } from "@/lib/orders";
 
+/**
+ * What an availability check was a check of: this order, as these lines, at
+ * this location. A result is only about the screen in front of the clerk while
+ * both still match.
+ */
+type AvailabilityCheck = { locationId: string; linesKey: string };
+
 type DialogKind =
   | null
   | "confirm"
@@ -86,26 +93,32 @@ export default function OrderDetailPage() {
 
   const [detail, setDetail] = useState<OrderDetail | null>(null);
   /**
-   * The last availability check, tagged with the location it was made at.
+   * The last availability check, tagged with what it was a check *of*.
    *
-   * Tagged rather than bare, because the clerk can change warehouse: rows
-   * counted at Gaborone say nothing about Maun, and showing them under the new
-   * name would be the screen inventing stock. Anything whose tag does not match
-   * the current choice is treated as not yet checked.
+   * Both halves of the tag are load-bearing, because both can change under it.
+   * Rows counted at Gaborone say nothing about Maun, and rows counted before a
+   * quantity was corrected say nothing about the order as it now stands —
+   * showing either under the new heading would be the screen inventing stock.
+   * Anything whose tag does not match is treated as not yet checked.
    */
-  const [availability, setAvailability] = useState<{
-    locationId: string;
-    rows: AvailabilityRow[];
-  } | null>(null);
+  const [availability, setAvailability] = useState<
+    (AvailabilityCheck & { rows: AvailabilityRow[] }) | null
+  >(null);
   /**
    * Why the pre-confirm check could not be made, if it could not.
+   *
+   * Tagged like the result, and for the same reason: a failure at Maun must
+   * stop being reported the moment the clerk selects Gaborone, or the dialog
+   * blames the wrong warehouse for a refusal it never made.
    *
    * Kept apart from the page's error banner on purpose. This check is advisory
    * — `order_confirm` counts the shelf again under a row lock — so a failed
    * check must not read as a failed action, and must not stop the clerk
    * confirming.
    */
-  const [availabilityError, setAvailabilityError] = useState<string | null>(null);
+  const [availabilityError, setAvailabilityError] = useState<
+    (AvailabilityCheck & { message: string }) | null
+  >(null);
   /** Newest check, so a slow one cannot land on top of a newer one. */
   const availabilitySeq = useRef(0);
   const [locations, setLocations] = useState<StockLocation[]>([]);
@@ -267,11 +280,15 @@ export default function OrderDetailPage() {
       try {
         const rows = await fetchAvailability(supabase, orderId, fulfilFrom);
         if (runId !== availabilitySeq.current) return;
-        setAvailability({ locationId: fulfilFrom, rows });
+        setAvailability({ locationId: fulfilFrom, linesKey, rows });
         setAvailabilityError(null);
       } catch (e) {
         if (runId !== availabilitySeq.current) return;
-        setAvailabilityError(e instanceof Error ? e.message : String(e));
+        setAvailabilityError({
+          locationId: fulfilFrom,
+          linesKey,
+          message: e instanceof Error ? e.message : String(e),
+        });
       }
     })();
   }, [supabase, orderId, linesKey, fulfilFrom]);
@@ -312,9 +329,17 @@ export default function OrderDetailPage() {
 
   const o = detail.order;
   const fulfilName = locations.find((l) => l.id === fulfilFrom)?.name ?? null;
-  /** Only rows counted at the location now chosen. See `availability`. */
-  const stockHere = availability?.locationId === fulfilFrom ? availability.rows : null;
+
+  /** Whether a check describes the order and location now on screen. */
+  const describesNow = (c: AvailabilityCheck | null | undefined) =>
+    c != null && c.locationId === fulfilFrom && c.linesKey === linesKey;
+
+  /** Only rows counted for this order at this location. See `availability`. */
+  const stockHere = describesNow(availability) ? availability!.rows : null;
   const short = (stockHere ?? []).filter((a) => a.qty_short > 0);
+  const checkFailure = describesNow(availabilityError)
+    ? availabilityError!.message
+    : null;
   /**
    * A check is on its way and there is no answer yet.
    *
@@ -327,7 +352,7 @@ export default function OrderDetailPage() {
     detail.lines.length > 0 &&
     fulfilFrom !== "" &&
     stockHere === null &&
-    availabilityError === null;
+    checkFailure === null;
 
   // Only while the order is still `new`. `order_lines_insert`/`update` admit a
   // line only in that state, so offering the box later would be offering an
@@ -628,11 +653,11 @@ export default function OrderDetailPage() {
         <p className="rounded-lg border border-border bg-muted/40 p-2.5 text-sm">{notice}</p>
       )}
 
-      {o.status === "new" && availabilityError && (
+      {o.status === "new" && checkFailure && (
         <p className="rounded-lg border border-border bg-muted/40 p-2.5 text-sm text-muted-foreground">
           Stock could not be checked{fulfilName ? ` at ${fulfilName}` : ""}:{" "}
-          {availabilityError}. Confirming counts it again, so this is worth a
-          retry rather than a worry.
+          {checkFailure}. Confirming counts it again, so this is worth a retry
+          rather than a worry.
         </p>
       )}
 
@@ -1158,7 +1183,16 @@ export default function OrderDetailPage() {
               </div>
             )}
 
-            {availabilityError ? (
+            {/* Nowhere to fulfil from at all. Falling through to the branches
+                below would report everything in stock on the strength of a
+                check that never ran — reassuring, and about nothing.
+                `order_confirm` refuses this case in the same words. */}
+            {fulfilFrom === "" ? (
+              <p className="text-sm text-muted-foreground">
+                There is nowhere to fulfil this order from. Set a default
+                warehouse before confirming.
+              </p>
+            ) : checkFailure ? (
               <p className="text-sm text-muted-foreground">
                 Stock could not be checked{fulfilName ? ` at ${fulfilName}` : ""}, so
                 what follows is unknown rather than fine. Confirming counts it
