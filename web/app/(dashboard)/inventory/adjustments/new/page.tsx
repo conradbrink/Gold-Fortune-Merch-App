@@ -54,6 +54,7 @@ export default function NewAdjustmentPage() {
   const [locationId, setLocationId] = useState("");
   const [reasonCode, setReasonCode] = useState<string>("damage");
   const [reasonNote, setReasonNote] = useState("");
+  const [issuedTo, setIssuedTo] = useState("");
   const [customFrom, setCustomFrom] = useState<string>("available");
   const [customTo, setCustomTo] = useState<string>("damaged");
   const [source, setSource] = useState<SourceStock[]>([]);
@@ -67,8 +68,26 @@ export default function NewAdjustmentPage() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Seeded from `?reason=` so "Book out promo stock" can land here with the
+  // reason already chosen. Read from window rather than useSearchParams, which
+  // would force this page into a Suspense boundary for nothing — the same call
+  // `representatives/page.tsx` makes, and for the same reason.
+  //
+  // Checked against the list rather than trusted: a hand-typed `?reason=xyz`
+  // would otherwise leave `reason` undefined and take the whole page down on
+  // `reason.hint`.
+  useEffect(() => {
+    const wanted = new URLSearchParams(window.location.search).get("reason");
+    if (wanted && ADJUSTMENT_REASONS.some((r) => r.value === wanted)) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setReasonCode(wanted);
+    }
+  }, []);
+
   const reason = ADJUSTMENT_REASONS.find((r) => r.value === reasonCode)!;
   const isCustom = reasonCode === "other";
+  /** Stock handed out and gone, which is the one reason that has to name a person. */
+  const isIssue = reasonCode === "promotional_issue";
   const fromBucket = isCustom ? customFrom : reason.from;
   const toBucket = isCustom ? customTo : reason.to;
 
@@ -164,6 +183,13 @@ export default function NewAdjustmentPage() {
       if (!reasonNote.trim()) return setError("Say what this adjustment is for.");
       if (customFrom === customTo) return setError("The two buckets have to differ.");
     }
+    // `stock_adjustments_issue_attributed` refuses this anyway, and would do it
+    // by naming a constraint. Checked here so the clerk gets a sentence, and
+    // trimmed the same way the constraint trims so a box of spaces is caught in
+    // the same place a person is looking.
+    if (isIssue && !issuedTo.trim()) {
+      return setError("Say who the stock is being issued to.");
+    }
 
     const filled = lines.filter((l) => l.sourceKey && Number(l.qty) > 0);
     if (filled.length === 0) return setError("Add at least one line with a quantity.");
@@ -191,6 +217,7 @@ export default function NewAdjustmentPage() {
         locationId,
         reasonCode,
         reasonNote: reasonNote.trim() || null,
+        issuedToName: isIssue ? issuedTo.trim() : null,
         lines: filled.map((l) => {
           const s = byKey.get(l.sourceKey)!;
           return {
@@ -313,6 +340,26 @@ export default function NewAdjustmentPage() {
             </span>
           </div>
 
+          {/* Only for an issue, because it is only required for an issue. A
+              box that is present for every reason and matters for one is a box
+              people learn to skip. */}
+          {isIssue && (
+            <div>
+              <Label htmlFor="issuedto">Issued to (required)</Label>
+              <Input
+                id="issuedto"
+                value={issuedTo}
+                onChange={(e) => setIssuedTo(e.target.value)}
+                placeholder="Who is taking the stock"
+              />
+              <p className="mt-1 text-xs text-muted-foreground">
+                A name, not a role — this is the record of who had the stock
+                when it left the building. Anyone can be named, whether or not
+                they use this system.
+              </p>
+            </div>
+          )}
+
           <div>
             <Label htmlFor="note">
               {isCustom ? "Why? (required)" : "Note (optional)"}
@@ -321,7 +368,11 @@ export default function NewAdjustmentPage() {
               id="note"
               value={reasonNote}
               onChange={(e) => setReasonNote(e.target.value)}
-              placeholder="What happened, and who saw it"
+              placeholder={
+                isIssue
+                  ? "What it was for — the promotion, the shop, the event"
+                  : "What happened, and who saw it"
+              }
             />
           </div>
         </CardContent>

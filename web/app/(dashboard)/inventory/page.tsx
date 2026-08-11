@@ -6,6 +6,7 @@ import {
   Search,
   CalendarClock,
   ClipboardList,
+  Gift,
   PackagePlus,
   ArrowLeftRight,
   SlidersHorizontal,
@@ -149,6 +150,17 @@ export default function InventoryPage() {
             render={<Link href="/inventory/stocktakes" />}
           >
             <ClipboardList className="mr-1.5 h-4 w-4" /> Stocktakes
+          </Button>
+          {/* Sits beside Receive stock because it is the mirror of it — stock
+              leaving rather than arriving — and because a clerk handing out
+              promotional units should not have to know it is filed as an
+              adjustment to find it. */}
+          <Button
+            variant="outline"
+            nativeButton={false}
+            render={<Link href="/inventory/adjustments/new?reason=promotional_issue" />}
+          >
+            <Gift className="mr-1.5 h-4 w-4" /> Book out promo stock
           </Button>
           <Button nativeButton={false} render={<Link href="/inventory/receive" />}>
             <PackagePlus className="mr-1.5 h-4 w-4" /> Receive stock
