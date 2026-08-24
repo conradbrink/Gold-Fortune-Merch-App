@@ -4,6 +4,25 @@
     <!-- GPS check-in/out at stores -->
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
+    <!-- The workday trail, recorded while a day is open.
+
+         Background location is a separate grant from the two above and cannot be
+         obtained from an in-app prompt on Android 11+ — the rep has to choose
+         "Allow all the time" in system settings. Without it the app still works
+         and still records a trail; it just stops whenever the app is not on
+         screen, which is what `LocationTrackingMode.foregroundOnly` reports.
+
+         FOREGROUND_SERVICE_LOCATION is the typed permission Android 14 requires
+         alongside the untyped one. geolocator declares the service itself, with
+         android:foregroundServiceType="location", so there is no <service> here.
+
+         WAKE_LOCK backs ForegroundNotificationConfig.enableWakeLock: without it
+         the device sleeps between fixes and Android delivers the whole batch on
+         waking, which reads as a rep who sat still for hours and then teleported. -->
+    <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION"/>
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION"/>
+    <uses-permission android:name="android.permission.WAKE_LOCK"/>
     <application
         android:label="Gold Fortune"
         android:name="${applicationName}"
