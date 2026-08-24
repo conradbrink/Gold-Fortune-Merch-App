@@ -4081,6 +4081,17 @@ export type Database = {
           rep_name: string
         }[]
       }
+      rep_day_times_per_day: {
+        Args: { p_from: string; p_to: string }
+        Returns: {
+          end_seconds: number
+          length_seconds: number
+          local_day: string
+          rep_id: string
+          rep_name: string
+          start_seconds: number
+        }[]
+      }
       rep_delete_impact: {
         Args: { p_rep_id: string }
         Returns: {
