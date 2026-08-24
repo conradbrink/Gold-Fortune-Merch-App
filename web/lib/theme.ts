@@ -43,9 +43,25 @@ export function isThemeMode(value: unknown): value is ThemeMode {
  */
 export const DEFAULT_THEME_MODE: ThemeMode = "system";
 
+/**
+ * The choice for this visit when `localStorage` refused to keep it.
+ *
+ * Without this the control undoes itself. `setMode` stores, applies the class,
+ * then dispatches the change event — and the listener re-reads the snapshot. If
+ * the write threw, that read returns the default, React renders "System" again
+ * and `syncClassToSnapshot` strips the class `applyMode` has just set. Choosing
+ * Dark in Safari's private mode flashed dark and snapped straight back.
+ *
+ * Deliberately not a fallback for *reading*: it is only consulted once a write
+ * has actually failed, so a normal browser keeps `localStorage` as the single
+ * source of truth and cross-tab changes still win.
+ */
+let volatileMode: ThemeMode | null = null;
+
 /** Whatever was chosen last, or the default. Safe to call on the server. */
 export function readStoredMode(): ThemeMode {
   if (typeof window === "undefined") return DEFAULT_THEME_MODE;
+  if (volatileMode !== null) return volatileMode;
   try {
     const stored = window.localStorage.getItem(THEME_STORAGE_KEY);
     return isThemeMode(stored) ? stored : DEFAULT_THEME_MODE;
@@ -58,8 +74,12 @@ export function readStoredMode(): ThemeMode {
 export function storeMode(mode: ThemeMode): void {
   try {
     window.localStorage.setItem(THEME_STORAGE_KEY, mode);
+    // The store is authoritative again, so stop shadowing it — otherwise one
+    // early failure would outrank every later write for the whole visit.
+    volatileMode = null;
   } catch {
     // A preference that cannot be saved is still worth applying for this visit.
+    volatileMode = mode;
   }
 }
 
