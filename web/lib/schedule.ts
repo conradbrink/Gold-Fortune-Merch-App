@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { callRpc } from "@/lib/rpc";
 import { toLocalDateInput } from "@/lib/date-range";
+import { shortestPathKm, toPoint } from "@/lib/geo";
 
 /**
  * Call cycle (journey plan) — the recurring pattern the schedule is generated
@@ -67,6 +68,9 @@ export type PlannedStore = {
   day_of_week: number | null;
   week_of_cycle: number | null;
   visit_frequency: VisitFrequency;
+  /** Null when the store has never been geocoded — 24 of them have not been. */
+  lat: number | null;
+  lng: number | null;
 };
 
 export type GenerateResult = {
@@ -287,6 +291,129 @@ export function countPlannedVisits(
     }
   }
   return n;
+}
+
+/* ------------------------------------------------------------------ *
+ * Cycle calendar
+ *
+ * `computeWeekLoad` answers "how heavy is a Tuesday", which is the right question
+ * when you are deciding a store's frequency. It cannot answer "what does Tuesday
+ * of week three look like", because it collapses every occurrence of a weekday
+ * into one figure. With three frequencies and a week-of-cycle field, working that
+ * out by hand means simulating the calendar in your head — so this expands it
+ * instead, into the actual dates the generator will write.
+ * ------------------------------------------------------------------ */
+
+/** One dated day in the grid — a real date, not a weekday. */
+export type CycleDay = {
+  date: Date;
+  weekday: number;
+  /**
+   * Inside the window `generate_routes` will write. Days before it are shown so
+   * the first row is a whole week rather than a ragged stub, but nothing will be
+   * scheduled on them — the generator never looks at a date before tomorrow.
+   */
+  inHorizon: boolean;
+  stores: PlannedStore[];
+  /** Distinct towns landing on this date, sorted. */
+  towns: string[];
+  /** Shortest straight-line path through the stops. Null when a stop has no coordinates. */
+  driveKm: number | null;
+};
+
+export type CycleWeek = {
+  /** Monday of this row. */
+  weekStart: Date;
+  /**
+   * ISO week number. Carried because bi-weekly stores alternate on its *parity* —
+   * a manager looking at two adjacent rows needs to know which is week A.
+   */
+  isoWeek: number;
+  /** One per column, in `columns` order. */
+  days: CycleDay[];
+};
+
+export type CycleCalendar = {
+  /** ISO weekdays forming the columns, ascending. */
+  columns: number[];
+  weeks: CycleWeek[];
+  /**
+   * Columns present only because stores are planned on them — days the org does
+   * not work. Rendering the working days alone would make those stores vanish
+   * from the one view that exists to show where every store landed.
+   */
+  offDayColumns: number[];
+};
+
+/** Local date-only comparison. A timestamp comparison would flip at midnight UTC. */
+function dayStart(d: Date): Date {
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate());
+}
+
+/**
+ * Expands the call cycle into the dated days it produces.
+ *
+ * The horizon deliberately matches `generate_routes` — starts tomorrow, runs
+ * `weeks * 7` days — because this view's whole claim is that it shows what will
+ * actually be written. Rows are real calendar weeks starting on Monday, so the
+ * first row usually begins before the horizon does; those cells are marked rather
+ * than dropped.
+ */
+export function buildCycleCalendar(
+  stores: PlannedStore[],
+  weeks: number,
+  workingDays: number[],
+  from = new Date()
+): CycleCalendar {
+  const start = dayStart(addDays(from, 1));
+  const end = dayStart(addDays(from, weeks * 7));
+
+  const planned = stores.filter((s) => s.active && s.day_of_week !== null);
+
+  // A store planned on a day the org does not work still has to be visible: the
+  // generator will schedule it regardless, and a grid that hid it would be the
+  // second blind spot this view exists to remove.
+  const plannedDays = new Set(planned.map((s) => s.day_of_week as number));
+  const offDayColumns = [...plannedDays]
+    .filter((d) => !workingDays.includes(d))
+    .sort((a, b) => a - b);
+  const columns = [...new Set([...workingDays, ...offDayColumns])].sort(
+    (a, b) => a - b
+  );
+
+  // Back up to the Monday of the week the horizon opens in.
+  const firstMonday = addDays(start, -(isoWeekday(start) - 1));
+
+  const weekRows: CycleWeek[] = [];
+  for (
+    let monday = firstMonday;
+    monday.getTime() <= end.getTime();
+    monday = addDays(monday, 7)
+  ) {
+    const days: CycleDay[] = columns.map((weekday) => {
+      const date = addDays(monday, weekday - 1);
+      const landing = planned.filter(
+        (s) =>
+          s.day_of_week === weekday &&
+          occursOn(date, s.visit_frequency, s.week_of_cycle)
+      );
+      return {
+        date,
+        weekday,
+        inHorizon: date.getTime() >= start.getTime() && date.getTime() <= end.getTime(),
+        stores: landing,
+        towns: [...new Set(landing.map((s) => s.city ?? "No town"))].sort(),
+        driveKm:
+          landing.length === 0
+            ? null
+            : shortestPathKm(landing.map((s) => toPoint(s.lat, s.lng))),
+      };
+    });
+
+    weekRows.push({ weekStart: monday, isoWeek: isoWeekNumber(monday), days });
+  }
+
+  return { columns, weeks: weekRows, offDayColumns };
 }
 
 /* ------------------------------------------------------------------ *
@@ -773,10 +900,20 @@ export async function fetchPlannedStores(
   const { data, error } = await supabase
     .from("store_assignments")
     .select(
-      "id, store_id, is_primary, day_of_week, week_of_cycle, stores(name, city, state, active, visit_frequency)"
+      "id, store_id, is_primary, day_of_week, week_of_cycle, stores(name, city, state, active, visit_frequency, lat, lng)"
     )
     .eq("rep_id", repId);
   if (error) throw new Error(error.message);
+
+  type StoreRow = {
+    name: string;
+    city: string | null;
+    state: string | null;
+    active: boolean;
+    visit_frequency: VisitFrequency;
+    lat: number | null;
+    lng: number | null;
+  };
 
   const rows = (data ?? []) as unknown as {
     id: string;
@@ -784,22 +921,7 @@ export async function fetchPlannedStores(
     is_primary: boolean;
     day_of_week: number | null;
     week_of_cycle: number | null;
-    stores:
-      | {
-          name: string;
-          city: string | null;
-          state: string | null;
-          active: boolean;
-          visit_frequency: VisitFrequency;
-        }
-      | {
-          name: string;
-          city: string | null;
-          state: string | null;
-          active: boolean;
-          visit_frequency: VisitFrequency;
-        }[]
-      | null;
+    stores: StoreRow | StoreRow[] | null;
   }[];
 
   return rows
@@ -818,6 +940,8 @@ export async function fetchPlannedStores(
         day_of_week: r.day_of_week,
         week_of_cycle: r.week_of_cycle,
         visit_frequency: (store?.visit_frequency ?? "weekly") as VisitFrequency,
+        lat: store?.lat ?? null,
+        lng: store?.lng ?? null,
       };
     })
     .sort(
