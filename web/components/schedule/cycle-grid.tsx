@@ -35,12 +35,28 @@ function formatDayMonth(d: Date): string {
   return d.toLocaleDateString("en-GB", { day: "numeric", month: "short" });
 }
 
-/** Towns in the space a cell has. Three is where names stop being readable. */
+/**
+ * Towns in the space a cell has.
+ *
+ * Two names is the most that fits at this width, and three is where they stop
+ * being readable anyway — past that the count is the useful fact, because the
+ * point being made is "this day is scattered", not which towns specifically.
+ */
 function describeTowns(towns: string[]): string {
   if (towns.length === 0) return "";
   if (towns.length <= 2) return towns.join(" · ");
   return `${towns.length} towns`;
 }
+
+/* Column widths, in pixels.
+ *
+ * Sized so a six-day week fits the content column the sidebar leaves without
+ * scrolling at all — `LABEL_W + 6 * DAY_W + 6 * GAP` has to stay under it. A
+ * two-town label truncates at this width and everything else fits; the full
+ * detail is in each cell's tooltip and in the panel below the grid. */
+const LABEL_W = 76;
+const DAY_W = 76;
+const GAP = 4;
 
 function DayCell({
   day,
@@ -59,9 +75,9 @@ function DayCell({
   // but the generator will never write to it — so it must not look plannable.
   if (!day.inHorizon) {
     return (
-      <div className="rounded-md border border-dashed border-border/60 px-2 py-2.5 text-center">
-        <p className="text-[11px] text-muted-foreground/50">
-          {formatDayMonth(day.date)}
+      <div className="rounded-md border border-dashed border-border/60 px-1.5 py-2 text-center">
+        <p className="text-[10px] tabular-nums text-muted-foreground/50">
+          {day.date.getDate()}
         </p>
       </div>
     );
@@ -76,60 +92,73 @@ function DayCell({
       type="button"
       onClick={onSelect}
       aria-pressed={selected}
+      // The full picture goes in the tooltip: the cell is 80px wide and has to
+      // truncate, so hovering must not be the only way to learn nothing new.
+      title={
+        empty
+          ? `${formatDayMonth(day.date)} — nothing scheduled`
+          : `${formatDayMonth(day.date)} — ${day.stores.length} stop${day.stores.length === 1 ? "" : "s"}` +
+            ` in ${day.towns.join(", ")}` +
+            (day.stores.length > 1
+              ? day.driveKm === null
+                ? " · distance unknown, a stop has no coordinates"
+                : ` · ${Math.round(day.driveKm)} km straight line`
+              : "")
+      }
       className={[
-        "rounded-md border px-2 py-2 text-left transition-colors",
+        "flex flex-col rounded-md border px-1.5 py-1.5 text-left transition-colors",
         "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
         selected ? "ring-2 ring-primary ring-offset-1 ring-offset-background" : "",
         heavy
           ? "border-destructive/50 bg-destructive/10 hover:bg-destructive/15"
           : multiTown
             ? "border-amber-500/50 bg-amber-500/10 hover:bg-amber-500/15"
-            : empty
-              ? "border-border bg-card hover:bg-muted/50"
-              : "border-border bg-card hover:bg-muted/50",
+            : "border-border bg-card hover:bg-muted/50",
       ].join(" ")}
     >
       <p className="flex items-baseline justify-between gap-1">
         <span
           className={[
-            "text-lg font-bold tabular-nums leading-none",
+            "text-base font-bold tabular-nums leading-none",
             empty ? "text-muted-foreground/40" : "text-foreground",
           ].join(" ")}
         >
           {day.stores.length || "—"}
         </span>
-        <span className="text-[10px] tabular-nums text-muted-foreground">
-          {formatDayMonth(day.date)}
+        {/* Day of the month only — the row label already says which month, and
+            repeating it 47 times is what made this read as a wall of text. */}
+        <span className="text-[10px] tabular-nums text-muted-foreground/70">
+          {day.date.getDate()}
         </span>
       </p>
 
       {!empty && (
-        <>
-          <p className="mt-1 truncate text-[11px] text-muted-foreground">
-            {describeTowns(day.towns)}
-          </p>
-          {/* A single stop has no travel between stops, so it has no distance
-              worth printing — "0 km" there is noise that reads as a measurement.
-              Null is different: a stop has no coordinates, and saying "0 km"
-              would claim the shops are all in the same place. */}
-          {day.stores.length > 1 && (
-            <p className="text-[11px] tabular-nums text-muted-foreground">
-              {day.driveKm === null
-                ? "distance unknown"
-                : `${Math.round(day.driveKm)} km`}
-            </p>
-          )}
-        </>
+        <p className="mt-0.5 truncate text-[10px] leading-tight text-muted-foreground">
+          {describeTowns(day.towns)}
+        </p>
+      )}
+
+      {/* A single stop has no travel between stops, so it has no distance worth
+          printing — "0 km" there is noise that reads as a measurement. Null is
+          different: a stop has no coordinates, and saying "0 km" would claim the
+          shops are all in the same place. */}
+      {!empty && day.stores.length > 1 && (
+        <p className="text-[10px] leading-tight tabular-nums text-muted-foreground/80">
+          {/* "unknown", not "no distance" — the latter reads as *zero* distance,
+              which is the precise misreading the null-instead-of-0 rule exists
+              to prevent. The tooltip says why it is unknown. */}
+          {day.driveKm === null ? "unknown" : `${Math.round(day.driveKm)} km`}
+        </p>
       )}
 
       {(heavy || multiTown || isOffDay) && (
         <p
           className={[
-            "mt-1 flex items-center gap-1 text-[10px] font-medium",
+            "mt-auto flex items-center gap-0.5 pt-0.5 text-[10px] font-medium leading-tight",
             heavy ? "text-destructive" : "text-amber-700 dark:text-amber-400",
           ].join(" ")}
         >
-          <AlertTriangle className="h-3 w-3 shrink-0" />
+          <AlertTriangle className="h-2.5 w-2.5 shrink-0" />
           {heavy
             ? `${day.stores.length - storesPerDay} over`
             : multiTown
@@ -207,31 +236,78 @@ export function CycleGrid({
 
   return (
     <div className="space-y-3">
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-muted-foreground">
-        <span>
-          <span className="font-semibold text-foreground">{totals.days}</span>{" "}
-          working {totals.days === 1 ? "day" : "days"} over {weeks} weeks
-        </span>
-        {totals.km > 0 && (
-          <span title="Straight-line distance between stops, not road distance.">
-            <span className="font-semibold text-foreground">
-              {Math.round(totals.km).toLocaleString("en-GB")} km
-            </span>{" "}
-            as the crow flies
-            {totals.unmeasured > 0 &&
-              `, plus ${totals.unmeasured} ${totals.unmeasured === 1 ? "day" : "days"} that cannot be measured`}
-          </span>
-        )}
-        {totals.overloaded > 0 && (
-          <span className="font-medium text-destructive">
-            {totals.overloaded} over capacity
-          </span>
-        )}
-        {totals.split > 0 && (
-          <span className="font-medium text-amber-700 dark:text-amber-400">
-            {totals.split} across more than one town
-          </span>
-        )}
+      {/* Four figures at the same weight wrapped into a paragraph nobody read.
+          As tiles they scan in one pass, and the two that need acting on carry
+          their own colour. */}
+      <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-4">
+        <div className="rounded-md border border-border bg-card px-2.5 py-1.5">
+          <p className="text-base font-bold leading-none tabular-nums text-foreground">
+            {totals.days}
+          </p>
+          <p className="mt-0.5 text-[11px] leading-tight text-muted-foreground">
+            working days · {weeks} weeks
+          </p>
+        </div>
+
+        <div
+          className="rounded-md border border-border bg-card px-2.5 py-1.5"
+          title="Straight-line distance between stops, in the shortest order found. Not road distance and not a drive time."
+        >
+          <p className="text-base font-bold leading-none tabular-nums text-foreground">
+            {Math.round(totals.km).toLocaleString("en-GB")} km
+          </p>
+          <p className="mt-0.5 text-[11px] leading-tight text-muted-foreground">
+            {totals.unmeasured > 0
+              ? `crow flies · ${totals.unmeasured} unmeasured`
+              : "as the crow flies"}
+          </p>
+        </div>
+
+        {/* Always rendered, including at zero — a figure that disappears when it
+            is good teaches nobody that it was ever being watched. */}
+        <div
+          className={[
+            "rounded-md border px-2.5 py-1.5",
+            totals.overloaded > 0
+              ? "border-destructive/50 bg-destructive/10"
+              : "border-border bg-card",
+          ].join(" ")}
+        >
+          <p
+            className={[
+              "text-base font-bold leading-none tabular-nums",
+              totals.overloaded > 0 ? "text-destructive" : "text-foreground",
+            ].join(" ")}
+          >
+            {totals.overloaded}
+          </p>
+          <p className="mt-0.5 text-[11px] leading-tight text-muted-foreground">
+            over {storesPerDay} stops
+          </p>
+        </div>
+
+        <div
+          className={[
+            "rounded-md border px-2.5 py-1.5",
+            totals.split > 0
+              ? "border-amber-500/50 bg-amber-500/10"
+              : "border-border bg-card",
+          ].join(" ")}
+        >
+          <p
+            className={[
+              "text-base font-bold leading-none tabular-nums",
+              totals.split > 0
+                ? "text-amber-700 dark:text-amber-400"
+                : "text-foreground",
+            ].join(" ")}
+          >
+            {totals.split}
+          </p>
+          <p className="mt-0.5 text-[11px] leading-tight text-muted-foreground">
+            span 2+ towns
+          </p>
+        </div>
       </div>
 
       {calendar.offDayColumns.length > 0 && (
@@ -246,22 +322,38 @@ export function CycleGrid({
         </p>
       )}
 
-      {/* Seven columns never fit a phone. Scroll the grid, not the page. */}
+      {/*
+        The sidebar leaves a narrow content column, so six or seven day columns
+        still overflow it and the grid scrolls sideways. The week label must
+        therefore be **sticky**: without it, scrolling far enough to reach
+        Saturday takes Monday *and* every row label off screen at once, and what
+        is left is a block of numbers with nothing saying which week any of them
+        belongs to. That is the single thing that made this hard to read.
+      */}
       <div className="overflow-x-auto">
         <div
-          className="grid min-w-[680px] gap-1.5"
+          className="grid"
           style={{
-            gridTemplateColumns: `92px repeat(${calendar.columns.length}, minmax(104px, 1fr))`,
+            gap: GAP,
+            // The gaps are part of the width. Leaving them out of this sum is
+            // what made the grid overflow by exactly one gap per column.
+            minWidth:
+              LABEL_W +
+              calendar.columns.length * DAY_W +
+              calendar.columns.length * GAP,
+            gridTemplateColumns: `${LABEL_W}px repeat(${calendar.columns.length}, minmax(${DAY_W}px, 1fr))`,
           }}
         >
-          <div />
+          {/* The corner sits above the sticky column, so it has to be sticky too
+              or the weekday headings slide underneath it. */}
+          <div className="sticky left-0 z-20 bg-background" />
           {calendar.columns.map((weekday) => {
             const day = WEEKDAYS.find((w) => w.value === weekday);
             const off = calendar.offDayColumns.includes(weekday);
             return (
               <div
                 key={weekday}
-                className="px-2 pb-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground"
+                className="px-1 pb-1 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground"
               >
                 {day?.short}
                 {off && (
@@ -275,17 +367,20 @@ export function CycleGrid({
 
           {calendar.weeks.map((week, i) => (
             <div key={week.weekStart.toISOString()} className="contents">
-              <div className="flex flex-col justify-center gap-0.5 pr-2">
-                <p className="text-xs font-semibold text-foreground">
+              <div className="sticky left-0 z-10 flex flex-col justify-center bg-background pr-2">
+                <p className="text-xs font-semibold leading-tight text-foreground">
                   Week {i + 1}
                 </p>
-                <p className="text-[11px] text-muted-foreground">
-                  {formatDayMonth(week.weekStart)}
-                </p>
                 {/* Bi-weekly stores alternate on ISO week parity, so which of the
-                    two a row is decides half of what lands in it. */}
-                <p className="text-[10px] uppercase tracking-wide text-muted-foreground/70">
-                  Week {week.isoWeek % 2 === 1 ? "A" : "B"}
+                    two a row is decides half of what lands in it. On one line
+                    with the date: three stacked lines made the label column wider
+                    than the days it was labelling. */}
+                <p className="text-[10px] leading-tight text-muted-foreground">
+                  {formatDayMonth(week.weekStart)}
+                  <span className="text-muted-foreground/70">
+                    {" · "}
+                    {week.isoWeek % 2 === 1 ? "A" : "B"}
+                  </span>
                 </p>
               </div>
               {week.days.map((day) => (
