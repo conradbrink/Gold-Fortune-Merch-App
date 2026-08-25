@@ -19,9 +19,11 @@ import { rangeDays, rangeForPreset, type DateRange } from "@/lib/date-range";
 import {
   fetchDashboardSummary,
   fetchOperationsSummary,
+  fetchRepDayDetail,
   fetchRepDayTimes,
   type DashboardSummary,
   type OperationsSummary,
+  type RepDayDetail,
   type RepDayTimes,
 } from "@/lib/dashboard";
 import {
@@ -54,6 +56,7 @@ export default function InsightsDashboardPage() {
   const [range, setRange] = useState<DateRange>(() => rangeForPreset("30d"));
   const [data, setData] = useState<DashboardSummary | null>(null);
   const [dayTimes, setDayTimes] = useState<RepDayTimes[]>([]);
+  const [dayDetail, setDayDetail] = useState<RepDayDetail[]>([]);
   const [ops, setOps] = useState<OperationsSummary | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -100,9 +103,13 @@ export default function InsightsDashboardPage() {
       // transient refusal — threw away headline KPIs that had loaded perfectly
       // well. Each source now fails on its own, and the cards that depend on it
       // say why.
-      const [summary, times, operations] = await Promise.allSettled([
+      const [summary, times, dayRows, operations] = await Promise.allSettled([
         fetchDashboardSummary(supabase, range),
         fetchRepDayTimes(supabase, range),
+        // Same source as `times`: the averages and the days behind them are one
+        // feature, and a card showing an average whose detail failed to load
+        // would offer a day picker that silently finds nothing.
+        fetchRepDayDetail(supabase, range),
         fetchOperationsSummary(supabase, range),
       ]);
 
@@ -119,6 +126,11 @@ export default function InsightsDashboardPage() {
         setDayTimes([]);
         failed.add("dayTimes");
       }
+      if (dayRows.status === "fulfilled") setDayDetail(dayRows.value);
+      else {
+        setDayDetail([]);
+        failed.add("dayTimes");
+      }
       if (operations.status === "fulfilled") setOps(operations.value);
       else {
         setOps(null);
@@ -132,7 +144,7 @@ export default function InsightsDashboardPage() {
       // A source that *answers* `null` counts here too. Its cards go unavailable
       // either way, and without an error there would be no banner and no Retry —
       // the card would say "Retry above" pointing at nothing.
-      const rejected = [summary, times, operations].find(
+      const rejected = [summary, times, dayRows, operations].find(
         (r) => r.status === "rejected"
       );
       const answeredNothing =
@@ -262,6 +274,7 @@ export default function InsightsDashboardPage() {
   const widgetData: WidgetData = {
     summary: data,
     dayTimes,
+    dayDetail,
     operations: ops,
     days,
   };
