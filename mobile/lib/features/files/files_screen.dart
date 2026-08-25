@@ -152,8 +152,13 @@ class _FilesScreenState extends ConsumerState<FilesScreen> {
                       onLongPress: saved
                           ? () async {
                               await repo.removeDownload(file);
-                              ref.invalidate(filesProvider);
+                              // The guard has to come *before* the ref, not
+                              // between the ref and the snackbar: `ref` after
+                              // unmount is a StateError in its own right, so the
+                              // old order protected the message and not the
+                              // thing that actually throws.
                               if (!context.mounted) return;
+                              ref.invalidate(filesProvider);
                               ScaffoldMessenger.of(context).showSnackBar(
                                 const SnackBar(
                                   content: Text('Removed the copy from this phone.'),
