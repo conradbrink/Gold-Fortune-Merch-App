@@ -144,7 +144,7 @@ export default function InsightsDashboardPage() {
       // A source that *answers* `null` counts here too. Its cards go unavailable
       // either way, and without an error there would be no banner and no Retry —
       // the card would say "Retry above" pointing at nothing.
-      const rejected = [summary, times, operations].find(
+      const rejected = [summary, times, dayRows, operations].find(
         (r) => r.status === "rejected"
       );
       const answeredNothing =

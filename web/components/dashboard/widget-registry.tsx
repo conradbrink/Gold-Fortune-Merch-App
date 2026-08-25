@@ -552,7 +552,7 @@ function WorkingDay({
    * team work". A specific date answers a different question — "what happened on
    * Tuesday" — so it is a deliberate choice rather than the landing state.
    */
-  const [day, setDay] = useState("");
+  const [chosenDay, setChosenDay] = useState("");
 
   // Newest first: a manager checking a specific day is nearly always checking a
   // recent one. Derived from the rows themselves, so the list only ever offers
@@ -561,6 +561,19 @@ function WorkingDay({
     () => [...new Set(detail.map((d) => d.local_day))].sort().reverse(),
     [detail]
   );
+
+  /**
+   * The selection, but only if the current range still contains it.
+   *
+   * `chosenDay` outlives a range change — the card is not remounted — so a date
+   * picked under "90 days" can vanish from `days` when the range narrows. The
+   * `<select>` would then hold a value matching no option and render blank,
+   * while the card took the single-day path with nothing in it: "0 reps worked"
+   * and "3 reps recorded no activity on this day" for a range that plainly has
+   * activity. Derived rather than reset in an effect, so there is no frame where
+   * the two disagree.
+   */
+  const day = chosenDay !== "" && days.includes(chosenDay) ? chosenDay : "";
 
   const chosen = useMemo(
     () =>
@@ -589,10 +602,13 @@ function WorkingDay({
             <select
               id="working-day-picker"
               value={day}
-              onChange={(e) => setDay(e.target.value)}
+              onChange={(e) => setChosenDay(e.target.value)}
               className="rounded-md border border-border bg-background px-2 py-1 text-xs text-foreground"
             >
-              <option value="">Average of {company.days} rep-days</option>
+              <option value="">
+                Average of {company.days} rep-
+                {company.days === 1 ? "day" : "days"}
+              </option>
               {days.map((d) => (
                 <option key={d} value={d}>
                   {formatDayLabel(d)}
