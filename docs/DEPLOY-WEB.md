@@ -46,7 +46,7 @@ with the real values from `web/.env.local`. Apply them to **Production**,
 ⚠️ **Never prefix a secret with `NEXT_PUBLIC_`.** That prefix compiles the
 value into the JavaScript every visitor downloads. This has been verified for
 the current build: with all secrets present in the build environment, none of
-the four secret keys appear anywhere in the output, while the publishable key
+the five secret keys appear anywhere in the output, while the publishable key
 does — which is how you know the check is actually looking.
 
 ### 3. Set the production branch

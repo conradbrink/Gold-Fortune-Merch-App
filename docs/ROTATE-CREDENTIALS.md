@@ -136,7 +136,7 @@ alone unless you want the churn.
 Check **Usage** for the exposure window while you are there. Unexpected spend
 is the signal that the key was actually used, not merely exposed.
 
-## 3. Google — three keys
+## 3. Google — four keys
 
 Google Cloud Console → APIs & Services → Credentials. Google has no in-place
 rotation: you create a replacement and delete the old one.

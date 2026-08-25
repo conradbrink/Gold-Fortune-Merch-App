@@ -140,6 +140,115 @@ export async function fetchRepDayDetail(
   return (data ?? []) as RepDayDetail[];
 }
 
+/** One rep-day's driving, keyed the same way as `RepDayDetail`. */
+export type RepDayDistance = {
+  rep_id: string;
+  /** Local date, `YYYY-MM-DD`, to match `RepDayDetail.local_day`. */
+  local_day: string;
+  /**
+   * Metres along roads, from the Routes API. **Null until the day is settled**,
+   * and never filled in from the phone's own figure.
+   *
+   * That substitution would be tempting and wrong. The phone accumulates
+   * straight-line legs between pings, and measured across 33 settled days it
+   * captured **23 km against 1,953 km actually driven** — about one per cent,
+   * because the sampling timer it depended on barely ran. A blank is honest; that
+   * number dressed up as mileage is not.
+   */
+  road_metres: number | null;
+};
+
+/**
+ * Driving per rep-day, for the range on screen.
+ *
+ * Read from `workday_sessions` rather than folded into `rep_day_times_per_day`:
+ * a working day is a union of sessions, visits and sales calls, but a *distance*
+ * only ever comes from a session, and widening that RPC would have it return a
+ * column that is null for two thirds of what it counts.
+ *
+ * The day is derived from `started_at` in local time, matching how the RPC keys
+ * its rows — a session opened at seven in the morning in CAT is that date, and
+ * comparing UTC dates would misfile every early start.
+ */
+export async function fetchRepDayDistance(
+  supabase: SupabaseClient,
+  range: DateRange
+): Promise<RepDayDistance[]> {
+  const { data, error } = await supabase
+    .from("workday_sessions")
+    .select("rep_id, started_at, road_distance_meters")
+    .gte("started_at", range.from.toISOString())
+    // `.lt`, not `.lte`: `DateRange.to` is the exclusive start of the next day,
+    // so a session beginning exactly on it belongs to tomorrow.
+    .lt("started_at", range.to.toISOString())
+    .order("started_at", { ascending: true });
+  if (error) throw new Error(error.message);
+
+  /**
+   * One row per rep per day, not per session.
+   *
+   * Nothing stops a rep opening a second workday — they end one at lunch and
+   * start another, or a phone is replaced mid-round. Mapping sessions straight
+   * to records meant the later one silently overwrote the earlier in the lookup,
+   * so the card showed the afternoon's driving as the whole day, and counted the
+   * same date twice when working out how much of the range is settled.
+   *
+   * A day counts as settled only when **every** session in it has a distance:
+   * summing one settled session and one unsettled would produce a total that
+   * looks complete and is short.
+   */
+  const byDay = new Map<
+    string,
+    { rep_id: string; local_day: string; metres: number; missing: boolean }
+  >();
+
+  for (const r of (data ?? []) as {
+    rep_id: string;
+    started_at: string;
+    road_distance_meters: number | null;
+  }[]) {
+    const local_day = reportingDay(r.started_at);
+    const key = `${r.rep_id}|${local_day}`;
+    const acc =
+      byDay.get(key) ?? { rep_id: r.rep_id, local_day, metres: 0, missing: false };
+    if (r.road_distance_meters === null) acc.missing = true;
+    else acc.metres += Number(r.road_distance_meters);
+    byDay.set(key, acc);
+  }
+
+  return [...byDay.values()].map((d) => ({
+    rep_id: d.rep_id,
+    local_day: d.local_day,
+    road_metres: d.missing ? null : d.metres,
+  }));
+}
+
+/**
+ * The local date of a timestamp, in the timezone the reporting is keyed to.
+ *
+ * **Not the browser's timezone.** `rep_day_times_per_day` converts to
+ * `Africa/Gaborone` in SQL before grouping, and this key is matched against
+ * those rows — so deriving it from the manager's own clock would put the driving
+ * on the wrong day, or on no day at all, for anyone opening the dashboard from
+ * outside CAT. Everyone is in Botswana today, which is exactly why this would
+ * have gone unnoticed.
+ */
+function reportingDay(iso: string): string {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Africa/Gaborone",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date(iso));
+}
+
+/** Metres as kilometres for display. Null stays null — it is not zero. */
+export function formatKm(metres: number | null): string {
+  if (metres === null) return "—";
+  const km = metres / 1000;
+  return `${km < 10 ? km.toFixed(1) : Math.round(km).toLocaleString("en-GB")} km`;
+}
+
 /**
  * The company average, weighted by days worked.
  *
