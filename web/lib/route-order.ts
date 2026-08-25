@@ -150,8 +150,15 @@ export async function fetchDaysToOrder(
     .from("routes")
     // Single string literal — a concatenated .select() degrades to
     // GenericStringError in postgrest-js.
+    //
+    // `profiles!routes_rep_id_fkey` names which of the two foreign keys to
+    // follow. `routes` points at `profiles` twice — `rep_id` for whose day it is
+    // and `created_by` for who scheduled it — and without the constraint name
+    // PostgREST refuses the embed outright ("more than one relationship was
+    // found") rather than picking one. The same trap `fetchDayBoard` documents
+    // for visits/stores; it costs nothing to name it and the page dies without.
     .select(
-      "id, rep_id, store_id, scheduled_date, sequence_order, profiles(full_name), stores(name, city, lat, lng), visits(checkin_at)"
+      "id, rep_id, store_id, scheduled_date, sequence_order, profiles!routes_rep_id_fkey(full_name), stores(name, city, lat, lng), visits(checkin_at)"
     )
     .gte("scheduled_date", toLocalDateInput(from))
     .lte("scheduled_date", toLocalDateInput(to));
