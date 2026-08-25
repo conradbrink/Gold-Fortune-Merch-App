@@ -1,7 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { callRpc } from "@/lib/rpc";
 import { toLocalDateInput } from "@/lib/date-range";
-import { shortestPathKm, toPoint } from "@/lib/geo";
+import { clusterByProximity, shortestPathKm, toPoint } from "@/lib/geo";
 
 /**
  * Call cycle (journey plan) — the recurring pattern the schedule is generated
@@ -425,20 +425,22 @@ export function cycleVisits(frequency: VisitFrequency): number {
   return frequency === "weekly" ? 4 : frequency === "biweekly" ? 2 : 1;
 }
 
-/** Which weeks of a four-week cycle a store lands on, given its slot. */
-function weeksFor(frequency: VisitFrequency, slot: number): number[] {
-  if (frequency === "weekly") return [1, 2, 3, 4];
-  // Bi-weekly alternates: cycle 1 = weeks 1 and 3, cycle 2 = weeks 2 and 4.
-  if (frequency === "biweekly") return slot === 1 ? [1, 3] : [2, 4];
-  return [slot];
-}
 
 export type SpreadAssignment = {
   assignmentId: string;
   storeId: string;
   storeName: string;
   city: string | null;
-  dayOfWeek: number;
+  /**
+   * Null clears the day.
+   *
+   * A store the plan could not place has to be *written* as unplanned, not left
+   * out of the write. Omitting it leaves whatever day it had before — so a shop
+   * that "did not fit" quietly kept its old Saturday, and the rep was left with
+   * a Saturday that existed to visit one shop. The panel said "left unplanned"
+   * while the data said otherwise.
+   */
+  dayOfWeek: number | null;
   weekOfCycle: number | null;
 };
 
@@ -448,6 +450,28 @@ export type SpreadResult = {
   overflow: PlannedStore[];
   /** Towns that had to be split across more than one day. */
   splitTowns: string[];
+  /**
+   * Days that came out below `storesPerDay`.
+   *
+   * A half-empty day is not a lighter day — the rep drives out and back either
+   * way — so falling short is a finding, not a success. Reported rather than
+   * prevented: sometimes the estate genuinely does not fill the week.
+   */
+  underTarget: { day: number; stores: number }[];
+  /**
+   * Stores with no coordinates, and the day each rode along on.
+   *
+   * They cannot be clustered, so they are not counted when a day is *chosen* —
+   * only when its occupancy is tallied afterwards. A town with several
+   * ungeocoded shops can therefore push one day past the target, and the manager
+   * would otherwise see a high peak with nothing explaining it.
+   */
+  riders: { day: number; stores: number }[];
+  /** Weekdays the plan actually occupies, against the number the team works. */
+  daysUsed: number;
+  /** Weekdays the grouping wanted. Above `daysAvailable` means work overflowed. */
+  daysWanted: number;
+  daysAvailable: number;
   /**
    * Days carrying more than one town — the thing the planner exists to avoid.
    * Only happens when there are more towns than working days.
@@ -459,147 +483,187 @@ export type SpreadResult = {
 };
 
 /**
- * Proposes a day and week for every one of a rep's stores.
+ * Proposes a day and a cycle week for every one of a rep's stores.
  *
  * Deterministic and pure: no AI, no network, same input to same output. That
- * matters because the manager reviews this before it is written — a proposal
- * they cannot predict or re-derive is one they cannot trust.
+ * matters because a manager reviews this before it is written — a proposal they
+ * cannot predict or re-derive is one they cannot trust.
  *
- * The model is `workingDays × 4 weeks` buckets, each holding `storesPerDay`. A
- * store occupies one **day** and, depending on frequency, some or all of that
- * day's four weeks — so a weekly store costs four times what a monthly one
- * does, and `week_of_cycle` is chosen to level the load rather than defaulting
- * to 1 and piling every monthly store into week one.
+ * ## The rules, and why each one is here
  *
- * Town is the only geography available — the estate has no coordinates — and
- * the goal is that no day carries two towns.
+ * **Days are filled to `storesPerDay`, not capped at it.** This used to treat
+ * that number as a ceiling and happily produce a Tuesday with two stops. A
+ * half-empty day is not a lighter day — the rep still drives out and back — so
+ * `storesPerDay` is now the *target* and a day that lands short is reported.
  *
- * Days are **reserved per town up front**, largest town first, according to how
- * many that town's load actually needs. Two earlier attempts got this wrong in
- * opposite directions, and both are worth remembering:
+ * **Grouping is by position, not by town name.** Towns were the old proxy and a
+ * bad one: Gaborone and Mogoditshane are five kilometres apart and were treated
+ * as a reason to split a day. `clusterByProximity` seeds each group from the
+ * furthest outlying stop, which is what makes a far cluster — Mochudi, Pilane,
+ * Morwa and Oodi, say — come out as one trip instead of being smeared across
+ * several days.
  *
- * - Penalising any day a town had not already used packed each town tight, so
- *   75 Gaborone stores filled Monday to Wednesday and left Thursday and Friday
- *   empty.
- * - Penalising only days another town held spread Gaborone across all five
- *   days, which left Francistown nowhere clean to go — it ended up sharing two
- *   of them, which is the very thing this is meant to avoid.
+ * **Weekly and less-often stores are planned separately.** A weekly store
+ * occupies its weekday every week, so its day is spent. Anything less frequent
+ * only lands every other week, so two such groups **share one weekday** as week
+ * A and week B — which is how a day carrying nine stores every fortnight still
+ * reads as a full day rather than a half-empty one. This is the change that
+ * makes the minimum reachable at all.
  *
- * Reserving `ceil(load / (storesPerDay × 4))` days per town gets both: Gaborone
- * takes the three days it needs, Francistown takes a fourth, and the fifth
- * stays free. Days are only shared when the towns genuinely outnumber them.
+ * Stores with no coordinates cannot be clustered. They ride with the group that
+ * already holds most of their town, and are counted separately when no such
+ * group exists, rather than being dropped or guessed at.
  */
 export function autoSpreadDays(
   stores: PlannedStore[],
   capacity: DayCapacity
 ): SpreadResult {
-  const days = capacity.workingDays.length > 0 ? [...capacity.workingDays].sort((a, b) => a - b) : [1];
-  const cap = Math.max(1, capacity.storesPerDay);
+  const days =
+    capacity.workingDays.length > 0
+      ? [...capacity.workingDays].sort((a, b) => a - b)
+      : [1];
+  const target = Math.max(1, capacity.storesPerDay);
 
-  // occupancy[day][week] — how many stores already land on that occurrence.
-  const occupancy: Record<number, number[]> = {};
-  for (const d of days) occupancy[d] = [0, 0, 0, 0];
+  const active = stores.filter((s) => s.active);
+  const placed = active.filter((s) => s.lat !== null && s.lng !== null);
+  const unplaceable = active.filter((s) => s.lat === null || s.lng === null);
 
-  const byTown: Record<string, PlannedStore[]> = {};
-  for (const s of stores) {
-    if (!s.active) continue;
-    (byTown[s.city ?? "￿No town"] ??= []).push(s);
-  }
+  const weekly = placed.filter((s) => s.visit_frequency === "weekly");
+  const periodic = placed.filter((s) => s.visit_frequency !== "weekly");
 
-  // Largest towns first: they are the hardest to place, and leaving them until
-  // the end is what forces a big town to be split across days unnecessarily.
-  const towns = Object.entries(byTown).sort((a, b) => b[1].length - a[1].length);
+  // `target` is a floor, so divide *down*: 26 stores at 8 a day is three days of
+  // nine, not four days one of which holds two. Rounding up is what produced a
+  // Thursday with 2 stops on it.
+  const groupsFor = (n: number) => Math.max(1, Math.floor(n / target));
+
+  const weeklyGroups = weekly.length
+    ? clusterByProximity(weekly, (s) => ({ lat: s.lat!, lng: s.lng! }), groupsFor(weekly.length))
+    : [];
+  const periodicGroups = periodic.length
+    ? clusterByProximity(periodic, (s) => ({ lat: s.lat!, lng: s.lng! }), groupsFor(periodic.length))
+    : [];
+
+  // A weekly group needs a weekday to itself. Two periodic groups share one.
+  const daysForWeekly = weeklyGroups.length;
+  const daysForPeriodic = Math.ceil(periodicGroups.length / 2);
 
   const assignments: SpreadAssignment[] = [];
   const overflow: PlannedStore[] = [];
-  const splitTowns: string[] = [];
   const dayTowns: Record<number, Set<string>> = {};
-  for (const d of days) dayTowns[d] = new Set();
-
-  /**
-   * Reserve days per town before placing anything.
-   *
-   * A day holds `storesPerDay` on each of the cycle's four weeks, so one day
-   * absorbs `storesPerDay × 4` visits per cycle. A town needing more than that
-   * gets more days; one needing less gets exactly one, leaving the rest free
-   * for other towns.
-   */
-  const perDayCycleCapacity = cap * 4;
-  const reserved: Record<string, number[]> = {};
-  const unclaimed = [...days];
-
-  for (const [town, townStores] of towns) {
-    const load = townStores.reduce((n, s) => n + cycleVisits(s.visit_frequency), 0);
-    const need = Math.max(1, Math.ceil(load / perDayCycleCapacity));
-    // Once the week is fully claimed, later towns have to share. That is a
-    // genuine constraint — more towns than working days — and is reported.
-    reserved[town] =
-      unclaimed.length > 0 ? unclaimed.splice(0, Math.min(need, unclaimed.length)) : [...days];
+  const occupancy: Record<number, number[]> = {};
+  for (const d of days) {
+    dayTowns[d] = new Set();
+    occupancy[d] = [0, 0, 0, 0];
   }
 
-  for (const [town, townStores] of towns) {
-    // Heaviest stores first within a town, so a weekly store gets the roomiest
-    // day rather than being wedged into whatever is left.
-    const ordered = [...townStores].sort(
-      (a, b) =>
-        cycleVisits(b.visit_frequency) - cycleVisits(a.visit_frequency) ||
-        a.store_name.localeCompare(b.store_name)
-    );
+  const place = (
+    store: PlannedStore,
+    day: number,
+    slot: number | null
+  ) => {
+    assignments.push({
+      assignmentId: store.assignment_id,
+      storeId: store.store_id,
+      storeName: store.store_name,
+      city: store.city,
+      dayOfWeek: day,
+      // Weekly ignores the week entirely; storing one would be noise.
+      weekOfCycle: store.visit_frequency === "weekly" ? null : slot,
+    });
+    dayTowns[day].add(store.city ?? "No town");
+    // Which weeks of the four-week cycle this store actually lands on.
+    //
+    // `[1,3]` / `[2,4]` is bi-weekly and was being applied to monthly stores
+    // too, so a monthly store was booked into two occurrences it is never
+    // visited on. `generate_routes` was unaffected — it reads `visit_frequency`
+    // and schedules correctly — but every figure the manager reviews came from
+    // this: `peakByDay` read high, and `underTarget` could miss a day that was
+    // genuinely short. A preview that overstates the load is the one thing this
+    // panel must not do.
+    const weeks =
+      store.visit_frequency === "weekly"
+        ? [1, 2, 3, 4]
+        : store.visit_frequency === "monthly"
+          ? [slot ?? 1]
+          : slot === 2
+            ? [2, 4]
+            : [1, 3];
+    for (const w of weeks) occupancy[day][w - 1] += 1;
+  };
 
-    const daysUsed = new Set<number>();
-
-    for (const store of ordered) {
-      const freq = store.visit_frequency;
-      const slots = freq === "weekly" ? [1] : freq === "biweekly" ? [1, 2] : [1, 2, 3, 4];
-
-      let best: { day: number; slot: number; score: number } | null = null;
-
-      // This town's own days first; only if they are genuinely full does it
-      // spill onto anyone else's, and then the least crowded one.
-      const ownDays = reserved[town] ?? days;
-      const candidates = [...ownDays, ...days.filter((d) => !ownDays.includes(d))];
-
-      for (const day of candidates) {
-        for (const slot of slots) {
-          const weeks = weeksFor(freq, slot);
-          if (weeks.some((w) => occupancy[day][w - 1] >= cap)) continue;
-
-          // Within the town's own days, take the emptiest so the town spreads
-          // evenly rather than filling one day at a time. The penalty for
-          // someone else's day exceeds any achievable occupancy, so load never
-          // outvotes keeping towns apart.
-          const peak = Math.max(...weeks.map((w) => occupancy[day][w - 1]));
-          const foreign = !ownDays.includes(day);
-          const score = peak + (foreign ? 1000 : 0);
-
-          if (best === null || score < best.score) {
-            best = { day, slot, score };
-          }
-        }
-      }
-
-      if (!best) {
-        overflow.push(store);
-        continue;
-      }
-
-      for (const w of weeksFor(freq, best.slot)) occupancy[best.day][w - 1] += 1;
-      if (daysUsed.size > 0 && !daysUsed.has(best.day) && !splitTowns.includes(town)) {
-        splitTowns.push(town);
-      }
-      daysUsed.add(best.day);
-      dayTowns[best.day].add(town);
-
-      assignments.push({
-        assignmentId: store.assignment_id,
-        storeId: store.store_id,
-        storeName: store.store_name,
-        city: store.city,
-        dayOfWeek: best.day,
-        // Weekly ignores the week entirely; storing one would be noise.
-        weekOfCycle: freq === "weekly" ? null : best.slot,
-      });
+  // Weekly first: they are the inflexible ones, so they choose their days.
+  let cursor = 0;
+  for (const group of weeklyGroups) {
+    if (cursor >= days.length) {
+      overflow.push(...group);
+      continue;
     }
+    const day = days[cursor++];
+    for (const store of group) place(store, day, null);
+  }
+
+  // Then the periodic groups, two to a day, alternating weeks.
+  for (let i = 0; i < periodicGroups.length; i += 2) {
+    if (cursor >= days.length) {
+      overflow.push(...periodicGroups.slice(i).flat());
+      break;
+    }
+    const day = days[cursor++];
+    for (const store of periodicGroups[i]) place(store, day, 1);
+    if (periodicGroups[i + 1]) {
+      for (const store of periodicGroups[i + 1]) place(store, day, 2);
+    }
+  }
+
+  // Stores with no position ride with their own town where one is already
+  // placed. Guessing a day for a shop nobody can find is worse than saying so.
+  const townDay = new Map<string, { day: number; slot: number | null }>();
+  for (const a of assignments) {
+    // Only a real day is a home to ride to. At this point every assignment has
+    // one — the cleared entries are appended below — but the guard keeps that
+    // true if the order ever changes.
+    if (a.dayOfWeek === null) continue;
+    const key = a.city ?? "No town";
+    if (!townDay.has(key)) townDay.set(key, { day: a.dayOfWeek, slot: a.weekOfCycle });
+  }
+  const stranded: PlannedStore[] = [];
+  const riders: { day: number; stores: number }[] = [];
+  for (const store of unplaceable) {
+    // A missing town is not a town. Keying on "No town" let a store with neither
+    // coordinates nor a city ride along with an unrelated store that also had no
+    // city — an arbitrary day, chosen on the strength of two nulls matching.
+    // With nothing at all to place it by it belongs in overflow, where it is
+    // cleared and reported as unplanned.
+    const home = store.city ? townDay.get(store.city) : undefined;
+    if (home) {
+      place(store, home.day, home.slot ?? 1);
+      const seen = riders.find((r) => r.day === home.day);
+      if (seen) seen.stores += 1;
+      else riders.push({ day: home.day, stores: 1 });
+    } else stranded.push(store);
+  }
+  overflow.push(...stranded);
+
+  // Written, not omitted: an unplaceable store is cleared so it shows up in the
+  // "no day set" warning and stops holding a day open on its own.
+  for (const store of overflow) {
+    assignments.push({
+      assignmentId: store.assignment_id,
+      storeId: store.store_id,
+      storeName: store.store_name,
+      city: store.city,
+      dayOfWeek: null,
+      weekOfCycle: null,
+    });
+  }
+
+  const townsByDay = new Map<string, Set<number>>();
+  for (const a of assignments) {
+    if (a.dayOfWeek === null) continue;
+    const key = a.city ?? "No town";
+    const seen = townsByDay.get(key);
+    if (seen) seen.add(a.dayOfWeek);
+    else townsByDay.set(key, new Set([a.dayOfWeek]));
   }
 
   const peakByDay: Record<number, number> = {};
@@ -608,14 +672,28 @@ export function autoSpreadDays(
   return {
     assignments,
     overflow,
-    splitTowns,
+    // Which days come out under the target, and by how much — the figure the
+    // old version could not report because it was aiming at a ceiling.
+    riders: riders.sort((a, b) => a.day - b.day),
+    underTarget: days
+      .filter((d) => peakByDay[d] > 0 && peakByDay[d] < target)
+      .map((d) => ({ day: d, stores: peakByDay[d] })),
+    // What the plan actually occupies, not what it wanted. Reporting demand here
+    // produced "7 of 6 working days", which is a sentence that cannot be true.
+    daysUsed: days.filter((d) => peakByDay[d] > 0).length,
+    daysWanted: daysForWeekly + daysForPeriodic,
+    daysAvailable: days.length,
+    // A town on more than one day. Sometimes unavoidable — Gaborone cannot fit
+    // in a single day — so this is reported rather than prevented.
+    splitTowns: [...townsByDay.entries()]
+      .filter(([, ds]) => ds.size > 1)
+      .map(([town]) => town)
+      .sort(),
     sharedDays: days
       .filter((d) => dayTowns[d].size > 1)
       .map((d) => ({ day: d, towns: [...dayTowns[d]].sort() })),
     peakByDay,
-    visitsPerCycle: stores
-      .filter((s) => s.active)
-      .reduce((n, s) => n + cycleVisits(s.visit_frequency), 0),
+    visitsPerCycle: active.reduce((n, s) => n + cycleVisits(s.visit_frequency), 0),
   };
 }
 

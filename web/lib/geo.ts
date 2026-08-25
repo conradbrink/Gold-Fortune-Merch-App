@@ -197,6 +197,102 @@ export function orderStops<T>(
   return twoOpt(nearestNeighbour(pts)).map((p) => points.get(p)!);
 }
 
+/** Mean position of a set of points. Only used to grow and seed clusters. */
+function centroid(points: Point[]): Point {
+  let lat = 0;
+  let lng = 0;
+  for (const p of points) {
+    lat += p.lat;
+    lng += p.lng;
+  }
+  return { lat: lat / points.length, lng: lng / points.length };
+}
+
+/**
+ * Splits stops into `groupCount` compact groups of roughly equal size.
+ *
+ * Each group is a day's work, so the property that matters is that a group is
+ * tight on the ground — not that the groups are equal, and not that they follow
+ * town names. Town names were the old rule and they are a poor proxy: Gaborone
+ * and Mogoditshane are five kilometres apart and were treated as a reason to
+ * split a day, while two shops sharing a town name forty kilometres apart were
+ * treated as one place.
+ *
+ * **Each group is seeded from the point furthest from what is left**, then grown
+ * by repeatedly taking the nearest remaining stop. Seeding from an extremity is
+ * what makes an outlying cluster come out as its own group rather than being
+ * smeared across several: the far towns get claimed first, together, while there
+ * is still room to hold them. Seeding from the middle instead leaves the
+ * stragglers to be distributed among whatever groups have space, which is
+ * exactly the "one shop on the far side of the country" day this is meant to end.
+ */
+export function clusterByProximity<T>(
+  items: T[],
+  getPoint: (item: T) => Point,
+  groupCount: number
+): T[][] {
+  const groups: T[][] = [];
+  const wanted = Math.max(1, Math.min(Math.floor(groupCount), items.length));
+  if (items.length === 0) return groups;
+
+  // Even sizes, remainder spread one per group. Cutting fixed-size chunks
+  // instead leaves a runt at the end — 26 stores in chunks of 8 gives
+  // 8, 8, 8 and a **2**, and that 2 costs a whole working day for a rep who
+  // still has to drive out and back. Balanced groups of 9, 9, 8 use three.
+  const base = Math.floor(items.length / wanted);
+  const extra = items.length % wanted;
+  const sizes = Array.from({ length: wanted }, (_, i) => base + (i < extra ? 1 : 0));
+
+  const remaining = [...items];
+  for (const size of sizes) {
+    if (remaining.length === 0) break;
+    const rest = remaining.map(getPoint);
+    const middle = centroid(rest);
+
+    let seedIndex = 0;
+    let furthest = -1;
+    remaining.forEach((item, i) => {
+      const d = distanceKm(middle, getPoint(item));
+      if (d > furthest) {
+        furthest = d;
+        seedIndex = i;
+      }
+    });
+
+    const group = [remaining.splice(seedIndex, 1)[0]];
+    while (group.length < size && remaining.length > 0) {
+      const here = centroid(group.map(getPoint));
+      let nearestIndex = 0;
+      let nearest = Infinity;
+      remaining.forEach((item, i) => {
+        const d = distanceKm(here, getPoint(item));
+        if (d < nearest) {
+          nearest = d;
+          nearestIndex = i;
+        }
+      });
+      group.push(remaining.splice(nearestIndex, 1)[0]);
+    }
+    groups.push(group);
+  }
+
+  // Anything left over from rounding joins the nearest existing group.
+  for (const item of remaining) {
+    let best = groups[0];
+    let bestDistance = Infinity;
+    for (const g of groups) {
+      const d = distanceKm(centroid(g.map(getPoint)), getPoint(item));
+      if (d < bestDistance) {
+        bestDistance = d;
+        best = g;
+      }
+    }
+    best.push(item);
+  }
+
+  return groups;
+}
+
 /** `{lat, lng}` when both are present, null otherwise — for `shortestPathKm`. */
 export function toPoint(
   lat: number | null | undefined,
