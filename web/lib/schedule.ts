@@ -425,13 +425,6 @@ export function cycleVisits(frequency: VisitFrequency): number {
   return frequency === "weekly" ? 4 : frequency === "biweekly" ? 2 : 1;
 }
 
-/** Which weeks of a four-week cycle a store lands on, given its slot. */
-function weeksFor(frequency: VisitFrequency, slot: number): number[] {
-  if (frequency === "weekly") return [1, 2, 3, 4];
-  // Bi-weekly alternates: cycle 1 = weeks 1 and 3, cycle 2 = weeks 2 and 4.
-  if (frequency === "biweekly") return slot === 1 ? [1, 3] : [2, 4];
-  return [slot];
-}
 
 export type SpreadAssignment = {
   assignmentId: string;
