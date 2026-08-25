@@ -21,10 +21,12 @@ import {
   fetchDashboardSummary,
   fetchOperationsSummary,
   fetchRepDayDetail,
+  fetchRepDayDistance,
   fetchRepDayTimes,
   type DashboardSummary,
   type OperationsSummary,
   type RepDayDetail,
+  type RepDayDistance,
   type RepDayTimes,
 } from "@/lib/dashboard";
 import {
@@ -58,6 +60,7 @@ export default function InsightsDashboardPage() {
   const [data, setData] = useState<DashboardSummary | null>(null);
   const [dayTimes, setDayTimes] = useState<RepDayTimes[]>([]);
   const [dayDetail, setDayDetail] = useState<RepDayDetail[]>([]);
+  const [dayDistance, setDayDistance] = useState<RepDayDistance[]>([]);
   const [liveReps, setLiveReps] = useState<LiveReps | null>(null);
   const [ops, setOps] = useState<OperationsSummary | null>(null);
   const [loading, setLoading] = useState(true);
@@ -105,13 +108,15 @@ export default function InsightsDashboardPage() {
       // transient refusal — threw away headline KPIs that had loaded perfectly
       // well. Each source now fails on its own, and the cards that depend on it
       // say why.
-      const [summary, times, dayRows, operations, live] = await Promise.allSettled([
+      const [summary, times, dayRows, distanceRows, operations, live] =
+        await Promise.allSettled([
         fetchDashboardSummary(supabase, range),
         fetchRepDayTimes(supabase, range),
         // Same source as `times`: the averages and the days behind them are one
         // feature, and a card showing an average whose detail failed to load
         // would offer a day picker that silently finds nothing.
         fetchRepDayDetail(supabase, range),
+        fetchRepDayDistance(supabase, range),
         fetchOperationsSummary(supabase, range),
         // Not range-scoped, unlike everything else here: "where is the team"
         // is a question about now, and a date filter would answer a different
@@ -136,6 +141,12 @@ export default function InsightsDashboardPage() {
       else {
         setDayDetail([]);
         failed.add("dayTimes");
+      }
+      if (distanceRows.status === "fulfilled") setDayDistance(distanceRows.value);
+      else {
+        // Distance is an addition to the card, not the card. Losing it should
+        // grey one column, not take the working-day figures down with it.
+        setDayDistance([]);
       }
       if (operations.status === "fulfilled") setOps(operations.value);
       else {
@@ -334,6 +345,7 @@ export default function InsightsDashboardPage() {
     summary: data,
     dayTimes,
     dayDetail,
+    dayDistance,
     operations: ops,
     liveReps,
     days,

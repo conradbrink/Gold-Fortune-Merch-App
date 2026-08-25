@@ -1,3 +1,4 @@
+import { createClient as createAdminClient } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/server";
 import { enforceRateLimit, LIMITS } from "@/lib/rate-limit";
 import {
@@ -66,6 +67,35 @@ export async function POST(request: Request) {
       );
     }
 
+    if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {
+      return Response.json(
+        { error: "SUPABASE_SERVICE_ROLE_KEY is not configured on the server." },
+        { status: 503 }
+      );
+    }
+
+    /**
+     * Settlement writes go through the service role. The caller's own client
+     * cannot make them.
+     *
+     * `road_distance_*` are deliberately not writable by anyone through RLS —
+     * the migration says so — because the Routes key is server-side and a handset
+     * offering a road distance would mean the key had reached a handset. A
+     * manager therefore has SELECT on `workday_sessions` and no UPDATE, which is
+     * correct and was exactly the hole this route fell into: every claim silently
+     * matched zero rows and every day was skipped as "someone else has it".
+     *
+     * Authorisation is still the caller's: `supabase` above proved a signed-in
+     * manager before this client is built, and this one is used only for the
+     * settlement columns.
+     */
+    const admin = createAdminClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.SUPABASE_SERVICE_ROLE_KEY,
+      // Per-request, so nothing to persist or refresh.
+      { auth: { autoRefreshToken: false, persistSession: false } }
+    );
+
     const body = (await request.json().catch(() => ({}))) as {
       sessionId?: string;
     };
@@ -73,7 +103,7 @@ export async function POST(request: Request) {
     // Finished, not yet settled, and not already known to have failed — a day
     // that could not be routed should not be retried on every run, billing the
     // same failure repeatedly. Clearing `road_distance_error` re-queues it.
-    let query = supabase
+    let query = admin
       .from("workday_sessions")
       .select("id, rep_id, started_at, ended_at")
       .not("ended_at", "is", null)
@@ -101,7 +131,7 @@ export async function POST(request: Request) {
      * it forever: neither a figure nor a reason, and no way to notice.
      */
     const release = async (id: string, why: string | null): Promise<string | null> => {
-      const { error } = await supabase
+      const { error } = await admin
         .from("workday_sessions")
         .update({ road_distance_at: null, road_distance_error: why })
         .eq("id", id);
@@ -126,6 +156,7 @@ export async function POST(request: Request) {
     }[] = [];
     let settled = 0;
     let requests = 0;
+    let skipped = 0;
 
     for (const session of sessions as {
       id: string;
@@ -148,7 +179,7 @@ export async function POST(request: Request) {
        * deliberate trade — a day that has to be re-queued by hand is better than
        * one billed twice — and clearing the timestamp re-queues it.
        */
-      const { data: claimed, error: claimError } = await supabase
+      const { data: claimed, error: claimError } = await admin
         .from("workday_sessions")
         .update({ road_distance_at: new Date().toISOString() })
         .eq("id", session.id)
@@ -160,8 +191,13 @@ export async function POST(request: Request) {
         continue;
       }
       if (!claimed || claimed.length === 0) {
-        // Someone else is settling it. Not an error, and not worth reporting as
-        // one — the other run will record the outcome.
+        // Almost always a concurrent run holding it, which is not an error — the
+        // other one records the outcome. But it is *reported* rather than skipped
+        // in silence, because "someone else has it" and "this client cannot write
+        // it at all" are indistinguishable from here, and the second looked
+        // exactly like a quiet success: settled 0, days [], no error, nothing to
+        // debug from.
+        skipped++;
         continue;
       }
 
@@ -170,7 +206,7 @@ export async function POST(request: Request) {
       // neighbouring session's pings where two overlap — which on this route
       // means billing Google to route a day that includes somebody else's
       // afternoon.
-      const { data: pingRows, error: pingError } = await supabase
+      const { data: pingRows, error: pingError } = await admin
         .from("location_pings")
         .select("lat, lng, recorded_at")
         .eq("workday_session_id", session.id)
@@ -251,7 +287,7 @@ export async function POST(request: Request) {
         // matching nothing succeeds with no error and no rows, so without
         // checking the count this would report a settled day that holds no
         // distance. Same guard, and the same lesson, as `applySpread`.
-        const { data: written, error: writeError } = await supabase
+        const { data: written, error: writeError } = await admin
           .from("workday_sessions")
           .update({
             road_distance_meters: metres,
@@ -288,7 +324,7 @@ export async function POST(request: Request) {
       }
     }
 
-    return Response.json({ settled, requests, days });
+    return Response.json({ settled, requests, skipped, days });
   } catch (reason) {
     const message =
       reason instanceof Error

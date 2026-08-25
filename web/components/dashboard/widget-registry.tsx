@@ -22,10 +22,12 @@ import {
   deltaPct,
   formatDuration,
   formatPct,
+  formatKm,
   formatTimeOfDay,
   type DashboardSummary,
   type OperationsSummary,
   type RepDayDetail,
+  type RepDayDistance,
   type RepDayTimes,
 } from "@/lib/dashboard";
 
@@ -53,6 +55,8 @@ export type WidgetData = {
   dayTimes: RepDayTimes[];
   /** Every rep-day behind `dayTimes`, for the Working day card's day picker. */
   dayDetail: RepDayDetail[];
+  /** Road distance per rep-day. Empty when the settle step has not run. */
+  dayDistance: RepDayDistance[];
   operations: OperationsSummary | null;
   /** Last-known rep positions. Not range-scoped — "where are they" is about now. */
   liveReps: LiveReps | null;
@@ -222,8 +226,8 @@ export const WIDGETS: WidgetDefinition[] = [
       "When each rep starts, closes and how long they work — from the day's evidence, not from what anyone typed.",
     span: 4,
     source: "dayTimes",
-    render: ({ dayTimes, dayDetail }) => (
-      <WorkingDay rows={dayTimes} detail={dayDetail} />
+    render: ({ dayTimes, dayDetail, dayDistance }) => (
+      <WorkingDay rows={dayTimes} detail={dayDetail} distance={dayDistance} />
     ),
   },
   {
@@ -554,10 +558,39 @@ function formatDayLabel(localDay: string): string {
 function WorkingDay({
   rows,
   detail,
+  distance,
 }: {
   rows: RepDayTimes[];
   detail: RepDayDetail[];
+  distance: RepDayDistance[];
 }) {
+  /** Road metres by rep and local day, for the two tables below. */
+  const kmFor = useMemo(() => {
+    const m = new Map<string, number | null>();
+    for (const d of distance) m.set(`${d.rep_id}|${d.local_day}`, d.road_metres);
+    return m;
+  }, [distance]);
+
+  /**
+   * A rep's driving over the whole range, and how much of it is actually known.
+   *
+   * The count matters as much as the total: a rep with two settled days out of
+   * twenty has a total that means almost nothing, and a bare figure would invite
+   * comparing it with somebody whose days are all settled.
+   */
+  const totalFor = useMemo(() => {
+    const m = new Map<string, { metres: number; settled: number; days: number }>();
+    for (const d of distance) {
+      const acc = m.get(d.rep_id) ?? { metres: 0, settled: 0, days: 0 };
+      acc.days += 1;
+      if (d.road_metres !== null) {
+        acc.metres += d.road_metres;
+        acc.settled += 1;
+      }
+      m.set(d.rep_id, acc);
+    }
+    return m;
+  }, [distance]);
   const company = companyDayTimes(rows);
 
   /**
@@ -655,6 +688,7 @@ function WorkingDay({
                     <th className="py-2 text-right font-medium">In</th>
                     <th className="py-2 text-right font-medium">Out</th>
                     <th className="py-2 text-right font-medium">Length</th>
+                    <th className="py-2 text-right font-medium">Driving</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -674,6 +708,16 @@ function WorkingDay({
                       </td>
                       <td className="py-2 text-right tabular-nums text-muted-foreground">
                         {formatDuration(Number(d.length_seconds ?? 0))}
+                      </td>
+                      <td
+                        className="py-2 text-right tabular-nums text-foreground"
+                        title={
+                          kmFor.get(`${d.rep_id}|${d.local_day}`) == null
+                            ? "No road distance for this day yet."
+                            : "Driving distance along roads, from the day's recorded positions."
+                        }
+                      >
+                        {formatKm(kmFor.get(`${d.rep_id}|${d.local_day}`) ?? null)}
                       </td>
                     </tr>
                   ))}
@@ -723,6 +767,14 @@ function WorkingDay({
               weighted by days worked so a rep with one day does not count the
               same as a rep with twenty.
             </p>
+            {/* Said once, plainly. The distance is a driving route computed
+                through the day's recorded positions — closer to the truth than a
+                straight line, and not a reading off an odometer. A dash means the
+                day has not been worked out yet, never that nobody drove. */}
+            <p className="text-xs text-muted-foreground">
+              Driving is the route along roads through each day&rsquo;s recorded
+              positions. A dash means that day has not been worked out yet.
+            </p>
 
             <div className="mt-4 overflow-x-auto">
               <table className="w-full text-sm">
@@ -733,6 +785,7 @@ function WorkingDay({
                     <th className="py-2 text-right font-medium">Starts</th>
                     <th className="py-2 text-right font-medium">Closes</th>
                     <th className="py-2 text-right font-medium">Length</th>
+                    <th className="py-2 text-right font-medium">Driving</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -752,6 +805,34 @@ function WorkingDay({
                       </td>
                       <td className="py-2 text-right tabular-nums text-muted-foreground">
                         {formatDuration(Number(r.avg_length_seconds ?? 0))}
+                      </td>
+                      <td className="py-2 text-right tabular-nums text-foreground">
+                        {(() => {
+                          const t = totalFor.get(r.rep_id);
+                          if (!t || t.settled === 0) return <span className="text-muted-foreground">—</span>;
+                          return (
+                            <>
+                              {formatKm(t.metres)}
+                              {/* Counted against the rep's *working days*, the
+                                  number in the column two to the left — not
+                                  against workday sessions, which is a smaller and
+                                  unexplained figure on screen.
+                                  
+                                  The gap is itself worth seeing: a distance needs
+                                  a workday session, and a rep who worked by every
+                                  other measure but never pressed Start has no
+                                  route to measure. */}
+                              {t.settled < r.days_worked && (
+                                <span
+                                  className="ml-1 text-xs font-normal text-muted-foreground"
+                                  title={`${t.settled} of ${r.days_worked} working days have a road distance. A day only has one if the rep started a workday on it.`}
+                                >
+                                  ({t.settled}/{r.days_worked})
+                                </span>
+                              )}
+                            </>
+                          );
+                        })()}
                       </td>
                     </tr>
                   ))}

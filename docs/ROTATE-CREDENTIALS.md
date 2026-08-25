@@ -136,7 +136,7 @@ alone unless you want the churn.
 Check **Usage** for the exposure window while you are there. Unexpected spend
 is the signal that the key was actually used, not merely exposed.
 
-## 3. Google — three keys
+## 3. Google — four keys
 
 Google Cloud Console → APIs & Services → Credentials. Google has no in-place
 rotation: you create a replacement and delete the old one.
@@ -145,6 +145,7 @@ rotation: you create a replacement and delete the old one.
 |---|---|
 | `GOOGLE_GEOCODING_API_KEY` | server-side; restrict to the Geocoding API |
 | `GOOGLE_PLACES_API_KEY` | server-side; restrict to the Places API |
+| `GOOGLE_ROUTES_API_KEY` | server-side; restrict to the Routes API. Billed per request, so rotate it the moment it is suspected rather than at the next convenient time |
 | `NEXT_PUBLIC_GOOGLE_MAPS_KEY` | **HTTP referrer restriction** — this one is public by design and visible in the page source. The referrer restriction is the only thing protecting it. Do not create the replacement unrestricted. |
 
 For each: create → apply the same API and referrer restrictions as the old one
