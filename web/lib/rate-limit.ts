@@ -40,6 +40,13 @@ export const LIMITS = {
   repInvite: { bucket: "rep_invite", limit: 10, windowSeconds: 3600 },
   /** Deactivating or deleting a rep. Cheap, but worth a ceiling. */
   repAdmin: { bucket: "rep_admin", limit: 60, windowSeconds: 3600 },
+  /**
+   * Google Routes, charged per request. A rep-day is roughly ten of them, so
+   * this ceiling is about twenty rep-days an hour — far above the handful a real
+   * settle run needs, and low enough that a loop cannot bill the account dry
+   * before anyone notices.
+   */
+  roadDistance: { bucket: "road_distance", limit: 200, windowSeconds: 3600 },
 } satisfies Record<string, Limit>;
 
 type Verdict =

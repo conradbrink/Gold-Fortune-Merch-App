@@ -10,7 +10,7 @@ export type Database = {
   // Allows to automatically instantiate createClient with right options
   // instead of createClient<Database, { PostgrestVersion: 'XX' }>(URL, KEY)
   __InternalSupabase: {
-    PostgrestVersion: "14.15"
+    PostgrestVersion: "14.17"
   }
   public: {
     Tables: {
@@ -3592,6 +3592,9 @@ export type Database = {
           id: string
           org_id: string
           rep_id: string
+          road_distance_at: string | null
+          road_distance_error: string | null
+          road_distance_meters: number | null
           start_lat: number | null
           start_lng: number | null
           started_at: string
@@ -3609,6 +3612,9 @@ export type Database = {
           id?: string
           org_id: string
           rep_id: string
+          road_distance_at?: string | null
+          road_distance_error?: string | null
+          road_distance_meters?: number | null
           start_lat?: number | null
           start_lng?: number | null
           started_at?: string
@@ -3626,6 +3632,9 @@ export type Database = {
           id?: string
           org_id?: string
           rep_id?: string
+          road_distance_at?: string | null
+          road_distance_error?: string | null
+          road_distance_meters?: number | null
           start_lat?: number | null
           start_lng?: number | null
           started_at?: string
@@ -4149,6 +4158,10 @@ export type Database = {
         }[]
       }
       service_flag: { Args: { p_name: string }; Returns: boolean }
+      set_route_day_order: {
+        Args: { p_date: string; p_rep_id: string; p_route_ids: string[] }
+        Returns: number
+      }
       set_store_location_from_visit: {
         Args: {
           p_accuracy_m: number
