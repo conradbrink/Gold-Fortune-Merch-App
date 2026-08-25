@@ -288,6 +288,12 @@ export function CallCyclePlanner() {
     );
   }
 
+  /** Stores the proposal actually put on a day. */
+  const placedCount = useMemo(
+    () => (spread?.assignments ?? []).filter((a) => a.dayOfWeek !== null).length,
+    [spread]
+  );
+
   async function acceptSpread() {
     if (!spread) return;
     setApplying(true);
@@ -494,9 +500,9 @@ export function CallCyclePlanner() {
               Auto-spread days
             </Button>
             <span className="text-xs text-muted-foreground">
-              Fills every day, keeping each town together and staying within{" "}
-              {settings.storesPerDay} stores a day. You can change anything
-              after.
+              Groups stores by how close together they are and fills each day to{" "}
+              {settings.storesPerDay}, putting outlying towns on a day of their
+              own. You can change anything after.
             </span>
           </div>
 
@@ -624,43 +630,85 @@ export function CallCyclePlanner() {
           {spread && (
             <div className="space-y-2 rounded-lg border border-primary/40 bg-primary/5 p-3">
               <p className="text-sm font-medium text-foreground">
-                Proposed: {spread.assignments.length} store
-                {spread.assignments.length === 1 ? "" : "s"} across{" "}
-                {Object.values(spread.peakByDay).filter((n) => n > 0).length}{" "}
-                days, peak{" "}
+                {/* Placed, not every assignment. Overflow stores are written with
+                    a null day so they are cleared rather than left where they
+                    were — which meant this count included the very stores the
+                    next sentence says did not fit. The two disagreed. */}
+                Proposed: {placedCount} store
+                {placedCount === 1 ? "" : "s"} over{" "}
+                {spread.daysUsed} of {spread.daysAvailable} working days, peak{" "}
                 {Math.max(0, ...Object.values(spread.peakByDay))} on a day.
               </p>
+
+              {/* The target is a floor now, not a ceiling. A day that comes out
+                  short is the finding — the rep drives out and back either way,
+                  so a half-empty day costs nearly what a full one does. */}
+              {spread.underTarget.length > 0 && (
+                <p className="flex items-start gap-1.5 text-xs text-amber-700 dark:text-amber-400">
+                  <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                  Under {settings.storesPerDay} stops:{" "}
+                  {spread.underTarget
+                    .map(
+                      (u) =>
+                        `${WEEKDAYS.find((w) => w.value === u.day)?.long} (${u.stores})`
+                    )
+                    .join(", ")}
+                  . There is not enough work to fill those days at this
+                  frequency — either they take more stores, or this rep does not
+                  need the whole week.
+                </p>
+              )}
+
+              {spread.riders.length > 0 && (
+                <p className="text-xs text-muted-foreground">
+                  Riding along without a location:{" "}
+                  {spread.riders
+                    .map(
+                      (r) =>
+                        `${WEEKDAYS.find((w) => w.value === r.day)?.long} (${r.stores})`
+                    )
+                    .join(", ")}
+                  . These could not be grouped by distance, so they follow their
+                  town and add to that day&rsquo;s count.
+                </p>
+              )}
+
               {spread.splitTowns.length > 0 && (
                 <p className="text-xs text-muted-foreground">
                   Too big for one day, so split across days:{" "}
                   {spread.splitTowns.join(", ")}.
                 </p>
               )}
-              {/* The one outcome this whole view exists to prevent, so it is
-                  stated rather than left to be spotted on the strip. */}
+
+              {/* Not the alarm it once was. Days are grouped on position now, so
+                  a day holding Gaborone and Mogoditshane — five kilometres apart
+                  — is a sensible day, and saying otherwise trained people to
+                  ignore the warning. */}
               {spread.sharedDays.length > 0 && (
-                <p className="flex items-start gap-1.5 text-xs text-amber-700 dark:text-amber-400">
-                  <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-                  There are more towns than working days, so{" "}
+                <p className="text-xs text-muted-foreground">
+                  Days covering more than one town:{" "}
                   {spread.sharedDays
                     .map(
                       (d) =>
-                        `${WEEKDAYS.find((w) => w.value === d.day)?.long} covers ${d.towns.join(" and ")}`
+                        `${WEEKDAYS.find((w) => w.value === d.day)?.short} (${d.towns.join(", ")})`
                     )
                     .join("; ")}
-                  .
+                  . Grouped by distance, so these are neighbours rather than a
+                  drive between towns.
                 </p>
               )}
+
               {spread.overflow.length > 0 && (
                 <p className="flex items-start gap-1.5 text-xs text-destructive">
                   <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
                   {spread.overflow.length} store
-                  {spread.overflow.length === 1 ? "" : "s"} would not fit in the
-                  week at all and {spread.overflow.length === 1 ? "was" : "were"}{" "}
-                  left unplanned. Reduce their frequency, raise stores per day,
-                  or move them to another rep.
+                  {spread.overflow.length === 1 ? "" : "s"} did not fit in the
+                  week and {spread.overflow.length === 1 ? "was" : "were"} left
+                  unplanned. Reduce their frequency, add a working day, or move
+                  them to another rep.
                 </p>
               )}
+
               <div className="flex flex-wrap gap-2">
                 <Button size="sm" onClick={acceptSpread} disabled={applying}>
                   {applying ? "Applying…" : "Apply to all stores"}
