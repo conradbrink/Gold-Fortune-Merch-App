@@ -24,7 +24,7 @@ publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 # The build number MUST rise on every release: Android refuses to install an
 # update whose versionCode is not higher than the installed one, and the failure
 # is a silent "app not installed" on the handset.
-version: 1.1.5+5
+version: 1.1.6+6
 
 environment:
   sdk: ^3.12.2
