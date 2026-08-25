@@ -73,12 +73,14 @@ void main() {
       // object at all, so deleting the foreground service — the entire substance
       // of this change — would not have failed a single test. The service config
       // itself is what has to be pinned.
-      final background = LocationTracking.settingsFor(
-        LocationTrackingMode.background,
-      );
-      expect(background, isA<AndroidSettings>());
+      // Cast once into a typed local rather than casting inline and leaning on
+      // Dart promoting the `final` afterwards. That promotion is real and
+      // analyses clean, but it is subtle enough to read as a mistake.
+      final background =
+          LocationTracking.settingsFor(LocationTrackingMode.background)
+              as AndroidSettings;
       expect(
-        (background as AndroidSettings).foregroundNotificationConfig,
+        background.foregroundNotificationConfig,
         isNotNull,
         reason:
             'Without this the sampling stops the moment Android backgrounds the '
@@ -91,12 +93,11 @@ void main() {
 
       // Advertising "recording your route" to a rep whose grant stops at
       // "while using the app" would promise tracking that is not happening.
-      final foregroundOnly = LocationTracking.settingsFor(
-        LocationTrackingMode.foregroundOnly,
-      );
-      expect(foregroundOnly, isA<AndroidSettings>());
+      final foregroundOnly =
+          LocationTracking.settingsFor(LocationTrackingMode.foregroundOnly)
+              as AndroidSettings;
       expect(
-        (foregroundOnly as AndroidSettings).foregroundNotificationConfig,
+        foregroundOnly.foregroundNotificationConfig,
         isNull,
         reason:
             'A permanent notification for tracking that cannot run in the '
