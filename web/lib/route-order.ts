@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { callRpc } from "@/lib/rpc";
 import { toLocalDateInput } from "@/lib/date-range";
 import { distanceKm, orderStops, pathLengthKm, type Point } from "@/lib/geo";
 
@@ -340,16 +341,21 @@ export function planStopOrder(
 }
 
 /**
- * Writes the new sequence numbers.
+ * Writes the new sequence numbers, one whole day per call.
  *
- * `.select("id")` on every update is what makes a lost write visible: a PostgREST
- * update matching nothing succeeds silently and returns no rows, which is how
- * `applySpread` once dropped a store with no error to show for it. Same lesson,
- * same guard.
+ * Delegates to `set_route_day_order` (20260825120720) rather than issuing an
+ * update per stop, because a day has to move as one thing. PostgREST gives each
+ * update its own transaction, so a failure part way through used to leave a day
+ * holding new numbers for some stops and old ones for others — duplicate
+ * `sequence_order` values, and `route_repository.dart` orders by that column, so
+ * the rep would open their phone to a broken round. The old guard could only
+ * report that after it had happened.
  *
- * Days are written whole. A half-renumbered day is worse than an alphabetical
- * one — it can contain two stops numbered 3 — so a day that cannot be completed
- * is reported rather than left in place.
+ * The RPC also re-checks, under a row lock, the things this module can only
+ * check when the *proposal* is built: that the day is still in the future, that
+ * nobody has started it, and that these are exactly that day's stops. The
+ * proposal sits on screen while a manager reads it, and a rep can check in
+ * during that window.
  */
 export async function applyStopOrder(
   supabase: SupabaseClient,
@@ -361,29 +367,23 @@ export async function applyStopOrder(
   for (const plan of plans) {
     if (!plan.changed) continue;
 
-    const results = await Promise.all(
-      plan.routeIds.map(async (routeId, index) => {
-        const { data, error } = await supabase
-          .from("routes")
-          .update({ sequence_order: index + 1 })
-          .eq("id", routeId)
-          .select("id");
-        if (error) throw new Error(error.message);
-        return (data?.length ?? 0) > 0;
-      })
-    );
+    const { data, error } = await callRpc(supabase, "set_route_day_order", {
+      p_rep_id: plan.repId,
+      p_date: plan.date,
+      p_route_ids: plan.routeIds,
+    });
 
-    const missed = results.filter((ok) => !ok).length;
-    if (missed > 0) {
+    if (error) {
+      // The RPC's own messages are written for this reader — "that round has
+      // already started", "not exactly the stops scheduled for that day" — so
+      // they are surfaced rather than replaced with something vaguer.
       throw new Error(
-        `${plan.repName ?? "A rep"}'s ${plan.date} could not be fully re-ordered ` +
-          `(${missed} of ${plan.routeIds.length} stops did not update). ` +
-          `The day may have changed since the plan was worked out — reload and try again.`
+        `${plan.repName ?? "A rep"}'s ${plan.date} was not re-ordered: ${error.message}`
       );
     }
 
     daysWritten++;
-    stopsWritten += plan.routeIds.length;
+    stopsWritten += Number(data ?? plan.routeIds.length);
   }
 
   return { daysWritten, stopsWritten };
