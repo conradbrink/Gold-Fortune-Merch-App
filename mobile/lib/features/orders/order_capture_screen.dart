@@ -141,6 +141,16 @@ class _OrderCaptureScreenState extends ConsumerState<OrderCaptureScreen> {
   Future<void> _persist() async {
     final lines = _lines();
     final repo = ref.read(orderRepositoryProvider);
+    // Captured **before** any await, while this widget is certainly mounted.
+    //
+    // The container outlives the widget; the widget's own `ref` does not, which
+    // is what threw when a save landed after disposal. Guarding the invalidate
+    // behind `mounted` stopped the crash and traded away the refresh — and
+    // `orderDraftProvider` is not auto-disposed, so a *mounted* StoreDetailScreen
+    // would go on showing the old "Order in progress · N" indefinitely, not just
+    // until the next tap. Keeping both is the point: the write happens, and the
+    // thing that reads it is told.
+    final container = ProviderScope.containerOf(context, listen: false);
     final note = _note.text.trim();
     final name = _contactName.text.trim();
     final phone = _contactPhone.text.trim();
@@ -152,7 +162,11 @@ class _OrderCaptureScreenState extends ConsumerState<OrderCaptureScreen> {
         phone.isEmpty &&
         _requiredBy == null) {
       await repo.drafts.clear(widget.visitClientId);
-      ref.invalidate(orderDraftProvider(widget.visitClientId));
+      // #20 moved this invalidate *after* the await on purpose, so the store
+      // screen's "Order in progress" count could never read one edit stale.
+      // Through the container rather than `ref`, so that stays true even when
+      // this screen is gone by the time the write lands.
+      container.invalidate(orderDraftProvider(widget.visitClientId));
       return;
     }
     await repo.drafts.save(
@@ -171,7 +185,11 @@ class _OrderCaptureScreenState extends ConsumerState<OrderCaptureScreen> {
     // nothing fires again afterwards — so the store screen's "Order in
     // progress · N products" line could sit one edit behind what the rep
     // typed. Sent by CodeRabbit outside the diff on PR #19, after the merge.
-    ref.invalidate(orderDraftProvider(widget.visitClientId));
+    //
+    // Through the container for the same reason as the clear branch: the write
+    // has already happened, and the screen that reads it must be told whether or
+    // not this one survived to see it.
+    container.invalidate(orderDraftProvider(widget.visitClientId));
   }
 
   List<OrderDraftLine> _lines() {
