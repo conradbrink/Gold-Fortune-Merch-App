@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:gf_merch_rep/core/location_tracking.dart';
 
 /// The workday trail's rate limit.
@@ -68,15 +69,38 @@ void main() {
 
   group('tracking settings', () {
     test('a foreground service is attached only when it can actually run', () {
+      // Asserting `isNotNull` here was worthless: it passed for any settings
+      // object at all, so deleting the foreground service — the entire substance
+      // of this change — would not have failed a single test. The service config
+      // itself is what has to be pinned.
+      final background = LocationTracking.settingsFor(
+        LocationTrackingMode.background,
+      );
+      expect(background, isA<AndroidSettings>());
+      expect(
+        (background as AndroidSettings).foregroundNotificationConfig,
+        isNotNull,
+        reason:
+            'Without this the sampling stops the moment Android backgrounds the '
+            'app, which is the 3.6% delivery rate this change exists to fix.',
+      );
+      // Persistent and wake-locked, or the trail arrives in one batch and reads
+      // as a rep who teleported.
+      expect(background.foregroundNotificationConfig!.setOngoing, isTrue);
+      expect(background.foregroundNotificationConfig!.enableWakeLock, isTrue);
+
       // Advertising "recording your route" to a rep whose grant stops at
       // "while using the app" would promise tracking that is not happening.
-      expect(
-        LocationTracking.settingsFor(LocationTrackingMode.background),
-        isNotNull,
+      final foregroundOnly = LocationTracking.settingsFor(
+        LocationTrackingMode.foregroundOnly,
       );
+      expect(foregroundOnly, isA<AndroidSettings>());
       expect(
-        LocationTracking.settingsFor(LocationTrackingMode.foregroundOnly),
-        isNotNull,
+        (foregroundOnly as AndroidSettings).foregroundNotificationConfig,
+        isNull,
+        reason:
+            'A permanent notification for tracking that cannot run in the '
+            'background is a promise the app does not keep.',
       );
     });
 

@@ -17,6 +17,10 @@ class WorkdayController extends AsyncNotifier<WorkdaySession?> {
   DateTime? _lastPingAt;
   LocationTrackingMode _trackingMode = LocationTrackingMode.unavailable;
 
+  /// Bumped by every start and every stop, so an in-flight start can tell that
+  /// it has been overtaken. See [_startTracking].
+  int _trackingGeneration = 0;
+
   /// How much of the trail this rep's permissions actually allow.
   ///
   /// Read by the banner so a rep granting only "while using the app" is told
@@ -74,17 +78,30 @@ class WorkdayController extends AsyncNotifier<WorkdaySession?> {
   /// where a timer cannot — see `core/location_tracking.dart` for what that does
   /// and does not guarantee.
   Future<void> _startTracking() async {
+    // Claim this attempt. `currentMode()` is a channel round trip, and `build()`
+    // re-runs on sign-out — so a start begun before sign-out can resume *after*
+    // `_stopTracking` has already cancelled everything, and assign a fresh
+    // subscription with nobody left to own it. That subscription holds the
+    // foreground service open: a rep who has signed out keeps a "Workday in
+    // progress" notice and keeps sampling GPS. The token is what makes a start
+    // abandonable partway through.
+    final generation = ++_trackingGeneration;
+    bool superseded() => generation != _trackingGeneration;
+
     await _pingSub?.cancel();
     _pingSub = null;
+    if (superseded()) return;
 
     _trackingMode = await LocationTracking.currentMode();
+    if (superseded()) return;
+
     final stream = LocationTracking.stream(_trackingMode);
     if (stream == null) {
       ref.notifyListeners();
       return;
     }
 
-    _pingSub = stream.listen(
+    final sub = stream.listen(
       _onPosition,
       // A stream error (services switched off mid-round, permission revoked)
       // must not tear down the day. Drop the subscription and leave the session
@@ -93,6 +110,16 @@ class WorkdayController extends AsyncNotifier<WorkdaySession?> {
       onError: (_) {},
       cancelOnError: false,
     );
+
+    // Listening is itself an await-free step, but a stop can have landed while
+    // the stream was being built. Cancelling here rather than keeping it is the
+    // difference between a stray service and none.
+    if (superseded()) {
+      await sub.cancel();
+      return;
+    }
+
+    _pingSub = sub;
     ref.notifyListeners();
   }
 
@@ -100,6 +127,9 @@ class WorkdayController extends AsyncNotifier<WorkdaySession?> {
   /// clears its notification. A rep who has finished for the day must not be
   /// left with a "Workday in progress" notice, or a service still sampling GPS.
   Future<void> _stopTracking() async {
+    // Invalidate any start still in flight *before* awaiting, or it can finish
+    // afterwards and hand back a subscription this stop was meant to prevent.
+    _trackingGeneration++;
     await _pingSub?.cancel();
     _pingSub = null;
   }
