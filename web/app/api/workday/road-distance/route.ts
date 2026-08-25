@@ -100,12 +100,23 @@ export async function POST(request: Request) {
      * on it, and the eligibility filter — `road_distance_at is null` — then skips
      * it forever: neither a figure nor a reason, and no way to notice.
      */
-    const release = async (id: string, why: string | null) => {
-      await supabase
+    const release = async (id: string, why: string | null): Promise<string | null> => {
+      const { error } = await supabase
         .from("workday_sessions")
         .update({ road_distance_at: null, road_distance_error: why })
         .eq("id", id);
+      // A release that fails leaves the claim standing, and the day is then
+      // invisible to every later run — the exact state releasing exists to
+      // prevent. Reported rather than swallowed, because only the original
+      // error would otherwise reach the caller and it would look recoverable.
+      return error ? error.message : null;
     };
+
+    /** Combines the reason a day failed with a release that also failed. */
+    const withRelease = (why: string, releaseError: string | null) =>
+      releaseError
+        ? `${why} — and the day could not be released for a retry (${releaseError}); clear road_distance_at to re-queue it.`
+        : why;
 
     const days: {
       sessionId: string;
@@ -166,8 +177,11 @@ export async function POST(request: Request) {
         .order("recorded_at", { ascending: true });
 
       if (pingError) {
-        await release(session.id, pingError.message);
-        days.push({ sessionId: session.id, error: pingError.message });
+        const rel = await release(session.id, pingError.message);
+        days.push({
+          sessionId: session.id,
+          error: withRelease(pingError.message, rel),
+        });
         continue;
       }
 
@@ -228,8 +242,11 @@ export async function POST(request: Request) {
           .select("id");
 
         if (writeError) {
-          await release(session.id, writeError.message);
-          days.push({ sessionId: session.id, error: writeError.message });
+          const rel = await release(session.id, writeError.message);
+          days.push({
+            sessionId: session.id,
+            error: withRelease(writeError.message, rel),
+          });
           continue;
         }
 
@@ -240,8 +257,8 @@ export async function POST(request: Request) {
           reason instanceof Error ? reason.message : "Could not route this day.";
         // Recorded on the row, so the next run skips it and a person can see
         // why rather than finding a permanently blank figure.
-        await release(session.id, message);
-        days.push({ sessionId: session.id, error: message });
+        const rel = await release(session.id, message);
+        days.push({ sessionId: session.id, error: withRelease(message, rel) });
       }
     }
 
