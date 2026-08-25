@@ -458,6 +458,15 @@ export type SpreadResult = {
    * prevented: sometimes the estate genuinely does not fill the week.
    */
   underTarget: { day: number; stores: number }[];
+  /**
+   * Stores with no coordinates, and the day each rode along on.
+   *
+   * They cannot be clustered, so they are not counted when a day is *chosen* —
+   * only when its occupancy is tallied afterwards. A town with several
+   * ungeocoded shops can therefore push one day past the target, and the manager
+   * would otherwise see a high peak with nothing explaining it.
+   */
+  riders: { day: number; stores: number }[];
   /** Weekdays the plan actually occupies, against the number the team works. */
   daysUsed: number;
   /** Weekdays the grouping wanted. Above `daysAvailable` means work overflowed. */
@@ -562,12 +571,23 @@ export function autoSpreadDays(
       weekOfCycle: store.visit_frequency === "weekly" ? null : slot,
     });
     dayTowns[day].add(store.city ?? "No town");
+    // Which weeks of the four-week cycle this store actually lands on.
+    //
+    // `[1,3]` / `[2,4]` is bi-weekly and was being applied to monthly stores
+    // too, so a monthly store was booked into two occurrences it is never
+    // visited on. `generate_routes` was unaffected — it reads `visit_frequency`
+    // and schedules correctly — but every figure the manager reviews came from
+    // this: `peakByDay` read high, and `underTarget` could miss a day that was
+    // genuinely short. A preview that overstates the load is the one thing this
+    // panel must not do.
     const weeks =
       store.visit_frequency === "weekly"
         ? [1, 2, 3, 4]
-        : slot === 2
-          ? [2, 4]
-          : [1, 3];
+        : store.visit_frequency === "monthly"
+          ? [slot ?? 1]
+          : slot === 2
+            ? [2, 4]
+            : [1, 3];
     for (const w of weeks) occupancy[day][w - 1] += 1;
   };
 
@@ -607,10 +627,15 @@ export function autoSpreadDays(
     if (!townDay.has(key)) townDay.set(key, { day: a.dayOfWeek, slot: a.weekOfCycle });
   }
   const stranded: PlannedStore[] = [];
+  const riders: { day: number; stores: number }[] = [];
   for (const store of unplaceable) {
     const home = townDay.get(store.city ?? "No town");
-    if (home) place(store, home.day, home.slot ?? 1);
-    else stranded.push(store);
+    if (home) {
+      place(store, home.day, home.slot ?? 1);
+      const seen = riders.find((r) => r.day === home.day);
+      if (seen) seen.stores += 1;
+      else riders.push({ day: home.day, stores: 1 });
+    } else stranded.push(store);
   }
   overflow.push(...stranded);
 
@@ -644,6 +669,7 @@ export function autoSpreadDays(
     overflow,
     // Which days come out under the target, and by how much — the figure the
     // old version could not report because it was aiming at a ceiling.
+    riders: riders.sort((a, b) => a.day - b.day),
     underTarget: days
       .filter((d) => peakByDay[d] > 0 && peakByDay[d] < target)
       .map((d) => ({ day: d, stores: peakByDay[d] })),

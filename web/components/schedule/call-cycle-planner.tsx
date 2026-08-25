@@ -288,6 +288,12 @@ export function CallCyclePlanner() {
     );
   }
 
+  /** Stores the proposal actually put on a day. */
+  const placedCount = useMemo(
+    () => (spread?.assignments ?? []).filter((a) => a.dayOfWeek !== null).length,
+    [spread]
+  );
+
   async function acceptSpread() {
     if (!spread) return;
     setApplying(true);
@@ -624,8 +630,12 @@ export function CallCyclePlanner() {
           {spread && (
             <div className="space-y-2 rounded-lg border border-primary/40 bg-primary/5 p-3">
               <p className="text-sm font-medium text-foreground">
-                Proposed: {spread.assignments.length} store
-                {spread.assignments.length === 1 ? "" : "s"} over{" "}
+                {/* Placed, not every assignment. Overflow stores are written with
+                    a null day so they are cleared rather than left where they
+                    were — which meant this count included the very stores the
+                    next sentence says did not fit. The two disagreed. */}
+                Proposed: {placedCount} store
+                {placedCount === 1 ? "" : "s"} over{" "}
                 {spread.daysUsed} of {spread.daysAvailable} working days, peak{" "}
                 {Math.max(0, ...Object.values(spread.peakByDay))} on a day.
               </p>
@@ -644,8 +654,22 @@ export function CallCyclePlanner() {
                     )
                     .join(", ")}
                   . There is not enough work to fill those days at this
-                  frequency — either they take more stores, or the week is
-                  shorter than it needs to be.
+                  frequency — either they take more stores, or this rep does not
+                  need the whole week.
+                </p>
+              )}
+
+              {spread.riders.length > 0 && (
+                <p className="text-xs text-muted-foreground">
+                  Riding along without a location:{" "}
+                  {spread.riders
+                    .map(
+                      (r) =>
+                        `${WEEKDAYS.find((w) => w.value === r.day)?.long} (${r.stores})`
+                    )
+                    .join(", ")}
+                  . These could not be grouped by distance, so they follow their
+                  town and add to that day&rsquo;s count.
                 </p>
               )}
 
