@@ -145,6 +145,7 @@ rotation: you create a replacement and delete the old one.
 |---|---|
 | `GOOGLE_GEOCODING_API_KEY` | server-side; restrict to the Geocoding API |
 | `GOOGLE_PLACES_API_KEY` | server-side; restrict to the Places API |
+| `GOOGLE_ROUTES_API_KEY` | server-side; restrict to the Routes API. Billed per request, so rotate it the moment it is suspected rather than at the next convenient time |
 | `NEXT_PUBLIC_GOOGLE_MAPS_KEY` | **HTTP referrer restriction** — this one is public by design and visible in the page source. The referrer restriction is the only thing protecting it. Do not create the replacement unrestricted. |
 
 For each: create → apply the same API and referrer restrictions as the old one
