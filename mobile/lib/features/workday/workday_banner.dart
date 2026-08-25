@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../core/location_tracking.dart';
 import '../../core/providers.dart';
 import '../../core/theme.dart';
 import '../../data/models/route_visit.dart';
@@ -40,6 +41,25 @@ class _WorkdayBannerState extends ConsumerState<WorkdayBanner> {
   void dispose() {
     _tick?.cancel();
     super.dispose();
+  }
+
+  /// What the banner promises, matched to what the grant actually permits.
+  ///
+  /// This read "every 20 min" long after the interval became five, which is the
+  /// kind of stale copy nobody notices because it is never wrong *enough* — but
+  /// a rep reading it has been told something untrue about their own phone.
+  String _trackingLine(LocationTrackingMode mode) {
+    switch (mode) {
+      case LocationTrackingMode.background:
+        return 'Recording your route every 5 min';
+      case LocationTrackingMode.foregroundOnly:
+        return 'Only recording while this app is open';
+      case LocationTrackingMode.unavailable:
+        // Covers services switched off *and* permission denied. Naming only one
+        // sends half of the reps to the wrong screen looking for the wrong
+        // switch.
+        return 'Not recording your route';
+    }
   }
 
   String _formatElapsed(Duration d) {
@@ -173,6 +193,11 @@ class _WorkdayBannerState extends ConsumerState<WorkdayBanner> {
     // Only the user's own start/end shows a busy label; the provider's first
     // load just disables the button briefly.
     final isLoading = _pending;
+    // How much of the trail this rep's grant actually allows. Exposed by the
+    // controller since the location-stream change and, until now, read by
+    // nothing — so a rep on a partial grant was tracked partially and never told.
+    final trackingMode =
+        ref.watch(workdayControllerProvider.notifier).trackingMode;
     final initialising = workdayAsync.isLoading && !_pending;
 
     return Container(
@@ -231,7 +256,7 @@ class _WorkdayBannerState extends ConsumerState<WorkdayBanner> {
                     const SizedBox(height: 2),
                     Text(
                       active
-                          ? 'Tracking your location every 20 min'
+                          ? _trackingLine(trackingMode)
                           : finishedForToday
                               ? 'You have finished for today. Your next '
                                   'workday can be started tomorrow.'
@@ -246,6 +271,13 @@ class _WorkdayBannerState extends ConsumerState<WorkdayBanner> {
               ),
             ],
           ),
+          // A partial grant is worth interrupting for. Without this the rep sees
+          // "Workday in progress", believes they are covered, and the gap only
+          // surfaces days later as a patchy trail nobody can explain.
+          if (active && trackingMode != LocationTrackingMode.background) ...[
+            const SizedBox(height: 12),
+            _PermissionNotice(mode: trackingMode),
+          ],
           if (active) ...[
             const SizedBox(height: 14),
             Row(
@@ -348,6 +380,83 @@ class _Metric extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+/// Says what is missing and opens the one screen that can fix it.
+///
+/// `LocationTracking.openPermissionSettings` has existed since the location
+/// stream landed and was wired to nothing, so the only route to "Allow all the
+/// time" was a rep knowing their way around Android settings. On Android 11 and
+/// later that grant *cannot* be requested from inside the app — the request
+/// returns "while in use" with no dialog shown, which looks like a broken
+/// button — so sending them to the system screen is the only honest option.
+class _PermissionNotice extends StatelessWidget {
+  const _PermissionNotice({required this.mode});
+
+  final LocationTrackingMode mode;
+
+  @override
+  Widget build(BuildContext context) {
+    // `unavailable` is two different situations wearing one name — location
+    // services switched off, and permission denied or permanently denied. The
+    // enum does not tell them apart, so the copy must not pretend to: it names
+    // both and sends the rep to the screen that fixes either.
+    final off = mode == LocationTrackingMode.unavailable;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: AppColors.warning.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: AppColors.warning.withValues(alpha: 0.4)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Icon(Icons.warning_amber_rounded,
+              size: 18, color: AppColors.warning),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  off
+                      ? 'Your route is not being recorded'
+                      : 'Your route stops recording in the background',
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w700,
+                    fontSize: 13,
+                    color: AppColors.textPrimary,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  off
+                      ? 'Location is switched off, or this app has not been '
+                          'given permission. Open settings to turn it on.'
+                      : 'Set location to "Allow all the time" so your route '
+                          'keeps recording when the app is not open.',
+                  style: const TextStyle(
+                      color: AppColors.textMuted, fontSize: 12.5),
+                ),
+                const SizedBox(height: 8),
+                TextButton(
+                  onPressed: () => LocationTracking.openPermissionSettings(),
+                  style: TextButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 12, vertical: 6),
+                    minimumSize: Size.zero,
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  ),
+                  child: const Text('Open settings'),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

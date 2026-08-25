@@ -14,6 +14,8 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { StatTile } from "@/components/dashboard/stat-tile";
 import { CoverageDonut } from "@/components/dashboard/coverage-donut";
+import { RepMap } from "@/components/dashboard/rep-map";
+import type { LiveReps } from "@/lib/live-reps";
 import { UnitsTrendChart } from "@/components/dashboard/units-trend-chart";
 import {
   companyDayTimes,
@@ -44,7 +46,7 @@ import {
  */
 
 /** The RPCs behind the catalogue. One fetch each, however many cards use them. */
-export type WidgetSource = "summary" | "dayTimes" | "operations";
+export type WidgetSource = "summary" | "dayTimes" | "operations" | "liveReps";
 
 export type WidgetData = {
   summary: DashboardSummary | null;
@@ -52,6 +54,8 @@ export type WidgetData = {
   /** Every rep-day behind `dayTimes`, for the Working day card's day picker. */
   dayDetail: RepDayDetail[];
   operations: OperationsSummary | null;
+  /** Last-known rep positions. Not range-scoped — "where are they" is about now. */
+  liveReps: LiveReps | null;
   /** How many days the chosen range covers, for labels like "vs previous 30 days". */
   days: number;
 };
@@ -201,6 +205,15 @@ export const WIDGETS: WidgetDefinition[] = [
         />
       );
     },
+  },
+  {
+    id: "live_reps",
+    title: "Where the team is",
+    description:
+      "Each rep's latest position on a map, with how long ago it arrived. Phones report every 5 minutes once the current app build reaches them; until then most fixes come from check-ins.",
+    span: 4,
+    source: "liveReps",
+    render: ({ liveReps }) => (liveReps ? <RepMap data={liveReps} /> : null),
   },
   {
     id: "working_day",

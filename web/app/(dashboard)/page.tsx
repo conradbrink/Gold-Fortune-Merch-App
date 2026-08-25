@@ -16,6 +16,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { createClient } from "@/lib/supabase/client";
 import { rangeDays, rangeForPreset, type DateRange } from "@/lib/date-range";
+import { fetchLiveReps, type LiveReps } from "@/lib/live-reps";
 import {
   fetchDashboardSummary,
   fetchOperationsSummary,
@@ -57,6 +58,7 @@ export default function InsightsDashboardPage() {
   const [data, setData] = useState<DashboardSummary | null>(null);
   const [dayTimes, setDayTimes] = useState<RepDayTimes[]>([]);
   const [dayDetail, setDayDetail] = useState<RepDayDetail[]>([]);
+  const [liveReps, setLiveReps] = useState<LiveReps | null>(null);
   const [ops, setOps] = useState<OperationsSummary | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -103,7 +105,7 @@ export default function InsightsDashboardPage() {
       // transient refusal — threw away headline KPIs that had loaded perfectly
       // well. Each source now fails on its own, and the cards that depend on it
       // say why.
-      const [summary, times, dayRows, operations] = await Promise.allSettled([
+      const [summary, times, dayRows, operations, live] = await Promise.allSettled([
         fetchDashboardSummary(supabase, range),
         fetchRepDayTimes(supabase, range),
         // Same source as `times`: the averages and the days behind them are one
@@ -111,6 +113,10 @@ export default function InsightsDashboardPage() {
         // would offer a day picker that silently finds nothing.
         fetchRepDayDetail(supabase, range),
         fetchOperationsSummary(supabase, range),
+        // Not range-scoped, unlike everything else here: "where is the team"
+        // is a question about now, and a date filter would answer a different
+        // one while looking like it had answered this.
+        fetchLiveReps(supabase),
       ]);
 
       if (isStale()) return;
@@ -136,6 +142,11 @@ export default function InsightsDashboardPage() {
         setOps(null);
         failed.add("operations");
       }
+      if (live.status === "fulfilled") setLiveReps(live.value);
+      else {
+        setLiveReps(null);
+        failed.add("liveReps");
+      }
       setFailedSources(failed);
 
       // Reported rather than swallowed — a section quietly missing is how a
@@ -144,7 +155,7 @@ export default function InsightsDashboardPage() {
       // A source that *answers* `null` counts here too. Its cards go unavailable
       // either way, and without an error there would be no banner and no Retry —
       // the card would say "Retry above" pointing at nothing.
-      const rejected = [summary, times, dayRows, operations].find(
+      const rejected = [summary, times, dayRows, operations, live].find(
         (r) => r.status === "rejected"
       );
       const answeredNothing =
@@ -270,12 +281,61 @@ export default function InsightsDashboardPage() {
     }
   }
 
+  /**
+   * The map is the one card that has to keep moving on its own.
+   *
+   * Everything else here answers a question about a date range and is correct
+   * until the range changes. "Where is the team" is only ever true for a minute,
+   * and a manager leaves this page open — so this source, and only this source,
+   * re-fetches on a timer. Sixty seconds against a five-minute ping cadence: fast
+   * enough that a new fix appears promptly, slow enough not to hammer PostgREST
+   * for a table that gains a handful of rows an hour.
+   *
+   * Failures are swallowed deliberately. A dropped poll leaves the previous
+   * positions on screen with their ages ticking up, which is exactly what it
+   * looks like when a rep goes quiet — the card is already built to show that
+   * honestly, and an error banner for one missed refresh would be noise.
+   */
+  /** Whether the map card is actually on this manager's dashboard. */
+  const showsLiveReps = layout.includes("live_reps");
+
+  useEffect(() => {
+    // Two conditions, and both are needed.
+    //
+    // **The card has to be in the layout.** It is optional — a manager who
+    // removed it should not be paying four requests a minute, one of them over
+    // `location_pings`, for a card that is not rendered. Waiting for the layout
+    // to load first, so the default is not polled against before the saved one
+    // arrives.
+    //
+    // **And the tab has to be visible.** A dashboard left open overnight is
+    // otherwise sixty ticks an hour at nobody. Bound to `visibilitychange` as
+    // well as the interval, so returning to the tab refreshes at once rather
+    // than showing a stale card for up to a minute.
+    if (!layoutLoaded || !showsLiveReps) return;
+
+    const poll = () => {
+      if (document.visibilityState !== "visible") return;
+      fetchLiveReps(supabase)
+        .then(setLiveReps)
+        .catch(() => {});
+    };
+    const t = setInterval(poll, 60_000);
+    document.addEventListener("visibilitychange", poll);
+    return () => {
+      clearInterval(t);
+      document.removeEventListener("visibilitychange", poll);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [layoutLoaded, showsLiveReps]);
+
   const days = rangeDays(range);
   const widgetData: WidgetData = {
     summary: data,
     dayTimes,
     dayDetail,
     operations: ops,
+    liveReps,
     days,
   };
 
@@ -295,6 +355,7 @@ export default function InsightsDashboardPage() {
     summary: data !== null,
     dayTimes: !failedSources.has("dayTimes"),
     operations: ops !== null,
+    liveReps: liveReps !== null,
   };
 
   const cards = layout.map((id) => findWidget(id)).filter((w) => w !== undefined);

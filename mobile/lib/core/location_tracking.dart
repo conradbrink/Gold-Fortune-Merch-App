@@ -40,21 +40,47 @@ import 'package:geolocator/geolocator.dart';
 
 /// How often the platform is asked for a position while a workday is open.
 ///
-/// The owner asked for five minutes. Note that this is a *ceiling on frequency*,
-/// not a promise of one fix every five minutes: [kTrackingDistanceFilterM] means
-/// a stationary rep produces nothing at all.
+/// Five minutes, and now genuinely five minutes: with [kTrackingDistanceFilterM]
+/// at zero this is a real cadence rather than a ceiling, so a rep standing still
+/// still reports. That is what the dashboard's live map needs — a dot that stops
+/// updating the moment somebody walks into a shop is indistinguishable from a
+/// phone that has died.
 const kLocationPingInterval = Duration(minutes: 5);
 
 /// Metres a rep must move before the platform reports a new position.
 ///
-/// This is the single most useful setting in the file, for battery *and* for
-/// data quality. A rep spends 20–40 minutes inside a store; without a distance
-/// filter that is eight identical points, each one costing a fix. With it, the
-/// trail records movement and nothing else.
+/// **Zero: time governs, not movement.** This was 75 m, and that was the right
+/// setting for a *trail* — a rep spends 20–40 minutes inside a store, and 75 m
+/// meant the trail recorded movement and nothing else, at a real saving in
+/// battery and rows.
 ///
-/// 75 m is comfortably outside the noise of a medium-accuracy fix, so a phone
-/// sitting on a counter does not jitter its way into a stream of pings.
-const kTrackingDistanceFilterM = 75;
+/// It is the wrong setting for a *live map*, which is what the owner asked for.
+/// A filtered stream goes silent exactly when a rep is standing in a shop, and
+/// on a map that silence is indistinguishable from a flat battery or a lost
+/// signal. Reporting every five minutes regardless is the point.
+///
+/// Two costs come with it, and both are handled rather than hoped away:
+///
+/// * **Battery.** Roughly twelve fixes an hour against a handful. Accuracy stays
+///   `medium`, so these are fused Wi-Fi and cell fixes rather than GPS wake-ups,
+///   which is the larger lever by far — but this is a real increase and has not
+///   been measured on a handset.
+/// * **Jitter counted as travel.** A phone on a counter wanders tens of metres
+///   at medium accuracy. The filter used to absorb that; now [kOdometerFloorM]
+///   does, so mileage still only counts movement that actually happened.
+const kTrackingDistanceFilterM = 0;
+
+/// Metres a leg must cover before it counts toward a rep's mileage.
+///
+/// The distance filter used to do this implicitly: nothing under 75 m was ever
+/// reported, so nothing under 75 m could be added up. With time-based sampling
+/// the pings arrive regardless, and a stationary phone would otherwise walk its
+/// own odometer several kilometres in a day out of pure GPS noise — and that
+/// number is what a rep's driving is judged on.
+///
+/// So the *ping* is recorded either way, because the map wants to know the rep is
+/// still there, and only the *distance* is gated.
+const kOdometerFloorM = 50;
 
 /// Floor on the spacing between two recorded pings, whatever the stream does.
 ///
@@ -63,6 +89,17 @@ const kTrackingDistanceFilterM = 75;
 /// and an outbox that never drains on a bad connection. This is the guard that
 /// makes the write rate predictable regardless of speed.
 const kMinPingSpacing = Duration(minutes: 4);
+
+/// Metres of a leg that count toward mileage, after the noise floor.
+///
+/// Pulled out of the repository so the rule can be tested without a database or
+/// a platform channel — the same reason [shouldRecordPing] lives here. It is a
+/// gate, not a scale: a leg either happened or it did not, and shrinking a real
+/// 60 m leg to 10 m would be a different kind of wrong.
+double odometerLegMeters(double rawMeters) {
+  if (!rawMeters.isFinite || rawMeters < 0) return 0;
+  return rawMeters < kOdometerFloorM ? 0 : rawMeters;
+}
 
 /// Whether a position arriving now should be written as a ping.
 ///
