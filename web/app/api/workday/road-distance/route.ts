@@ -92,6 +92,21 @@ export async function POST(request: Request) {
       return Response.json({ settled: 0, requests: 0, days: [] });
     }
 
+    /**
+     * Hands a claimed day back.
+     *
+     * Every path out of the loop that is not a successful write has to come
+     * through here. A claim left standing marks the day settled with no distance
+     * on it, and the eligibility filter — `road_distance_at is null` — then skips
+     * it forever: neither a figure nor a reason, and no way to notice.
+     */
+    const release = async (id: string, why: string | null) => {
+      await supabase
+        .from("workday_sessions")
+        .update({ road_distance_at: null, road_distance_error: why })
+        .eq("id", id);
+    };
+
     const days: {
       sessionId: string;
       metres?: number;
@@ -151,6 +166,7 @@ export async function POST(request: Request) {
         .order("recorded_at", { ascending: true });
 
       if (pingError) {
+        await release(session.id, pingError.message);
         days.push({ sessionId: session.id, error: pingError.message });
         continue;
       }
@@ -176,18 +192,18 @@ export async function POST(request: Request) {
         // and was still charged ten — so a run could outspend its own ceiling.
         const cost = batchForRouting(thinPings(pings)).length;
         if (cost > 0) {
+          // Fail closed: this is about to bill Google, and an endpoint that
+          // cannot count what it is spending should not spend it.
           const gate = await enforceRateLimit(
             supabase,
             LIMITS.roadDistance,
-            cost
+            cost,
+            { failClosed: true }
           );
           if (!gate.ok) {
             // Release the claim: this day was never routed and must not be left
             // looking settled.
-            await supabase
-              .from("workday_sessions")
-              .update({ road_distance_at: null })
-              .eq("id", session.id);
+            await release(session.id, null);
             return gate.response;
           }
         }
@@ -212,6 +228,7 @@ export async function POST(request: Request) {
           .select("id");
 
         if (writeError) {
+          await release(session.id, writeError.message);
           days.push({ sessionId: session.id, error: writeError.message });
           continue;
         }
@@ -223,13 +240,7 @@ export async function POST(request: Request) {
           reason instanceof Error ? reason.message : "Could not route this day.";
         // Recorded on the row, so the next run skips it and a person can see
         // why rather than finding a permanently blank figure.
-        // Clear the claim and record why. Leaving `road_distance_at` set would
-        // mark the day settled with no distance on it, and the next run would
-        // skip it forever.
-        await supabase
-          .from("workday_sessions")
-          .update({ road_distance_at: null, road_distance_error: message })
-          .eq("id", session.id);
+        await release(session.id, message);
         days.push({ sessionId: session.id, error: message });
       }
     }

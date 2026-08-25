@@ -111,12 +111,13 @@ class WorkdayController extends AsyncNotifier<WorkdaySession?> {
       // The subscription is deliberately *not* torn down: a transient fix
       // failure must not end the day, and `cancelOnError: false` keeps the
       // stream alive so it resumes if the rep restores the grant.
-      onError: (_) async {
-        final mode = await LocationTracking.currentMode();
-        if (mode != _trackingMode) {
-          _trackingMode = mode;
-          ref.notifyListeners();
-        }
+      // Synchronous, and the refresh fired from inside it. `Stream.listen` does
+      // not await what `onError` returns, so an `async` callback that throws —
+      // `currentMode()` hitting a dead platform channel, say — becomes an
+      // unhandled asynchronous error and takes the zone down. The work is
+      // started here and its failure caught there.
+      onError: (_) {
+        unawaited(_refreshTrackingMode());
       },
       cancelOnError: false,
     );
@@ -131,6 +132,27 @@ class WorkdayController extends AsyncNotifier<WorkdaySession?> {
 
     _pingSub = sub;
     ref.notifyListeners();
+  }
+
+  /// Re-reads the grant after the stream has complained.
+  ///
+  /// A stream error is how a mid-day revocation arrives — permission taken away,
+  /// or location services switched off, while the day is open. Left unread, the
+  /// banner goes on promising "recording your route every 5 min" after recording
+  /// has stopped, which is the false reassurance the notice exists to remove.
+  ///
+  /// Its own failure is swallowed on purpose: not knowing the mode is no reason
+  /// to end a rep's day, and the next error or restart asks again.
+  Future<void> _refreshTrackingMode() async {
+    try {
+      final mode = await LocationTracking.currentMode();
+      if (mode != _trackingMode) {
+        _trackingMode = mode;
+        ref.notifyListeners();
+      }
+    } catch (_) {
+      // Deliberately ignored — see above.
+    }
   }
 
   /// Ends the subscription, which is what stops the foreground service and

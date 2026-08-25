@@ -138,6 +138,11 @@ export async function fetchLiveReps(
           .select("rep_id, lat, lng, accuracy_m, recorded_at, source")
           .eq("rep_id", rep.id)
           .gte("recorded_at", since)
+          // Newest *usable* fix, not newest row. Filtering nulls in the browser
+          // after taking one row means a single incomplete ping hides a perfectly
+          // good older one and the rep is reported as having sent nothing.
+          .not("lat", "is", null)
+          .not("lng", "is", null)
           .order("recorded_at", { ascending: false })
           .limit(1)
       )

@@ -64,10 +64,20 @@ type Verdict =
  * ability to count is a worse reason to take the product down than to let a
  * handful of calls through un-counted; the failure is logged instead.
  */
+/**
+ * [failClosed] is for endpoints that spend money per call.
+ *
+ * The default is to fail *open*: if the counter cannot be read, a manager is let
+ * through rather than blocked by a broken side-table, which is right when the
+ * worst case is an unmetered database query. It is wrong when the worst case is
+ * an unmetered bill from Google — there, an endpoint that cannot count what it is
+ * about to spend should decline to spend it.
+ */
 export async function enforceRateLimit(
   supabase: SupabaseClient,
   limit: Limit,
-  cost = 1
+  cost = 1,
+  { failClosed = false }: { failClosed?: boolean } = {}
 ): Promise<Verdict> {
   const { data, error } = await supabase.rpc("consume_rate_limit", {
     p_bucket: limit.bucket,
@@ -80,7 +90,17 @@ export async function enforceRateLimit(
     console.error(
       `[rate-limit] ${limit.bucket} could not be counted: ${error.message}`
     );
-    return { ok: true };
+    if (!failClosed) return { ok: true };
+    return {
+      ok: false,
+      response: Response.json(
+        {
+          error:
+            "Usage could not be counted, so this request was not run. Try again shortly.",
+        },
+        { status: 503 }
+      ),
+    };
   }
 
   const verdict = data as {

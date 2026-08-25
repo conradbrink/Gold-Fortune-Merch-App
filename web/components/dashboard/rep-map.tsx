@@ -147,7 +147,18 @@ export function RepMap({ data }: { data: LiveReps }) {
   // no gain — colours are recomputed on each poll instead, which is the rate the
   // underlying data can actually change at.
   useEffect(() => {
-    if (!MAPS_KEY || !mapRef.current || positions.length === 0) return;
+    // Nothing to draw: the container is unmounted by the render below, so a
+    // retained map object would be bound to a node that no longer exists — and
+    // when a ping restores the list, the effect would reuse it and the panel
+    // would stay blank. Drop it and let the next run build a fresh one.
+    if (positions.length === 0) {
+      for (const m of markers.current) m.setMap(null);
+      markers.current = [];
+      mapObj.current = null;
+      fitted.current = false;
+      return;
+    }
+    if (!MAPS_KEY || !mapRef.current) return;
     let cancelled = false;
 
     loadMaps()
