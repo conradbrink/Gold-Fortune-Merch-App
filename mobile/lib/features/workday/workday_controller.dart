@@ -103,11 +103,21 @@ class WorkdayController extends AsyncNotifier<WorkdaySession?> {
 
     final sub = stream.listen(
       _onPosition,
-      // A stream error (services switched off mid-round, permission revoked)
-      // must not tear down the day. Drop the subscription and leave the session
-      // open — the rep can still check in and out, and the trail resumes if
-      // they turn location back on and reopen the app.
-      onError: (_) {},
+      // A stream error is how a mid-day revocation arrives: permission taken
+      // away, or location services switched off, while the day is open. Dropping
+      // it silently left the banner still promising "recording every 5 min" after
+      // recording had stopped — the one thing the notice exists to prevent.
+      //
+      // The subscription is deliberately *not* torn down: a transient fix
+      // failure must not end the day, and `cancelOnError: false` keeps the
+      // stream alive so it resumes if the rep restores the grant.
+      onError: (_) async {
+        final mode = await LocationTracking.currentMode();
+        if (mode != _trackingMode) {
+          _trackingMode = mode;
+          ref.notifyListeners();
+        }
+      },
       cancelOnError: false,
     );
 
@@ -136,10 +146,9 @@ class WorkdayController extends AsyncNotifier<WorkdaySession?> {
 
   /// One position from the stream, rate-limited into at most one written ping.
   ///
-  /// The distance filter bounds *stationary* noise, not speed: a rep driving at
-  /// 60 km/h clears the 75 m filter every four and a half seconds. Without this
-  /// guard that is hundreds of rows an hour and an outbox that never drains on a
-  /// weak connection.
+  /// Now that sampling is time-based this is the *only* rate limit — the 75 m
+  /// distance filter that used to bound a stationary rep is gone, so without
+  /// [shouldRecordPing] every fix the platform produced would be written.
   Future<void> _onPosition(Position position) async {
     final now = DateTime.now();
     if (!shouldRecordPing(now: now, lastPingAt: _lastPingAt)) return;

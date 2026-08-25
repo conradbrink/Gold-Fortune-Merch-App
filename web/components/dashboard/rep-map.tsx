@@ -71,6 +71,9 @@ function RepRow({
     <button
       type="button"
       onClick={onSelect}
+      // The row is a toggle, and the only thing distinguishing the chosen one is
+      // a background colour — which is nothing at all to a screen reader.
+      aria-pressed={selected}
       className={[
         "flex w-full items-start gap-2.5 border-b border-border px-3 py-2.5 text-left last:border-b-0",
         selected ? "bg-accent/70" : "hover:bg-accent/40",
@@ -106,6 +109,15 @@ export function RepMap({ data }: { data: LiveReps }) {
   /** So clearing a selection re-fits, while an ordinary poll does not. */
   const wasSelected = useRef(false);
   const [mapError, setMapError] = useState<string | null>(null);
+  /**
+   * Bumped by "Try again", and a dependency of the map effect.
+   *
+   * Clearing the error alone could never work: the effect depends on
+   * `[positions, selected]`, neither of which the button changes, so it never
+   * re-ran and the container remounted empty and stayed empty. The loader
+   * caching its own rejection made it doubly impossible — both halves are fixed.
+   */
+  const [retry, setRetry] = useState(0);
   const [selected, setSelected] = useState<string | null>(null);
 
   // Ages have to move on their own, or a card left open all afternoon keeps
@@ -228,7 +240,7 @@ export function RepMap({ data }: { data: LiveReps }) {
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [positions, selected]);
+  }, [positions, selected, retry]);
 
   const anyOpenDay =
     positions.some((p) => p.dayOpen) || data.missing.some((m) => m.dayOpen);
@@ -237,8 +249,12 @@ export function RepMap({ data }: { data: LiveReps }) {
     <Card>
       <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2 space-y-0">
         <CardTitle className="text-base">Where the team is</CardTitle>
+        {/* Two claims, and only one of them is true today. The refresh is ours
+            and happens now; the five-minute cadence needs an app build that has
+            not reached the handsets, so it is stated as a destination rather
+            than a fact. */}
         <span className="text-xs text-muted-foreground">
-          Phones report every 5 minutes · refreshed every minute
+          Latest position · refreshed every minute
         </span>
       </CardHeader>
       <CardContent>
@@ -312,7 +328,12 @@ export function RepMap({ data }: { data: LiveReps }) {
                   variant="outline"
                   onClick={() => {
                     setMapError(null);
-                    setNow(Date.now());
+                    // The map object is gone with the unmounted container, so a
+                    // retry has to build a new one rather than reuse the old ref.
+                    mapObj.current = null;
+                    markers.current = [];
+                    fitted.current = false;
+                    setRetry((n) => n + 1);
                   }}
                 >
                   <RefreshCw className="mr-1.5 h-3.5 w-3.5" />

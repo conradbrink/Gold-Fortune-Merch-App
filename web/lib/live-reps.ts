@@ -80,6 +80,10 @@ export function describeSource(source: PingSource, store: string | null): string
       return "Ended the day";
     case "interval":
       return "On the move";
+    default:
+      // A source added to the phone later would otherwise render as nothing at
+      // all here — a blank line under a rep's name, with no clue why.
+      return "Last known position";
   }
 }
 
@@ -105,26 +109,47 @@ export async function fetchLiveReps(
 ): Promise<LiveReps> {
   const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
 
-  const [repsRes, pingsRes, daysRes, visitsRes] = await Promise.all([
-    supabase
-      .from("profiles")
-      .select("id, full_name")
-      .eq("role", "rep")
-      .eq("is_active", true)
-      .order("full_name"),
-    // Newest first, then reduced to one per rep in the browser. PostgREST has no
-    // DISTINCT ON, and a per-rep query would be one round trip per rep.
-    supabase
-      .from("location_pings")
-      .select("rep_id, lat, lng, accuracy_m, recorded_at, source")
-      .gte("recorded_at", since)
-      .order("recorded_at", { ascending: false })
-      .limit(2000),
+  const { data: repRows, error: repError } = await supabase
+    .from("profiles")
+    .select("id, full_name")
+    .eq("role", "rep")
+    .eq("is_active", true)
+    .order("full_name");
+  if (repError) throw new Error(repError.message);
+  const reps = (repRows ?? []) as { id: string; full_name: string | null }[];
+
+  /**
+   * One query per rep for their newest fix, rather than one capped query for
+   * everyone.
+   *
+   * A global `.limit(2000)` is applied by PostgREST *before* anything is reduced
+   * per rep, so on a busy day a rep whose newest ping falls beyond the cap
+   * vanishes from the results and is reported as having sent nothing — the one
+   * statement this card exists to make, made wrongly. There is no DISTINCT ON in
+   * PostgREST, so the choice is a request each or an RPC; at the size of a field
+   * team a handful of parallel requests is the smaller change and cannot be
+   * silently truncated.
+   */
+  const [pingResults, daysRes, visitsRes] = await Promise.all([
+    Promise.all(
+      reps.map((rep) =>
+        supabase
+          .from("location_pings")
+          .select("rep_id, lat, lng, accuracy_m, recorded_at, source")
+          .eq("rep_id", rep.id)
+          .gte("recorded_at", since)
+          .order("recorded_at", { ascending: false })
+          .limit(1)
+      )
+    ),
     supabase
       .from("workday_sessions")
       .select("rep_id")
-      .is("ended_at", null),
-    // For naming the shop a check-in or check-out happened at.
+      .is("ended_at", null)
+      // An open day from last week is a rep who forgot to press End, not a rep
+      // who is out now — and treating it as "working" would explain away a
+      // silence that deserves explaining.
+      .gte("started_at", since),
     supabase
       .from("visits")
       .select(
@@ -135,8 +160,9 @@ export async function fetchLiveReps(
       .limit(500),
   ]);
 
-  if (repsRes.error) throw new Error(repsRes.error.message);
-  if (pingsRes.error) throw new Error(pingsRes.error.message);
+  for (const res of pingResults) {
+    if (res.error) throw new Error(res.error.message);
+  }
   if (daysRes.error) throw new Error(daysRes.error.message);
   if (visitsRes.error) throw new Error(visitsRes.error.message);
 
@@ -161,10 +187,9 @@ export async function fetchLiveReps(
   }
 
   const latest = new Map<string, RepPosition>();
-  const reps = (repsRes.data ?? []) as { id: string; full_name: string | null }[];
   const nameOf = new Map(reps.map((r) => [r.id, r.full_name ?? "Unnamed rep"]));
 
-  for (const p of (pingsRes.data ?? []) as {
+  for (const p of pingResults.flatMap((r) => r.data ?? []) as {
     rep_id: string;
     lat: number | null;
     lng: number | null;

@@ -297,12 +297,22 @@ export default function InsightsDashboardPage() {
    * honestly, and an error banner for one missed refresh would be noise.
    */
   useEffect(() => {
-    const t = setInterval(() => {
+    // Only while the tab is actually being looked at. A dashboard left open in a
+    // background tab overnight is otherwise a request a minute for a card nobody
+    // can see — and it comes back current on the next tick either way, because
+    // the fetch runs immediately on becoming visible again.
+    const poll = () => {
+      if (document.visibilityState !== "visible") return;
       fetchLiveReps(supabase)
         .then(setLiveReps)
         .catch(() => {});
-    }, 60_000);
-    return () => clearInterval(t);
+    };
+    const t = setInterval(poll, 60_000);
+    document.addEventListener("visibilitychange", poll);
+    return () => {
+      clearInterval(t);
+      document.removeEventListener("visibilitychange", poll);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

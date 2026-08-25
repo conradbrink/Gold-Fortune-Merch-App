@@ -1,6 +1,11 @@
 import { createClient } from "@/lib/supabase/server";
 import { enforceRateLimit, LIMITS } from "@/lib/rate-limit";
-import { computeDayRoadMetres, type Ping } from "@/lib/road-distance";
+import {
+  batchForRouting,
+  computeDayRoadMetres,
+  thinPings,
+  type Ping,
+} from "@/lib/road-distance";
 
 /**
  * Settles finished workdays with the distance actually driven.
@@ -87,16 +92,6 @@ export async function POST(request: Request) {
       return Response.json({ settled: 0, requests: 0, days: [] });
     }
 
-    // Charged before the work, and by the number of days — the price scales with
-    // the request, exactly as geocoding does. Ten days is roughly a hundred
-    // Routes calls, so a day is worth ten units of quota.
-    const gate = await enforceRateLimit(
-      supabase,
-      LIMITS.roadDistance,
-      sessions.length * 10
-    );
-    if (!gate.ok) return gate.response;
-
     const days: {
       sessionId: string;
       metres?: number;
@@ -112,12 +107,47 @@ export async function POST(request: Request) {
       started_at: string;
       ended_at: string;
     }[]) {
+      /**
+       * Claim the day before spending anything on it.
+       *
+       * Two runs overlapping — a retry, a second tab, a cron beside a manual
+       * press — both select the same rows while `road_distance_at` is still
+       * null, and both pay Google to compute the same day. The claim is a
+       * conditional update: `is("road_distance_at", null)` makes it a
+       * compare-and-set, and PostgREST returning no rows means somebody else
+       * got there first.
+       *
+       * `road_distance_at` is stamped now and the metres filled in afterwards,
+       * so a crash mid-route leaves a claimed day with no distance. That is the
+       * deliberate trade — a day that has to be re-queued by hand is better than
+       * one billed twice — and clearing the timestamp re-queues it.
+       */
+      const { data: claimed, error: claimError } = await supabase
+        .from("workday_sessions")
+        .update({ road_distance_at: new Date().toISOString() })
+        .eq("id", session.id)
+        .is("road_distance_at", null)
+        .select("id");
+
+      if (claimError) {
+        days.push({ sessionId: session.id, error: claimError.message });
+        continue;
+      }
+      if (!claimed || claimed.length === 0) {
+        // Someone else is settling it. Not an error, and not worth reporting as
+        // one — the other run will record the outcome.
+        continue;
+      }
+
+      // By session, not by rep and a time window. Every ping carries the session
+      // it belongs to (647 of 648 in production do), and a window can pick up a
+      // neighbouring session's pings where two overlap — which on this route
+      // means billing Google to route a day that includes somebody else's
+      // afternoon.
       const { data: pingRows, error: pingError } = await supabase
         .from("location_pings")
         .select("lat, lng, recorded_at")
-        .eq("rep_id", session.rep_id)
-        .gte("recorded_at", session.started_at)
-        .lte("recorded_at", session.ended_at)
+        .eq("workday_session_id", session.id)
         .order("recorded_at", { ascending: true });
 
       if (pingError) {
@@ -140,6 +170,28 @@ export async function POST(request: Request) {
         }));
 
       try {
+        // Quota charged on the work actually about to happen, not a flat guess.
+        // Ten per session was wrong in both directions: a quiet day bills one
+        // request and was charged ten, and a long one produces eleven or more
+        // and was still charged ten — so a run could outspend its own ceiling.
+        const cost = batchForRouting(thinPings(pings)).length;
+        if (cost > 0) {
+          const gate = await enforceRateLimit(
+            supabase,
+            LIMITS.roadDistance,
+            cost
+          );
+          if (!gate.ok) {
+            // Release the claim: this day was never routed and must not be left
+            // looking settled.
+            await supabase
+              .from("workday_sessions")
+              .update({ road_distance_at: null })
+              .eq("id", session.id);
+            return gate.response;
+          }
+        }
+
         const { metres, requests: used } = await computeDayRoadMetres(
           pings,
           apiKey
@@ -171,9 +223,12 @@ export async function POST(request: Request) {
           reason instanceof Error ? reason.message : "Could not route this day.";
         // Recorded on the row, so the next run skips it and a person can see
         // why rather than finding a permanently blank figure.
+        // Clear the claim and record why. Leaving `road_distance_at` set would
+        // mark the day settled with no distance on it, and the next run would
+        // skip it forever.
         await supabase
           .from("workday_sessions")
-          .update({ road_distance_error: message })
+          .update({ road_distance_at: null, road_distance_error: message })
           .eq("id", session.id);
         days.push({ sessionId: session.id, error: message });
       }

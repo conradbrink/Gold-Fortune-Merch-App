@@ -210,7 +210,7 @@ export const WIDGETS: WidgetDefinition[] = [
     id: "live_reps",
     title: "Where the team is",
     description:
-      "Each rep's position on a map, reported every 5 minutes while their workday is open, with how long ago each fix arrived.",
+      "Each rep's latest position on a map, with how long ago it arrived. Phones report every 5 minutes once the current app build reaches them; until then most fixes come from check-ins.",
     span: 4,
     source: "liveReps",
     render: ({ liveReps }) => (liveReps ? <RepMap data={liveReps} /> : null),

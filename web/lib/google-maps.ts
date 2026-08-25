@@ -44,7 +44,7 @@ export type MapsLibs = {
 export function loadMaps(): Promise<MapsLibs> {
   if (window.__gmapsPromise) return window.__gmapsPromise;
 
-  window.__gmapsPromise = new Promise<void>((resolve, reject) => {
+  const attempt = new Promise<void>((resolve, reject) => {
     // Already bootstrapped by an earlier mount (or a hot reload) — the bootstrap
     // defines `importLibrary`, so its presence is the readiness signal. `typeof`
     // rather than truthiness: the declared type is non-optional, so a plain
@@ -60,7 +60,10 @@ export function loadMaps(): Promise<MapsLibs> {
     // API's own readiness signal and has no such race.
     const CB = "__gfMapsReady";
     (window as unknown as Record<string, unknown>)[CB] = () => resolve();
-    s.src = `https://maps.googleapis.com/maps/api/js?key=${MAPS_KEY}&v=weekly&loading=async&libraries=places&callback=${CB}`;
+    // No `libraries=` — every library here is pulled with `importLibrary` below,
+    // which is the point of `loading=async`. Naming Places in the URL loads it
+    // eagerly for both maps when only one has a search box.
+    s.src = `https://maps.googleapis.com/maps/api/js?key=${MAPS_KEY}&v=weekly&loading=async&callback=${CB}`;
     s.async = true;
     s.onerror = () => reject(new Error("Google Maps failed to load."));
     document.head.appendChild(s);
@@ -82,6 +85,18 @@ export function loadMaps(): Promise<MapsLibs> {
       Autocomplete = null;
     }
     return { Map: maps.Map, Marker: markerLib.Marker, Autocomplete };
+  });
+
+  // Cache the attempt, but **only while it can still succeed**.
+  //
+  // Storing the promise before it settles is what makes this one script tag per
+  // page rather than one per mount. Leaving a *rejected* promise there turns one
+  // bad load — a dropped connection, a key momentarily refused — into a map that
+  // can never come back for the life of the page, and makes any "try again"
+  // button a lie, because every later call hands back the same rejection.
+  window.__gmapsPromise = attempt.catch((error: unknown) => {
+    delete window.__gmapsPromise;
+    throw error;
   });
 
   return window.__gmapsPromise;

@@ -55,7 +55,10 @@ class _WorkdayBannerState extends ConsumerState<WorkdayBanner> {
       case LocationTrackingMode.foregroundOnly:
         return 'Only recording while this app is open';
       case LocationTrackingMode.unavailable:
-        return 'Not recording — location is off';
+        // Covers services switched off *and* permission denied. Naming only one
+        // sends half of the reps to the wrong screen looking for the wrong
+        // switch.
+        return 'Not recording your route';
     }
   }
 
@@ -396,6 +399,10 @@ class _PermissionNotice extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // `unavailable` is two different situations wearing one name — location
+    // services switched off, and permission denied or permanently denied. The
+    // enum does not tell them apart, so the copy must not pretend to: it names
+    // both and sends the rep to the screen that fixes either.
     final off = mode == LocationTrackingMode.unavailable;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
@@ -416,7 +423,7 @@ class _PermissionNotice extends StatelessWidget {
               children: [
                 Text(
                   off
-                      ? 'Location is switched off'
+                      ? 'Your route is not being recorded'
                       : 'Your route stops recording in the background',
                   style: const TextStyle(
                     fontWeight: FontWeight.w700,
@@ -427,7 +434,8 @@ class _PermissionNotice extends StatelessWidget {
                 const SizedBox(height: 2),
                 Text(
                   off
-                      ? 'Turn location on so your workday can be recorded.'
+                      ? 'Location is switched off, or this app has not been '
+                          'given permission. Open settings to turn it on.'
                       : 'Set location to "Allow all the time" so your route '
                           'keeps recording when the app is not open.',
                   style: const TextStyle(
