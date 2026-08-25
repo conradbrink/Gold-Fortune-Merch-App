@@ -225,9 +225,17 @@ export function CycleGrid({
   }, [calendar, storesPerDay]);
 
   if (calendar.weeks.length === 0 || totals.days === 0) {
+    // Two different states, and they had one message between them. A store can
+    // have a day set and still put nothing in the horizon: four occurrences of a
+    // weekday do not always cover all four nth-of-the-month values, so a monthly
+    // store on week 4 can miss a 4-week window entirely. Blaming that on "no
+    // store has a day set" sends the manager to the wrong screen.
+    const planned = stores.filter((s) => s.active && s.day_of_week !== null);
     return (
       <p className="rounded-lg border border-border bg-card py-10 text-center text-sm text-muted-foreground">
-        No store has a day set, so there is nothing to lay out.{" "}
+        {planned.length === 0
+          ? "No store has a day set, so there is nothing to lay out. "
+          : `${planned.length} store${planned.length === 1 ? " has a day" : "s have days"} set, but none of them fall in the next ${weeks} weeks — check the cycle week on the monthly and fortnightly ones, or widen the horizon. `}
         {unplanned.length > 0 &&
           `${unplanned.length} assigned store${unplanned.length === 1 ? "" : "s"} ${unplanned.length === 1 ? "is" : "are"} waiting for one.`}
       </p>
@@ -446,7 +454,11 @@ export function CycleGrid({
                   <div className="min-w-[160px] flex-1">
                     <p className="flex items-center gap-1.5 text-sm font-medium text-foreground">
                       <span className="truncate">{s.store_name}</span>
-                      {s.lat === null && (
+                      {/* Both, not just lat: `toPoint` needs the pair, and one
+                          missing half nulls the whole day's distance. Checking
+                          lat alone left a day reading "unknown" with no row
+                          saying which stop was responsible. */}
+                      {(s.lat === null || s.lng === null) && (
                         <Badge
                           variant="secondary"
                           className="shrink-0 gap-1 text-[10px]"
