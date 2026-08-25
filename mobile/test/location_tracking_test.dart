@@ -109,10 +109,36 @@ void main() {
       expect(LocationTracking.stream(LocationTrackingMode.unavailable), isNull);
     });
 
-    test('the distance filter is wide enough not to jitter', () {
-      // A medium-accuracy fix wanders tens of metres while the phone sits on a
-      // counter. Below about 50 m the trail fills with a stationary rep.
-      expect(kTrackingDistanceFilterM, greaterThanOrEqualTo(50));
+    test('sampling is governed by time, not by movement', () {
+      // Zero on purpose. A distance filter goes silent exactly when a rep is
+      // standing in a shop, and on the dashboard's map that silence is
+      // indistinguishable from a dead battery. Anything above zero here would
+      // quietly turn the live map back into a trail.
+      expect(kTrackingDistanceFilterM, 0);
+    });
+  });
+
+  group('odometerLegMeters', () {
+    test('jitter does not become mileage', () {
+      // The distance filter used to absorb this implicitly: nothing under 75 m
+      // was reported, so nothing under 75 m could be added up. Sampling on time
+      // means a phone on a counter reports every five minutes, each fix metres
+      // from the last, and mileage is what a rep's driving is judged on.
+      expect(odometerLegMeters(0), 0);
+      expect(odometerLegMeters(12.4), 0);
+      expect(odometerLegMeters(kOdometerFloorM - 0.1), 0);
+    });
+
+    test('a real leg is counted in full, not scaled', () {
+      // A gate, not a scale — shrinking a genuine leg would be its own error.
+      expect(odometerLegMeters(kOdometerFloorM.toDouble()), kOdometerFloorM);
+      expect(odometerLegMeters(1200), 1200);
+    });
+
+    test('a nonsense reading contributes nothing', () {
+      expect(odometerLegMeters(double.nan), 0);
+      expect(odometerLegMeters(double.infinity), 0);
+      expect(odometerLegMeters(-5), 0);
     });
   });
 }

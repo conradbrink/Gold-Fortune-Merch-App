@@ -6,6 +6,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:uuid/uuid.dart';
 
 import '../../core/location_service.dart';
+import '../../core/location_tracking.dart';
 import '../local/app_database.dart';
 import '../local/outbox_types.dart';
 import '../models/workday_session.dart';
@@ -295,6 +296,11 @@ class WorkdayRepository {
             position.latitude,
             position.longitude,
           );
-    return (position: position, legMeters: leg);
+    // Noise is not travel. Sampling on time rather than distance means a phone
+    // sitting on a counter reports every five minutes, and each of those fixes
+    // is metres from the last for no reason anybody drove — left unchecked that
+    // walks the odometer kilometres in a day. The ping is still written; only
+    // the distance is gated.
+    return (position: position, legMeters: odometerLegMeters(leg));
   }
 }
