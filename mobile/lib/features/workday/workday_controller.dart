@@ -3,28 +3,41 @@ import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:geolocator/geolocator.dart';
 
+import '../../core/location_tracking.dart';
 import '../../core/providers.dart';
 import '../../data/models/workday_session.dart';
 
-/// How often to sample the rep's location while a workday is open.
-/// The brief asked for every 15–30 minutes; 20 balances trail fidelity
-/// against battery drain.
-const kLocationPingInterval = Duration(minutes: 20);
+export '../../core/location_tracking.dart'
+    show kLocationPingInterval, LocationTrackingMode;
 
 class WorkdayController extends AsyncNotifier<WorkdaySession?> {
-  Timer? _pingTimer;
+  StreamSubscription<Position>? _pingSub;
   Position? _lastPingPosition;
+  /// When the last ping was *written*, to enforce [kMinPingSpacing].
+  DateTime? _lastPingAt;
+  LocationTrackingMode _trackingMode = LocationTrackingMode.unavailable;
+
+  /// Bumped by every start and every stop, so an in-flight start can tell that
+  /// it has been overtaken. See [_startTracking].
+  int _trackingGeneration = 0;
+
+  /// How much of the trail this rep's permissions actually allow.
+  ///
+  /// Read by the banner so a rep granting only "while using the app" is told
+  /// their route stops recording when they put the phone away, rather than the
+  /// manager discovering the gap a week later.
+  LocationTrackingMode get trackingMode => _trackingMode;
 
   @override
   Future<WorkdaySession?> build() async {
     // Must outlive any one screen — navigating to a store shouldn't wipe the
-    // active session or stop the ping timer.
+    // active session or drop the location subscription.
     ref.keepAlive();
-    ref.onDispose(() => _pingTimer?.cancel());
+    ref.onDispose(() => _pingSub?.cancel());
 
     final user = ref.watch(currentUserProvider);
     if (user == null) {
-      _pingTimer?.cancel();
+      unawaited(_stopTracking());
       return null;
     }
 
@@ -32,9 +45,11 @@ class WorkdayController extends AsyncNotifier<WorkdaySession?> {
     final session = await repo.fetchActiveSession(user.id);
 
     if (session != null) {
-      _startPingTimer();
+      // Resubscribes after a cold start, so a rep whose phone was killed
+      // mid-round starts recording again the moment the app is reopened.
+      unawaited(_startTracking());
     } else {
-      _pingTimer?.cancel();
+      unawaited(_stopTracking());
       // Only worth asking when there is no open day: a rep with a session
       // running is plainly not finished, and this would be a wasted request
       // on every rebuild.
@@ -54,12 +69,85 @@ class WorkdayController extends AsyncNotifier<WorkdaySession?> {
   /// already gone home.
   bool get isClosedForToday => _closedToday;
 
-  void _startPingTimer() {
-    _pingTimer?.cancel();
-    _pingTimer = Timer.periodic(kLocationPingInterval, (_) => _ping());
+  /// Subscribes to the platform's position stream for the open day.
+  ///
+  /// Replaces a `Timer.periodic`, which is the whole point of this change: a
+  /// Dart timer stops when Android suspends the process, and measurement against
+  /// production showed the old one delivering **3.6%** of the pings it promised,
+  /// with 14 of 23 sessions recording none at all. The platform keeps sampling
+  /// where a timer cannot — see `core/location_tracking.dart` for what that does
+  /// and does not guarantee.
+  Future<void> _startTracking() async {
+    // Claim this attempt. `currentMode()` is a channel round trip, and `build()`
+    // re-runs on sign-out — so a start begun before sign-out can resume *after*
+    // `_stopTracking` has already cancelled everything, and assign a fresh
+    // subscription with nobody left to own it. That subscription holds the
+    // foreground service open: a rep who has signed out keeps a "Workday in
+    // progress" notice and keeps sampling GPS. The token is what makes a start
+    // abandonable partway through.
+    final generation = ++_trackingGeneration;
+    bool superseded() => generation != _trackingGeneration;
+
+    await _pingSub?.cancel();
+    _pingSub = null;
+    if (superseded()) return;
+
+    _trackingMode = await LocationTracking.currentMode();
+    if (superseded()) return;
+
+    final stream = LocationTracking.stream(_trackingMode);
+    if (stream == null) {
+      ref.notifyListeners();
+      return;
+    }
+
+    final sub = stream.listen(
+      _onPosition,
+      // A stream error (services switched off mid-round, permission revoked)
+      // must not tear down the day. Drop the subscription and leave the session
+      // open — the rep can still check in and out, and the trail resumes if
+      // they turn location back on and reopen the app.
+      onError: (_) {},
+      cancelOnError: false,
+    );
+
+    // Listening is itself an await-free step, but a stop can have landed while
+    // the stream was being built. Cancelling here rather than keeping it is the
+    // difference between a stray service and none.
+    if (superseded()) {
+      await sub.cancel();
+      return;
+    }
+
+    _pingSub = sub;
+    ref.notifyListeners();
   }
 
-  Future<void> _ping() async {
+  /// Ends the subscription, which is what stops the foreground service and
+  /// clears its notification. A rep who has finished for the day must not be
+  /// left with a "Workday in progress" notice, or a service still sampling GPS.
+  Future<void> _stopTracking() async {
+    // Invalidate any start still in flight *before* awaiting, or it can finish
+    // afterwards and hand back a subscription this stop was meant to prevent.
+    _trackingGeneration++;
+    await _pingSub?.cancel();
+    _pingSub = null;
+  }
+
+  /// One position from the stream, rate-limited into at most one written ping.
+  ///
+  /// The distance filter bounds *stationary* noise, not speed: a rep driving at
+  /// 60 km/h clears the 75 m filter every four and a half seconds. Without this
+  /// guard that is hundreds of rows an hour and an outbox that never drains on a
+  /// weak connection.
+  Future<void> _onPosition(Position position) async {
+    final now = DateTime.now();
+    if (!shouldRecordPing(now: now, lastPingAt: _lastPingAt)) return;
+    _lastPingAt = now;
+    await _ping(position);
+  }
+
+  Future<void> _ping(Position position) async {
     final session = state.value;
     final profile = ref.read(profileProvider).value;
     if (session == null || profile == null) return;
@@ -71,6 +159,7 @@ class WorkdayController extends AsyncNotifier<WorkdaySession?> {
         repId: profile.id,
         sessionClientId: session.clientGeneratedId,
         last: _lastPingPosition,
+        position: position,
       );
       _lastPingPosition = result.position;
       // Mileage accrues locally so it stays correct with no connection, and
@@ -81,8 +170,9 @@ class WorkdayController extends AsyncNotifier<WorkdaySession?> {
       await repo.cacheActiveSession(updated);
       state = AsyncData(updated);
     } catch (_) {
-      // A single failed ping (no fix, permission revoked mid-day) must not
-      // kill the timer — the next interval tries again.
+      // A single failed write (offline, permission revoked mid-day) must not
+      // tear down the subscription — the next position from the stream tries
+      // again, and `queuePing` has already put it in the outbox regardless.
     }
   }
 
@@ -109,7 +199,8 @@ class WorkdayController extends AsyncNotifier<WorkdaySession?> {
         repId: profile.id,
       );
       _lastPingPosition = null;
-      _startPingTimer();
+      _lastPingAt = null;
+      await _startTracking();
       return session;
     });
   }
@@ -128,8 +219,9 @@ class WorkdayController extends AsyncNotifier<WorkdaySession?> {
         session: session,
         distanceMeters: session.distanceMeters,
       );
-      _pingTimer?.cancel();
+      await _stopTracking();
       _lastPingPosition = null;
+      _lastPingAt = null;
       // Set immediately so the banner flips to "finished for today" on this
       // frame, rather than only after the next rebuild re-reads it.
       _closedToday = true;

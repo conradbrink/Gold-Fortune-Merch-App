@@ -263,13 +263,21 @@ class WorkdayRepository {
 
   /// Captures an interval sample and returns the leg travelled since [last],
   /// so mileage accrues locally without needing the server.
+  /// Records one interval ping.
+  ///
+  /// [position] is the fix the workday's location stream has already produced.
+  /// Passing it matters for battery: taking a fresh high-accuracy fix here would
+  /// wake the GPS chip a second time for a position we were just handed, which
+  /// is exactly the drain `LocationTracking` is arranged to avoid. It stays
+  /// optional so a caller with no stream — a one-off, or a test — still works.
   Future<({Position position, double legMeters})> recordIntervalPing({
     required String orgId,
     required String repId,
     required String sessionClientId,
     Position? last,
+    Position? position,
   }) async {
-    final position = await LocationService.getCurrentPosition();
+    position ??= await LocationService.getCurrentPosition();
     await queuePing(
       orgId: orgId,
       repId: repId,
