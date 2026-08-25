@@ -1,6 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { callRpc } from "@/lib/rpc";
-import { toLocalDateInput, type DateRange } from "@/lib/date-range";
+import type { DateRange } from "@/lib/date-range";
 
 export type PeriodMetrics = {
   visits_total: number;
@@ -178,19 +178,68 @@ export async function fetchRepDayDistance(
     .from("workday_sessions")
     .select("rep_id, started_at, road_distance_meters")
     .gte("started_at", range.from.toISOString())
-    .lte("started_at", range.to.toISOString())
+    // `.lt`, not `.lte`: `DateRange.to` is the exclusive start of the next day,
+    // so a session beginning exactly on it belongs to tomorrow.
+    .lt("started_at", range.to.toISOString())
     .order("started_at", { ascending: true });
   if (error) throw new Error(error.message);
 
-  return ((data ?? []) as {
+  /**
+   * One row per rep per day, not per session.
+   *
+   * Nothing stops a rep opening a second workday — they end one at lunch and
+   * start another, or a phone is replaced mid-round. Mapping sessions straight
+   * to records meant the later one silently overwrote the earlier in the lookup,
+   * so the card showed the afternoon's driving as the whole day, and counted the
+   * same date twice when working out how much of the range is settled.
+   *
+   * A day counts as settled only when **every** session in it has a distance:
+   * summing one settled session and one unsettled would produce a total that
+   * looks complete and is short.
+   */
+  const byDay = new Map<
+    string,
+    { rep_id: string; local_day: string; metres: number; missing: boolean }
+  >();
+
+  for (const r of (data ?? []) as {
     rep_id: string;
     started_at: string;
     road_distance_meters: number | null;
-  }[]).map((r) => ({
-    rep_id: r.rep_id,
-    local_day: toLocalDateInput(new Date(r.started_at)),
-    road_metres: r.road_distance_meters,
+  }[]) {
+    const local_day = reportingDay(r.started_at);
+    const key = `${r.rep_id}|${local_day}`;
+    const acc =
+      byDay.get(key) ?? { rep_id: r.rep_id, local_day, metres: 0, missing: false };
+    if (r.road_distance_meters === null) acc.missing = true;
+    else acc.metres += Number(r.road_distance_meters);
+    byDay.set(key, acc);
+  }
+
+  return [...byDay.values()].map((d) => ({
+    rep_id: d.rep_id,
+    local_day: d.local_day,
+    road_metres: d.missing ? null : d.metres,
   }));
+}
+
+/**
+ * The local date of a timestamp, in the timezone the reporting is keyed to.
+ *
+ * **Not the browser's timezone.** `rep_day_times_per_day` converts to
+ * `Africa/Gaborone` in SQL before grouping, and this key is matched against
+ * those rows — so deriving it from the manager's own clock would put the driving
+ * on the wrong day, or on no day at all, for anyone opening the dashboard from
+ * outside CAT. Everyone is in Botswana today, which is exactly why this would
+ * have gone unnoticed.
+ */
+function reportingDay(iso: string): string {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Africa/Gaborone",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date(iso));
 }
 
 /** Metres as kilometres for display. Null stays null — it is not zero. */
