@@ -1,6 +1,6 @@
 "use client";
 
-import type { ReactNode } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import Link from "next/link";
 import {
   ClipboardCheck,
@@ -23,6 +23,7 @@ import {
   formatTimeOfDay,
   type DashboardSummary,
   type OperationsSummary,
+  type RepDayDetail,
   type RepDayTimes,
 } from "@/lib/dashboard";
 
@@ -48,6 +49,8 @@ export type WidgetSource = "summary" | "dayTimes" | "operations";
 export type WidgetData = {
   summary: DashboardSummary | null;
   dayTimes: RepDayTimes[];
+  /** Every rep-day behind `dayTimes`, for the Working day card's day picker. */
+  dayDetail: RepDayDetail[];
   operations: OperationsSummary | null;
   /** How many days the chosen range covers, for labels like "vs previous 30 days". */
   days: number;
@@ -206,7 +209,9 @@ export const WIDGETS: WidgetDefinition[] = [
       "When each rep starts, closes and how long they work — from the day's evidence, not from what anyone typed.",
     span: 4,
     source: "dayTimes",
-    render: ({ dayTimes }) => <WorkingDay rows={dayTimes} />,
+    render: ({ dayTimes, dayDetail }) => (
+      <WorkingDay rows={dayTimes} detail={dayDetail} />
+    ),
   },
   {
     id: "visits_trend",
@@ -517,19 +522,163 @@ export function findWidget(id: string): WidgetDefinition | undefined {
  * Times are local. The RPC converts before averaging — averaging the stored
  * UTC values and formatting afterwards would report every day two hours early.
  */
-function WorkingDay({ rows }: { rows: RepDayTimes[] }) {
+/**
+ * `2026-08-24` → `Mon 24 Aug`.
+ *
+ * Parsed as local midnight, never `new Date("2026-08-24")` — that is parsed as
+ * UTC, and in CAT it would render the previous day for every date in the list.
+ * `en-GB` because 24/08 is the local reading.
+ */
+function formatDayLabel(localDay: string): string {
+  const [y, m, d] = localDay.split("-").map(Number);
+  return new Date(y, (m ?? 1) - 1, d ?? 1).toLocaleDateString("en-GB", {
+    weekday: "short",
+    day: "numeric",
+    month: "short",
+  });
+}
+
+function WorkingDay({
+  rows,
+  detail,
+}: {
+  rows: RepDayTimes[];
+  detail: RepDayDetail[];
+}) {
   const company = companyDayTimes(rows);
+
+  /**
+   * "" is the average, which is the default and the answer to "how does this
+   * team work". A specific date answers a different question — "what happened on
+   * Tuesday" — so it is a deliberate choice rather than the landing state.
+   */
+  const [chosenDay, setChosenDay] = useState("");
+
+  // Newest first: a manager checking a specific day is nearly always checking a
+  // recent one. Derived from the rows themselves, so the list only ever offers
+  // days somebody actually worked — no empty dates to pick and be puzzled by.
+  const days = useMemo(
+    () => [...new Set(detail.map((d) => d.local_day))].sort().reverse(),
+    [detail]
+  );
+
+  /**
+   * The selection, but only if the current range still contains it.
+   *
+   * `chosenDay` outlives a range change — the card is not remounted — so a date
+   * picked under "90 days" can vanish from `days` when the range narrows. The
+   * `<select>` would then hold a value matching no option and render blank,
+   * while the card took the single-day path with nothing in it: "0 reps worked"
+   * and "3 reps recorded no activity on this day" for a range that plainly has
+   * activity. Derived rather than reset in an effect, so there is no frame where
+   * the two disagree.
+   */
+  const day = chosenDay !== "" && days.includes(chosenDay) ? chosenDay : "";
+
+  const chosen = useMemo(
+    () =>
+      day === ""
+        ? []
+        : detail
+            .filter((d) => d.local_day === day)
+            .sort((a, b) =>
+              (a.rep_name ?? "").localeCompare(b.rep_name ?? "")
+            ),
+    [detail, day]
+  );
 
   return (
     <Card>
-      <CardHeader>
+      <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2 space-y-0">
         <CardTitle className="text-base">Working day</CardTitle>
+        {days.length > 0 && (
+          <div className="flex items-center gap-2">
+            <label
+              htmlFor="working-day-picker"
+              className="text-xs text-muted-foreground"
+            >
+              Show
+            </label>
+            <select
+              id="working-day-picker"
+              value={day}
+              onChange={(e) => setChosenDay(e.target.value)}
+              className="rounded-md border border-border bg-background px-2 py-1 text-xs text-foreground"
+            >
+              <option value="">
+                Average of {company.days} rep-
+                {company.days === 1 ? "day" : "days"}
+              </option>
+              {days.map((d) => (
+                <option key={d} value={d}>
+                  {formatDayLabel(d)}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
       </CardHeader>
       <CardContent>
         {company.days === 0 ? (
           <p className="py-8 text-center text-sm text-muted-foreground">
             No recorded activity in this period, so there is no day to measure.
           </p>
+        ) : day !== "" ? (
+          <>
+            <p className="text-sm font-semibold text-foreground">
+              {formatDayLabel(day)}
+            </p>
+            <p className="mt-0.5 text-xs text-muted-foreground">
+              {chosen.length} rep{chosen.length === 1 ? "" : "s"} worked. These
+              are the actual first and last activity of that day, not an
+              average.
+            </p>
+
+            <div className="mt-3 overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-border text-left text-xs text-muted-foreground">
+                    <th className="py-2 font-medium">Rep</th>
+                    <th className="py-2 text-right font-medium">In</th>
+                    <th className="py-2 text-right font-medium">Out</th>
+                    <th className="py-2 text-right font-medium">Length</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {chosen.map((d) => (
+                    <tr
+                      key={`${d.rep_id}-${d.local_day}`}
+                      className="border-b border-border/60"
+                    >
+                      <td className="py-2 text-foreground">
+                        {d.rep_name ?? "Unnamed rep"}
+                      </td>
+                      <td className="py-2 text-right tabular-nums text-foreground">
+                        {formatTimeOfDay(d.start_seconds)}
+                      </td>
+                      <td className="py-2 text-right tabular-nums text-foreground">
+                        {formatTimeOfDay(d.end_seconds)}
+                      </td>
+                      <td className="py-2 text-right tabular-nums text-muted-foreground">
+                        {formatDuration(Number(d.length_seconds ?? 0))}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Named rather than implied: a rep missing from this table did not
+                work that day, which is a different thing from a missing record
+                and is worth being able to tell apart at a glance. */}
+            {chosen.length < rows.length && (
+              <p className="mt-2 text-xs text-muted-foreground">
+                {rows.length - chosen.length} rep
+                {rows.length - chosen.length === 1 ? "" : "s"} recorded no
+                activity on this day.
+              </p>
+            )}
+          </>
         ) : (
           <>
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
