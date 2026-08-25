@@ -108,6 +108,38 @@ export async function fetchRepDayTimes(
   return (data ?? []) as RepDayTimes[];
 }
 
+/** One rep on one working day — the detail the averages are taken over. */
+export type RepDayDetail = {
+  rep_id: string;
+  rep_name: string | null;
+  /** Local date, `YYYY-MM-DD`. Already converted to Africa/Gaborone by the RPC. */
+  local_day: string;
+  /** Seconds since local midnight, the same convention as `RepDayTimes`. */
+  start_seconds: number | null;
+  end_seconds: number | null;
+  length_seconds: number | null;
+};
+
+/**
+ * Every rep-day in the range, rather than a mean per rep.
+ *
+ * Fetched for the whole range in one call and grouped in the browser, so moving
+ * between days in the picker costs nothing — there are at most a few dozen rows,
+ * and a round trip per selection would make the control feel broken on a slow
+ * connection.
+ */
+export async function fetchRepDayDetail(
+  supabase: SupabaseClient,
+  range: DateRange
+): Promise<RepDayDetail[]> {
+  const { data, error } = await callRpc(supabase, "rep_day_times_per_day", {
+    p_from: range.from.toISOString(),
+    p_to: range.to.toISOString(),
+  });
+  if (error) throw new Error(error.message);
+  return (data ?? []) as RepDayDetail[];
+}
+
 /**
  * The company average, weighted by days worked.
  *

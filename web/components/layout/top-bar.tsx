@@ -21,6 +21,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { createClient } from "@/lib/supabase/client";
 import { GlobalSearch } from "@/components/layout/global-search";
+import { ThemeToggle } from "@/components/layout/theme-toggle";
 import { useCurrentRole } from "@/lib/use-current-role";
 
 export function TopBar({ onOpenNav }: { onOpenNav?: () => void }) {
@@ -90,6 +91,10 @@ export function TopBar({ onOpenNav }: { onOpenNav?: () => void }) {
             feature in this product, so they were an advertisement for something
             that does not exist. Removed rather than wired to a placeholder.
             Settings had the same problem but does have somewhere to go. */}
+        {/* Outside the manager gate, unlike search and settings. How the screen
+            looks is nobody's permission to grant, and warehouse staff work the
+            same long shifts on the same screens. */}
+        <ThemeToggle />
         {isManager && (
           <>
             <Button
