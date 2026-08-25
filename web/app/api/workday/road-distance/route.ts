@@ -216,8 +216,24 @@ export async function POST(request: Request) {
           );
           if (!gate.ok) {
             // Release the claim: this day was never routed and must not be left
-            // looking settled.
-            await release(session.id, null);
+            // looking settled. If the release itself fails the day is stranded,
+            // and returning the plain 429 or 503 would hide that — the caller
+            // would retry and never see this session again.
+            const rel = await release(session.id, null);
+            if (rel) {
+              return Response.json(
+                {
+                  error: withRelease(
+                    "Usage limit reached before this day was routed.",
+                    rel
+                  ),
+                  settled,
+                  requests,
+                  days,
+                },
+                { status: 503 }
+              );
+            }
             return gate.response;
           }
         }
@@ -231,7 +247,11 @@ export async function POST(request: Request) {
         // A day with nothing to route is settled at zero rather than left
         // pending forever — the rep opened a day and did not travel, which is a
         // real answer. `road_distance_at` is what marks it done either way.
-        const { error: writeError } = await supabase
+        // `.select("id")` is what makes a lost write visible: a PostgREST update
+        // matching nothing succeeds with no error and no rows, so without
+        // checking the count this would report a settled day that holds no
+        // distance. Same guard, and the same lesson, as `applySpread`.
+        const { data: written, error: writeError } = await supabase
           .from("workday_sessions")
           .update({
             road_distance_meters: metres,
@@ -241,11 +261,17 @@ export async function POST(request: Request) {
           .eq("id", session.id)
           .select("id");
 
-        if (writeError) {
-          const rel = await release(session.id, writeError.message);
+        const writeFailure =
+          writeError?.message ??
+          ((written?.length ?? 0) === 0
+            ? "The settled distance did not save — the day may have been changed while it was being routed."
+            : null);
+
+        if (writeFailure) {
+          const rel = await release(session.id, writeFailure);
           days.push({
             sessionId: session.id,
-            error: withRelease(writeError.message, rel),
+            error: withRelease(writeFailure, rel),
           });
           continue;
         }

@@ -296,11 +296,24 @@ export default function InsightsDashboardPage() {
    * looks like when a rep goes quiet — the card is already built to show that
    * honestly, and an error banner for one missed refresh would be noise.
    */
+  /** Whether the map card is actually on this manager's dashboard. */
+  const showsLiveReps = layout.includes("live_reps");
+
   useEffect(() => {
-    // Only while the tab is actually being looked at. A dashboard left open in a
-    // background tab overnight is otherwise a request a minute for a card nobody
-    // can see — and it comes back current on the next tick either way, because
-    // the fetch runs immediately on becoming visible again.
+    // Two conditions, and both are needed.
+    //
+    // **The card has to be in the layout.** It is optional — a manager who
+    // removed it should not be paying four requests a minute, one of them over
+    // `location_pings`, for a card that is not rendered. Waiting for the layout
+    // to load first, so the default is not polled against before the saved one
+    // arrives.
+    //
+    // **And the tab has to be visible.** A dashboard left open overnight is
+    // otherwise sixty ticks an hour at nobody. Bound to `visibilitychange` as
+    // well as the interval, so returning to the tab refreshes at once rather
+    // than showing a stale card for up to a minute.
+    if (!layoutLoaded || !showsLiveReps) return;
+
     const poll = () => {
       if (document.visibilityState !== "visible") return;
       fetchLiveReps(supabase)
@@ -314,7 +327,7 @@ export default function InsightsDashboardPage() {
       document.removeEventListener("visibilitychange", poll);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [layoutLoaded, showsLiveReps]);
 
   const days = rangeDays(range);
   const widgetData: WidgetData = {
