@@ -431,7 +431,16 @@ export type SpreadAssignment = {
   storeId: string;
   storeName: string;
   city: string | null;
-  dayOfWeek: number;
+  /**
+   * Null clears the day.
+   *
+   * A store the plan could not place has to be *written* as unplanned, not left
+   * out of the write. Omitting it leaves whatever day it had before — so a shop
+   * that "did not fit" quietly kept its old Saturday, and the rep was left with
+   * a Saturday that existed to visit one shop. The panel said "left unplanned"
+   * while the data said otherwise.
+   */
+  dayOfWeek: number | null;
   weekOfCycle: number | null;
 };
 
@@ -590,6 +599,10 @@ export function autoSpreadDays(
   // placed. Guessing a day for a shop nobody can find is worse than saying so.
   const townDay = new Map<string, { day: number; slot: number | null }>();
   for (const a of assignments) {
+    // Only a real day is a home to ride to. At this point every assignment has
+    // one — the cleared entries are appended below — but the guard keeps that
+    // true if the order ever changes.
+    if (a.dayOfWeek === null) continue;
     const key = a.city ?? "No town";
     if (!townDay.has(key)) townDay.set(key, { day: a.dayOfWeek, slot: a.weekOfCycle });
   }
@@ -601,8 +614,22 @@ export function autoSpreadDays(
   }
   overflow.push(...stranded);
 
+  // Written, not omitted: an unplaceable store is cleared so it shows up in the
+  // "no day set" warning and stops holding a day open on its own.
+  for (const store of overflow) {
+    assignments.push({
+      assignmentId: store.assignment_id,
+      storeId: store.store_id,
+      storeName: store.store_name,
+      city: store.city,
+      dayOfWeek: null,
+      weekOfCycle: null,
+    });
+  }
+
   const townsByDay = new Map<string, Set<number>>();
   for (const a of assignments) {
+    if (a.dayOfWeek === null) continue;
     const key = a.city ?? "No town";
     const seen = townsByDay.get(key);
     if (seen) seen.add(a.dayOfWeek);
