@@ -1,6 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { callRpc } from "@/lib/rpc";
-import type { DateRange } from "@/lib/date-range";
+import { toLocalDateInput, type DateRange } from "@/lib/date-range";
 
 export type PeriodMetrics = {
   visits_total: number;
@@ -138,6 +138,66 @@ export async function fetchRepDayDetail(
   });
   if (error) throw new Error(error.message);
   return (data ?? []) as RepDayDetail[];
+}
+
+/** One rep-day's driving, keyed the same way as `RepDayDetail`. */
+export type RepDayDistance = {
+  rep_id: string;
+  /** Local date, `YYYY-MM-DD`, to match `RepDayDetail.local_day`. */
+  local_day: string;
+  /**
+   * Metres along roads, from the Routes API. **Null until the day is settled**,
+   * and never filled in from the phone's own figure.
+   *
+   * That substitution would be tempting and wrong. The phone accumulates
+   * straight-line legs between pings, and measured across 33 settled days it
+   * captured **23 km against 1,953 km actually driven** — about one per cent,
+   * because the sampling timer it depended on barely ran. A blank is honest; that
+   * number dressed up as mileage is not.
+   */
+  road_metres: number | null;
+};
+
+/**
+ * Driving per rep-day, for the range on screen.
+ *
+ * Read from `workday_sessions` rather than folded into `rep_day_times_per_day`:
+ * a working day is a union of sessions, visits and sales calls, but a *distance*
+ * only ever comes from a session, and widening that RPC would have it return a
+ * column that is null for two thirds of what it counts.
+ *
+ * The day is derived from `started_at` in local time, matching how the RPC keys
+ * its rows — a session opened at seven in the morning in CAT is that date, and
+ * comparing UTC dates would misfile every early start.
+ */
+export async function fetchRepDayDistance(
+  supabase: SupabaseClient,
+  range: DateRange
+): Promise<RepDayDistance[]> {
+  const { data, error } = await supabase
+    .from("workday_sessions")
+    .select("rep_id, started_at, road_distance_meters")
+    .gte("started_at", range.from.toISOString())
+    .lte("started_at", range.to.toISOString())
+    .order("started_at", { ascending: true });
+  if (error) throw new Error(error.message);
+
+  return ((data ?? []) as {
+    rep_id: string;
+    started_at: string;
+    road_distance_meters: number | null;
+  }[]).map((r) => ({
+    rep_id: r.rep_id,
+    local_day: toLocalDateInput(new Date(r.started_at)),
+    road_metres: r.road_distance_meters,
+  }));
+}
+
+/** Metres as kilometres for display. Null stays null — it is not zero. */
+export function formatKm(metres: number | null): string {
+  if (metres === null) return "—";
+  const km = metres / 1000;
+  return `${km < 10 ? km.toFixed(1) : Math.round(km).toLocaleString("en-GB")} km`;
 }
 
 /**
