@@ -855,7 +855,14 @@ class _FormsSection extends ConsumerWidget {
                                 ),
                               ),
                             );
-                            if (saved == true) {
+                            // `context.mounted`, not just `saved`: the await
+                            // above suspends for as long as the form is open,
+                            // and a rep who checks out or is thrown back to the
+                            // route list in that time leaves this widget
+                            // unmounted. Riverpod treats `ref` after unmount as
+                            // a StateError, and it is fatal — Sentry FLUTTER-B,
+                            // on 1.1.5+5.
+                            if (saved == true && context.mounted) {
                               ref.invalidate(
                                   submittedTemplateIdsProvider(visitClientGeneratedId));
                             }

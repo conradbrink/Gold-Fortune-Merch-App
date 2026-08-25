@@ -152,6 +152,12 @@ class _OrderCaptureScreenState extends ConsumerState<OrderCaptureScreen> {
         phone.isEmpty &&
         _requiredBy == null) {
       await repo.drafts.clear(widget.visitClientId);
+      // #20 moved this invalidate *after* the await on purpose, so the store
+      // screen's "Order in progress" count could never read one edit stale.
+      // That is right, and it is also what exposes `ref` to the screen being
+      // disposed mid-save — the draft is written either way, so the count
+      // self-corrects on the next tap rather than taking the app down.
+      if (!mounted) return;
       ref.invalidate(orderDraftProvider(widget.visitClientId));
       return;
     }
@@ -171,6 +177,11 @@ class _OrderCaptureScreenState extends ConsumerState<OrderCaptureScreen> {
     // nothing fires again afterwards — so the store screen's "Order in
     // progress · N products" line could sit one edit behind what the rep
     // typed. Sent by CodeRabbit outside the diff on PR #19, after the merge.
+    //
+    // Which is also why this needs the guard: the write is what matters and it
+    // has already happened, so a screen disposed mid-save loses only the
+    // refresh, and the count self-corrects on the next tap.
+    if (!mounted) return;
     ref.invalidate(orderDraftProvider(widget.visitClientId));
   }
 
