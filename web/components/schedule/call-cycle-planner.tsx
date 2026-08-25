@@ -45,6 +45,7 @@ import {
 } from "@/lib/org-settings";
 import { CapacityMeter } from "@/components/schedule/capacity-meter";
 import { CoveragePlanner } from "@/components/schedule/coverage-planner";
+import { CycleGrid } from "@/components/schedule/cycle-grid";
 
 /**
  * The call-cycle planner: pick a rep, give each of their stores a day and a
@@ -72,6 +73,14 @@ export function CallCyclePlanner() {
   const [busy, setBusy] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [weeks, setWeeks] = useState(8);
+  /**
+   * "days" lays the cycle out as the dated days it produces; "stores" is the
+   * town-grouped list. Two views rather than one merged screen because they
+   * answer different questions — the grid says what a given day holds, the list
+   * says how often a shop is called on — and the list is still the better place
+   * to change a frequency.
+   */
+  const [planView, setPlanView] = useState<"days" | "stores">("days");
 
   const [genOpen, setGenOpen] = useState(false);
   const [preview, setPreview] = useState<GenerateResult | null>(null);
@@ -493,153 +502,199 @@ export function CallCyclePlanner() {
             )}
           </div>
 
-          <Input
-            placeholder="Search stores or cities…"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-          />
-
-          <div className="space-y-4">
-            {cityGroups.length === 0 && (
-              <p className="rounded-lg border border-border bg-card py-8 text-center text-sm text-muted-foreground">
-                No stores match &ldquo;{query}&rdquo;.
-              </p>
-            )}
-
-            {cityGroups.map((g) => (
-              <div
-                key={g.city}
-                className="overflow-hidden rounded-lg border border-border"
-              >
-                <div className="flex items-center gap-2 border-b border-border bg-muted/40 px-3 py-2">
-                  <MapPin className="h-4 w-4 text-muted-foreground" />
-                  <span className="text-sm font-semibold text-foreground">
-                    {g.city}
-                  </span>
-                  <span className="text-xs text-muted-foreground">
-                    {g.stores.length} {g.stores.length === 1 ? "store" : "stores"}
-                  </span>
-                </div>
-
-                <ul className="divide-y divide-border">
-                  {g.stores.map((s) => (
-                    <li
-                      key={s.assignment_id}
-                      className={[
-                        "flex flex-wrap items-end gap-3 px-3 py-3",
-                        busy === s.assignment_id ? "opacity-60" : "",
-                      ].join(" ")}
-                    >
-                      <div className="min-w-[180px] flex-1">
-                        <p className="flex items-center gap-2 text-sm font-medium text-foreground">
-                          <span className="truncate">{s.store_name}</span>
-                          {s.is_primary && (
-                            <Badge variant="secondary" className="shrink-0">
-                              Primary
-                            </Badge>
-                          )}
-                          {!s.active && (
-                            <Badge variant="destructive" className="shrink-0">
-                              Inactive
-                            </Badge>
-                          )}
-                        </p>
-                        <p className="text-xs text-muted-foreground">
-                          {describeCycle(s)}
-                        </p>
-                      </div>
-
-                      <div className="w-32 space-y-1">
-                        <Label
-                          htmlFor={`day-${s.assignment_id}`}
-                          className="text-xs text-muted-foreground"
-                        >
-                          Day
-                        </Label>
-                        <NativeSelect
-                          id={`day-${s.assignment_id}`}
-                          value={s.day_of_week === null ? "" : String(s.day_of_week)}
-                          disabled={busy === s.assignment_id}
-                          onChange={(e) =>
-                            changeDay(
-                              s,
-                              e.target.value === "" ? null : Number(e.target.value)
-                            )
-                          }
-                        >
-                          <option value="">Not planned</option>
-                          {WEEKDAYS.map((w) => (
-                            <option key={w.value} value={w.value}>
-                              {w.long}
-                            </option>
-                          ))}
-                        </NativeSelect>
-                      </div>
-
-                      <div className="w-36 space-y-1">
-                        <Label
-                          htmlFor={`freq-${s.assignment_id}`}
-                          className="text-xs text-muted-foreground"
-                        >
-                          Frequency
-                        </Label>
-                        <NativeSelect
-                          id={`freq-${s.assignment_id}`}
-                          value={s.visit_frequency}
-                          disabled={busy === s.assignment_id}
-                          title="Frequency belongs to the store, so this changes it for every rep who covers it."
-                          onChange={(e) =>
-                            changeFrequency(s, e.target.value as VisitFrequency)
-                          }
-                        >
-                          {FREQUENCIES.map((f) => (
-                            <option key={f.value} value={f.value}>
-                              {f.label}
-                            </option>
-                          ))}
-                        </NativeSelect>
-                      </div>
-
-                      {/* Week only means anything above weekly — rendering it
-                          always would invite setting a value that is ignored. */}
-                      {s.visit_frequency !== "weekly" && (
-                        <div className="w-32 space-y-1">
-                          <Label
-                            htmlFor={`week-${s.assignment_id}`}
-                            className="text-xs text-muted-foreground"
-                          >
-                            Week
-                          </Label>
-                          <NativeSelect
-                            id={`week-${s.assignment_id}`}
-                            value={String(s.week_of_cycle ?? 1)}
-                            disabled={
-                              busy === s.assignment_id || s.day_of_week === null
-                            }
-                            onChange={(e) => changeWeek(s, Number(e.target.value))}
-                          >
-                            {s.visit_frequency === "biweekly" ? (
-                              <>
-                                <option value="1">Week A</option>
-                                <option value="2">Week B</option>
-                              </>
-                            ) : (
-                              <>
-                                <option value="1">1st</option>
-                                <option value="2">2nd</option>
-                                <option value="3">3rd</option>
-                                <option value="4">4th</option>
-                              </>
-                            )}
-                          </NativeSelect>
-                        </div>
-                      )}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            ))}
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex rounded-lg border border-border p-0.5">
+              {(
+                [
+                  ["days", "By day"],
+                  ["stores", "By store"],
+                ] as const
+              ).map(([value, label]) => (
+                <button
+                  key={value}
+                  type="button"
+                  onClick={() => setPlanView(value)}
+                  aria-pressed={planView === value}
+                  className={`rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
+                    planView === value
+                      ? "bg-primary text-primary-foreground"
+                      : "text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+            <p className="text-xs text-muted-foreground">
+              {planView === "days"
+                ? "Every date the generator will write a route for."
+                : "Grouped by town, where frequency is set."}
+            </p>
           </div>
+
+          {planView === "days" && (
+            <CycleGrid
+              stores={stores}
+              weeks={weeks}
+              storesPerDay={settings.storesPerDay}
+              workingDays={settings.workingDays}
+              busy={busy}
+              onChangeDay={changeDay}
+              onChangeWeek={changeWeek}
+            />
+          )}
+
+          {planView === "stores" && (
+            <>
+              <Input
+                placeholder="Search stores or cities…"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+              />
+
+              <div className="space-y-4">
+                {cityGroups.length === 0 && (
+                  <p className="rounded-lg border border-border bg-card py-8 text-center text-sm text-muted-foreground">
+                    No stores match &ldquo;{query}&rdquo;.
+                  </p>
+                )}
+
+                {cityGroups.map((g) => (
+                  <div
+                    key={g.city}
+                    className="overflow-hidden rounded-lg border border-border"
+                  >
+                    <div className="flex items-center gap-2 border-b border-border bg-muted/40 px-3 py-2">
+                      <MapPin className="h-4 w-4 text-muted-foreground" />
+                      <span className="text-sm font-semibold text-foreground">
+                        {g.city}
+                      </span>
+                      <span className="text-xs text-muted-foreground">
+                        {g.stores.length} {g.stores.length === 1 ? "store" : "stores"}
+                      </span>
+                    </div>
+
+                    <ul className="divide-y divide-border">
+                      {g.stores.map((s) => (
+                        <li
+                          key={s.assignment_id}
+                          className={[
+                            "flex flex-wrap items-end gap-3 px-3 py-3",
+                            busy === s.assignment_id ? "opacity-60" : "",
+                          ].join(" ")}
+                        >
+                          <div className="min-w-[180px] flex-1">
+                            <p className="flex items-center gap-2 text-sm font-medium text-foreground">
+                              <span className="truncate">{s.store_name}</span>
+                              {s.is_primary && (
+                                <Badge variant="secondary" className="shrink-0">
+                                  Primary
+                                </Badge>
+                              )}
+                              {!s.active && (
+                                <Badge variant="destructive" className="shrink-0">
+                                  Inactive
+                                </Badge>
+                              )}
+                            </p>
+                            <p className="text-xs text-muted-foreground">
+                              {describeCycle(s)}
+                            </p>
+                          </div>
+
+                          <div className="w-32 space-y-1">
+                            <Label
+                              htmlFor={`day-${s.assignment_id}`}
+                              className="text-xs text-muted-foreground"
+                            >
+                              Day
+                            </Label>
+                            <NativeSelect
+                              id={`day-${s.assignment_id}`}
+                              value={s.day_of_week === null ? "" : String(s.day_of_week)}
+                              disabled={busy === s.assignment_id}
+                              onChange={(e) =>
+                                changeDay(
+                                  s,
+                                  e.target.value === "" ? null : Number(e.target.value)
+                                )
+                              }
+                            >
+                              <option value="">Not planned</option>
+                              {WEEKDAYS.map((w) => (
+                                <option key={w.value} value={w.value}>
+                                  {w.long}
+                                </option>
+                              ))}
+                            </NativeSelect>
+                          </div>
+
+                          <div className="w-36 space-y-1">
+                            <Label
+                              htmlFor={`freq-${s.assignment_id}`}
+                              className="text-xs text-muted-foreground"
+                            >
+                              Frequency
+                            </Label>
+                            <NativeSelect
+                              id={`freq-${s.assignment_id}`}
+                              value={s.visit_frequency}
+                              disabled={busy === s.assignment_id}
+                              title="Frequency belongs to the store, so this changes it for every rep who covers it."
+                              onChange={(e) =>
+                                changeFrequency(s, e.target.value as VisitFrequency)
+                              }
+                            >
+                              {FREQUENCIES.map((f) => (
+                                <option key={f.value} value={f.value}>
+                                  {f.label}
+                                </option>
+                              ))}
+                            </NativeSelect>
+                          </div>
+
+                          {/* Week only means anything above weekly — rendering it
+                              always would invite setting a value that is ignored. */}
+                          {s.visit_frequency !== "weekly" && (
+                            <div className="w-32 space-y-1">
+                              <Label
+                                htmlFor={`week-${s.assignment_id}`}
+                                className="text-xs text-muted-foreground"
+                              >
+                                Week
+                              </Label>
+                              <NativeSelect
+                                id={`week-${s.assignment_id}`}
+                                value={String(s.week_of_cycle ?? 1)}
+                                disabled={
+                                  busy === s.assignment_id || s.day_of_week === null
+                                }
+                                onChange={(e) => changeWeek(s, Number(e.target.value))}
+                              >
+                                {s.visit_frequency === "biweekly" ? (
+                                  <>
+                                    <option value="1">Week A</option>
+                                    <option value="2">Week B</option>
+                                  </>
+                                ) : (
+                                  <>
+                                    <option value="1">1st</option>
+                                    <option value="2">2nd</option>
+                                    <option value="3">3rd</option>
+                                    <option value="4">4th</option>
+                                  </>
+                                )}
+                              </NativeSelect>
+                            </div>
+                          )}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
 
           {inactive.length > 0 && (
             <p className="text-xs text-muted-foreground">
