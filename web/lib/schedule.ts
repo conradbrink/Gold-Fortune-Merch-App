@@ -629,7 +629,12 @@ export function autoSpreadDays(
   const stranded: PlannedStore[] = [];
   const riders: { day: number; stores: number }[] = [];
   for (const store of unplaceable) {
-    const home = townDay.get(store.city ?? "No town");
+    // A missing town is not a town. Keying on "No town" let a store with neither
+    // coordinates nor a city ride along with an unrelated store that also had no
+    // city — an arbitrary day, chosen on the strength of two nulls matching.
+    // With nothing at all to place it by it belongs in overflow, where it is
+    // cleared and reported as unplanned.
+    const home = store.city ? townDay.get(store.city) : undefined;
     if (home) {
       place(store, home.day, home.slot ?? 1);
       const seen = riders.find((r) => r.day === home.day);
