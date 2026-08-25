@@ -82,7 +82,11 @@ export async function fetchRepStartAnchors(
     .from("visits")
     .select("rep_id, checkin_at, checkin_lat, checkin_lng")
     .not("checkin_at", "is", null)
+    // Both halves. `checkin_lng` is nullable too, and a null survives the cast
+    // to become 0 in the median — putting a rep's anchor in the Gulf of Guinea
+    // and quietly reshaping every day it touches.
     .not("checkin_lat", "is", null)
+    .not("checkin_lng", "is", null)
     .order("checkin_at", { ascending: true });
   if (error) throw new Error(error.message);
 
@@ -146,6 +150,48 @@ export async function fetchDaysToOrder(
   const to = new Date(from);
   to.setDate(to.getDate() + weeks * 7);
 
+  // PostgREST caps a response at 1,000 rows. Past that the tail of the horizon
+  // arrives silently truncated — and a *partially* returned day is the worst
+  // possible input here: the stops that came back get renumbered 1..n while the
+  // ones that did not keep their old numbers, so the day ends up with two stops
+  // called 3 and the rep app, which orders by that column, shows a broken round.
+  // Paged, and ordered by id so the pages cannot overlap or skip.
+  const PAGE = 1000;
+  const rows: RouteRow[] = [];
+  for (let offset = 0; ; offset += PAGE) {
+    const page = await fetchRoutePage(supabase, from, to, offset, PAGE);
+    rows.push(...page);
+    if (page.length < PAGE) break;
+  }
+
+  return groupRouteRows(rows);
+}
+
+type Embedded<T> = T | T[] | null;
+
+type RouteRow = {
+  id: string;
+  rep_id: string;
+  store_id: string;
+  scheduled_date: string;
+  sequence_order: number | null;
+  profiles: Embedded<{ full_name: string | null }>;
+  stores: Embedded<{
+    name: string;
+    city: string | null;
+    lat: number | null;
+    lng: number | null;
+  }>;
+  visits: { checkin_at: string | null }[] | null;
+};
+
+async function fetchRoutePage(
+  supabase: SupabaseClient,
+  from: Date,
+  to: Date,
+  offset: number,
+  size: number
+): Promise<RouteRow[]> {
   const { data, error } = await supabase
     .from("routes")
     // Single string literal — a concatenated .select() degrades to
@@ -161,31 +207,25 @@ export async function fetchDaysToOrder(
       "id, rep_id, store_id, scheduled_date, sequence_order, profiles!routes_rep_id_fkey(full_name), stores(name, city, lat, lng), visits(checkin_at)"
     )
     .gte("scheduled_date", toLocalDateInput(from))
-    .lte("scheduled_date", toLocalDateInput(to));
+    .lte("scheduled_date", toLocalDateInput(to))
+    // A stable total order, or two pages can return the same row and miss another.
+    .order("id", { ascending: true })
+    .range(offset, offset + size - 1);
   if (error) throw new Error(error.message);
+  return (data ?? []) as unknown as RouteRow[];
+}
 
-  type Embedded<T> = T | T[] | null;
+function groupRouteRows(rows: RouteRow[]): {
+  days: OrderableDay[];
+  started: number;
+} {
   const one = <T>(e: Embedded<T>): T | null =>
     Array.isArray(e) ? e[0] ?? null : e;
 
   const byDay = new Map<string, OrderableDay>();
   const startedDays = new Set<string>();
 
-  for (const r of (data ?? []) as unknown as {
-    id: string;
-    rep_id: string;
-    store_id: string;
-    scheduled_date: string;
-    sequence_order: number | null;
-    profiles: Embedded<{ full_name: string | null }>;
-    stores: Embedded<{
-      name: string;
-      city: string | null;
-      lat: number | null;
-      lng: number | null;
-    }>;
-    visits: { checkin_at: string | null }[] | null;
-  }[]) {
+  for (const r of rows) {
     const key = `${r.rep_id}|${r.scheduled_date}`;
     // A day the rep has already begun is off limits, however far ahead it is.
     if (r.visits?.some((v) => v.checkin_at)) startedDays.add(key);
@@ -267,11 +307,18 @@ export function planStopOrder(
       a.storeName.localeCompare(b.storeName)
     );
     const routeIds = [...ordered, ...tail].map((s) => s.routeId);
-    const changed = routeIds.some(
-      (id, i) =>
-        id !==
-        [...inCurrentOrder, ...tail].map((s) => s.routeId)[i]
-    );
+
+    // Compare against the order the database actually holds, hoisted out of the
+    // loop. Comparing against placed-then-tail instead was wrong twice over: it
+    // rebuilt the array once per stop, and it assumed the very arrangement this
+    // function is trying to produce. A day whose located stops were already
+    // optimal but whose unplaceable stop sat in the middle came out `changed:
+    // false`, so the rule that unplaceable stops belong at the end was quietly
+    // not applied to exactly the days that needed it.
+    const storedOrder = [...day.stops]
+      .sort((a, b) => (a.sequence ?? 0) - (b.sequence ?? 0))
+      .map((s) => s.routeId);
+    const changed = routeIds.some((id, i) => id !== storedOrder[i]);
 
     currentKm += beforeTotal;
     plannedKm += afterTotal;

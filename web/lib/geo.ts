@@ -158,8 +158,14 @@ export function orderStops<T>(
   getPoint: (item: T) => Point,
   anchor?: Point | null
 ): T[] {
-  if (items.length < 3) return [...items];
+  if (items.length < 2) return [...items];
 
+  // Two stops still need the anchor. The leg between them is the same length in
+  // either direction, so the only distance in play is the drive from where the
+  // rep starts to whichever they call on first — which is precisely what this
+  // function exists to shorten. Returning early here left every two-stop day
+  // sitting in whatever order the alphabet gave it.
+  //
   // Rotate the nearest-to-anchor stop into first place before the greedy pass,
   // so the fixed point twoOpt preserves is the one the rep really starts from.
   let start = 0;

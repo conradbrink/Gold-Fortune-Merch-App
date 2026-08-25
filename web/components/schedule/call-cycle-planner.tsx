@@ -328,6 +328,15 @@ export function CallCyclePlanner() {
     }
   }
 
+  /** Distance over the days that would actually change, which is what is named. */
+  const changedKm = useMemo(() => {
+    const changed = (order?.days ?? []).filter((d) => d.changed);
+    return {
+      current: changed.reduce((n, d) => n + d.currentKm, 0),
+      planned: changed.reduce((n, d) => n + d.plannedKm, 0),
+    };
+  }, [order]);
+
   async function acceptOrder() {
     if (!order) return;
     setOrderingBusy("applying");
@@ -520,6 +529,10 @@ export function CallCyclePlanner() {
 
           {order && (
             <div className="space-y-2 rounded-lg border border-primary/40 bg-primary/5 p-3">
+              {/* Distances over the days being changed, not every day planned.
+                  Unchanged days add the same figure to both totals and only
+                  dilute the percentage, and the sentence names the changed
+                  count — so the two halves described different sets of days. */}
               {order.days.filter((d) => d.changed).length === 0 ? (
                 <p className="text-sm text-foreground">
                   Every scheduled day is already in its shortest order. Nothing
@@ -534,19 +547,22 @@ export function CallCyclePlanner() {
                       : "s"}{" "}
                     would be re-ordered:{" "}
                     <span className="tabular-nums">
-                      {Math.round(order.currentKm).toLocaleString("en-GB")} km
+                      {Math.round(changedKm.current).toLocaleString("en-GB")} km
                     </span>{" "}
                     of driving becomes{" "}
                     <span className="tabular-nums">
-                      {Math.round(order.plannedKm).toLocaleString("en-GB")} km
+                      {Math.round(changedKm.planned).toLocaleString("en-GB")} km
                     </span>
-                    {order.currentKm > 0 && (
+                    {/* Only claimed when it is true. A day whose anchor leg
+                        costs more than its inter-stop saving can come out
+                        longer, and "-4% less" is not a sentence. */}
+                    {changedKm.current > 0 && changedKm.planned < changedKm.current && (
                       <>
                         {" "}
                         &mdash;{" "}
                         <span className="font-semibold text-emerald-700 dark:text-emerald-500">
                           {Math.round(
-                            (1 - order.plannedKm / order.currentKm) * 100
+                            (1 - changedKm.planned / changedKm.current) * 100
                           )}
                           % less
                         </span>
