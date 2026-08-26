@@ -16,7 +16,9 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Field } from "@/components/hr/field";
+import { JobRoleEditor } from "@/components/access/job-role-editor";
 import { createClient } from "@/lib/supabase/client";
 import { useHrLoad } from "@/lib/hr/use-load";
 import { generatePassword } from "@/lib/representatives";
@@ -142,6 +144,13 @@ export default function UsersPage() {
         </div>
       )}
 
+      <Tabs defaultValue="people">
+        <TabsList>
+          <TabsTrigger value="people">People</TabsTrigger>
+          <TabsTrigger value="roles">Job roles</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="people" className="mt-4">
       <div className="grid gap-4 lg:grid-cols-[18rem_1fr]">
         <Card>
           <CardContent className="p-2">
@@ -203,7 +212,9 @@ export default function UsersPage() {
                     <option value="" disabled>
                       Choose…
                     </option>
-                    {directory.jobRoles.map((r) => (
+                    {directory.jobRoles
+                      .filter((r) => r.active || r.id === selected.job_role_id)
+                      .map((r) => (
                       <option key={r.id} value={r.id}>
                         {r.name}
                       </option>
@@ -300,10 +311,22 @@ export default function UsersPage() {
         )}
       </div>
 
+        </TabsContent>
+
+        <TabsContent value="roles" className="mt-4">
+          <JobRoleEditor directory={directory} onChanged={load} />
+        </TabsContent>
+      </Tabs>
+
       <CreateUserDialog
         open={creating}
         onOpenChange={setCreating}
-        jobRoles={directory.jobRoles.filter((r) => r.name !== "Administrator")}
+        // Active roles only, and never the administrator template: creating
+        // another full administrator is a Supabase-dashboard act, and the API
+        // refuses it regardless of what this list offers.
+        jobRoles={directory.jobRoles.filter(
+          (r) => r.active && r.code !== "administrator"
+        )}
         onCreated={load}
       />
     </div>

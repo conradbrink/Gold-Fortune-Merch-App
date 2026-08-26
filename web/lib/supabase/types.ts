@@ -5090,6 +5090,7 @@ export type Database = {
         Row: {
           active: boolean
           base_role: string
+          code: string | null
           created_at: string
           description: string | null
           id: string
@@ -5102,6 +5103,7 @@ export type Database = {
         Insert: {
           active?: boolean
           base_role: string
+          code?: string | null
           created_at?: string
           description?: string | null
           id?: string
@@ -5114,6 +5116,7 @@ export type Database = {
         Update: {
           active?: boolean
           base_role?: string
+          code?: string | null
           created_at?: string
           description?: string | null
           id?: string
@@ -6011,6 +6014,20 @@ export type Database = {
       has_permission: { Args: { p_code: string }; Returns: boolean }
       my_permissions: { Args: never; Returns: string[] }
       provision_organization: { Args: { p_org: string }; Returns: undefined }
+      delete_job_role: { Args: { p_id: string }; Returns: undefined }
+      org_timezone: { Args: { p_org: string }; Returns: string }
+      reapply_job_role: { Args: { p_id: string }; Returns: number }
+      save_job_role: {
+        Args: {
+          p_active: boolean
+          p_base_role: string
+          p_description: string
+          p_id: string
+          p_name: string
+          p_permissions: string[]
+        }
+        Returns: string
+      }
       set_job_role: { Args: { p_job_role: string; p_profile: string }; Returns: undefined }
       set_profile_permission: {
         Args: { p_code: string; p_granted: boolean; p_profile: string }
