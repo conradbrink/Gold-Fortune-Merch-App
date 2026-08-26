@@ -31,12 +31,18 @@ import { enforceRateLimit, LIMITS } from "@/lib/rate-limit";
  * manager granting their own level of access, which is the one action worth
  * making somebody go to the Supabase dashboard for — where it is deliberate,
  * attributable, and outside anything an XSS on this app could reach.
+ *
+ * `hr_manager` is accepted under that same rule and not as an exception to it:
+ * it reaches `/hr` and nothing else, which is strictly less than a manager. It
+ * is worth saying plainly that this grant is not small — an HR manager reads
+ * salaries, dates of birth and disciplinary files. The test that lets it
+ * through is "less access than the person granting it", not "harmless".
  */
 
 export const runtime = "nodejs";
 
 /** Roles a manager may create from the app. Deliberately excludes 'manager'. */
-const INVITABLE = new Set(["rep", "warehouse"]);
+const INVITABLE = new Set(["rep", "warehouse", "hr_manager"]);
 
 export async function POST(request: Request) {
   try {

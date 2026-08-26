@@ -101,8 +101,8 @@ export async function fetchWarehouseStaff(supabase: Client): Promise<StaffMember
  *
  * Goes through the route handler rather than the browser client, because
  * creating an auth user needs the service-role key and that must never reach a
- * bundle. The route refuses anything but `rep` and `warehouse`, so this cannot
- * be turned into a way to mint a manager.
+ * bundle. The route refuses any role a manager does not outrank — `manager`
+ * itself is excluded — so this cannot be turned into a way to mint one.
  */
 export async function inviteWarehouseUser(input: {
   email: string;
