@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useMemo, useState } from "react";
-import { Check, Copy, Eye, EyeOff, Info, RefreshCw, UserPlus } from "lucide-react";
+import { Check, Copy, Eye, EyeOff, Info, RefreshCw, Smartphone, UserPlus } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -37,6 +37,14 @@ import {
  * it is the reason there is no "CFO" role in the database's role column — the
  * CFO who needs the warehouse and HR but not sales is a set of permissions, not
  * a fifth role waiting to be invented.
+ *
+ * Mobile access is shown but not tickable, and that is not an oversight. The
+ * Android app decides who it lets in by reading `profiles.role` — anybody who
+ * is not a `rep` gets the "this is for reps" notice — so it is the job role's
+ * base role that grants it, and turning it into a permission needs a Flutter
+ * release rather than a migration. Showing it derived is the honest halfway
+ * house: an administrator can see who has it and change it by changing the job
+ * role, and nothing pretends to be a switch that is not wired up.
  *
  * 🔴 The honesty this screen owes its user: not every tick box is enforced by
  * the database yet. HR, the warehouse and the working day are; the rest still
@@ -156,9 +164,12 @@ export default function UsersPage() {
                         </Badge>
                       )}
                     </span>
-                    <span className="block truncate text-xs text-muted-foreground">
+                    <span className="flex items-center gap-1.5 truncate text-xs text-muted-foreground">
                       {directory.jobRoles.find((r) => r.id === u.job_role_id)?.name ??
                         "No job role"}
+                      {u.role === "rep" && (
+                        <Smartphone className="h-3 w-3 shrink-0" aria-label="Uses the mobile app" />
+                      )}
                     </span>
                   </button>
                 </li>
@@ -199,6 +210,27 @@ export default function UsersPage() {
                     ))}
                   </NativeSelect>
                 </Field>
+                <p className="flex gap-2 rounded-md bg-muted/50 p-3 text-xs text-muted-foreground">
+                  <Smartphone className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                  {selected.role === "rep" ? (
+                    <span>
+                      <span className="font-medium text-foreground">
+                        Signs in to the Android app.
+                      </span>{" "}
+                      Check-ins, forms, photos and their round. Granted by the
+                      job role, not by a tick box — the app decides by reading
+                      the underlying role, so changing this means moving them to
+                      or off a field-rep job role.
+                    </span>
+                  ) : (
+                    <span>
+                      Does not use the Android app — it shows them the
+                      &ldquo;this is for reps&rdquo; notice. Only a job role
+                      whose underlying role is <em>rep</em> opens it, and this
+                      one&rsquo;s is <em>{selected.role}</em>.
+                    </span>
+                  )}
+                </p>
                 {isAdminUser && (
                   <p className="flex gap-2 rounded-md bg-muted/50 p-3 text-xs text-muted-foreground">
                     <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" />
@@ -299,7 +331,7 @@ function CreateUserDialog({
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  jobRoles: { id: string; name: string; description: string | null }[];
+  jobRoles: { id: string; name: string; description: string | null; base_role: string }[];
   onCreated: () => void;
 }) {
   const [fullName, setFullName] = useState("");
@@ -413,7 +445,15 @@ function CreateUserDialog({
             <Field
               label="Job role"
               className="sm:col-span-2"
-              hint={chosen?.description ?? undefined}
+              hint={
+                chosen
+                  ? `${chosen.description ?? ""}${
+                      chosen.base_role === "rep"
+                        ? " They will also be able to sign in to the Android app."
+                        : " They will not be able to sign in to the Android app."
+                    }`.trim()
+                  : undefined
+              }
             >
               <NativeSelect
                 value={jobRoleId}

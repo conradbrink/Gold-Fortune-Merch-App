@@ -59,6 +59,7 @@ export default function CompanyProfilePage() {
     address: "",
     support_email: "",
     vat_rate: "",
+    timezone: "",
   });
   /** Planning capacity. Kept separate: it saves with its own button, because
       it changes what the whole schedule is measured against. */
@@ -91,6 +92,7 @@ export default function CompanyProfilePage() {
         address: orgRow.address ?? "",
         support_email: orgRow.support_email ?? "",
         vat_rate: String(orgRow.vat_rate ?? 0),
+        timezone: orgRow.timezone ?? "Africa/Gaborone",
       });
     }
 
@@ -155,6 +157,7 @@ export default function CompanyProfilePage() {
         address: form.address || null,
         support_email: form.support_email || null,
         vat_rate: Number(form.vat_rate) || 0,
+        timezone: form.timezone,
       })
       .eq("id", org.id);
     setSaving(false);
@@ -258,6 +261,38 @@ export default function CompanyProfilePage() {
                   taken keep the rate they were captured at, so changing this
                   never restates an invoice a customer is holding. 0 charges no
                   VAT.
+                </p>
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="timezone">Timezone</Label>
+                <Input
+                  id="timezone"
+                  list="iana-timezones"
+                  value={form.timezone}
+                  onChange={(e) => setForm({ ...form, timezone: e.target.value })}
+                />
+                {/* A short list of the ones a customer here is likely to want,
+                    as suggestions rather than a closed set — the database
+                    accepts any IANA name and refuses anything else, so a
+                    dropdown of six would be a smaller lie than a free field. */}
+                <datalist id="iana-timezones">
+                  <option value="Africa/Gaborone" />
+                  <option value="Africa/Johannesburg" />
+                  <option value="Africa/Windhoek" />
+                  <option value="Africa/Harare" />
+                  <option value="Africa/Lusaka" />
+                  <option value="Africa/Maputo" />
+                  <option value="Africa/Nairobi" />
+                  <option value="Africa/Lagos" />
+                  <option value="Europe/London" />
+                  <option value="UTC" />
+                </datalist>
+                <p className="text-xs text-muted-foreground">
+                  Decides which calendar day something falls on — attendance,
+                  the working-day card and every dashboard read it. Not a
+                  display preference: a rep finishing at 23:30 lands on the
+                  wrong day if this is wrong, and the day after shows a start
+                  with no end. An IANA name; anything else is refused.
                 </p>
               </div>
               <div className="flex items-end gap-3 sm:col-span-2">

@@ -1575,6 +1575,7 @@ export type Database = {
           legal_name: string | null
           name: string
           stores_per_day: number
+          timezone: string
           support_email: string | null
           vat_rate: number
           website: string | null
@@ -1589,6 +1590,7 @@ export type Database = {
           legal_name?: string | null
           name: string
           stores_per_day?: number
+          timezone?: string
           support_email?: string | null
           vat_rate?: number
           website?: string | null
@@ -1603,6 +1605,7 @@ export type Database = {
           legal_name?: string | null
           name?: string
           stores_per_day?: number
+          timezone?: string
           support_email?: string | null
           vat_rate?: number
           website?: string | null
