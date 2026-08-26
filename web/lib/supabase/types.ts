@@ -1875,6 +1875,7 @@ export type Database = {
       }
       profiles: {
         Row: {
+          job_role_id: string | null
           created_at: string
           email: string | null
           full_name: string | null
@@ -1886,6 +1887,7 @@ export type Database = {
           role: string
         }
         Insert: {
+          job_role_id?: string | null
           created_at?: string
           email?: string | null
           full_name?: string | null
@@ -1897,6 +1899,7 @@ export type Database = {
           role: string
         }
         Update: {
+          job_role_id?: string | null
           created_at?: string
           email?: string | null
           full_name?: string | null
@@ -1908,6 +1911,13 @@ export type Database = {
           role?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "profiles_job_role_id_fkey"
+            columns: ["job_role_id"]
+            isOneToOne: false
+            referencedRelation: "job_roles"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "profiles_org_id_fkey"
             columns: ["org_id"]
@@ -5016,6 +5026,153 @@ export type Database = {
           },
         ]
       }
+      app_permissions: {
+        Row: {
+          area: string
+          code: string
+          data_enforced: boolean
+          description: string
+          label: string
+          sort_order: number
+        }
+        Insert: {
+          area: string
+          code: string
+          data_enforced?: boolean
+          description: string
+          label: string
+          sort_order?: number
+        }
+        Update: {
+          area?: string
+          code?: string
+          data_enforced?: boolean
+          description?: string
+          label?: string
+          sort_order?: number
+        }
+        Relationships: []
+      }
+      job_role_permissions: {
+        Row: {
+          job_role_id: string
+          permission_code: string
+        }
+        Insert: {
+          job_role_id: string
+          permission_code: string
+        }
+        Update: {
+          job_role_id?: string
+          permission_code?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "job_role_permissions_job_role_id_fkey"
+            columns: ["job_role_id"]
+            isOneToOne: false
+            referencedRelation: "job_roles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "job_role_permissions_permission_code_fkey"
+            columns: ["permission_code"]
+            isOneToOne: false
+            referencedRelation: "app_permissions"
+            referencedColumns: ["code"]
+          },
+        ]
+      }
+      job_roles: {
+        Row: {
+          active: boolean
+          base_role: string
+          created_at: string
+          description: string | null
+          id: string
+          is_system: boolean
+          name: string
+          org_id: string
+          sort_order: number
+          updated_at: string
+        }
+        Insert: {
+          active?: boolean
+          base_role: string
+          created_at?: string
+          description?: string | null
+          id?: string
+          is_system?: boolean
+          name: string
+          org_id: string
+          sort_order?: number
+          updated_at?: string
+        }
+        Update: {
+          active?: boolean
+          base_role?: string
+          created_at?: string
+          description?: string | null
+          id?: string
+          is_system?: boolean
+          name?: string
+          org_id?: string
+          sort_order?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "job_roles_org_id_fkey"
+            columns: ["org_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      profile_permissions: {
+        Row: {
+          granted_at: string
+          granted_by: string | null
+          permission_code: string
+          profile_id: string
+        }
+        Insert: {
+          granted_at?: string
+          granted_by?: string | null
+          permission_code: string
+          profile_id: string
+        }
+        Update: {
+          granted_at?: string
+          granted_by?: string | null
+          permission_code?: string
+          profile_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "profile_permissions_granted_by_fkey"
+            columns: ["granted_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "profile_permissions_permission_code_fkey"
+            columns: ["permission_code"]
+            isOneToOne: false
+            referencedRelation: "app_permissions"
+            referencedColumns: ["code"]
+          },
+          {
+            foreignKeyName: "profile_permissions_profile_id_fkey"
+            columns: ["profile_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       hr_leave_balance_summary: {
@@ -5847,6 +6004,16 @@ export type Database = {
         Args: { p_from: string; p_org: string; p_to: string }
         Returns: number
       }
+      assign_default_permissions: { Args: never; Returns: unknown }
+      has_permission: { Args: { p_code: string }; Returns: boolean }
+      my_permissions: { Args: never; Returns: string[] }
+      provision_organization: { Args: { p_org: string }; Returns: undefined }
+      set_job_role: { Args: { p_job_role: string; p_profile: string }; Returns: undefined }
+      set_profile_permission: {
+        Args: { p_code: string; p_granted: boolean; p_profile: string }
+        Returns: undefined
+      }
+      hr_can_configure: { Args: never; Returns: boolean }
     }
     Enums: {
       [_ in never]: never

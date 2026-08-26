@@ -14,8 +14,8 @@ import { Detail, Field } from "@/components/hr/field";
 import { WarningDialog } from "@/components/hr/warning-dialog";
 import { createClient } from "@/lib/supabase/client";
 import { useHrLoad } from "@/lib/hr/use-load";
-import { useCurrentRole } from "@/lib/use-current-role";
-import { isHrRole } from "@/lib/roles";
+import { usePermissions } from "@/lib/use-permissions";
+import { can } from "@/lib/permissions";
 import { formatDateOnly } from "@/lib/format-date";
 import { toLocalDateInput } from "@/lib/date-range";
 import { fetchOrgId } from "@/lib/hr/employees";
@@ -56,8 +56,8 @@ export default function CasePage() {
   const supabase = createClient();
   const params = useParams<{ id: string }>();
   const id = params.id;
-  const role = useCurrentRole();
-  const isHr = isHrRole(role);
+  const permissions = usePermissions();
+  const isHr = permissions !== null && can(permissions, "hr");
 
   const [row, setRow] = useState<CaseRow | null>(null);
   const [evidence, setEvidence] = useState<EvidenceRow[]>([]);

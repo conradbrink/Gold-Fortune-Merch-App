@@ -25,7 +25,8 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { ErrorBanner, EmptyRow } from "@/components/warehouse/stat-tile";
-import { useCurrentRole } from "@/lib/use-current-role";
+import { can } from "@/lib/permissions";
+import { usePermissions } from "@/lib/use-permissions";
 import { fetchOrgId } from "@/lib/representatives";
 import {
   fetchSuppliersAll,
@@ -71,8 +72,11 @@ type Editing =
  */
 export default function WarehouseSettingsPage() {
   const supabase = createClient();
-  const role = useCurrentRole();
-  const isManager = role === "manager";
+  const permissions = usePermissions();
+  // The tabs behind this are stock locations, reorder levels and warehouse
+  // logins — setup rather than day-to-day picking, so they follow the approval
+  // permission rather than plain warehouse access.
+  const isManager = permissions !== null && can(permissions, "warehouse_approve");
 
   const [orgId, setOrgId] = useState<string | null>(null);
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);

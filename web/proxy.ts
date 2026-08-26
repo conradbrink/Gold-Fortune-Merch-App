@@ -2,11 +2,10 @@ import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 import {
   canAccessPath,
-  isAppRole,
+  homeFor,
   matchesPrefix,
-  ROLE_HOME,
-  type AppRole,
-} from "@/lib/roles";
+  toPermissionSet,
+} from "@/lib/permissions";
 
 export async function proxy(request: NextRequest) {
   let response = NextResponse.next({ request });
@@ -80,14 +79,13 @@ export async function proxy(request: NextRequest) {
   // rep fetching a newer APK is the update path working as intended) and the
   // password-reset pair.
   //
-  // This used to ask "is this person a rep?" and bounce them to /rep-notice.
-  // That was a denylist with an open default, and it broke the moment a third
-  // role existed: a warehouse clerk is not a rep, so they fell through to the
-  // full manager shell — Reports, Representatives, Territories, Settings. RLS
-  // empties those grids and the API routes refuse anyone who is not a manager,
-  // so nothing leaked, but the clerk was handed a menu of pages that render
-  // blank. `canAccessPath` inverts it: permitted paths are named, and a role
-  // nobody has thought about yet is locked out rather than let in.
+  // This has been narrowed twice. It first asked "is this person a rep?" and
+  // bounced them — a denylist with an open default, which broke the moment a
+  // third role existed. Then it was an allowlist per role, which broke the
+  // moment somebody needed two roles' worth of access and there was no role for
+  // them. It now asks which permissions the person holds, and every path names
+  // the one it needs; a page added tomorrow with no entry in that map is
+  // refused until somebody decides who it belongs to.
   if (
     user &&
     !isRepNoticePage &&
@@ -95,37 +93,34 @@ export async function proxy(request: NextRequest) {
     !isDownloadPage &&
     !isPasswordResetPage
   ) {
-    const { data: profile, error: profileError } = await supabase
-      .from("profiles")
-      .select("role")
-      .eq("id", user.id)
-      .single();
+    // One round trip, as before — it used to fetch `profiles.role`. Asking the
+    // database for the permission set rather than deriving it here keeps the
+    // proxy and RLS reading the same answer from the same place.
+    const { data: granted, error: permissionError } = await supabase.rpc(
+      "my_permissions"
+    );
 
-    // A query that failed is not the same fact as a profile that is missing.
-    // Falling through to the `rep` default on a timeout or an RLS change would
-    // strand a manager on /rep-notice looking like a broken account, and the
-    // one thing they could not work out is that it was temporary. PGRST116 is
-    // "no rows", which genuinely is a broken account and is handled below.
-    if (profileError && profileError.code !== "PGRST116") {
+    // A query that failed is not the same fact as a person with no
+    // permissions. Falling through to "nothing" on a timeout would strand an
+    // administrator on /rep-notice looking like a broken account, and the one
+    // thing they could not work out is that it was temporary.
+    if (permissionError) {
       return new NextResponse(
         "Could not check your access just now. Reload in a moment.",
         { status: 503 }
       );
     }
 
-    const role = profile?.role as AppRole | undefined;
+    // An empty set is a real answer: a signed-in user whose profile was never
+    // provisioned. They get the notice page, which is a dead end rather than a
+    // redirect loop.
+    const permissions = toPermissionSet(granted as string[] | null);
 
-    // No profile row, or a role this build does not know about. Treated as a
-    // rep, which is the least-privileged destination and a dead end rather than
-    // a redirect loop. A signed-in user with no profile is a broken account,
-    // not a manager.
-    const effectiveRole: AppRole = isAppRole(role) ? role : "rep";
-
-    if (!canAccessPath(effectiveRole, request.nextUrl.pathname)) {
+    if (!canAccessPath(permissions, request.nextUrl.pathname)) {
       const url = request.nextUrl.clone();
-      url.pathname = ROLE_HOME[effectiveRole];
+      url.pathname = homeFor(permissions);
       // Guard against a home that is itself refused, which would redirect for
-      // ever. Only reachable if ROLE_HOME and the allowlist ever disagree.
+      // ever. Only reachable if `homeFor` and the path map ever disagree.
       if (url.pathname === request.nextUrl.pathname) return response;
       return NextResponse.redirect(url);
     }

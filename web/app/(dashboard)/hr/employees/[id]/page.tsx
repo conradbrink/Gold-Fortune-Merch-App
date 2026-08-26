@@ -34,8 +34,8 @@ import { CaseDialog } from "@/components/hr/case-dialog";
 import { WarningDialog } from "@/components/hr/warning-dialog";
 import { createClient } from "@/lib/supabase/client";
 import { useHrLoad } from "@/lib/hr/use-load";
-import { useCurrentRole } from "@/lib/use-current-role";
-import { isHrRole } from "@/lib/roles";
+import { usePermissions } from "@/lib/use-permissions";
+import { can } from "@/lib/permissions";
 import { formatDateOnly } from "@/lib/format-date";
 import { toLocalDateInput } from "@/lib/date-range";
 import {
@@ -113,8 +113,8 @@ export default function EmployeeProfilePage() {
   const supabase = createClient();
   const params = useParams<{ id: string }>();
   const id = params.id;
-  const role = useCurrentRole();
-  const isHr = isHrRole(role);
+  const permissions = usePermissions();
+  const isHr = permissions !== null && can(permissions, "hr");
 
   const [employee, setEmployee] = useState<EmployeeRow | null>(null);
   const [reference, setReference] = useState<HrReference | null>(null);

@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useState } from "react";
-import { Check, Copy, Eye, EyeOff, Plus, RefreshCw } from "lucide-react";
+import { Plus } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -21,15 +21,12 @@ import {
 import { Field } from "@/components/hr/field";
 import { createClient } from "@/lib/supabase/client";
 import { useHrLoad } from "@/lib/hr/use-load";
-import { useCurrentRole } from "@/lib/use-current-role";
-import { isHrRole } from "@/lib/roles";
+import { usePermissions } from "@/lib/use-permissions";
+import { can } from "@/lib/permissions";
 import { fetchOrgId } from "@/lib/hr/employees";
-import { generatePassword } from "@/lib/representatives";
 import {
   codeFromLabel,
-  createHrManager,
   fetchHrReference,
-  fetchHrStaff,
   LOOKUP_KINDS,
   saveDepartment,
   saveLeaveType,
@@ -66,19 +63,16 @@ import { REVIEW_PERIOD_LABELS } from "@/lib/hr/types";
  */
 export default function HrSettingsPage() {
   const supabase = createClient();
-  const role = useCurrentRole();
-  const isHr = isHrRole(role);
-  // The Admin tier. `isHr` is true for an HR manager too, and an HR manager
-  // must not be able to create another one — the API refuses it, and this keeps
-  // the tab from offering a form that would bounce.
-  const isAdmin = role === "manager";
+  const permissions = usePermissions();
+  // Changing HR settings is a narrower grant than running HR — the database
+  // draws the same line, in `hr_can_configure()`. Creating people and granting
+  // permissions is not here at all: that moved to Settings → Users, which does
+  // it for every job role rather than only for HR.
+  const isHr = permissions !== null && can(permissions, "hr_settings");
 
   const [reference, setReference] = useState<HrReference | null>(null);
   const [orgId, setOrgId] = useState<string | null>(null);
   const [settings, setSettings] = useState<SettingsInput | null>(null);
-  const [staff, setStaff] = useState<
-    { id: string; full_name: string | null; email: string | null; is_active: boolean }[]
-  >([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState<string | null>(null);
@@ -86,14 +80,12 @@ export default function HrSettingsPage() {
   const load = useCallback(async () => {
     setError(null);
     try {
-      const [ref, org, hrStaff] = await Promise.all([
+      const [ref, org] = await Promise.all([
         fetchHrReference(supabase),
         fetchOrgId(supabase),
-        fetchHrStaff(supabase),
       ]);
       setReference(ref);
       setOrgId(org);
-      setStaff(hrStaff);
       const s = ref.settings;
       setSettings({
         work_start_time: (s?.work_start_time ?? "08:00").slice(0, 5),
@@ -187,7 +179,6 @@ export default function HrSettingsPage() {
           <TabsTrigger value="departments">Departments</TabsTrigger>
           <TabsTrigger value="performance">Performance</TabsTrigger>
           <TabsTrigger value="disciplinary">Disciplinary</TabsTrigger>
-          {isAdmin && <TabsTrigger value="staff">HR staff</TabsTrigger>}
         </TabsList>
 
         {/* ---------------------------------------------------------- hours */}
@@ -603,216 +594,7 @@ export default function HrSettingsPage() {
           ))}
         </TabsContent>
 
-        {/* ---------------------------------------------------------- staff */}
-        {isAdmin && (
-          <TabsContent value="staff" className="mt-4 space-y-3">
-            <HrStaffPanel staff={staff} onCreated={load} />
-          </TabsContent>
-        )}
       </Tabs>
-    </div>
-  );
-}
-
-/**
- * Who holds the HR role, and how to add one.
- *
- * Admin-only, because `/api/reps/invite` refuses any caller who is not a
- * `manager` — an HR manager cannot create another HR manager, by design. The
- * form is here rather than on Representatives because that page is about field
- * reps and this is not a field rep.
- *
- * ⚠️ What this grants is not small. An HR manager reads salaries, dates of
- * birth and disciplinary files for the whole organisation. They cannot reach
- * sales, the warehouse, territories or company settings — `/hr` is the entire
- * allowlist — but within HR they see everything.
- */
-function HrStaffPanel({
-  staff,
-  onCreated,
-}: {
-  staff: { id: string; full_name: string | null; email: string | null; is_active: boolean }[];
-  onCreated: () => void;
-}) {
-  const [fullName, setFullName] = useState("");
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [reveal, setReveal] = useState(false);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [created, setCreated] = useState<{ email: string; password: string } | null>(
-    null
-  );
-  const [copied, setCopied] = useState(false);
-
-  async function submit() {
-    if (!fullName.trim() || !email.trim()) {
-      setError("A name and an email address are required.");
-      return;
-    }
-    if (password.length < 8) {
-      setError("The password must be at least 8 characters.");
-      return;
-    }
-    setBusy(true);
-    setError(null);
-    try {
-      await createHrManager({
-        email: email.trim(),
-        fullName: fullName.trim(),
-        password,
-      });
-      // Held only to show once. Nothing writes it anywhere else.
-      setCreated({ email: email.trim(), password });
-      setFullName("");
-      setEmail("");
-      setPassword("");
-      onCreated();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  return (
-    <div className="space-y-3">
-      <Card>
-        <CardContent className="px-0">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Name</TableHead>
-                <TableHead>Email</TableHead>
-                <TableHead className="text-right">Active</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {staff.length === 0 ? (
-                <TableRow>
-                  <TableCell colSpan={3} className="py-6 text-center text-sm text-muted-foreground">
-                    Nobody holds the HR role yet. You have it through your
-                    manager account.
-                  </TableCell>
-                </TableRow>
-              ) : (
-                staff.map((s) => (
-                  <TableRow key={s.id} className={s.is_active ? undefined : "opacity-60"}>
-                    <TableCell className="font-medium">
-                      {s.full_name ?? "Unnamed"}
-                    </TableCell>
-                    <TableCell className="text-sm text-muted-foreground">
-                      {s.email ?? "—"}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <Badge variant="outline" className="font-normal">
-                        {s.is_active ? "Yes" : "No"}
-                      </Badge>
-                    </TableCell>
-                  </TableRow>
-                ))
-              )}
-            </TableBody>
-          </Table>
-        </CardContent>
-      </Card>
-
-      {created ? (
-        <Card>
-          <CardContent className="space-y-3 p-5">
-            <h2 className="text-sm font-semibold">Account created</h2>
-            <p className="text-sm text-muted-foreground">
-              Hand these over now — the password is shown once and is not stored
-              anywhere you can look it up. Ask them to change it at first
-              sign-in.
-            </p>
-            <div className="flex flex-wrap items-center gap-2 rounded-md bg-muted/50 p-3 font-mono text-sm">
-              <span>{created.email}</span>
-              <span>·</span>
-              <span>{reveal ? created.password : "••••••••••••"}</span>
-              <Button
-                size="sm"
-                variant="ghost"
-                onClick={() => setReveal((v) => !v)}
-                aria-label={reveal ? "Hide password" : "Show password"}
-              >
-                {reveal ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-              </Button>
-              <Button
-                size="sm"
-                variant="ghost"
-                onClick={async () => {
-                  await navigator.clipboard.writeText(created.password);
-                  setCopied(true);
-                }}
-              >
-                {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
-              </Button>
-            </div>
-            <Button size="sm" variant="outline" onClick={() => setCreated(null)}>
-              Done
-            </Button>
-          </CardContent>
-        </Card>
-      ) : (
-        <Card>
-          <CardContent className="space-y-3 p-5">
-            <div>
-              <h2 className="text-sm font-semibold">Add an HR manager</h2>
-              <p className="text-xs text-muted-foreground">
-                They will be able to read salaries, dates of birth and
-                disciplinary files for everyone, and reach nothing outside HR.
-              </p>
-            </div>
-            <div className="grid gap-3 sm:grid-cols-2">
-              <Field label="Full name">
-                <Input value={fullName} onChange={(e) => setFullName(e.target.value)} />
-              </Field>
-              <Field label="Email">
-                <Input
-                  type="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                />
-              </Field>
-              <Field label="Starting password" className="sm:col-span-2">
-                <div className="flex gap-2">
-                  <Input
-                    type={reveal ? "text" : "password"}
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                  />
-                  <Button
-                    variant="outline"
-                    onClick={() => {
-                      setPassword(generatePassword());
-                      setReveal(true);
-                    }}
-                    title="Generate a password"
-                  >
-                    <RefreshCw className="h-4 w-4" />
-                  </Button>
-                  <Button
-                    variant="outline"
-                    onClick={() => setReveal((v) => !v)}
-                    aria-label={reveal ? "Hide password" : "Show password"}
-                  >
-                    {reveal ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                  </Button>
-                </div>
-              </Field>
-            </div>
-            {error && (
-              <p className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
-                {error}
-              </p>
-            )}
-            <Button onClick={submit} disabled={busy}>
-              {busy ? "Creating…" : "Create HR manager"}
-            </Button>
-          </CardContent>
-        </Card>
-      )}
     </div>
   );
 }

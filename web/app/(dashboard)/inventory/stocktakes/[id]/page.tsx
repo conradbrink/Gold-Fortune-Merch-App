@@ -27,7 +27,8 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { StatTile, ErrorBanner, EmptyRow } from "@/components/warehouse/stat-tile";
-import { useCurrentRole } from "@/lib/use-current-role";
+import { can } from "@/lib/permissions";
+import { usePermissions } from "@/lib/use-permissions";
 import {
   fetchStocktake,
   fetchVarianceReport,
@@ -65,7 +66,10 @@ type Line = {
 export default function StocktakeDetailPage() {
   const supabase = createClient();
   const { id } = useParams<{ id: string }>();
-  const role = useCurrentRole();
+  const permissions = usePermissions();
+  // Approving a variance is deliberately not the same grant as counting the
+  // stock — see the `warehouse_approve` permission.
+  const canApprove = permissions !== null && can(permissions, "warehouse_approve");
 
   const [head, setHead] = useState<StocktakeRow | null>(null);
   const [locationName, setLocationName] = useState<string | null>(null);
@@ -229,7 +233,7 @@ export default function StocktakeDetailPage() {
               </Button>
             </>
           )}
-          {submitted && role === "manager" && (
+          {submitted && canApprove && (
             <>
               <Button onClick={() => setDialog("approve")} disabled={busy}>
                 Approve
@@ -246,7 +250,7 @@ export default function StocktakeDetailPage() {
       {notice && (
         <p className="rounded-lg border border-border bg-muted/40 p-2.5 text-sm">{notice}</p>
       )}
-      {submitted && role !== "manager" && (
+      {submitted && !canApprove && (
         <p className="rounded-lg border border-border bg-muted/40 p-2.5 text-sm">
           Handed in. A manager has to approve the variances before they change the
           stock.
@@ -389,7 +393,7 @@ export default function StocktakeDetailPage() {
                   <TableHead className="text-right">Variance</TableHead>
                   <TableHead className="text-right">Now</TableHead>
                   <TableHead>Reason</TableHead>
-                  {submitted && role === "manager" && <TableHead>Confirm</TableHead>}
+                  {submitted && canApprove && <TableHead>Confirm</TableHead>}
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -439,7 +443,7 @@ export default function StocktakeDetailPage() {
                       <TableCell className="text-muted-foreground">
                         {v.variance_reason?.replace(/_/g, " ") ?? "—"}
                       </TableCell>
-                      {submitted && role === "manager" && (
+                      {submitted && canApprove && (
                         <TableCell>
                           {v.moved_since_submit && v.variance_qty !== 0 ? (
                             <label className="flex items-center gap-1.5 text-xs">

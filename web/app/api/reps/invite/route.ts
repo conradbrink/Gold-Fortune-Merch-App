@@ -41,7 +41,15 @@ import { enforceRateLimit, LIMITS } from "@/lib/rate-limit";
 
 export const runtime = "nodejs";
 
-/** Roles a manager may create from the app. Deliberately excludes 'manager'. */
+/**
+ * Roles a caller may create by naming one directly.
+ *
+ * Kept for the two callers that predate job roles — the rep dialog, which sends
+ * nothing and gets `rep`, and warehouse setup, which sends `warehouse`. New
+ * callers send `job_role_id` instead and the base role comes off the template.
+ *
+ * `manager` is still absent, on purpose. See the note above.
+ */
 const INVITABLE = new Set(["rep", "warehouse", "hr_manager"]);
 
 export async function POST(request: Request) {
@@ -69,9 +77,23 @@ export async function POST(request: Request) {
       .single();
 
     const caller = profile as { org_id: string; role: string } | null;
-    if (caller?.role !== "manager") {
+    if (!caller) {
+      return Response.json({ error: "Your account is incomplete." }, { status: 403 });
+    }
+
+    // Asked of the database rather than compared against a role string here.
+    // `has_permission` is the same function every policy uses, so this route
+    // and RLS cannot drift into disagreeing about who is an administrator.
+    const { data: isAdmin, error: adminError } = await supabase.rpc(
+      "has_permission",
+      { p_code: "admin" }
+    );
+    if (adminError) {
+      return Response.json({ error: adminError.message }, { status: 502 });
+    }
+    if (isAdmin !== true) {
       return Response.json(
-        { error: "Only managers can create accounts." },
+        { error: "Only an administrator can create accounts." },
         { status: 403 }
       );
     }
@@ -88,6 +110,7 @@ export async function POST(request: Request) {
       full_name?: string;
       password?: string;
       role?: string;
+      job_role_id?: string;
     };
     // The cast above is a claim about this body, not a check on it. A caller
     // sending {"role": 123} makes `.trim()` throw a TypeError, which the outer
@@ -97,21 +120,70 @@ export async function POST(request: Request) {
     const email = str(body.email).trim().toLowerCase();
     const fullName = str(body.full_name).trim();
     const password = str(body.password);
-    // Defaults to 'rep' so the existing caller, which sends no role, keeps
-    // behaving exactly as it did.
-    const role = str(body.role).trim() || "rep";
+    // Two ways in. `job_role_id` is the one that matters now: the caller names
+    // a template and the base role comes off it, so the browser never chooses a
+    // role and cannot choose a role it should not have. `role` is the older
+    // path, kept because the rep dialog and warehouse setup still use it.
+    const jobRoleId = str(body.job_role_id).trim();
+    let role: string;
 
-    if (!INVITABLE.has(role)) {
-      return Response.json(
-        {
-          error:
-            role === "manager"
-              ? "Managers cannot be created here. Add them in the Supabase dashboard."
-              : "Unknown role.",
-        },
-        { status: 400 }
+    if (jobRoleId) {
+      const { data: jobRole, error: jobRoleError } = await supabase
+        .from("job_roles")
+        .select("id, base_role, org_id")
+        .eq("id", jobRoleId)
+        .maybeSingle();
+
+      // Read through the caller's own client, so RLS has already confined it to
+      // their organisation — there is no version of this that can point at
+      // somebody else's template.
+      if (jobRoleError) {
+        return Response.json({ error: jobRoleError.message }, { status: 502 });
+      }
+      const template = jobRole as { base_role: string; org_id: string } | null;
+      if (!template || template.org_id !== caller.org_id) {
+        return Response.json({ error: "Unknown job role." }, { status: 400 });
+      }
+
+      // A template that grants `admin` cannot be used to mint an account, for
+      // the same reason `manager` was never invitable: that is an administrator
+      // handing out their own level of access, and it belongs somewhere
+      // deliberate and attributable.
+      const { data: grants } = await supabase
+        .from("job_role_permissions")
+        .select("permission_code")
+        .eq("job_role_id", jobRoleId);
+      const grantsAdmin = ((grants ?? []) as { permission_code: string }[]).some(
+        (g) => g.permission_code === "admin"
       );
+      if (grantsAdmin) {
+        return Response.json(
+          {
+            error:
+              "Accounts on an administrator template must be created in the Supabase dashboard.",
+          },
+          { status: 400 }
+        );
+      }
+
+      role = template.base_role;
+    } else {
+      // Defaults to 'rep' so the existing caller, which sends no role, keeps
+      // working unchanged.
+      role = str(body.role).trim() || "rep";
+      if (!INVITABLE.has(role)) {
+        return Response.json(
+          {
+            error:
+              role === "manager"
+                ? "Managers cannot be created here. Add them in the Supabase dashboard."
+                : "Unknown role.",
+          },
+          { status: 400 }
+        );
+      }
     }
+
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
       return Response.json({ error: "Enter a valid email address." }, { status: 400 });
     }
@@ -153,10 +225,14 @@ export async function POST(request: Request) {
     const invited = created;
 
     // No trigger creates profiles on this project, so the row is ours to write.
+    // `job_role_id` is written with the profile so the trigger that copies the
+    // template's permissions sees it on INSERT. Setting it afterwards would
+    // leave a window where the account exists with no grants at all.
     const { error: profileError } = await admin.from("profiles").insert({
       id: invited.user.id,
       org_id: caller.org_id,
       role,
+      job_role_id: jobRoleId || null,
       full_name: fullName,
       email,
     });
@@ -172,7 +248,13 @@ export async function POST(request: Request) {
       );
     }
 
-    return Response.json({ id: invited.user.id, email, full_name: fullName, role });
+    return Response.json({
+      id: invited.user.id,
+      email,
+      full_name: fullName,
+      role,
+      job_role_id: jobRoleId || null,
+    });
   } catch (reason) {
     const message =
       reason instanceof Error ? reason.message : "Unexpected error sending invite.";

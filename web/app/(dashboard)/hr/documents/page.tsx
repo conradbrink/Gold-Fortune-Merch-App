@@ -19,8 +19,8 @@ import {
 import { DocumentDialog } from "@/components/hr/document-dialog";
 import { createClient } from "@/lib/supabase/client";
 import { useHrLoad } from "@/lib/hr/use-load";
-import { useCurrentRole } from "@/lib/use-current-role";
-import { isHrRole } from "@/lib/roles";
+import { usePermissions } from "@/lib/use-permissions";
+import { can } from "@/lib/permissions";
 import { formatDateOnly } from "@/lib/format-date";
 import { fetchEmployees, fetchOrgId, type EmployeeRow } from "@/lib/hr/employees";
 import { fetchHrReference, type HrReference } from "@/lib/hr/settings";
@@ -53,8 +53,8 @@ import {
  */
 export default function HrDocumentsPage() {
   const supabase = createClient();
-  const role = useCurrentRole();
-  const isHr = isHrRole(role);
+  const permissions = usePermissions();
+  const isHr = permissions !== null && can(permissions, "hr");
 
   const [documents, setDocuments] = useState<DocumentRow[]>([]);
   const [employees, setEmployees] = useState<EmployeeRow[]>([]);

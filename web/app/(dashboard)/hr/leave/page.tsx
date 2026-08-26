@@ -20,8 +20,8 @@ import {
 import { LeaveRequestDialog } from "@/components/hr/leave-request-dialog";
 import { createClient } from "@/lib/supabase/client";
 import { useHrLoad } from "@/lib/hr/use-load";
-import { useCurrentRole } from "@/lib/use-current-role";
-import { isHrRole } from "@/lib/roles";
+import { usePermissions } from "@/lib/use-permissions";
+import { can } from "@/lib/permissions";
 import { formatDateOnly } from "@/lib/format-date";
 import { toLocalDateInput } from "@/lib/date-range";
 import { fetchEmployees, fetchOrgId, type EmployeeRow } from "@/lib/hr/employees";
@@ -49,8 +49,8 @@ import { LEAVE_STATUS_LABELS } from "@/lib/hr/types";
  */
 export default function HrLeavePage() {
   const supabase = createClient();
-  const role = useCurrentRole();
-  const isHr = isHrRole(role);
+  const permissions = usePermissions();
+  const isHr = permissions !== null && can(permissions, "hr");
 
   const [requests, setRequests] = useState<LeaveRequestRow[]>([]);
   const [balances, setBalances] = useState<LeaveBalance[]>([]);
