@@ -14,7 +14,7 @@
  * broken, which is its own kind of failure.
  */
 
-export type AppRole = "rep" | "manager" | "warehouse";
+export type AppRole = "rep" | "manager" | "warehouse" | "hr_manager";
 
 /**
  * The prefixes a warehouse clerk may reach.
@@ -47,11 +47,37 @@ const WAREHOUSE_ALLOWED = ["/warehouse", "/orders", "/inventory"] as const;
  */
 const WAREHOUSE_DENIED = ["/warehouse/insights"] as const;
 
+/**
+ * The HR module, and nothing else.
+ *
+ * An HR manager reads dates of birth, salaries and disciplinary histories, and
+ * has no business in sales, the warehouse, the leads pipeline or the
+ * organisation's settings. One prefix is the whole grant, and the database
+ * agrees: every HR policy names `hr_manager`, and no other policy in the schema
+ * does.
+ */
+const HR_MANAGER_ALLOWED = ["/hr"] as const;
+
+/**
+ * Employee self-service, reachable by every role.
+ *
+ * Reps work in the Android app and the web dashboard bounces them to
+ * `/rep-notice` — which is right for the merchandising screens and wrong for
+ * this one. Somebody has to be able to read their own leave balance, submit a
+ * request, and acknowledge their own review, and the alternative was building
+ * all of that a second time in Flutter for a release cycle we do not need.
+ * This page is deliberately the only exception: it shows the signed-in person
+ * their own record and refuses to render anybody else's, and RLS refuses it
+ * again underneath.
+ */
+const SELF_SERVICE = "/hr/me";
+
 /** Where each role lands when it asks for the site root. */
 export const ROLE_HOME: Record<AppRole, string> = {
   rep: "/rep-notice",
   manager: "/",
   warehouse: "/warehouse",
+  hr_manager: "/hr",
 };
 
 /**
@@ -89,14 +115,36 @@ export function isAppRole(value: unknown): value is AppRole {
 /** Whether `role` may load `pathname`. */
 export function canAccessPath(role: AppRole, pathname: string): boolean {
   if (role === "manager") return true;
-  // A rep's only destination is their own notice page. Returning `false` for
-  // every path including that one made `ROLE_HOME.rep` a path its own role may
-  // not load — an invariant violated from the start, and harmless today only
-  // because `proxy.ts` exempts `/rep-notice` before it gets here. The loop
+
+  // Checked before every allowlist below, because it is the one destination
+  // that is about the caller rather than about the caller's job.
+  if (matchesPrefix(pathname, SELF_SERVICE)) return true;
+
+  // A rep's only other destination is their own notice page. Returning `false`
+  // for every path including that one made `ROLE_HOME.rep` a path its own role
+  // may not load — an invariant violated from the start, and harmless today
+  // only because `proxy.ts` exempts `/rep-notice` before it gets here. The loop
   // guard in the proxy should be the thing that never fires, not the thing
   // holding the arrangement together.
   if (role === "rep") return matchesPrefix(pathname, ROLE_HOME.rep);
 
+  if (role === "hr_manager") {
+    return HR_MANAGER_ALLOWED.some((p) => matchesPrefix(pathname, p));
+  }
+
   if (WAREHOUSE_DENIED.some((p) => matchesPrefix(pathname, p))) return false;
   return WAREHOUSE_ALLOWED.some((p) => matchesPrefix(pathname, p));
+}
+
+/**
+ * Whether this role runs the HR module, as opposed to merely appearing in it.
+ *
+ * Presentation only — it decides which buttons are offered. `hr_is_hr()` in the
+ * database is the same question asked where it counts, and the two are
+ * deliberately the same pair of roles. A line manager is not HR: they are
+ * granted their own team by `hr_manages_employee`, which is a row-level fact
+ * and cannot be answered from a role string.
+ */
+export function isHrRole(role: AppRole | null): boolean {
+  return role === "manager" || role === "hr_manager";
 }

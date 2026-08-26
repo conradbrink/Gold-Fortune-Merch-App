@@ -187,7 +187,14 @@ export function SidebarContent({
           const isClosed = foldable && closed.includes(group.label!);
           const holdsCurrent = group.items.some((i) => i.href === current);
           return (
-          <div key={group.label ?? "standalone"} className={index > 0 ? "mt-4" : ""}>
+          // Keyed on the first destination when there is no heading. There
+          // used to be exactly one unlabelled group (Dashboard) and the literal
+          // "standalone" was unique; My HR made a second, and React quietly
+          // reported two children with the same key on every page.
+          <div
+            key={group.label ?? group.items[0]?.href ?? String(index)}
+            className={index > 0 ? "mt-4" : ""}
+          >
             {/* Collapsed to icons there is no room for a heading, and a rule
                 separates the groups more clearly than truncated text would. */}
             {group.label &&

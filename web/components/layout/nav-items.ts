@@ -17,6 +17,15 @@ import {
   Boxes,
   ClipboardCheck,
   Settings2,
+  PieChart,
+  Contact,
+  CalendarCheck,
+  CalendarOff,
+  FolderLock,
+  Star,
+  ShieldAlert,
+  SlidersHorizontal,
+  UserRound,
 } from "lucide-react";
 import { canAccessPath, type AppRole } from "@/lib/roles";
 
@@ -50,10 +59,13 @@ export type NavItem = {
  * the item does.
  */
 export type NavGroup = {
-  /** Null renders the items with no heading — used for Dashboard alone. */
+  /** Null renders the items with no heading — used for Dashboard and My HR. */
   label: string | null;
   items: NavItem[];
 };
+
+/** Who runs the HR module. Mirrors `isHrRole` in lib/roles.ts. */
+const HR_ROLES: AppRole[] = ["manager", "hr_manager"];
 
 export const navGroups: NavGroup[] = [
   {
@@ -145,6 +157,41 @@ export const navGroups: NavGroup[] = [
   {
     label: "Team",
     items: [{ href: "/representatives", label: "Representatives", icon: Users }],
+  },
+  {
+    // The whole HR module, and the only group an `hr_manager` account sees.
+    //
+    // Eight destinations under one heading rather than a collapsing sub-menu:
+    // the sidebar has no nesting today, and adding a second interaction model
+    // for one group would make HR the odd section rather than a section. The
+    // group heading does the work the parent item would have done.
+    label: "Human Resources",
+    items: [
+      { href: "/hr", label: "HR dashboard", icon: PieChart, roles: HR_ROLES },
+      { href: "/hr/employees", label: "Employees", icon: Contact, roles: HR_ROLES },
+      { href: "/hr/attendance", label: "Attendance", icon: CalendarCheck, roles: HR_ROLES },
+      { href: "/hr/leave", label: "Leave", icon: CalendarOff, roles: HR_ROLES },
+      { href: "/hr/documents", label: "Documents", icon: FolderLock, roles: HR_ROLES },
+      { href: "/hr/performance", label: "Performance", icon: Star, roles: HR_ROLES },
+      { href: "/hr/disciplinary", label: "Disciplinary", icon: ShieldAlert, roles: HR_ROLES },
+      { href: "/hr/settings", label: "HR settings", icon: SlidersHorizontal, roles: HR_ROLES },
+    ],
+  },
+  {
+    // Everybody, including a rep who otherwise never sees this shell. Its own
+    // group rather than an entry under Human Resources, because for three of
+    // the four roles it is the only HR destination there is, and a lone item
+    // under a heading called "Human Resources" would read as a module they had
+    // been given and could not open.
+    label: null,
+    items: [
+      {
+        href: "/hr/me",
+        label: "My HR",
+        icon: UserRound,
+        roles: ["manager", "hr_manager", "warehouse", "rep"],
+      },
+    ],
   },
   {
     label: "Resources",

@@ -22,6 +22,7 @@ import {
 import { createClient } from "@/lib/supabase/client";
 import { GlobalSearch } from "@/components/layout/global-search";
 import { ThemeToggle } from "@/components/layout/theme-toggle";
+import { NotificationsBell } from "@/components/hr/notifications-bell";
 import { useCurrentRole } from "@/lib/use-current-role";
 
 export function TopBar({ onOpenNav }: { onOpenNav?: () => void }) {
@@ -87,10 +88,15 @@ export function TopBar({ onOpenNav }: { onOpenNav?: () => void }) {
           </Button>
         )}
         {/* Mail and Bell used to sit here as bare icons — not buttons, no
-            handler, nothing behind them. There is no mail and no notification
-            feature in this product, so they were an advertisement for something
-            that does not exist. Removed rather than wired to a placeholder.
-            Settings had the same problem but does have somewhere to go. */}
+            handler, nothing behind them, an advertisement for a feature that
+            did not exist. Mail still does not. The bell is back because the HR
+            module gave it something to show: leave requests to decide, reviews
+            to acknowledge, cases waiting on somebody. It renders nothing at all
+            when the feed is empty or unreadable.
+
+            Ungated by role, like the theme toggle below it: a rep with a
+            pending leave decision needs telling as much as a manager does. */}
+        <NotificationsBell />
         {/* Outside the manager gate, unlike search and settings. How the screen
             looks is nobody's permission to grant, and warehouse staff work the
             same long shifts on the same screens. */}
