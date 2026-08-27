@@ -161,7 +161,17 @@ export const navGroups: NavGroup[] = [
     ],
   },
   {
-    label: "Team",
+    // "Sales Team", not "Team". The old heading sat a few inches above a Human
+    // Resources group containing "Employees" and gave no signal about which of
+    // the two answered which question — they are the same five people described
+    // two different ways.
+    //
+    // The names now carry that: Employees is the employment record — department,
+    // manager, contract, status. This is field coverage — who covers which store,
+    // and when they were last out. Neither set of columns appears on the other
+    // page, which is why folding one into the other would lose something rather
+    // than tidy something.
+    label: "Sales Team",
     items: [
       { href: "/representatives", label: "Representatives", icon: Users, permission: "team" },
     ],
@@ -186,6 +196,27 @@ export const navGroups: NavGroup[] = [
     ],
   },
   {
+    // Everybody, including a rep who otherwise never sees this shell. Its own
+    // group rather than an entry under Human Resources, because for three of
+    // the four roles it is the only HR destination there is, and a lone item
+    // under a heading called "Human Resources" would read as a module they had
+    // been given and could not open.
+    //
+    // Directly under Human Resources and above Administration: for anyone who
+    // holds `hr` it now sits with the module it belongs to, and for everyone
+    // else it is the last thing before the administrator-only section rather
+    // than something below it.
+    label: null,
+    items: [
+      {
+        href: "/hr/me",
+        label: "My HR",
+        icon: UserRound,
+        // The one destination with no permission: a person's own record.
+      },
+    ],
+  },
+  {
     // Reachable only by an administrator, and deliberately in the sidebar
     // rather than behind the top-bar gear: who can see what is a thing people
     // go looking for, and a settings icon is where features go to be lost.
@@ -202,22 +233,6 @@ export const navGroups: NavGroup[] = [
         label: "Company profile",
         icon: Building2,
         permission: "company_settings",
-      },
-    ],
-  },
-  {
-    // Everybody, including a rep who otherwise never sees this shell. Its own
-    // group rather than an entry under Human Resources, because for three of
-    // the four roles it is the only HR destination there is, and a lone item
-    // under a heading called "Human Resources" would read as a module they had
-    // been given and could not open.
-    label: null,
-    items: [
-      {
-        href: "/hr/me",
-        label: "My HR",
-        icon: UserRound,
-        // The one destination with no permission: a person's own record.
       },
     ],
   },
