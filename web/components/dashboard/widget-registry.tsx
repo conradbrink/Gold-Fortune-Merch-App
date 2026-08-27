@@ -17,6 +17,7 @@ import { CoverageDonut } from "@/components/dashboard/coverage-donut";
 import { RepMap } from "@/components/dashboard/rep-map";
 import type { LiveReps } from "@/lib/live-reps";
 import { UnitsTrendChart } from "@/components/dashboard/units-trend-chart";
+import { SettleDriving } from "@/components/workday/settle-driving";
 import {
   companyDayTimes,
   deltaPct,
@@ -637,6 +638,7 @@ function WorkingDay({
     <Card>
       <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2 space-y-0">
         <CardTitle className="text-base">Working day</CardTitle>
+        <SettleDriving />
         {days.length > 0 && (
           <div className="flex items-center gap-2">
             <label

@@ -89,10 +89,6 @@ export function StorePicker({
   );
 
   useEffect(() => {
-    setActive(0);
-  }, [term]);
-
-  useEffect(() => {
     function onPointerDown(event: MouseEvent) {
       if (!boxRef.current?.contains(event.target as Node)) {
         setOpen(false);
@@ -148,7 +144,13 @@ export function StorePicker({
             <input
               ref={inputRef}
               value={term}
-              onChange={(e) => setTerm(e.target.value)}
+              onChange={(e) => {
+                setTerm(e.target.value);
+                // Reset here rather than in an effect on `term`: the highlight
+                // has to move with the list, and an effect doing it is a second
+                // render for something the keystroke already knows.
+                setActive(0);
+              }}
               onKeyDown={(e) => {
                 if (e.key === "Escape") {
                   setOpen(false);
@@ -176,6 +178,7 @@ export function StorePicker({
                 aria-label="Clear the search"
                 onClick={() => {
                   setTerm("");
+                  setActive(0);
                   inputRef.current?.focus();
                 }}
                 className="shrink-0 text-muted-foreground hover:text-foreground"
