@@ -61,6 +61,33 @@ create index if not exists dispatches_assigned_rep_idx
 -- ever taken — hundreds of rows they have no job to do about — and would make
 -- "assigned to me" mean nothing.
 
+-- ---------------------------------------------------------------------------
+-- The pre-image, for a rollback
+-- ---------------------------------------------------------------------------
+--
+-- Captured from `pg_policy` immediately before this ran, because a dropped
+-- policy leaves nothing behind to reconstruct it from and the migration files
+-- do not hold the current text (see the note above). To undo this migration:
+--
+--   drop policy if exists dispatches_select on public.dispatches;
+--   create policy dispatches_select on public.dispatches for select using (
+--     org_id = (select public.current_org_id())
+--     and (select public.has_permission('warehouse')));
+--
+--   drop policy if exists dispatch_lines_select on public.dispatch_lines;
+--   create policy dispatch_lines_select on public.dispatch_lines for select using (
+--     org_id = (select public.current_org_id())
+--     and (select public.has_permission('warehouse')));
+--
+--   drop policy if exists orders_select on public.orders;
+--   create policy orders_select on public.orders for select using (
+--     org_id = (select public.current_org_id())
+--     and ((select public.has_permission('warehouse'))
+--          or rep_id = (select auth.uid())));
+--
+--   drop function if exists public.assign_dispatch_rep(uuid, uuid);
+--   alter table public.dispatches drop column if exists assigned_rep_id;
+
 drop policy if exists dispatches_select on public.dispatches;
 create policy dispatches_select on public.dispatches
   for select using (
@@ -112,11 +139,17 @@ create policy orders_select on public.orders
 -- Who can assign one
 -- ---------------------------------------------------------------------------
 --
--- The existing update policy governs the rest of the row and is left alone.
--- This is a function rather than a widened policy because the rule is not
--- "may update dispatches" — it is "may hand this specific job to somebody who
--- is actually a rep in this organisation", and a policy cannot check the
--- second half without trusting the value it is checking.
+-- ⚠️ There is **no UPDATE policy on `dispatches` at all** — `dispatches_select`
+-- is the only policy on the table. An earlier draft of this comment claimed an
+-- existing update policy governed the rest of the row and was left alone, which
+-- was simply false; `orders` has one, `dispatches` does not. Every write to a
+-- dispatch already goes through a `security definer` function, and this is one
+-- more of them.
+--
+-- A function rather than a new policy because the rule is not "may update
+-- dispatches" — it is "may hand this specific job to somebody who is actually a
+-- rep in this organisation", and a policy cannot check the second half without
+-- trusting the value it is checking.
 
 create or replace function public.assign_dispatch_rep(p_dispatch uuid, p_rep uuid)
 returns void
@@ -173,7 +206,11 @@ begin
 
   insert into public.security_events (org_id, actor_id, action, subject_type, subject_id, detail)
   values (v_org, auth.uid(), 'dispatch.rep_assigned', 'dispatch', p_dispatch,
+          -- The id as well as the name. A name is what a person reads; an id is
+          -- what the row can still be joined on after somebody is renamed or
+          -- deactivated, which is exactly when an audit trail gets read.
           jsonb_build_object('dispatch_number', v_number,
+                             'rep_id', p_rep,
                              'rep', coalesce(v_rep_name, 'unassigned')));
 end;
 $$;
