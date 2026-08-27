@@ -5,6 +5,7 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { NativeSelect } from "@/components/ui/native-select";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { toLocalDate } from "@/lib/date-range";
 import { ExportMenu } from "@/components/export-menu";
 import type { ExportSheet } from "@/lib/export";
 import {
@@ -130,7 +131,7 @@ export default function SalesPage() {
       ],
       rows: rows.map((r) => ({
         order: r.orderNumber,
-        delivered: r.deliveredAt.slice(0, 10),
+        delivered: toLocalDate(r.deliveredAt),
         store: r.storeName,
         rep: r.repName,
         units: r.units,

@@ -16,6 +16,7 @@ import { PerfectStoreTable } from "@/components/reports/perfect-store-table";
 import { OosHotspotsTable } from "@/components/reports/oos-hotspots-table";
 import { AdherenceTable } from "@/components/reports/adherence-table";
 import { StorePicker } from "@/components/stores/store-picker";
+import { REPORT_TABS, type ReportTab } from "@/lib/report-tabs";
 import { ExportMenu } from "@/components/export-menu";
 import type { ExportSheet } from "@/lib/export";
 import { createClient } from "@/lib/supabase/client";
@@ -23,6 +24,7 @@ import {
   rangeForPreset,
   rangeDays,
   toLocalDateInput,
+  toLocalDate,
   fromLocalDateInput,
   type DateRange,
 } from "@/lib/date-range";
@@ -50,25 +52,9 @@ import {
 type Rep = { id: string; full_name: string | null };
 type Store = { id: string; name: string; city: string | null };
 
-/**
- * The tabs, in the order a manager acts on them: which store is worst, what is
- * out of stock, who has been neglected — then the descriptive reports.
- *
- * A list rather than eight `TabsTrigger`s written out, because three other
- * things now need to know the set: the URL check that lets the dashboard link
- * to one, the export that exports whichever is open, and the title that export
- * carries.
- */
-const TABS = [
-  { value: "score", label: "Perfect Store" },
-  { value: "oos", label: "Out of stock" },
-  { value: "coverage", label: "Coverage" },
-  { value: "adherence", label: "Adherence" },
-  { value: "reps", label: "Reps" },
-  { value: "trends", label: "Trends" },
-  { value: "form", label: "Form" },
-  { value: "photos", label: "Photos" },
-] as const;
+/** Re-exported so the file that renders the tabs and the file that links to
+ * them cannot disagree about what a tab is called. */
+const TABS = REPORT_TABS;
 
 export default function ReportsPage() {
   const supabase = createClient();
@@ -77,29 +63,45 @@ export default function ReportsPage() {
    * The range and the tab both come from the URL when it names them, because
    * the dashboard tiles link straight in: "out of stock rate, 6.2%" is a
    * question, and the answer is the hotspots table over the same days the tile
-   * was measuring. Read with `window.location` rather than `useSearchParams`,
-   * which in this version of Next forces the whole page into a Suspense
-   * boundary — the same reason the global search reads it that way.
+   * was measuring.
+   *
+   * Read **after mount**, not in the `useState` initialiser. This page is
+   * prerendered, and an initialiser that reads `window.location` produces one
+   * value on the server and another in the browser — a hydration mismatch on
+   * the state that decides which RPCs run. `useSearchParams` would avoid the
+   * window read and force the whole page into a Suspense boundary in this
+   * version of Next, which is the same trade the global search declined.
    */
-  const [range, setRange] = useState<DateRange>(() => {
-    if (typeof window === "undefined") return rangeForPreset("30d");
+  const [range, setRange] = useState<DateRange>(() => rangeForPreset("30d"));
+  const [tab, setTab] = useState<ReportTab>("score");
+
+  //
+  // `set-state-in-effect` is suppressed rather than satisfied, and it is worth
+  // saying why: the two ways to avoid it are both worse here. Reading the URL
+  // in the `useState` initialiser is the hydration mismatch this moved away
+  // from, and adjusting state during render restarts the first render — which
+  // is the hydration render — for the same reason. A mount-only effect that
+  // runs once and hands the state to the pickers is the pattern React's own
+  // documentation gives for reading a browser-only value.
+  //
+  /* eslint-disable react-hooks/set-state-in-effect */
+  useEffect(() => {
     const q = new URLSearchParams(window.location.search);
+    const asked = q.get("tab") ?? "";
+    if (TABS.some((t) => t.value === asked)) setTab(asked as ReportTab);
+
     const from = q.get("from");
     const to = q.get("to");
-    if (!from || !to) return rangeForPreset("30d");
+    if (!from || !to) return;
     const parsed = { from: fromLocalDateInput(from), to: fromLocalDateInput(to) };
     // A malformed date would otherwise produce an Invalid Date, which every RPC
     // below turns into a 400 the page reports as its own failure.
-    if (Number.isNaN(+parsed.from) || Number.isNaN(+parsed.to)) {
-      return rangeForPreset("30d");
-    }
-    return parsed;
-  });
-  const [tab, setTab] = useState<string>(() => {
-    if (typeof window === "undefined") return "score";
-    const asked = new URLSearchParams(window.location.search).get("tab") ?? "";
-    return TABS.some((t) => t.value === asked) ? asked : "score";
-  });
+    if (Number.isNaN(+parsed.from) || Number.isNaN(+parsed.to)) return;
+    setRange(parsed);
+    // Mount only: the pickers own both from here, and re-reading the URL after
+    // the user has changed one would put it back.
+  }, []);
+  /* eslint-enable react-hooks/set-state-in-effect */
   const [templates, setTemplates] = useState<FormTemplate[]>([]);
   const [templateId, setTemplateId] = useState<string | null>(null);
   const [reps, setReps] = useState<Rep[]>([]);
@@ -277,7 +279,7 @@ export default function ReportsPage() {
             oos: r.oos_count,
             rate: formatRate(r.oos_rate),
             run: r.max_consecutive_oos,
-            last: r.last_oos_at ? r.last_oos_at.slice(0, 10) : "",
+            last: toLocalDate(r.last_oos_at),
             skus: r.top_skus.map((t) => `${t.sku} (${t.n})`).join(", "),
           })),
         };
@@ -301,7 +303,7 @@ export default function ReportsPage() {
             city: g.city ?? "",
             reps: g.assigned_reps ?? "",
             visits: g.visits_in_period,
-            last: g.last_visit_at ? g.last_visit_at.slice(0, 10) : "never",
+            last: toLocalDate(g.last_visit_at) || "never",
             // "never visited" rather than a blank: an empty cell in this column
             // reads as nought days, which is the opposite of what it means.
             days: g.days_since ?? "never visited",
@@ -477,7 +479,7 @@ export default function ReportsPage() {
 
       {/* Ordered by what a manager acts on first: which store is worst, what is
           out of stock, who has been neglected — then the descriptive reports. */}
-      <Tabs value={tab} onValueChange={setTab}>
+      <Tabs value={tab} onValueChange={(v) => setTab(v as ReportTab)}>
         {/* One row, scrolled — never wrapped. TabsList is a fixed-height pill,
             so wrapping pushes the second row outside its own background and the
             triggers' `flex-1` stretches them into ragged spacing. Labels are

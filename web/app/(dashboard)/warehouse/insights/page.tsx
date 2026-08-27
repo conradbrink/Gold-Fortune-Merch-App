@@ -67,6 +67,21 @@ export default function WarehouseInsightsPage() {
   const [ageing, setAgeing] = useState<AgeingRow[]>([]);
   const [valuation, setValuation] = useState<ValuationRow[]>([]);
   const [loading, setLoading] = useState(true);
+  /**
+   * What the figures on screen were actually fetched for.
+   *
+   * `loading` goes false after the first load and never comes back — the effect
+   * deliberately sets no state before its first await, so switching the period
+   * leaves the old rows up while the new ones arrive. Fine to look at, wrong to
+   * export: the file would carry the new period's heading over the old
+   * period's numbers. Recorded after the await rather than flipping `loading`
+   * at the top of the effect, which would be a synchronous setState in an
+   * effect body and is the rule the tree is trying to keep at zero.
+   */
+  const [loadedFor, setLoadedFor] = useState<{
+    days: number;
+    groupBy: string;
+  } | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   // No state set before the first await, and cancellation so that switching
@@ -92,6 +107,7 @@ export default function WarehouseInsightsPage() {
         setMovements(m);
         setAgeing(a);
         setValuation(val);
+        setLoadedFor({ days, groupBy });
         setError(null);
       } catch (e) {
         if (!cancelled) setError(e instanceof Error ? e.message : String(e));
@@ -180,7 +196,15 @@ export default function WarehouseInsightsPage() {
           {/* The performance table, grouped however it is on screen. The
               valuation and ageing cards below are single figures and a short
               list; this is the one a warehouse manager takes to a meeting. */}
-          <ExportMenu build={buildPerformanceSheet} disabled={loading} />
+          <ExportMenu
+            build={buildPerformanceSheet}
+            disabled={
+              loading ||
+              loadedFor === null ||
+              loadedFor.days !== days ||
+              loadedFor.groupBy !== groupBy
+            }
+          />
         </div>
       </div>
 

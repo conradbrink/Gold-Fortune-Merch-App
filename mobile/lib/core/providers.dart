@@ -168,9 +168,14 @@ final myDeliveriesProvider = FutureProvider<List<Delivery>>((ref) {
 });
 
 /// How many are still on the road, for the badge on the home screen.
-final outstandingDeliveryCountProvider = FutureProvider<int>((ref) async {
-  final rows = await ref.watch(myDeliveriesProvider.future);
-  return rows.where((d) => d.isOutstanding).length;
+///
+/// Asked of the server rather than counted from `myDeliveriesProvider`, which
+/// is a fifty-row page of the newest dispatches whatever their status — a rep
+/// with fifty finished deliveries and one outstanding would have been badged
+/// zero, which is the one case the badge exists for.
+final outstandingDeliveryCountProvider = FutureProvider<int>((ref) {
+  ref.watch(currentUserProvider);
+  return ref.watch(deliveryRepositoryProvider).outstandingCount();
 });
 
 final routeRepositoryProvider = Provider<RouteRepository>((ref) {

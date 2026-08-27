@@ -6,7 +6,7 @@ import { createClient } from "@/lib/supabase/client";
 import { useHrLoad } from "@/lib/hr/use-load";
 import { usePermissions } from "@/lib/use-permissions";
 import { can } from "@/lib/permissions";
-import { countOutstanding } from "@/lib/road-distance-settle";
+import { countOutstanding } from "@/lib/road-distance-outstanding";
 
 /**
  * Settle the finished days that have no road distance yet.

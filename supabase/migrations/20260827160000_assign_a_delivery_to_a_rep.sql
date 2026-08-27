@@ -30,6 +30,12 @@ comment on column public.dispatches.assigned_rep_id is
   'The rep responsible for this delivery, when one is. Not the driver — driver_id is who carried it, this is whose job it is. Null is the normal case.';
 
 -- The rep's own list, which is the only query the phone makes.
+--
+-- Not `concurrently`, deliberately. A concurrent build cannot run inside a
+-- transaction, so it would mean a second, non-transactional migration for an
+-- index on a table holding 54 rows — the lock is measured in milliseconds and
+-- the warehouse is asleep at deploy time. Revisit if `dispatches` ever gets
+-- large enough for the build to be worth the split.
 create index if not exists dispatches_assigned_rep_idx
   on public.dispatches (assigned_rep_id, status, dispatched_at desc)
   where assigned_rep_id is not null;
@@ -121,36 +127,43 @@ set search_path to 'public'
 as $$
 declare
   v_org uuid := public.current_org_id();
-  v_dispatch record;
-  v_rep record;
+  v_number text;
+  v_role   text;
+  v_active boolean;
+  -- Scalars, not a record. A plpgsql `record` that was never assigned raises
+  -- on any field read, so `coalesce(v_rep.full_name, 'unassigned')` in the
+  -- audit line below would have thrown on every *unassign* — the one path with
+  -- no rep to look up. Exactly the trap `save_job_role` fell into on 26 August.
+  v_rep_name text;
 begin
   if not public.has_permission('warehouse') then
     raise exception 'Only the warehouse can assign a delivery.' using errcode = '42501';
   end if;
 
-  select id, org_id, status, dispatch_number into v_dispatch
-    from public.dispatches where id = p_dispatch;
-  if v_dispatch is null or v_dispatch.org_id is distinct from v_org then
+  select dispatch_number into v_number
+    from public.dispatches
+   where id = p_dispatch and org_id = v_org;
+  if not found then
     raise exception 'That dispatch does not exist.' using errcode = '42501';
   end if;
 
   -- Clearing it is allowed and is not an error: a delivery reassigned back to
   -- the warehouse is an ordinary thing to do.
   if p_rep is not null then
-    select id, org_id, role, is_active, full_name into v_rep
-      from public.profiles where id = p_rep;
-    if v_rep is null or v_rep.org_id is distinct from v_org then
+    select role, is_active, full_name into v_role, v_active, v_rep_name
+      from public.profiles where id = p_rep and org_id = v_org;
+    if not found then
       raise exception 'That person is not in your organisation.' using errcode = '42501';
     end if;
-    if not v_rep.is_active then
+    if not v_active then
       raise exception 'That account is deactivated.' using errcode = '42501';
     end if;
     -- The base role, not a permission. Mobile access is still decided by
     -- `profiles.role` — see the app's own gate — so assigning a delivery to
     -- somebody who cannot open the app would be a job nobody can be shown.
-    if v_rep.role <> 'rep' then
+    if v_role <> 'rep' then
       raise exception '% cannot be given a delivery: only a field rep opens the app.',
-        coalesce(v_rep.full_name, 'That account') using errcode = '42501';
+        coalesce(v_rep_name, 'That account') using errcode = '42501';
     end if;
   end if;
 
@@ -160,8 +173,8 @@ begin
 
   insert into public.security_events (org_id, actor_id, action, subject_type, subject_id, detail)
   values (v_org, auth.uid(), 'dispatch.rep_assigned', 'dispatch', p_dispatch,
-          jsonb_build_object('dispatch_number', v_dispatch.dispatch_number,
-                             'rep', coalesce(v_rep.full_name, 'unassigned')));
+          jsonb_build_object('dispatch_number', v_number,
+                             'rep', coalesce(v_rep_name, 'unassigned')));
 end;
 $$;
 

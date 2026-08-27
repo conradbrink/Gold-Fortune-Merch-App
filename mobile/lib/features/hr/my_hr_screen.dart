@@ -153,9 +153,6 @@ class _BalanceCard extends StatelessWidget {
 
   final LeaveBalance balance;
 
-  static String _n(double v) =>
-      v == v.roundToDouble() ? v.toStringAsFixed(0) : v.toStringAsFixed(1);
-
   @override
   Widget build(BuildContext context) {
     return Card(
@@ -173,8 +170,8 @@ class _BalanceCard extends StatelessWidget {
                   const SizedBox(height: 2),
                   Text(
                     balance.deductsFromBalance
-                        ? '${_n(balance.usedDays)} taken · '
-                            '${_n(balance.pendingDays)} awaiting a decision'
+                        ? '${formatDays(balance.usedDays)} taken · '
+                            '${formatDays(balance.pendingDays)} awaiting a decision'
                         : 'Tracked, but does not come off a balance',
                     style: const TextStyle(
                         color: AppColors.textMuted, fontSize: 12),
@@ -187,7 +184,7 @@ class _BalanceCard extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
                   Text(
-                    _n(balance.remainingDays),
+                    formatDays(balance.remainingDays),
                     style: const TextStyle(
                       fontSize: 22,
                       fontWeight: FontWeight.w700,
@@ -294,7 +291,8 @@ class _RequestCard extends ConsumerWidget {
             Text(
               '${fmt.format(request.startDate)} — '
               '${DateFormat('d MMM yyyy').format(request.endDate)} · '
-              '${request.days} ${request.days == 1 ? 'day' : 'days'}',
+              '${formatDays(request.days)} '
+              '${request.days == 1 ? 'day' : 'days'}',
               style: const TextStyle(color: AppColors.textMuted, fontSize: 12),
             ),
             if (request.reason != null && request.reason!.isNotEmpty) ...[

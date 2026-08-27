@@ -22,6 +22,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { toLocalDateTime } from "@/lib/date-range";
 import { ExportMenu } from "@/components/export-menu";
 import type { ExportSheet } from "@/lib/export";
 import { createClient } from "@/lib/supabase/client";
@@ -187,8 +188,8 @@ function VisitsContent() {
       rows: filtered.map((v) => ({
         store: v.storeName,
         rep: v.repName,
-        in: v.checkin_at ? v.checkin_at.replace("T", " ").slice(0, 16) : "",
-        out: v.checkout_at ? v.checkout_at.replace("T", " ").slice(0, 16) : "",
+        in: toLocalDateTime(v.checkin_at),
+        out: toLocalDateTime(v.checkout_at),
         status: v.status,
         // Minutes rather than "1h 12m": a spreadsheet column somebody will
         // want to sum, and "1h 12m" sums to nothing.

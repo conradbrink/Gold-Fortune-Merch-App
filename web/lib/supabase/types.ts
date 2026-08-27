@@ -319,6 +319,13 @@ export type Database = {
         }
         Relationships: [
           {
+            foreignKeyName: "dispatches_assigned_rep_id_fkey"
+            columns: ["assigned_rep_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "dispatches_delivered_by_fkey"
             columns: ["delivered_by"]
             isOneToOne: false

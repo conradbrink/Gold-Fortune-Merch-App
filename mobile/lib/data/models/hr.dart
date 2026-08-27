@@ -7,6 +7,14 @@
 // on a handset that ships on its own release cycle is how the two start
 // disagreeing about somebody's leave.
 
+/// A day count as a person writes it: `4`, not `4.0`, and `1.5` when it is.
+///
+/// Half days are real, so the value cannot simply be rounded — and a leave
+/// balance that reads "4.0 days left" looks like a number the system computed
+/// rather than an entitlement somebody set.
+String formatDays(double days) =>
+    days == days.roundToDouble() ? days.toStringAsFixed(0) : days.toStringAsFixed(1);
+
 class LeaveType {
   const LeaveType({
     required this.id,

@@ -51,6 +51,7 @@ export async function settleRoadDistance({
   apiKey,
   charge,
   sessionId,
+  orgId,
   maxSessions = MAX_SESSIONS,
 }: {
   /** Service-role client. `road_distance_*` is writable by nobody through RLS. */
@@ -59,6 +60,16 @@ export async function settleRoadDistance({
   charge: Budget;
   /** One specific day, rather than the outstanding queue. */
   sessionId?: string;
+  /**
+   * Confine the queue to one organisation.
+   *
+   * The service-role client bypasses RLS, so without this a manager pressing
+   * the button settles whichever days are oldest **across every tenant** — and
+   * bills their own Routes quota for somebody else's driving. The button passes
+   * its caller's org; the nightly job deliberately does not, because settling
+   * every organisation is the job.
+   */
+  orgId?: string;
   maxSessions?: number;
 }): Promise<SettleResult> {
   // Finished, not yet settled, and not already known to have failed — a day
@@ -74,11 +85,27 @@ export async function settleRoadDistance({
     .limit(maxSessions);
 
   if (sessionId) query = query.eq("id", sessionId);
+  if (orgId) query = query.eq("org_id", orgId);
 
   const { data: sessions, error: sessionsError } = await query;
   if (sessionsError) throw new Error(sessionsError.message);
   if (!sessions || sessions.length === 0) {
-    return { settled: 0, requests: 0, skipped: 0, days: [] };
+    // For the queue, nothing outstanding is the ordinary answer. For one named
+    // day it is not: the caller asked for that session and got a success with
+    // no work in it, which reads as "settled" rather than "already settled, or
+    // still open, or previously failed and not retried".
+    return {
+      settled: 0,
+      requests: 0,
+      skipped: 0,
+      days: [],
+      ...(sessionId
+        ? {
+            stopped:
+              "That day is not waiting to be settled — it is still open, already has a distance, or failed before. Clearing road_distance_at re-queues it.",
+          }
+        : {}),
+    };
   }
 
   /**
@@ -256,22 +283,4 @@ export async function settleRoadDistance({
   }
 
   return { settled, requests, skipped, days, ...(stopped ? { stopped } : {}) };
-}
-
-/**
- * How many finished days are waiting to be settled.
- *
- * Read by the button so it can say what pressing it would do, and say nothing
- * when the answer is nothing. Counts through the caller's own client: a manager
- * has SELECT on `workday_sessions` and this is not a privileged question.
- */
-export async function countOutstanding(supabase: SupabaseClient): Promise<number> {
-  const { count, error } = await supabase
-    .from("workday_sessions")
-    .select("id", { count: "exact", head: true })
-    .not("ended_at", "is", null)
-    .is("road_distance_at", null)
-    .is("road_distance_error", null);
-  if (error) throw new Error(error.message);
-  return count ?? 0;
 }

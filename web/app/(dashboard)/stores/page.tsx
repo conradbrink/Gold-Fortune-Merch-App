@@ -36,6 +36,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { ImportStoresButton } from "@/components/stores/import-dialog";
+import { toLocalDate } from "@/lib/date-range";
 import { ExportMenu } from "@/components/export-menu";
 import type { ExportSheet } from "@/lib/export";
 import {
@@ -676,7 +677,7 @@ export default function StoresPage() {
         reps: (assignedByStore[store.id] ?? []).map((a) => a.name).join(", "),
         // The date only. A store visited three weeks ago and one visited never
         // are different answers, and a blank cell says neither.
-        lastVisit: lastVisits[store.id]?.slice(0, 10) ?? "never",
+        lastVisit: toLocalDate(lastVisits[store.id]) || "never",
         active: store.active ? "Yes" : "No",
       })),
     };
@@ -816,7 +817,7 @@ export default function StoresPage() {
             outlets and "all of them" is rarely the list somebody wants to hand
             over. The file says which filters produced it, so a colleague
             receiving it can tell a Gaborone-only list from the whole book. */}
-        <ExportMenu build={buildStoreSheet} label="Export" />
+        <ExportMenu build={buildStoreSheet} disabled={loading} label="Export" />
         <Button
           variant="outline"
           size="sm"

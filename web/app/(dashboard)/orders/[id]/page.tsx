@@ -251,6 +251,10 @@ export default function OrderDetailPage() {
         setCarriers(c);
         setCatalogue(cat);
         setLocations(locs);
+        // Fails loudly. A discarded error here empties the assignment dropdown,
+        // which reads as "there are no reps" — and the next thing somebody does
+        // is unassign a delivery to make the control agree with the list.
+        if (repRows.error) throw new Error(repRows.error.message);
         setReps(
           (repRows.data ?? []) as { id: string; full_name: string | null }[]
         );
@@ -1079,6 +1083,19 @@ export default function OrderDetailPage() {
                         }
                       >
                         <option value="">Nobody — the warehouse handles it</option>
+                        {/* A rep deactivated since the delivery was assigned is
+                            not in the list, and a native select with no
+                            matching option silently displays the first one —
+                            so this would have shown "Nobody" for a delivery
+                            that is somebody's. Named, and not selectable
+                            again. */}
+                        {d.assigned_rep_id &&
+                          !reps.some((r) => r.id === d.assigned_rep_id) && (
+                            <option value={d.assigned_rep_id} disabled>
+                              {d.assigned_rep_name ?? "Unnamed rep"} (no longer
+                              active)
+                            </option>
+                          )}
                         {reps.map((r) => (
                           <option key={r.id} value={r.id}>
                             {r.full_name ?? "Unnamed rep"}

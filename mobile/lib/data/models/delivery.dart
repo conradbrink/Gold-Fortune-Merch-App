@@ -35,8 +35,9 @@ class Delivery {
   final DateTime? expectedOn;
   final DateTime? deliveredAt;
 
-  /// Driver, vehicle or courier — whoever is actually carrying it, which is not
-  /// necessarily the rep this is assigned to.
+  /// The courier, where the warehouse named one. A driver or vehicle record is
+  /// behind `has_permission('warehouse')` and a rep cannot read either, so this
+  /// is the only carrier detail that reaches the phone.
   final String? carrier;
   final String? trackingReference;
   final int lineCount;
@@ -47,8 +48,6 @@ class Delivery {
   factory Delivery.fromMap(Map<String, dynamic> m) {
     final order = m['order'] as Map<String, dynamic>?;
     final store = order?['store'] as Map<String, dynamic>?;
-    final driver = m['driver'] as Map<String, dynamic>?;
-    final vehicle = m['vehicle'] as Map<String, dynamic>?;
     final lines = (m['lines'] as List?) ?? const [];
 
     return Delivery(
@@ -65,11 +64,7 @@ class Delivery {
       deliveredAt: m['delivered_at'] == null
           ? null
           : DateTime.parse(m['delivered_at'] as String),
-      carrier: [
-        driver?['full_name'] as String?,
-        vehicle?['registration'] as String?,
-        m['carrier_name'] as String?,
-      ].whereType<String>().join(' · ').ifEmptyThenNull(),
+      carrier: m['carrier_name'] as String?,
       trackingReference: m['tracking_reference'] as String?,
       lineCount: lines.length,
       // Summed from the dispatch lines rather than the order's, because a
@@ -82,8 +77,4 @@ class Delivery {
       ),
     );
   }
-}
-
-extension on String {
-  String? ifEmptyThenNull() => isEmpty ? null : this;
 }

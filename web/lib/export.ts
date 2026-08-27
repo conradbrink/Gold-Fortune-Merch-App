@@ -60,6 +60,24 @@ function text(value: string | number | null | undefined): string {
   return value === null || value === undefined ? "" : String(value);
 }
 
+/**
+ * Stops a cell being read as a formula.
+ *
+ * Excel, LibreOffice and Sheets all evaluate a cell whose text begins `=`, `+`,
+ * `-` or `@`, and every string in these exports came from somebody typing it:
+ * a store name, a rejection note, a rep's own reason for leave. A store called
+ * `=cmd|'/c calc'!A1` is a real attack in a real product, and the person who
+ * opens the file is the manager who asked for it.
+ *
+ * A leading apostrophe is the standard neutraliser — the spreadsheet drops it
+ * on display and treats the rest as text. Numbers are untouched: they go into
+ * the sheet as numbers, never through here, so a negative figure is still
+ * negative and still sums.
+ */
+function neutralise(value: string): string {
+  return /^[=+\-@\t\r]/.test(value) ? `'${value}` : value;
+}
+
 function matrix(sheet: ExportSheet): (string | number)[][] {
   return [
     sheet.columns.map((c) => c.header),
@@ -67,7 +85,7 @@ function matrix(sheet: ExportSheet): (string | number)[][] {
       sheet.columns.map((c) => {
         const value = row[c.key];
         if (c.numeric && typeof value === "number") return value;
-        return text(value);
+        return neutralise(text(value));
       })
     ),
   ];

@@ -17,6 +17,7 @@ import { CoverageDonut } from "@/components/dashboard/coverage-donut";
 import { RepMap } from "@/components/dashboard/rep-map";
 import type { LiveReps } from "@/lib/live-reps";
 import { toLocalDateInput, type DateRange } from "@/lib/date-range";
+import type { ReportTab } from "@/lib/report-tabs";
 import { UnitsTrendChart } from "@/components/dashboard/units-trend-chart";
 import { SettleDriving } from "@/components/workday/settle-driving";
 import {
@@ -77,7 +78,7 @@ export type WidgetData = {
  * they were measured over; landing on the default 30 days would answer a
  * different question from the one that was clicked.
  */
-function reportHref(tab: string, range: DateRange): string {
+function reportHref(tab: ReportTab, range: DateRange): string {
   const params = new URLSearchParams({
     tab,
     from: toLocalDateInput(range.from),

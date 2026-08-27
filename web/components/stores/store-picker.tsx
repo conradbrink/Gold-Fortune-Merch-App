@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { Check, ChevronDown, Search, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -66,6 +66,11 @@ export function StorePicker({
   const [active, setActive] = useState(0);
   const boxRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const listRef = useRef<HTMLUListElement>(null);
+  // Stable across renders and unique per instance, so two pickers on one page
+  // do not point their `aria-controls` at each other.
+  const listId = useId();
+  const optionId = (i: number) => `${listId}-option-${i}`;
 
   const chosen = stores.find((s) => s.id === value) ?? null;
 
@@ -89,15 +94,39 @@ export function StorePicker({
   );
 
   useEffect(() => {
+    function leave() {
+      setOpen(false);
+      setTerm("");
+    }
     function onPointerDown(event: MouseEvent) {
-      if (!boxRef.current?.contains(event.target as Node)) {
-        setOpen(false);
-        setTerm("");
-      }
+      if (!boxRef.current?.contains(event.target as Node)) leave();
+    }
+    // Tabbing out has to close it too. A panel left open behind a keyboard user
+    // covers whatever they moved on to, and they have no pointer to dismiss it
+    // with. `relatedTarget` is where focus went — null when it left the
+    // document entirely, which is not a reason to close.
+    function onFocusOut(event: FocusEvent) {
+      const next = event.relatedTarget as Node | null;
+      if (next && !boxRef.current?.contains(next)) leave();
     }
     document.addEventListener("mousedown", onPointerDown);
-    return () => document.removeEventListener("mousedown", onPointerDown);
+    const box = boxRef.current;
+    box?.addEventListener("focusout", onFocusOut);
+    return () => {
+      document.removeEventListener("mousedown", onPointerDown);
+      box?.removeEventListener("focusout", onFocusOut);
+    };
   }, []);
+
+  // The list scrolls at 18rem and arrow keys walk past that in a few presses.
+  // Without this the highlight moves somewhere the user cannot see, which on a
+  // 230-item list is the same as it not moving at all.
+  useEffect(() => {
+    if (!open) return;
+    listRef.current
+      ?.querySelector(`[data-index="${active}"]`)
+      ?.scrollIntoView({ block: "nearest" });
+  }, [active, open]);
 
   function choose(store: PickableStore | null) {
     onChange(store?.id ?? "");
@@ -115,6 +144,10 @@ export function StorePicker({
         type="button"
         id={id}
         disabled={disabled}
+        role="combobox"
+        aria-expanded={open}
+        aria-controls={open ? listId : undefined}
+        aria-haspopup="listbox"
         onClick={() => {
           setOpen((o) => !o);
           // Focused on the next frame: the input does not exist until the panel
@@ -170,6 +203,13 @@ export function StorePicker({
               }}
               placeholder="Name, town or code"
               aria-label="Search stores"
+              role="combobox"
+              aria-expanded
+              aria-controls={listId}
+              aria-autocomplete="list"
+              aria-activedescendant={
+                options.length > 0 ? optionId(active) : undefined
+              }
               className="min-w-0 flex-1 bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground"
             />
             {term !== "" && (
@@ -188,7 +228,13 @@ export function StorePicker({
             )}
           </div>
 
-          <ul className="max-h-72 overflow-y-auto py-1">
+          <ul
+            ref={listRef}
+            id={listId}
+            role="listbox"
+            aria-label="Stores"
+            className="max-h-72 overflow-y-auto py-1"
+          >
             {options.length === 0 ? (
               <li className="px-3 py-3 text-sm text-muted-foreground">
                 No store matches &ldquo;{term.trim()}&rdquo;.
@@ -197,9 +243,13 @@ export function StorePicker({
               options.map((store, i) => {
                 const selected = (store?.id ?? "") === value;
                 return (
-                  <li key={store?.id ?? "__all"}>
+                  <li key={store?.id ?? "__all"} role="none">
                     <button
                       type="button"
+                      role="option"
+                      id={optionId(i)}
+                      data-index={i}
+                      aria-selected={selected}
                       onMouseEnter={() => setActive(i)}
                       onClick={() => choose(store)}
                       className={cn(

@@ -1,3 +1,4 @@
+import { timingSafeEqual } from "node:crypto";
 import { createClient as createAdminClient } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/server";
 import { enforceRateLimit, LIMITS } from "@/lib/rate-limit";
@@ -27,6 +28,12 @@ import { settleRoadDistance, type Budget } from "@/lib/road-distance-settle";
  * hourly quota. GET is the nightly Vercel cron, which has no signed-in caller
  * to charge and carries a per-run ceiling instead.
  *
+ * ⚠️ Vercel crons run in **UTC only** and `web/vercel.json` says `0 21 * * *`.
+ * That is 23:00 in Botswana because CAT is UTC+2 and observes no daylight
+ * saving; it is not 23:00 for an organisation on any other `organizations.
+ * timezone`. The schedule is a fixed UTC time, and the only thing that has to
+ * be true of it is that it falls after every rep has closed their day.
+ *
  * The nightly job exists because for the first two days of this feature there
  * was no scheduler and no button, so the only runs it ever had were manual —
  * and the column quietly stopped filling in on 25 August without anything
@@ -43,13 +50,25 @@ export const maxDuration = 60;
  *
  * The manual path is bounded by the caller's rate-limit bucket, which needs an
  * `auth.uid()` the cron does not have. So the cron's budget is this: a hard
- * count of Routes requests per run, checked before each day is routed. Ten
- * days at roughly ten requests each, which is a normal night's backlog and far
- * less than the hourly ceiling on the manual path.
+ * count of Routes requests per run, checked before each day is routed.
+ *
+ * ⚠️ **Bounded by `maxDuration`, not by money.** The Routes calls are
+ * sequential and take roughly a second each, so 120 of them cannot finish
+ * inside a 60-second function — the platform would kill the run mid-route,
+ * leaving a day claimed with no distance on it and nothing to say why. Forty is
+ * comfortably inside the limit and is still four rep-days, which is more than a
+ * night's backlog for a team this size. Days left over are settled by the next
+ * run, which is what the queue is for.
  */
-const MAX_CRON_REQUESTS = 120;
+const MAX_CRON_REQUESTS = 40;
 
 function missingConfig(): Response | null {
+  if (!process.env.NEXT_PUBLIC_SUPABASE_URL) {
+    return Response.json(
+      { error: "NEXT_PUBLIC_SUPABASE_URL is not configured on the server." },
+      { status: 503 }
+    );
+  }
   if (!process.env.GOOGLE_ROUTES_API_KEY) {
     return Response.json(
       { error: "GOOGLE_ROUTES_API_KEY is not configured on the server." },
@@ -129,14 +148,36 @@ export async function POST(request: Request) {
       });
       if (gate.ok) return null;
       refusal = gate.response;
-      return "Usage limit reached before this day was routed.";
+      // 503 is the limiter failing closed rather than the quota running out,
+      // and reporting the second when it was the first sends somebody looking
+      // for usage they have not spent.
+      return gate.response.status === 503
+        ? "Usage could not be counted, so this day was not routed."
+        : "Usage limit reached before this day was routed.";
     };
+
+    // The caller's own organisation, taken from their profile and never from
+    // the body. The service-role client below bypasses RLS, so without this a
+    // manager pressing the button would settle whichever days are oldest across
+    // every tenant — and pay for them out of their own quota.
+    const { data: profile, error: profileError } = await supabase
+      .from("profiles")
+      .select("org_id")
+      .eq("id", user.id)
+      .single();
+    if (profileError || !profile) {
+      return Response.json(
+        { error: profileError?.message ?? "Your account is incomplete." },
+        { status: 403 }
+      );
+    }
 
     const result = await settleRoadDistance({
       admin: adminClient(),
       apiKey: process.env.GOOGLE_ROUTES_API_KEY!,
       charge,
       sessionId: body.sessionId,
+      orgId: (profile as { org_id: string }).org_id,
     });
 
     // The rate limiter's own 429 or 503 is the right answer only when nothing
@@ -175,12 +216,7 @@ export async function GET(request: Request) {
       { status: 503 }
     );
   }
-  const offered = request.headers.get("authorization") ?? "";
-  const expected = `Bearer ${secret}`;
-  if (
-    offered.length !== expected.length ||
-    !timingSafeEqual(offered, expected)
-  ) {
+  if (!matches(request.headers.get("authorization") ?? "", `Bearer ${secret}`)) {
     return Response.json({ error: "Not authorised." }, { status: 401 });
   }
 
@@ -218,9 +254,17 @@ export async function GET(request: Request) {
   }
 }
 
-/** Constant-time string compare, so the secret cannot be guessed byte by byte. */
-function timingSafeEqual(a: string, b: string): boolean {
-  let diff = 0;
-  for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
-  return diff === 0;
+/**
+ * Constant-time compare, so the secret cannot be guessed byte by byte.
+ *
+ * Node's own, over UTF-8 bytes. The hand-rolled version this replaces walked
+ * UTF-16 code units, which is not the same thing for a non-ASCII secret, and
+ * `timingSafeEqual` throws on a length mismatch — so the lengths are compared
+ * first and that much does leak. It leaks the length of a random secret, which
+ * is not the part worth protecting.
+ */
+function matches(offered: string, expected: string): boolean {
+  const a = Buffer.from(offered, "utf8");
+  const b = Buffer.from(expected, "utf8");
+  return a.length === b.length && timingSafeEqual(a, b);
 }

@@ -23,11 +23,17 @@ class DeliveryRepository {
   /// names are deliberately not: naming them means reading `order_lines`, whose
   /// policy is its own and which carries the pricing. A rep assigned somebody
   /// else's delivery has no business with what the shop is paying for it.
+  ///
+  /// `drivers` and `vehicles` are **not** embedded either, and that is a fact
+  /// about the database rather than a choice about the screen: both are gated
+  /// on `has_permission('warehouse')`, which a rep does not hold, so the embed
+  /// would have come back null on every row and quietly rendered nothing. A
+  /// courier's name typed into `carrier_name` lives on the dispatch itself and
+  /// does show. Widening two more tables for a driver's name is a policy
+  /// decision, not something to smuggle in through a select string.
   static const _select = '''
 id, dispatch_number, status, dispatched_at, expected_delivery_on, delivered_at,
 carrier_name, tracking_reference,
-driver:drivers(full_name),
-vehicle:vehicles(registration),
 order:orders(order_number, store:stores(name, address)),
 lines:dispatch_lines(qty)
 ''';
@@ -44,5 +50,21 @@ lines:dispatch_lines(qty)
     return [
       for (final r in rows as List) Delivery.fromMap(r as Map<String, dynamic>),
     ];
+  }
+
+  /// How many are still on the road.
+  ///
+  /// Its own query, and not `myDeliveries().where(...)`. That list is the fifty
+  /// newest dispatches whatever their status, so a rep with fifty finished
+  /// deliveries and one outstanding would have been badged zero — the one case
+  /// the badge exists for. A head count with the status in the filter cannot
+  /// be wrong that way, and it rides the partial index.
+  Future<int> outstandingCount() async {
+    final rows = await _client
+        .from('dispatches')
+        .select('id')
+        .eq('status', 'in_transit')
+        .count(CountOption.exact);
+    return rows.count;
   }
 }

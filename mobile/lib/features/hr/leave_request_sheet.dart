@@ -98,18 +98,31 @@ class _LeaveRequestSheetState extends ConsumerState<LeaveRequestSheet> {
   }
 
   Future<void> _attach(ImageSource source) async {
-    final shot = await _picker.pickImage(
-      source: source,
-      // Enough to read a doctor's handwriting, small enough to send on a rural
-      // connection. The same trade the visit photos make.
-      imageQuality: 70,
-      maxWidth: 1600,
-    );
-    if (shot == null) return;
-    setState(() {
-      _document = File(shot.path);
-      _documentName = shot.name;
-    });
+    try {
+      final shot = await _picker.pickImage(
+        source: source,
+        // Enough to read a doctor's handwriting, small enough to send on a rural
+        // connection. The same trade the visit photos make.
+        imageQuality: 70,
+        maxWidth: 1600,
+      );
+      if (shot == null) return;
+      if (!mounted) return;
+      setState(() {
+        _document = File(shot.path);
+        _documentName = shot.name;
+        _error = null;
+      });
+    } catch (e) {
+      // The picker throws rather than returning null when the camera permission
+      // is refused or no camera exists. Unhandled, the button did nothing at
+      // all — and on the one form that will not submit without a photograph,
+      // "nothing happened" is the worst possible answer.
+      if (!mounted) return;
+      setState(() => _error =
+          'The camera or gallery could not be opened. Check the app\'s '
+          'permissions and try again.\n$e');
+    }
   }
 
   Future<void> _submit() async {
@@ -245,8 +258,9 @@ class _LeaveRequestSheetState extends ConsumerState<LeaveRequestSheet> {
                 child: Text(
                   // Said out loud, because it is the number that comes off the
                   // balance and it is not the number of days on the calendar.
-                  '$_days working ${_days == 1 ? 'day' : 'days'}, weekends and '
-                  'public holidays excluded.',
+                  '${formatDays(_days!)} working '
+                  '${_days == 1 ? 'day' : 'days'}, weekends and public '
+                  'holidays excluded.',
                   style: const TextStyle(
                       color: AppColors.textMuted, fontSize: 12),
                 ),

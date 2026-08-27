@@ -29,7 +29,12 @@ import {
 } from "@/components/activities/location-verdict";
 import { SubmissionDetail } from "@/components/forms/submission-detail";
 import { createClient } from "@/lib/supabase/client";
-import { rangeForPreset, toLocalDateInput, type DateRange } from "@/lib/date-range";
+import {
+  rangeForPreset,
+  toLocalDateInput,
+  toLocalDateTime,
+  type DateRange,
+} from "@/lib/date-range";
 import {
   fetchActivityFeed,
   fetchActivitySummary,
@@ -202,7 +207,7 @@ export default function ActivitiesPage() {
         { header: "Geofence (m)", key: "fence", numeric: true },
       ],
       rows: events.map((ev) => ({
-        when: ev.occurred_at.replace("T", " ").slice(0, 16),
+        when: toLocalDateTime(ev.occurred_at),
         kind:
           ev.kind === "check_in"
             ? "Check in"
@@ -248,7 +253,11 @@ export default function ActivitiesPage() {
               discrepancies" on, this is the off-site list somebody takes into a
               conversation. The file says so in its own header, so nobody has to
               remember which state it was exported from. */}
-          <ExportMenu build={buildActivitySheet} />
+          {/* Disabled while the feed reloads. `loadFirstPage` sets `loading`
+              on every filter change, so without this the menu would export the
+              previous query's rows under the new filters' heading — a file that
+              says one thing and contains another. */}
+          <ExportMenu build={buildActivitySheet} disabled={loading} />
         </div>
       </div>
 
