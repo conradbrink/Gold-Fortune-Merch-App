@@ -149,9 +149,29 @@ strings "$APK" | grep -q "rxtlnetlzmbqirqaalkw.supabase.co" \
   && echo "✓ points at production" \
   || { echo "✗ WRONG ENDPOINT — do not ship this"; exit 1; }
 
-strings "$APK" | grep -qiE "localhost|10\.0\.2\.2|127\.0\.0\.1" \
-  && { echo "✗ contains a development URL — do not ship this"; exit 1; } \
-  || echo "✓ no development URLs"
+# ⚠️ Scoped to your OWN Dart, not the whole APK. `strings` over the APK always
+# matches: the Dart VM's help text inside libflutter.so contains "127.0.0.1" and
+# "localhost" ("Bind to the IPv6 localhost address for the Dart VM Service…"),
+# and libapp.so picks up a bare "localhost" from a package. Verified on 27 Aug
+# 2026 by downloading the shipped 1.1.6 from the bucket: it carries the exact
+# same five strings as 1.1.7. A check that fails on every correct build is one
+# people learn to skim past, which is the opposite of a check.
+# `grep` exits 0 on a match, 1 on none, and **2 on an error** — an unreadable
+# file or a mistyped path. A plain `&& fail || pass` sends that 2 down the pass
+# branch, which is the same failing-open shape as the check this replaced. Read
+# the status and treat anything above 1 as a refusal.
+grep -rniE "localhost|10\.0\.2\.2|127\.0\.0\.1" lib/; scan=$?
+case $scan in
+  0) echo "✗ a development URL in your own source — do not ship this"; exit 1 ;;
+  1) echo "✓ no development URLs in lib/" ;;
+  *) echo "✗ the source scan failed (grep exit $scan) — do not ship this"; exit 1 ;;
+esac
+
+# And the one the checklist never had: a missing DSN is silent, so prove it is
+# in there rather than trusting the flag was typed.
+strings "$APK" | grep -q "ingest.de.sentry.io" \
+  && echo "✓ Sentry DSN baked in — crash reporting is on" \
+  || { echo "✗ SENTRY_DSN missing — crashes would vanish silently"; exit 1; }
 
 # Confirm the signature is the release key, not the debug key.
 export JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home"
