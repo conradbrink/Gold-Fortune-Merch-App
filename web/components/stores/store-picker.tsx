@@ -200,15 +200,23 @@ export function StorePicker({
                 composing.current = true;
               }}
               onCompositionEnd={() => {
-                // Left set: the Enter that confirms the composition has not
-                // arrived yet in every browser. The handler below clears it.
+                // Cleared on the next tick rather than now. WebKit fires the
+                // confirming Enter *after* `compositionend` with `isComposing`
+                // already false, so clearing immediately would let that Enter
+                // choose a store — and clearing only on the next keystroke
+                // stranded the flag when the candidate was confirmed with the
+                // mouse, swallowing the Enter after it.
+                setTimeout(() => {
+                  composing.current = false;
+                }, 0);
               }}
               onKeyDown={(e) => {
-                if (e.key === "Enter" && (e.nativeEvent.isComposing || composing.current)) {
-                  composing.current = false;
+                if (
+                  e.key === "Enter" &&
+                  (e.nativeEvent.isComposing || composing.current)
+                ) {
                   return;
                 }
-                if (e.key !== "Enter") composing.current = false;
                 if (e.key === "Escape") {
                   setOpen(false);
                   setTerm("");

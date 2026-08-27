@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -98,6 +98,16 @@ export default function ReportsPage() {
    * its own range and quietly show, and export, the default.
    */
   const [urlRead, setUrlRead] = useState(false);
+  /**
+   * Which load this is.
+   *
+   * Seven RPCs go out together and a slow one from an earlier range can return
+   * after a newer range's — and whichever *returns* last would otherwise win.
+   * On a page whose tables are exported under a heading naming the range, that
+   * is a file that says one period and contains another. The same guard the
+   * dashboard and the global search already carry.
+   */
+  const loadSeq = useRef(0);
 
   //
   // `set-state-in-effect` is suppressed rather than satisfied, and it is worth
@@ -174,6 +184,8 @@ export default function ReportsPage() {
   }, []);
 
   const load = useCallback(async () => {
+    const runId = ++loadSeq.current;
+    const isStale = () => runId !== loadSeq.current;
     setLoading(true);
     setError(null);
     try {
@@ -193,6 +205,7 @@ export default function ReportsPage() {
         fetchOosHotspots(supabase, range),
         fetchScheduleAdherence(supabase, range),
       ]);
+      if (isStale()) return;
       setGaps(g);
       setScores(s);
       setTrends(t);
@@ -201,9 +214,13 @@ export default function ReportsPage() {
       setHotspots(oh);
       setAdherence(ad);
     } catch (e) {
+      if (isStale()) return;
       setError(e instanceof Error ? e.message : String(e));
     } finally {
-      setLoading(false);
+      // Only the newest run owns the spinner; an older one finishing must not
+      // clear it while the current one is still out — and `loading` is what the
+      // export controls read to know the rows match the filters.
+      if (!isStale()) setLoading(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [range, templateId, repId, storeId]);
