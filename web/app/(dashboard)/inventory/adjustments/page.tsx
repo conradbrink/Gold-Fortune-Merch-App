@@ -84,7 +84,7 @@ export default function AdjustmentsPage() {
       {waiting > 0 && (
         <p className="rounded-lg border border-amber-500/40 bg-amber-500/5 p-2.5 text-sm text-amber-700 dark:text-amber-500">
           {waiting} adjustment{waiting === 1 ? " is" : "s are"} waiting for a decision.
-          {!canApprove && " A manager has to approve them."}
+          {!canApprove && " Someone who can approve stock changes has to sign them off."}
         </p>
       )}
 

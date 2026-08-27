@@ -150,6 +150,12 @@ export function homeFor(permissions: PermissionSet): string {
     ["sales_coverage", "/stores"],
     ["team", "/representatives"],
     ["resources", "/products"],
+    // Last, and only because `permissionForPath` lets these two open a page on
+    // their own. Somebody holding nothing but `hr_settings` was sent to
+    // /rep-notice from the site root while /hr/settings would have loaded for
+    // them — a landing page that contradicts the proxy standing next to it.
+    ["hr_settings", "/hr/settings"],
+    ["company_settings", "/settings/company"],
   ];
   for (const [permission, href] of order) {
     if (can(permissions, permission)) return href;

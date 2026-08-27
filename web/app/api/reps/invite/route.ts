@@ -26,11 +26,16 @@ import { enforceRateLimit, LIMITS } from "@/lib/rate-limit";
  * trade than an inaccurate URL. Account creation with the service key is the
  * last code in this project that should exist twice.
  *
- * **'manager' is not accepted, on purpose.** Everything else here is a manager
- * granting somebody less access than they have. Creating another manager is a
+ * **A named 'manager' is not accepted, on purpose.** Everything else here is
+ * somebody granting less access than they hold. Creating another manager was a
  * manager granting their own level of access, which is the one action worth
  * making somebody go to the Supabase dashboard for — where it is deliberate,
  * attributable, and outside anything an XSS on this app could reach.
+ *
+ * Since permissions arrived, the level being handed out is `admin` rather than
+ * the role string, the route is administrator-only, and the guard that matters
+ * refuses any *template* granting `admin`. A template carrying the `manager`
+ * base role without that grant is allowed through — see the template branch.
  *
  * `hr_manager` is accepted under that same rule and not as an exception to it:
  * it reaches `/hr` and nothing else, which is strictly less than a manager. It
@@ -48,7 +53,8 @@ export const runtime = "nodejs";
  * nothing and gets `rep`, and warehouse setup, which sends `warehouse`. New
  * callers send `job_role_id` instead and the base role comes off the template.
  *
- * `manager` is still absent, on purpose. See the note above.
+ * `manager` is still absent, on purpose. See the note above — and see the
+ * template branch in POST, which does not consult this set and explains why.
  */
 const INVITABLE = new Set(["rep", "warehouse", "hr_manager"]);
 
@@ -149,10 +155,17 @@ export async function POST(request: Request) {
       // the same reason `manager` was never invitable: that is an administrator
       // handing out their own level of access, and it belongs somewhere
       // deliberate and attributable.
-      const { data: grants } = await supabase
+      const { data: grants, error: grantsError } = await supabase
         .from("job_role_permissions")
         .select("permission_code")
         .eq("job_role_id", jobRoleId);
+      // Fails closed. Discarding this error made `grants` null, `grantsAdmin`
+      // false, and the check below pass — so the one read that decides whether
+      // this template may mint an account at all would have been treated as a
+      // "no" whenever it did not answer.
+      if (grantsError) {
+        return Response.json({ error: grantsError.message }, { status: 502 });
+      }
       const grantsAdmin = ((grants ?? []) as { permission_code: string }[]).some(
         (g) => g.permission_code === "admin"
       );
@@ -166,6 +179,16 @@ export async function POST(request: Request) {
         );
       }
 
+      // `INVITABLE` is deliberately not applied here, and this is the only
+      // place that says so. That list refuses `manager` because it dates from
+      // when any manager could reach this route: a manager creating a manager
+      // was somebody handing out their own level of access. The route is
+      // administrator-only now, so the line that matters is `admin` — checked
+      // just above — and a template like Operations Manager, which carries the
+      // `manager` base role without the `admin` grant, is strictly less than
+      // what the person creating it holds. Refusing it here would also be
+      // inconsistent with Settings → Users, where `set_job_role` already puts
+      // an existing account on exactly that template.
       role = template.base_role;
     } else {
       // Defaults to 'rep' so the existing caller, which sends no role, keeps

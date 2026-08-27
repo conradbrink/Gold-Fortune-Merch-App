@@ -252,7 +252,7 @@ export default function StocktakeDetailPage() {
       )}
       {submitted && !canApprove && (
         <p className="rounded-lg border border-border bg-muted/40 p-2.5 text-sm">
-          Handed in. A manager has to approve the variances before they change the
+          Handed in. The variances have to be approved before they change the
           stock.
         </p>
       )}

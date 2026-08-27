@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Search, X } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
+import { can, type PermissionSet } from "@/lib/permissions";
 import { cn } from "@/lib/utils";
 
 /**
@@ -18,6 +19,16 @@ import { cn } from "@/lib/utils";
  * rather than `useSearchParams`, which in this version of Next forces every
  * consumer into a Suspense boundary; these pages are already client components,
  * so there is nothing to gain from it.
+ *
+ * ------------------------------------------------------ the five permissions
+ *
+ * The five sources land on four different modules, so one gate on the box was
+ * wrong in both directions: somebody with the store estate and nothing else was
+ * offered products, forms and files — names they may not read, on a link that
+ * bounces at the proxy — and the permission that opens the box is not the one
+ * that opens the result. Each source is now asked for separately, with the
+ * permission its destination requires, and a source nobody may reach is not
+ * queried at all rather than queried and hidden.
  */
 
 type Hit = {
@@ -37,16 +48,23 @@ function sanitise(term: string): string {
 }
 
 /**
- * A query that resolves whether it succeeded or not.
+ * A query that resolves whether it succeeded or not — or was never sent.
  *
  * PostgREST reports a refusal as `.error` on a resolved promise, but a transport
  * failure rejects — and one rejection in a `Promise.all` loses every sibling
  * result. Turning the rejection into the same `{ data, error }` shape keeps the
  * results that did arrive and leaves one way to report the ones that did not.
+ *
+ * `null` is a source the caller has no permission to open. It resolves to no
+ * rows and no error, because a source that was never asked has not failed — an
+ * error here would put "Some results are missing" above a list that is exactly
+ * what this person is allowed to see. A query builder is a thenable, so one
+ * passed here and not awaited never reaches the network.
  */
 async function settled<T extends { data: unknown; error: unknown }>(
-  query: PromiseLike<T>
-): Promise<T | { data: null; error: { message: string } }> {
+  query: PromiseLike<T> | null
+): Promise<T | { data: null; error: { message: string } | null }> {
+  if (query === null) return { data: null, error: null };
   try {
     return await query;
   } catch (e) {
@@ -62,9 +80,36 @@ async function settled<T extends { data: unknown; error: unknown }>(
  *   default because the header has no room for it. The top bar's mobile search
  *   button drives this — before it did, that button was inert.
  */
-export function GlobalSearch({ revealed = false }: { revealed?: boolean }) {
+export function GlobalSearch({
+  permissions,
+  revealed = false,
+}: {
+  permissions: PermissionSet;
+  revealed?: boolean;
+}) {
   const router = useRouter();
   const supabase = createClient();
+
+  // Read once per render and closed over by `run`, which deliberately has an
+  // empty dependency list so the debounce is not restarted on every keystroke.
+  // The set only changes when the signed-in person does, and that remounts the
+  // whole chrome.
+  const canOutlets = can(permissions, "sales_coverage");
+  const canReps = can(permissions, "team");
+  const canResources = can(permissions, "resources");
+
+  // Names only what this person can actually be shown. A box offering forms and
+  // files to somebody who may not read either is the same dead end the gate on
+  // the queries exists to remove.
+  const sources = [
+    ...(canOutlets ? ["places"] : []),
+    ...(canReps ? ["reps"] : []),
+    ...(canResources ? ["products", "forms", "files"] : []),
+  ];
+  const placeholder =
+    sources.length > 1
+      ? `Find ${sources.slice(0, -1).join(", ")} and ${sources[sources.length - 1]}`
+      : `Find ${sources[0] ?? "anything you can open"}`;
 
   const [term, setTerm] = useState("");
   const [hits, setHits] = useState<Hit[]>([]);
@@ -106,39 +151,52 @@ export function GlobalSearch({ revealed = false }: { revealed?: boolean }) {
         // path reports both.
         const [stores, reps, products, forms, files] = await Promise.all([
           settled(
-            supabase
-              .from("stores")
-              .select("id, name, city")
-              .eq("active", true)
-              .or(`name.ilike.${like},city.ilike.${like}`)
-              .limit(5)
+            canOutlets
+              ? supabase
+                  .from("stores")
+                  .select("id, name, city")
+                  .eq("active", true)
+                  .or(`name.ilike.${like},city.ilike.${like}`)
+                  .limit(5)
+              : null
           ),
           settled(
-            supabase
-              .from("profiles")
-              .select("id, full_name, email")
-              // Reps only: a hit here navigates to /representatives?q=…, and the
-              // directory lists reps, so a manager match led to an empty page.
-              .eq("role", "rep")
-              .or(`full_name.ilike.${like},email.ilike.${like}`)
-              .limit(5)
+            canReps
+              ? supabase
+                  .from("profiles")
+                  .select("id, full_name, email")
+                  // Reps only: a hit here navigates to /representatives?q=…, and
+                  // the directory lists reps, so a manager match led to an empty
+                  // page.
+                  .eq("role", "rep")
+                  .or(`full_name.ilike.${like},email.ilike.${like}`)
+                  .limit(5)
+              : null
           ),
           settled(
-            supabase
-              .from("products")
-              .select("id, name, brand, sku_code")
-              .or(`name.ilike.${like},brand.ilike.${like},sku_code.ilike.${like}`)
-              .limit(5)
+            canResources
+              ? supabase
+                  .from("products")
+                  .select("id, name, brand, sku_code")
+                  .or(
+                    `name.ilike.${like},brand.ilike.${like},sku_code.ilike.${like}`
+                  )
+                  .limit(5)
+              : null
           ),
           settled(
-            supabase
-              .from("form_templates")
-              .select("id, name, active")
-              .ilike("name", like)
-              .limit(5)
+            canResources
+              ? supabase
+                  .from("form_templates")
+                  .select("id, name, active")
+                  .ilike("name", like)
+                  .limit(5)
+              : null
           ),
           settled(
-            supabase.from("files").select("id, name").ilike("name", like).limit(5)
+            canResources
+              ? supabase.from("files").select("id, name").ilike("name", like).limit(5)
+              : null
           ),
         ]);
 
@@ -209,7 +267,7 @@ export function GlobalSearch({ revealed = false }: { revealed?: boolean }) {
       }
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    []
+    [canOutlets, canReps, canResources]
   );
 
   // Debounced: five queries per keystroke would be five per keystroke.
@@ -275,7 +333,7 @@ export function GlobalSearch({ revealed = false }: { revealed?: boolean }) {
               go(hits[active]);
             }
           }}
-          placeholder="Find places, reps, forms, files and products"
+          placeholder={placeholder}
           aria-label="Search"
           className="min-w-0 flex-1 bg-transparent text-foreground outline-none placeholder:text-muted-foreground"
         />

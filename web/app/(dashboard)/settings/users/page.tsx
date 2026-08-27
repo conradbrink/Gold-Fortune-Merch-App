@@ -435,15 +435,33 @@ function CreateUserDialog({
               <span>{created.email}</span>
               <span>·</span>
               <span>{reveal ? created.password : "••••••••••••"}</span>
-              <Button size="sm" variant="ghost" onClick={() => setReveal((v) => !v)}>
+              <Button
+                size="sm"
+                variant="ghost"
+                aria-label={reveal ? "Hide the password" : "Show the password"}
+                onClick={() => setReveal((v) => !v)}
+              >
                 {reveal ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
               </Button>
               <Button
                 size="sm"
                 variant="ghost"
+                aria-label="Copy the password"
                 onClick={async () => {
-                  await navigator.clipboard.writeText(created.password);
-                  setCopied(true);
+                  try {
+                    await navigator.clipboard.writeText(created.password);
+                    setCopied(true);
+                  } catch {
+                    // The clipboard is refused outside a secure context and can
+                    // be denied by permission. Unhandled, this left the icon
+                    // unchanged and the password uncopied — and the password is
+                    // shown once, so somebody would have clicked Done believing
+                    // they had it.
+                    setReveal(true);
+                    setError(
+                      "The password could not be copied. It is shown above — copy it by hand before closing this."
+                    );
+                  }
                 }}
               >
                 {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}

@@ -38,6 +38,40 @@ export function peopleOnRole(directory: AccessDirectory, jobRoleId: string): num
   return directory.users.filter((u) => u.job_role_id === jobRoleId).length;
 }
 
+/**
+ * How many rows one PostgREST response is allowed to carry.
+ *
+ * Supabase caps an unpaged response at 1,000 rows and says nothing about it —
+ * the reply is a complete-looking array that happens to stop. Two of the five
+ * reads below can pass that: `profiles` in a large organisation, and
+ * `profile_permissions`, which holds a row per person per tick and reaches the
+ * cap first. A truncated permission read is the dangerous one, because it
+ * renders as somebody's boxes being unticked rather than as an error, and an
+ * administrator would "correct" it by re-granting what was never lost.
+ *
+ * Kept below the server's cap so a short page proves the end of the table. If
+ * it were equal and the server's limit were lowered, a full page would look
+ * like a partial one and the loop would stop early.
+ */
+const PAGE = 500;
+
+type Page<T> = PromiseLike<{ data: T[] | null; error: { message: string } | null }>;
+
+/** Every row of a query, however many pages that takes. */
+async function allRows<T>(page: (from: number, to: number) => Page<T>): Promise<T[]> {
+  const rows: T[] = [];
+  for (let from = 0; ; from += PAGE) {
+    const { data, error } = await page(from, from + PAGE - 1);
+    if (error) throw new Error(error.message);
+    const batch = data ?? [];
+    rows.push(...batch);
+    // A short page is the end of the table. An exactly-full last page costs one
+    // more round trip that comes back empty, which is the cheap side to be
+    // wrong on.
+    if (batch.length < PAGE) return rows;
+  }
+}
+
 export async function fetchAccessDirectory(
   supabase: SupabaseClient
 ): Promise<AccessDirectory> {
@@ -46,32 +80,50 @@ export async function fetchAccessDirectory(
     // Disabled roles are listed too. The People tab filters them out of the
     // dropdown; the Job roles tab has to show one in order to re-enable it.
     supabase.from("job_roles").select("*").order("sort_order").order("name"),
-    supabase
-      .from("profiles")
-      .select("id, full_name, email, role, is_active, job_role_id")
-      .order("full_name"),
-    supabase.from("profile_permissions").select("profile_id, permission_code"),
-    supabase.from("job_role_permissions").select("job_role_id, permission_code"),
+    // Paged. The catalogue and the templates above are bounded by the number of
+    // modules and the number of job roles, both of which a person maintains by
+    // hand; these three are bounded by headcount.
+    allRows<Omit<OrgUser, "permissions">>((from, to) =>
+      supabase
+        .from("profiles")
+        .select("id, full_name, email, role, is_active, job_role_id")
+        .order("full_name")
+        // A second, unique key: `full_name` is nullable and repeats, and rows
+        // that tie can come back in a different order per page, which loses
+        // some and duplicates others across the boundary.
+        .order("id")
+        .range(from, to)
+    ),
+    allRows<{ profile_id: string; permission_code: string }>((from, to) =>
+      supabase
+        .from("profile_permissions")
+        .select("profile_id, permission_code")
+        .order("profile_id")
+        .order("permission_code")
+        .range(from, to)
+    ),
+    allRows<{ job_role_id: string; permission_code: string }>((from, to) =>
+      supabase
+        .from("job_role_permissions")
+        .select("job_role_id, permission_code")
+        .order("job_role_id")
+        .order("permission_code")
+        .range(from, to)
+    ),
   ]);
 
-  const failed = [perms, roles, profiles, grants, roleGrants].find((r) => r.error);
+  const failed = [perms, roles].find((r) => r.error);
   if (failed?.error) throw new Error(failed.error.message);
 
   const byProfile = new Map<string, string[]>();
-  for (const g of (grants.data ?? []) as {
-    profile_id: string;
-    permission_code: string;
-  }[]) {
+  for (const g of grants) {
     const list = byProfile.get(g.profile_id) ?? [];
     list.push(g.permission_code);
     byProfile.set(g.profile_id, list);
   }
 
   const byRole = new Map<string, string[]>();
-  for (const g of (roleGrants.data ?? []) as {
-    job_role_id: string;
-    permission_code: string;
-  }[]) {
+  for (const g of roleGrants) {
     const list = byRole.get(g.job_role_id) ?? [];
     list.push(g.permission_code);
     byRole.set(g.job_role_id, list);
@@ -81,7 +133,7 @@ export async function fetchAccessDirectory(
     permissions: (perms.data ?? []) as AppPermission[],
     jobRoles: (roles.data ?? []) as JobRole[],
     jobRolePermissions: byRole,
-    users: ((profiles.data ?? []) as Omit<OrgUser, "permissions">[]).map((p) => ({
+    users: profiles.map((p) => ({
       ...p,
       permissions: (byProfile.get(p.id) ?? []).sort(),
     })),

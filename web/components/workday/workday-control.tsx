@@ -40,6 +40,7 @@ export function WorkdayControl() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [ready, setReady] = useState(false);
+  const [unreadable, setUnreadable] = useState(false);
   // Re-rendered once a minute so the elapsed time is not frozen at whatever it
   // said when the page loaded.
   const [, setTick] = useState(0);
@@ -59,9 +60,16 @@ export function WorkdayControl() {
       ]);
       setOpen(state.open);
       setOrgId(org);
+      setUnreadable(false);
     } catch {
       // A control that cannot read its own state hides rather than offering a
       // button that will fail. The phone app is unaffected either way.
+      //
+      // Recorded rather than swallowed: `finally` sets `ready` either way, so
+      // without this the failure rendered Start with no org id and the press
+      // died at "Your organisation could not be resolved" — which reads as the
+      // account being broken rather than the page having failed to load.
+      setUnreadable(true);
     } finally {
       setReady(true);
     }
@@ -76,7 +84,7 @@ export function WorkdayControl() {
     return () => clearInterval(t);
   }, [open]);
 
-  if (!allowed || !ready) return null;
+  if (!allowed || !ready || unreadable) return null;
 
   async function toggle() {
     if (!userId) return;

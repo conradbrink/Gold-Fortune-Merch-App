@@ -203,7 +203,7 @@ export default function AdjustmentDetailPage() {
       )}
       {isPending && !canApprove && (
         <p className="rounded-lg border border-border bg-muted/40 p-2.5 text-sm text-muted-foreground">
-          Waiting for a manager. The stock is unchanged until then.
+          Waiting for approval. The stock is unchanged until then.
         </p>
       )}
       {head.decision_note && (

@@ -1878,36 +1878,36 @@ export type Database = {
       }
       profiles: {
         Row: {
-          job_role_id: string | null
           created_at: string
           email: string | null
           full_name: string | null
           id: string
           is_active: boolean
+          job_role_id: string | null
           job_title: string | null
           org_id: string
           phone: string | null
           role: string
         }
         Insert: {
-          job_role_id?: string | null
           created_at?: string
           email?: string | null
           full_name?: string | null
           id: string
           is_active?: boolean
+          job_role_id?: string | null
           job_title?: string | null
           org_id: string
           phone?: string | null
           role: string
         }
         Update: {
-          job_role_id?: string | null
           created_at?: string
           email?: string | null
           full_name?: string | null
           id?: string
           is_active?: boolean
+          job_role_id?: string | null
           job_title?: string | null
           org_id?: string
           phone?: string | null
@@ -6014,6 +6014,7 @@ export type Database = {
       has_permission: { Args: { p_code: string }; Returns: boolean }
       my_permissions: { Args: never; Returns: string[] }
       provision_organization: { Args: { p_org: string }; Returns: undefined }
+      provision_organization_on_insert: { Args: never; Returns: unknown }
       delete_job_role: { Args: { p_id: string }; Returns: undefined }
       org_timezone: { Args: { p_org: string }; Returns: string }
       reapply_job_role: { Args: { p_id: string }; Returns: number }

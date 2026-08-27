@@ -31,10 +31,17 @@ export function TopBar({ onOpenNav }: { onOpenNav?: () => void }) {
   const router = useRouter();
   const supabase = createClient();
   const permissions = usePermissions();
-  // Global search spans stores, reps, forms and files. Offering it to somebody
-  // who cannot open any of those would be a box that only returns dead ends,
-  // so it follows the store estate — the biggest thing it searches.
-  const canSearch = permissions !== null && can(permissions, "sales_coverage");
+  // Global search spans four modules, not one. It used to follow the store
+  // estate alone, which was wrong in both directions: a warehouse-and-resources
+  // person got no box at all, and somebody with only the store estate got a box
+  // that searched products, forms and files as well and offered them links that
+  // bounce at the proxy. Offered when at least one source is open; which ones
+  // are searched is decided inside, from the same set.
+  const canSearch =
+    permissions !== null &&
+    (can(permissions, "sales_coverage") ||
+      can(permissions, "team") ||
+      can(permissions, "resources"));
   const canOpenSettings = permissions !== null && can(permissions, "company_settings");
   const [label, setLabel] = useState("Gold Fortune User");
   const [initials, setInitials] = useState("GF");
@@ -74,7 +81,9 @@ export function TopBar({ onOpenNav }: { onOpenNav?: () => void }) {
         <Menu className="h-5 w-5" />
       </Button>
 
-      {canSearch && <GlobalSearch revealed={searchRevealed} />}
+      {canSearch && permissions !== null && (
+        <GlobalSearch permissions={permissions} revealed={searchRevealed} />
+      )}
 
       <div className="ml-auto flex items-center gap-2 text-muted-foreground sm:gap-4">
         {canSearch && (
