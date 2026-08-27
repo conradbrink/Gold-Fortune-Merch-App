@@ -63,6 +63,9 @@ export type OrderDetail = {
     dispatched_at: string;
     delivered_at: string | null;
     received_by_name: string | null;
+    /** The rep whose job this delivery is, when one has been given it. */
+    assigned_rep_id: string | null;
+    assigned_rep_name: string | null;
   }[];
   documents: {
     id: string;
@@ -191,7 +194,7 @@ export async function fetchOrderDetail(
     supabase
       .from("dispatches")
       .select(
-        "id, dispatch_number, status, tracking_reference, carrier_name, dispatched_at, delivered_at, received_by_name, drivers(full_name), vehicles(registration)"
+        "id, dispatch_number, status, tracking_reference, carrier_name, dispatched_at, delivered_at, received_by_name, assigned_rep_id, assigned_rep:profiles!dispatches_assigned_rep_id_fkey(full_name), drivers(full_name), vehicles(registration)"
       )
       .eq("order_id", orderId)
       .order("dispatched_at", { ascending: false }),
@@ -255,6 +258,11 @@ export async function fetchOrderDetail(
       dispatched_at: string;
       delivered_at: string | null;
       received_by_name: string | null;
+      assigned_rep_id: string | null;
+      assigned_rep:
+        | { full_name: string | null }
+        | { full_name: string | null }[]
+        | null;
       drivers: { full_name: string } | { full_name: string }[] | null;
       vehicles: { registration: string } | { registration: string }[] | null;
     }[]).map((d) => ({
@@ -268,6 +276,8 @@ export async function fetchOrderDetail(
       dispatched_at: d.dispatched_at,
       delivered_at: d.delivered_at,
       received_by_name: d.received_by_name,
+      assigned_rep_id: d.assigned_rep_id,
+      assigned_rep_name: one(d.assigned_rep)?.full_name ?? null,
     })),
     documents: (docsRes.data ?? []) as OrderDetail["documents"],
   };
@@ -840,3 +850,20 @@ export async function signedDocumentUrl(
   if (error) throw new Error(error.message);
   return data.signedUrl;
 }
+
+/**
+ * Give a delivery to a rep, or take it back with null.
+ *
+ * Through an RPC rather than an update, because the rule is not "may write
+ * dispatches" — it is "may hand this job to somebody who can actually be shown
+ * it", and only a `rep` base role opens the Android app.
+ */
+export const assignDispatchRep = (
+  supabase: Client,
+  dispatchId: string,
+  repId: string | null
+) =>
+  callRpc(supabase, "assign_dispatch_rep", {
+    p_dispatch: dispatchId,
+    p_rep: repId,
+  });

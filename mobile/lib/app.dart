@@ -11,6 +11,7 @@ import 'core/theme.dart';
 import 'data/local/app_database.dart';
 import 'features/auth/login_screen.dart';
 import 'features/auth/manager_notice_screen.dart';
+import 'features/deliveries/deliveries_screen.dart';
 import 'features/files/files_screen.dart';
 import 'features/hr/my_hr_screen.dart';
 import 'features/orders/order_capture_route.dart';
@@ -129,6 +130,13 @@ final routerProvider = Provider<GoRouter>((ref) {
             // somebody invisible to themselves.
             path: 'my-hr',
             builder: (context, state) => const MyHrScreen(),
+          ),
+          GoRoute(
+            // Also open to any signed-in rep. RLS decides what is in the list —
+            // a dispatch nobody has assigned to them is not visible to them at
+            // all, so an empty screen is the correct answer rather than a gate.
+            path: 'deliveries',
+            builder: (context, state) => const DeliveriesScreen(),
           ),
           GoRoute(
             path: 'workday-summary',

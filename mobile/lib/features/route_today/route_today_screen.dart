@@ -43,6 +43,9 @@ class RouteTodayScreen extends ConsumerWidget {
           // is the one thing on this screen that somebody else is waiting on,
           // and an icon that looks the same either way is how it goes unread.
           _MyHrAction(count: ref.watch(unacknowledgedWarningCountProvider)),
+          _DeliveriesAction(
+            count: ref.watch(outstandingDeliveryCountProvider),
+          ),
           IconButton(
             icon: const Icon(Icons.logout),
             tooltip: 'Sign out',
@@ -298,6 +301,31 @@ class _MyHrAction extends StatelessWidget {
     if (unread == 0) return button;
     return Badge.count(
       count: unread,
+      backgroundColor: AppColors.gold,
+      textColor: AppColors.navyDark,
+      child: button,
+    );
+  }
+}
+
+/// Deliveries the warehouse has put this rep's name on, badged with how many
+/// are still on the road.
+class _DeliveriesAction extends StatelessWidget {
+  const _DeliveriesAction({required this.count});
+
+  final AsyncValue<int> count;
+
+  @override
+  Widget build(BuildContext context) {
+    final outstanding = count.maybeWhen(data: (n) => n, orElse: () => 0);
+    final button = IconButton(
+      icon: const Icon(Icons.local_shipping_outlined),
+      tooltip: 'My deliveries',
+      onPressed: () => context.go('/deliveries'),
+    );
+    if (outstanding == 0) return button;
+    return Badge.count(
+      count: outstanding,
       backgroundColor: AppColors.gold,
       textColor: AppColors.navyDark,
       child: button,

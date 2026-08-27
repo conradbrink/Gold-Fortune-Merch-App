@@ -15,8 +15,10 @@ import '../data/models/catalogue_product.dart';
 import '../data/local/app_database.dart';
 import '../data/local/order_draft.dart';
 import '../data/repositories/file_repository.dart';
+import '../data/models/delivery.dart';
 import '../data/models/hr.dart';
 import '../data/repositories/form_repository.dart';
+import '../data/repositories/delivery_repository.dart';
 import '../data/repositories/hr_repository.dart';
 import '../data/repositories/lead_repository.dart';
 import '../data/repositories/order_repository.dart';
@@ -151,6 +153,24 @@ final myWarningsProvider = FutureProvider<List<Warning>>((ref) async {
 final unacknowledgedWarningCountProvider = FutureProvider<int>((ref) async {
   final warnings = await ref.watch(myWarningsProvider.future);
   return warnings.where((w) => !w.acknowledged).length;
+});
+
+// ------------------------------------------------------------- deliveries
+
+final deliveryRepositoryProvider = Provider<DeliveryRepository>((ref) {
+  return DeliveryRepository(supabase);
+});
+
+/// Consignments assigned to this rep. Narrowed by RLS, not by a filter here.
+final myDeliveriesProvider = FutureProvider<List<Delivery>>((ref) {
+  ref.watch(currentUserProvider);
+  return ref.watch(deliveryRepositoryProvider).myDeliveries();
+});
+
+/// How many are still on the road, for the badge on the home screen.
+final outstandingDeliveryCountProvider = FutureProvider<int>((ref) async {
+  final rows = await ref.watch(myDeliveriesProvider.future);
+  return rows.where((d) => d.isOutstanding).length;
 });
 
 final routeRepositoryProvider = Provider<RouteRepository>((ref) {
