@@ -741,6 +741,7 @@ function LeaveTypeEditor({
   const [days, setDays] = useState("");
   const [paid, setPaid] = useState(true);
   const [needsDoc, setNeedsDoc] = useState(false);
+  const [deducts, setDeducts] = useState(true);
 
   // Load the chosen type's values during render, not in an effect: the fields
   // would otherwise show the previous type for a frame after the dropdown
@@ -751,6 +752,7 @@ function LeaveTypeEditor({
     setDays(String(type.default_entitlement_days));
     setPaid(type.is_paid);
     setNeedsDoc(type.requires_document);
+    setDeducts(type.deducts_from_balance);
   }
 
   if (!type) return null;
@@ -792,6 +794,17 @@ function LeaveTypeEditor({
             />
             Needs a document
           </label>
+          {/* The entitlement above is meaningless for a type that does not
+              deduct — study leave, unpaid leave taken outside the allowance —
+              and the balance screen already reads this column. It was being
+              persisted unchanged from a field nothing could edit. */}
+          <label className="flex items-center gap-2 pb-1.5 text-sm">
+            <Checkbox
+              checked={deducts}
+              onCheckedChange={(c) => setDeducts(Boolean(c))}
+            />
+            Comes off the balance
+          </label>
           <Button
             size="sm"
             variant="outline"
@@ -805,7 +818,7 @@ function LeaveTypeEditor({
                 is_paid: paid,
                 default_entitlement_days: Number(days),
                 requires_document: needsDoc,
-                deducts_from_balance: type.deducts_from_balance,
+                deducts_from_balance: deducts,
                 active: type.active,
                 sort_order: type.sort_order,
               })

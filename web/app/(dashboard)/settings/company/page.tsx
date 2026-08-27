@@ -50,6 +50,7 @@ export default function CompanyProfilePage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
   const [inviteNote, setInviteNote] = useState(false);
   const [form, setForm] = useState({
     name: "",
@@ -147,7 +148,13 @@ export default function CompanyProfilePage() {
     if (!org) return;
     setSaving(true);
     setSaved(false);
-    await supabase
+    setSaveError(null);
+    // The error was discarded here and "Saved." shown regardless. Harmless
+    // while every field was free text; the timezone is not — a value that is
+    // not an IANA zone is refused by `organizations_validate_timezone`, and the
+    // org would have gone on running in the old zone while the screen said it
+    // had changed. Which day a visit belongs to depends on that answer.
+    const { error } = await supabase
       .from("organizations")
       .update({
         name: form.name,
@@ -161,6 +168,10 @@ export default function CompanyProfilePage() {
       })
       .eq("id", org.id);
     setSaving(false);
+    if (error) {
+      setSaveError(error.message);
+      return;
+    }
     setSaved(true);
   }
 
@@ -305,6 +316,9 @@ export default function CompanyProfilePage() {
                 </Button>
                 {saved && (
                   <span className="text-sm text-emerald-700">Saved.</span>
+                )}
+                {saveError && (
+                  <span className="text-sm text-destructive">{saveError}</span>
                 )}
               </div>
             </CardContent>

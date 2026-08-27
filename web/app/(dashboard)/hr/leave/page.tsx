@@ -509,6 +509,21 @@ function BalanceGrid({
                               setBusy(true);
                               setError(null);
                               try {
+                                // The zeroes are deliberate and the numbers
+                                // survive them. `hr_leave_balance_summary`
+                                // shows entitlement + carry-over + adjustment
+                                // as one figure, and this box edits that
+                                // figure — so it is written back as the base
+                                // with the parts folded in. Preserving the
+                                // parts instead would add them to the total a
+                                // second time: 15 + 5 carried, shown as 20 and
+                                // typed up to 22, would become 27.
+                                //
+                                // What is lost is the breakdown and the note.
+                                // Both are nulls in every row today and
+                                // nothing writes them; the day a carry-over
+                                // screen exists, this button needs a base-only
+                                // field rather than this comment.
                                 await onSave({
                                   employee_id: b.employee_id,
                                   leave_type_id: b.leave_type_id,
