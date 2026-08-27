@@ -39,6 +39,10 @@ class RouteTodayScreen extends ConsumerWidget {
             tooltip: 'Files',
             onPressed: () => context.go('/files'),
           ),
+          // Badged rather than silent. A warning nobody has said they have seen
+          // is the one thing on this screen that somebody else is waiting on,
+          // and an icon that looks the same either way is how it goes unread.
+          _MyHrAction(count: ref.watch(unacknowledgedWarningCountProvider)),
           IconButton(
             icon: const Icon(Icons.logout),
             tooltip: 'Sign out',
@@ -268,6 +272,35 @@ class _RouteCard extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+/// The entry point to the rep's own HR record, with a badge for anything on
+/// their file they have not acknowledged.
+///
+/// The count is a `FutureProvider`, and a rep with no signal or no employee
+/// record gets the plain icon rather than an error — the whole point of the
+/// badge is the one case where there is something to say.
+class _MyHrAction extends StatelessWidget {
+  const _MyHrAction({required this.count});
+
+  final AsyncValue<int> count;
+
+  @override
+  Widget build(BuildContext context) {
+    final unread = count.maybeWhen(data: (n) => n, orElse: () => 0);
+    final button = IconButton(
+      icon: const Icon(Icons.event_available_outlined),
+      tooltip: 'My leave and file',
+      onPressed: () => context.go('/my-hr'),
+    );
+    if (unread == 0) return button;
+    return Badge.count(
+      count: unread,
+      backgroundColor: AppColors.gold,
+      textColor: AppColors.navyDark,
+      child: button,
     );
   }
 }

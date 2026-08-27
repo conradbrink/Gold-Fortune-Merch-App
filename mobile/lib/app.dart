@@ -12,6 +12,7 @@ import 'data/local/app_database.dart';
 import 'features/auth/login_screen.dart';
 import 'features/auth/manager_notice_screen.dart';
 import 'features/files/files_screen.dart';
+import 'features/hr/my_hr_screen.dart';
 import 'features/orders/order_capture_route.dart';
 import 'features/route_today/route_today_screen.dart';
 import 'features/visit/store_detail_screen.dart';
@@ -120,6 +121,14 @@ final routerProvider = Provider<GoRouter>((ref) {
           GoRoute(
             path: 'files',
             builder: (context, state) => const FilesScreen(),
+          ),
+          GoRoute(
+            // Reachable by any signed-in rep. `/hr/me` on the web is in
+            // ALWAYS_ALLOWED for the same reason: requiring a grant to see
+            // your own leave means an administrator can accidentally make
+            // somebody invisible to themselves.
+            path: 'my-hr',
+            builder: (context, state) => const MyHrScreen(),
           ),
           GoRoute(
             path: 'workday-summary',
