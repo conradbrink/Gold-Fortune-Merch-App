@@ -6,6 +6,7 @@ import {
   Calendar,
   ClipboardList,
   BadgePercent,
+  Users,
   Package,
   FileText,
   Folder,
@@ -157,6 +158,22 @@ export const navGroups: NavGroup[] = [
         icon: Settings2,
         permission: "warehouse",
       },
+    ],
+  },
+  {
+    // "Sales Team", not "Team". The old heading sat a few inches above a Human
+    // Resources group containing "Employees" and gave no signal about which of
+    // the two answered which question — they are the same five people described
+    // two different ways.
+    //
+    // The names now carry that: Employees is the employment record — department,
+    // manager, contract, status. This is field coverage — who covers which store,
+    // and when they were last out. Neither set of columns appears on the other
+    // page, which is why folding one into the other would lose something rather
+    // than tidy something.
+    label: "Sales Team",
+    items: [
+      { href: "/representatives", label: "Representatives", icon: Users, permission: "team" },
     ],
   },
   {
