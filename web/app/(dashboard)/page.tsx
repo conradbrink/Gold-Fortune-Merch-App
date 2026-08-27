@@ -349,6 +349,7 @@ export default function InsightsDashboardPage() {
     operations: ops,
     liveReps,
     days,
+    range,
   };
 
   /**

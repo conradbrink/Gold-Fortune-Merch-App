@@ -20,10 +20,16 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { DateRangePicker } from "@/components/dashboard/date-range-picker";
-import { LocationVerdict } from "@/components/activities/location-verdict";
+import { StorePicker } from "@/components/stores/store-picker";
+import { ExportMenu } from "@/components/export-menu";
+import type { ExportSheet } from "@/lib/export";
+import {
+  LocationVerdict,
+  VERDICT_STYLES,
+} from "@/components/activities/location-verdict";
 import { SubmissionDetail } from "@/components/forms/submission-detail";
 import { createClient } from "@/lib/supabase/client";
-import { rangeForPreset, type DateRange } from "@/lib/date-range";
+import { rangeForPreset, toLocalDateInput, type DateRange } from "@/lib/date-range";
 import {
   fetchActivityFeed,
   fetchActivitySummary,
@@ -65,7 +71,10 @@ export default function ActivitiesPage() {
   const [open, setOpen] = useState<ActivityEvent | null>(null);
 
   const [reps, setReps] = useState<Option[]>([]);
-  const [stores, setStores] = useState<Option[]>([]);
+  /** Named `name` rather than `label` because the store picker searches it. */
+  const [stores, setStores] = useState<
+    { id: string; name: string; city: string | null }[]
+  >([]);
 
   // Filter dropdown options — fetched once, independent of the feed.
   useEffect(() => {
@@ -77,7 +86,10 @@ export default function ActivitiesPage() {
           .select("id, full_name")
           .eq("role", "rep")
           .order("full_name"),
-        supabase.from("stores").select("id, name").order("name"),
+        // `city` is here for the store picker's search, which matches on the
+        // town as well as the name — a manager often knows an outlet by where
+        // it is before they know what it is called.
+        supabase.from("stores").select("id, name, city").order("name"),
       ]);
       if (cancelled) return;
       setReps(
@@ -86,7 +98,9 @@ export default function ActivitiesPage() {
           label: r.full_name ?? "Unnamed rep",
         }))
       );
-      setStores((storeRows ?? []).map((s) => ({ id: s.id, label: s.name })));
+      setStores(
+        (storeRows ?? []).map((s) => ({ id: s.id, name: s.name, city: s.city }))
+      );
     }
     loadOptions();
     return () => {
@@ -153,6 +167,60 @@ export default function ActivitiesPage() {
 
   const flagged = (summary?.off_site ?? 0) + (summary?.invalid_gps ?? 0);
 
+  /**
+   * The loaded rows, as a spreadsheet.
+   *
+   * The feed is paged, so this exports what has been loaded rather than the
+   * whole period — and says which, because "42 of 310 events" in the header of
+   * a file is the difference between a sample and a claim. Pressing "Show more"
+   * first is how you get the rest.
+   */
+  function buildActivitySheet(): ExportSheet {
+    return {
+      title: onlyFlagged ? "Location discrepancies" : "Activities",
+      orgName: "Gold Fortune Merchandising",
+      context: [
+        `${toLocalDateInput(range.from)} to ${toLocalDateInput(new Date(+range.to - 86_400_000))}`,
+        repId !== "all"
+          ? `Rep: ${reps.find((r) => r.id === repId)?.label ?? repId}`
+          : "All reps",
+        storeId !== "all"
+          ? `Store: ${stores.find((st) => st.id === storeId)?.name ?? storeId}`
+          : "All stores",
+        onlyFlagged ? "Discrepancies only — off site and invalid GPS" : "Every event",
+        `${events.length} of ${total} events loaded`,
+      ],
+      filename: onlyFlagged ? "gf-discrepancies" : "gf-activities",
+      columns: [
+        { header: "When", key: "when" },
+        { header: "Event", key: "kind" },
+        { header: "Rep", key: "rep" },
+        { header: "Store", key: "store" },
+        { header: "Verdict", key: "verdict" },
+        { header: "Distance (m)", key: "distance", numeric: true },
+        { header: "GPS accuracy (m)", key: "accuracy", numeric: true },
+        { header: "Geofence (m)", key: "fence", numeric: true },
+      ],
+      rows: events.map((ev) => ({
+        when: ev.occurred_at.replace("T", " ").slice(0, 16),
+        kind:
+          ev.kind === "check_in"
+            ? "Check in"
+            : ev.kind === "check_out"
+              ? "Check out"
+              : "Sales call",
+        rep: ev.rep_name ?? "",
+        store: ev.store_name,
+        // The label a person read on screen, not the enum. An exported
+        // "off_site" is a column somebody has to be told how to read.
+        verdict: VERDICT_STYLES[ev.verdict].label,
+        distance: ev.distance_m,
+        accuracy: ev.accuracy_m,
+        fence: ev.geofence_radius_m,
+      })),
+    };
+  }
+
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -168,13 +236,20 @@ export default function ActivitiesPage() {
             location and store verification where there is a store to verify.
           </p>
         </div>
-        <Button
-          size="sm"
-          variant={onlyFlagged ? "default" : "outline"}
-          onClick={() => setOnlyFlagged((v) => !v)}
-        >
-          {onlyFlagged ? "Showing discrepancies" : "Only discrepancies"}
-        </Button>
+        <div className="flex flex-wrap items-center gap-2">
+          <Button
+            size="sm"
+            variant={onlyFlagged ? "default" : "outline"}
+            onClick={() => setOnlyFlagged((v) => !v)}
+          >
+            {onlyFlagged ? "Showing discrepancies" : "Only discrepancies"}
+          </Button>
+          {/* Exports the rows on screen, which is the point: with "Only
+              discrepancies" on, this is the off-site list somebody takes into a
+              conversation. The file says so in its own header, so nobody has to
+              remember which state it was exported from. */}
+          <ExportMenu build={buildActivitySheet} />
+        </div>
       </div>
 
       <DateRangePicker value={range} onChange={setRange} />
@@ -195,18 +270,16 @@ export default function ActivitiesPage() {
           </NativeSelect>
         </div>
         <div className="w-full sm:w-56">
-          <NativeSelect
-            aria-label="Filter by store"
-            value={storeId}
-            onChange={(e) => setStoreId(e.target.value)}
-          >
-            <option value="all">All stores</option>
-            {stores.map((s) => (
-              <option key={s.id} value={s.id}>
-                {s.label}
-              </option>
-            ))}
-          </NativeSelect>
+          {/* "all" is this page's sentinel for no filter and the picker's is
+              "", so the two are translated here rather than either one being
+              bent to the other. */}
+          <StorePicker
+            stores={stores}
+            value={storeId === "all" ? "" : storeId}
+            onChange={(id) => setStoreId(id === "" ? "all" : id)}
+            allLabel="All stores"
+            placeholder="All stores"
+          />
         </div>
       </div>
 

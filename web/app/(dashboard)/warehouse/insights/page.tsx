@@ -4,6 +4,8 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { ExportMenu } from "@/components/export-menu";
+import type { ExportSheet } from "@/lib/export";
 import { NativeSelect } from "@/components/ui/native-select";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -110,6 +112,49 @@ export default function WarehouseInsightsPage() {
   const value = totalValuation(valuation);
   const backordered = velocity.filter((v) => Number(v.times_backordered) > 0);
 
+  /** Fulfilment performance for the chosen period, grouped as on screen. */
+  function buildPerformanceSheet(): ExportSheet {
+    const grouping = GROUPINGS.find((g) => g.value === groupBy);
+    return {
+      title: `Fulfilment performance by ${grouping?.label.toLowerCase() ?? groupBy}`,
+      orgName: "Gold Fortune Merchandising",
+      context: [
+        PERIODS.find((p) => p.days === days)?.label ?? `Last ${days} days`,
+        overall
+          ? `${overall.orders_delivered} orders delivered overall`
+          : "No overall figure",
+      ],
+      filename: "gf-fulfilment",
+      columns: [
+        { header: grouping?.label ?? "Group", key: "bucket" },
+        { header: "Delivered", key: "delivered", numeric: true },
+        { header: "Fulfil (hours)", key: "fulfil", numeric: true },
+        { header: "Deliver (hours)", key: "deliver", numeric: true },
+        { header: "Late", key: "late", numeric: true },
+        { header: "Accuracy %", key: "accuracy", numeric: true },
+      ],
+      rows: grouped.map((r) => ({
+        bucket: r.bucket,
+        delivered: Number(r.orders_delivered),
+        // Hours as a number, not "18h 20m": the screen wants it readable and a
+        // spreadsheet wants it addable, and they are not the same string.
+        fulfil:
+          r.avg_fulfilment_hours == null
+            ? null
+            : Number(Number(r.avg_fulfilment_hours).toFixed(1)),
+        deliver:
+          r.avg_delivery_hours == null
+            ? null
+            : Number(Number(r.avg_delivery_hours).toFixed(1)),
+        late: Number(r.late_deliveries),
+        accuracy:
+          r.fulfilment_accuracy == null
+            ? null
+            : Number(Number(r.fulfilment_accuracy).toFixed(1)),
+      })),
+    };
+  }
+
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-end justify-between gap-3">
@@ -119,18 +164,24 @@ export default function WarehouseInsightsPage() {
             Fulfilment, delivery and stock movement.
           </p>
         </div>
-        <NativeSelect
-          value={String(days)}
-          onChange={(e) => setDays(Number(e.target.value))}
-          className="w-44"
-          aria-label="Period"
-        >
-          {PERIODS.map((p) => (
-            <option key={p.days} value={p.days}>
-              {p.label}
-            </option>
-          ))}
-        </NativeSelect>
+        <div className="flex flex-wrap items-center gap-2">
+          <NativeSelect
+            value={String(days)}
+            onChange={(e) => setDays(Number(e.target.value))}
+            className="w-44"
+            aria-label="Period"
+          >
+            {PERIODS.map((p) => (
+              <option key={p.days} value={p.days}>
+                {p.label}
+              </option>
+            ))}
+          </NativeSelect>
+          {/* The performance table, grouped however it is on screen. The
+              valuation and ageing cards below are single figures and a short
+              list; this is the one a warehouse manager takes to a meeting. */}
+          <ExportMenu build={buildPerformanceSheet} disabled={loading} />
+        </div>
       </div>
 
       <ErrorBanner message={error} />

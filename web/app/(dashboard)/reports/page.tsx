@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Download } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -16,8 +15,17 @@ import { InsightsPanel } from "@/components/reports/insights-panel";
 import { PerfectStoreTable } from "@/components/reports/perfect-store-table";
 import { OosHotspotsTable } from "@/components/reports/oos-hotspots-table";
 import { AdherenceTable } from "@/components/reports/adherence-table";
+import { StorePicker } from "@/components/stores/store-picker";
+import { ExportMenu } from "@/components/export-menu";
+import type { ExportSheet } from "@/lib/export";
 import { createClient } from "@/lib/supabase/client";
-import { rangeForPreset, rangeDays, type DateRange } from "@/lib/date-range";
+import {
+  rangeForPreset,
+  rangeDays,
+  toLocalDateInput,
+  fromLocalDateInput,
+  type DateRange,
+} from "@/lib/date-range";
 import {
   fetchComplianceTrends,
   fetchCoverageGaps,
@@ -40,12 +48,58 @@ import {
 } from "@/lib/reports";
 
 type Rep = { id: string; full_name: string | null };
-type Store = { id: string; name: string };
+type Store = { id: string; name: string; city: string | null };
+
+/**
+ * The tabs, in the order a manager acts on them: which store is worst, what is
+ * out of stock, who has been neglected — then the descriptive reports.
+ *
+ * A list rather than eight `TabsTrigger`s written out, because three other
+ * things now need to know the set: the URL check that lets the dashboard link
+ * to one, the export that exports whichever is open, and the title that export
+ * carries.
+ */
+const TABS = [
+  { value: "score", label: "Perfect Store" },
+  { value: "oos", label: "Out of stock" },
+  { value: "coverage", label: "Coverage" },
+  { value: "adherence", label: "Adherence" },
+  { value: "reps", label: "Reps" },
+  { value: "trends", label: "Trends" },
+  { value: "form", label: "Form" },
+  { value: "photos", label: "Photos" },
+] as const;
 
 export default function ReportsPage() {
   const supabase = createClient();
 
-  const [range, setRange] = useState<DateRange>(() => rangeForPreset("30d"));
+  /**
+   * The range and the tab both come from the URL when it names them, because
+   * the dashboard tiles link straight in: "out of stock rate, 6.2%" is a
+   * question, and the answer is the hotspots table over the same days the tile
+   * was measuring. Read with `window.location` rather than `useSearchParams`,
+   * which in this version of Next forces the whole page into a Suspense
+   * boundary — the same reason the global search reads it that way.
+   */
+  const [range, setRange] = useState<DateRange>(() => {
+    if (typeof window === "undefined") return rangeForPreset("30d");
+    const q = new URLSearchParams(window.location.search);
+    const from = q.get("from");
+    const to = q.get("to");
+    if (!from || !to) return rangeForPreset("30d");
+    const parsed = { from: fromLocalDateInput(from), to: fromLocalDateInput(to) };
+    // A malformed date would otherwise produce an Invalid Date, which every RPC
+    // below turns into a 400 the page reports as its own failure.
+    if (Number.isNaN(+parsed.from) || Number.isNaN(+parsed.to)) {
+      return rangeForPreset("30d");
+    }
+    return parsed;
+  });
+  const [tab, setTab] = useState<string>(() => {
+    if (typeof window === "undefined") return "score";
+    const asked = new URLSearchParams(window.location.search).get("tab") ?? "";
+    return TABS.some((t) => t.value === asked) ? asked : "score";
+  });
   const [templates, setTemplates] = useState<FormTemplate[]>([]);
   const [templateId, setTemplateId] = useState<string | null>(null);
   const [reps, setReps] = useState<Rep[]>([]);
@@ -77,7 +131,7 @@ export default function ReportsPage() {
             .order("full_name", { ascending: true }),
           supabase
             .from("stores")
-            .select("id, name")
+            .select("id, name, city")
             .eq("active", true)
             .order("name", { ascending: true }),
         ]);
@@ -152,65 +206,198 @@ export default function ReportsPage() {
     0
   );
 
-  function exportCsv() {
-    const rows: (string | number)[][] = [
-      ["Report", "Gold Fortune Merchandising"],
-      ["From", range.from.toISOString().slice(0, 10)],
-      ["To (exclusive)", range.to.toISOString().slice(0, 10)],
-      [],
-      ["Store coverage"],
-      ["Store", "Group", "Responsible rep", "Visits in period", "Days since last visit"],
-      ...gaps.map((g) => [
-        g.store_name,
-        g.store_group ?? "",
-        g.assigned_reps ?? "",
-        g.visits_in_period,
-        g.days_since ?? "never visited",
-      ]),
-      [],
-      ["Rep scorecard"],
-      ["Rep", "Completed", "Total", "Completion", "Forms", "Location verified"],
-      ...scores.map((s) => [
-        s.rep_name ?? "",
-        s.visits_completed,
-        s.visits_total,
-        formatRate(s.completion_rate),
-        formatRate(s.form_compliance_rate),
-        formatRate(s.verified_rate),
-      ]),
-      [],
-      ["Compliance trend"],
-      [
-        "Bucket",
-        "Submissions",
-        "Out of stock",
-        "Planogram OK",
-        "Price correct",
-        "Avg facings",
-      ],
-      ...trends.map((t) => [
-        t.bucket_start.slice(0, 10),
-        t.submissions,
-        formatRate(t.oos_rate),
-        formatRate(t.planogram_rate),
-        formatRate(t.price_correct_rate),
-        t.avg_facings ?? "",
-      ]),
-    ];
+  /**
+   * The open tab, as a spreadsheet.
+   *
+   * One tab, not all eight. The old export wrote coverage, the scorecard and
+   * the trend into a single CSV whatever you were looking at, so the file never
+   * matched the screen and three of its sections were noise. Exporting what is
+   * in front of you is the version somebody can hand to a supplier.
+   *
+   * Photos are the one tab with nothing to export — a grid of images is not a
+   * table, and a spreadsheet of storage paths would be a worse answer than
+   * saying so.
+   */
+  function sheetForTab(): ExportSheet | null {
+    const context = [
+      `${toLocalDateInput(range.from)} to ${toLocalDateInput(new Date(+range.to - 86_400_000))}`,
+      repId ? `Rep: ${reps.find((r) => r.id === repId)?.full_name ?? repId}` : null,
+      storeId ? `Store: ${stores.find((st) => st.id === storeId)?.name ?? storeId}` : null,
+      templateId
+        ? `Form: ${templates.find((t) => t.id === templateId)?.name ?? templateId}`
+        : null,
+    ].filter((line): line is string => line !== null);
 
-    // Quote every cell and double embedded quotes — store names contain commas.
-    const csv = rows
-      .map((r) => r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(","))
-      .join("\n");
+    const base = { context, orgName: "Gold Fortune Merchandising" };
 
-    const url = URL.createObjectURL(
-      new Blob([csv], { type: "text/csv;charset=utf-8" })
-    );
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `gf-report-${range.from.toISOString().slice(0, 10)}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
+    switch (tab) {
+      case "score":
+        return {
+          ...base,
+          title: "Perfect Store score",
+          filename: "gf-perfect-store",
+          columns: [
+            { header: "Store", key: "store" },
+            { header: "Group", key: "group" },
+            { header: "Audits", key: "audits", numeric: true },
+            { header: "Availability %", key: "availability", numeric: true },
+            { header: "Planogram %", key: "planogram", numeric: true },
+            { header: "Price %", key: "price", numeric: true },
+            { header: "Condition %", key: "condition", numeric: true },
+            { header: "Score", key: "score", numeric: true },
+          ],
+          rows: perfect.map((r) => ({
+            store: r.store_name,
+            group: r.store_group ?? "",
+            audits: r.audits,
+            availability: r.availability_pct,
+            planogram: r.planogram_pct,
+            price: r.price_pct,
+            condition: r.condition_pct,
+            score: r.score,
+          })),
+        };
+      case "oos":
+        return {
+          ...base,
+          title: "Out-of-stock hotspots",
+          filename: "gf-out-of-stock",
+          columns: [
+            { header: "Store", key: "store" },
+            { header: "Checks", key: "checks", numeric: true },
+            { header: "Out of stock", key: "oos", numeric: true },
+            { header: "Rate", key: "rate" },
+            { header: "Longest run", key: "run", numeric: true },
+            { header: "Last seen out", key: "last" },
+            { header: "Top lines", key: "skus" },
+          ],
+          rows: hotspots.map((r) => ({
+            store: r.store_name,
+            checks: r.checks,
+            oos: r.oos_count,
+            rate: formatRate(r.oos_rate),
+            run: r.max_consecutive_oos,
+            last: r.last_oos_at ? r.last_oos_at.slice(0, 10) : "",
+            skus: r.top_skus.map((t) => `${t.sku} (${t.n})`).join(", "),
+          })),
+        };
+      case "coverage":
+        return {
+          ...base,
+          title: "Store coverage",
+          filename: "gf-coverage",
+          columns: [
+            { header: "Store", key: "store" },
+            { header: "Group", key: "group" },
+            { header: "Town", key: "city" },
+            { header: "Responsible rep", key: "reps" },
+            { header: "Visits in period", key: "visits", numeric: true },
+            { header: "Last visited", key: "last" },
+            { header: "Days since last visit", key: "days" },
+          ],
+          rows: gaps.map((g) => ({
+            store: g.store_name,
+            group: g.store_group ?? "",
+            city: g.city ?? "",
+            reps: g.assigned_reps ?? "",
+            visits: g.visits_in_period,
+            last: g.last_visit_at ? g.last_visit_at.slice(0, 10) : "never",
+            // "never visited" rather than a blank: an empty cell in this column
+            // reads as nought days, which is the opposite of what it means.
+            days: g.days_since ?? "never visited",
+          })),
+        };
+      case "adherence":
+        return {
+          ...base,
+          title: "Schedule adherence",
+          filename: "gf-adherence",
+          columns: [
+            { header: "Rep", key: "rep" },
+            { header: "Planned", key: "planned", numeric: true },
+            { header: "Completed", key: "completed", numeric: true },
+            { header: "Missed", key: "missed", numeric: true },
+            { header: "Adherence", key: "rate" },
+            { header: "Missed stops", key: "detail" },
+          ],
+          rows: adherence.map((a) => ({
+            rep: a.rep_name ?? "",
+            planned: a.planned,
+            completed: a.completed,
+            missed: a.missed,
+            rate: formatRate(a.adherence_rate),
+            detail: a.missed_detail
+              .map((m) => `${m.store} (${m.date.slice(0, 10)})`)
+              .join(", "),
+          })),
+        };
+      case "reps":
+        return {
+          ...base,
+          title: "Rep scorecard",
+          filename: "gf-rep-scorecard",
+          columns: [
+            { header: "Rep", key: "rep" },
+            { header: "Completed", key: "completed", numeric: true },
+            { header: "Total", key: "total", numeric: true },
+            { header: "Completion", key: "completion" },
+            { header: "Stores covered", key: "stores", numeric: true },
+            { header: "Forms", key: "forms" },
+            { header: "Location verified", key: "verified" },
+          ],
+          rows: scores.map((r) => ({
+            rep: r.rep_name ?? "",
+            completed: r.visits_completed,
+            total: r.visits_total,
+            completion: formatRate(r.completion_rate),
+            stores: r.stores_covered,
+            forms: formatRate(r.form_compliance_rate),
+            verified: formatRate(r.verified_rate),
+          })),
+        };
+      case "trends":
+        return {
+          ...base,
+          title: "Compliance trend",
+          filename: "gf-compliance-trend",
+          columns: [
+            { header: "Bucket", key: "bucket" },
+            { header: "Submissions", key: "submissions", numeric: true },
+            { header: "Out of stock", key: "oos" },
+            { header: "Planogram OK", key: "planogram" },
+            { header: "Price correct", key: "price" },
+            { header: "Avg facings", key: "facings", numeric: true },
+          ],
+          rows: trends.map((t) => ({
+            bucket: t.bucket_start.slice(0, 10),
+            submissions: t.submissions,
+            oos: formatRate(t.oos_rate),
+            planogram: formatRate(t.planogram_rate),
+            price: formatRate(t.price_correct_rate),
+            facings: t.avg_facings,
+          })),
+        };
+      case "form":
+        return {
+          ...base,
+          title: "Form results",
+          filename: "gf-form-results",
+          columns: [
+            { header: "Question", key: "label" },
+            { header: "Type", key: "type" },
+            { header: "Answers", key: "answers", numeric: true },
+            { header: "Summary", key: "summary" },
+          ],
+          rows: chartFields.map((f) => ({
+            label: f.label,
+            type: f.field_type,
+            answers: f.response_count,
+            summary: JSON.stringify(f.stats ?? {}),
+          })),
+        };
+      default:
+        return null;
+    }
   }
 
   return (
@@ -225,10 +412,11 @@ export default function ReportsPage() {
             submitted in the selected period
           </p>
         </div>
-        <Button className="gap-1.5" onClick={exportCsv} disabled={loading}>
-          <Download className="h-4 w-4" />
-          Export CSV
-        </Button>
+        <ExportMenu
+          build={sheetForTab}
+          disabled={loading}
+          label={`Export ${TABS.find((t) => t.value === tab)?.label ?? ""}`}
+        />
       </div>
 
       <div className="flex flex-wrap items-center gap-3 rounded-lg border border-border bg-card p-3">
@@ -260,19 +448,14 @@ export default function ReportsPage() {
               </option>
             ))}
           </NativeSelect>
-          <NativeSelect
-            aria-label="Store"
-            className="w-[11rem]"
+          <StorePicker
+            className="w-[13rem]"
+            stores={stores}
             value={storeId}
-            onChange={(e) => setStoreId(e.target.value)}
-          >
-            <option value="">All stores</option>
-            {stores.map((s) => (
-              <option key={s.id} value={s.id}>
-                {s.name}
-              </option>
-            ))}
-          </NativeSelect>
+            onChange={setStoreId}
+            allLabel="All stores"
+            placeholder="All stores"
+          />
         </div>
       </div>
 
@@ -294,20 +477,17 @@ export default function ReportsPage() {
 
       {/* Ordered by what a manager acts on first: which store is worst, what is
           out of stock, who has been neglected — then the descriptive reports. */}
-      <Tabs defaultValue="score">
+      <Tabs value={tab} onValueChange={setTab}>
         {/* One row, scrolled — never wrapped. TabsList is a fixed-height pill,
             so wrapping pushes the second row outside its own background and the
             triggers' `flex-1` stretches them into ragged spacing. Labels are
             kept short so all eight fit without scrolling on a normal screen. */}
         <TabsList className="max-w-full justify-start overflow-x-auto px-1 [&::-webkit-scrollbar]:hidden [&>*]:shrink-0 [&>*]:px-2.5">
-          <TabsTrigger value="score">Perfect Store</TabsTrigger>
-          <TabsTrigger value="oos">Out of stock</TabsTrigger>
-          <TabsTrigger value="coverage">Coverage</TabsTrigger>
-          <TabsTrigger value="adherence">Adherence</TabsTrigger>
-          <TabsTrigger value="reps">Reps</TabsTrigger>
-          <TabsTrigger value="trends">Trends</TabsTrigger>
-          <TabsTrigger value="form">Form</TabsTrigger>
-          <TabsTrigger value="photos">Photos</TabsTrigger>
+          {TABS.map((t) => (
+            <TabsTrigger key={t.value} value={t.value}>
+              {t.label}
+            </TabsTrigger>
+          ))}
         </TabsList>
 
         <TabsContent value="score" className="mt-4">
