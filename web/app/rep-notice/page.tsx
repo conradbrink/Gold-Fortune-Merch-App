@@ -1,8 +1,9 @@
 "use client";
 
 import Image from "next/image";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Smartphone } from "lucide-react";
+import { Smartphone, UserRound } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { createClient } from "@/lib/supabase/client";
 
@@ -29,10 +30,23 @@ export default function RepNoticePage() {
           the Gold Fortune Merchandising mobile app. This web dashboard is for
           managers.
         </p>
+        {/* The one exception, and worth saying out loud: leave, payslips-to-be,
+            reviews and the acknowledgements that go with them are not in the
+            app, and this page used to be a dead end for a rep who needed them. */}
+        <p className="text-sm text-muted-foreground">
+          Your own HR record — leave, attendance, documents and reviews — is
+          here on the web.
+        </p>
       </div>
-      <Button variant="outline" onClick={handleSignOut}>
-        Sign out
-      </Button>
+      <div className="flex flex-wrap items-center justify-center gap-2">
+        <Button nativeButton={false} render={<Link href="/hr/me" />}>
+          <UserRound className="mr-1.5 h-4 w-4" />
+          My HR
+        </Button>
+        <Button variant="outline" onClick={handleSignOut}>
+          Sign out
+        </Button>
+      </div>
     </div>
   );
 }

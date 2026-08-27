@@ -50,6 +50,7 @@ export default function CompanyProfilePage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
   const [inviteNote, setInviteNote] = useState(false);
   const [form, setForm] = useState({
     name: "",
@@ -59,6 +60,7 @@ export default function CompanyProfilePage() {
     address: "",
     support_email: "",
     vat_rate: "",
+    timezone: "",
   });
   /** Planning capacity. Kept separate: it saves with its own button, because
       it changes what the whole schedule is measured against. */
@@ -91,6 +93,7 @@ export default function CompanyProfilePage() {
         address: orgRow.address ?? "",
         support_email: orgRow.support_email ?? "",
         vat_rate: String(orgRow.vat_rate ?? 0),
+        timezone: orgRow.timezone ?? "Africa/Gaborone",
       });
     }
 
@@ -145,7 +148,13 @@ export default function CompanyProfilePage() {
     if (!org) return;
     setSaving(true);
     setSaved(false);
-    await supabase
+    setSaveError(null);
+    // The error was discarded here and "Saved." shown regardless. Harmless
+    // while every field was free text; the timezone is not — a value that is
+    // not an IANA zone is refused by `organizations_validate_timezone`, and the
+    // org would have gone on running in the old zone while the screen said it
+    // had changed. Which day a visit belongs to depends on that answer.
+    const { error } = await supabase
       .from("organizations")
       .update({
         name: form.name,
@@ -155,9 +164,14 @@ export default function CompanyProfilePage() {
         address: form.address || null,
         support_email: form.support_email || null,
         vat_rate: Number(form.vat_rate) || 0,
+        timezone: form.timezone,
       })
       .eq("id", org.id);
     setSaving(false);
+    if (error) {
+      setSaveError(error.message);
+      return;
+    }
     setSaved(true);
   }
 
@@ -260,6 +274,38 @@ export default function CompanyProfilePage() {
                   VAT.
                 </p>
               </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="timezone">Timezone</Label>
+                <Input
+                  id="timezone"
+                  list="iana-timezones"
+                  value={form.timezone}
+                  onChange={(e) => setForm({ ...form, timezone: e.target.value })}
+                />
+                {/* A short list of the ones a customer here is likely to want,
+                    as suggestions rather than a closed set — the database
+                    accepts any IANA name and refuses anything else, so a
+                    dropdown of six would be a smaller lie than a free field. */}
+                <datalist id="iana-timezones">
+                  <option value="Africa/Gaborone" />
+                  <option value="Africa/Johannesburg" />
+                  <option value="Africa/Windhoek" />
+                  <option value="Africa/Harare" />
+                  <option value="Africa/Lusaka" />
+                  <option value="Africa/Maputo" />
+                  <option value="Africa/Nairobi" />
+                  <option value="Africa/Lagos" />
+                  <option value="Europe/London" />
+                  <option value="UTC" />
+                </datalist>
+                <p className="text-xs text-muted-foreground">
+                  Decides which calendar day something falls on — attendance,
+                  the working-day card and every dashboard read it. Not a
+                  display preference: a rep finishing at 23:30 lands on the
+                  wrong day if this is wrong, and the day after shows a start
+                  with no end. An IANA name; anything else is refused.
+                </p>
+              </div>
               <div className="flex items-end gap-3 sm:col-span-2">
                 <Button
                   onClick={handleSave}
@@ -270,6 +316,9 @@ export default function CompanyProfilePage() {
                 </Button>
                 {saved && (
                   <span className="text-sm text-emerald-700">Saved.</span>
+                )}
+                {saveError && (
+                  <span className="text-sm text-destructive">{saveError}</span>
                 )}
               </div>
             </CardContent>

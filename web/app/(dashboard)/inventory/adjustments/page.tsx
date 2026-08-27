@@ -15,12 +15,14 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { ErrorBanner, EmptyRow } from "@/components/warehouse/stat-tile";
-import { useCurrentRole } from "@/lib/use-current-role";
+import { can } from "@/lib/permissions";
+import { usePermissions } from "@/lib/use-permissions";
 import { fetchAdjustments, type AdjustmentListRow } from "@/lib/stock-moves";
 
 export default function AdjustmentsPage() {
   const supabase = createClient();
-  const role = useCurrentRole();
+  const permissions = usePermissions();
+  const canApprove = permissions !== null && can(permissions, "warehouse_approve");
   const [rows, setRows] = useState<AdjustmentListRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -82,7 +84,7 @@ export default function AdjustmentsPage() {
       {waiting > 0 && (
         <p className="rounded-lg border border-amber-500/40 bg-amber-500/5 p-2.5 text-sm text-amber-700 dark:text-amber-500">
           {waiting} adjustment{waiting === 1 ? " is" : "s are"} waiting for a decision.
-          {role !== "manager" && " A manager has to approve them."}
+          {!canApprove && " Someone who can approve stock changes has to sign them off."}
         </p>
       )}
 

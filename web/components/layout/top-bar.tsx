@@ -22,17 +22,27 @@ import {
 import { createClient } from "@/lib/supabase/client";
 import { GlobalSearch } from "@/components/layout/global-search";
 import { ThemeToggle } from "@/components/layout/theme-toggle";
-import { useCurrentRole } from "@/lib/use-current-role";
+import { NotificationsBell } from "@/components/hr/notifications-bell";
+import { WorkdayControl } from "@/components/workday/workday-control";
+import { can } from "@/lib/permissions";
+import { usePermissions } from "@/lib/use-permissions";
 
 export function TopBar({ onOpenNav }: { onOpenNav?: () => void }) {
   const router = useRouter();
   const supabase = createClient();
-  const role = useCurrentRole();
-  // Global search spans stores, reps, forms and files, and every result links
-  // to a page only a manager can open. Scoping it to the warehouse's own
-  // records is worth doing once there are orders to find; offering it now
-  // would be offering a box that only returns dead ends.
-  const isManager = role === "manager";
+  const permissions = usePermissions();
+  // Global search spans four modules, not one. It used to follow the store
+  // estate alone, which was wrong in both directions: a warehouse-and-resources
+  // person got no box at all, and somebody with only the store estate got a box
+  // that searched products, forms and files as well and offered them links that
+  // bounce at the proxy. Offered when at least one source is open; which ones
+  // are searched is decided inside, from the same set.
+  const canSearch =
+    permissions !== null &&
+    (can(permissions, "sales_coverage") ||
+      can(permissions, "team") ||
+      can(permissions, "resources"));
+  const canOpenSettings = permissions !== null && can(permissions, "company_settings");
   const [label, setLabel] = useState("Gold Fortune User");
   const [initials, setInitials] = useState("GF");
   /** Below `sm` the search box is hidden; this is what the button reveals. */
@@ -71,10 +81,12 @@ export function TopBar({ onOpenNav }: { onOpenNav?: () => void }) {
         <Menu className="h-5 w-5" />
       </Button>
 
-      {isManager && <GlobalSearch revealed={searchRevealed} />}
+      {canSearch && permissions !== null && (
+        <GlobalSearch permissions={permissions} revealed={searchRevealed} />
+      )}
 
       <div className="ml-auto flex items-center gap-2 text-muted-foreground sm:gap-4">
-        {isManager && (
+        {canSearch && (
           <Button
             variant="ghost"
             size="icon"
@@ -87,15 +99,24 @@ export function TopBar({ onOpenNav }: { onOpenNav?: () => void }) {
           </Button>
         )}
         {/* Mail and Bell used to sit here as bare icons — not buttons, no
-            handler, nothing behind them. There is no mail and no notification
-            feature in this product, so they were an advertisement for something
-            that does not exist. Removed rather than wired to a placeholder.
-            Settings had the same problem but does have somewhere to go. */}
+            handler, nothing behind them, an advertisement for a feature that
+            did not exist. Mail still does not. The bell is back because the HR
+            module gave it something to show: leave requests to decide, reviews
+            to acknowledge, cases waiting on somebody. It renders nothing at all
+            when the feed is empty or unreadable.
+
+            Ungated by role, like the theme toggle below it: a rep with a
+            pending leave decision needs telling as much as a manager does. */}
+        {/* Ahead of the bell, because it is the one control in this bar that
+            somebody comes to the app specifically to press. Renders nothing for
+            anybody without the `workday` permission. */}
+        <WorkdayControl />
+        <NotificationsBell />
         {/* Outside the manager gate, unlike search and settings. How the screen
             looks is nobody's permission to grant, and warehouse staff work the
             same long shifts on the same screens. */}
         <ThemeToggle />
-        {isManager && (
+        {canOpenSettings && (
           <>
             <Button
               variant="ghost"

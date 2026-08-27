@@ -17,23 +17,38 @@ import {
   Boxes,
   ClipboardCheck,
   Settings2,
+  PieChart,
+  Contact,
+  CalendarCheck,
+  CalendarOff,
+  FolderLock,
+  Star,
+  ShieldAlert,
+  SlidersHorizontal,
+  UserRound,
+  ShieldCheck,
+  Building2,
 } from "lucide-react";
-import { canAccessPath, type AppRole } from "@/lib/roles";
+import {
+  can,
+  canAccessPath,
+  type PermissionCode,
+  type PermissionSet,
+} from "@/lib/permissions";
 
 export type NavItem = {
   href: string;
   label: string;
   icon: typeof LayoutDashboard;
   /**
-   * Who is offered this destination. Omitted means managers only, which is what
-   * every item here was before a third role existed — so the default preserves
-   * the behaviour rather than silently widening it.
+   * The permission this destination needs.
    *
-   * This is presentation, not enforcement. `canAccessPath` in `lib/roles.ts`
-   * decides what is actually served, and the two are checked against each other
-   * by `visibleNavGroups` below.
+   * Presentation, not enforcement: `canAccessPath` in `lib/permissions.ts`
+   * decides what is actually served, and `visibleNavGroups` requires both — so
+   * forgetting one here makes an item quietly disappear rather than become a
+   * dead end. Omitted means everyone, which is true of exactly one item.
    */
-  roles?: AppRole[];
+  permission?: PermissionCode;
 };
 
 /**
@@ -50,15 +65,17 @@ export type NavItem = {
  * the item does.
  */
 export type NavGroup = {
-  /** Null renders the items with no heading — used for Dashboard alone. */
+  /** Null renders the items with no heading — used for Dashboard and My HR. */
   label: string | null;
   items: NavItem[];
 };
 
+
+
 export const navGroups: NavGroup[] = [
   {
     label: null,
-    items: [{ href: "/", label: "Dashboard", icon: LayoutDashboard }],
+    items: [{ href: "/", label: "Dashboard", icon: LayoutDashboard, permission: "dashboard" }],
   },
   {
     // Directly under Dashboard, because it answers the same question at the
@@ -73,8 +90,8 @@ export const navGroups: NavGroup[] = [
     // one.
     label: "Insights",
     items: [
-      { href: "/sales", label: "Sales", icon: TrendingUp },
-      { href: "/reports", label: "Reports", icon: BarChart3 },
+      { href: "/sales", label: "Sales", icon: TrendingUp, permission: "insights" },
+      { href: "/reports", label: "Reports", icon: BarChart3, permission: "insights" },
       // Moved out of Warehouse & Fulfilment. It reads as warehouse work
       // because of its URL, but it ranks staff by fulfilment time and
       // accuracy — which is the same kind of thing as Sales, and not the
@@ -82,29 +99,30 @@ export const navGroups: NavGroup[] = [
       // Its own icon rather than Reports' bar chart: the two sat adjacent with
       // the same glyph, which read as one entry duplicated. A gauge also says
       // what it is — fulfilment speed and accuracy, not another report.
-      { href: "/warehouse/insights", label: "Warehouse insights", icon: Gauge },
+      { href: "/warehouse/insights", label: "Warehouse insights", icon: Gauge, permission: "insights" },
     ],
   },
   {
     label: "Sales & Coverage",
     items: [
-      { href: "/leads", label: "Leads", icon: Target },
-      { href: "/stores", label: "Stores", icon: Store },
-      { href: "/territories", label: "Territories", icon: MapIcon },
+      { href: "/leads", label: "Leads", icon: Target, permission: "sales_coverage" },
+      { href: "/stores", label: "Stores", icon: Store, permission: "sales_coverage" },
+      { href: "/territories", label: "Territories", icon: MapIcon, permission: "sales_coverage" },
     ],
   },
   {
     label: "Field Operations",
     items: [
-      { href: "/schedule", label: "Schedule", icon: Calendar },
+      { href: "/schedule", label: "Schedule", icon: Calendar, permission: "field_ops" },
       {
         // One destination, two names in the old menu. The feed is where a
         // manager starts, and the per-visit drill-down hangs off it.
         href: "/activities",
         label: "Visits & Activities",
         icon: ClipboardList,
+        permission: "field_ops",
       },
-      { href: "/promotions", label: "Promotions", icon: BadgePercent },
+      { href: "/promotions", label: "Promotions", icon: BadgePercent, permission: "field_ops" },
     ],
   },
   {
@@ -117,19 +135,19 @@ export const navGroups: NavGroup[] = [
         href: "/warehouse",
         label: "Warehouse",
         icon: Warehouse,
-        roles: ["manager", "warehouse"],
+        permission: "warehouse",
       },
       {
         href: "/orders",
         label: "Orders",
         icon: ClipboardCheck,
-        roles: ["manager", "warehouse"],
+        permission: "warehouse",
       },
       {
         href: "/inventory",
         label: "Inventory",
         icon: Boxes,
-        roles: ["manager", "warehouse"],
+        permission: "warehouse",
       },
       // Reachable by clerks on purpose: adding the driver who started this
       // morning should not wait for a manager, and RLS already permits it. The
@@ -138,20 +156,77 @@ export const navGroups: NavGroup[] = [
         href: "/warehouse/settings",
         label: "Warehouse setup",
         icon: Settings2,
-        roles: ["manager", "warehouse"],
+        permission: "warehouse",
       },
     ],
   },
   {
     label: "Team",
-    items: [{ href: "/representatives", label: "Representatives", icon: Users }],
+    items: [
+      { href: "/representatives", label: "Representatives", icon: Users, permission: "team" },
+    ],
+  },
+  {
+    // The whole HR module, and the only group an `hr_manager` account sees.
+    //
+    // Eight destinations under one heading rather than a collapsing sub-menu:
+    // the sidebar has no nesting today, and adding a second interaction model
+    // for one group would make HR the odd section rather than a section. The
+    // group heading does the work the parent item would have done.
+    label: "Human Resources",
+    items: [
+      { href: "/hr", label: "HR dashboard", icon: PieChart, permission: "hr" },
+      { href: "/hr/employees", label: "Employees", icon: Contact, permission: "hr" },
+      { href: "/hr/attendance", label: "Attendance", icon: CalendarCheck, permission: "hr" },
+      { href: "/hr/leave", label: "Leave", icon: CalendarOff, permission: "hr" },
+      { href: "/hr/documents", label: "Documents", icon: FolderLock, permission: "hr" },
+      { href: "/hr/performance", label: "Performance", icon: Star, permission: "hr" },
+      { href: "/hr/disciplinary", label: "Disciplinary", icon: ShieldAlert, permission: "hr" },
+      { href: "/hr/settings", label: "HR settings", icon: SlidersHorizontal, permission: "hr_settings" },
+    ],
+  },
+  {
+    // Reachable only by an administrator, and deliberately in the sidebar
+    // rather than behind the top-bar gear: who can see what is a thing people
+    // go looking for, and a settings icon is where features go to be lost.
+    label: "Administration",
+    items: [
+      {
+        href: "/settings/users",
+        label: "Users & permissions",
+        icon: ShieldCheck,
+        permission: "admin",
+      },
+      {
+        href: "/settings/company",
+        label: "Company profile",
+        icon: Building2,
+        permission: "company_settings",
+      },
+    ],
+  },
+  {
+    // Everybody, including a rep who otherwise never sees this shell. Its own
+    // group rather than an entry under Human Resources, because for three of
+    // the four roles it is the only HR destination there is, and a lone item
+    // under a heading called "Human Resources" would read as a module they had
+    // been given and could not open.
+    label: null,
+    items: [
+      {
+        href: "/hr/me",
+        label: "My HR",
+        icon: UserRound,
+        // The one destination with no permission: a person's own record.
+      },
+    ],
   },
   {
     label: "Resources",
     items: [
-      { href: "/products", label: "Products", icon: Package },
-      { href: "/forms", label: "Forms", icon: FileText },
-      { href: "/files", label: "Files", icon: Folder },
+      { href: "/products", label: "Products", icon: Package, permission: "resources" },
+      { href: "/forms", label: "Forms", icon: FileText, permission: "resources" },
+      { href: "/files", label: "Files", icon: Folder, permission: "resources" },
     ],
   },
 ];
@@ -185,21 +260,19 @@ export function activeHref(pathname: string): string | null {
 /**
  * The groups this role should be shown, with empty groups dropped.
  *
- * The `roles` field says what we *intend* to offer; `canAccessPath` says what
- * the proxy will actually serve. Requiring both means the two can never drift
- * into offering a link that bounces: forget the allowlist entry and the item
- * quietly disappears from the menu rather than becoming a dead end. Forget the
- * `roles` field and the item is simply not offered, which is the safe default
- * this file already takes.
+ * The `permission` field says what we *intend* to offer; `canAccessPath` says
+ * what the proxy will actually serve. Requiring both means the two can never
+ * drift into offering a link that bounces: get the path map wrong and the item
+ * quietly disappears from the menu rather than becoming a dead end.
  */
-export function visibleNavGroups(role: AppRole): NavGroup[] {
+export function visibleNavGroups(permissions: PermissionSet): NavGroup[] {
   return navGroups
     .map((group) => ({
       ...group,
       items: group.items.filter(
         (item) =>
-          (item.roles ?? ["manager"]).includes(role) &&
-          canAccessPath(role, item.href)
+          (item.permission === undefined || can(permissions, item.permission)) &&
+          canAccessPath(permissions, item.href)
       ),
     }))
     .filter((group) => group.items.length > 0);

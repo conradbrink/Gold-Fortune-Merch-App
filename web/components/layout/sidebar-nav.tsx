@@ -9,7 +9,8 @@ import { cn } from "@/lib/utils";
 import { activeHref, visibleNavGroups } from "@/components/layout/nav-items";
 import { createClient } from "@/lib/supabase/client";
 import { fetchOrgName } from "@/lib/org-settings";
-import { useCurrentRole } from "@/lib/use-current-role";
+import { usePermissions } from "@/lib/use-permissions";
+import { can } from "@/lib/permissions";
 
 /** Remembered across navigations and reloads — a width you have to re-set on
     every page is worse than no control at all. */
@@ -30,10 +31,10 @@ export function SidebarContent({
   onToggleCollapse?: () => void;
 }) {
   const pathname = usePathname();
-  const role = useCurrentRole();
-  // Empty until the role is known — see `useCurrentRole` for why this does not
+  const permissions = usePermissions();
+  // Empty until the permissions are known — see `usePermissions` for why this does not
   // fall back to the manager menu.
-  const groups = role ? visibleNavGroups(role) : [];
+  const groups = permissions ? visibleNavGroups(permissions) : [];
   const current = activeHref(pathname);
 
   /**
@@ -72,13 +73,14 @@ export function SidebarContent({
   /**
    * The company's own name for the footer, or null until it arrives.
    *
-   * Fetched only for a manager, because the footer it feeds is manager-only and
-   * a clerk asking for a row they are shown nothing of is a query for nothing.
+   * Fetched only for whoever can open the company profile, because the footer
+   * it feeds links there and a clerk asking for a row they are shown nothing of
+   * is a query for nothing.
    */
   const [orgName, setOrgName] = useState<string | null>(null);
 
   useEffect(() => {
-    if (role !== "manager") return;
+    if (!permissions || !can(permissions, "company_settings")) return;
     let cancelled = false;
     (async () => {
       const name = await fetchOrgName(createClient());
@@ -87,7 +89,7 @@ export function SidebarContent({
     return () => {
       cancelled = true;
     };
-  }, [role]);
+  }, [permissions]);
 
   useEffect(() => {
     const raw = window.localStorage.getItem(GROUPS_KEY);
@@ -187,7 +189,14 @@ export function SidebarContent({
           const isClosed = foldable && closed.includes(group.label!);
           const holdsCurrent = group.items.some((i) => i.href === current);
           return (
-          <div key={group.label ?? "standalone"} className={index > 0 ? "mt-4" : ""}>
+          // Keyed on the first destination when there is no heading. There
+          // used to be exactly one unlabelled group (Dashboard) and the literal
+          // "standalone" was unique; My HR made a second, and React quietly
+          // reported two children with the same key on every page.
+          <div
+            key={group.label ?? group.items[0]?.href ?? String(index)}
+            className={index > 0 ? "mt-4" : ""}
+          >
             {/* Collapsed to icons there is no room for a heading, and a rule
                 separates the groups more clearly than truncated text would. */}
             {group.label &&
@@ -261,10 +270,10 @@ export function SidebarContent({
           );
         })}
       </nav>
-      {/* The company profile is a manager's page — org details, capacity,
-          members. Offering it to a clerk would be a link straight back to
+      {/* The company profile is org details, capacity and members. Offering it
+          to somebody without the permission would be a link straight back to
           wherever they came from. */}
-      {role === "manager" && (
+      {permissions && can(permissions, "company_settings") && (
       <div className="border-t border-sidebar-border p-3">
         <Link
           href="/settings/company"

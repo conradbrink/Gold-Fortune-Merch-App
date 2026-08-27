@@ -26,7 +26,8 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { ErrorBanner } from "@/components/warehouse/stat-tile";
-import { useCurrentRole } from "@/lib/use-current-role";
+import { can } from "@/lib/permissions";
+import { usePermissions } from "@/lib/use-permissions";
 import {
   ADJUSTMENT_REASONS,
   fetchAdjustment,
@@ -55,7 +56,10 @@ type Line = {
 export default function AdjustmentDetailPage() {
   const supabase = createClient();
   const { id } = useParams<{ id: string }>();
-  const role = useCurrentRole();
+  const permissions = usePermissions();
+  // Approving a variance is deliberately not the same grant as counting the
+  // stock — see the `warehouse_approve` permission.
+  const canApprove = permissions !== null && can(permissions, "warehouse_approve");
 
   const [head, setHead] = useState<AdjustmentRow | null>(null);
   const [locationName, setLocationName] = useState<string | null>(null);
@@ -174,7 +178,7 @@ export default function AdjustmentDetailPage() {
               {busy ? "Submitting…" : "Submit for approval"}
             </Button>
           )}
-          {isPending && role === "manager" && (
+          {isPending && canApprove && (
             <>
               <Button onClick={() => { setNote(""); setDialog("approve"); }} disabled={busy}>
                 Approve
@@ -197,9 +201,9 @@ export default function AdjustmentDetailPage() {
           it to the ledger.
         </p>
       )}
-      {isPending && role !== "manager" && (
+      {isPending && !canApprove && (
         <p className="rounded-lg border border-border bg-muted/40 p-2.5 text-sm text-muted-foreground">
-          Waiting for a manager. The stock is unchanged until then.
+          Waiting for approval. The stock is unchanged until then.
         </p>
       )}
       {head.decision_note && (

@@ -26,17 +26,37 @@ import { enforceRateLimit, LIMITS } from "@/lib/rate-limit";
  * trade than an inaccurate URL. Account creation with the service key is the
  * last code in this project that should exist twice.
  *
- * **'manager' is not accepted, on purpose.** Everything else here is a manager
- * granting somebody less access than they have. Creating another manager is a
+ * **A named 'manager' is not accepted, on purpose.** Everything else here is
+ * somebody granting less access than they hold. Creating another manager was a
  * manager granting their own level of access, which is the one action worth
  * making somebody go to the Supabase dashboard for — where it is deliberate,
  * attributable, and outside anything an XSS on this app could reach.
+ *
+ * Since permissions arrived, the level being handed out is `admin` rather than
+ * the role string, the route is administrator-only, and the guard that matters
+ * refuses any *template* granting `admin`. A template carrying the `manager`
+ * base role without that grant is allowed through — see the template branch.
+ *
+ * `hr_manager` is accepted under that same rule and not as an exception to it:
+ * it reaches `/hr` and nothing else, which is strictly less than a manager. It
+ * is worth saying plainly that this grant is not small — an HR manager reads
+ * salaries, dates of birth and disciplinary files. The test that lets it
+ * through is "less access than the person granting it", not "harmless".
  */
 
 export const runtime = "nodejs";
 
-/** Roles a manager may create from the app. Deliberately excludes 'manager'. */
-const INVITABLE = new Set(["rep", "warehouse"]);
+/**
+ * Roles a caller may create by naming one directly.
+ *
+ * Kept for the two callers that predate job roles — the rep dialog, which sends
+ * nothing and gets `rep`, and warehouse setup, which sends `warehouse`. New
+ * callers send `job_role_id` instead and the base role comes off the template.
+ *
+ * `manager` is still absent, on purpose. See the note above — and see the
+ * template branch in POST, which does not consult this set and explains why.
+ */
+const INVITABLE = new Set(["rep", "warehouse", "hr_manager"]);
 
 export async function POST(request: Request) {
   try {
@@ -63,9 +83,23 @@ export async function POST(request: Request) {
       .single();
 
     const caller = profile as { org_id: string; role: string } | null;
-    if (caller?.role !== "manager") {
+    if (!caller) {
+      return Response.json({ error: "Your account is incomplete." }, { status: 403 });
+    }
+
+    // Asked of the database rather than compared against a role string here.
+    // `has_permission` is the same function every policy uses, so this route
+    // and RLS cannot drift into disagreeing about who is an administrator.
+    const { data: isAdmin, error: adminError } = await supabase.rpc(
+      "has_permission",
+      { p_code: "admin" }
+    );
+    if (adminError) {
+      return Response.json({ error: adminError.message }, { status: 502 });
+    }
+    if (isAdmin !== true) {
       return Response.json(
-        { error: "Only managers can create accounts." },
+        { error: "Only an administrator can create accounts." },
         { status: 403 }
       );
     }
@@ -82,6 +116,7 @@ export async function POST(request: Request) {
       full_name?: string;
       password?: string;
       role?: string;
+      job_role_id?: string;
     };
     // The cast above is a claim about this body, not a check on it. A caller
     // sending {"role": 123} makes `.trim()` throw a TypeError, which the outer
@@ -91,21 +126,87 @@ export async function POST(request: Request) {
     const email = str(body.email).trim().toLowerCase();
     const fullName = str(body.full_name).trim();
     const password = str(body.password);
-    // Defaults to 'rep' so the existing caller, which sends no role, keeps
-    // behaving exactly as it did.
-    const role = str(body.role).trim() || "rep";
+    // Two ways in. `job_role_id` is the one that matters now: the caller names
+    // a template and the base role comes off it, so the browser never chooses a
+    // role and cannot choose a role it should not have. `role` is the older
+    // path, kept because the rep dialog and warehouse setup still use it.
+    const jobRoleId = str(body.job_role_id).trim();
+    let role: string;
 
-    if (!INVITABLE.has(role)) {
-      return Response.json(
-        {
-          error:
-            role === "manager"
-              ? "Managers cannot be created here. Add them in the Supabase dashboard."
-              : "Unknown role.",
-        },
-        { status: 400 }
+    if (jobRoleId) {
+      const { data: jobRole, error: jobRoleError } = await supabase
+        .from("job_roles")
+        .select("id, base_role, org_id")
+        .eq("id", jobRoleId)
+        .maybeSingle();
+
+      // Read through the caller's own client, so RLS has already confined it to
+      // their organisation — there is no version of this that can point at
+      // somebody else's template.
+      if (jobRoleError) {
+        return Response.json({ error: jobRoleError.message }, { status: 502 });
+      }
+      const template = jobRole as { base_role: string; org_id: string } | null;
+      if (!template || template.org_id !== caller.org_id) {
+        return Response.json({ error: "Unknown job role." }, { status: 400 });
+      }
+
+      // A template that grants `admin` cannot be used to mint an account, for
+      // the same reason `manager` was never invitable: that is an administrator
+      // handing out their own level of access, and it belongs somewhere
+      // deliberate and attributable.
+      const { data: grants, error: grantsError } = await supabase
+        .from("job_role_permissions")
+        .select("permission_code")
+        .eq("job_role_id", jobRoleId);
+      // Fails closed. Discarding this error made `grants` null, `grantsAdmin`
+      // false, and the check below pass — so the one read that decides whether
+      // this template may mint an account at all would have been treated as a
+      // "no" whenever it did not answer.
+      if (grantsError) {
+        return Response.json({ error: grantsError.message }, { status: 502 });
+      }
+      const grantsAdmin = ((grants ?? []) as { permission_code: string }[]).some(
+        (g) => g.permission_code === "admin"
       );
+      if (grantsAdmin) {
+        return Response.json(
+          {
+            error:
+              "Accounts on an administrator template must be created in the Supabase dashboard.",
+          },
+          { status: 400 }
+        );
+      }
+
+      // `INVITABLE` is deliberately not applied here, and this is the only
+      // place that says so. That list refuses `manager` because it dates from
+      // when any manager could reach this route: a manager creating a manager
+      // was somebody handing out their own level of access. The route is
+      // administrator-only now, so the line that matters is `admin` — checked
+      // just above — and a template like Operations Manager, which carries the
+      // `manager` base role without the `admin` grant, is strictly less than
+      // what the person creating it holds. Refusing it here would also be
+      // inconsistent with Settings → Users, where `set_job_role` already puts
+      // an existing account on exactly that template.
+      role = template.base_role;
+    } else {
+      // Defaults to 'rep' so the existing caller, which sends no role, keeps
+      // working unchanged.
+      role = str(body.role).trim() || "rep";
+      if (!INVITABLE.has(role)) {
+        return Response.json(
+          {
+            error:
+              role === "manager"
+                ? "Managers cannot be created here. Add them in the Supabase dashboard."
+                : "Unknown role.",
+          },
+          { status: 400 }
+        );
+      }
     }
+
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
       return Response.json({ error: "Enter a valid email address." }, { status: 400 });
     }
@@ -147,10 +248,14 @@ export async function POST(request: Request) {
     const invited = created;
 
     // No trigger creates profiles on this project, so the row is ours to write.
+    // `job_role_id` is written with the profile so the trigger that copies the
+    // template's permissions sees it on INSERT. Setting it afterwards would
+    // leave a window where the account exists with no grants at all.
     const { error: profileError } = await admin.from("profiles").insert({
       id: invited.user.id,
       org_id: caller.org_id,
       role,
+      job_role_id: jobRoleId || null,
       full_name: fullName,
       email,
     });
@@ -166,7 +271,13 @@ export async function POST(request: Request) {
       );
     }
 
-    return Response.json({ id: invited.user.id, email, full_name: fullName, role });
+    return Response.json({
+      id: invited.user.id,
+      email,
+      full_name: fullName,
+      role,
+      job_role_id: jobRoleId || null,
+    });
   } catch (reason) {
     const message =
       reason instanceof Error ? reason.message : "Unexpected error sending invite.";
