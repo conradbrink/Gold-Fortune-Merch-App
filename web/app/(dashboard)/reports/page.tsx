@@ -1,7 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { Download } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -16,8 +15,19 @@ import { InsightsPanel } from "@/components/reports/insights-panel";
 import { PerfectStoreTable } from "@/components/reports/perfect-store-table";
 import { OosHotspotsTable } from "@/components/reports/oos-hotspots-table";
 import { AdherenceTable } from "@/components/reports/adherence-table";
+import { StorePicker } from "@/components/stores/store-picker";
+import { REPORT_TABS, type ReportTab } from "@/lib/report-tabs";
+import { ExportMenu } from "@/components/export-menu";
+import type { ExportSheet } from "@/lib/export";
 import { createClient } from "@/lib/supabase/client";
-import { rangeForPreset, rangeDays, type DateRange } from "@/lib/date-range";
+import {
+  rangeForPreset,
+  rangeDays,
+  toLocalDateInput,
+  toLocalDate,
+  fromLocalDateInput,
+  type DateRange,
+} from "@/lib/date-range";
 import {
   fetchComplianceTrends,
   fetchCoverageGaps,
@@ -39,13 +49,94 @@ import {
   type TrendPointRow,
 } from "@/lib/reports";
 
+/**
+ * The day before an exclusive end, as a calendar operation.
+ *
+ * `new Date(+to - 86_400_000)` is a day of milliseconds, and a day is not
+ * always 86,400,000 of them — across a daylight-saving boundary it lands on the
+ * wrong date. Botswana keeps no daylight saving, so this cannot bite here and
+ * is written properly anyway: the next tenant is the one it would bite.
+ */
+function dayBefore(exclusiveEnd: Date): Date {
+  const d = new Date(exclusiveEnd);
+  d.setDate(d.getDate() - 1);
+  return d;
+}
+
 type Rep = { id: string; full_name: string | null };
-type Store = { id: string; name: string };
+type Store = { id: string; name: string; city: string | null };
+
+/** Re-exported so the file that renders the tabs and the file that links to
+ * them cannot disagree about what a tab is called. */
+const TABS = REPORT_TABS;
 
 export default function ReportsPage() {
   const supabase = createClient();
 
+  /**
+   * The range and the tab both come from the URL when it names them, because
+   * the dashboard tiles link straight in: "out of stock rate, 6.2%" is a
+   * question, and the answer is the hotspots table over the same days the tile
+   * was measuring.
+   *
+   * Read **after mount**, not in the `useState` initialiser. This page is
+   * prerendered, and an initialiser that reads `window.location` produces one
+   * value on the server and another in the browser — a hydration mismatch on
+   * the state that decides which RPCs run. `useSearchParams` would avoid the
+   * window read and force the whole page into a Suspense boundary in this
+   * version of Next, which is the same trade the global search declined.
+   */
   const [range, setRange] = useState<DateRange>(() => rangeForPreset("30d"));
+  const [tab, setTab] = useState<ReportTab>("score");
+  /**
+   * Whether the URL has been read yet.
+   *
+   * `load` must not fire before it has. Both effects run in the same flush, so
+   * the default 30-day request and the URL's request would be in the air
+   * together — and whichever *returned* last would win, which is not
+   * necessarily the one the link asked for. A dashboard tile could then land on
+   * its own range and quietly show, and export, the default.
+   */
+  const [urlRead, setUrlRead] = useState(false);
+  /**
+   * Which load this is.
+   *
+   * Seven RPCs go out together and a slow one from an earlier range can return
+   * after a newer range's — and whichever *returns* last would otherwise win.
+   * On a page whose tables are exported under a heading naming the range, that
+   * is a file that says one period and contains another. The same guard the
+   * dashboard and the global search already carry.
+   */
+  const loadSeq = useRef(0);
+
+  //
+  // `set-state-in-effect` is suppressed rather than satisfied, and it is worth
+  // saying why: the two ways to avoid it are both worse here. Reading the URL
+  // in the `useState` initialiser is the hydration mismatch this moved away
+  // from, and adjusting state during render restarts the first render — which
+  // is the hydration render — for the same reason. A mount-only effect that
+  // runs once and hands the state to the pickers is the pattern React's own
+  // documentation gives for reading a browser-only value.
+  //
+  /* eslint-disable react-hooks/set-state-in-effect */
+  useEffect(() => {
+    // Mount only: the pickers own both from here, and re-reading the URL after
+    // the user has changed one would put it back.
+    setUrlRead(true);
+    const q = new URLSearchParams(window.location.search);
+    const asked = q.get("tab") ?? "";
+    if (TABS.some((t) => t.value === asked)) setTab(asked as ReportTab);
+
+    const from = q.get("from");
+    const to = q.get("to");
+    if (!from || !to) return;
+    const parsed = { from: fromLocalDateInput(from), to: fromLocalDateInput(to) };
+    // A malformed date would otherwise produce an Invalid Date, which every RPC
+    // below turns into a 400 the page reports as its own failure.
+    if (Number.isNaN(+parsed.from) || Number.isNaN(+parsed.to)) return;
+    setRange(parsed);
+  }, []);
+  /* eslint-enable react-hooks/set-state-in-effect */
   const [templates, setTemplates] = useState<FormTemplate[]>([]);
   const [templateId, setTemplateId] = useState<string | null>(null);
   const [reps, setReps] = useState<Rep[]>([]);
@@ -77,7 +168,7 @@ export default function ReportsPage() {
             .order("full_name", { ascending: true }),
           supabase
             .from("stores")
-            .select("id, name")
+            .select("id, name, city")
             .eq("active", true)
             .order("name", { ascending: true }),
         ]);
@@ -93,6 +184,8 @@ export default function ReportsPage() {
   }, []);
 
   const load = useCallback(async () => {
+    const runId = ++loadSeq.current;
+    const isStale = () => runId !== loadSeq.current;
     setLoading(true);
     setError(null);
     try {
@@ -112,6 +205,7 @@ export default function ReportsPage() {
         fetchOosHotspots(supabase, range),
         fetchScheduleAdherence(supabase, range),
       ]);
+      if (isStale()) return;
       setGaps(g);
       setScores(s);
       setTrends(t);
@@ -120,16 +214,21 @@ export default function ReportsPage() {
       setHotspots(oh);
       setAdherence(ad);
     } catch (e) {
+      if (isStale()) return;
       setError(e instanceof Error ? e.message : String(e));
     } finally {
-      setLoading(false);
+      // Only the newest run owns the spinner; an older one finishing must not
+      // clear it while the current one is still out — and `loading` is what the
+      // export controls read to know the rows match the filters.
+      if (!isStale()) setLoading(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [range, templateId, repId, storeId]);
 
   useEffect(() => {
+    if (!urlRead) return;
     load();
-  }, [load]);
+  }, [load, urlRead]);
 
   const photoGroups = useMemo(
     () =>
@@ -152,65 +251,211 @@ export default function ReportsPage() {
     0
   );
 
-  function exportCsv() {
-    const rows: (string | number)[][] = [
-      ["Report", "Gold Fortune Merchandising"],
-      ["From", range.from.toISOString().slice(0, 10)],
-      ["To (exclusive)", range.to.toISOString().slice(0, 10)],
-      [],
-      ["Store coverage"],
-      ["Store", "Group", "Responsible rep", "Visits in period", "Days since last visit"],
-      ...gaps.map((g) => [
-        g.store_name,
-        g.store_group ?? "",
-        g.assigned_reps ?? "",
-        g.visits_in_period,
-        g.days_since ?? "never visited",
-      ]),
-      [],
-      ["Rep scorecard"],
-      ["Rep", "Completed", "Total", "Completion", "Forms", "Location verified"],
-      ...scores.map((s) => [
-        s.rep_name ?? "",
-        s.visits_completed,
-        s.visits_total,
-        formatRate(s.completion_rate),
-        formatRate(s.form_compliance_rate),
-        formatRate(s.verified_rate),
-      ]),
-      [],
-      ["Compliance trend"],
-      [
-        "Bucket",
-        "Submissions",
-        "Out of stock",
-        "Planogram OK",
-        "Price correct",
-        "Avg facings",
-      ],
-      ...trends.map((t) => [
-        t.bucket_start.slice(0, 10),
-        t.submissions,
-        formatRate(t.oos_rate),
-        formatRate(t.planogram_rate),
-        formatRate(t.price_correct_rate),
-        t.avg_facings ?? "",
-      ]),
-    ];
+  /**
+   * The open tab, as a spreadsheet.
+   *
+   * One tab, not all eight. The old export wrote coverage, the scorecard and
+   * the trend into a single CSV whatever you were looking at, so the file never
+   * matched the screen and three of its sections were noise. Exporting what is
+   * in front of you is the version somebody can hand to a supplier.
+   *
+   * Photos are the one tab with nothing to export — a grid of images is not a
+   * table, and a spreadsheet of storage paths would be a worse answer than
+   * saying so.
+   */
+  function sheetForTab(): ExportSheet | null {
+    // 🔴 The rep, store and form pickers filter **only** the Form report —
+    // every other query on this page takes the date range and nothing else. A
+    // Coverage export headed "Rep: Jerry Habana" would therefore have been a
+    // lie about rows covering the whole estate, which is worse than a file with
+    // no context at all: this one reads as evidence.
+    const formFilters =
+      tab === "form"
+        ? [
+            repId ? `Rep: ${reps.find((r) => r.id === repId)?.full_name ?? repId}` : null,
+            storeId
+              ? `Store: ${stores.find((st) => st.id === storeId)?.name ?? storeId}`
+              : null,
+            templateId
+              ? `Form: ${templates.find((t) => t.id === templateId)?.name ?? templateId}`
+              : null,
+          ]
+        : [];
+    const context = [
+      `${toLocalDateInput(range.from)} to ${toLocalDateInput(dayBefore(range.to))}`,
+      ...formFilters,
+    ].filter((line): line is string => line !== null);
 
-    // Quote every cell and double embedded quotes — store names contain commas.
-    const csv = rows
-      .map((r) => r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(","))
-      .join("\n");
+    const base = { context, orgName: "Gold Fortune Merchandising" };
 
-    const url = URL.createObjectURL(
-      new Blob([csv], { type: "text/csv;charset=utf-8" })
-    );
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `gf-report-${range.from.toISOString().slice(0, 10)}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
+    switch (tab) {
+      case "score":
+        return {
+          ...base,
+          title: "Perfect Store score",
+          filename: "gf-perfect-store",
+          columns: [
+            { header: "Store", key: "store" },
+            { header: "Group", key: "group" },
+            { header: "Audits", key: "audits", numeric: true },
+            { header: "Availability %", key: "availability", numeric: true },
+            { header: "Planogram %", key: "planogram", numeric: true },
+            { header: "Price %", key: "price", numeric: true },
+            { header: "Condition %", key: "condition", numeric: true },
+            { header: "Score", key: "score", numeric: true },
+          ],
+          rows: perfect.map((r) => ({
+            store: r.store_name,
+            group: r.store_group ?? "",
+            audits: r.audits,
+            availability: r.availability_pct,
+            planogram: r.planogram_pct,
+            price: r.price_pct,
+            condition: r.condition_pct,
+            score: r.score,
+          })),
+        };
+      case "oos":
+        return {
+          ...base,
+          title: "Out-of-stock hotspots",
+          filename: "gf-out-of-stock",
+          columns: [
+            { header: "Store", key: "store" },
+            { header: "Checks", key: "checks", numeric: true },
+            { header: "Out of stock", key: "oos", numeric: true },
+            { header: "Rate", key: "rate" },
+            { header: "Longest run", key: "run", numeric: true },
+            { header: "Last seen out", key: "last" },
+            { header: "Top lines", key: "skus" },
+          ],
+          rows: hotspots.map((r) => ({
+            store: r.store_name,
+            checks: r.checks,
+            oos: r.oos_count,
+            rate: formatRate(r.oos_rate),
+            run: r.max_consecutive_oos,
+            last: toLocalDate(r.last_oos_at),
+            skus: r.top_skus.map((t) => `${t.sku} (${t.n})`).join(", "),
+          })),
+        };
+      case "coverage":
+        return {
+          ...base,
+          title: "Store coverage",
+          filename: "gf-coverage",
+          columns: [
+            { header: "Store", key: "store" },
+            { header: "Group", key: "group" },
+            { header: "Town", key: "city" },
+            { header: "Responsible rep", key: "reps" },
+            { header: "Visits in period", key: "visits", numeric: true },
+            { header: "Last visited", key: "last" },
+            { header: "Days since last visit", key: "days" },
+          ],
+          rows: gaps.map((g) => ({
+            store: g.store_name,
+            group: g.store_group ?? "",
+            city: g.city ?? "",
+            reps: g.assigned_reps ?? "",
+            visits: g.visits_in_period,
+            last: toLocalDate(g.last_visit_at) || "never",
+            // "never visited" rather than a blank: an empty cell in this column
+            // reads as nought days, which is the opposite of what it means.
+            days: g.days_since ?? "never visited",
+          })),
+        };
+      case "adherence":
+        return {
+          ...base,
+          title: "Schedule adherence",
+          filename: "gf-adherence",
+          columns: [
+            { header: "Rep", key: "rep" },
+            { header: "Planned", key: "planned", numeric: true },
+            { header: "Completed", key: "completed", numeric: true },
+            { header: "Missed", key: "missed", numeric: true },
+            { header: "Adherence", key: "rate" },
+            { header: "Missed stops", key: "detail" },
+          ],
+          rows: adherence.map((a) => ({
+            rep: a.rep_name ?? "",
+            planned: a.planned,
+            completed: a.completed,
+            missed: a.missed,
+            rate: formatRate(a.adherence_rate),
+            detail: a.missed_detail
+              .map((m) => `${m.store} (${m.date.slice(0, 10)})`)
+              .join(", "),
+          })),
+        };
+      case "reps":
+        return {
+          ...base,
+          title: "Rep scorecard",
+          filename: "gf-rep-scorecard",
+          columns: [
+            { header: "Rep", key: "rep" },
+            { header: "Completed", key: "completed", numeric: true },
+            { header: "Total", key: "total", numeric: true },
+            { header: "Completion", key: "completion" },
+            { header: "Stores covered", key: "stores", numeric: true },
+            { header: "Forms", key: "forms" },
+            { header: "Location verified", key: "verified" },
+          ],
+          rows: scores.map((r) => ({
+            rep: r.rep_name ?? "",
+            completed: r.visits_completed,
+            total: r.visits_total,
+            completion: formatRate(r.completion_rate),
+            stores: r.stores_covered,
+            forms: formatRate(r.form_compliance_rate),
+            verified: formatRate(r.verified_rate),
+          })),
+        };
+      case "trends":
+        return {
+          ...base,
+          title: "Compliance trend",
+          filename: "gf-compliance-trend",
+          columns: [
+            { header: "Bucket", key: "bucket" },
+            { header: "Submissions", key: "submissions", numeric: true },
+            { header: "Out of stock", key: "oos" },
+            { header: "Planogram OK", key: "planogram" },
+            { header: "Price correct", key: "price" },
+            { header: "Avg facings", key: "facings", numeric: true },
+          ],
+          rows: trends.map((t) => ({
+            bucket: t.bucket_start.slice(0, 10),
+            submissions: t.submissions,
+            oos: formatRate(t.oos_rate),
+            planogram: formatRate(t.planogram_rate),
+            price: formatRate(t.price_correct_rate),
+            facings: t.avg_facings,
+          })),
+        };
+      case "form":
+        return {
+          ...base,
+          title: "Form results",
+          filename: "gf-form-results",
+          columns: [
+            { header: "Question", key: "label" },
+            { header: "Type", key: "type" },
+            { header: "Answers", key: "answers", numeric: true },
+            { header: "Summary", key: "summary" },
+          ],
+          rows: chartFields.map((f) => ({
+            label: f.label,
+            type: f.field_type,
+            answers: f.response_count,
+            summary: JSON.stringify(f.stats ?? {}),
+          })),
+        };
+      default:
+        return null;
+    }
   }
 
   return (
@@ -225,10 +470,11 @@ export default function ReportsPage() {
             submitted in the selected period
           </p>
         </div>
-        <Button className="gap-1.5" onClick={exportCsv} disabled={loading}>
-          <Download className="h-4 w-4" />
-          Export CSV
-        </Button>
+        <ExportMenu
+          build={sheetForTab}
+          disabled={loading}
+          label={`Export ${TABS.find((t) => t.value === tab)?.label ?? ""}`}
+        />
       </div>
 
       <div className="flex flex-wrap items-center gap-3 rounded-lg border border-border bg-card p-3">
@@ -260,19 +506,14 @@ export default function ReportsPage() {
               </option>
             ))}
           </NativeSelect>
-          <NativeSelect
-            aria-label="Store"
-            className="w-[11rem]"
+          <StorePicker
+            className="w-[13rem]"
+            stores={stores}
             value={storeId}
-            onChange={(e) => setStoreId(e.target.value)}
-          >
-            <option value="">All stores</option>
-            {stores.map((s) => (
-              <option key={s.id} value={s.id}>
-                {s.name}
-              </option>
-            ))}
-          </NativeSelect>
+            onChange={setStoreId}
+            allLabel="All stores"
+            placeholder="All stores"
+          />
         </div>
       </div>
 
@@ -294,20 +535,17 @@ export default function ReportsPage() {
 
       {/* Ordered by what a manager acts on first: which store is worst, what is
           out of stock, who has been neglected — then the descriptive reports. */}
-      <Tabs defaultValue="score">
+      <Tabs value={tab} onValueChange={(v) => setTab(v as ReportTab)}>
         {/* One row, scrolled — never wrapped. TabsList is a fixed-height pill,
             so wrapping pushes the second row outside its own background and the
             triggers' `flex-1` stretches them into ragged spacing. Labels are
             kept short so all eight fit without scrolling on a normal screen. */}
         <TabsList className="max-w-full justify-start overflow-x-auto px-1 [&::-webkit-scrollbar]:hidden [&>*]:shrink-0 [&>*]:px-2.5">
-          <TabsTrigger value="score">Perfect Store</TabsTrigger>
-          <TabsTrigger value="oos">Out of stock</TabsTrigger>
-          <TabsTrigger value="coverage">Coverage</TabsTrigger>
-          <TabsTrigger value="adherence">Adherence</TabsTrigger>
-          <TabsTrigger value="reps">Reps</TabsTrigger>
-          <TabsTrigger value="trends">Trends</TabsTrigger>
-          <TabsTrigger value="form">Form</TabsTrigger>
-          <TabsTrigger value="photos">Photos</TabsTrigger>
+          {TABS.map((t) => (
+            <TabsTrigger key={t.value} value={t.value}>
+              {t.label}
+            </TabsTrigger>
+          ))}
         </TabsList>
 
         <TabsContent value="score" className="mt-4">

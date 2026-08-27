@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { UserPlus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -15,8 +16,9 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { AssignStoresDialog } from "@/components/representatives/assign-stores-dialog";
-import { InviteRepDialog } from "@/components/representatives/invite-rep-dialog";
 import { createClient } from "@/lib/supabase/client";
+import { can } from "@/lib/permissions";
+import { usePermissions } from "@/lib/use-permissions";
 import {
   fetchAssignments,
   fetchOrgId,
@@ -29,13 +31,24 @@ import {
 } from "@/lib/representatives";
 
 /**
- * Representatives.
+ * Representatives — who covers which store.
  *
- * Inviting a rep goes through /api/reps/invite because creating an auth user
- * needs the service-role key, which must never reach a browser bundle.
+ * A coverage view, and only that. It used to carry an "Add rep" button of its
+ * own, which made three separate places that create a person: here, Settings →
+ * Users, and an HR employee record. Three dialogs, three ideas of what creating
+ * somebody means, and after the permission model landed this one could not
+ * finish the job anyway — `/api/reps/invite` requires `admin`, so the button
+ * 403'd for exactly the people this page is granted to.
+ *
+ * So creating an account happens in Settings → Users, where a job role is
+ * chosen and the permissions come with it; the employment record lives in HR;
+ * and this page answers the question its own subtitle asks. The link below is
+ * shown only to whoever can actually follow it.
  */
 export default function RepresentativesPage() {
   const supabase = createClient();
+  const permissions = usePermissions();
+  const canAddPeople = permissions !== null && can(permissions, "admin");
 
   const [reps, setReps] = useState<RepSummary[]>([]);
   const [stores, setStores] = useState<StoreOption[]>([]);
@@ -44,7 +57,6 @@ export default function RepresentativesPage() {
 
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState<RepSummary | null>(null);
-  const [inviting, setInviting] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -108,10 +120,16 @@ export default function RepresentativesPage() {
             which store
           </p>
         </div>
-        <Button className="gap-1.5" onClick={() => setInviting(true)}>
-          <UserPlus className="h-4 w-4" />
-          Add rep
-        </Button>
+        {canAddPeople && (
+          <Button
+            className="gap-1.5"
+            nativeButton={false}
+            render={<Link href="/settings/users" />}
+          >
+            <UserPlus className="h-4 w-4" />
+            Add someone
+          </Button>
+        )}
       </div>
 
       {error && (
@@ -217,12 +235,6 @@ export default function RepresentativesPage() {
           )}
         </CardContent>
       </Card>
-
-      <InviteRepDialog
-        open={inviting}
-        onOpenChange={setInviting}
-        onInvited={load}
-      />
 
       <AssignStoresDialog
         rep={selected}

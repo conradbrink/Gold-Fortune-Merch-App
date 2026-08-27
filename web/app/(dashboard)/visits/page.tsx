@@ -22,6 +22,9 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { toLocalDateTime } from "@/lib/date-range";
+import { ExportMenu } from "@/components/export-menu";
+import type { ExportSheet } from "@/lib/export";
 import { createClient } from "@/lib/supabase/client";
 import type { VisitStatus } from "@/lib/mock-data";
 
@@ -156,6 +159,48 @@ function VisitsContent() {
       `${v.storeName} ${v.repName}`.toLowerCase().includes(search.toLowerCase())
     );
 
+  /** The filtered list, as a spreadsheet. */
+  function buildVisitSheet(): ExportSheet {
+    const applied = [
+      withForms ? "Visits with at least one form" : null,
+      statusFilter !== "all" ? `Status: ${statusFilter}` : null,
+      search.trim() ? `Search: ${search.trim()}` : null,
+    ].filter((line): line is string => line !== null);
+
+    return {
+      title: withForms ? "Visits with forms" : "Visits",
+      orgName: "Gold Fortune Merchandising",
+      context: [
+        `${filtered.length} of ${visits.length} visits`,
+        ...(applied.length > 0 ? applied : ["No filters applied"]),
+      ],
+      filename: "gf-visits",
+      columns: [
+        { header: "Store", key: "store" },
+        { header: "Rep", key: "rep" },
+        { header: "Checked in", key: "in" },
+        { header: "Checked out", key: "out" },
+        { header: "Status", key: "status" },
+        { header: "Duration (minutes)", key: "minutes", numeric: true },
+        { header: "Scheduled", key: "scheduled" },
+        { header: "Forms", key: "forms", numeric: true },
+      ],
+      rows: filtered.map((v) => ({
+        store: v.storeName,
+        rep: v.repName,
+        in: toLocalDateTime(v.checkin_at),
+        out: toLocalDateTime(v.checkout_at),
+        status: v.status,
+        // Minutes rather than "1h 12m": a spreadsheet column somebody will
+        // want to sum, and "1h 12m" sums to nothing.
+        minutes:
+          v.duration_seconds === null ? null : Math.round(v.duration_seconds / 60),
+        scheduled: v.unscheduled ? "Unscheduled" : "Scheduled",
+        forms: v.formCount,
+      })),
+    };
+  }
+
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -187,6 +232,10 @@ function VisitsContent() {
             <ClipboardCheck className="mr-1.5 h-4 w-4" />
             With forms
           </Button>
+          {/* Exports the filtered list — a rep, a status, a search — which is
+              how somebody gets one person's calls for a period out of here and
+              into a review meeting. */}
+          <ExportMenu build={buildVisitSheet} disabled={loading} />
         </div>
       </div>
 

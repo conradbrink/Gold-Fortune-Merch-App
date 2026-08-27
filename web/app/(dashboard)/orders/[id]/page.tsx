@@ -36,6 +36,7 @@ import {
   confirmOrder,
   startPicking,
   markPacked,
+  assignDispatchRep,
   dispatchOrder,
   markDelivered,
   returnUndelivered,
@@ -157,6 +158,15 @@ export default function OrderDetailPage() {
     }[]
   >([]);
 
+  /**
+   * Field reps, for handing a delivery to one.
+   *
+   * Only `role = 'rep'`: the Android app lets nobody else in, so assigning a
+   * delivery to a warehouse clerk would be a job with nowhere to appear. The
+   * RPC refuses it too — this list is so nobody is offered the refusal.
+   */
+  const [reps, setReps] = useState<{ id: string; full_name: string | null }[]>([]);
+
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -225,16 +235,29 @@ export default function OrderDetailPage() {
     let cancelled = false;
     (async () => {
       try {
-        const [c, cat, locs] = await Promise.all([
+        const [c, cat, locs, repRows] = await Promise.all([
           fetchCarriers(supabase),
           fetchOrderableProducts(supabase),
           fetchLocations(supabase),
+          supabase
+            .from("profiles")
+            .select("id, full_name")
+            .eq("role", "rep")
+            .eq("is_active", true)
+            .order("full_name"),
         ]);
         const d = await reload();
         if (cancelled) return;
         setCarriers(c);
         setCatalogue(cat);
         setLocations(locs);
+        // Fails loudly. A discarded error here empties the assignment dropdown,
+        // which reads as "there are no reps" — and the next thing somebody does
+        // is unassign a delivery to make the control agree with the list.
+        if (repRows.error) throw new Error(repRows.error.message);
+        setReps(
+          (repRows.data ?? []) as { id: string; full_name: string | null }[]
+        );
         // A location the order names but the picker cannot offer — retired
         // since — falls back to the default rather than being held in state
         // invisibly: a native select with no matching option displays the
@@ -1030,6 +1053,56 @@ export default function OrderDetailPage() {
                         .filter(Boolean)
                         .join(" · ") || "No carrier recorded"}
                     </p>
+                    {/* Whose job it is, which is not the same question as who
+                        is driving. A rep given this sees it on their phone;
+                        until somebody is given it, nobody does. */}
+                    <div className="mt-2 flex items-center gap-2">
+                      <label
+                        htmlFor={`assign-${d.id}`}
+                        className="shrink-0 text-xs text-muted-foreground"
+                      >
+                        Rep
+                      </label>
+                      <NativeSelect
+                        id={`assign-${d.id}`}
+                        className="h-8 text-xs"
+                        value={d.assigned_rep_id ?? ""}
+                        disabled={busy}
+                        onChange={(e) =>
+                          run(
+                            () =>
+                              assignDispatchRep(
+                                supabase,
+                                d.id,
+                                e.target.value || null
+                              ),
+                            e.target.value
+                              ? "The delivery is on that rep's phone now."
+                              : "The delivery is nobody's job now."
+                          )
+                        }
+                      >
+                        <option value="">Nobody — the warehouse handles it</option>
+                        {/* A rep deactivated since the delivery was assigned is
+                            not in the list, and a native select with no
+                            matching option silently displays the first one —
+                            so this would have shown "Nobody" for a delivery
+                            that is somebody's. Named, and not selectable
+                            again. */}
+                        {d.assigned_rep_id &&
+                          !reps.some((r) => r.id === d.assigned_rep_id) && (
+                            <option value={d.assigned_rep_id} disabled>
+                              {d.assigned_rep_name ?? "Unnamed rep"} (no longer
+                              active)
+                            </option>
+                          )}
+                        {reps.map((r) => (
+                          <option key={r.id} value={r.id}>
+                            {r.full_name ?? "Unnamed rep"}
+                          </option>
+                        ))}
+                      </NativeSelect>
+                    </div>
                     {d.tracking_reference && (
                       <p className="text-xs text-muted-foreground">
                         Tracking {d.tracking_reference}

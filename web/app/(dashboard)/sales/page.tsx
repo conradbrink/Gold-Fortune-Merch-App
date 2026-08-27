@@ -5,6 +5,9 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { NativeSelect } from "@/components/ui/native-select";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { toLocalDate } from "@/lib/date-range";
+import { ExportMenu } from "@/components/export-menu";
+import type { ExportSheet } from "@/lib/export";
 import {
   Table,
   TableBody,
@@ -91,12 +94,56 @@ export default function SalesPage() {
       (scopePeriod
         ? sales.filter((s) => {
             const t = new Date(s.deliveredAt).getTime();
-            return t >= scopePeriod.from.getTime() && t <= scopePeriod.to.getTime();
+            // Half-open, matching the export below and `within()` in lib/sales.
+            // An inclusive end put a delivery exactly on the boundary on screen
+            // and left it out of the file.
+            return t >= scopePeriod.from.getTime() && t < scopePeriod.to.getTime();
           })
         : sales
       ).slice(0, 25),
     [sales, scopePeriod]
   );
+
+  /** Every delivery in the chosen period, valued — the working behind the totals. */
+  function buildSalesSheet(): ExportSheet {
+    const rows = scopePeriod
+      ? sales.filter(
+          (s) =>
+            new Date(s.deliveredAt) >= scopePeriod.from &&
+            new Date(s.deliveredAt) < scopePeriod.to
+        )
+      : sales;
+    return {
+      title: "Sales by delivery",
+      orgName: "Gold Fortune Merchandising",
+      context: [
+        scopePeriod ? scopePeriod.label : "All time",
+        `${rows.length} deliveries`,
+        "Counted on the day the goods were delivered, valued on what actually arrived.",
+      ],
+      filename: "gf-sales",
+      columns: [
+        { header: "Order", key: "order" },
+        { header: "Delivered", key: "delivered" },
+        { header: "Store", key: "store" },
+        { header: "Rep", key: "rep" },
+        { header: "Units", key: "units", numeric: true },
+        { header: "Sales excl. VAT", key: "net", numeric: true },
+        { header: "VAT", key: "vat", numeric: true },
+        { header: "Incl. VAT", key: "gross", numeric: true },
+      ],
+      rows: rows.map((r) => ({
+        order: r.orderNumber,
+        delivered: toLocalDate(r.deliveredAt),
+        store: r.storeName,
+        rep: r.repName,
+        units: r.units,
+        net: r.net,
+        vat: r.vat,
+        gross: r.gross,
+      })),
+    };
+  }
 
   return (
     <div className="space-y-6">
@@ -109,16 +156,22 @@ export default function SalesPage() {
             figures.
           </p>
         </div>
-        <NativeSelect
-          value={scope}
-          onChange={(e) => setScope(e.target.value as "week" | "month" | "all")}
-          className="w-44"
-          aria-label="Period"
-        >
-          <option value="week">This week</option>
-          <option value="month">This month</option>
-          <option value="all">All time</option>
-        </NativeSelect>
+        <div className="flex flex-wrap items-center gap-2">
+          <NativeSelect
+            value={scope}
+            onChange={(e) => setScope(e.target.value as "week" | "month" | "all")}
+            className="w-44"
+            aria-label="Period"
+          >
+            <option value="week">This week</option>
+            <option value="month">This month</option>
+            <option value="all">All time</option>
+          </NativeSelect>
+          {/* The deliveries, not the rep summary: the summary is four numbers
+              somebody can read off the screen, and the deliveries are the
+              working that a total is only worth as much as. */}
+          <ExportMenu build={buildSalesSheet} disabled={loading} />
+        </div>
       </div>
 
       <ErrorBanner message={error} />

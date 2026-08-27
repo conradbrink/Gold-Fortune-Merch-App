@@ -246,6 +246,7 @@ export type Database = {
       }
       dispatches: {
         Row: {
+          assigned_rep_id: string | null
           carrier_name: string | null
           created_at: string
           delivered_at: string | null
@@ -269,6 +270,7 @@ export type Database = {
           vehicle_id: string | null
         }
         Insert: {
+          assigned_rep_id?: string | null
           carrier_name?: string | null
           created_at?: string
           delivered_at?: string | null
@@ -292,6 +294,7 @@ export type Database = {
           vehicle_id?: string | null
         }
         Update: {
+          assigned_rep_id?: string | null
           carrier_name?: string | null
           created_at?: string
           delivered_at?: string | null
@@ -315,6 +318,13 @@ export type Database = {
           vehicle_id?: string | null
         }
         Relationships: [
+          {
+            foreignKeyName: "dispatches_assigned_rep_id_fkey"
+            columns: ["assigned_rep_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "dispatches_delivered_by_fkey"
             columns: ["delivered_by"]
@@ -6013,6 +6023,10 @@ export type Database = {
       assign_default_permissions: { Args: never; Returns: unknown }
       has_permission: { Args: { p_code: string }; Returns: boolean }
       my_permissions: { Args: never; Returns: string[] }
+      assign_dispatch_rep: {
+        Args: { p_dispatch: string; p_rep: string | null }
+        Returns: undefined
+      }
       provision_organization: { Args: { p_org: string }; Returns: undefined }
       provision_organization_on_insert: { Args: never; Returns: unknown }
       delete_job_role: { Args: { p_id: string }; Returns: undefined }

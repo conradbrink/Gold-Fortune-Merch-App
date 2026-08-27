@@ -16,7 +16,10 @@ import { StatTile } from "@/components/dashboard/stat-tile";
 import { CoverageDonut } from "@/components/dashboard/coverage-donut";
 import { RepMap } from "@/components/dashboard/rep-map";
 import type { LiveReps } from "@/lib/live-reps";
+import { toLocalDateInput, type DateRange } from "@/lib/date-range";
+import type { ReportTab } from "@/lib/report-tabs";
 import { UnitsTrendChart } from "@/components/dashboard/units-trend-chart";
+import { SettleDriving } from "@/components/workday/settle-driving";
 import {
   companyDayTimes,
   deltaPct,
@@ -62,7 +65,27 @@ export type WidgetData = {
   liveReps: LiveReps | null;
   /** How many days the chosen range covers, for labels like "vs previous 30 days". */
   days: number;
+  /** The chosen range, so a tile can hand it to the page it links into. */
+  range: DateRange;
 };
+
+/**
+ * Where a tile's number can be taken apart.
+ *
+ * A rate on a dashboard is the start of a question, not the end of one — "out
+ * of stock is 6.2%" is only useful next to *which stores*. Reports already has
+ * those tables, so the tiles link into the right tab carrying the same days
+ * they were measured over; landing on the default 30 days would answer a
+ * different question from the one that was clicked.
+ */
+function reportHref(tab: ReportTab, range: DateRange): string {
+  const params = new URLSearchParams({
+    tab,
+    from: toLocalDateInput(range.from),
+    to: toLocalDateInput(range.to),
+  });
+  return `/reports?${params.toString()}`;
+}
 
 export type WidgetDefinition = {
   /** Stored in `dashboard_layouts.widget_ids`. Never change one in place. */
@@ -149,7 +172,7 @@ export const WIDGETS: WidgetDefinition[] = [
     description: "Share of active stores visited at least once in the period.",
     span: 1,
     source: "summary",
-    render: ({ summary }) => {
+    render: ({ summary, range }) => {
       if (!summary) return null;
       const pct = coveragePctOf(summary);
       return (
@@ -159,6 +182,7 @@ export const WIDGETS: WidgetDefinition[] = [
           sublabel={`${summary.current.stores_covered} of ${summary.stores_active} active stores visited`}
           icon={<Store className="h-5 w-5 opacity-80" />}
           tone="outline"
+          href={reportHref("coverage", range)}
         />
       );
     },
@@ -170,7 +194,7 @@ export const WIDGETS: WidgetDefinition[] = [
       "Share of stock checks answered “no”. Reads the in_stock metric on your forms.",
     span: 1,
     source: "summary",
-    render: ({ summary, days }) => {
+    render: ({ summary, days, range }) => {
       if (!summary) return null;
       return (
         <StatTile
@@ -182,6 +206,7 @@ export const WIDGETS: WidgetDefinition[] = [
           invertDelta
           icon={<PackageX className="h-5 w-5 opacity-80" />}
           tone="outline"
+          href={reportHref("oos", range)}
         />
       );
     },
@@ -193,7 +218,7 @@ export const WIDGETS: WidgetDefinition[] = [
       "Share of planogram checks answered “yes”. Reads the planogram_ok metric.",
     span: 1,
     source: "summary",
-    render: ({ summary, days }) => {
+    render: ({ summary, days, range }) => {
       if (!summary) return null;
       return (
         <StatTile
@@ -206,6 +231,9 @@ export const WIDGETS: WidgetDefinition[] = [
           deltaLabel={`vs previous ${days} days`}
           icon={<LayoutGrid className="h-5 w-5 opacity-80" />}
           tone="outline"
+          // Trends rather than a planogram table: the rate is only readable
+          // against its own history, and no per-store planogram table exists.
+          href={reportHref("trends", range)}
         />
       );
     },
@@ -637,6 +665,7 @@ function WorkingDay({
     <Card>
       <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2 space-y-0">
         <CardTitle className="text-base">Working day</CardTitle>
+        <SettleDriving />
         {days.length > 0 && (
           <div className="flex items-center gap-2">
             <label

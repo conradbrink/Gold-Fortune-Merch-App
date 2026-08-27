@@ -15,7 +15,11 @@ import '../data/models/catalogue_product.dart';
 import '../data/local/app_database.dart';
 import '../data/local/order_draft.dart';
 import '../data/repositories/file_repository.dart';
+import '../data/models/delivery.dart';
+import '../data/models/hr.dart';
 import '../data/repositories/form_repository.dart';
+import '../data/repositories/delivery_repository.dart';
+import '../data/repositories/hr_repository.dart';
 import '../data/repositories/lead_repository.dart';
 import '../data/repositories/order_repository.dart';
 import '../data/repositories/promotion_repository.dart';
@@ -101,6 +105,77 @@ final fileRepositoryProvider = Provider<FileRepository>((ref) {
 /// the rep taps a file.
 final filesProvider = FutureProvider<List<CachedFile>>((ref) {
   return ref.watch(fileRepositoryProvider).fetchFiles();
+});
+
+// ---------------------------------------------------------------- my HR
+//
+// None of this is cached in the local database, unlike almost everything else
+// here. See `HrRepository` for why: leave is filed from a kitchen table, not
+// from a shop floor with no signal, and a request queued silently offline is a
+// person believing they have told somebody they are ill.
+
+final hrRepositoryProvider = Provider<HrRepository>((ref) {
+  return HrRepository(supabase);
+});
+
+/// This rep's own employee id, or null when nobody has made them one yet.
+final myEmployeeIdProvider = FutureProvider<String?>((ref) {
+  // Watched rather than read: signing out and back in as somebody else must not
+  // leave the previous person's employee id behind it.
+  ref.watch(currentUserProvider);
+  return ref.watch(hrRepositoryProvider).myEmployeeId();
+});
+
+final leaveTypesProvider = FutureProvider<List<LeaveType>>((ref) {
+  return ref.watch(hrRepositoryProvider).leaveTypes();
+});
+
+final myLeaveBalancesProvider = FutureProvider<List<LeaveBalance>>((ref) async {
+  final id = await ref.watch(myEmployeeIdProvider.future);
+  if (id == null) return const [];
+  return ref.watch(hrRepositoryProvider).balances(id);
+});
+
+final myLeaveRequestsProvider = FutureProvider<List<LeaveRequest>>((ref) async {
+  final id = await ref.watch(myEmployeeIdProvider.future);
+  if (id == null) return const [];
+  return ref.watch(hrRepositoryProvider).requests(id);
+});
+
+final myWarningsProvider = FutureProvider<List<Warning>>((ref) async {
+  final id = await ref.watch(myEmployeeIdProvider.future);
+  if (id == null) return const [];
+  return ref.watch(hrRepositoryProvider).warnings(id);
+});
+
+/// Warnings this rep has not said they have seen. Drives the badge on the home
+/// screen, which is the only reason the app knows about warnings at all.
+final unacknowledgedWarningCountProvider = FutureProvider<int>((ref) async {
+  final warnings = await ref.watch(myWarningsProvider.future);
+  return warnings.where((w) => !w.acknowledged).length;
+});
+
+// ------------------------------------------------------------- deliveries
+
+final deliveryRepositoryProvider = Provider<DeliveryRepository>((ref) {
+  return DeliveryRepository(supabase);
+});
+
+/// Consignments assigned to this rep. Narrowed by RLS, not by a filter here.
+final myDeliveriesProvider = FutureProvider<List<Delivery>>((ref) {
+  ref.watch(currentUserProvider);
+  return ref.watch(deliveryRepositoryProvider).myDeliveries();
+});
+
+/// How many are still on the road, for the badge on the home screen.
+///
+/// Asked of the server rather than counted from `myDeliveriesProvider`, which
+/// is a fifty-row page of the newest dispatches whatever their status — a rep
+/// with fifty finished deliveries and one outstanding would have been badged
+/// zero, which is the one case the badge exists for.
+final outstandingDeliveryCountProvider = FutureProvider<int>((ref) {
+  ref.watch(currentUserProvider);
+  return ref.watch(deliveryRepositoryProvider).outstandingCount();
 });
 
 final routeRepositoryProvider = Provider<RouteRepository>((ref) {

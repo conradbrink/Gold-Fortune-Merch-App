@@ -30,6 +30,13 @@ import { toLocalDateInput } from "@/lib/date-range";
  * after how long, is a policy question this system has no view on — the brief
  * is explicit that no employment-law rule may be hard-coded, and a default of
  * "six months" would be exactly that, wearing the costume of a convenience.
+ *
+ * **The letter is required on a written warning**, because a hearing that turns
+ * on "what was he actually told" is not helped by a row saying a letter was
+ * issued and no letter. Which types require it is `meta.requires_document` on
+ * the warning type, seeded onto Written and Final Written and editable, not a
+ * list in this file — and the database refuses the write either way, so the
+ * check below is a courtesy rather than the rule.
  */
 export function WarningDialog({
   open,
@@ -53,6 +60,11 @@ export function WarningDialog({
   const supabase = createClient();
   const today = toLocalDateInput(new Date());
   const types = lookupsOfKind(lookups, "warning_type");
+
+  /** Whether this warning type needs the signed letter on file. */
+  const needsLetter = (code: string) =>
+    (types.find((t) => t.code === code)?.meta as { requires_document?: boolean } | null)
+      ?.requires_document === true;
 
   const [type, setType] = useState("");
   const [issuedOn, setIssuedOn] = useState(today);
@@ -91,6 +103,12 @@ export function WarningDialog({
     }
     if (!reason.trim()) {
       setError("Give the reason. This is what the employee is told.");
+      return;
+    }
+    if (needsLetter(type) && !file) {
+      setError(
+        "Attach the signed letter. A written warning is not recorded without it."
+      );
       return;
     }
     setBusy(true);
@@ -163,7 +181,15 @@ export function WarningDialog({
               onChange={(e) => setReason(e.target.value)}
             />
           </Field>
-          <Field label="Attach the letter" className="sm:col-span-2">
+          <Field
+            label={needsLetter(type) ? "Attach the letter — required" : "Attach the letter"}
+            className="sm:col-span-2"
+            hint={
+              needsLetter(type)
+                ? "Kept in the private HR store with the case file."
+                : "Optional for this warning type."
+            }
+          >
             <Input type="file" onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
           </Field>
         </div>

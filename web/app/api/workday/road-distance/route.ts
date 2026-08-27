@@ -1,12 +1,8 @@
+import { timingSafeEqual } from "node:crypto";
 import { createClient as createAdminClient } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/server";
 import { enforceRateLimit, LIMITS } from "@/lib/rate-limit";
-import {
-  batchForRouting,
-  computeDayRoadMetres,
-  thinPings,
-  type Ping,
-} from "@/lib/road-distance";
+import { settleRoadDistance, type Budget } from "@/lib/road-distance-settle";
 
 /**
  * Settles finished workdays with the distance actually driven.
@@ -25,14 +21,88 @@ import {
  * figure would look complete and be short by however far the rep drove after.
  *
  * `proxy.ts` excludes /api from its matcher, so this handler owns its own auth.
+ *
+ * ------------------------------------------------------------- two ways in
+ *
+ * POST is a signed-in manager pressing the button, charged against their own
+ * hourly quota. GET is the nightly Vercel cron, which has no signed-in caller
+ * to charge and carries a per-run ceiling instead.
+ *
+ * ⚠️ Vercel crons run in **UTC only** and `web/vercel.json` says `0 21 * * *`.
+ * That is 23:00 in Botswana because CAT is UTC+2 and observes no daylight
+ * saving; it is not 23:00 for an organisation on any other `organizations.
+ * timezone`. The schedule is a fixed UTC time, and the only thing that has to
+ * be true of it is that it falls after every rep has closed their day.
+ *
+ * The nightly job exists because for the first two days of this feature there
+ * was no scheduler and no button, so the only runs it ever had were manual —
+ * and the column quietly stopped filling in on 25 August without anything
+ * saying so. A number that appears only when somebody remembers to ask for it
+ * is a number nobody can trust.
  */
 
 export const runtime = "nodejs";
 // A day is roughly ten sequential Routes calls, and a batch of days is more.
 export const maxDuration = 60;
 
-/** Never settle more than this in one call, however many are outstanding. */
-const MAX_SESSIONS = 10;
+/**
+ * What one unattended run may spend.
+ *
+ * The manual path is bounded by the caller's rate-limit bucket, which needs an
+ * `auth.uid()` the cron does not have. So the cron's budget is this: a hard
+ * count of Routes requests per run, checked before each day is routed.
+ *
+ * ⚠️ **Bounded by `maxDuration`, not by money.** The Routes calls are
+ * sequential and take roughly a second each, so 120 of them cannot finish
+ * inside a 60-second function — the platform would kill the run mid-route,
+ * leaving a day claimed with no distance on it and nothing to say why. Forty is
+ * comfortably inside the limit and is still four rep-days, which is more than a
+ * night's backlog for a team this size. Days left over are settled by the next
+ * run, which is what the queue is for.
+ */
+const MAX_CRON_REQUESTS = 40;
+
+function missingConfig(): Response | null {
+  if (!process.env.NEXT_PUBLIC_SUPABASE_URL) {
+    return Response.json(
+      { error: "NEXT_PUBLIC_SUPABASE_URL is not configured on the server." },
+      { status: 503 }
+    );
+  }
+  if (!process.env.GOOGLE_ROUTES_API_KEY) {
+    return Response.json(
+      { error: "GOOGLE_ROUTES_API_KEY is not configured on the server." },
+      { status: 503 }
+    );
+  }
+  if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {
+    return Response.json(
+      { error: "SUPABASE_SERVICE_ROLE_KEY is not configured on the server." },
+      { status: 503 }
+    );
+  }
+  return null;
+}
+
+/**
+ * Settlement writes go through the service role. The caller's own client
+ * cannot make them.
+ *
+ * `road_distance_*` are deliberately not writable by anyone through RLS — the
+ * migration says so — because the Routes key is server-side and a handset
+ * offering a road distance would mean the key had reached a handset. A manager
+ * therefore has SELECT on `workday_sessions` and no UPDATE, which is correct
+ * and was exactly the hole this route fell into: every claim silently matched
+ * zero rows and every day was skipped as "someone else has it".
+ */
+function adminClient() {
+  return createAdminClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+    // Per-request, so nothing to persist or refresh.
+    { auth: { autoRefreshToken: false, persistSession: false } }
+  );
+}
 
 export async function POST(request: Request) {
   try {
@@ -45,286 +115,78 @@ export async function POST(request: Request) {
       return Response.json({ error: "Not authenticated." }, { status: 401 });
     }
 
-    const { data: profile } = await supabase
-      .from("profiles")
-      .select("role")
-      .eq("id", user.id)
-      .single();
-
-    if (profile?.role !== "manager") {
+    // Asked of the database rather than compared against a role string here, so
+    // this route and RLS cannot drift into disagreeing about who may do it.
+    const { data: isAdmin, error: adminError } = await supabase.rpc(
+      "has_permission",
+      { p_code: "team" }
+    );
+    if (adminError) {
+      return Response.json({ error: adminError.message }, { status: 502 });
+    }
+    if (isAdmin !== true) {
       return Response.json(
-        { error: "Road distance is available to managers only." },
+        { error: "Road distance is available to whoever manages the team." },
         { status: 403 }
       );
     }
 
     // After authz, so an anonymous caller learns nothing about the configuration.
-    const apiKey = process.env.GOOGLE_ROUTES_API_KEY;
-    if (!apiKey) {
-      return Response.json(
-        { error: "GOOGLE_ROUTES_API_KEY is not configured on the server." },
-        { status: 503 }
-      );
-    }
-
-    if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {
-      return Response.json(
-        { error: "SUPABASE_SERVICE_ROLE_KEY is not configured on the server." },
-        { status: 503 }
-      );
-    }
-
-    /**
-     * Settlement writes go through the service role. The caller's own client
-     * cannot make them.
-     *
-     * `road_distance_*` are deliberately not writable by anyone through RLS —
-     * the migration says so — because the Routes key is server-side and a handset
-     * offering a road distance would mean the key had reached a handset. A
-     * manager therefore has SELECT on `workday_sessions` and no UPDATE, which is
-     * correct and was exactly the hole this route fell into: every claim silently
-     * matched zero rows and every day was skipped as "someone else has it".
-     *
-     * Authorisation is still the caller's: `supabase` above proved a signed-in
-     * manager before this client is built, and this one is used only for the
-     * settlement columns.
-     */
-    const admin = createAdminClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.SUPABASE_SERVICE_ROLE_KEY,
-      // Per-request, so nothing to persist or refresh.
-      { auth: { autoRefreshToken: false, persistSession: false } }
-    );
+    const bad = missingConfig();
+    if (bad) return bad;
 
     const body = (await request.json().catch(() => ({}))) as {
       sessionId?: string;
     };
 
-    // Finished, not yet settled, and not already known to have failed — a day
-    // that could not be routed should not be retried on every run, billing the
-    // same failure repeatedly. Clearing `road_distance_error` re-queues it.
-    let query = admin
-      .from("workday_sessions")
-      .select("id, rep_id, started_at, ended_at")
-      .not("ended_at", "is", null)
-      .is("road_distance_at", null)
-      .is("road_distance_error", null)
-      .order("ended_at", { ascending: false })
-      .limit(MAX_SESSIONS);
-
-    if (body.sessionId) query = query.eq("id", body.sessionId);
-
-    const { data: sessions, error: sessionsError } = await query;
-    if (sessionsError) {
-      return Response.json({ error: sessionsError.message }, { status: 500 });
-    }
-    if (!sessions || sessions.length === 0) {
-      return Response.json({ settled: 0, requests: 0, days: [] });
-    }
-
-    /**
-     * Hands a claimed day back.
-     *
-     * Every path out of the loop that is not a successful write has to come
-     * through here. A claim left standing marks the day settled with no distance
-     * on it, and the eligibility filter — `road_distance_at is null` — then skips
-     * it forever: neither a figure nor a reason, and no way to notice.
-     */
-    const release = async (id: string, why: string | null): Promise<string | null> => {
-      const { error } = await admin
-        .from("workday_sessions")
-        .update({ road_distance_at: null, road_distance_error: why })
-        .eq("id", id);
-      // A release that fails leaves the claim standing, and the day is then
-      // invisible to every later run — the exact state releasing exists to
-      // prevent. Reported rather than swallowed, because only the original
-      // error would otherwise reach the caller and it would look recoverable.
-      return error ? error.message : null;
+    let refusal: Response | null = null;
+    // Fail closed: this is about to bill Google, and an endpoint that cannot
+    // count what it is spending should not spend it.
+    const charge: Budget = async (cost) => {
+      const gate = await enforceRateLimit(supabase, LIMITS.roadDistance, cost, {
+        failClosed: true,
+      });
+      if (gate.ok) return null;
+      refusal = gate.response;
+      // 503 is the limiter failing closed rather than the quota running out,
+      // and reporting the second when it was the first sends somebody looking
+      // for usage they have not spent.
+      return gate.response.status === 503
+        ? "Usage could not be counted, so this day was not routed."
+        : "Usage limit reached before this day was routed.";
     };
 
-    /** Combines the reason a day failed with a release that also failed. */
-    const withRelease = (why: string, releaseError: string | null) =>
-      releaseError
-        ? `${why} — and the day could not be released for a retry (${releaseError}); clear road_distance_at to re-queue it.`
-        : why;
-
-    const days: {
-      sessionId: string;
-      metres?: number;
-      requests?: number;
-      error?: string;
-    }[] = [];
-    let settled = 0;
-    let requests = 0;
-    let skipped = 0;
-
-    for (const session of sessions as {
-      id: string;
-      rep_id: string;
-      started_at: string;
-      ended_at: string;
-    }[]) {
-      /**
-       * Claim the day before spending anything on it.
-       *
-       * Two runs overlapping — a retry, a second tab, a cron beside a manual
-       * press — both select the same rows while `road_distance_at` is still
-       * null, and both pay Google to compute the same day. The claim is a
-       * conditional update: `is("road_distance_at", null)` makes it a
-       * compare-and-set, and PostgREST returning no rows means somebody else
-       * got there first.
-       *
-       * `road_distance_at` is stamped now and the metres filled in afterwards,
-       * so a crash mid-route leaves a claimed day with no distance. That is the
-       * deliberate trade — a day that has to be re-queued by hand is better than
-       * one billed twice — and clearing the timestamp re-queues it.
-       */
-      const { data: claimed, error: claimError } = await admin
-        .from("workday_sessions")
-        .update({ road_distance_at: new Date().toISOString() })
-        .eq("id", session.id)
-        .is("road_distance_at", null)
-        .select("id");
-
-      if (claimError) {
-        days.push({ sessionId: session.id, error: claimError.message });
-        continue;
-      }
-      if (!claimed || claimed.length === 0) {
-        // Almost always a concurrent run holding it, which is not an error — the
-        // other one records the outcome. But it is *reported* rather than skipped
-        // in silence, because "someone else has it" and "this client cannot write
-        // it at all" are indistinguishable from here, and the second looked
-        // exactly like a quiet success: settled 0, days [], no error, nothing to
-        // debug from.
-        skipped++;
-        continue;
-      }
-
-      // By session, not by rep and a time window. Every ping carries the session
-      // it belongs to (647 of 648 in production do), and a window can pick up a
-      // neighbouring session's pings where two overlap — which on this route
-      // means billing Google to route a day that includes somebody else's
-      // afternoon.
-      const { data: pingRows, error: pingError } = await admin
-        .from("location_pings")
-        .select("lat, lng, recorded_at")
-        .eq("workday_session_id", session.id)
-        .order("recorded_at", { ascending: true });
-
-      if (pingError) {
-        const rel = await release(session.id, pingError.message);
-        days.push({
-          sessionId: session.id,
-          error: withRelease(pingError.message, rel),
-        });
-        continue;
-      }
-
-      const pings: Ping[] = ((pingRows ?? []) as {
-        lat: number | null;
-        lng: number | null;
-        recorded_at: string;
-      }[])
-        // A ping missing either half is not a position; routing through 0,0
-        // would send the day via the Gulf of Guinea.
-        .filter((p) => p.lat !== null && p.lng !== null)
-        .map((p) => ({
-          lat: p.lat as number,
-          lng: p.lng as number,
-          recordedAt: p.recorded_at,
-        }));
-
-      try {
-        // Quota charged on the work actually about to happen, not a flat guess.
-        // Ten per session was wrong in both directions: a quiet day bills one
-        // request and was charged ten, and a long one produces eleven or more
-        // and was still charged ten — so a run could outspend its own ceiling.
-        const cost = batchForRouting(thinPings(pings)).length;
-        if (cost > 0) {
-          // Fail closed: this is about to bill Google, and an endpoint that
-          // cannot count what it is spending should not spend it.
-          const gate = await enforceRateLimit(
-            supabase,
-            LIMITS.roadDistance,
-            cost,
-            { failClosed: true }
-          );
-          if (!gate.ok) {
-            // Release the claim: this day was never routed and must not be left
-            // looking settled. If the release itself fails the day is stranded,
-            // and returning the plain 429 or 503 would hide that — the caller
-            // would retry and never see this session again.
-            const rel = await release(session.id, null);
-            if (rel) {
-              return Response.json(
-                {
-                  error: withRelease(
-                    "Usage limit reached before this day was routed.",
-                    rel
-                  ),
-                  settled,
-                  requests,
-                  days,
-                },
-                { status: 503 }
-              );
-            }
-            return gate.response;
-          }
-        }
-
-        const { metres, requests: used } = await computeDayRoadMetres(
-          pings,
-          apiKey
-        );
-        requests += used;
-
-        // A day with nothing to route is settled at zero rather than left
-        // pending forever — the rep opened a day and did not travel, which is a
-        // real answer. `road_distance_at` is what marks it done either way.
-        // `.select("id")` is what makes a lost write visible: a PostgREST update
-        // matching nothing succeeds with no error and no rows, so without
-        // checking the count this would report a settled day that holds no
-        // distance. Same guard, and the same lesson, as `applySpread`.
-        const { data: written, error: writeError } = await admin
-          .from("workday_sessions")
-          .update({
-            road_distance_meters: metres,
-            road_distance_at: new Date().toISOString(),
-            road_distance_error: null,
-          })
-          .eq("id", session.id)
-          .select("id");
-
-        const writeFailure =
-          writeError?.message ??
-          ((written?.length ?? 0) === 0
-            ? "The settled distance did not save — the day may have been changed while it was being routed."
-            : null);
-
-        if (writeFailure) {
-          const rel = await release(session.id, writeFailure);
-          days.push({
-            sessionId: session.id,
-            error: withRelease(writeFailure, rel),
-          });
-          continue;
-        }
-
-        settled++;
-        days.push({ sessionId: session.id, metres, requests: used });
-      } catch (reason) {
-        const message =
-          reason instanceof Error ? reason.message : "Could not route this day.";
-        // Recorded on the row, so the next run skips it and a person can see
-        // why rather than finding a permanently blank figure.
-        const rel = await release(session.id, message);
-        days.push({ sessionId: session.id, error: withRelease(message, rel) });
-      }
+    // The caller's own organisation, taken from their profile and never from
+    // the body. The service-role client below bypasses RLS, so without this a
+    // manager pressing the button would settle whichever days are oldest across
+    // every tenant — and pay for them out of their own quota.
+    const { data: profile, error: profileError } = await supabase
+      .from("profiles")
+      .select("org_id")
+      .eq("id", user.id)
+      .single();
+    if (profileError || !profile) {
+      return Response.json(
+        { error: profileError?.message ?? "Your account is incomplete." },
+        { status: 403 }
+      );
     }
 
-    return Response.json({ settled, requests, skipped, days });
+    const result = await settleRoadDistance({
+      admin: adminClient(),
+      apiKey: process.env.GOOGLE_ROUTES_API_KEY!,
+      charge,
+      sessionId: body.sessionId,
+      orgId: (profile as { org_id: string }).org_id,
+    });
+
+    // The rate limiter's own 429 or 503 is the right answer only when nothing
+    // was settled. Once days have been written, the caller needs to know which,
+    // so the partial result carries the reason it stopped instead.
+    if (refusal && result.settled === 0 && result.days.length === 0) {
+      return refusal;
+    }
+    return Response.json(result);
   } catch (reason) {
     const message =
       reason instanceof Error
@@ -332,4 +194,77 @@ export async function POST(request: Request) {
         : "Unexpected error computing road distance.";
     return Response.json({ error: message }, { status: 500 });
   }
+}
+
+/**
+ * The nightly run.
+ *
+ * Vercel Cron issues a GET carrying `Authorization: Bearer $CRON_SECRET`. The
+ * comparison is length-safe and constant-ish rather than `===` on purpose:
+ * this is the only credential on the endpoint, and it guards a button that
+ * spends money.
+ *
+ * With no `CRON_SECRET` configured the route refuses rather than running
+ * unauthenticated — an open endpoint that bills Google per request is the one
+ * failure mode worth being loud about.
+ */
+export async function GET(request: Request) {
+  const secret = process.env.CRON_SECRET;
+  if (!secret) {
+    return Response.json(
+      { error: "CRON_SECRET is not configured on the server." },
+      { status: 503 }
+    );
+  }
+  if (!matches(request.headers.get("authorization") ?? "", `Bearer ${secret}`)) {
+    return Response.json({ error: "Not authorised." }, { status: 401 });
+  }
+
+  const bad = missingConfig();
+  if (bad) return bad;
+
+  try {
+    let spent = 0;
+    const charge: Budget = async (cost) => {
+      if (spent + cost > MAX_CRON_REQUESTS) {
+        return `This run reached its ceiling of ${MAX_CRON_REQUESTS} Routes requests. The days left over are settled by the next run.`;
+      }
+      spent += cost;
+      return null;
+    };
+
+    const result = await settleRoadDistance({
+      admin: adminClient(),
+      apiKey: process.env.GOOGLE_ROUTES_API_KEY!,
+      charge,
+    });
+    // Logged as well as returned: nobody reads a cron's response body, and a
+    // night where every day failed should leave a trace in the platform log.
+    console.info(
+      `[road-distance] nightly run settled ${result.settled}, ${result.requests} requests, ${result.days.filter((d) => d.error).length} failed`
+    );
+    return Response.json(result);
+  } catch (reason) {
+    const message =
+      reason instanceof Error
+        ? reason.message
+        : "Unexpected error computing road distance.";
+    console.error(`[road-distance] nightly run failed: ${message}`);
+    return Response.json({ error: message }, { status: 500 });
+  }
+}
+
+/**
+ * Constant-time compare, so the secret cannot be guessed byte by byte.
+ *
+ * Node's own, over UTF-8 bytes. The hand-rolled version this replaces walked
+ * UTF-16 code units, which is not the same thing for a non-ASCII secret, and
+ * `timingSafeEqual` throws on a length mismatch — so the lengths are compared
+ * first and that much does leak. It leaks the length of a random secret, which
+ * is not the part worth protecting.
+ */
+function matches(offered: string, expected: string): boolean {
+  const a = Buffer.from(offered, "utf8");
+  const b = Buffer.from(expected, "utf8");
+  return a.length === b.length && timingSafeEqual(a, b);
 }

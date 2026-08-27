@@ -21,6 +21,34 @@ export function toLocalDateInput(d: Date): string {
   return `${y}-${m}-${day}`;
 }
 
+/**
+ * A stored timestamp as local date and time, for a spreadsheet cell.
+ *
+ * `iso.replace("T", " ").slice(0, 16)` looks like the same thing and is not: it
+ * hands over the UTC clock while every table on screen shows local. Two hours
+ * ahead of UTC that is not a cosmetic difference — a rep who checked in at
+ * 01:30 on Tuesday exports as 23:30 on **Monday**, on the one column somebody
+ * would use to argue about a working day.
+ *
+ * Sortable rather than pretty: `2026-08-27 14:05` sorts correctly as text in
+ * every spreadsheet, and "27 Aug 2026, 2:05 pm" does not.
+ */
+export function toLocalDateTime(iso: string | null | undefined): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (Number.isNaN(+d)) return "";
+  const hh = String(d.getHours()).padStart(2, "0");
+  const mm = String(d.getMinutes()).padStart(2, "0");
+  return `${toLocalDateInput(d)} ${hh}:${mm}`;
+}
+
+/** The local calendar date of a stored timestamp. Same trap, same reasoning. */
+export function toLocalDate(iso: string | null | undefined): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  return Number.isNaN(+d) ? "" : toLocalDateInput(d);
+}
+
 /** Parses a `YYYY-MM-DD` input value as local midnight, not UTC midnight. */
 export function fromLocalDateInput(value: string): Date {
   const [y, m, d] = value.split("-").map(Number);

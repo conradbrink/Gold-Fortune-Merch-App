@@ -36,6 +36,9 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { ImportStoresButton } from "@/components/stores/import-dialog";
+import { toLocalDate } from "@/lib/date-range";
+import { ExportMenu } from "@/components/export-menu";
+import type { ExportSheet } from "@/lib/export";
 import {
   findSharedPoints,
   geocodeState,
@@ -632,6 +635,54 @@ export default function StoresPage() {
         .includes(search.toLowerCase())
     );
 
+  /** The visible list, as a spreadsheet. Same rows, same order, same filters. */
+  function buildStoreSheet(): ExportSheet {
+    const applied = [
+      groupFilter !== "all" ? `Group: ${groupName(groupFilter === "none" ? null : groupFilter)}` : null,
+      cityFilter !== "all"
+        ? `Town: ${cityFilter === "none" ? "not recorded" : cityFilter}`
+        : null,
+      provFilter !== "all" ? `Location quality: ${provFilter}` : null,
+      search.trim() ? `Search: ${search.trim()}` : null,
+    ].filter((line): line is string => line !== null);
+
+    return {
+      title: "Stores",
+      orgName: "Gold Fortune Merchandising",
+      context: [
+        `${filtered.length} of ${stores.length} stores`,
+        ...(applied.length > 0 ? applied : ["No filters applied"]),
+      ],
+      filename: "gf-stores",
+      columns: [
+        { header: "Store", key: "name" },
+        { header: "Group", key: "group" },
+        { header: "Address", key: "address" },
+        { header: "Town", key: "city" },
+        { header: "Region", key: "state" },
+        { header: "Code", key: "code" },
+        { header: "Call cycle", key: "frequency" },
+        { header: "Responsible", key: "reps" },
+        { header: "Last visited", key: "lastVisit" },
+        { header: "Active", key: "active" },
+      ],
+      rows: filtered.map((store) => ({
+        name: store.name,
+        group: groupName(store.store_group_id),
+        address: store.address ?? "",
+        city: store.city ?? "",
+        state: store.state ?? "",
+        code: store.place_code ?? "",
+        frequency: store.visit_frequency,
+        reps: (assignedByStore[store.id] ?? []).map((a) => a.name).join(", "),
+        // The date only. A store visited three weeks ago and one visited never
+        // are different answers, and a blank cell says neither.
+        lastVisit: toLocalDate(lastVisits[store.id]) || "never",
+        active: store.active ? "Yes" : "No",
+      })),
+    };
+  }
+
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -762,6 +813,11 @@ export default function StoresPage() {
           )}
         </Button>
         <ImportStoresButton onImported={loadData} />
+        {/* Exports what is on screen, filters and all — the estate is 230
+            outlets and "all of them" is rarely the list somebody wants to hand
+            over. The file says which filters produced it, so a colleague
+            receiving it can tell a Gaborone-only list from the whole book. */}
+        <ExportMenu build={buildStoreSheet} disabled={loading} label="Export" />
         <Button
           variant="outline"
           size="sm"

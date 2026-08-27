@@ -18,6 +18,7 @@ import { DayBoard } from "@/components/schedule/day-board";
 import { createClient } from "@/lib/supabase/client";
 import { toLocalDateInput } from "@/lib/date-range";
 import { fetchOrgId } from "@/lib/representatives";
+import { StorePicker } from "@/components/stores/store-picker";
 import { addStop, fetchDayBoard, type DayRep } from "@/lib/schedule";
 
 /**
@@ -280,21 +281,17 @@ export default function SchedulePage() {
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="stop-store">Store</Label>
-              <NativeSelect
+              {/* Searchable rather than a dropdown of 230. Finding one outlet
+                  meant scrolling the estate in alphabetical order, on the one
+                  screen where somebody is usually working from a name a rep has
+                  just said to them over the phone. */}
+              <StorePicker
                 id="stop-store"
+                stores={stores}
                 value={form.storeId}
-                onChange={(e) => setForm({ ...form, storeId: e.target.value })}
-              >
-                <option value="" disabled>
-                  Select a store
-                </option>
-                {stores.map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.name}
-                    {s.city ? ` — ${s.city}` : ""}
-                  </option>
-                ))}
-              </NativeSelect>
+                onChange={(storeId) => setForm({ ...form, storeId })}
+                placeholder="Search stores…"
+              />
             </div>
           </div>
           <DialogFooter>
