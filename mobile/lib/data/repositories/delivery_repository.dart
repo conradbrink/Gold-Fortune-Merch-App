@@ -59,12 +59,17 @@ lines:dispatch_lines(qty)
   /// deliveries and one outstanding would have been badged zero — the one case
   /// the badge exists for. A head count with the status in the filter cannot
   /// be wrong that way, and it rides the partial index.
-  Future<int> outstandingCount() async {
-    final rows = await _client
+  Future<int> outstandingCount() {
+    // `.count()` straight off the filtered builder is a head request — the
+    // number and no rows. `select('id').count()` transfers every matching id
+    // to produce one integer, over a connection this app treats as expensive
+    // everywhere else.
+    // `count()` returns a filter builder, so the filter chains *after* it —
+    // the reverse of a select. The request is head-only: the number and no
+    // rows, over a connection this app treats as expensive everywhere else.
+    return _client
         .from('dispatches')
-        .select('id')
-        .eq('status', 'in_transit')
-        .count(CountOption.exact);
-    return rows.count;
+        .count(CountOption.exact)
+        .eq('status', 'in_transit');
   }
 }

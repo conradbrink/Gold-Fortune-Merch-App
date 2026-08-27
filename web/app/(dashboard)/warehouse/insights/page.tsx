@@ -132,7 +132,9 @@ export default function WarehouseInsightsPage() {
   function buildPerformanceSheet(): ExportSheet {
     const grouping = GROUPINGS.find((g) => g.value === groupBy);
     return {
-      title: `Fulfilment performance by ${grouping?.label.toLowerCase() ?? groupBy}`,
+      // The labels already read "By staff member", so prefixing another "by"
+      // titled the file "Fulfilment performance by by staff member".
+      title: `Fulfilment performance — ${grouping?.label ?? groupBy}`,
       orgName: "Gold Fortune Merchandising",
       context: [
         PERIODS.find((p) => p.days === days)?.label ?? `Last ${days} days`,

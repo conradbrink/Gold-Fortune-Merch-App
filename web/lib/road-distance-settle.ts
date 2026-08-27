@@ -102,7 +102,7 @@ export async function settleRoadDistance({
       ...(sessionId
         ? {
             stopped:
-              "That day is not waiting to be settled — it is still open, already has a distance, or failed before. Clearing road_distance_at re-queues it.",
+              "That day is not waiting to be settled — it is still open, already has a distance, or failed before. Clear road_distance_at and road_distance_error to re-queue it; the eligibility filter requires both to be null.",
           }
         : {}),
     };

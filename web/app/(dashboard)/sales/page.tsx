@@ -94,7 +94,10 @@ export default function SalesPage() {
       (scopePeriod
         ? sales.filter((s) => {
             const t = new Date(s.deliveredAt).getTime();
-            return t >= scopePeriod.from.getTime() && t <= scopePeriod.to.getTime();
+            // Half-open, matching the export below and `within()` in lib/sales.
+            // An inclusive end put a delivery exactly on the boundary on screen
+            // and left it out of the file.
+            return t >= scopePeriod.from.getTime() && t < scopePeriod.to.getTime();
           })
         : sales
       ).slice(0, 25),

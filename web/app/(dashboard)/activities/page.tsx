@@ -47,6 +47,17 @@ const PAGE_SIZE = 50;
 
 type Option = { id: string; label: string };
 
+/**
+ * The day before an exclusive end, as a calendar operation rather than a
+ * subtraction of 86,400,000 milliseconds — a day is not always that many, and
+ * across a daylight-saving boundary the subtraction lands on the wrong date.
+ */
+function dayBefore(exclusiveEnd: Date): Date {
+  const d = new Date(exclusiveEnd);
+  d.setDate(d.getDate() - 1);
+  return d;
+}
+
 function formatWhen(iso: string) {
   const d = new Date(iso);
   return {
@@ -185,7 +196,7 @@ export default function ActivitiesPage() {
       title: onlyFlagged ? "Location discrepancies" : "Activities",
       orgName: "Gold Fortune Merchandising",
       context: [
-        `${toLocalDateInput(range.from)} to ${toLocalDateInput(new Date(+range.to - 86_400_000))}`,
+        `${toLocalDateInput(range.from)} to ${toLocalDateInput(dayBefore(range.to))}`,
         repId !== "all"
           ? `Rep: ${reps.find((r) => r.id === repId)?.label ?? repId}`
           : "All reps",

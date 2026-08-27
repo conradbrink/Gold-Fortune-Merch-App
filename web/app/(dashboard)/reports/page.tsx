@@ -49,6 +49,20 @@ import {
   type TrendPointRow,
 } from "@/lib/reports";
 
+/**
+ * The day before an exclusive end, as a calendar operation.
+ *
+ * `new Date(+to - 86_400_000)` is a day of milliseconds, and a day is not
+ * always 86,400,000 of them — across a daylight-saving boundary it lands on the
+ * wrong date. Botswana keeps no daylight saving, so this cannot bite here and
+ * is written properly anyway: the next tenant is the one it would bite.
+ */
+function dayBefore(exclusiveEnd: Date): Date {
+  const d = new Date(exclusiveEnd);
+  d.setDate(d.getDate() - 1);
+  return d;
+}
+
 type Rep = { id: string; full_name: string | null };
 type Store = { id: string; name: string; city: string | null };
 
@@ -74,6 +88,16 @@ export default function ReportsPage() {
    */
   const [range, setRange] = useState<DateRange>(() => rangeForPreset("30d"));
   const [tab, setTab] = useState<ReportTab>("score");
+  /**
+   * Whether the URL has been read yet.
+   *
+   * `load` must not fire before it has. Both effects run in the same flush, so
+   * the default 30-day request and the URL's request would be in the air
+   * together — and whichever *returned* last would win, which is not
+   * necessarily the one the link asked for. A dashboard tile could then land on
+   * its own range and quietly show, and export, the default.
+   */
+  const [urlRead, setUrlRead] = useState(false);
 
   //
   // `set-state-in-effect` is suppressed rather than satisfied, and it is worth
@@ -86,6 +110,9 @@ export default function ReportsPage() {
   //
   /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
+    // Mount only: the pickers own both from here, and re-reading the URL after
+    // the user has changed one would put it back.
+    setUrlRead(true);
     const q = new URLSearchParams(window.location.search);
     const asked = q.get("tab") ?? "";
     if (TABS.some((t) => t.value === asked)) setTab(asked as ReportTab);
@@ -98,8 +125,6 @@ export default function ReportsPage() {
     // below turns into a 400 the page reports as its own failure.
     if (Number.isNaN(+parsed.from) || Number.isNaN(+parsed.to)) return;
     setRange(parsed);
-    // Mount only: the pickers own both from here, and re-reading the URL after
-    // the user has changed one would put it back.
   }, []);
   /* eslint-enable react-hooks/set-state-in-effect */
   const [templates, setTemplates] = useState<FormTemplate[]>([]);
@@ -184,8 +209,9 @@ export default function ReportsPage() {
   }, [range, templateId, repId, storeId]);
 
   useEffect(() => {
+    if (!urlRead) return;
     load();
-  }, [load]);
+  }, [load, urlRead]);
 
   const photoGroups = useMemo(
     () =>
@@ -221,13 +247,26 @@ export default function ReportsPage() {
    * saying so.
    */
   function sheetForTab(): ExportSheet | null {
+    // 🔴 The rep, store and form pickers filter **only** the Form report —
+    // every other query on this page takes the date range and nothing else. A
+    // Coverage export headed "Rep: Jerry Habana" would therefore have been a
+    // lie about rows covering the whole estate, which is worse than a file with
+    // no context at all: this one reads as evidence.
+    const formFilters =
+      tab === "form"
+        ? [
+            repId ? `Rep: ${reps.find((r) => r.id === repId)?.full_name ?? repId}` : null,
+            storeId
+              ? `Store: ${stores.find((st) => st.id === storeId)?.name ?? storeId}`
+              : null,
+            templateId
+              ? `Form: ${templates.find((t) => t.id === templateId)?.name ?? templateId}`
+              : null,
+          ]
+        : [];
     const context = [
-      `${toLocalDateInput(range.from)} to ${toLocalDateInput(new Date(+range.to - 86_400_000))}`,
-      repId ? `Rep: ${reps.find((r) => r.id === repId)?.full_name ?? repId}` : null,
-      storeId ? `Store: ${stores.find((st) => st.id === storeId)?.name ?? storeId}` : null,
-      templateId
-        ? `Form: ${templates.find((t) => t.id === templateId)?.name ?? templateId}`
-        : null,
+      `${toLocalDateInput(range.from)} to ${toLocalDateInput(dayBefore(range.to))}`,
+      ...formFilters,
     ].filter((line): line is string => line !== null);
 
     const base = { context, orgName: "Gold Fortune Merchandising" };

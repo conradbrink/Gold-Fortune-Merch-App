@@ -67,6 +67,18 @@ export function StorePicker({
   const boxRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLUListElement>(null);
+  /**
+   * Whether an input method is mid-composition.
+   *
+   * Typing a name in a language that needs an IME ends each candidate with
+   * Enter, and that Enter would otherwise pick whatever the list is currently
+   * highlighting — before the word being typed had even been entered. The
+   * ref rather than state because it is read inside a keydown and changing it
+   * must not re-render. Safari clears `isComposing` before the confirming
+   * Enter arrives, so the flag is held until the next keystroke rather than
+   * cleared on `compositionend`.
+   */
+  const composing = useRef(false);
   // Stable across renders and unique per instance, so two pickers on one page
   // do not point their `aria-controls` at each other.
   const listId = useId();
@@ -184,7 +196,19 @@ export function StorePicker({
                 // render for something the keystroke already knows.
                 setActive(0);
               }}
+              onCompositionStart={() => {
+                composing.current = true;
+              }}
+              onCompositionEnd={() => {
+                // Left set: the Enter that confirms the composition has not
+                // arrived yet in every browser. The handler below clears it.
+              }}
               onKeyDown={(e) => {
+                if (e.key === "Enter" && (e.nativeEvent.isComposing || composing.current)) {
+                  composing.current = false;
+                  return;
+                }
+                if (e.key !== "Enter") composing.current = false;
                 if (e.key === "Escape") {
                   setOpen(false);
                   setTerm("");
