@@ -40,6 +40,69 @@ export type FieldReport = {
   stats: NumberStats | BooleanStats | ChoiceStats | PhotoStats | TextStats | null;
 };
 
+/**
+ * One form field's aggregate as a line of prose, for an export cell.
+ *
+ * Exists because the export used to write `JSON.stringify(field.stats)` into
+ * the Summary column, which put `{"recent":[{"text":"None","submitted_at":
+ * "2026-08-27T16:50:42.562945+00:00"}]}` in front of whoever opened the file.
+ * It also wrecked the PDF: autoTable sizes columns by content, so a 400-
+ * character cell took the whole page width and broke "Question", "Type" and
+ * "Answers" mid-word in the header.
+ *
+ * The on-screen version of this is `FieldReportCard`, which draws charts. This
+ * is the same information for a medium that has no charts, and the two are
+ * deliberately separate — a component that returned both JSX and a string
+ * would serve neither well.
+ */
+export function summariseFieldStats(field: FieldReport): string {
+  const { field_type, stats, response_count } = field;
+  if (!stats || response_count === 0) return "No answers";
+
+  switch (field_type) {
+    case "number": {
+      const s = stats as NumberStats;
+      const n = (v: number | null) => (v === null || v === undefined ? "—" : String(Number(v)));
+      return `min ${n(s.min)} · avg ${n(s.avg)} · max ${n(s.max)} · total ${n(s.sum)}`;
+    }
+    case "boolean": {
+      const s = stats as BooleanStats;
+      const yes = Number(s.yes ?? 0);
+      const no = Number(s.no ?? 0);
+      const total = yes + no;
+      if (total === 0) return "No answers";
+      const pct = (v: number) => `${Math.round((v / total) * 100)}%`;
+      return `Yes ${yes} (${pct(yes)}) · No ${no} (${pct(no)})`;
+    }
+    case "multiple_choice": {
+      const s = stats as ChoiceStats;
+      const options = s.options ?? [];
+      if (options.length === 0) return "No answers";
+      // Zero-count options are kept for the same reason the chart keeps them:
+      // "nobody ever picks Top shelf" is the finding.
+      return options.map((o) => `${o.option} ${o.count}`).join(" · ");
+    }
+    case "photo": {
+      const s = stats as PhotoStats;
+      const count = Number(s.count ?? 0);
+      return `${count} photo${count === 1 ? "" : "s"}`;
+    }
+    case "text": {
+      const s = stats as TextStats;
+      const recent = s.recent ?? [];
+      if (recent.length === 0) return "No answers";
+      // Newlines are flattened: a rep's multi-line list of out-of-stock SKUs
+      // would otherwise blow a table row open in the PDF and break the CSV.
+      return recent
+        .map((r) => r.text.replace(/\s+/g, " ").trim())
+        .filter(Boolean)
+        .join(" | ");
+    }
+    default:
+      return "";
+  }
+}
+
 export type CoverageGap = {
   store_id: string;
   store_name: string;

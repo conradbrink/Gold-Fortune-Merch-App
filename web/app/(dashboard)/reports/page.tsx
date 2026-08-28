@@ -38,6 +38,7 @@ import {
   fetchOosHotspots,
   fetchScheduleAdherence,
   formatRate,
+  summariseFieldStats,
   type Adherence,
   type CoverageGap,
   type FieldReport,
@@ -450,7 +451,7 @@ export default function ReportsPage() {
             label: f.label,
             type: f.field_type,
             answers: f.response_count,
-            summary: JSON.stringify(f.stats ?? {}),
+            summary: summariseFieldStats(f),
           })),
         };
       default:
