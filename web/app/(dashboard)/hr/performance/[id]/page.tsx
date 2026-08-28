@@ -23,6 +23,7 @@ import {
   saveEmployeeComments,
   saveRating,
   saveReviewNarrative,
+  templateName,
   type ReviewRow,
 } from "@/lib/hr/performance";
 import {
@@ -103,9 +104,13 @@ export default function ReviewPage() {
 
   useHrLoad(load);
 
+  // The review's own scorecard, not the organisation's whole category list.
+  // `template_id` was stamped when the review was created and is never
+  // re-resolved, so moving somebody to another department does not retrospectively
+  // change what their last manager reviewed them on.
   const categories = useMemo(
-    () => activeCategories(reference?.reviewCategories ?? []),
-    [reference]
+    () => activeCategories(reference?.reviewCategories ?? [], review?.template_id),
+    [reference, review?.template_id]
   );
   const scaleMax = reference?.settings?.rating_scale_max ?? 5;
   const ratingMap = useMemo(
@@ -274,8 +279,11 @@ export default function ReviewPage() {
 
       <Card>
         <CardContent className="p-5">
-          <dl className="grid gap-3 sm:grid-cols-4">
+          <dl className="grid gap-3 sm:grid-cols-5">
             <Detail label="Reviewer">{review.reviewer?.full_name ?? "—"}</Detail>
+            <Detail label="Scorecard">
+              {templateName(reference?.reviewTemplates ?? [], review.template_id)}
+            </Detail>
             <Detail label="Review date">{formatDateOnly(review.review_date)}</Detail>
             <Detail label="Period">
               {formatDateOnly(review.period_start)} — {formatDateOnly(review.period_end)}
@@ -295,15 +303,21 @@ export default function ReviewPage() {
 
       <Card>
         <CardContent className="space-y-4 p-5">
-          <div className="flex items-baseline justify-between">
-            <h2 className="text-sm font-semibold">Categories</h2>
+          <div className="flex items-baseline justify-between gap-3">
+            <h2 className="text-sm font-semibold">
+              {templateName(reference?.reviewTemplates ?? [], review.template_id)}
+            </h2>
             <p className="text-xs text-muted-foreground">
               1 = {RATING_LABELS[0]} · {scaleMax} = {RATING_LABELS[RATING_LABELS.length - 1]}
             </p>
           </div>
           {categories.length === 0 ? (
+            // Two different problems, and telling somebody the wrong one sends
+            // them to the wrong screen.
             <p className="text-sm text-muted-foreground">
-              No review categories are configured.
+              {review.template_id
+                ? "This scorecard has no active categories. Add them in Settings → Performance."
+                : "This review has no scorecard. Assign one to the employee\u2019s department in Settings → Performance."}
             </p>
           ) : (
             <ul className="space-y-3">

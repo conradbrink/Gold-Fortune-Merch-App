@@ -32,11 +32,14 @@ import {
   saveLeaveType,
   saveLookup,
   saveReviewCategory,
+  saveReviewTemplate,
   saveSettings,
+  setDepartmentTemplate,
   WEEKDAYS,
   type HrReference,
   type SettingsInput,
 } from "@/lib/hr/settings";
+import { activeTemplates, categoriesOfTemplate } from "@/lib/hr/performance";
 import { REVIEW_PERIOD_LABELS } from "@/lib/hr/types";
 
 /**
@@ -76,6 +79,12 @@ export default function HrSettingsPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState<string | null>(null);
+  // Which scorecard's categories the Performance tab is showing. Held as "" and
+  // resolved against the loaded list below rather than seeded in an effect once
+  // the reference data arrives — an effect that sets state from state is the
+  // pattern `use-load.ts` exists to keep out of this module.
+  const [templateId, setTemplateId] = useState("");
+  const [newTemplate, setNewTemplate] = useState("");
 
   const load = useCallback(async () => {
     setError(null);
@@ -143,6 +152,16 @@ export default function HrSettingsPage() {
       <div className="h-64 animate-pulse rounded-lg bg-muted/50" />
     );
   }
+
+  // The scorecard on screen: whatever HR picked, else the first one there is.
+  // Falls back rather than persisting a choice, so deleting or retiring the
+  // selected scorecard cannot leave the tab pointing at nothing.
+  const selectedTemplate =
+    reference.reviewTemplates.find((t) => t.id === templateId)?.id ??
+    reference.reviewTemplates[0]?.id ??
+    "";
+  const current =
+    reference.reviewTemplates.find((t) => t.id === selectedTemplate) ?? null;
 
   return (
     <div className="space-y-4">
@@ -501,16 +520,124 @@ export default function HrSettingsPage() {
             </CardContent>
           </Card>
 
-          <EditableList
-            rows={reference.reviewCategories.map((c) => ({
-              id: c.id,
-              label: c.name,
-              code: "",
-              active: c.active,
-              extra:
-                Number(c.weight) === 1 ? "" : `weighted ×${Number(c.weight)}`,
-            }))}
+          <ScorecardAssignment
+            reference={reference}
             editable={isHr}
+            busy={busy}
+            onAssign={(departmentId, templateId) =>
+              persist(
+                () => setDepartmentTemplate(supabase, departmentId, templateId),
+                "Scorecard assigned."
+              )
+            }
+          />
+
+          <Card>
+            <CardContent className="space-y-3 p-5">
+              <div>
+                <h2 className="text-sm font-semibold">Scorecards</h2>
+                <p className="text-xs text-muted-foreground">
+                  A scorecard is the set of things one kind of job is rated on.
+                  Pick one to edit its categories.
+                </p>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <NativeSelect
+                  className="w-[16rem]"
+                  value={selectedTemplate}
+                  onChange={(e) => setTemplateId(e.target.value)}
+                >
+                  {reference.reviewTemplates.length === 0 && (
+                    <option value="">No scorecards yet</option>
+                  )}
+                  {reference.reviewTemplates.map((t) => (
+                    <option key={t.id} value={t.id}>
+                      {t.name}
+                      {t.active ? "" : " (retired)"}
+                    </option>
+                  ))}
+                </NativeSelect>
+                {isHr && (
+                  <>
+                    <Input
+                      className="max-w-xs"
+                      placeholder="Add a scorecard"
+                      value={newTemplate}
+                      onChange={(e) => setNewTemplate(e.target.value)}
+                    />
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={busy || !newTemplate.trim()}
+                      onClick={() =>
+                        persist(async () => {
+                          if (!orgId) throw new Error("No organisation.");
+                          await saveReviewTemplate(supabase, orgId, {
+                            name: newTemplate.trim(),
+                            description: null,
+                            active: true,
+                            sort_order:
+                              (reference.reviewTemplates.at(-1)?.sort_order ?? 0) + 10,
+                          });
+                          setNewTemplate("");
+                        }, "Scorecard added.")
+                      }
+                    >
+                      <Plus className="mr-1.5 h-4 w-4" /> Add
+                    </Button>
+                  </>
+                )}
+              </div>
+              {current && (
+                <div className="flex flex-wrap items-center gap-3">
+                  {current.description && (
+                    <p className="text-xs text-muted-foreground">
+                      {current.description}
+                    </p>
+                  )}
+                  {isHr && (
+                    <label className="flex items-center gap-2 text-xs text-muted-foreground">
+                      <Checkbox
+                        checked={current.active}
+                        onCheckedChange={(checked) =>
+                          persist(async () => {
+                            if (!orgId) throw new Error("No organisation.");
+                            await saveReviewTemplate(supabase, orgId, {
+                              id: current.id,
+                              name: current.name,
+                              description: current.description,
+                              active: Boolean(checked),
+                              sort_order: current.sort_order,
+                            });
+                          }, checked ? "Scorecard enabled." : "Scorecard retired.")
+                        }
+                      />
+                      In use
+                    </label>
+                  )}
+                </div>
+              )}
+              {!current?.active && current && (
+                <p className="text-xs text-muted-foreground">
+                  Retired. Reviews already written against it keep their
+                  categories and scores; no new review can be started on it.
+                </p>
+              )}
+            </CardContent>
+          </Card>
+
+          <EditableList
+            rows={categoriesOfTemplate(reference.reviewCategories, selectedTemplate).map(
+              (c) => ({
+                id: c.id,
+                label: c.name,
+                code: "",
+                active: c.active,
+                extra:
+                  Number(c.weight) === 1 ? "" : `weighted ×${Number(c.weight)}`,
+              })
+            )}
+            editable={isHr && Boolean(selectedTemplate)}
             addLabel="Add a category"
             onToggle={(row, active) =>
               persist(async () => {
@@ -518,6 +645,7 @@ export default function HrSettingsPage() {
                 const c = reference.reviewCategories.find((x) => x.id === row.id)!;
                 await saveReviewCategory(supabase, orgId, {
                   id: c.id,
+                  template_id: c.template_id,
                   name: c.name,
                   description: c.description,
                   weight: Number(c.weight),
@@ -529,13 +657,18 @@ export default function HrSettingsPage() {
             onAdd={(label) =>
               persist(async () => {
                 if (!orgId) throw new Error("No organisation.");
+                if (!selectedTemplate) throw new Error("Add a scorecard first.");
+                const existing = categoriesOfTemplate(
+                  reference.reviewCategories,
+                  selectedTemplate
+                );
                 await saveReviewCategory(supabase, orgId, {
+                  template_id: selectedTemplate,
                   name: label,
                   description: null,
                   weight: 1,
                   active: true,
-                  sort_order:
-                    (reference.reviewCategories.at(-1)?.sort_order ?? 0) + 10,
+                  sort_order: (existing.at(-1)?.sort_order ?? 0) + 10,
                 });
               }, "Category added.")
             }
@@ -711,6 +844,118 @@ function EditableList({
           </div>
         )}
         {children}
+      </CardContent>
+    </Card>
+  );
+}
+
+/**
+ * Which scorecard each department's people are reviewed on.
+ *
+ * This table is the whole answer to "why is the warehouse clerk being asked
+ * about shelf facings": the review form follows the employee's department, and
+ * before this existed there was only one set of categories for the entire
+ * company.
+ *
+ * A department left unassigned is shown as a problem rather than defaulted.
+ * Falling back to some organisation-wide scorecard would let a review be
+ * written against criteria nobody chose for that job — which is the failure
+ * being fixed, restated one level up.
+ *
+ * Retired scorecards are offered only where one is already assigned, so an
+ * existing assignment stays visible and correctable instead of silently
+ * reading as "None".
+ */
+function ScorecardAssignment({
+  reference,
+  editable,
+  busy,
+  onAssign,
+}: {
+  reference: HrReference;
+  editable: boolean;
+  busy: boolean;
+  onAssign: (departmentId: string, templateId: string | null) => void;
+}) {
+  const choices = activeTemplates(reference.reviewTemplates);
+  const departments = reference.departments.filter((d) => d.active);
+  const unassigned = departments.filter((d) => !d.review_template_id).length;
+
+  return (
+    <Card>
+      <CardContent className="space-y-3 px-0 pb-4">
+        <div className="space-y-1 px-5 pt-1">
+          <h2 className="text-sm font-semibold">Who is reviewed on what</h2>
+          <p className="text-xs text-muted-foreground">
+            Each department&rsquo;s people are reviewed on its scorecard. One
+            person can be moved to a different one on their employee record.
+          </p>
+        </div>
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Department</TableHead>
+              <TableHead>Scorecard</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {departments.length === 0 ? (
+              <TableRow>
+                <TableCell colSpan={2} className="py-6 text-center text-sm text-muted-foreground">
+                  No departments configured.
+                </TableCell>
+              </TableRow>
+            ) : (
+              departments.map((d) => {
+                const assigned = reference.reviewTemplates.find(
+                  (t) => t.id === d.review_template_id
+                );
+                return (
+                  <TableRow key={d.id}>
+                    <TableCell className="font-medium">{d.name}</TableCell>
+                    <TableCell>
+                      {editable ? (
+                        <NativeSelect
+                          className="w-[16rem]"
+                          disabled={busy}
+                          value={d.review_template_id ?? ""}
+                          onChange={(e) =>
+                            onAssign(d.id, e.target.value || null)
+                          }
+                        >
+                          <option value="">None — reviews cannot be started</option>
+                          {choices.map((t) => (
+                            <option key={t.id} value={t.id}>
+                              {t.name}
+                            </option>
+                          ))}
+                          {assigned && !assigned.active && (
+                            <option value={assigned.id}>
+                              {assigned.name} (retired)
+                            </option>
+                          )}
+                        </NativeSelect>
+                      ) : assigned ? (
+                        <span className="text-sm text-muted-foreground">
+                          {assigned.name}
+                        </span>
+                      ) : (
+                        <span className="text-sm text-destructive">None</span>
+                      )}
+                    </TableCell>
+                  </TableRow>
+                );
+              })
+            )}
+          </TableBody>
+        </Table>
+        {unassigned > 0 && (
+          <p className="px-5 text-xs text-destructive">
+            {unassigned === 1
+              ? "One department has no scorecard. Nobody in it can be reviewed until it does."
+              : `${unassigned} departments have no scorecard. Nobody in them can be reviewed until they do.`}
+          </p>
+        )}
       </CardContent>
     </Card>
   );

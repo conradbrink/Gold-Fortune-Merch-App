@@ -3815,6 +3815,7 @@ export type Database = {
           id: string
           name: string
           org_id: string
+          review_template_id: string | null
           sort_order: number
           updated_at: string
         }
@@ -3826,6 +3827,7 @@ export type Database = {
           id?: string
           name: string
           org_id: string
+          review_template_id?: string | null
           sort_order?: number
           updated_at?: string
         }
@@ -3837,10 +3839,18 @@ export type Database = {
           id?: string
           name?: string
           org_id?: string
+          review_template_id?: string | null
           sort_order?: number
           updated_at?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "hr_departments_review_template_fk"
+            columns: ["review_template_id", "org_id"]
+            isOneToOne: false
+            referencedRelation: "hr_review_templates"
+            referencedColumns: ["id", "org_id"]
+          },
           {
             foreignKeyName: "hr_departments_head_employee_id_fkey"
             columns: ["head_employee_id"]
@@ -4258,6 +4268,7 @@ export type Database = {
           position: string | null
           probation_end_date: string | null
           profile_id: string | null
+          review_template_id: string | null
           start_date: string | null
           territory_id: string | null
           updated_at: string
@@ -4292,6 +4303,7 @@ export type Database = {
           position?: string | null
           probation_end_date?: string | null
           profile_id?: string | null
+          review_template_id?: string | null
           start_date?: string | null
           territory_id?: string | null
           updated_at?: string
@@ -4326,6 +4338,7 @@ export type Database = {
           position?: string | null
           probation_end_date?: string | null
           profile_id?: string | null
+          review_template_id?: string | null
           start_date?: string | null
           territory_id?: string | null
           updated_at?: string
@@ -4334,6 +4347,13 @@ export type Database = {
           work_start_time?: string | null
         }
         Relationships: [
+          {
+            foreignKeyName: "hr_employees_review_template_fk"
+            columns: ["review_template_id", "org_id"]
+            isOneToOne: false
+            referencedRelation: "hr_review_templates"
+            referencedColumns: ["id", "org_id"]
+          },
           {
             foreignKeyName: "hr_employees_created_by_fkey"
             columns: ["created_by"]
@@ -4711,6 +4731,7 @@ export type Database = {
           name: string
           org_id: string
           sort_order: number
+          template_id: string
           updated_at: string
           weight: number
         }
@@ -4722,6 +4743,7 @@ export type Database = {
           name: string
           org_id: string
           sort_order?: number
+          template_id: string
           updated_at?: string
           weight?: number
         }
@@ -4733,10 +4755,18 @@ export type Database = {
           name?: string
           org_id?: string
           sort_order?: number
+          template_id?: string
           updated_at?: string
           weight?: number
         }
         Relationships: [
+          {
+            foreignKeyName: "hr_review_categories_template_fk"
+            columns: ["template_id", "org_id"]
+            isOneToOne: false
+            referencedRelation: "hr_review_templates"
+            referencedColumns: ["id", "org_id"]
+          },
           {
             foreignKeyName: "hr_review_categories_org_id_fkey"
             columns: ["org_id"]
@@ -4782,6 +4812,47 @@ export type Database = {
           },
         ]
       }
+      hr_review_templates: {
+        Row: {
+          active: boolean
+          created_at: string
+          description: string | null
+          id: string
+          name: string
+          org_id: string
+          sort_order: number
+          updated_at: string
+        }
+        Insert: {
+          active?: boolean
+          created_at?: string
+          description?: string | null
+          id?: string
+          name: string
+          org_id: string
+          sort_order?: number
+          updated_at?: string
+        }
+        Update: {
+          active?: boolean
+          created_at?: string
+          description?: string | null
+          id?: string
+          name?: string
+          org_id?: string
+          sort_order?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "hr_review_templates_org_id_fkey"
+            columns: ["org_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       hr_reviews: {
         Row: {
           acknowledged_at: string | null
@@ -4806,6 +4877,7 @@ export type Database = {
           reviewer_id: string | null
           status: string
           strengths: string | null
+          template_id: string | null
           updated_at: string
         }
         Insert: {
@@ -4831,6 +4903,7 @@ export type Database = {
           reviewer_id?: string | null
           status?: string
           strengths?: string | null
+          template_id?: string | null
           updated_at?: string
         }
         Update: {
@@ -4856,9 +4929,17 @@ export type Database = {
           reviewer_id?: string | null
           status?: string
           strengths?: string | null
+          template_id?: string | null
           updated_at?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "hr_reviews_template_fk"
+            columns: ["template_id", "org_id"]
+            isOneToOne: false
+            referencedRelation: "hr_review_templates"
+            referencedColumns: ["id", "org_id"]
+          },
           {
             foreignKeyName: "hr_reviews_acknowledged_by_fkey"
             columns: ["acknowledged_by"]

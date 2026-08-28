@@ -3,9 +3,11 @@ import {
   assertAffected,
   periodBounds,
   periodIndexOf,
+  type Department,
   type Review,
   type ReviewCategory,
   type ReviewRating,
+  type ReviewTemplate,
 } from "@/lib/hr/types";
 
 /**
@@ -21,6 +23,12 @@ import {
  * for later is that a category is a row in `hr_review_categories`, so a future
  * machine-filled category needs a column on that table and not a new shape for
  * a review.
+ *
+ * Which categories a given review offers is its **scorecard**, resolved from
+ * the employee (their own override, else their department's) and stamped onto
+ * the review when it is created. Resolved here as well as in the database: the
+ * database's answer is the one that counts, and this one exists so a manager
+ * can see which scorecard they are about to use before they commit to it.
  */
 
 export type ReviewRow = Review & {
@@ -98,6 +106,9 @@ export async function createReview(
     period_year: number;
     period_index: number;
     review_date: string;
+    /** Omit to let the database resolve it. Sent only when HR has deliberately
+     *  chosen a scorecard other than the employee's own. */
+    template_id?: string | null;
   }
 ): Promise<Review> {
   const bounds = periodBounds(input.period_type, input.period_year, input.period_index);
@@ -112,6 +123,7 @@ export async function createReview(
       period_start: bounds.start,
       period_end: bounds.end,
       review_date: input.review_date,
+      ...(input.template_id ? { template_id: input.template_id } : {}),
     })
     .select("*");
   if (error) {
@@ -274,9 +286,79 @@ export function history(reviews: ReviewRow[]): ReviewRow[] {
     );
 }
 
-export function activeCategories(categories: ReviewCategory[]): ReviewCategory[] {
+/**
+ * The categories a review is actually rated on.
+ *
+ * Filtered to the review's own scorecard, which is the whole point: a warehouse
+ * clerk's form asks about picking accuracy and a merchandiser's asks about
+ * shelf facings, and neither is offered the other's. A null `templateId` yields
+ * nothing rather than everything — a review with no scorecard is a review the
+ * database would refuse to create today, and showing every category of every
+ * scorecard is precisely the behaviour this replaced.
+ *
+ * Inactive categories are dropped, so retiring one stops it appearing on new
+ * reviews. Ratings already given against it survive: the rating rows are
+ * untouched and the stored `overall_rating` on a completed review does not move.
+ */
+export function activeCategories(
+  categories: ReviewCategory[],
+  templateId: string | null | undefined
+): ReviewCategory[] {
+  if (!templateId) return [];
   return categories
-    .filter((c) => c.active)
+    .filter((c) => c.active && c.template_id === templateId)
+    .sort((a, b) => a.sort_order - b.sort_order || a.name.localeCompare(b.name));
+}
+
+/** Every category on a scorecard, retired ones included, for the settings list. */
+export function categoriesOfTemplate(
+  categories: ReviewCategory[],
+  templateId: string | null | undefined
+): ReviewCategory[] {
+  if (!templateId) return [];
+  return categories
+    .filter((c) => c.template_id === templateId)
+    .sort((a, b) => a.sort_order - b.sort_order || a.name.localeCompare(b.name));
+}
+
+/**
+ * The scorecard a new review for this employee would use.
+ *
+ * The employee's own override first, then their department's. Deliberately no
+ * organisation-wide fallback: the database refuses to create a review without a
+ * scorecard, and the screens read a null here as "HR has not said what this
+ * person is reviewed on" — which is a sentence somebody can act on, unlike a
+ * default nobody chose.
+ *
+ * An inactive scorecard resolves to null. Retiring one has to stop new reviews
+ * being written against it, or retiring it means nothing.
+ */
+export function resolveTemplateId(
+  employee: { review_template_id?: string | null; department_id?: string | null } | null,
+  departments: Department[],
+  templates: ReviewTemplate[]
+): string | null {
+  if (!employee) return null;
+  const id =
+    employee.review_template_id ??
+    departments.find((d) => d.id === employee.department_id)?.review_template_id ??
+    null;
+  if (!id) return null;
+  return templates.some((t) => t.id === id && t.active) ? id : null;
+}
+
+/** A scorecard's name, or an em dash. Never throws on a retired or missing one. */
+export function templateName(
+  templates: ReviewTemplate[],
+  id: string | null | undefined
+): string {
+  if (!id) return "—";
+  return templates.find((t) => t.id === id)?.name ?? "—";
+}
+
+export function activeTemplates(templates: ReviewTemplate[]): ReviewTemplate[] {
+  return templates
+    .filter((t) => t.active)
     .sort((a, b) => a.sort_order - b.sort_order || a.name.localeCompare(b.name));
 }
 

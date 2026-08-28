@@ -27,6 +27,7 @@ import {
   EMPLOYMENT_STATUS_LABELS,
   EMPLOYMENT_TYPE_LABELS,
   type Department,
+  type ReviewTemplate,
 } from "@/lib/hr/types";
 
 /**
@@ -51,6 +52,7 @@ export function EmployeeDialog({
   orgId,
   departments,
   territories,
+  reviewTemplates,
   managers,
   profiles,
   onSaved,
@@ -62,6 +64,7 @@ export function EmployeeDialog({
   orgId: string | null;
   departments: Department[];
   territories: { id: string; name: string }[];
+  reviewTemplates: ReviewTemplate[];
   managers: EmployeeRow[];
   profiles: ProfileOption[];
   onSaved: () => void;
@@ -110,6 +113,18 @@ export function EmployeeDialog({
     () => managers.filter((m) => m.id !== employee?.id),
     [managers, employee?.id]
   );
+
+  /**
+   * The scorecard this person inherits, read off the department currently
+   * chosen in the form rather than off the saved record — changing the
+   * department dropdown should immediately change what "their department's"
+   * means underneath it.
+   */
+  const departmentTemplate = useMemo(() => {
+    const dept = departments.find((d) => d.id === form.department_id);
+    if (!dept?.review_template_id) return null;
+    return reviewTemplates.find((t) => t.id === dept.review_template_id) ?? null;
+  }, [departments, reviewTemplates, form.department_id]);
 
   const takenBy = useMemo(() => {
     const map = new Map<string, string>();
@@ -307,6 +322,35 @@ export function EmployeeDialog({
                 ))}
               </NativeSelect>
             </Field>
+            <Field
+              label="Review scorecard"
+              hint={
+                departmentTemplate
+                  ? `Their department uses ${departmentTemplate.name}. Change this only for somebody whose job spans two.`
+                  : "Their department has no scorecard, so one must be set here before they can be reviewed."
+              }
+            >
+              <NativeSelect
+                value={form.review_template_id ?? ""}
+                onChange={(e) =>
+                  set("review_template_id", e.target.value || null)
+                }
+              >
+                <option value="">
+                  {departmentTemplate
+                    ? `Their department’s (${departmentTemplate.name})`
+                    : "Their department’s — none set"}
+                </option>
+                {reviewTemplates
+                  .filter((t) => t.active || t.id === form.review_template_id)
+                  .map((t) => (
+                    <option key={t.id} value={t.id}>
+                      {t.name}
+                      {t.active ? "" : " (retired)"}
+                    </option>
+                  ))}
+              </NativeSelect>
+            </Field>
             <Field label="Employment status">
               <NativeSelect
                 value={form.employment_status}
@@ -447,6 +491,7 @@ function blank(): EmployeeInput {
     emergency_contact_phone: null,
     position: null,
     department_id: null,
+    review_template_id: null,
     manager_id: null,
     territory_id: null,
     employment_status: "active",
@@ -478,6 +523,7 @@ function fromRow(e: EmployeeRow): EmployeeInput {
     emergency_contact_phone: e.emergency_contact_phone,
     position: e.position,
     department_id: e.department_id,
+    review_template_id: e.review_template_id,
     manager_id: e.manager_id,
     territory_id: e.territory_id,
     employment_status: e.employment_status,

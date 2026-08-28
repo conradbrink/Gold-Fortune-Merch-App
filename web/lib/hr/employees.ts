@@ -196,6 +196,9 @@ export type EmployeeInput = {
   department_id: string | null;
   manager_id: string | null;
   territory_id: string | null;
+  /** Overrides the department's review scorecard for this one person. Null is
+   *  the normal case and means "whatever my department uses". */
+  review_template_id: string | null;
   employment_status: string;
   employment_type: string;
   start_date: string | null;

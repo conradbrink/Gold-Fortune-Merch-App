@@ -27,7 +27,14 @@ import {
   fetchPerformanceDashboard,
   type PerformanceDashboard,
 } from "@/lib/hr/dashboard";
-import { createReview, currentPeriod, fetchReviews, type ReviewRow } from "@/lib/hr/performance";
+import {
+  createReview,
+  currentPeriod,
+  fetchReviews,
+  resolveTemplateId,
+  templateName,
+  type ReviewRow,
+} from "@/lib/hr/performance";
 import {
   formatScore,
   periodLabel,
@@ -48,6 +55,12 @@ import {
  * visits or coverage — section 7 asks for the review system first and the
  * automatic metrics later, and a number the system produced would be
  * indistinguishable on screen from one a manager stood behind.
+ *
+ * The scorecard shown against each person who is due is the one their review
+ * would be written on, resolved the same way the database resolves it. It is on
+ * screen before the button is pressed because a review is created and then
+ * locked to its scorecard, and finding out afterwards that a warehouse clerk is
+ * being rated on shelf facings is how this page used to work.
  */
 export default function HrPerformancePage() {
   const supabase = createClient();
@@ -117,6 +130,22 @@ export default function HrPerformancePage() {
     );
     return employees.filter((e) => ids.has(e.id));
   }, [employees]);
+
+  /**
+   * The scorecard each employee would be reviewed on, by employee id.
+   *
+   * Computed from data the page already has rather than asked for per row: the
+   * "due" list and the employee list are both already loaded, and resolving is
+   * two lookups. The database resolves it again on insert and its answer is the
+   * one that is stored — this map exists so the manager can see it first.
+   */
+  const templateFor = useMemo(() => {
+    const byId = new Map(employees.map((e) => [e.id, e]));
+    const departments = reference?.departments ?? [];
+    const templates = reference?.reviewTemplates ?? [];
+    return (employeeId: string) =>
+      resolveTemplateId(byId.get(employeeId) ?? null, departments, templates);
+  }, [employees, reference]);
 
   async function startReview(employeeId: string) {
     if (!orgId) return;
@@ -248,18 +277,21 @@ export default function HrPerformancePage() {
                   <TableRow>
                     <TableHead>Employee</TableHead>
                     <TableHead className="hidden sm:table-cell">Position</TableHead>
+                    <TableHead className="hidden md:table-cell">Scorecard</TableHead>
                     <TableHead />
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {(dashboard?.due_list ?? []).length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={3} className="py-8 text-center text-sm text-muted-foreground">
+                      <TableCell colSpan={4} className="py-8 text-center text-sm text-muted-foreground">
                         {loading ? "Loading…" : "Everyone has been reviewed this period."}
                       </TableCell>
                     </TableRow>
                   ) : (
-                    (dashboard?.due_list ?? []).map((d) => (
+                    (dashboard?.due_list ?? []).map((d) => {
+                      const templateId = templateFor(d.employee_id);
+                      return (
                       <TableRow key={d.employee_id}>
                         <TableCell className="font-medium">
                           <Link
@@ -275,10 +307,32 @@ export default function HrPerformancePage() {
                         <TableCell className="hidden sm:table-cell text-sm text-muted-foreground">
                           {d.position ?? "—"}
                         </TableCell>
+                        <TableCell className="hidden md:table-cell text-sm">
+                          {templateId ? (
+                            <span className="text-muted-foreground">
+                              {templateName(reference?.reviewTemplates ?? [], templateId)}
+                            </span>
+                          ) : (
+                            // Not an error state on this row's part — nobody has
+                            // told the system what this job is reviewed on yet,
+                            // and the fix is one dropdown away.
+                            <Link
+                              href="/hr/settings"
+                              className="text-destructive hover:underline"
+                            >
+                              None set
+                            </Link>
+                          )}
+                        </TableCell>
                         <TableCell className="text-right">
                           <Button
                             size="sm"
-                            disabled={starting === d.employee_id}
+                            disabled={starting === d.employee_id || !templateId}
+                            title={
+                              templateId
+                                ? undefined
+                                : "Assign a scorecard to this employee’s department in Settings → Performance first."
+                            }
                             onClick={() => startReview(d.employee_id)}
                           >
                             <Plus className="mr-1.5 h-4 w-4" />
@@ -286,7 +340,8 @@ export default function HrPerformancePage() {
                           </Button>
                         </TableCell>
                       </TableRow>
-                    ))
+                      );
+                    })
                   )}
                 </TableBody>
               </Table>
