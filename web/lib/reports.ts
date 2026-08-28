@@ -106,6 +106,11 @@ export function summariseFieldStats(field: FieldReport): string {
       const answers = recent
         .map((r) => r.text.replace(/\s+/g, " ").trim())
         .filter(Boolean);
+      // Whitespace-only answers collapse to nothing here, which would leave
+      // `head` empty and `rest` negative and return "" — a blank cell against a
+      // non-zero answer count. Every other branch says "No answers" for that
+      // state and so should this.
+      if (answers.length === 0) return "No answers";
       // `form_report` returns the 20 most recent, and twenty joined answers is
       // the same oversized cell that broke the PDF header in the first place —
       // just made of prose instead of JSON. Five and a count, and the Form tab
