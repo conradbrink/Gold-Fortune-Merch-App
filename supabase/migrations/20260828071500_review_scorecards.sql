@@ -346,6 +346,23 @@ create index if not exists hr_reviews_template_idx
 
 -- Backfill in two passes: evidence before inference.
 --
+-- The guard comes off first, and the first attempt at this migration is why.
+-- `hr_review_guard` enforces the completion lock — "only HR can change a
+-- completed review" — against `hr_is_hr()`, which is false for the role a
+-- migration runs as. It has no organisation and no `auth.uid()`, so it is not
+-- HR, and it was correctly refused permission to touch the three completed
+-- reviews. The trigger is doing its job; a migration filling in a column that
+-- did not exist a second ago is simply not the actor it was written to police.
+--
+-- Disabled rather than worked around with a `security definer` helper, because
+-- the alternative is a permanently installed function whose only purpose is to
+-- bypass the lock — a far worse thing to leave in the schema than six lines of
+-- migration. `hr_reviews_log` and the `updated_at` trigger stay on: neither
+-- fires spuriously here (the audit branch keys off status and the five
+-- narrative columns, none of which move), and a backfilled row genuinely was
+-- updated.
+alter table public.hr_reviews disable trigger hr_reviews_guard;
+
 -- A review that already carries ratings tells us its scorecard outright — the
 -- categories somebody actually rated. That is a fact, and it beats re-resolving
 -- from today's department, which would be a guess about the past.
@@ -367,6 +384,8 @@ update public.hr_reviews r
   left join public.hr_departments d on d.id = e.department_id
  where e.id = r.employee_id
    and r.template_id is null;
+
+alter table public.hr_reviews enable trigger hr_reviews_guard;
 
 -- Deliberately NOT `set not null`. Every existing review has been placed above,
 -- and the guard below refuses to create one without a scorecard — but an
