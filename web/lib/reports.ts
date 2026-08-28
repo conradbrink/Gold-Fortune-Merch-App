@@ -62,7 +62,17 @@ export function summariseFieldStats(field: FieldReport): string {
   switch (field_type) {
     case "number": {
       const s = stats as NumberStats;
-      const n = (v: number | null) => (v === null || v === undefined ? "—" : String(Number(v)));
+      // Postgres returns `avg` as an arbitrary-precision numeric and the client
+      // receives the string "2.6666666666666667". `String(Number(v))` keeps
+      // every digit, and a 17-digit cell is the wide-column problem this
+      // function exists to fix, arriving by a different door. Two decimals,
+      // with trailing zeros dropped so an integer still reads as one.
+      const n = (v: number | null) => {
+        if (v === null || v === undefined) return "—";
+        const num = Number(v);
+        if (!Number.isFinite(num)) return "—";
+        return String(Math.round(num * 100) / 100);
+      };
       return `min ${n(s.min)} · avg ${n(s.avg)} · max ${n(s.max)} · total ${n(s.sum)}`;
     }
     case "boolean": {

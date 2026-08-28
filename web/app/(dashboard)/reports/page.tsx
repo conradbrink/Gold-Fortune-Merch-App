@@ -81,6 +81,23 @@ type StoreGroup = { id: string; name: string };
  */
 const CHAIN_AWARE_TABS: ReportTab[] = ["score", "oos", "coverage", "trends"];
 
+/**
+ * Why each remaining tab ignores the chain, in its own words.
+ *
+ * Two different reasons, and one message for both was wrong for two of them.
+ * The rep-level reports genuinely need work in Postgres; Form and Photos are
+ * filtered by store and template already and simply have no chain concept, so
+ * telling somebody they are "one row per rep" is nonsense they cannot act on.
+ */
+const CHAIN_UNFILTERED_REASON: Partial<Record<ReportTab, string>> = {
+  reps: "this report is one row per rep, and a rep works more than one chain, so narrowing it needs their visits recounted rather than rows removed.",
+  adherence:
+    "this report is one row per rep, and a rep works more than one chain, so narrowing it needs their visits recounted rather than rows removed.",
+  form: "form results are grouped by question, not by store. Use the store picker above to narrow them.",
+  photos:
+    "the gallery is grouped by store already. Use the store picker above to narrow it.",
+};
+
 /** Re-exported so the file that renders the tabs and the file that links to
  * them cannot disagree about what a tab is called. */
 const TABS = REPORT_TABS;
@@ -616,12 +633,16 @@ export default function ReportsPage() {
       {/* A chain is selected but this tab ignores it. Said out loud, because
           the alternative is a rep scorecard that silently shows estate-wide
           figures while a chain is named in the filter bar above it — which
-          reads as "Jerry in Choppies" and is not. */}
+          reads as "Jerry in Choppies" and is not.
+
+          The reason differs by tab and the notice has to say the true one. The
+          first version gave the rep-level explanation on all four unfiltered
+          tabs, which was simply wrong on Form and Photos: neither is one row
+          per rep. */}
       {chainName && !CHAIN_AWARE_TABS.includes(tab) && (
         <div className="rounded-md border border-border bg-muted/40 px-4 py-2 text-sm text-muted-foreground">
-          Showing all chains. {chainName} cannot be applied here yet — this
-          report is one row per rep, and a rep works more than one chain, so
-          narrowing it needs their visits recounted rather than rows removed.
+          Showing all chains. {chainName} cannot be applied here yet —{" "}
+          {CHAIN_UNFILTERED_REASON[tab] ?? "this report is not filtered by chain."}
         </div>
       )}
 

@@ -225,10 +225,15 @@ grant execute on function public.hr_review_resolve_template(uuid) to authenticat
 -- and nobody has made that claim. Settings → Performance is where that argument
 -- gets had.
 --
--- Attendance & Reliability, Teamwork and Professional Conduct appear on all
--- four scorecards as separate rows. They are the three things asked of everyone
--- regardless of the job, and the descriptions differ because who you are
--- expected to work with differs.
+-- Attendance & Reliability and Professional Conduct appear on all four
+-- scorecards as separate rows — they are asked of everyone regardless of the
+-- job, and the descriptions differ because what is expected differs.
+--
+-- Teamwork is on three of the four. Management & Supervisory does not carry it,
+-- because "works well with the team" is not the question you ask about the
+-- person accountable for that team — Team Leadership and Developing the Team
+-- are, and both are on that scorecard. HR can add it in Settings if they
+-- disagree; that is what the editor is for.
 
 insert into public.hr_review_templates (org_id, name, description, sort_order)
 select o.id, v.name, v.description, v.sort_order

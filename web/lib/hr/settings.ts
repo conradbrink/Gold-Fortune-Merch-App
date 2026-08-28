@@ -208,6 +208,25 @@ export async function saveLeaveType(
  * against or its overall score stops meaning anything. `active = false` is how
  * one is retired, and it stays readable on the reviews that used it.
  */
+/**
+ * A duplicate name, in words rather than in Postgres.
+ *
+ * The unique indexes are `(org_id, lower(name))` on a scorecard and
+ * `(template_id, lower(name))` on a category, and PostgREST hands their
+ * violation back verbatim. Without this the settings banner reads `duplicate
+ * key value violates unique constraint "hr_review_categories_template_name_idx"`
+ * at somebody who typed a name that was already in the list.
+ */
+function friendlyDuplicate(message: string, what: string): string {
+  if (message.includes("hr_review_templates_org_name_idx")) {
+    return `There is already a scorecard called that.`;
+  }
+  if (message.includes("hr_review_categories_template_name_idx")) {
+    return `This scorecard already has a category called that.`;
+  }
+  return message || `The ${what} was not saved`;
+}
+
 export async function saveReviewTemplate(
   supabase: SupabaseClient,
   orgId: string,
@@ -224,7 +243,7 @@ export async function saveReviewTemplate(
     ? supabase.from("hr_review_templates").update(rest).eq("id", id)
     : supabase.from("hr_review_templates").insert({ ...rest, org_id: orgId });
   const { data, error } = await query.select("id");
-  if (error) throw new Error(error.message);
+  if (error) throw new Error(friendlyDuplicate(error.message, "scorecard"));
   assertAffected(data, "The scorecard was not saved");
 }
 
@@ -279,7 +298,7 @@ export async function saveReviewCategory(
         .from("hr_review_categories")
         .insert({ ...rest, template_id, org_id: orgId });
   const { data, error } = await query.select("id");
-  if (error) throw new Error(error.message);
+  if (error) throw new Error(friendlyDuplicate(error.message, "category"));
   assertAffected(data, "The category was not saved");
 }
 

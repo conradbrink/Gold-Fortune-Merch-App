@@ -104,18 +104,27 @@ export default function ReviewPage() {
 
   useHrLoad(load);
 
-  // The review's own scorecard, not the organisation's whole category list.
-  // `template_id` was stamped when the review was created and is never
-  // re-resolved, so moving somebody to another department does not retrospectively
-  // change what their last manager reviewed them on.
-  const categories = useMemo(
-    () => activeCategories(reference?.reviewCategories ?? [], review?.template_id),
-    [reference, review?.template_id]
-  );
   const scaleMax = reference?.settings?.rating_scale_max ?? 5;
   const ratingMap = useMemo(
     () => new Map(ratings.map((r) => [r.category_id, r.rating])),
     [ratings]
+  );
+  // The review's own scorecard, not the organisation's whole category list.
+  // `template_id` was stamped when the review was created and is never
+  // re-resolved, so moving somebody to another department does not retrospectively
+  // change what their last manager reviewed them on.
+  //
+  // The rated ids go in so a category retired after this review was written
+  // still shows the rating it was given. The stored overall counts it either
+  // way, and a score whose parts are hidden is not a reviewable record.
+  const categories = useMemo(
+    () =>
+      activeCategories(
+        reference?.reviewCategories ?? [],
+        review?.template_id,
+        new Set(ratingMap.keys())
+      ),
+    [reference, review?.template_id, ratingMap]
   );
   const preview = previewOverall(categories, ratingMap);
 
@@ -329,7 +338,14 @@ export default function ReviewPage() {
                     className="flex flex-wrap items-center justify-between gap-3 border-b border-border pb-3 last:border-0 last:pb-0"
                   >
                     <div className="min-w-0 flex-1">
-                      <p className="text-sm font-medium text-foreground">{c.name}</p>
+                      <p className="text-sm font-medium text-foreground">
+                        {c.name}
+                        {!c.active && (
+                          <span className="ml-2 text-xs font-normal text-muted-foreground">
+                            retired
+                          </span>
+                        )}
+                      </p>
                       {c.description && (
                         <p className="text-xs text-muted-foreground">{c.description}</p>
                       )}

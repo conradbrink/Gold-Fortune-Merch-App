@@ -916,6 +916,11 @@ function ScorecardAssignment({
                     <TableCell>
                       {editable ? (
                         <NativeSelect
+                          // A column heading is not programmatically tied to a
+                          // control inside the cell, so without this every row
+                          // announces as an unlabelled combobox and they are
+                          // indistinguishable from one another.
+                          aria-label={`Review scorecard for ${d.name}`}
                           className="w-[16rem]"
                           disabled={busy}
                           value={d.review_template_id ?? ""}

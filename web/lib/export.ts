@@ -204,6 +204,11 @@ export async function exportPdf(sheet: ExportSheet): Promise<void> {
   doc.setFontSize(8);
   doc.setFont("helvetica", "bold");
   const headerFloor = sheet.columns.map((c) => doc.getTextWidth(c.header) + 10);
+  // Measuring under bold 8pt is what makes the floor right — the header IS
+  // drawn bold. Restoring is what stops it leaking: `didDrawPage` below sets
+  // only size and colour, so without this the "Generated …" and "Page N"
+  // footers came out bold on every export in the app.
+  doc.setFont("helvetica", "normal");
 
   autoTable(doc, {
     startY: y + 6,

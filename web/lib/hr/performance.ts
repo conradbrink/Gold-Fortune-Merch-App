@@ -296,17 +296,29 @@ export function history(reviews: ReviewRow[]): ReviewRow[] {
  * database would refuse to create today, and showing every category of every
  * scorecard is precisely the behaviour this replaced.
  *
- * Inactive categories are dropped, so retiring one stops it appearing on new
- * reviews. Ratings already given against it survive: the rating rows are
- * untouched and the stored `overall_rating` on a completed review does not move.
+ * Retired categories are dropped so they stop appearing on new reviews —
+ * **except** any that this review already carries a rating for. That exception
+ * is not a nicety. `hr_recalc_review_overall` computes the weighted mean by
+ * joining `hr_review_categories` with no `active` filter, so a rating against a
+ * retired category still counts toward the stored `overall_rating`. Hiding the
+ * row would leave a completed review showing a score its own visible ratings
+ * cannot account for — the parts are the evidence, and a review that will not
+ * show them is worse than one that shows a retired heading.
+ *
+ * Pass `ratedIds` on any screen that renders saved ratings. Omitting it is
+ * right for a blank form, where nothing has been rated yet.
  */
 export function activeCategories(
   categories: ReviewCategory[],
-  templateId: string | null | undefined
+  templateId: string | null | undefined,
+  ratedIds?: ReadonlySet<string>
 ): ReviewCategory[] {
   if (!templateId) return [];
   return categories
-    .filter((c) => c.active && c.template_id === templateId)
+    .filter(
+      (c) =>
+        c.template_id === templateId && (c.active || (ratedIds?.has(c.id) ?? false))
+    )
     .sort((a, b) => a.sort_order - b.sort_order || a.name.localeCompare(b.name));
 }
 
