@@ -93,10 +93,17 @@ export function summariseFieldStats(field: FieldReport): string {
       if (recent.length === 0) return "No answers";
       // Newlines are flattened: a rep's multi-line list of out-of-stock SKUs
       // would otherwise blow a table row open in the PDF and break the CSV.
-      return recent
+      const answers = recent
         .map((r) => r.text.replace(/\s+/g, " ").trim())
-        .filter(Boolean)
-        .join(" | ");
+        .filter(Boolean);
+      // `form_report` returns the 20 most recent, and twenty joined answers is
+      // the same oversized cell that broke the PDF header in the first place —
+      // just made of prose instead of JSON. Five and a count, and the Form tab
+      // on screen is where you go to read them all.
+      const SHOWN = 5;
+      const head = answers.slice(0, SHOWN).join(" | ");
+      const rest = answers.length - SHOWN;
+      return rest > 0 ? `${head} … (+${rest} more)` : head;
     }
     default:
       return "";
