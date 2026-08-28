@@ -170,6 +170,7 @@ export type PerfectStore = {
 export type OosHotspot = {
   store_id: string;
   store_name: string;
+  store_group: string | null;
   checks: number;
   oos_count: number;
   oos_rate: number | null;

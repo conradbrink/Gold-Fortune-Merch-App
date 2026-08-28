@@ -66,6 +66,20 @@ function dayBefore(exclusiveEnd: Date): Date {
 
 type Rep = { id: string; full_name: string | null };
 type Store = { id: string; name: string; city: string | null };
+/** A retail chain — Choppies, Sefelana, Liquarama. `store_groups` in the schema. */
+type StoreGroup = { id: string; name: string };
+
+/**
+ * The tabs the chain filter actually narrows.
+ *
+ * Score, out-of-stock and coverage are one row per store, so they are filtered
+ * exactly. The trend is recomputed in Postgres for the chain. The rep scorecard
+ * and schedule adherence are one row per *rep* — a rep works several chains, so
+ * narrowing them means recomputing their visits against the chain rather than
+ * dropping rows, and neither RPC does that yet. Listing them here rather than
+ * scattering `tab !== "reps"` checks keeps the honest answer in one place.
+ */
+const CHAIN_AWARE_TABS: ReportTab[] = ["score", "oos", "coverage", "trends"];
 
 /** Re-exported so the file that renders the tabs and the file that links to
  * them cannot disagree about what a tab is called. */
@@ -144,6 +158,9 @@ export default function ReportsPage() {
   const [stores, setStores] = useState<Store[]>([]);
   const [repId, setRepId] = useState<string>("");
   const [storeId, setStoreId] = useState<string>("");
+  /** The chain. Empty means the whole estate. */
+  const [storeGroupId, setStoreGroupId] = useState<string>("");
+  const [storeGroups, setStoreGroups] = useState<StoreGroup[]>([]);
 
   const [form, setForm] = useState<FieldReport[]>([]);
   const [gaps, setGaps] = useState<CoverageGap[]>([]);
@@ -160,7 +177,7 @@ export default function ReportsPage() {
   useEffect(() => {
     (async () => {
       try {
-        const [tpl, repRows, storeRows] = await Promise.all([
+        const [tpl, repRows, storeRows, groupRows] = await Promise.all([
           fetchFormTemplates(supabase),
           supabase
             .from("profiles")
@@ -172,11 +189,16 @@ export default function ReportsPage() {
             .select("id, name, city")
             .eq("active", true)
             .order("name", { ascending: true }),
+          supabase
+            .from("store_groups")
+            .select("id, name")
+            .order("name", { ascending: true }),
         ]);
         setTemplates(tpl);
         setTemplateId((prev) => prev ?? tpl[0]?.id ?? null);
         setReps((repRows.data ?? []) as Rep[]);
         setStores((storeRows.data ?? []) as Store[]);
+        setStoreGroups((groupRows.data ?? []) as StoreGroup[]);
       } catch (e) {
         setError(e instanceof Error ? e.message : String(e));
       }
@@ -195,7 +217,7 @@ export default function ReportsPage() {
       const [g, s, t, f, ps, oh, ad] = await Promise.all([
         fetchCoverageGaps(supabase, range),
         fetchRepScorecard(supabase, range),
-        fetchComplianceTrends(supabase, range, bucket),
+        fetchComplianceTrends(supabase, range, bucket, storeGroupId || null),
         templateId
           ? fetchFormReport(supabase, templateId, range, {
               repIds: repId ? [repId] : undefined,
@@ -224,12 +246,43 @@ export default function ReportsPage() {
       if (!isStale()) setLoading(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [range, templateId, repId, storeId]);
+  }, [range, templateId, repId, storeId, storeGroupId]);
 
   useEffect(() => {
     if (!urlRead) return;
     load();
   }, [load, urlRead]);
+
+  /**
+   * The chain filter, applied to the reports that are one row per store.
+   *
+   * Filtered here rather than in the RPC, and that is exact rather than a
+   * shortcut: Perfect Store, Coverage and Out of stock all return a row per
+   * store, so selecting the rows of a chain gives precisely that chain's rows.
+   * There is no aggregate to get wrong. The one report where that is NOT true
+   * is the trend, which sums across stores per bucket — it takes the chain as
+   * an argument and is recomputed in Postgres.
+   *
+   * Matched on the group's name rather than its id because that is what these
+   * RPCs return. A rename would break it, which is the cost; adding an id to
+   * three function signatures is the price of avoiding it, and two of those
+   * three have live bodies that disagree with the migrations in this repo.
+   *
+   * ⚠️ The rep scorecard and schedule adherence are NOT filtered. They are one
+   * row per rep, and a rep works several chains — narrowing them correctly
+   * means recomputing their visit counts against a chain in Postgres, not
+   * dropping rows here. The UI says so rather than quietly showing estate-wide
+   * figures under a chain heading.
+   */
+  const chainName = storeGroups.find((g) => g.id === storeGroupId)?.name ?? null;
+  const byChain = useCallback(
+    <T extends { store_group: string | null }>(rows: T[]): T[] =>
+      chainName === null ? rows : rows.filter((r) => r.store_group === chainName),
+    [chainName]
+  );
+  const perfectShown = useMemo(() => byChain(perfect), [byChain, perfect]);
+  const gapsShown = useMemo(() => byChain(gaps), [byChain, gaps]);
+  const hotspotsShown = useMemo(() => byChain(hotspots), [byChain, hotspots]);
 
   const photoGroups = useMemo(
     () =>
@@ -265,6 +318,11 @@ export default function ReportsPage() {
    * saying so.
    */
   function sheetForTab(): ExportSheet | null {
+    // The chain reaches four of the six exportable tabs. It is written into the
+    // context lines only for those — a "Chain: Choppies Group" heading over the
+    // rep scorecard would be exactly the lie the note below warns about.
+    const chainLine =
+      chainName && CHAIN_AWARE_TABS.includes(tab) ? `Chain: ${chainName}` : null;
     // 🔴 The rep, store and form pickers filter **only** the Form report —
     // every other query on this page takes the date range and nothing else. A
     // Coverage export headed "Rep: Jerry Habana" would therefore have been a
@@ -284,6 +342,7 @@ export default function ReportsPage() {
         : [];
     const context = [
       `${toLocalDateInput(range.from)} to ${toLocalDateInput(dayBefore(range.to))}`,
+      chainLine,
       ...formFilters,
     ].filter((line): line is string => line !== null);
 
@@ -305,7 +364,7 @@ export default function ReportsPage() {
             { header: "Condition %", key: "condition", numeric: true },
             { header: "Score", key: "score", numeric: true },
           ],
-          rows: perfect.map((r) => ({
+          rows: perfectShown.map((r) => ({
             store: r.store_name,
             group: r.store_group ?? "",
             audits: r.audits,
@@ -323,6 +382,7 @@ export default function ReportsPage() {
           filename: "gf-out-of-stock",
           columns: [
             { header: "Store", key: "store" },
+            { header: "Chain", key: "group" },
             { header: "Checks", key: "checks", numeric: true },
             { header: "Out of stock", key: "oos", numeric: true },
             { header: "Rate", key: "rate" },
@@ -330,8 +390,9 @@ export default function ReportsPage() {
             { header: "Last seen out", key: "last" },
             { header: "Top lines", key: "skus" },
           ],
-          rows: hotspots.map((r) => ({
+          rows: hotspotsShown.map((r) => ({
             store: r.store_name,
+            group: r.store_group ?? "—",
             checks: r.checks,
             oos: r.oos_count,
             rate: formatRate(r.oos_rate),
@@ -354,7 +415,7 @@ export default function ReportsPage() {
             { header: "Last visited", key: "last" },
             { header: "Days since last visit", key: "days" },
           ],
-          rows: gaps.map((g) => ({
+          rows: gapsShown.map((g) => ({
             store: g.store_name,
             group: g.store_group ?? "",
             city: g.city ?? "",
@@ -480,6 +541,22 @@ export default function ReportsPage() {
 
       <div className="flex flex-wrap items-center gap-3 rounded-lg border border-border bg-card p-3">
         <DateRangePicker value={range} onChange={setRange} />
+        {/* The chain sits next to the date range rather than with the form
+            pickers below, because unlike those it narrows most of the page
+            rather than only the Form tab. */}
+        <NativeSelect
+          aria-label="Chain"
+          className="w-[13rem]"
+          value={storeGroupId}
+          onChange={(e) => setStoreGroupId(e.target.value)}
+        >
+          <option value="">All chains</option>
+          {storeGroups.map((g) => (
+            <option key={g.id} value={g.id}>
+              {g.name}
+            </option>
+          ))}
+        </NativeSelect>
         <div className="flex flex-wrap items-center gap-2">
           <NativeSelect
             aria-label="Form template"
@@ -536,6 +613,18 @@ export default function ReportsPage() {
 
       {/* Ordered by what a manager acts on first: which store is worst, what is
           out of stock, who has been neglected — then the descriptive reports. */}
+      {/* A chain is selected but this tab ignores it. Said out loud, because
+          the alternative is a rep scorecard that silently shows estate-wide
+          figures while a chain is named in the filter bar above it — which
+          reads as "Jerry in Choppies" and is not. */}
+      {chainName && !CHAIN_AWARE_TABS.includes(tab) && (
+        <div className="rounded-md border border-border bg-muted/40 px-4 py-2 text-sm text-muted-foreground">
+          Showing all chains. {chainName} cannot be applied here yet — this
+          report is one row per rep, and a rep works more than one chain, so
+          narrowing it needs their visits recounted rather than rows removed.
+        </div>
+      )}
+
       <Tabs value={tab} onValueChange={(v) => setTab(v as ReportTab)}>
         {/* One row, scrolled — never wrapped. TabsList is a fixed-height pill,
             so wrapping pushes the second row outside its own background and the
@@ -561,7 +650,7 @@ export default function ReportsPage() {
               </p>
             </CardHeader>
             <CardContent className="px-0">
-              {loading ? <SkeletonRows /> : <PerfectStoreTable rows={perfect} />}
+              {loading ? <SkeletonRows /> : <PerfectStoreTable rows={perfectShown} />}
             </CardContent>
           </Card>
         </TabsContent>
@@ -577,7 +666,7 @@ export default function ReportsPage() {
               </p>
             </CardHeader>
             <CardContent className="px-0">
-              {loading ? <SkeletonRows /> : <OosHotspotsTable rows={hotspots} />}
+              {loading ? <SkeletonRows /> : <OosHotspotsTable rows={hotspotsShown} />}
             </CardContent>
           </Card>
         </TabsContent>
@@ -623,7 +712,7 @@ export default function ReportsPage() {
               </p>
             </CardHeader>
             <CardContent className="px-0">
-              {loading ? <SkeletonRows /> : <CoverageTable rows={gaps} />}
+              {loading ? <SkeletonRows /> : <CoverageTable rows={gapsShown} />}
             </CardContent>
           </Card>
         </TabsContent>
