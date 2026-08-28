@@ -285,6 +285,7 @@ export default function HrEmployeesPage() {
         orgId={orgId}
         departments={reference?.departments ?? []}
         territories={reference?.territories ?? []}
+        reviewTemplates={reference?.reviewTemplates ?? []}
         managers={employees}
         profiles={profiles}
         onSaved={load}

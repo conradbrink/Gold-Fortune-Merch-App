@@ -196,6 +196,20 @@ export async function exportPdf(sheet: ExportSheet): Promise<void> {
     y += 12;
   }
 
+  // autoTable sizes columns by content, so one very wide cell takes the page
+  // and squeezes the rest until their *headers* break mid-word — a form-results
+  // export came out with columns headed "Questio n", "Typ e" and "Answer s".
+  // Measuring the header in the face it is actually drawn in and setting that
+  // as the floor means a column is never narrower than its own name.
+  doc.setFontSize(8);
+  doc.setFont("helvetica", "bold");
+  const headerFloor = sheet.columns.map((c) => doc.getTextWidth(c.header) + 10);
+  // Measuring under bold 8pt is what makes the floor right — the header IS
+  // drawn bold. Restoring is what stops it leaking: `didDrawPage` below sets
+  // only size and colour, so without this the "Generated …" and "Page N"
+  // footers came out bold on every export in the app.
+  doc.setFont("helvetica", "normal");
+
   autoTable(doc, {
     startY: y + 6,
     head: [sheet.columns.map((c) => c.header)],
@@ -204,7 +218,13 @@ export async function exportPdf(sheet: ExportSheet): Promise<void> {
     headStyles: { fillColor: [31, 41, 55], textColor: 255, fontStyle: "bold" },
     alternateRowStyles: { fillColor: [246, 247, 249] },
     columnStyles: Object.fromEntries(
-      sheet.columns.map((c, i) => [i, { halign: c.numeric ? "right" : "left" }])
+      sheet.columns.map((c, i) => [
+        i,
+        {
+          halign: c.numeric ? "right" : "left",
+          minCellWidth: headerFloor[i],
+        },
+      ])
     ),
     margin: { left: 40, right: 40, bottom: 40 },
     // Drawn per page rather than at the end: `getNumberOfPages` is only right

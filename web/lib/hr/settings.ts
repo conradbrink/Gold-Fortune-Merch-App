@@ -6,6 +6,7 @@ import {
   type LeaveType,
   type Lookup,
   type ReviewCategory,
+  type ReviewTemplate,
 } from "@/lib/hr/types";
 
 /**
@@ -19,6 +20,13 @@ import {
  * (entitlement days, a weight) and have their own tables. Departments have
  * both a name and a head, and are their own table for the same reason.
  *
+ * Review categories are additionally nested: each belongs to a scorecard in
+ * `hr_review_templates`, and the flat `reviewCategories` list below is every
+ * category of every scorecard. Callers filter it by `template_id` rather than
+ * asking for one scorecard's categories, because both screens that use it need
+ * more than one scorecard at a time — the settings page to let HR switch
+ * between them, the performance page to label a whole list of employees.
+ *
  * Nothing here hard-codes a Botswana rule. The working day, the late threshold,
  * the leave year, the rating scale and the acceptable score are all settings,
  * because section 12 is explicit that policy changes and the schema should not
@@ -30,6 +38,8 @@ export type HrReference = {
   departments: Department[];
   lookups: Lookup[];
   leaveTypes: LeaveType[];
+  reviewTemplates: ReviewTemplate[];
+  /** Every scorecard's categories in one list; filter by `template_id`. */
   reviewCategories: ReviewCategory[];
   territories: { id: string; name: string }[];
 };
@@ -37,14 +47,14 @@ export type HrReference = {
 /**
  * One round trip for every list the HR screens need.
  *
- * Six parallel queries rather than six sequential ones: they are independent,
- * and a settings page that takes six round trips to first paint on a Botswana
- * mobile connection is a settings page nobody opens twice.
+ * Seven parallel queries rather than seven sequential ones: they are
+ * independent, and a settings page that takes seven round trips to first paint
+ * on a Botswana mobile connection is a settings page nobody opens twice.
  */
 export async function fetchHrReference(
   supabase: SupabaseClient
 ): Promise<HrReference> {
-  const [settings, departments, lookups, leaveTypes, categories, territories] =
+  const [settings, departments, lookups, leaveTypes, templates, categories, territories] =
     await Promise.all([
       supabase.from("hr_settings").select("*").maybeSingle(),
       supabase
@@ -62,6 +72,11 @@ export async function fetchHrReference(
         .select("*")
         .order("sort_order", { ascending: true }),
       supabase
+        .from("hr_review_templates")
+        .select("*")
+        .order("sort_order", { ascending: true })
+        .order("name", { ascending: true }),
+      supabase
         .from("hr_review_categories")
         .select("*")
         .order("sort_order", { ascending: true }),
@@ -76,9 +91,15 @@ export async function fetchHrReference(
         .order("name", { ascending: true }),
     ]);
 
-  const first = [settings, departments, lookups, leaveTypes, categories, territories].find(
-    (r) => r.error
-  );
+  const first = [
+    settings,
+    departments,
+    lookups,
+    leaveTypes,
+    templates,
+    categories,
+    territories,
+  ].find((r) => r.error);
   if (first?.error) throw new Error(first.error.message);
 
   return {
@@ -86,6 +107,7 @@ export async function fetchHrReference(
     departments: (departments.data ?? []) as Department[],
     lookups: (lookups.data ?? []) as Lookup[],
     leaveTypes: (leaveTypes.data ?? []) as LeaveType[],
+    reviewTemplates: (templates.data ?? []) as ReviewTemplate[],
     reviewCategories: (categories.data ?? []) as ReviewCategory[],
     territories: (territories.data ?? []) as { id: string; name: string }[],
   };
@@ -177,11 +199,91 @@ export async function saveLeaveType(
   assertAffected(data, "The leave type was not saved");
 }
 
+/**
+ * A scorecard: the named set of categories an employee is reviewed against.
+ *
+ * Never deleted from here. A scorecard that any review was written against is
+ * refused by the database anyway — `hr_reviews.template_id` is `on delete
+ * restrict`, because a completed review has to keep the criteria it was written
+ * against or its overall score stops meaning anything. `active = false` is how
+ * one is retired, and it stays readable on the reviews that used it.
+ */
+/**
+ * A duplicate name, in words rather than in Postgres.
+ *
+ * The unique indexes are `(org_id, lower(name))` on a scorecard and
+ * `(template_id, lower(name))` on a category, and PostgREST hands their
+ * violation back verbatim. Without this the settings banner reads `duplicate
+ * key value violates unique constraint "hr_review_categories_template_name_idx"`
+ * at somebody who typed a name that was already in the list.
+ */
+function friendlyDuplicate(message: string, what: string): string {
+  if (message.includes("hr_review_templates_org_name_idx")) {
+    return `There is already a scorecard called that.`;
+  }
+  if (message.includes("hr_review_categories_template_name_idx")) {
+    return `This scorecard already has a category called that.`;
+  }
+  return message || `The ${what} was not saved`;
+}
+
+export async function saveReviewTemplate(
+  supabase: SupabaseClient,
+  orgId: string,
+  input: {
+    id?: string;
+    name: string;
+    description: string | null;
+    active: boolean;
+    sort_order: number;
+  }
+): Promise<void> {
+  const { id, ...rest } = input;
+  const query = id
+    ? supabase.from("hr_review_templates").update(rest).eq("id", id)
+    : supabase.from("hr_review_templates").insert({ ...rest, org_id: orgId });
+  const { data, error } = await query.select("id");
+  if (error) throw new Error(friendlyDuplicate(error.message, "scorecard"));
+  assertAffected(data, "The scorecard was not saved");
+}
+
+/**
+ * Which scorecard a department's people are reviewed on.
+ *
+ * Separate from `saveDepartment` rather than another field on it because they
+ * are edited from different places and by different reasoning — a department's
+ * name and code are its identity, and this is a policy decision about reviews
+ * that HR makes on the Performance settings tab.
+ */
+export async function setDepartmentTemplate(
+  supabase: SupabaseClient,
+  departmentId: string,
+  templateId: string | null
+): Promise<void> {
+  const { data, error } = await supabase
+    .from("hr_departments")
+    .update({ review_template_id: templateId })
+    .eq("id", departmentId)
+    .select("id");
+  if (error) throw new Error(error.message);
+  assertAffected(data, "The scorecard was not assigned");
+}
+
+/**
+ * A category, on exactly one scorecard.
+ *
+ * `template_id` is destructured out of the update for the same reason a leave
+ * type's `code` is: moving a category to another scorecard would silently
+ * detach every rating already given against it from the review that gave it.
+ * A category on the wrong scorecard is deactivated and re-created on the right
+ * one.
+ */
 export async function saveReviewCategory(
   supabase: SupabaseClient,
   orgId: string,
   input: {
     id?: string;
+    template_id: string;
     name: string;
     description: string | null;
     weight: number;
@@ -189,12 +291,14 @@ export async function saveReviewCategory(
     sort_order: number;
   }
 ): Promise<void> {
-  const { id, ...rest } = input;
+  const { id, template_id, ...rest } = input;
   const query = id
     ? supabase.from("hr_review_categories").update(rest).eq("id", id)
-    : supabase.from("hr_review_categories").insert({ ...rest, org_id: orgId });
+    : supabase
+        .from("hr_review_categories")
+        .insert({ ...rest, template_id, org_id: orgId });
   const { data, error } = await query.select("id");
-  if (error) throw new Error(error.message);
+  if (error) throw new Error(friendlyDuplicate(error.message, "category"));
   assertAffected(data, "The category was not saved");
 }
 

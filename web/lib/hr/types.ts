@@ -34,6 +34,7 @@ export type LeaveType = Tables<"hr_leave_types">;
 export type LeaveBalanceRow = Tables<"hr_leave_balances">;
 export type LeaveRequest = Tables<"hr_leave_requests">;
 export type HrDocument = Tables<"hr_documents">;
+export type ReviewTemplate = Tables<"hr_review_templates">;
 export type ReviewCategory = Tables<"hr_review_categories">;
 export type Review = Tables<"hr_reviews">;
 export type ReviewRating = Tables<"hr_review_ratings">;

@@ -1098,6 +1098,7 @@ export default function EmployeeProfilePage() {
         orgId={orgId}
         departments={reference?.departments ?? []}
         territories={reference?.territories ?? []}
+        reviewTemplates={reference?.reviewTemplates ?? []}
         managers={everyone}
         profiles={profiles}
         onSaved={load}
