@@ -1,15 +1,18 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { AlertTriangle, MapPin, X } from "lucide-react";
+import { AlertTriangle, MapPin, Pin, Plus, Trash2, X } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { NativeSelect } from "@/components/ui/native-select";
+import { StorePicker, type PickableStore } from "@/components/stores/store-picker";
 import {
   WEEKDAYS,
   buildCycleCalendar,
   describeCycle,
   type CycleDay,
+  type ManualStop,
   type PlannedStore,
 } from "@/lib/schedule";
 
@@ -22,7 +25,11 @@ import {
  * week-of-cycle mean that answer is a simulation, so this runs the simulation and
  * shows the result.
  *
- * Every cell is a real date the generator will write a route for. Nothing here is
+ * Every cell is a real date. Most of what lands on one is the generator\'s doing —
+ * the cycle expanded into occurrences — and the rest is one-off stops pinned to
+ * that exact date by hand, which the generator will never write and never
+ * retract. Both are drawn, because the question the grid answers is what the
+ * rep\'s day looks like, not which table the day came from. Nothing here is
  * an average or a peak: `WeekLoadStrip` already reports those, and putting a
  * per-occurrence figure in a cell dated to one specific day would be a lie about a
  * day that exists.
@@ -83,9 +90,10 @@ function DayCell({
     );
   }
 
-  const empty = day.stores.length === 0;
-  const heavy = day.stores.length > storesPerDay;
+  const empty = day.stopCount === 0;
+  const heavy = day.stopCount > storesPerDay;
   const multiTown = day.towns.length > 1;
+  const pinned = day.manual.length > 0;
 
   return (
     <button
@@ -97,9 +105,12 @@ function DayCell({
       title={
         empty
           ? `${formatDayMonth(day.date)} — nothing scheduled`
-          : `${formatDayMonth(day.date)} — ${day.stores.length} stop${day.stores.length === 1 ? "" : "s"}` +
+          : `${formatDayMonth(day.date)} — ${day.stopCount} stop${day.stopCount === 1 ? "" : "s"}` +
+            (pinned
+              ? ` (${day.manual.length} one-off${day.manual.length === 1 ? "" : "s"})`
+              : "") +
             ` in ${day.towns.join(", ")}` +
-            (day.stores.length > 1
+            (day.stopCount > 1
               ? day.driveKm === null
                 ? " · distance unknown, a stop has no coordinates"
                 : ` · ${Math.round(day.driveKm)} km straight line`
@@ -123,11 +134,21 @@ function DayCell({
             empty ? "text-muted-foreground/40" : "text-foreground",
           ].join(" ")}
         >
-          {day.stores.length || "—"}
+          {day.stopCount || "—"}
         </span>
         {/* Day of the month only — the row label already says which month, and
             repeating it 47 times is what made this read as a wall of text. */}
-        <span className="text-[10px] tabular-nums text-muted-foreground/70">
+        <span className="flex items-baseline gap-0.5 text-[10px] tabular-nums text-muted-foreground/70">
+          {/* A pin, not a count. That some of this day was placed by hand
+              changes how the number should be read — it will not move when the
+              cycle does — and the cell is 80px wide, so it gets a mark rather
+              than a sentence. */}
+          {pinned && (
+            <Pin
+              className="h-2.5 w-2.5 shrink-0 text-primary"
+              aria-label={`${day.manual.length} one-off stop${day.manual.length === 1 ? "" : "s"}`}
+            />
+          )}
           {day.date.getDate()}
         </span>
       </p>
@@ -142,7 +163,7 @@ function DayCell({
           printing — "0 km" there is noise that reads as a measurement. Null is
           different: a stop has no coordinates, and saying "0 km" would claim the
           shops are all in the same place. */}
-      {!empty && day.stores.length > 1 && (
+      {!empty && day.stopCount > 1 && (
         <p className="text-[10px] leading-tight tabular-nums text-muted-foreground/80">
           {/* "unknown", not "no distance" — the latter reads as *zero* distance,
               which is the precise misreading the null-instead-of-0 rule exists
@@ -160,7 +181,7 @@ function DayCell({
         >
           <AlertTriangle className="h-2.5 w-2.5 shrink-0" />
           {heavy
-            ? `${day.stores.length - storesPerDay} over`
+            ? `${day.stopCount - storesPerDay} over`
             : multiTown
               ? "split"
               : "off day"}
@@ -172,29 +193,49 @@ function DayCell({
 
 export function CycleGrid({
   stores,
+  manual,
+  storeOptions,
   weeks,
   storesPerDay,
   workingDays,
   busy,
+  stopBusy,
+  canAddStops,
   onChangeDay,
   onChangeWeek,
+  onAddStop,
+  onRemoveStop,
 }: {
   stores: PlannedStore[];
+  /** One-off stops for this rep across the horizon. */
+  manual: ManualStop[];
+  /** Every store that can be pinned to a day — deliberately not just this
+      rep's, since a one-off is usually cover for a store they do not have. */
+  storeOptions: PickableStore[];
   weeks: number;
   storesPerDay: number;
   workingDays: number[];
   /** Assignment id currently being written, from the planner's own optimistic update. */
   busy: string | null;
+  /** Route id being removed, or "add" while an insert is in flight. */
+  stopBusy: string | null;
+  /** False until the org is known — `routes` cannot be written without it. */
+  canAddStops: boolean;
   onChangeDay: (store: PlannedStore, day: number | null) => void;
   onChangeWeek: (store: PlannedStore, week: number) => void;
+  /** Resolves true when the stop landed, false when the write failed. */
+  onAddStop: (date: Date, storeId: string) => Promise<boolean>;
+  onRemoveStop: (stop: ManualStop) => void;
 }) {
   // Keyed by date rather than by object identity: the calendar is rebuilt on every
   // edit, so holding the day itself would leave the panel showing a stale list.
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
+  /** The store chosen in the panel's picker, before it is added. */
+  const [addStoreId, setAddStoreId] = useState("");
 
   const calendar = useMemo(
-    () => buildCycleCalendar(stores, weeks, workingDays),
-    [stores, weeks, workingDays]
+    () => buildCycleCalendar(stores, weeks, workingDays, manual),
+    [stores, weeks, workingDays, manual]
   );
 
   const selected = useMemo(() => {
@@ -212,10 +253,10 @@ export function CycleGrid({
   const totals = useMemo(() => {
     const inHorizon = calendar.weeks
       .flatMap((w) => w.days)
-      .filter((d) => d.inHorizon && d.stores.length > 0);
+      .filter((d) => d.inHorizon && d.stopCount > 0);
     return {
       days: inHorizon.length,
-      overloaded: inHorizon.filter((d) => d.stores.length > storesPerDay).length,
+      overloaded: inHorizon.filter((d) => d.stopCount > storesPerDay).length,
       split: inHorizon.filter((d) => d.towns.length > 1).length,
       // Only summed over days where every stop has coordinates — mixing in the
       // days we cannot measure would understate the total and look precise.
@@ -224,6 +265,9 @@ export function CycleGrid({
     };
   }, [calendar, storesPerDay]);
 
+  // A one-off is enough to make the grid worth drawing even with nothing
+  // planned, so the empty state is only reached when neither kind of stop
+  // lands anywhere.
   if (calendar.weeks.length === 0 || totals.days === 0) {
     // Two different states, and they had one message between them. A store can
     // have a day set and still put nothing in the horizon: four occurrences of a
@@ -420,9 +464,11 @@ export function CycleGrid({
                 month: "long",
               })}
               <span className="ml-2 font-normal text-muted-foreground">
-                {selected.stores.length}{" "}
-                {selected.stores.length === 1 ? "stop" : "stops"}
-                {selected.stores.length > 1 &&
+                {selected.stopCount}{" "}
+                {selected.stopCount === 1 ? "stop" : "stops"}
+                {selected.manual.length > 0 &&
+                  ` · ${selected.manual.length} one-off${selected.manual.length === 1 ? "" : "s"}`}
+                {selected.stopCount > 1 &&
                   selected.driveKm !== null &&
                   ` · ${Math.round(selected.driveKm)} km straight line`}
               </span>
@@ -437,9 +483,9 @@ export function CycleGrid({
             </button>
           </div>
 
-          {selected.stores.length === 0 ? (
+          {selected.stopCount === 0 ? (
             <p className="text-sm text-muted-foreground">
-              Nothing lands on this day.
+              Nothing lands on this day yet.
             </p>
           ) : (
             <ul className="divide-y divide-border rounded-md border border-border bg-card">
@@ -536,8 +582,120 @@ export function CycleGrid({
                   )}
                 </li>
               ))}
+
+              {/* One-offs last, after the cycle they are an exception to. They
+                  carry no day, week or frequency control, because none of the
+                  three applies to a stop that happens once — the only thing
+                  that can be done to one is take it off again. */}
+              {selected.manual.map((m) => (
+                <li
+                  key={m.route_id}
+                  className={[
+                    "flex flex-wrap items-center gap-3 px-3 py-2.5",
+                    stopBusy === m.route_id ? "opacity-60" : "",
+                  ].join(" ")}
+                >
+                  <div className="min-w-[160px] flex-1">
+                    <p className="flex flex-wrap items-center gap-1.5 text-sm font-medium text-foreground">
+                      <span className="truncate">{m.store_name}</span>
+                      <Badge
+                        variant="secondary"
+                        className="shrink-0 gap-1 text-[10px]"
+                        title="Pinned to this date only. The generator never writes it and never takes it away."
+                      >
+                        <Pin className="h-3 w-3" />
+                        One-off
+                      </Badge>
+                      {(m.lat === null || m.lng === null) && (
+                        <Badge
+                          variant="secondary"
+                          className="shrink-0 gap-1 text-[10px]"
+                          title="No coordinates on file, so this stop cannot be placed on a route."
+                        >
+                          <MapPin className="h-3 w-3" />
+                          No location
+                        </Badge>
+                      )}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      {m.city ?? "No town"} · this date only
+                      {m.visited && " · already visited"}
+                    </p>
+                  </div>
+
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="gap-1.5 text-muted-foreground hover:text-destructive"
+                    disabled={m.visited || stopBusy === m.route_id}
+                    // A visited stop is not removable: deleting the route sets
+                    // `visits.route_id` to null and leaves a check-in that no
+                    // longer says what it was for. `generate_routes` refuses to
+                    // retract these for the same reason.
+                    title={
+                      m.visited
+                        ? "A rep has already checked in here, so this stop is part of the record now."
+                        : "Remove this one-off stop"
+                    }
+                    onClick={() => onRemoveStop(m)}
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                    {stopBusy === m.route_id ? "Removing…" : "Remove"}
+                  </Button>
+                </li>
+              ))}
             </ul>
           )}
+
+          {/* Adding is offered on every day in the horizon, including empty
+              ones — a blank Tuesday is exactly where somebody wants to put a
+              one-off, and hiding the control behind "has stops already" would
+              be backwards. */}
+          <div className="flex flex-wrap items-end gap-2 rounded-md border border-dashed border-border bg-card/60 p-2.5">
+            <div className="min-w-[200px] flex-1 space-y-1">
+              <Label
+                htmlFor="cycle-add-stop"
+                className="text-xs text-muted-foreground"
+              >
+                Add a stop to this date
+              </Label>
+              {/* Every store, not just this rep's. A one-off is usually cover
+                  — somebody else's outlet, or one nobody is assigned to yet —
+                  and restricting it to the rep's own round would rule out the
+                  case the feature exists for. */}
+              <StorePicker
+                id="cycle-add-stop"
+                stores={storeOptions}
+                value={addStoreId}
+                onChange={setAddStoreId}
+                placeholder="Search stores…"
+                disabled={!canAddStops || stopBusy === "add"}
+              />
+            </div>
+            <Button
+              type="button"
+              size="sm"
+              className="gap-1.5"
+              disabled={!addStoreId || !canAddStops || stopBusy === "add"}
+              onClick={async () => {
+                const added = await onAddStop(selected.date, addStoreId);
+                // Only cleared once it landed. A failed add that also wiped the
+                // picker would leave the manager retyping a name they had just
+                // found, with nothing on screen saying which store it was.
+                if (added) setAddStoreId("");
+              }}
+            >
+              <Plus className="h-3.5 w-3.5" />
+              {stopBusy === "add" ? "Adding…" : "Add stop"}
+            </Button>
+          </div>
+
+          <p className="text-xs text-muted-foreground">
+            A stop added here sits on this date only — it does not join the call
+            cycle, will not repeat, and survives every re-generate. To have a
+            store called on regularly, give it a day in the list instead.
+          </p>
         </div>
       )}
 

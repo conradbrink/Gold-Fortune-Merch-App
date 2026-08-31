@@ -1,6 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { callRpc } from "@/lib/rpc";
-import { toLocalDateInput } from "@/lib/date-range";
+import { fromLocalDateInput, toLocalDateInput } from "@/lib/date-range";
 import { clusterByProximity, shortestPathKm, toPoint } from "@/lib/geo";
 
 /**
@@ -71,6 +71,40 @@ export type PlannedStore = {
   /** Null when the store has never been geocoded — 24 of them have not been. */
   lat: number | null;
   lng: number | null;
+};
+
+/**
+ * A stop added by hand to one date, outside the call cycle.
+ *
+ * This is a `routes` row with `source = 'manual'`, not a `store_assignments`
+ * row, and the difference is the whole point: the cycle says what happens every
+ * week, and this says what happens once. `generate_routes` retracts its own
+ * `'cycle'` output when the pattern moves and never touches these — so a stop
+ * put on a date deliberately survives every re-plan.
+ *
+ * It carries no day, week or frequency, because it does not recur. It is not
+ * tied to an assignment either: a one-off is often a store this rep does not
+ * normally cover, which is why it is being added by hand.
+ */
+export type ManualStop = {
+  /** `routes.id` — the row removing it deletes. */
+  route_id: string;
+  store_id: string;
+  store_name: string;
+  city: string | null;
+  /** The date it sits on, local midnight. */
+  date: Date;
+  lat: number | null;
+  lng: number | null;
+  /**
+   * True once a rep has checked in against it.
+   *
+   * Deleting the route would orphan that visit — `visits.route_id` is `on
+   * delete set null`, so the visit survives with nothing saying what it was
+   * for. `generate_routes` refuses to retract a route with a visit for the same
+   * reason; removal is blocked in the UI rather than silently doing damage.
+   */
+  visited: boolean;
 };
 
 export type GenerateResult = {
@@ -315,10 +349,25 @@ export type CycleDay = {
    */
   inHorizon: boolean;
   stores: PlannedStore[];
-  /** Distinct towns landing on this date, sorted. */
+  /**
+   * One-off stops on this exact date, kept separate from the cycle ones.
+   *
+   * Not merged into `stores`: those are assignment rows carrying a day, a week
+   * and a frequency, and every control in the panel edits one of the three. A
+   * one-off has none of them, so it can only be added or removed — folding the
+   * two together would offer a "Move to Wednesday" on a row where that means
+   * nothing.
+   */
+  manual: ManualStop[];
+  /** Distinct towns landing on this date, sorted. Both kinds of stop. */
   towns: string[];
-  /** Shortest straight-line path through the stops. Null when a stop has no coordinates. */
+  /**
+   * Shortest straight-line path through the stops. Null when a stop has no
+   * coordinates. Counts one-offs: the rep drives to them like anything else.
+   */
   driveKm: number | null;
+  /** Everything the rep calls on that day, cycle and one-off together. */
+  stopCount: number;
 };
 
 export type CycleWeek = {
@@ -363,6 +412,7 @@ export function buildCycleCalendar(
   stores: PlannedStore[],
   weeks: number,
   workingDays: number[],
+  manual: ManualStop[] = [],
   from = new Date()
 ): CycleCalendar {
   const start = dayStart(addDays(from, 1));
@@ -373,7 +423,34 @@ export function buildCycleCalendar(
   // A store planned on a day the org does not work still has to be visible: the
   // generator will schedule it regardless, and a grid that hid it would be the
   // second blind spot this view exists to remove.
-  const plannedDays = new Set(planned.map((s) => s.day_of_week as number));
+  // Clipped to the window actually being drawn. Callers fetch one-offs over the
+  // widest horizon the UI offers so that changing the horizon needs no refetch,
+  // which means `manual` routinely carries stops outside this window — and an
+  // out-of-window stop that still got a vote on the columns would open an
+  // off-day column whose every cell is out of horizon, and make the banner
+  // announce a weekday the grid never shows.
+  const inWindow = manual.filter((m) => {
+    const t = dayStart(m.date).getTime();
+    return t >= start.getTime() && t <= end.getTime();
+  });
+
+  // One-offs keyed by date, so a day can find its own in one lookup rather than
+  // filtering the whole list per cell — 47 cells against every manual stop.
+  const manualByDate: Record<string, ManualStop[]> = {};
+  for (const m of inWindow) {
+    (manualByDate[dayStart(m.date).toDateString()] ??= []).push(m);
+  }
+
+  // A one-off on a weekday nothing recurs on still has to have a column, for
+  // the same reason an off-day column exists: the rep is going, so the grid has
+  // to be able to say so.
+  const manualDays = new Set(
+    inWindow.map((m) => isoWeekday(dayStart(m.date)))
+  );
+  const plannedDays = new Set([
+    ...planned.map((s) => s.day_of_week as number),
+    ...manualDays,
+  ]);
   const offDayColumns = [...plannedDays]
     .filter((d) => !workingDays.includes(d))
     .sort((a, b) => a - b);
@@ -397,16 +474,23 @@ export function buildCycleCalendar(
           s.day_of_week === weekday &&
           occursOn(date, s.visit_frequency, s.week_of_cycle)
       );
+      const oneOffs = manualByDate[date.toDateString()] ?? [];
+      // Distances and towns are about where the rep physically goes, so they
+      // are measured over both kinds of stop. Only `stores` stays cycle-only,
+      // because only cycle rows can be edited as a pattern.
+      const allStops = [...landing, ...oneOffs];
       return {
         date,
         weekday,
         inHorizon: date.getTime() >= start.getTime() && date.getTime() <= end.getTime(),
         stores: landing,
-        towns: [...new Set(landing.map((s) => s.city ?? "No town"))].sort(),
+        manual: oneOffs,
+        towns: [...new Set(allStops.map((s) => s.city ?? "No town"))].sort(),
         driveKm:
-          landing.length === 0
+          allStops.length === 0
             ? null
-            : shortestPathKm(landing.map((s) => toPoint(s.lat, s.lng))),
+            : shortestPathKm(allStops.map((s) => toPoint(s.lat, s.lng))),
+        stopCount: allStops.length,
       };
     });
 
@@ -971,6 +1055,73 @@ export async function removeStop(
  * The `.select()` is a single string literal — a concatenated one degrades to
  * `GenericStringError` in postgrest-js.
  */
+/**
+ * One rep's hand-added stops between two dates, inclusive.
+ *
+ * Scoped to `source = 'manual'` on purpose. The generator's own `'cycle'` rows
+ * describe the same dates the calendar already derives from the assignments,
+ * so reading them too would double every stop — the grid's claim is that it
+ * shows the plan, and the plan is the assignments plus whatever was pinned to a
+ * date by hand.
+ */
+export async function fetchManualStops(
+  supabase: SupabaseClient,
+  repId: string,
+  from: Date,
+  to: Date
+): Promise<ManualStop[]> {
+  // Single string literal — a concatenated .select() degrades to
+  // GenericStringError in postgrest-js.
+  const { data, error } = await supabase
+    .from("routes")
+    .select("id, store_id, scheduled_date, stores(name, city, lat, lng), visits(id)")
+    .eq("rep_id", repId)
+    .eq("source", "manual")
+    .gte("scheduled_date", toLocalDateInput(from))
+    .lte("scheduled_date", toLocalDateInput(to));
+  if (error) throw new Error(error.message);
+
+  type StoreRow = {
+    name: string;
+    city: string | null;
+    lat: number | null;
+    lng: number | null;
+  };
+
+  const rows = (data ?? []) as unknown as {
+    id: string;
+    store_id: string;
+    scheduled_date: string;
+    stores: StoreRow | StoreRow[] | null;
+    visits: { id: string }[] | null;
+  }[];
+
+  return rows
+    .map((r) => {
+      // postgrest returns an embedded relation as an object or an array
+      // depending on the cardinality it infers; normalise rather than guess.
+      const store = Array.isArray(r.stores) ? r.stores[0] ?? null : r.stores;
+      return {
+        route_id: r.id,
+        store_id: r.store_id,
+        store_name: store?.name ?? "Unknown store",
+        city: store?.city ?? null,
+        // Parsed as local midnight. `new Date("2026-09-08")` is UTC midnight,
+        // which in CAT is 02:00 the same day but west of Greenwich is the
+        // evening before — the stop would land in the wrong cell.
+        date: fromLocalDateInput(r.scheduled_date),
+        lat: store?.lat ?? null,
+        lng: store?.lng ?? null,
+        visited: (r.visits ?? []).length > 0,
+      };
+    })
+    .sort(
+      (a, b) =>
+        a.date.getTime() - b.date.getTime() ||
+        a.store_name.localeCompare(b.store_name)
+    );
+}
+
 export async function fetchPlannedStores(
   supabase: SupabaseClient,
   repId: string
