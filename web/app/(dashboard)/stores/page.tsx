@@ -457,7 +457,15 @@ export default function StoresPage() {
    */
   function setStoreCycle(store: StoreRow, frequency: VisitFrequency) {
     if (store.visit_frequency === frequency) return;
-    const before = stores;
+    // The previous *value*, not a snapshot of the whole list.
+    //
+    // `busyStore` holds one id, so only the row being written is disabled and a
+    // second row can be edited while this write is still in flight — and that
+    // row's `finally` clears the flag for both. Restoring a whole-array
+    // snapshot on failure would then take the other row's SUCCESSFUL change
+    // with it, and the table order and the export would stay wrong until a
+    // reload. Rolling back one field of one store cannot do that.
+    const previous = store.visit_frequency;
     runOnRow(
       store.id,
       () =>
@@ -466,7 +474,12 @@ export default function StoresPage() {
             s.id === store.id ? { ...s, visit_frequency: frequency } : s
           )
         ),
-      () => setStores(before),
+      () =>
+        setStores((prev) =>
+          prev.map((s) =>
+            s.id === store.id ? { ...s, visit_frequency: previous } : s
+          )
+        ),
       () => setStoreFrequency(supabase, store.id, frequency)
     );
   }
