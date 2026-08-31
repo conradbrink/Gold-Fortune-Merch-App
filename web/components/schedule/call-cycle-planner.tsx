@@ -28,6 +28,8 @@ import {
   WEEKDAYS,
   addDays,
   addStop,
+  isoWeekday,
+  occursOn,
   applySpread,
   autoSpreadDays,
   computeWeekLoad,
@@ -78,6 +80,21 @@ import { CycleGrid } from "@/components/schedule/cycle-grid";
  * affects one store and rolls that store back rather than discarding the
  * session's work.
  */
+/**
+ * Horizons the planner offers, widest last.
+ *
+ * One-offs are fetched over the widest of these no matter which is selected, so
+ * widening the view never needs a refetch — `buildCycleCalendar` clips the
+ * stops to whatever is actually being drawn.
+ */
+const HORIZONS = [4, 8, 12];
+
+/** Tomorrow to the end of the widest horizon — the window one-offs are read over. */
+function manualWindow(): [Date, Date] {
+  const now = new Date();
+  return [addDays(now, 1), addDays(now, HORIZONS[HORIZONS.length - 1] * 7)];
+}
+
 export function CallCyclePlanner() {
   const supabase = createClient();
 
@@ -173,18 +190,9 @@ export function CallCyclePlanner() {
     setLoadingStores(true);
     (async () => {
       try {
-        // A window wider than the grid draws: the first row starts on the
-        // Monday before the horizon opens, and a stop pinned there still has a
-        // cell to sit in. Over-fetching a fortnight of one-offs is cheaper than
-        // a stop that exists and is not drawn.
         const [rows, oneOffs] = await Promise.all([
           fetchPlannedStores(supabase, repId),
-          fetchManualStops(
-            supabase,
-            repId,
-            addDays(new Date(), -7),
-            addDays(new Date(), weeks * 7 + 7)
-          ),
+          fetchManualStops(supabase, repId, ...manualWindow()),
         ]);
         if (!cancelled) {
           setStores(rows);
@@ -199,6 +207,11 @@ export function CallCyclePlanner() {
     return () => {
       cancelled = true;
     };
+    // Deliberately not keyed on `weeks`. One-offs are fetched over the widest
+    // horizon the selector offers, so widening the view has everything it needs
+    // already and `buildCycleCalendar` clips to whatever is being drawn.
+    // Keying on `weeks` would refetch both queries and flash the spinner for a
+    // change that needs neither.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [repId]);
 
@@ -295,9 +308,17 @@ export function CallCyclePlanner() {
     setStopBusy("add");
     setError(null);
     try {
-      // Append to the end of that date. Order is the rep's to choose on the
-      // day, but `sequence_order` still needs a sane value — and the sequence
-      // is per date, so only this date's stops count towards it.
+      // Append to the end of that date. `generate_routes` numbers stops per
+      // rep and date, so this has to count the same population: the cycle
+      // stores that land on this exact date plus the one-offs already on it.
+      // Counting every assignment the rep has — which is what this did first —
+      // numbers a one-off in the sixties on a day with four stops.
+      const cycleOnDate = stores.filter(
+        (s) =>
+          s.active &&
+          s.day_of_week === isoWeekday(date) &&
+          occursOn(date, s.visit_frequency, s.week_of_cycle)
+      );
       const onDate = manual.filter(
         (m) => m.date.toDateString() === date.toDateString()
       );
@@ -307,19 +328,12 @@ export function CallCyclePlanner() {
         repId,
         storeId,
         date,
-        onDate.length + stores.length + 1
+        cycleOnDate.length + onDate.length + 1
       );
       // Re-read rather than construct the row locally: the insert is a no-op on
       // a duplicate (unique rep/store/date), so guessing would put a second
       // copy on screen that the database does not have.
-      setManual(
-        await fetchManualStops(
-          supabase,
-          repId,
-          addDays(new Date(), -7),
-          addDays(new Date(), weeks * 7 + 7)
-        )
-      );
+      setManual(await fetchManualStops(supabase, repId, ...manualWindow()));
       return true;
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -548,9 +562,11 @@ export function CallCyclePlanner() {
             value={String(weeks)}
             onChange={(e) => setWeeks(Number(e.target.value))}
           >
-            <option value="4">4 weeks</option>
-            <option value="8">8 weeks</option>
-            <option value="12">12 weeks</option>
+            {HORIZONS.map((w) => (
+              <option key={w} value={w}>
+                {w} weeks
+              </option>
+            ))}
           </NativeSelect>
         </div>
 

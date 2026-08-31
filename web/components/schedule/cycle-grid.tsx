@@ -467,7 +467,7 @@ export function CycleGrid({
                 {selected.stopCount}{" "}
                 {selected.stopCount === 1 ? "stop" : "stops"}
                 {selected.manual.length > 0 &&
-                  ` · ${selected.manual.length} one-off`}
+                  ` · ${selected.manual.length} one-off${selected.manual.length === 1 ? "" : "s"}`}
                 {selected.stopCount > 1 &&
                   selected.driveKm !== null &&
                   ` · ${Math.round(selected.driveKm)} km straight line`}

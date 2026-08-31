@@ -423,10 +423,21 @@ export function buildCycleCalendar(
   // A store planned on a day the org does not work still has to be visible: the
   // generator will schedule it regardless, and a grid that hid it would be the
   // second blind spot this view exists to remove.
+  // Clipped to the window actually being drawn. Callers fetch one-offs over the
+  // widest horizon the UI offers so that changing the horizon needs no refetch,
+  // which means `manual` routinely carries stops outside this window — and an
+  // out-of-window stop that still got a vote on the columns would open an
+  // off-day column whose every cell is out of horizon, and make the banner
+  // announce a weekday the grid never shows.
+  const inWindow = manual.filter((m) => {
+    const t = dayStart(m.date).getTime();
+    return t >= start.getTime() && t <= end.getTime();
+  });
+
   // One-offs keyed by date, so a day can find its own in one lookup rather than
   // filtering the whole list per cell — 47 cells against every manual stop.
   const manualByDate: Record<string, ManualStop[]> = {};
-  for (const m of manual) {
+  for (const m of inWindow) {
     (manualByDate[dayStart(m.date).toDateString()] ??= []).push(m);
   }
 
@@ -434,7 +445,7 @@ export function buildCycleCalendar(
   // the same reason an off-day column exists: the rep is going, so the grid has
   // to be able to say so.
   const manualDays = new Set(
-    manual.map((m) => isoWeekday(dayStart(m.date)))
+    inWindow.map((m) => isoWeekday(dayStart(m.date)))
   );
   const plannedDays = new Set([
     ...planned.map((s) => s.day_of_week as number),
