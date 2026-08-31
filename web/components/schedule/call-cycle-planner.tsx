@@ -18,22 +18,31 @@ import {
 import { WeekLoadStrip } from "@/components/schedule/week-load-strip";
 import { InsightsPanel } from "@/components/reports/insights-panel";
 import { createClient } from "@/lib/supabase/client";
-import { fetchRepDirectory, type RepSummary } from "@/lib/representatives";
+import {
+  fetchOrgId,
+  fetchRepDirectory,
+  type RepSummary,
+} from "@/lib/representatives";
 import {
   FREQUENCIES,
   WEEKDAYS,
+  addDays,
+  addStop,
   applySpread,
   autoSpreadDays,
   computeWeekLoad,
   countPlannedVisits,
   cycleVisits,
   describeCycle,
+  fetchManualStops,
   fetchPlannedStores,
   generateRoutes,
+  removeStop,
   reconcileWeekOfCycle,
   setAssignmentDay,
   setStoreFrequency,
   type GenerateResult,
+  type ManualStop,
   type PlannedStore,
   type SpreadResult,
   type VisitFrequency,
@@ -101,6 +110,17 @@ export function CallCyclePlanner() {
   const [orderingBusy, setOrderingBusy] = useState<string | null>(null);
   const [orderDone, setOrderDone] = useState<string | null>(null);
 
+  /** One-off stops for the selected rep, across the horizon the grid draws. */
+  const [manual, setManual] = useState<ManualStop[]>([]);
+  /** Route id being removed, or "add" while an insert is in flight. */
+  const [stopBusy, setStopBusy] = useState<string | null>(null);
+  /** Every active store, for the one-off picker. Fetched once, not per rep:
+      a one-off is frequently a store this rep does not cover. */
+  const [storeOptions, setStoreOptions] = useState<
+    { id: string; name: string; city: string | null }[]
+  >([]);
+  const [orgId, setOrgId] = useState<string | null>(null);
+
   const [settings, setSettings] = useState<OrgSettings>(DEFAULT_ORG_SETTINGS);
   /** Non-null while an auto-spread proposal is waiting to be accepted. */
   const [spread, setSpread] = useState<SpreadResult | null>(null);
@@ -108,6 +128,13 @@ export function CallCyclePlanner() {
 
   useEffect(() => {
     fetchOrgSettings(supabase).then(setSettings).catch(() => {});
+    fetchOrgId(supabase).then(setOrgId).catch(() => setOrgId(null));
+    supabase
+      .from("stores")
+      .select("id, name, city")
+      .eq("active", true)
+      .order("name")
+      .then(({ data }) => setStoreOptions(data ?? []));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -139,14 +166,30 @@ export function CallCyclePlanner() {
   useEffect(() => {
     if (!repId) {
       setStores([]);
+      setManual([]);
       return;
     }
     let cancelled = false;
     setLoadingStores(true);
     (async () => {
       try {
-        const rows = await fetchPlannedStores(supabase, repId);
-        if (!cancelled) setStores(rows);
+        // A window wider than the grid draws: the first row starts on the
+        // Monday before the horizon opens, and a stop pinned there still has a
+        // cell to sit in. Over-fetching a fortnight of one-offs is cheaper than
+        // a stop that exists and is not drawn.
+        const [rows, oneOffs] = await Promise.all([
+          fetchPlannedStores(supabase, repId),
+          fetchManualStops(
+            supabase,
+            repId,
+            addDays(new Date(), -7),
+            addDays(new Date(), weeks * 7 + 7)
+          ),
+        ]);
+        if (!cancelled) {
+          setStores(rows);
+          setManual(oneOffs);
+        }
       } catch (e) {
         if (!cancelled) setError(e instanceof Error ? e.message : String(e));
       } finally {
@@ -230,6 +273,74 @@ export function CallCyclePlanner() {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
       setBusy(null);
+    }
+  }
+
+  /**
+   * Pins one store to one date for this rep.
+   *
+   * Writes a `routes` row with `source = 'manual'`, which is a different thing
+   * from everything else on this screen: the rest of the planner edits the
+   * recurring pattern, and this edits a single day. `generate_routes` retracts
+   * only its own `'cycle'` rows, so a stop added here survives every re-plan —
+   * that is the whole reason the column exists.
+   *
+   * Returns whether it landed, so the picker only clears on success.
+   */
+  async function addOneOff(date: Date, storeId: string): Promise<boolean> {
+    if (!orgId || !repId) {
+      setError("Could not determine your organisation.");
+      return false;
+    }
+    setStopBusy("add");
+    setError(null);
+    try {
+      // Append to the end of that date. Order is the rep's to choose on the
+      // day, but `sequence_order` still needs a sane value — and the sequence
+      // is per date, so only this date's stops count towards it.
+      const onDate = manual.filter(
+        (m) => m.date.toDateString() === date.toDateString()
+      );
+      await addStop(
+        supabase,
+        orgId,
+        repId,
+        storeId,
+        date,
+        onDate.length + stores.length + 1
+      );
+      // Re-read rather than construct the row locally: the insert is a no-op on
+      // a duplicate (unique rep/store/date), so guessing would put a second
+      // copy on screen that the database does not have.
+      setManual(
+        await fetchManualStops(
+          supabase,
+          repId,
+          addDays(new Date(), -7),
+          addDays(new Date(), weeks * 7 + 7)
+        )
+      );
+      return true;
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+      return false;
+    } finally {
+      setStopBusy(null);
+    }
+  }
+
+  async function removeOneOff(stop: ManualStop) {
+    const rollback = manual;
+    setManual((prev) => prev.filter((m) => m.route_id !== stop.route_id));
+    setStopBusy(stop.route_id);
+    setError(null);
+    try {
+      await removeStop(supabase, stop.route_id);
+    } catch (e) {
+      setManual(rollback);
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setStopBusy(null);
     }
   }
 
@@ -769,7 +880,7 @@ export function CallCyclePlanner() {
             </div>
             <p className="text-xs text-muted-foreground">
               {planView === "days"
-                ? "Every date the generator will write a route for."
+                ? "Every date the generator will write a route for, plus any one-off stops pinned to a day."
                 : "Grouped by town, where frequency is set."}
             </p>
           </div>
@@ -777,12 +888,18 @@ export function CallCyclePlanner() {
           {planView === "days" && (
             <CycleGrid
               stores={stores}
+              manual={manual}
+              storeOptions={storeOptions}
               weeks={weeks}
               storesPerDay={settings.storesPerDay}
               workingDays={settings.workingDays}
               busy={busy}
+              stopBusy={stopBusy}
+              canAddStops={orgId !== null}
               onChangeDay={changeDay}
               onChangeWeek={changeWeek}
+              onAddStop={addOneOff}
+              onRemoveStop={removeOneOff}
             />
           )}
 
