@@ -94,6 +94,7 @@ type StoreGroup = Tables<"store_groups">;
 const emptyForm = {
   name: "",
   store_group_id: "",
+  visit_frequency: "weekly",
   address: "",
   city: "",
   state: "",
@@ -516,6 +517,7 @@ export default function StoresPage() {
     setForm({
       name: store.name ?? "",
       store_group_id: store.store_group_id ?? "",
+      visit_frequency: store.visit_frequency ?? "weekly",
       address: store.address ?? "",
       city: store.city ?? "",
       state: store.state ?? "",
@@ -546,6 +548,7 @@ export default function StoresPage() {
     const payload = {
       name: form.name,
       store_group_id: groupId,
+      visit_frequency: form.visit_frequency,
       address: form.address,
       city: form.city,
       state: form.state,
@@ -1206,6 +1209,35 @@ export default function StoresPage() {
                 />
               </div>
             )}
+            {/* The Call cycle column is `hidden lg:table-cell`, so below
+                1024px the badge in the row is not rendered and the cycle
+                cannot be set from the table at all. Group has always had this
+                dialog as its narrow-width way in; without this the cycle was
+                the one inline control on the page with no other route to it.
+                Reading it is still possible at any width — the mirror line
+                under the store name carries it. */}
+            <div className="space-y-1.5">
+              <Label htmlFor="store-frequency">Call cycle</Label>
+              <NativeSelect
+                id="store-frequency"
+                value={form.visit_frequency}
+                onChange={(e) =>
+                  setForm({ ...form, visit_frequency: e.target.value })
+                }
+              >
+                {FREQUENCIES.map((f) => (
+                  <option key={f.value} value={f.value}>
+                    {f.label}
+                  </option>
+                ))}
+              </NativeSelect>
+              {/* Frequency is a property of the store, so this is not scoped
+                  to whoever is looking at it. Said here because the dialog,
+                  unlike the planner, gives no hint that a rep is involved. */}
+              <p className="text-xs text-muted-foreground">
+                Applies to every rep who covers this store.
+              </p>
+            </div>
             <div className="space-y-1.5">
               <Label htmlFor="store-name">Store name</Label>
               <Input
