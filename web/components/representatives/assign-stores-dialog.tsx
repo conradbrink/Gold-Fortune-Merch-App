@@ -66,7 +66,17 @@ export function AssignStoresDialog({
 }) {
   const [query, setQuery] = useState("");
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
-  const [busyStore, setBusyStore] = useState<string | null>(null);
+  /**
+   * Every store with a write in flight, not just the most recent one.
+   *
+   * A single id cannot describe two at once: whichever write settled first
+   * re-enabled *both* rows while one was still pending. Nothing here keeps an
+   * optimistic copy — `onChanged()` re-reads — so this was never the data-loss
+   * shape, only a control that came back too early.
+   */
+  const [busyStores, setBusyStores] = useState<ReadonlySet<string>>(
+    () => new Set()
+  );
   const [error, setError] = useState<string | null>(null);
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
@@ -158,7 +168,7 @@ export function AssignStoresDialog({
   }, [open, rep?.rep_id, query]);
 
   async function run(storeId: string, fn: () => Promise<void>) {
-    setBusyStore(storeId);
+    setBusyStores((prev) => new Set(prev).add(storeId));
     setError(null);
     try {
       await fn();
@@ -166,7 +176,12 @@ export function AssignStoresDialog({
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
-      setBusyStore(null);
+      // Only this store's id — another may still be writing, and it clears its own.
+      setBusyStores((prev) => {
+        const next = new Set(prev);
+        next.delete(storeId);
+        return next;
+      });
     }
   }
 
@@ -539,7 +554,7 @@ export function AssignStoresDialog({
                     {g.stores.map((s) => {
                       const mine = mineByStore.get(s.id);
                       const others = otherCover.get(s.id) ?? 0;
-                      const busy = busyStore === s.id;
+                      const busy = busyStores.has(s.id);
                       // Shown, not blocked. A rep visiting is how an unverified
                       // location gets fixed, so refusing the assignment would
                       // prevent the only thing that resolves it — but it is

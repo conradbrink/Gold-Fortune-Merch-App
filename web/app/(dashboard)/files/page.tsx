@@ -58,7 +58,26 @@ export default function FilesPage() {
   const [userId, setUserId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [busyFile, setBusyFile] = useState<string | null>(null);
+  /**
+   * Every file with a write in flight, not just the most recent one.
+   *
+   * A single id cannot describe two at once: whichever write settled first
+   * re-enabled *both* controls while one was still pending.
+   */
+  const [busyFiles, setBusyFiles] = useState<ReadonlySet<string>>(() => new Set());
+
+  function markBusy(id: string) {
+    setBusyFiles((prev) => new Set(prev).add(id));
+  }
+
+  /** Only this file's id — another may still be writing, and it clears its own. */
+  function clearBusy(id: string) {
+    setBusyFiles((prev) => {
+      const next = new Set(prev);
+      next.delete(id);
+      return next;
+    });
+  }
   const [uploadOpen, setUploadOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [audienceFilter, setAudienceFilter] = useState("all");
@@ -108,8 +127,17 @@ export default function FilesPage() {
     repIds: string[],
     groupIds: string[]
   ) {
-    const before = files;
-    setBusyFile(file.id);
+    // The previous *values*, not a snapshot of the whole list. Files are
+    // written concurrently, so restoring the list as it was before this click
+    // would also undo an audience another row successfully changed in the
+    // meantime — and who can see a file is exactly the wrong thing to get
+    // silently wrong.
+    const previous = {
+      audience: file.audience,
+      rep_ids: file.rep_ids,
+      group_ids: file.group_ids,
+    };
+    markBusy(file.id);
     setError(null);
     setFiles((prev) =>
       prev.map((f) =>
@@ -121,10 +149,12 @@ export default function FilesPage() {
     try {
       await setAudience(supabase, file.id, audience, repIds, groupIds);
     } catch (e) {
-      setFiles(before);
+      setFiles((prev) =>
+        prev.map((f) => (f.id === file.id ? { ...f, ...previous } : f))
+      );
       setError(e instanceof Error ? e.message : String(e));
     } finally {
-      setBusyFile(null);
+      clearBusy(file.id);
     }
   }
 
@@ -139,7 +169,7 @@ export default function FilesPage() {
   }
 
   async function remove(file: FileRow) {
-    setBusyFile(file.id);
+    markBusy(file.id);
     setError(null);
     try {
       await deleteFile(supabase, file);
@@ -148,7 +178,7 @@ export default function FilesPage() {
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
-      setBusyFile(null);
+      clearBusy(file.id);
     }
   }
 
@@ -226,7 +256,7 @@ export default function FilesPage() {
             </TableHeader>
             <TableBody>
               {visible.map((f) => (
-                <TableRow key={f.id} className={busyFile === f.id ? "opacity-60" : ""}>
+                <TableRow key={f.id} className={busyFiles.has(f.id) ? "opacity-60" : ""}>
                   <TableCell className="min-w-[200px] max-w-[340px]">
                     <div className="flex items-start gap-2.5">
                       <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-accent text-accent-foreground">
@@ -254,7 +284,7 @@ export default function FilesPage() {
                       file={f}
                       reps={reps}
                       groups={groups}
-                      disabled={busyFile === f.id}
+                      disabled={busyFiles.has(f.id)}
                       onChange={(a, r, g) => changeAudience(f, a, r, g)}
                     />
                   </TableCell>
@@ -319,10 +349,10 @@ export default function FilesPage() {
             <Button
               size="sm"
               variant="destructive"
-              disabled={busyFile === confirmDelete.id}
+              disabled={busyFiles.has(confirmDelete.id)}
               onClick={() => remove(confirmDelete)}
             >
-              {busyFile === confirmDelete.id ? "Deleting…" : "Delete"}
+              {busyFiles.has(confirmDelete.id) ? "Deleting…" : "Delete"}
             </Button>
             <Button size="sm" variant="outline" onClick={() => setConfirmDelete(null)}>
               Cancel

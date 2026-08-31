@@ -85,7 +85,28 @@ export default function ProductsPage() {
 
   const [deleteTarget, setDeleteTarget] = useState<ProductRow | null>(null);
   const [impact, setImpact] = useState<DeleteImpact | null>(null);
-  const [busyRow, setBusyRow] = useState<string | null>(null);
+  /**
+   * Every row with a write in flight, not just the most recent one.
+   *
+   * A single id cannot describe two rows at once: whichever write settled
+   * first cleared the flag for both, so a row stopped looking busy while it
+   * was still writing. Deactivate is a one-click menu item and nothing here
+   * disables it, so two rows at once is ordinary rather than hypothetical.
+   */
+  const [busyRows, setBusyRows] = useState<ReadonlySet<string>>(() => new Set());
+
+  function markBusy(id: string) {
+    setBusyRows((prev) => new Set(prev).add(id));
+  }
+
+  /** Only this row's id — another row may still be writing, and it clears its own. */
+  function clearBusy(id: string) {
+    setBusyRows((prev) => {
+      const next = new Set(prev);
+      next.delete(id);
+      return next;
+    });
+  }
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -232,20 +253,27 @@ export default function ProductsPage() {
 
   /** Deactivating is the ordinary action — it keeps every answer on record. */
   async function toggleActive(p: ProductRow) {
-    setBusyRow(p.id);
-    const before = products;
+    markBusy(p.id);
+    // The previous *value*, not a snapshot of the whole list. Rows are written
+    // concurrently, so restoring every product as it looked before this click
+    // would also undo whatever another row committed in the meantime — a
+    // successful flip silently reverting, with the table then disagreeing with
+    // the database until a reload. Rolling back one field of one product cannot.
+    const previous = p.active;
     setProducts((prev) =>
-      prev.map((x) => (x.id === p.id ? { ...x, active: !x.active } : x))
+      prev.map((x) => (x.id === p.id ? { ...x, active: !previous } : x))
     );
     const { error: e } = await supabase
       .from("products")
-      .update({ active: !p.active })
+      .update({ active: !previous })
       .eq("id", p.id);
     if (e) {
-      setProducts(before);
+      setProducts((prev) =>
+        prev.map((x) => (x.id === p.id ? { ...x, active: previous } : x))
+      );
       setError(e.message);
     }
-    setBusyRow(null);
+    clearBusy(p.id);
   }
 
   async function askDelete(p: ProductRow) {
@@ -260,7 +288,7 @@ export default function ProductsPage() {
 
   async function confirmDelete() {
     if (!deleteTarget) return;
-    setBusyRow(deleteTarget.id);
+    markBusy(deleteTarget.id);
     const { error: e } = await supabase
       .from("products")
       .delete()
@@ -268,7 +296,7 @@ export default function ProductsPage() {
     if (e) setError(e.message);
     else setProducts((prev) => prev.filter((x) => x.id !== deleteTarget.id));
     setDeleteTarget(null);
-    setBusyRow(null);
+    clearBusy(deleteTarget.id);
   }
 
   return (
@@ -384,7 +412,7 @@ export default function ProductsPage() {
               </TableRow>
             )}
             {filtered.map((p) => (
-              <TableRow key={p.id} className={busyRow === p.id ? "opacity-60" : ""}>
+              <TableRow key={p.id} className={busyRows.has(p.id) ? "opacity-60" : ""}>
                 <TableCell>
                   <div className="flex items-center gap-2.5">
                     <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-secondary">

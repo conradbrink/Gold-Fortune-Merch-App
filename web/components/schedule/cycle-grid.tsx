@@ -215,10 +215,12 @@ export function CycleGrid({
   weeks: number;
   storesPerDay: number;
   workingDays: number[];
-  /** Assignment id currently being written, from the planner's own optimistic update. */
-  busy: string | null;
-  /** Route id being removed, or "add" while an insert is in flight. */
-  stopBusy: string | null;
+  /** Assignment ids currently being written, from the planner's own optimistic
+      update. A set, not one id: two rows can be edited at once, and one
+      finishing must not re-enable the other. */
+  busy: ReadonlySet<string>;
+  /** Route ids being removed, plus "add" while an insert is in flight. */
+  stopBusy: ReadonlySet<string>;
   /** False until the org is known — `routes` cannot be written without it. */
   canAddStops: boolean;
   onChangeDay: (store: PlannedStore, day: number | null) => void;
@@ -494,7 +496,7 @@ export function CycleGrid({
                   key={s.assignment_id}
                   className={[
                     "flex flex-wrap items-end gap-3 px-3 py-2.5",
-                    busy === s.assignment_id ? "opacity-60" : "",
+                    busy.has(s.assignment_id) ? "opacity-60" : "",
                   ].join(" ")}
                 >
                   <div className="min-w-[160px] flex-1">
@@ -530,7 +532,7 @@ export function CycleGrid({
                     <NativeSelect
                       id={`grid-day-${s.assignment_id}`}
                       value={String(s.day_of_week ?? "")}
-                      disabled={busy === s.assignment_id}
+                      disabled={busy.has(s.assignment_id)}
                       onChange={(e) =>
                         onChangeDay(
                           s,
@@ -561,7 +563,7 @@ export function CycleGrid({
                       <NativeSelect
                         id={`grid-week-${s.assignment_id}`}
                         value={String(s.week_of_cycle ?? 1)}
-                        disabled={busy === s.assignment_id}
+                        disabled={busy.has(s.assignment_id)}
                         onChange={(e) => onChangeWeek(s, Number(e.target.value))}
                       >
                         {s.visit_frequency === "biweekly" ? (
@@ -592,7 +594,7 @@ export function CycleGrid({
                   key={m.route_id}
                   className={[
                     "flex flex-wrap items-center gap-3 px-3 py-2.5",
-                    stopBusy === m.route_id ? "opacity-60" : "",
+                    stopBusy.has(m.route_id) ? "opacity-60" : "",
                   ].join(" ")}
                 >
                   <div className="min-w-[160px] flex-1">
@@ -628,7 +630,7 @@ export function CycleGrid({
                     variant="ghost"
                     size="sm"
                     className="gap-1.5 text-muted-foreground hover:text-destructive"
-                    disabled={m.visited || stopBusy === m.route_id}
+                    disabled={m.visited || stopBusy.has(m.route_id)}
                     // A visited stop is not removable: deleting the route sets
                     // `visits.route_id` to null and leaves a check-in that no
                     // longer says what it was for. `generate_routes` refuses to
@@ -641,7 +643,7 @@ export function CycleGrid({
                     onClick={() => onRemoveStop(m)}
                   >
                     <Trash2 className="h-3.5 w-3.5" />
-                    {stopBusy === m.route_id ? "Removing…" : "Remove"}
+                    {stopBusy.has(m.route_id) ? "Removing…" : "Remove"}
                   </Button>
                 </li>
               ))}
@@ -670,14 +672,14 @@ export function CycleGrid({
                 value={addStoreId}
                 onChange={setAddStoreId}
                 placeholder="Search stores…"
-                disabled={!canAddStops || stopBusy === "add"}
+                disabled={!canAddStops || stopBusy.has("add")}
               />
             </div>
             <Button
               type="button"
               size="sm"
               className="gap-1.5"
-              disabled={!addStoreId || !canAddStops || stopBusy === "add"}
+              disabled={!addStoreId || !canAddStops || stopBusy.has("add")}
               onClick={async () => {
                 const added = await onAddStop(selected.date, addStoreId);
                 // Only cleared once it landed. A failed add that also wiped the
@@ -687,7 +689,7 @@ export function CycleGrid({
               }}
             >
               <Plus className="h-3.5 w-3.5" />
-              {stopBusy === "add" ? "Adding…" : "Add stop"}
+              {stopBusy.has("add") ? "Adding…" : "Add stop"}
             </Button>
           </div>
 
