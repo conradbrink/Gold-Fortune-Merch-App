@@ -104,7 +104,21 @@ export function CallCyclePlanner() {
   const [loadingReps, setLoadingReps] = useState(true);
   const [loadingStores, setLoadingStores] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState<string | null>(null);
+  /**
+   * Every assignment with a write in flight, not just the most recent one.
+   *
+   * A single id cannot describe two rows at once: the second write to start
+   * overwrote the first, so whichever settled first re-enabled *both* controls
+   * while one was still pending. Every control here is a one-click select over
+   * a rep's whole estate, so two at once is ordinary.
+   *
+   * A set of ids rather than a count per id, which is sound here and is not on
+   * every page: every control that calls `run` is disabled by
+   * `busy.has(s.assignment_id)`, so one row cannot start a second write while
+   * its first is in flight. `products` and `files` count instead, because
+   * their controls stay live during a write.
+   */
+  const [busy, setBusy] = useState<ReadonlySet<string>>(() => new Set());
   const [query, setQuery] = useState("");
   const [weeks, setWeeks] = useState(8);
   /**
@@ -130,7 +144,7 @@ export function CallCyclePlanner() {
   /** One-off stops for the selected rep, across the horizon the grid draws. */
   const [manual, setManual] = useState<ManualStop[]>([]);
   /** Route id being removed, or "add" while an insert is in flight. */
-  const [stopBusy, setStopBusy] = useState<string | null>(null);
+  const [stopBusy, setStopBusy] = useState<ReadonlySet<string>>(() => new Set());
   /** Every active store, for the one-off picker. Fetched once, not per rep:
       a one-off is frequently a store this rep does not cover. */
   const [storeOptions, setStoreOptions] = useState<
@@ -270,23 +284,64 @@ export function CallCyclePlanner() {
     [settings, stores]
   );
 
+  /**
+   * Runs one row's write, with optimistic state that is rolled back on failure.
+   *
+   * `rollback` must undo **this** row's change and nothing else. Rows are
+   * written concurrently, so restoring a snapshot of the whole `stores` array
+   * taken before the call — which is what this did — also throws away whatever
+   * another row committed while this one was in flight. The planner's grid,
+   * its week-load strip and its capacity meter all read that array, so a
+   * reverted value moves figures the manager is planning against.
+   */
   async function run(
     assignmentId: string,
-    optimistic: PlannedStore[],
+    optimistic: () => void,
+    rollback: () => void,
     write: () => Promise<void>
   ) {
-    const rollback = stores;
-    setStores(optimistic);
-    setBusy(assignmentId);
+    setBusy((prev) => new Set(prev).add(assignmentId));
     setError(null);
+    optimistic();
     try {
       await write();
     } catch (e) {
-      setStores(rollback);
+      rollback();
       setError(e instanceof Error ? e.message : String(e));
     } finally {
-      setBusy(null);
+      // Only this row's id. Another row may still be writing, and it is the one
+      // that clears its own.
+      setBusy((prev) => {
+        const next = new Set(prev);
+        next.delete(assignmentId);
+        return next;
+      });
     }
+  }
+
+  function markStopBusy(id: string) {
+    setStopBusy((prev) => new Set(prev).add(id));
+  }
+
+  /** Only this stop's id — another may still be writing, and it clears its own. */
+  function clearStopBusy(id: string) {
+    setStopBusy((prev) => {
+      const next = new Set(prev);
+      next.delete(id);
+      return next;
+    });
+  }
+
+  /** Replaces some fields on one assignment, leaving every other row alone. */
+  function patchAssignment(
+    assignmentId: string,
+    patch: Partial<PlannedStore>
+  ) {
+    setStores((prev) =>
+      prev.map((x) =>
+        x.assignment_id === assignmentId ? { ...x, ...patch } : x
+      )
+    );
   }
 
   /**
@@ -305,7 +360,7 @@ export function CallCyclePlanner() {
       setError("Could not determine your organisation.");
       return false;
     }
-    setStopBusy("add");
+    markStopBusy("add");
     setError(null);
     try {
       // Append to the end of that date. `generate_routes` numbers stops per
@@ -339,22 +394,27 @@ export function CallCyclePlanner() {
       setError(e instanceof Error ? e.message : String(e));
       return false;
     } finally {
-      setStopBusy(null);
+      clearStopBusy("add");
     }
   }
 
   async function removeOneOff(stop: ManualStop) {
-    const rollback = manual;
-    setManual((prev) => prev.filter((m) => m.route_id !== stop.route_id));
-    setStopBusy(stop.route_id);
+    markStopBusy(stop.route_id);
     setError(null);
+    setManual((prev) => prev.filter((m) => m.route_id !== stop.route_id));
     try {
       await removeStop(supabase, stop.route_id);
     } catch (e) {
-      setManual(rollback);
+      // Put back the one row this took out, not a snapshot of every one-off:
+      // another day's stop may have been added or removed meanwhile, and a
+      // snapshot would undo that too. Order is never rendered — the grid
+      // buckets by date — so the end of the list is where it was.
+      setManual((prev) =>
+        prev.some((m) => m.route_id === stop.route_id) ? prev : [...prev, stop]
+      );
       setError(e instanceof Error ? e.message : String(e));
     } finally {
-      setStopBusy(null);
+      clearStopBusy(stop.route_id);
     }
   }
 
@@ -362,42 +422,62 @@ export function CallCyclePlanner() {
     // Weekly ignores the week entirely, so don't leave a stale value behind.
     const week =
       day === null || s.visit_frequency === "weekly" ? null : s.week_of_cycle ?? 1;
+    // The previous *values*, not a snapshot of the whole list — see `run`.
+    const previous = { day_of_week: s.day_of_week, week_of_cycle: s.week_of_cycle };
     run(
       s.assignment_id,
-      stores.map((x) =>
-        x.assignment_id === s.assignment_id
-          ? { ...x, day_of_week: day, week_of_cycle: week }
-          : x
-      ),
+      () =>
+        patchAssignment(s.assignment_id, { day_of_week: day, week_of_cycle: week }),
+      () => patchAssignment(s.assignment_id, previous),
       () => setAssignmentDay(supabase, s.assignment_id, day, week)
     );
   }
 
   function changeWeek(s: PlannedStore, week: number) {
+    const previous = s.week_of_cycle;
     run(
       s.assignment_id,
-      stores.map((x) =>
-        x.assignment_id === s.assignment_id ? { ...x, week_of_cycle: week } : x
-      ),
+      () => patchAssignment(s.assignment_id, { week_of_cycle: week }),
+      () => patchAssignment(s.assignment_id, { week_of_cycle: previous }),
       () => setAssignmentDay(supabase, s.assignment_id, s.day_of_week, week)
     );
   }
 
   function changeFrequency(s: PlannedStore, frequency: VisitFrequency) {
+    // Frequency belongs to the *store*, so this legitimately touches every row
+    // for that store — which makes "just this one" mean the store's rows, not
+    // the one assignment. Their previous values are captured per row, because
+    // the reps covering one store need not share a week, so one restore value
+    // would not do.
+    const previous = new Map(
+      stores
+        .filter((x) => x.store_id === s.store_id)
+        .map((x) => [
+          x.assignment_id,
+          { visit_frequency: x.visit_frequency, week_of_cycle: x.week_of_cycle },
+        ])
+    );
     run(
       s.assignment_id,
-      // Frequency belongs to the store, so update every row for that store,
-      // not just this assignment — and reconcile each row's own week, because
-      // the reps covering one store need not share a week.
-      stores.map((x) =>
-        x.store_id === s.store_id
-          ? {
-              ...x,
-              visit_frequency: frequency,
-              week_of_cycle: reconcileWeekOfCycle(frequency, x.week_of_cycle),
-            }
-          : x
-      ),
+      () =>
+        setStores((prev) =>
+          prev.map((x) =>
+            x.store_id === s.store_id
+              ? {
+                  ...x,
+                  visit_frequency: frequency,
+                  week_of_cycle: reconcileWeekOfCycle(frequency, x.week_of_cycle),
+                }
+              : x
+          )
+        ),
+      () =>
+        setStores((prev) =>
+          prev.map((x) => {
+            const was = previous.get(x.assignment_id);
+            return was ? { ...x, ...was } : x;
+          })
+        ),
       // One call: `setStoreFrequency` writes the week as well, store-wide.
       // It used to be followed by a `setAssignmentDay` guarded on the week
       // having changed, which was exactly backwards — a monthly store on week
@@ -955,7 +1035,7 @@ export function CallCyclePlanner() {
                           key={s.assignment_id}
                           className={[
                             "flex flex-wrap items-end gap-3 px-3 py-3",
-                            busy === s.assignment_id ? "opacity-60" : "",
+                            busy.has(s.assignment_id) ? "opacity-60" : "",
                           ].join(" ")}
                         >
                           <div className="min-w-[180px] flex-1">
@@ -987,7 +1067,7 @@ export function CallCyclePlanner() {
                             <NativeSelect
                               id={`day-${s.assignment_id}`}
                               value={s.day_of_week === null ? "" : String(s.day_of_week)}
-                              disabled={busy === s.assignment_id}
+                              disabled={busy.has(s.assignment_id)}
                               onChange={(e) =>
                                 changeDay(
                                   s,
@@ -1014,7 +1094,7 @@ export function CallCyclePlanner() {
                             <NativeSelect
                               id={`freq-${s.assignment_id}`}
                               value={s.visit_frequency}
-                              disabled={busy === s.assignment_id}
+                              disabled={busy.has(s.assignment_id)}
                               title="Frequency belongs to the store, so this changes it for every rep who covers it."
                               onChange={(e) =>
                                 changeFrequency(s, e.target.value as VisitFrequency)
@@ -1042,7 +1122,7 @@ export function CallCyclePlanner() {
                                 id={`week-${s.assignment_id}`}
                                 value={String(s.week_of_cycle ?? 1)}
                                 disabled={
-                                  busy === s.assignment_id || s.day_of_week === null
+                                  busy.has(s.assignment_id) || s.day_of_week === null
                                 }
                                 onChange={(e) => changeWeek(s, Number(e.target.value))}
                               >
