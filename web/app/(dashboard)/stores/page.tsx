@@ -222,7 +222,16 @@ export default function StoresPage() {
   /** Reps available to assign inline from this page. */
   const [reps, setReps] = useState<{ id: string; name: string }[]>([]);
   const [orgId, setOrgId] = useState<string | null>(null);
-  const [busyStore, setBusyStore] = useState<string | null>(null);
+  /**
+   * Every store with a row write in flight, not just the most recent one.
+   *
+   * This used to be a single id, and a single id re-enables rows that are
+   * still writing. Two rows can be edited at once — only the row being written
+   * is disabled — and whichever write settled first cleared the flag for both,
+   * so the other row's controls came back while its own write was still in the
+   * air. A set only forgets the id that actually finished.
+   */
+  const [busyStores, setBusyStores] = useState<Set<string>>(new Set());
   const [rowError, setRowError] = useState<string | null>(null);
   /** Non-null once a delete has been requested — holds what it would destroy. */
   const [deleteTarget, setDeleteTarget] = useState<StoreRow | null>(null);
@@ -347,6 +356,14 @@ export default function StoresPage() {
    * rolled back if the write fails. Nothing calls `loadData()` here — that
    * would raise the loading flag, replace the table with a spinner and drop
    * the manager back at the top of a 217-row list.
+   *
+   * `rollback` must undo **this** row's change and nothing else. Rows are
+   * written concurrently, so restoring a snapshot of the whole `stores` or
+   * `assignments` array taken before the call also throws away whatever
+   * another row committed while this one was in flight — a successful write
+   * disappearing from the table, and from the export, until a reload. Capture
+   * the previous value, or the single row, and put that back through a
+   * functional update.
    */
   async function runOnRow(
     storeId: string,
@@ -354,7 +371,7 @@ export default function StoresPage() {
     rollback: () => void,
     write: () => Promise<void>
   ) {
-    setBusyStore(storeId);
+    setBusyStores((prev) => new Set(prev).add(storeId));
     setRowError(null);
     optimistic();
     try {
@@ -363,7 +380,13 @@ export default function StoresPage() {
       rollback();
       setRowError(e instanceof Error ? e.message : String(e));
     } finally {
-      setBusyStore(null);
+      // Only this row's id. Another row may still be writing, and it is the
+      // one that clears its own.
+      setBusyStores((prev) => {
+        const next = new Set(prev);
+        next.delete(storeId);
+        return next;
+      });
     }
   }
 
@@ -374,7 +397,6 @@ export default function StoresPage() {
       setRowError("Could not determine your organisation.");
       return;
     }
-    const before = assignments;
     // A temporary id until the insert returns; only used as a React key and
     // for rollback, never sent anywhere.
     const optimisticRow: Assignment = {
@@ -386,22 +408,47 @@ export default function StoresPage() {
     runOnRow(
       store.id,
       () => setAssignments((prev) => [...prev, optimisticRow]),
-      () => setAssignments(before),
+      // Just the row this added. The unit here is one assignment rather than
+      // one field, and dropping the placeholder is the entire undo — every
+      // other assignment is left exactly as whoever wrote it left it.
+      () =>
+        setAssignments((prev) => prev.filter((a) => a.id !== optimisticRow.id)),
       async () => {
         await assignStore(supabase, orgId, store.id, repId);
-        // Re-read just the assignments so the placeholder id becomes the real
-        // one — one small query, and the table never unmounts.
-        setAssignments(await fetchAssignments(supabase));
+        // Re-read the assignments so the placeholder id becomes the real one —
+        // one small query, and the table never unmounts. Only *this* store's
+        // rows are taken from the read: another store's optimistic change may
+        // be in flight, which means it is not in the database yet and so not
+        // in this snapshot either. Assigning the snapshot wholesale would
+        // erase that change on the way past, and nothing would put it back —
+        // the success path has the same reach as a rollback, and needs the
+        // same narrowing.
+        const rows = await fetchAssignments(supabase);
+        setAssignments((prev) => [
+          ...prev.filter((a) => a.store_id !== store.id),
+          ...rows.filter((a) => a.store_id === store.id),
+        ]);
       }
     );
   }
 
   function unassignRep(store: StoreRow, assignmentId: string) {
-    const before = assignments;
+    // The one row being taken out, not a snapshot of every assignment. Putting
+    // it back on the end restores exactly what the table showed: the order of
+    // this array is never rendered — `assignedByStore` groups by store and
+    // sorts by rep name — and `fetchAssignments` does not order it either.
+    const removed = assignments.find((a) => a.id === assignmentId);
     runOnRow(
       store.id,
       () => setAssignments((prev) => prev.filter((a) => a.id !== assignmentId)),
-      () => setAssignments(before),
+      () =>
+        setAssignments((prev) =>
+          // Nothing to restore if it was already gone, and nothing to restore
+          // twice if another row's read-back has since brought it back.
+          !removed || prev.some((a) => a.id === assignmentId)
+            ? prev
+            : [...prev, removed]
+        ),
       () => unassignStore(supabase, assignmentId)
     );
   }
@@ -409,7 +456,8 @@ export default function StoresPage() {
   /** Moves a store between groups, or out of one entirely with `null`. */
   function setStoreGroup(store: StoreRow, groupId: string | null) {
     if (store.store_group_id === groupId) return;
-    const before = stores;
+    // The previous *value*, not a snapshot of the whole list — see `runOnRow`.
+    const previous = store.store_group_id;
     runOnRow(
       store.id,
       () =>
@@ -418,7 +466,12 @@ export default function StoresPage() {
             s.id === store.id ? { ...s, store_group_id: groupId } : s
           )
         ),
-      () => setStores(before),
+      () =>
+        setStores((prev) =>
+          prev.map((s) =>
+            s.id === store.id ? { ...s, store_group_id: previous } : s
+          )
+        ),
       async () => {
         const { error } = await supabase
           .from("stores")
@@ -459,9 +512,8 @@ export default function StoresPage() {
     if (store.visit_frequency === frequency) return;
     // The previous *value*, not a snapshot of the whole list.
     //
-    // `busyStore` holds one id, so only the row being written is disabled and a
-    // second row can be edited while this write is still in flight — and that
-    // row's `finally` clears the flag for both. Restoring a whole-array
+    // Only the row being written is disabled, so a second row can legitimately
+    // be edited while this write is still in flight. Restoring a whole-array
     // snapshot on failure would then take the other row's SUCCESSFUL change
     // with it, and the table order and the export would stay wrong until a
     // reload. Rolling back one field of one store cannot do that.
@@ -655,6 +707,20 @@ export default function StoresPage() {
     }
   }
 
+  /**
+   * Deactivates a store, or brings it back.
+   *
+   * Deliberately **not** folded into `runOnRow` with the other row controls.
+   * It keeps no optimistic state and has no rollback, so it never carried the
+   * stale-snapshot bug they did and cannot discard another row's write. What
+   * is wrong with it is a different fault: it throws the error away, so a
+   * write the database refuses reads as nothing happening, and it reloads the
+   * whole page, which is the spinner-and-lost-scroll behaviour `runOnRow`
+   * exists to avoid. Repairing either changes what the row does on screen —
+   * and the Responsible column reads `active`, replacing the rep menu with a
+   * dash — so it wants a change of its own rather than a ride on a data-loss
+   * fix.
+   */
   async function toggleActive(store: StoreRow) {
     await supabase
       .from("stores")
@@ -1549,7 +1615,7 @@ export default function StoresPage() {
                         render={
                           <button
                             type="button"
-                            disabled={busyStore === store.id}
+                            disabled={busyStores.has(store.id)}
                             className={
                               store.store_group_id
                                 ? "inline-flex items-center gap-1.5 rounded-full bg-secondary px-2.5 py-1 text-xs font-medium text-secondary-foreground hover:bg-secondary/70 disabled:opacity-50"
@@ -1613,7 +1679,7 @@ export default function StoresPage() {
                         render={
                           <button
                             type="button"
-                            disabled={busyStore === store.id}
+                            disabled={busyStores.has(store.id)}
                             className="inline-flex items-center gap-1.5 rounded-full bg-secondary px-2.5 py-1 text-xs font-medium text-secondary-foreground hover:bg-secondary/70 disabled:opacity-50"
                           >
                             <CalendarClock className="h-3 w-3" />
@@ -1674,7 +1740,7 @@ export default function StoresPage() {
                           render={
                             <button
                               type="button"
-                              disabled={busyStore === store.id || !orgId}
+                              disabled={busyStores.has(store.id) || !orgId}
                               className={
                                 assignedByStore[store.id]?.length
                                   ? "rounded px-1 py-0.5 text-left text-foreground hover:bg-muted disabled:opacity-50"
