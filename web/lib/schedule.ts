@@ -1044,11 +1044,68 @@ export async function setAssignmentDay(
 }
 
 /**
- * Changes a store's visit frequency.
+ * What `week_of_cycle` must become when a store moves to `frequency`.
  *
- * This is a property of the *store*, so it changes the cycle for every rep who
- * covers it — the planner says so next to the control rather than letting a
+ * The column is constrained 1-4 because *monthly* needs four — it is the nth
+ * occurrence of the weekday in the month. Bi-weekly only has two, and weekly
+ * has none. So the legal range depends on a column on a different table, which
+ * is exactly the kind of rule a check constraint cannot express and nothing
+ * therefore enforced: a monthly store on the 3rd Tuesday, moved to bi-weekly,
+ * kept its 3.
+ *
+ * That is not a cosmetic leftover. `describeCycle` reads 3 as "not 1" and
+ * prints **week B**, while `occursOn` and `generate_routes` both take the
+ * parity — `3 % 2 = 1` — and schedule the ODD weeks, which is week **A**. The
+ * label and the schedule disagree by a full week, and the Week control (whose
+ * options are only 1 and 2) renders blank, so the obvious "fix" of picking a
+ * week from the dropdown moves every visit for that store.
+ *
+ * Deliberately a clamp and not a default: a null stays null. Null already
+ * means week A everywhere that reads it (`?? 1` here, `coalesce(…, 1)` in the
+ * generator), so inventing a 1 would write a value nothing asked for onto
+ * assignments that are usually unplanned anyway.
+ */
+export function reconcileWeekOfCycle(
+  frequency: VisitFrequency,
+  weekOfCycle: number | null
+): number | null {
+  switch (frequency) {
+    case "weekly":
+      // Weekly ignores the week entirely; leaving one behind is a value that
+      // comes back the moment the store is put on a cycle again.
+      return null;
+    case "biweekly":
+      return weekOfCycle !== null && weekOfCycle > 2 ? 1 : weekOfCycle;
+    case "monthly":
+      // 1-4 are all meaningful here, so there is nothing to reconcile.
+      return weekOfCycle;
+  }
+}
+
+/**
+ * Changes a store's visit frequency, and brings its call cycle with it.
+ *
+ * Frequency is a property of the *store*, so it changes the cycle for every rep
+ * who covers it — the planner says so next to the control rather than letting a
  * manager discover it from someone else's week.
+ *
+ * The second write is why this function touches `store_assignments` as well as
+ * `stores`, which it did not used to. Frequency lives on one table and the week
+ * it constrains lives on the other, so *every* caller that moves a store down a
+ * frequency has to reconcile the week — and there are three of them (this
+ * planner, the bulk action in the coverage planner, and the per-row control on
+ * the stores list). Two of them never reconciled at all and the third was
+ * guarded by `week !== s.week_of_cycle`, which is false in precisely the case
+ * that needed the write. Putting it here makes all three correct, and makes it
+ * the kind of thing a fourth caller cannot forget.
+ *
+ * Store-wide, not one assignment: a store covered by two reps has a row per
+ * rep, and reconciling only the row the manager was looking at leaves the other
+ * rep's week holding a number their frequency no longer has.
+ *
+ * Ordered stores-then-assignments so a failure leaves the frequency changed and
+ * a week to tidy, never a week clamped for a frequency change that never
+ * landed. The planner's own writes are sequenced the same way.
  */
 export async function setStoreFrequency(
   supabase: SupabaseClient,
@@ -1060,6 +1117,24 @@ export async function setStoreFrequency(
     .update({ visit_frequency: frequency })
     .eq("id", storeId);
   if (error) throw new Error(error.message);
+
+  // Narrowed to the rows that actually need it — the filters are the same rule
+  // as `reconcileWeekOfCycle`, expressed as a predicate so an unaffected
+  // assignment is not rewritten (and so the update is idempotent on re-run).
+  if (frequency === "monthly") return;
+
+  const rows = supabase.from("store_assignments");
+  const { error: weekError } =
+    frequency === "weekly"
+      ? await rows
+          .update({ week_of_cycle: null })
+          .eq("store_id", storeId)
+          .not("week_of_cycle", "is", null)
+      : await rows
+          .update({ week_of_cycle: 1 })
+          .eq("store_id", storeId)
+          .gt("week_of_cycle", 2);
+  if (weekError) throw new Error(weekError.message);
 }
 
 /**
