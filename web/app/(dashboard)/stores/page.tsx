@@ -134,6 +134,7 @@ const FREQUENCY_ORDER: string[] = FREQUENCIES.map((f) => f.value);
 
 type SortKey =
   | "name"
+  | "town"
   | "location"
   | "group"
   | "cycle"
@@ -147,6 +148,9 @@ type SortState = { key: SortKey; dir: "asc" | "desc" };
     export repeats the active one so a sorted file says how it was sorted. */
 const SORT_LABELS: Record<SortKey, string> = {
   name: "Store",
+  // "Town", not "City", to match the filter above the table and the export
+  // column, both of which have always called it that.
+  town: "Town",
   location: "Location",
   group: "Group",
   cycle: "Call cycle",
@@ -806,6 +810,12 @@ export default function StoresPage() {
         alphabet, and a date compared as text is only accidentally right. */
     const rank = (s: StoreRow): string | number => {
       switch (sort.key) {
+        case "town":
+          // No town sorts first ascending, same argument as `lastVisit` and
+          // `responsible` below: a store without one can never be scheduled,
+          // so "which ones are missing it" is the question this column gets
+          // sorted for.
+          return (s.city ?? "").toLowerCase();
         case "location":
           // Trustworthiness, best first — the order the filter already uses.
           return GEOCODE_STATE_ORDER.indexOf(stateById[s.id]);
@@ -1417,6 +1427,14 @@ export default function StoresPage() {
             <TableHeader>
               <TableRow className="hover:bg-transparent">
                 <SortHeader sortKey="name" sort={sort} onSort={toggleSort} />
+                {/* Deliberately NOT breakpoint-hidden, unlike every other
+                    column added here. The town is the fact this estate is
+                    organised around — 45 of them, and the filter beside the
+                    search box is the one a manager reaches for first — and
+                    hiding it below `md` would mean the narrow windows this page
+                    is actually used in never show it. It is also the cheapest
+                    column on the row: one short word. */}
+                <SortHeader sortKey="town" sort={sort} onSort={toggleSort} />
                 {/* Beside the name on purpose: the name links to the point on
                     Google Maps, this says how much that point can be trusted. */}
                 <SortHeader
@@ -1487,48 +1505,56 @@ export default function StoresPage() {
                           <ExternalLink className="h-3 w-3 shrink-0 opacity-70" />
                         </a>
 
+                        {/* The street, without the town — the town has its own
+                            column now, and printing it twice on the same row
+                            was the wider half of what made this cell noisy.
+
+                            The mirror line that used to sit under this one is
+                            GONE. It restated Group, Call cycle, Status, Last
+                            visited and Location for whatever the breakpoints
+                            had hidden, on the principle that a narrow window
+                            should lose layout and not information. In practice
+                            it truncated — "… · Never visited · No locati…" —
+                            so it was losing information anyway, while making
+                            every row three lines tall. Removed on the owner's
+                            instruction after seeing it in production.
+
+                            ⚠️ The consequence is real and intended: below `md`
+                            the Location and Last visited columns are hidden and
+                            no longer restated anywhere, and below `lg` the same
+                            goes for Group and Call cycle. Group, cycle and
+                            location all remain reachable per row through the
+                            actions menu; Last visited does not. */}
                         <div
                           className="truncate text-xs text-muted-foreground"
                           title={
-                            [store.address, store.city, store.state, store.zip]
+                            [store.address, store.state, store.zip]
                               .filter(Boolean)
                               .join(", ") || undefined
                           }
                         >
-                          {[store.address, store.city, store.state, store.zip]
+                          {[store.address, store.state, store.zip]
                             .filter(Boolean)
-                            .join(", ") || (
-                            <span className="text-amber-700 dark:text-amber-400">
-                              No town — not schedulable
-                            </span>
-                          )}
-                        </div>
-                        {/* Mirrors whatever the breakpoints have hidden, so a
-                            narrow window loses layout, never information.
-
-                            Each fact hides at the width its own column
-                            appears, which is not one breakpoint: Group returns
-                            at lg and Status only at xl. Hiding the whole line
-                            at lg — as it used to — dropped Active/Inactive
-                            into a gap between 1024 and 1279px where neither
-                            the column nor the mirror showed it. */}
-                        <div className="truncate text-xs text-muted-foreground xl:hidden">
-                          <span className="lg:hidden">
-                            {groupName(store.store_group_id)}
-                            {" · "}
-                            {cycleLabel(store.visit_frequency)}
-                            {" · "}
-                          </span>
-                          {store.active ? "Active" : "Inactive"}
-                          <span className="md:hidden">
-                            {" · "}
-                            {formatLastVisit(lastVisits[store.id])}
-                            {" · "}
-                            {GEOCODE_STATE_STYLES[stateById[store.id]].label}
-                          </span>
+                            .join(", ")}
                         </div>
                       </div>
                     </div>
+                  </TableCell>
+                  <TableCell className="text-sm">
+                    {store.city ? (
+                      <span className="text-foreground">{store.city}</span>
+                    ) : (
+                      // Carries the warning the store cell used to: a store
+                      // with no town is invisible to the town filter and can
+                      // never be scheduled, which is worth saying in the column
+                      // that is supposed to answer "where".
+                      <span
+                        className="text-amber-700 dark:text-amber-400"
+                        title="Not schedulable until this store has a town."
+                      >
+                        No town
+                      </span>
+                    )}
                   </TableCell>
                   <TableCell className="hidden md:table-cell">
                     <GeocodePill
@@ -1790,7 +1816,7 @@ export default function StoresPage() {
               {filtered.length === 0 && (
                 <TableRow>
                   <TableCell
-                    colSpan={8}
+                    colSpan={9}
                     className="py-10 text-center text-sm text-muted-foreground"
                   >
                     No stores found.
