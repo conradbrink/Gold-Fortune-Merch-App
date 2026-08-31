@@ -73,6 +73,10 @@ export function AssignStoresDialog({
    * re-enabled *both* rows while one was still pending. Nothing here keeps an
    * optimistic copy — `onChanged()` re-reads — so this was never the data-loss
    * shape, only a control that came back too early.
+   *
+   * A set of ids rather than a count per id: the row's control is disabled by
+   * `busyStores.has(s.id)`, so one store cannot start a second write while its
+   * first is still going.
    */
   const [busyStores, setBusyStores] = useState<ReadonlySet<string>>(
     () => new Set()

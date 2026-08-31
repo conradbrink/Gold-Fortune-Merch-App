@@ -111,6 +111,12 @@ export function CallCyclePlanner() {
    * overwrote the first, so whichever settled first re-enabled *both* controls
    * while one was still pending. Every control here is a one-click select over
    * a rep's whole estate, so two at once is ordinary.
+   *
+   * A set of ids rather than a count per id, which is sound here and is not on
+   * every page: every control that calls `run` is disabled by
+   * `busy.has(s.assignment_id)`, so one row cannot start a second write while
+   * its first is in flight. `products` and `files` count instead, because
+   * their controls stay live during a write.
    */
   const [busy, setBusy] = useState<ReadonlySet<string>>(() => new Set());
   const [query, setQuery] = useState("");

@@ -86,24 +86,32 @@ export default function ProductsPage() {
   const [deleteTarget, setDeleteTarget] = useState<ProductRow | null>(null);
   const [impact, setImpact] = useState<DeleteImpact | null>(null);
   /**
-   * Every row with a write in flight, not just the most recent one.
+   * How many writes are in flight per row.
    *
-   * A single id cannot describe two rows at once: whichever write settled
-   * first cleared the flag for both, so a row stopped looking busy while it
-   * was still writing. Deactivate is a one-click menu item and nothing here
-   * disables it, so two rows at once is ordinary rather than hypothetical.
+   * A count, not a set of ids. A set cannot represent two writes for the same
+   * row, and this page is the case where that happens: the Deactivate menu
+   * item is never disabled, so it can be pressed twice, or followed by a
+   * delete, before the first write returns — and the first to settle would
+   * clear the flag while the second was still pending. Counting means a row
+   * stops looking busy only when its last write finishes.
+   *
+   * A plain object rather than a Map, matching the rest of this codebase.
    */
-  const [busyRows, setBusyRows] = useState<ReadonlySet<string>>(() => new Set());
+  const [busyRows, setBusyRows] = useState<Record<string, number>>({});
+
+  const isBusy = (id: string) => (busyRows[id] ?? 0) > 0;
 
   function markBusy(id: string) {
-    setBusyRows((prev) => new Set(prev).add(id));
+    setBusyRows((prev) => ({ ...prev, [id]: (prev[id] ?? 0) + 1 }));
   }
 
-  /** Only this row's id — another row may still be writing, and it clears its own. */
+  /** Drops this write only — any other still in flight for the row keeps it busy. */
   function clearBusy(id: string) {
     setBusyRows((prev) => {
-      const next = new Set(prev);
-      next.delete(id);
+      const left = (prev[id] ?? 0) - 1;
+      const next = { ...prev };
+      if (left > 0) next[id] = left;
+      else delete next[id];
       return next;
     });
   }
@@ -412,7 +420,7 @@ export default function ProductsPage() {
               </TableRow>
             )}
             {filtered.map((p) => (
-              <TableRow key={p.id} className={busyRows.has(p.id) ? "opacity-60" : ""}>
+              <TableRow key={p.id} className={isBusy(p.id) ? "opacity-60" : ""}>
                 <TableCell>
                   <div className="flex items-center gap-2.5">
                     <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-secondary">
