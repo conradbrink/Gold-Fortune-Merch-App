@@ -364,6 +364,13 @@ export default function StoresPage() {
    * disappearing from the table, and from the export, until a reload. Capture
    * the previous value, or the single row, and put that back through a
    * functional update.
+   *
+   * The set holds ids, not a count, which assumes one write per row at a time:
+   * every caller's control is disabled by `busyStores.has(store.id)`, so a row
+   * cannot start a second write while its first is in flight. A control added
+   * here without that check would clear the id on the first write to settle
+   * and re-enable the row early — the narrower fault this replaced, confined
+   * to one row.
    */
   async function runOnRow(
     storeId: string,
