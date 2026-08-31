@@ -438,10 +438,22 @@ export default function StoresPage() {
    * you. The planner works a rep at a time, which means a store nobody covers
    * yet has nowhere to be given a cycle at all.
    *
-   * Only the frequency. The weekday and the week of the cycle live on the
-   * assignment because they only mean something inside one rep's week, so they
-   * stay in the planner. Raising a store above weekly from here cannot strand
-   * it: `generate_routes` coalesces a null `week_of_cycle` to 1.
+   * The **weekday** stays in the planner. It lives on the assignment because it
+   * only means something inside one rep's week, and this page has no rep to set
+   * it against.
+   *
+   * The **week of the cycle** used to be the same argument, and is not any
+   * more. Since #44 `setStoreFrequency` reconciles it store-wide — clamping a
+   * monthly store's 3rd or 4th week down to 1 on the way to bi-weekly, and
+   * nulling it on the way to weekly — because the legal range for that column
+   * depends on `visit_frequency` on a different table, so every caller that
+   * moves a store down a frequency has to bring the week with it. Once
+   * `20260831120000` is applied, `stores_reconcile_week_of_cycle` does the same
+   * thing again in the database; the two agree, and both clamp rather than
+   * reject.
+   *
+   * Raising a store *above* weekly from here still cannot strand it: a null
+   * week stays null, and `generate_routes` coalesces null to 1.
    */
   function setStoreCycle(store: StoreRow, frequency: VisitFrequency) {
     if (store.visit_frequency === frequency) return;
