@@ -17,6 +17,10 @@ import {
   Check,
   Building2,
   MapPin,
+  CalendarClock,
+  ArrowUp,
+  ArrowDown,
+  ArrowUpDown,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -76,6 +80,11 @@ import {
   type Assignment,
 } from "@/lib/representatives";
 import { callRpc } from "@/lib/rpc";
+import {
+  FREQUENCIES,
+  setStoreFrequency,
+  type VisitFrequency,
+} from "@/lib/schedule";
 import { googleMapsUrl } from "@/lib/maps";
 import type { Tables } from "@/lib/supabase/types";
 
@@ -110,6 +119,82 @@ function formatLastVisit(iso: string | null | undefined): string {
   if (days === 1) return "Yesterday";
   if (days < 30) return `${days}d ago`;
   return new Date(iso).toLocaleDateString();
+}
+
+/** The call cycle as a manager reads it — "Weekly", "Every 2 weeks". */
+function cycleLabel(frequency: string): string {
+  return FREQUENCIES.find((f) => f.value === frequency)?.label ?? frequency;
+}
+
+/** Frequencies shortest-cycle first, so ordering by this column reads as
+    "how much attention does this store get" rather than as alphabetical
+    accident — "biweekly" before "monthly" before "weekly" is meaningless. */
+const FREQUENCY_ORDER: string[] = FREQUENCIES.map((f) => f.value);
+
+type SortKey =
+  | "name"
+  | "location"
+  | "group"
+  | "cycle"
+  | "lastVisit"
+  | "status"
+  | "responsible";
+
+type SortState = { key: SortKey; dir: "asc" | "desc" };
+
+/** One source of truth for the column names: the header renders these, and the
+    export repeats the active one so a sorted file says how it was sorted. */
+const SORT_LABELS: Record<SortKey, string> = {
+  name: "Store",
+  location: "Location",
+  group: "Group",
+  cycle: "Call cycle",
+  lastVisit: "Last visited",
+  status: "Status",
+  responsible: "Responsible",
+};
+
+/**
+ * A column header that orders the list.
+ *
+ * Every column here is sortable, including the ones a breakpoint has hidden —
+ * a header that cannot be clicked because the window is narrow is worse than
+ * one that is simply absent, and the hidden columns are mirrored under the
+ * store name anyway.
+ */
+function SortHeader({
+  sortKey,
+  sort,
+  onSort,
+  className,
+}: {
+  sortKey: SortKey;
+  sort: SortState;
+  onSort: (key: SortKey) => void;
+  className?: string;
+}) {
+  const active = sort.key === sortKey;
+  const Icon = !active ? ArrowUpDown : sort.dir === "asc" ? ArrowUp : ArrowDown;
+  return (
+    <TableHead
+      className={className}
+      aria-sort={
+        active ? (sort.dir === "asc" ? "ascending" : "descending") : "none"
+      }
+    >
+      <button
+        type="button"
+        onClick={() => onSort(sortKey)}
+        className="-mx-1 inline-flex items-center gap-1 rounded px-1 py-0.5 font-medium hover:bg-muted"
+      >
+        {SORT_LABELS[sortKey]}
+        <Icon
+          className={`h-3.5 w-3.5 ${active ? "opacity-100" : "opacity-40"}`}
+          aria-hidden
+        />
+      </button>
+    </TableHead>
+  );
 }
 
 export default function StoresPage() {
@@ -150,6 +235,9 @@ export default function StoresPage() {
   );
   /** Non-null while the location-provenance dialog is open. */
   const [locationTarget, setLocationTarget] = useState<StoreRow | null>(null);
+  /** Which column the table is ordered by. Name ascending, matching the order
+      the rows are fetched in, so the page opens looking as it always has. */
+  const [sort, setSort] = useState<SortState>({ key: "name", dir: "asc" });
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -337,6 +425,36 @@ export default function StoresPage() {
           .eq("id", store.id);
         if (error) throw new Error(error.message);
       }
+    );
+  }
+
+  /**
+   * Changes how often a store is visited.
+   *
+   * Frequency is a property of the *store*, so this changes the cycle for every
+   * rep who covers it — the same write `setStoreFrequency` makes from the
+   * planner, offered from the one page that has the whole estate in front of
+   * you. The planner works a rep at a time, which means a store nobody covers
+   * yet has nowhere to be given a cycle at all.
+   *
+   * Only the frequency. The weekday and the week of the cycle live on the
+   * assignment because they only mean something inside one rep's week, so they
+   * stay in the planner. Raising a store above weekly from here cannot strand
+   * it: `generate_routes` coalesces a null `week_of_cycle` to 1.
+   */
+  function setStoreCycle(store: StoreRow, frequency: VisitFrequency) {
+    if (store.visit_frequency === frequency) return;
+    const before = stores;
+    runOnRow(
+      store.id,
+      () =>
+        setStores((prev) =>
+          prev.map((s) =>
+            s.id === store.id ? { ...s, visit_frequency: frequency } : s
+          )
+        ),
+      () => setStores(before),
+      () => setStoreFrequency(supabase, store.id, frequency)
     );
   }
 
@@ -635,6 +753,70 @@ export default function StoresPage() {
         .includes(search.toLowerCase())
     );
 
+  function toggleSort(key: SortKey) {
+    setSort((prev) =>
+      prev.key === key
+        ? { key, dir: prev.dir === "asc" ? "desc" : "asc" }
+        : // A fresh column starts ascending. Carrying the previous column's
+          // direction over made the first click on a header look like it had
+          // sorted the wrong way round.
+          { key, dir: "asc" }
+    );
+  }
+
+  /**
+   * The rows as they are shown — filtered, then ordered.
+   *
+   * Not memoised, deliberately: `filtered` is rebuilt every render, so a
+   * `useMemo` keyed on it would recompute every render anyway while implying
+   * it does not. Ordering 230 rows costs nothing.
+   */
+  const visible = (() => {
+    const dir = sort.dir === "asc" ? 1 : -1;
+    /** What one row compares on. Numbers stay numbers rather than being
+        stringified: Location and Call cycle order by rank rather than by
+        alphabet, and a date compared as text is only accidentally right. */
+    const rank = (s: StoreRow): string | number => {
+      switch (sort.key) {
+        case "location":
+          // Trustworthiness, best first — the order the filter already uses.
+          return GEOCODE_STATE_ORDER.indexOf(stateById[s.id]);
+        case "group":
+          return groupName(s.store_group_id).toLowerCase();
+        case "cycle":
+          return FREQUENCY_ORDER.indexOf(s.visit_frequency);
+        case "lastVisit":
+          // A store nobody has ever visited is the oldest thing on the list,
+          // not a blank to be swept to the end: ascending should lead with the
+          // stores that need going to, which is the reason to sort by this at
+          // all.
+          return lastVisits[s.id] ? new Date(lastVisits[s.id]).getTime() : 0;
+        case "status":
+          return s.active ? 0 : 1;
+        case "responsible":
+          // Same argument: unassigned sorts first ascending, because "who has
+          // nobody" is the question this column gets sorted for.
+          return (assignedByStore[s.id] ?? [])
+            .map((a) => a.name)
+            .join(", ")
+            .toLowerCase();
+        default:
+          return s.name.toLowerCase();
+      }
+    };
+    return [...filtered].sort((a, b) => {
+      const x = rank(a);
+      const y = rank(b);
+      const cmp =
+        typeof x === "number" && typeof y === "number"
+          ? x - y
+          : String(x).localeCompare(String(y));
+      // Name breaks every tie, so two stores on the same cycle never swap
+      // places between renders.
+      return cmp !== 0 ? cmp * dir : a.name.localeCompare(b.name);
+    });
+  })();
+
   /** The visible list, as a spreadsheet. Same rows, same order, same filters. */
   function buildStoreSheet(): ExportSheet {
     const applied = [
@@ -652,6 +834,9 @@ export default function StoresPage() {
       context: [
         `${filtered.length} of ${stores.length} stores`,
         ...(applied.length > 0 ? applied : ["No filters applied"]),
+        `Sorted by ${SORT_LABELS[sort.key]}, ${
+          sort.dir === "asc" ? "ascending" : "descending"
+        }`,
       ],
       filename: "gf-stores",
       columns: [
@@ -666,14 +851,14 @@ export default function StoresPage() {
         { header: "Last visited", key: "lastVisit" },
         { header: "Active", key: "active" },
       ],
-      rows: filtered.map((store) => ({
+      rows: visible.map((store) => ({
         name: store.name,
         group: groupName(store.store_group_id),
         address: store.address ?? "",
         city: store.city ?? "",
         state: store.state ?? "",
         code: store.place_code ?? "",
-        frequency: store.visit_frequency,
+        frequency: cycleLabel(store.visit_frequency),
         reps: (assignedByStore[store.id] ?? []).map((a) => a.name).join(", "),
         // The date only. A store visited three weeks ago and one visited never
         // are different answers, and a blank cell says neither.
@@ -1174,22 +1359,56 @@ export default function StoresPage() {
           <Table>
             <TableHeader>
               <TableRow className="hover:bg-transparent">
-                <TableHead>Store</TableHead>
+                <SortHeader sortKey="name" sort={sort} onSort={toggleSort} />
                 {/* Beside the name on purpose: the name links to the point on
                     Google Maps, this says how much that point can be trusted. */}
-                <TableHead className="hidden md:table-cell">Location</TableHead>
+                <SortHeader
+                  sortKey="location"
+                  sort={sort}
+                  onSort={toggleSort}
+                  className="hidden md:table-cell"
+                />
                 {/* lg, not sm: the sidebar takes ~225px, so a "640px viewport"
                     is a ~415px table. Breakpoints here have to be read against
                     the container the table actually gets. */}
-                <TableHead className="hidden lg:table-cell">Group</TableHead>
-                <TableHead className="hidden md:table-cell">Last visited</TableHead>
-                <TableHead className="hidden xl:table-cell">Status</TableHead>
-                <TableHead>Responsible</TableHead>
+                <SortHeader
+                  sortKey="group"
+                  sort={sort}
+                  onSort={toggleSort}
+                  className="hidden lg:table-cell"
+                />
+                {/* Next to Group because the two are set together: which chain
+                    a store belongs to and how often it is worked are the two
+                    facts a manager is editing when they open this page to plan
+                    rather than to look something up. */}
+                <SortHeader
+                  sortKey="cycle"
+                  sort={sort}
+                  onSort={toggleSort}
+                  className="hidden lg:table-cell"
+                />
+                <SortHeader
+                  sortKey="lastVisit"
+                  sort={sort}
+                  onSort={toggleSort}
+                  className="hidden md:table-cell"
+                />
+                <SortHeader
+                  sortKey="status"
+                  sort={sort}
+                  onSort={toggleSort}
+                  className="hidden xl:table-cell"
+                />
+                <SortHeader
+                  sortKey="responsible"
+                  sort={sort}
+                  onSort={toggleSort}
+                />
                 <TableHead className="w-10" />
               </TableRow>
             </TableHeader>
             <TableBody>
-              {filtered.map((store) => (
+              {visible.map((store) => (
                 <TableRow key={store.id}>
                   {/* Bounded, not just min-width. An unbounded address pushed
                       Group, Responsible and the actions menu outside the
@@ -1239,6 +1458,8 @@ export default function StoresPage() {
                         <div className="truncate text-xs text-muted-foreground xl:hidden">
                           <span className="lg:hidden">
                             {groupName(store.store_group_id)}
+                            {" · "}
+                            {cycleLabel(store.visit_frequency)}
                             {" · "}
                           </span>
                           {store.active ? "Active" : "Inactive"}
@@ -1321,6 +1542,45 @@ export default function StoresPage() {
                             Ungrouped
                           </DropdownMenuItem>
                         )}
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </TableCell>
+                  <TableCell className="hidden lg:table-cell">
+                    {/* The badge is the control, same as Group and the rep
+                        names — and like Group this REPLACES rather than
+                        toggles, so the current cycle is ticked. Every store has
+                        one (the column is `not null default 'weekly'`), so
+                        there is no unset state to prompt for. */}
+                    <DropdownMenu>
+                      <DropdownMenuTrigger
+                        render={
+                          <button
+                            type="button"
+                            disabled={busyStore === store.id}
+                            className="inline-flex items-center gap-1.5 rounded-full bg-secondary px-2.5 py-1 text-xs font-medium text-secondary-foreground hover:bg-secondary/70 disabled:opacity-50"
+                          >
+                            <CalendarClock className="h-3 w-3" />
+                            {cycleLabel(store.visit_frequency)}
+                          </button>
+                        }
+                      />
+                      <DropdownMenuContent align="start">
+                        {FREQUENCIES.map((f) => (
+                          <DropdownMenuItem
+                            key={f.value}
+                            className="gap-2"
+                            onClick={() => setStoreCycle(store, f.value)}
+                          >
+                            <Check
+                              className={`h-3.5 w-3.5 ${
+                                store.visit_frequency === f.value
+                                  ? "opacity-100"
+                                  : "opacity-0"
+                              }`}
+                            />
+                            {f.label}
+                          </DropdownMenuItem>
+                        ))}
                       </DropdownMenuContent>
                     </DropdownMenu>
                   </TableCell>
@@ -1473,7 +1733,7 @@ export default function StoresPage() {
               {filtered.length === 0 && (
                 <TableRow>
                   <TableCell
-                    colSpan={7}
+                    colSpan={8}
                     className="py-10 text-center text-sm text-muted-foreground"
                   >
                     No stores found.
