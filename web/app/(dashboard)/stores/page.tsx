@@ -234,6 +234,13 @@ export default function StoresPage() {
    * re-enabled *both* controls while one was still pending. Two rows is not a
    * hypothetical on a 217-row table where every control is a one-click
    * dropdown.
+   *
+   * It holds ids rather than counts, which assumes one write per row at a
+   * time: every `runOnRow` caller's control is disabled by
+   * `busyStores.has(store.id)`, so a row cannot start a second write while its
+   * first is in flight. A control added without that check would clear the id
+   * on the first write to settle and re-enable the row early — the same fault
+   * this replaced, confined to one row.
    */
   const [busyStores, setBusyStores] = useState<ReadonlySet<string>>(
     () => new Set()
@@ -418,19 +425,30 @@ export default function StoresPage() {
         // one — one small query, and the table never unmounts.
         const fresh = await fetchAssignments(supabase);
         // Whole-array replacement has the same problem as whole-array
-        // rollback: another store's assign may still be in flight, and the
-        // server cannot know about it yet. Its placeholder is carried over so
-        // the row does not blink out and back.
+        // rollback: another store's write may still be in flight, and the
+        // server cannot know about it yet.
+        //
+        // Carrying over that store's *placeholders* is not enough, because an
+        // in-flight write is not always something added. `unassignRep` removes
+        // a row optimistically, and a pending removal is an ABSENCE — there is
+        // no placeholder to carry, and the row is still in the database, so a
+        // full `fresh` puts it back. Its own delete then succeeds, throws
+        // nothing, rolls back nothing, and the Responsible column keeps
+        // showing a rep who is no longer assigned until the next reload.
+        //
+        // So only the store this write touched is taken from the read, and
+        // every other store keeps whatever local state has. That store cannot
+        // have a second write of its own in flight — its controls are disabled
+        // while it is in `busyStores` — so the read is authoritative for it,
+        // and its placeholder falls out with the rest of its old rows.
+        //
+        // The cost is that this no longer refreshes other stores from the
+        // server, which is the right trade: a read-back triggered by writing
+        // store B has no business rewriting store A's row. `loadData()` is
+        // what re-syncs the whole table.
         setAssignments((prev) => [
-          ...fresh,
-          ...prev.filter(
-            (a) =>
-              a.id.startsWith("pending-") &&
-              a.store_id !== store.id &&
-              !fresh.some(
-                (f) => f.store_id === a.store_id && f.rep_id === a.rep_id
-              )
-          ),
+          ...prev.filter((a) => a.store_id !== store.id),
+          ...fresh.filter((a) => a.store_id === store.id),
         ]);
       }
     );
@@ -765,6 +783,20 @@ export default function StoresPage() {
     }
   }
 
+  /**
+   * Deactivates a store, or brings it back.
+   *
+   * Deliberately **not** routed through `runOnRow` with the other row
+   * controls. It keeps no optimistic state and has no rollback, so it never
+   * carried the stale-snapshot bug they did and cannot discard another row's
+   * write. What is wrong with it is a different fault: it throws the error
+   * away, so a write the database refuses reads as nothing happening, and it
+   * calls `loadData()`, which raises the loading flag, swaps the table for a
+   * spinner and drops the manager to the top of a 217-row list — the very
+   * behaviour `runOnRow` exists to avoid. Repairing either changes what the
+   * row does on screen, and the Responsible column reads `active` and replaces
+   * the rep menu with a dash, so it wants its own change and its own review.
+   */
   async function toggleActive(store: StoreRow) {
     await supabase
       .from("stores")
