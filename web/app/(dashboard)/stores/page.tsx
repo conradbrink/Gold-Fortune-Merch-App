@@ -621,6 +621,19 @@ export default function StoresPage() {
             .single();
           if (error) throw new Error(error.message);
           groupId = created?.id ?? null;
+          // Fold the new group into the form before going near the store
+          // write. The dialog stays open on failure now, so this block can run
+          // a second time — and `store_groups` has no unique index on
+          // (org_id, name), so a retry would quietly insert a second group
+          // with the same name and leave the first one orphaned. Pointing the
+          // form at the id that now exists makes the retry take the branch
+          // above instead, and stops the picker reading "+ Create new group…"
+          // for a group that has already been created.
+          if (groupId) {
+            const createdId = groupId;
+            setForm((f) => ({ ...f, store_group_id: createdId }));
+            setNewGroupName("");
+          }
         }
       }
 
@@ -681,6 +694,11 @@ export default function StoresPage() {
       // to be unchecked, so a failed save closed the dialog and looked exactly
       // like a successful one until the next reload disagreed.
       setSaveError(e instanceof Error ? e.message : String(e));
+      // Re-read even on the way out. These are several writes, not one, so a
+      // failure can land after some of them have already committed — and the
+      // group just created has to reach `groups` or the picker renders blank
+      // against an id it does not know.
+      loadData();
     } finally {
       setSaving(false);
     }
