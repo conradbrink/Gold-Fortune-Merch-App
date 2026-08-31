@@ -226,7 +226,18 @@ export default function StoresPage() {
   /** Reps available to assign inline from this page. */
   const [reps, setReps] = useState<{ id: string; name: string }[]>([]);
   const [orgId, setOrgId] = useState<string | null>(null);
-  const [busyStore, setBusyStore] = useState<string | null>(null);
+  /**
+   * Which rows have a write in flight — a set, not one id.
+   *
+   * It was a single id, and a single id cannot describe two rows at once: the
+   * second write to start overwrote the first, so finishing either one
+   * re-enabled *both* controls while one was still pending. Two rows is not a
+   * hypothetical on a 217-row table where every control is a one-click
+   * dropdown.
+   */
+  const [busyStores, setBusyStores] = useState<ReadonlySet<string>>(
+    () => new Set()
+  );
   const [rowError, setRowError] = useState<string | null>(null);
   /** Non-null once a delete has been requested — holds what it would destroy. */
   const [deleteTarget, setDeleteTarget] = useState<StoreRow | null>(null);
@@ -249,6 +260,9 @@ export default function StoresPage() {
   const [form, setForm] = useState(emptyForm);
   const [newGroupName, setNewGroupName] = useState("");
   const [saving, setSaving] = useState(false);
+  /** Why the store dialog could not save. Shown in the dialog, which stays
+      open, because closing it would throw away what was typed. */
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   const [groupDialogOpen, setGroupDialogOpen] = useState(false);
   const [editingGroupId, setEditingGroupId] = useState<string | null>(null);
@@ -358,7 +372,7 @@ export default function StoresPage() {
     rollback: () => void,
     write: () => Promise<void>
   ) {
-    setBusyStore(storeId);
+    setBusyStores((prev) => new Set(prev).add(storeId));
     setRowError(null);
     optimistic();
     try {
@@ -367,7 +381,11 @@ export default function StoresPage() {
       rollback();
       setRowError(e instanceof Error ? e.message : String(e));
     } finally {
-      setBusyStore(null);
+      setBusyStores((prev) => {
+        const next = new Set(prev);
+        next.delete(storeId);
+        return next;
+      });
     }
   }
 
@@ -378,7 +396,6 @@ export default function StoresPage() {
       setRowError("Could not determine your organisation.");
       return;
     }
-    const before = assignments;
     // A temporary id until the insert returns; only used as a React key and
     // for rollback, never sent anywhere.
     const optimisticRow: Assignment = {
@@ -390,22 +407,47 @@ export default function StoresPage() {
     runOnRow(
       store.id,
       () => setAssignments((prev) => [...prev, optimisticRow]),
-      () => setAssignments(before),
+      // Removes this row's placeholder and nothing else. Restoring a snapshot
+      // of the whole list would also undo whatever another row did while this
+      // write was in flight.
+      () =>
+        setAssignments((prev) => prev.filter((a) => a.id !== optimisticRow.id)),
       async () => {
         await assignStore(supabase, orgId, store.id, repId);
         // Re-read just the assignments so the placeholder id becomes the real
         // one — one small query, and the table never unmounts.
-        setAssignments(await fetchAssignments(supabase));
+        const fresh = await fetchAssignments(supabase);
+        // Whole-array replacement has the same problem as whole-array
+        // rollback: another store's assign may still be in flight, and the
+        // server cannot know about it yet. Its placeholder is carried over so
+        // the row does not blink out and back.
+        setAssignments((prev) => [
+          ...fresh,
+          ...prev.filter(
+            (a) =>
+              a.id.startsWith("pending-") &&
+              a.store_id !== store.id &&
+              !fresh.some(
+                (f) => f.store_id === a.store_id && f.rep_id === a.rep_id
+              )
+          ),
+        ]);
       }
     );
   }
 
   function unassignRep(store: StoreRow, assignmentId: string) {
-    const before = assignments;
+    // The row itself, not a snapshot of the list around it.
+    const removed = assignments.find((a) => a.id === assignmentId);
     runOnRow(
       store.id,
       () => setAssignments((prev) => prev.filter((a) => a.id !== assignmentId)),
-      () => setAssignments(before),
+      () =>
+        setAssignments((prev) =>
+          removed && !prev.some((a) => a.id === assignmentId)
+            ? [...prev, removed]
+            : prev
+        ),
       () => unassignStore(supabase, assignmentId)
     );
   }
@@ -413,7 +455,7 @@ export default function StoresPage() {
   /** Moves a store between groups, or out of one entirely with `null`. */
   function setStoreGroup(store: StoreRow, groupId: string | null) {
     if (store.store_group_id === groupId) return;
-    const before = stores;
+    const previous = store.store_group_id;
     runOnRow(
       store.id,
       () =>
@@ -422,7 +464,12 @@ export default function StoresPage() {
             s.id === store.id ? { ...s, store_group_id: groupId } : s
           )
         ),
-      () => setStores(before),
+      () =>
+        setStores((prev) =>
+          prev.map((s) =>
+            s.id === store.id ? { ...s, store_group_id: previous } : s
+          )
+        ),
       async () => {
         const { error } = await supabase
           .from("stores")
@@ -463,12 +510,12 @@ export default function StoresPage() {
     if (store.visit_frequency === frequency) return;
     // The previous *value*, not a snapshot of the whole list.
     //
-    // `busyStore` holds one id, so only the row being written is disabled and a
-    // second row can be edited while this write is still in flight — and that
-    // row's `finally` clears the flag for both. Restoring a whole-array
-    // snapshot on failure would then take the other row's SUCCESSFUL change
-    // with it, and the table order and the export would stay wrong until a
-    // reload. Rolling back one field of one store cannot do that.
+    // Only the row being written is disabled, so a second row can be edited
+    // while this write is still in flight. Restoring a whole-array snapshot on
+    // failure would then take the other row's SUCCESSFUL change with it, and
+    // the table order and the export would stay wrong until a reload. Rolling
+    // back one field of one store cannot do that — and every other caller of
+    // `runOnRow` now does the same, which is the other half of this fix.
     const previous = store.visit_frequency;
     runOnRow(
       store.id,
@@ -558,44 +605,103 @@ export default function StoresPage() {
 
   async function handleSave() {
     setSaving(true);
-    const orgId = await currentOrgId();
+    setSaveError(null);
+    try {
+      const orgId = await currentOrgId();
 
-    // Allow creating a brand-new group inline from the store dialog.
-    let groupId: string | null = form.store_group_id || null;
-    if (form.store_group_id === "__new__") {
-      groupId = null;
-      if (newGroupName.trim()) {
-        const { data: created } = await supabase
-          .from("store_groups")
-          .insert({ org_id: orgId, name: newGroupName.trim() })
-          .select("id")
-          .single();
-        groupId = created?.id ?? null;
+      // Allow creating a brand-new group inline from the store dialog.
+      let groupId: string | null = form.store_group_id || null;
+      if (form.store_group_id === "__new__") {
+        groupId = null;
+        if (newGroupName.trim()) {
+          const { data: created, error } = await supabase
+            .from("store_groups")
+            .insert({ org_id: orgId, name: newGroupName.trim() })
+            .select("id")
+            .single();
+          if (error) throw new Error(error.message);
+          groupId = created?.id ?? null;
+          // Fold the new group into the form before going near the store
+          // write. The dialog stays open on failure now, so this block can run
+          // a second time — and `store_groups` has no unique index on
+          // (org_id, name), so a retry would quietly insert a second group
+          // with the same name and leave the first one orphaned. Pointing the
+          // form at the id that now exists makes the retry take the branch
+          // above instead, and stops the picker reading "+ Create new group…"
+          // for a group that has already been created.
+          if (groupId) {
+            const createdId = groupId;
+            setForm((f) => ({ ...f, store_group_id: createdId }));
+            setNewGroupName("");
+          }
+        }
       }
+
+      const payload = {
+        name: form.name,
+        store_group_id: groupId,
+        address: form.address,
+        city: form.city,
+        state: form.state,
+        zip: form.zip,
+      };
+
+      if (editingId) {
+        const { error } = await supabase
+          .from("stores")
+          .update(payload)
+          .eq("id", editingId);
+        if (error) throw new Error(error.message);
+
+        // 🔴 The frequency goes through `setStoreFrequency`, NOT through the
+        // payload above.
+        //
+        // `visit_frequency` is the one field on this form that another table
+        // depends on: `store_assignments.week_of_cycle` is legal 1-4 only
+        // because monthly needs four, and bi-weekly has two. Writing the
+        // column directly — which this function did — is a fourth way to move
+        // a store down a frequency without bringing the week with it, the
+        // exact hole #44 closed for the other three. The database trigger
+        // `stores_reconcile_week_of_cycle` would catch it, and leaning on that
+        // alone is how the next caller concludes the client never reconciles.
+        //
+        // Only when it actually changed, so an ordinary edit of an address is
+        // still one write.
+        const current = stores.find((s) => s.id === editingId)?.visit_frequency;
+        if (form.visit_frequency !== current) {
+          await setStoreFrequency(
+            supabase,
+            editingId,
+            form.visit_frequency as VisitFrequency
+          );
+        }
+      } else {
+        // A brand-new store has no assignments, so there is no week to
+        // reconcile and the frequency rides along with the insert.
+        const { error } = await supabase
+          .from("stores")
+          .insert({ ...payload, visit_frequency: form.visit_frequency, org_id: orgId });
+        if (error) throw new Error(error.message);
+      }
+
+      setDialogOpen(false);
+      setEditingId(null);
+      setForm(emptyForm);
+      setNewGroupName("");
+      loadData();
+    } catch (e) {
+      // The dialog stays open holding what was typed. Every write above used
+      // to be unchecked, so a failed save closed the dialog and looked exactly
+      // like a successful one until the next reload disagreed.
+      setSaveError(e instanceof Error ? e.message : String(e));
+      // Re-read even on the way out. These are several writes, not one, so a
+      // failure can land after some of them have already committed — and the
+      // group just created has to reach `groups` or the picker renders blank
+      // against an id it does not know.
+      loadData();
+    } finally {
+      setSaving(false);
     }
-
-    const payload = {
-      name: form.name,
-      store_group_id: groupId,
-      visit_frequency: form.visit_frequency,
-      address: form.address,
-      city: form.city,
-      state: form.state,
-      zip: form.zip,
-    };
-
-    if (editingId) {
-      await supabase.from("stores").update(payload).eq("id", editingId);
-    } else {
-      await supabase.from("stores").insert({ ...payload, org_id: orgId });
-    }
-
-    setSaving(false);
-    setDialogOpen(false);
-    setEditingId(null);
-    setForm(emptyForm);
-    setNewGroupName("");
-    loadData();
   }
 
   async function handleCreateGroup() {
@@ -1209,7 +1315,13 @@ export default function StoresPage() {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+      <Dialog
+        open={dialogOpen}
+        onOpenChange={(open) => {
+          if (!open) setSaveError(null);
+          setDialogOpen(open);
+        }}
+      >
         <DialogContent>
           <DialogHeader>
             <DialogTitle>{editingId ? "Edit store" : "New store"}</DialogTitle>
@@ -1328,6 +1440,11 @@ export default function StoresPage() {
               </a>
             )}
           </div>
+          {saveError && (
+            <p className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+              {saveError}
+            </p>
+          )}
           <DialogFooter>
             <Button
               onClick={handleSave}
@@ -1575,7 +1692,7 @@ export default function StoresPage() {
                         render={
                           <button
                             type="button"
-                            disabled={busyStore === store.id}
+                            disabled={busyStores.has(store.id)}
                             className={
                               store.store_group_id
                                 ? "inline-flex items-center gap-1.5 rounded-full bg-secondary px-2.5 py-1 text-xs font-medium text-secondary-foreground hover:bg-secondary/70 disabled:opacity-50"
@@ -1639,7 +1756,7 @@ export default function StoresPage() {
                         render={
                           <button
                             type="button"
-                            disabled={busyStore === store.id}
+                            disabled={busyStores.has(store.id)}
                             className="inline-flex items-center gap-1.5 rounded-full bg-secondary px-2.5 py-1 text-xs font-medium text-secondary-foreground hover:bg-secondary/70 disabled:opacity-50"
                           >
                             <CalendarClock className="h-3 w-3" />
@@ -1700,7 +1817,7 @@ export default function StoresPage() {
                           render={
                             <button
                               type="button"
-                              disabled={busyStore === store.id || !orgId}
+                              disabled={busyStores.has(store.id) || !orgId}
                               className={
                                 assignedByStore[store.id]?.length
                                   ? "rounded px-1 py-0.5 text-left text-foreground hover:bg-muted disabled:opacity-50"
