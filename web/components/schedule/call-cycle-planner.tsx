@@ -30,6 +30,7 @@ import {
   describeCycle,
   fetchPlannedStores,
   generateRoutes,
+  reconcileWeekOfCycle,
   setAssignmentDay,
   setStoreFrequency,
   type GenerateResult,
@@ -258,22 +259,26 @@ export function CallCyclePlanner() {
   }
 
   function changeFrequency(s: PlannedStore, frequency: VisitFrequency) {
-    const week = frequency === "weekly" ? null : s.week_of_cycle ?? 1;
     run(
       s.assignment_id,
       // Frequency belongs to the store, so update every row for that store,
-      // not just this assignment.
+      // not just this assignment — and reconcile each row's own week, because
+      // the reps covering one store need not share a week.
       stores.map((x) =>
         x.store_id === s.store_id
-          ? { ...x, visit_frequency: frequency, week_of_cycle: week }
+          ? {
+              ...x,
+              visit_frequency: frequency,
+              week_of_cycle: reconcileWeekOfCycle(frequency, x.week_of_cycle),
+            }
           : x
       ),
-      async () => {
-        await setStoreFrequency(supabase, s.store_id, frequency);
-        if (week !== s.week_of_cycle) {
-          await setAssignmentDay(supabase, s.assignment_id, s.day_of_week, week);
-        }
-      }
+      // One call: `setStoreFrequency` writes the week as well, store-wide.
+      // It used to be followed by a `setAssignmentDay` guarded on the week
+      // having changed, which was exactly backwards — a monthly store on week
+      // 3 dropping to bi-weekly computed the *same* 3, so the guard was false
+      // and the one write that mattered never happened.
+      () => setStoreFrequency(supabase, s.store_id, frequency)
     );
   }
 
