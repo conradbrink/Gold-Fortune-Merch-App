@@ -32,8 +32,27 @@ export function SpreadProposal({
 }) {
   const supabase = createClient();
 
-  /** Non-null while a proposal is waiting to be accepted. */
-  const [spread, setSpread] = useState<SpreadResult | null>(null);
+  /**
+   * The proposal, kept together with the exact `stores` array it was computed
+   * from.
+   *
+   * A proposal is a snapshot, and this panel and the "By store" list are
+   * reachable at the same time. Changing a day or a frequency in the list while
+   * a proposal sits open would leave "Apply to all stores" writing the stale
+   * snapshot back by `assignment_id`, silently reverting the edit just made by
+   * hand.
+   *
+   * Held with its source and compared by identity rather than cleared from an
+   * effect: the planner replaces the whole array on every write, so this drops
+   * the proposal in the same render the edit lands in, with no flash of a
+   * proposal that is already wrong.
+   */
+  const [proposal, setProposal] = useState<
+    { result: SpreadResult; from: PlannedStore[] } | null
+  >(null);
+  const spread = proposal && proposal.from === stores ? proposal.result : null;
+  const setSpread = (result: SpreadResult | null) =>
+    setProposal(result === null ? null : { result, from: stores });
   const [applying, setApplying] = useState(false);
   const [error, setError] = useState<string | null>(null);
 

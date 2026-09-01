@@ -161,14 +161,28 @@ export function GenerateScheduleDialog({
         )}
 
         <DialogFooter>
+          {/* The confirm button is enabled when the run changes *anything*, not
+              only when it creates. A dry run can come back `created: 0,
+              removed: N` — that is what happens after a store is unassigned or
+              dropped to a lower frequency, and the future routes the pattern no
+              longer calls for are already on the reps' phones. Gating on
+              `created` alone showed "Removes N future routes" above a disabled
+              button reading "Create 0 routes", leaving no way to retract. */}
           {!genResult && (
             <Button
               onClick={confirmGenerate}
-              disabled={generating || previewing || !preview || preview.created === 0}
+              disabled={
+                generating ||
+                previewing ||
+                !preview ||
+                (preview.created === 0 && preview.removed === 0)
+              }
             >
               {generating
                 ? "Generating…"
-                : `Create ${preview?.created ?? 0} route${preview?.created === 1 ? "" : "s"}`}
+                : preview && preview.created === 0
+                  ? `Remove ${preview.removed} route${preview.removed === 1 ? "" : "s"}`
+                  : `Create ${preview?.created ?? 0} route${preview?.created === 1 ? "" : "s"}`}
             </Button>
           )}
           <Button variant="outline" onClick={() => setGenOpen(false)}>

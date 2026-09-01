@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { AlertTriangle } from "lucide-react";
 import { Label } from "@/components/ui/label";
 import { NativeSelect } from "@/components/ui/native-select";
@@ -79,6 +79,16 @@ export function CallCyclePlanner() {
   const [reps, setReps] = useState<RepSummary[]>([]);
   const [repId, setRepId] = useState("");
   const [stores, setStores] = useState<PlannedStore[]>([]);
+  /**
+   * The rep on screen right now, for the guard that runs after an await. State
+   * captured in a closure would still be the value from the render that started
+   * the write. Assigned from an effect because a ref write during render is not
+   * allowed; the commit lands well before any awaited query resolves.
+   */
+  const repIdRef = useRef(repId);
+  useEffect(() => {
+    repIdRef.current = repId;
+  }, [repId]);
   const [loadingReps, setLoadingReps] = useState(true);
   const [loadingStores, setLoadingStores] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -453,14 +463,26 @@ export function CallCyclePlanner() {
     );
   }
 
-  /** Re-reads this rep's stores. Auto-spread can move every one of them, so
-      there is no narrower patch to make. */
+  /**
+   * Re-reads this rep's stores. Auto-spread can move every one of them, so
+   * there is no narrower patch to make.
+   *
+   * The rep is captured before the await and re-checked after it. The caller
+   * completes its own write first, so the select stays live throughout, and a
+   * late result would otherwise load the previous rep's round into the grid,
+   * the week-load strip and the capacity meter.
+   */
   async function reloadStores() {
-    if (!repId) return;
+    const startedRepId = repIdRef.current;
+    if (!startedRepId) return;
     try {
-      setStores(await fetchPlannedStores(supabase, repId));
+      const rows = await fetchPlannedStores(supabase, startedRepId);
+      if (startedRepId !== repIdRef.current) return;
+      setStores(rows);
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      if (startedRepId === repIdRef.current) {
+        setError(e instanceof Error ? e.message : String(e));
+      }
     }
   }
 

@@ -1301,6 +1301,27 @@ export async function fetchLastGeneratedDate(
   return row ? fromLocalDateInput(row.scheduled_date) : null;
 }
 
+/**
+ * The first and last dates a month's grid draws — the Monday on or before the
+ * 1st, through the Sunday on or after the last.
+ *
+ * Exported because the planner has to fetch exactly this range. When the two
+ * were computed separately they had to be kept identical by hand, and the cost
+ * of them drifting is silent: the leading and trailing cells render empty and
+ * look like days with nothing on them.
+ *
+ * Six rows for a 31-day month starting on a Sunday, five or four otherwise —
+ * driven by the dates, not assumed.
+ */
+export function monthGridBounds(month: Date): { start: Date; end: Date } {
+  const first = new Date(month.getFullYear(), month.getMonth(), 1);
+  const last = new Date(month.getFullYear(), month.getMonth() + 1, 0);
+  return {
+    start: addDays(first, -(isoWeekday(first) - 1)),
+    end: addDays(last, 7 - isoWeekday(last)),
+  };
+}
+
 /** One cell of the month grid. */
 export type MonthDay = {
   date: Date;
@@ -1339,12 +1360,7 @@ export function buildMonthCalendar(
   const midnight = dayStart(today);
   const work = new Set(workingDays);
 
-  // Back up to the Monday on or before the 1st, then run whole weeks until the
-  // month is covered. Six rows for a 31-day month starting on a Sunday, five or
-  // four otherwise — driven by the dates, not assumed.
-  const start = addDays(first, -(isoWeekday(first) - 1));
-  const last = new Date(month.getFullYear(), month.getMonth() + 1, 0);
-  const end = addDays(last, 7 - isoWeekday(last));
+  const { start, end } = monthGridBounds(month);
 
   const weeks: MonthDay[][] = [];
   for (let cursor = start; cursor <= end; cursor = addDays(cursor, 7)) {

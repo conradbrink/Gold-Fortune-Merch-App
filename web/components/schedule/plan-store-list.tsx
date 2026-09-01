@@ -47,6 +47,9 @@ export function PlanStoreList({
   return (
       <>
         <Input
+          // A placeholder is not an accessible name, and it disappears as soon
+          // as anybody types.
+          aria-label="Search stores or cities"
           placeholder="Search stores or cities…"
           value={query}
           onChange={(e) => onQueryChange(e.target.value)}

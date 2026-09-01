@@ -172,7 +172,14 @@ export default function SchedulePage() {
               <button
                 key={v.value}
                 type="button"
-                onClick={() => setView(v.value)}
+                onClick={() => {
+                  // `error` is this page's, and only the Today load clears it.
+                  // The other two tabs render their own banners, so a failed
+                  // Today load would otherwise sit above a tab that did not
+                  // produce it.
+                  setError(null);
+                  setView(v.value);
+                }}
                 aria-pressed={view === v.value}
                 className={`rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
                   view === v.value

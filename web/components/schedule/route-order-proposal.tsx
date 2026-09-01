@@ -202,6 +202,9 @@ export function RouteOrderProposal({ weeks }: { weeks: number }) {
             <Button
               size="sm"
               variant="outline"
+              // Discarding mid-write would clear the proposal the in-flight
+              // apply is still reading from.
+              disabled={orderingBusy !== null}
               onClick={() => setOrder(null)}
             >
               Discard

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -20,12 +20,11 @@ import {
   type OrgSettings,
 } from "@/lib/org-settings";
 import {
-  addDays,
   addStop,
   buildMonthCalendar,
   fetchLastGeneratedDate,
   fetchRepDayPlans,
-  isoWeekday,
+  monthGridBounds,
   nextSequenceFor,
   removeStop,
   type DayPlanStop,
@@ -73,6 +72,21 @@ export function MonthPlanner() {
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
   /** Route ids being removed, plus "add" while an insert is in flight. */
   const [stopBusy, setStopBusy] = useState<ReadonlySet<string>>(() => new Set());
+
+  /**
+   * What is on screen right now, for the guards that run after an await. State
+   * captured in a closure would still be the value from the render that started
+   * the write.
+   *
+   * Assigned from an effect rather than during render: a ref write during render
+   * is not allowed, and the commit lands well before any awaited query resolves.
+   */
+  const repIdRef = useRef(repId);
+  const monthRef = useRef(month);
+  useEffect(() => {
+    repIdRef.current = repId;
+    monthRef.current = month;
+  }, [repId, month]);
 
   const [orgId, setOrgId] = useState<string | null>(null);
   const [settings, setSettings] = useState<OrgSettings>(DEFAULT_ORG_SETTINGS);
@@ -124,17 +138,16 @@ export function MonthPlanner() {
    * month shows in this month's last row, and it would be odd for that to be
    * the one cell that never has anything on it.
    *
-   * Two numbers rather than two `Date`s in the dependency list: a `Date` is a
-   * fresh object on every render, so keying the fetch on one would refetch the
-   * month forever.
+   * From `monthGridBounds`, the same helper `buildMonthCalendar` uses. When the
+   * two were computed separately they had to be kept identical by hand, and
+   * drifting apart fails silently: the edge cells just render empty.
+   *
+   * Held as two strings rather than two `Date`s, because a `Date` is a fresh
+   * object on every render and keying the fetch on one would refetch forever.
    */
   const [fromKey, toKey] = useMemo(() => {
-    const first = new Date(month.getFullYear(), month.getMonth(), 1);
-    const last = new Date(month.getFullYear(), month.getMonth() + 1, 0);
-    return [
-      toLocalDateInput(addDays(first, -(isoWeekday(first) - 1))),
-      toLocalDateInput(addDays(last, 7 - isoWeekday(last))),
-    ];
+    const { start, end } = monthGridBounds(month);
+    return [toLocalDateInput(start), toLocalDateInput(end)];
   }, [month]);
 
   useEffect(() => {
@@ -191,9 +204,26 @@ export function MonthPlanner() {
     });
   }
 
+  /**
+   * True while the screen is still showing the rep and month a write started on.
+   *
+   * Every write here awaits the network, and the rep select and the month
+   * stepper stay live while it does. Without this check a late result merges one
+   * rep's day into another rep's map, and the count on that date is wrong until
+   * the next full refetch — the plans effect only cancels its *own* fetch, not
+   * these.
+   */
+  function stillShowing(startedRepId: string, startedMonth: Date): boolean {
+    return (
+      startedRepId === repIdRef.current &&
+      startedMonth.getTime() === monthRef.current.getTime()
+    );
+  }
+
   /** Re-reads one date. Cheaper than the month, and leaves every other day alone. */
-  async function refreshDay(date: Date) {
-    const fresh = await fetchRepDayPlans(supabase, repId, date, date);
+  async function refreshDay(date: Date, startedRepId: string, startedMonth: Date) {
+    const fresh = await fetchRepDayPlans(supabase, startedRepId, date, date);
+    if (!stillShowing(startedRepId, startedMonth)) return;
     const key = toLocalDateInput(date);
     setPlans((prev) => {
       const next = { ...prev };
@@ -217,6 +247,10 @@ export function MonthPlanner() {
       setError("Could not determine your organisation.");
       return false;
     }
+    // Captured before the await, so the write and its read-back both belong to
+    // the rep and month the manager was looking at when they pressed Add.
+    const startedRepId = repId;
+    const startedMonth = month;
     markStopBusy("add");
     setError(null);
     try {
@@ -224,11 +258,13 @@ export function MonthPlanner() {
       // number on any day that has been re-ordered or has had a stop removed,
       // and the rep's phone sorts on this column with no tiebreak.
       const sequence = nextSequenceFor(plans[toLocalDateInput(date)]);
-      await addStop(supabase, orgId, repId, storeId, date, sequence);
-      await refreshDay(date);
+      await addStop(supabase, orgId, startedRepId, storeId, date, sequence);
+      await refreshDay(date, startedRepId, startedMonth);
       return true;
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      if (stillShowing(startedRepId, startedMonth)) {
+        setError(e instanceof Error ? e.message : String(e));
+      }
       return false;
     } finally {
       clearStopBusy("add");
@@ -243,6 +279,8 @@ export function MonthPlanner() {
     if (stop.visited) return;
 
     const key = toLocalDateInput(date);
+    const startedRepId = repId;
+    const startedMonth = month;
     markStopBusy(stop.route_id);
     setError(null);
 
@@ -261,6 +299,9 @@ export function MonthPlanner() {
     try {
       await removeStop(supabase, stop.route_id);
     } catch (e) {
+      // The rollback is skipped outright once the screen has moved on — putting
+      // the stop back would insert one rep's row into another rep's map.
+      if (!stillShowing(startedRepId, startedMonth)) return;
       // Puts back this one stop, not a snapshot of the day: another removal may
       // have committed while this one was in flight, and restoring the whole
       // list would resurrect what it took away.
