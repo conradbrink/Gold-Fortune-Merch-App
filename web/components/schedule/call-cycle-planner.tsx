@@ -7,6 +7,7 @@ import { NativeSelect } from "@/components/ui/native-select";
 import { WeekLoadStrip } from "@/components/schedule/week-load-strip";
 import { InsightsPanel } from "@/components/reports/insights-panel";
 import { createClient } from "@/lib/supabase/client";
+import { toLocalDateInput } from "@/lib/date-range";
 import {
   fetchOrgId,
   fetchRepDirectory,
@@ -22,6 +23,8 @@ import {
   cycleVisits,
   fetchManualStops,
   fetchPlannedStores,
+  fetchRepDayPlans,
+  nextSequenceFor,
   removeStop,
   reconcileWeekOfCycle,
   setAssignmentDay,
@@ -336,14 +339,36 @@ export function CallCyclePlanner() {
       setError("Could not determine your organisation.");
       return false;
     }
+    // Captured before the awaits below, so the whole add belongs to the rep the
+    // manager was looking at when they pressed Add.
+    const startedRepId = repId;
     markStopBusy("add");
     setError(null);
     try {
-      // Append to the end of that date. `generate_routes` numbers stops per
-      // rep and date, so this has to count the same population: the cycle
-      // stores that land on this exact date plus the one-offs already on it.
-      // Counting every assignment the rep has — which is what this did first —
-      // numbers a one-off in the sixties on a day with four stops.
+      /*
+       * Append to the end of that date — but "the end" has two answers and the
+       * stop has to clear both.
+       *
+       * What is already written: once `generate_routes` has run, the date holds
+       * real rows numbered 1..N, and those numbers are facts. Counting the
+       * projection instead — which is what this did — hands back a number
+       * already in use, and `route_repository.dart` orders on this column with
+       * no tiebreak, so two stops end up competing for one slot.
+       *
+       * What is *going* to be written: on a date the generator has not reached,
+       * there are no rows to count, and it will later write its cycle stores as
+       * 1..N ignoring anything hand-added. Taking max+1 over an empty date would
+       * hand back 1 and collide with the first of them.
+       *
+       * So: the larger of the two, plus one. On a generated date the real rows
+       * win; on an ungenerated one the projection does. Note this is not the
+       * old "count every assignment the rep has", which numbered a one-off in
+       * the sixties on a day with four stops (fixed in #49) — both counts here
+       * are scoped to this one date.
+       */
+      const dayKey = toLocalDateInput(date);
+      const written = await fetchRepDayPlans(supabase, startedRepId, date, date);
+
       const cycleOnDate = stores.filter(
         (s) =>
           s.active &&
@@ -353,21 +378,34 @@ export function CallCyclePlanner() {
       const onDate = manual.filter(
         (m) => m.date.toDateString() === date.toDateString()
       );
+      const projected = cycleOnDate.length + onDate.length;
+
       await addStop(
         supabase,
         orgId,
-        repId,
+        startedRepId,
         storeId,
         date,
-        cycleOnDate.length + onDate.length + 1
+        nextSequenceFor(written[dayKey], projected)
       );
       // Re-read rather than construct the row locally: the insert is a no-op on
       // a duplicate (unique rep/store/date), so guessing would put a second
       // copy on screen that the database does not have.
-      setManual(await fetchManualStops(supabase, repId, ...manualWindow()));
+      const fresh = await fetchManualStops(
+        supabase,
+        startedRepId,
+        ...manualWindow()
+      );
+      // There are now two awaits before this lands and the rep select stays live
+      // throughout, so a late read-back would paint the previous rep's one-offs
+      // over the current one's.
+      if (startedRepId !== repIdRef.current) return true;
+      setManual(fresh);
       return true;
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      if (startedRepId === repIdRef.current) {
+        setError(e instanceof Error ? e.message : String(e));
+      }
       return false;
     } finally {
       clearStopBusy("add");
