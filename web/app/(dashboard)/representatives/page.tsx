@@ -16,6 +16,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { AssignStoresDialog } from "@/components/representatives/assign-stores-dialog";
+import { CoveragePlanner } from "@/components/schedule/coverage-planner";
 import { createClient } from "@/lib/supabase/client";
 import { can } from "@/lib/permissions";
 import { usePermissions } from "@/lib/use-permissions";
@@ -235,6 +236,13 @@ export default function RepresentativesPage() {
           )}
         </CardContent>
       </Card>
+
+      {/* Dividing the estate up is this page's question, not the schedule's.
+          It sat at the top of the call-cycle planner, above six panels that
+          only mean anything once stores have a rep — which put the setup step
+          inside the screen that depends on it. The table above says who covers
+          what one rep at a time; this says it for the whole estate at once. */}
+      <CoveragePlanner onChanged={load} />
 
       <AssignStoresDialog
         rep={selected}
