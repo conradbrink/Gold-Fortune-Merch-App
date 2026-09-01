@@ -14,6 +14,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { CallCyclePlanner } from "@/components/schedule/call-cycle-planner";
+import { MonthPlanner } from "@/components/schedule/month-planner";
 import { DayBoard } from "@/components/schedule/day-board";
 import { createClient } from "@/lib/supabase/client";
 import { toLocalDateInput } from "@/lib/date-range";
@@ -44,14 +45,35 @@ function isBeforeToday(d: Date): boolean {
   );
 }
 
-type View = "day" | "plan";
+type View = "today" | "plan" | "cycle";
+
+/** The tabs, in the order the work happens: watch the day, lay out the month,
+    then maintain the pattern the month is mostly generated from. */
+const VIEWS: { value: View; label: string; blurb: string }[] = [
+  {
+    value: "today",
+    label: "Today",
+    blurb: "What each rep is covering today, and how far through they are.",
+  },
+  {
+    value: "plan",
+    label: "Plan",
+    blurb: "One rep's month. Click a day to add or remove stores.",
+  },
+  {
+    value: "cycle",
+    label: "Call cycle",
+    blurb: "The recurring pattern dated routes are generated from.",
+  },
+];
 
 export default function SchedulePage() {
   const supabase = createClient();
-  // "day" is what is happening on one date. "plan" is the recurring call cycle
-  // the dated routes are generated from — the two answer different questions,
-  // so they are views rather than one merged page.
-  const [view, setView] = useState<View>("day");
+  // Three questions, three tabs: is today going to plan, what does this rep's
+  // month look like, and what pattern is it generated from. They were two, and
+  // the middle one — laying a month out by hand — had nowhere to live, so it
+  // ended up buried six panels down inside the pattern editor.
+  const [view, setView] = useState<View>("today");
   const [date, setDate] = useState(() => new Date());
   const [dayReps, setDayReps] = useState<DayRep[]>([]);
   const [stores, setStores] = useState<{ id: string; name: string; city: string | null }[]>([]);
@@ -77,7 +99,7 @@ export default function SchedulePage() {
 
   useEffect(() => {
     // The planner fetches its own data; skip the day queries while it is shown.
-    if (view !== "day") return;
+    if (view !== "today") return;
     loadDay();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [date, view]);
@@ -141,25 +163,31 @@ export default function SchedulePage() {
             Schedule
           </h1>
           <p className="text-sm text-muted-foreground">
-            {view === "day"
-              ? "What each rep is covering today, and how far through they are."
-              : "The recurring call cycle every dated route is generated from."}
+            {VIEWS.find((v) => v.value === view)?.blurb}
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <div className="flex rounded-lg border border-border p-0.5">
-            {(["day", "plan"] as const).map((v) => (
+            {VIEWS.map((v) => (
               <button
-                key={v}
+                key={v.value}
                 type="button"
-                onClick={() => setView(v)}
+                onClick={() => {
+                  // `error` is this page's, and only the Today load clears it.
+                  // The other two tabs render their own banners, so a failed
+                  // Today load would otherwise sit above a tab that did not
+                  // produce it.
+                  setError(null);
+                  setView(v.value);
+                }}
+                aria-pressed={view === v.value}
                 className={`rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
-                  view === v
+                  view === v.value
                     ? "bg-primary text-primary-foreground"
                     : "text-muted-foreground hover:text-foreground"
                 }`}
               >
-                {v === "day" ? "Day" : "Plan"}
+                {v.label}
               </button>
             ))}
           </div>
@@ -172,9 +200,11 @@ export default function SchedulePage() {
         </p>
       )}
 
-      {view === "plan" && <CallCyclePlanner />}
+      {view === "plan" && <MonthPlanner />}
 
-      {view === "day" && (
+      {view === "cycle" && <CallCyclePlanner />}
+
+      {view === "today" && (
         <>
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="flex items-center gap-2">

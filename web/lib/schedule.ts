@@ -1122,6 +1122,266 @@ export async function fetchManualStops(
     );
 }
 
+/* ------------------------------------------------------------------ *
+ * The month planner — real routes, not the projected cycle
+ *
+ * `buildCycleCalendar` above derives stops by running `occursOn` over the
+ * assignments: it shows what `generate_routes` *would* write. That is the right
+ * answer for a screen whose claim is "this is the pattern", and the wrong one
+ * for "what is this rep doing on the 14th", because the two drift the moment an
+ * assignment changes — the projection moves immediately, the `routes` rows the
+ * rep's phone actually reads do not move until somebody re-generates.
+ *
+ * So everything below reads `routes`. It costs one thing: a month past the last
+ * generated date renders empty, which is what `fetchLastGeneratedDate` exists to
+ * explain.
+ * ------------------------------------------------------------------ */
+
+/** One real `routes` row, as the month planner needs it. */
+export type DayPlanStop = {
+  /** `routes.id` — the row a removal deletes. */
+  route_id: string;
+  store_id: string;
+  store_name: string;
+  city: string | null;
+  /** The order the rep's phone lists it in. Null on rows written before it. */
+  sequence: number | null;
+  /**
+   * Where the row came from, and the single most useful thing to show a
+   * manager: `generate_routes` owns its own `'cycle'` rows and retracts them
+   * when the pattern moves, and never touches a `'manual'` one.
+   */
+  source: "cycle" | "manual";
+  /**
+   * True once a rep has checked in against it.
+   *
+   * Removal must be blocked: `visits.route_id` is `on delete set null`, so
+   * deleting the route succeeds and leaves the check-in with nothing saying
+   * what it was for. The generator refuses to retract a visited route for the
+   * same reason. The database will not stop you; this flag is what does.
+   */
+  visited: boolean;
+};
+
+/** One date's worth of stops for one rep. */
+export type PlannedDay = {
+  /** Local midnight. */
+  date: Date;
+  /** Cycle rows first in sequence order, then one-offs, then by name. */
+  stops: DayPlanStop[];
+  /** Distinct towns called on, sorted. More than one is worth flagging. */
+  towns: string[];
+};
+
+/**
+ * Every route already written for one rep between two dates, keyed by
+ * `YYYY-MM-DD` local.
+ *
+ * Both bounds are inclusive. Unlike `fetchManualStops` this reads **both**
+ * sources — the month view's claim is "this is the rep's month", and half of it
+ * would be a lie.
+ *
+ * Scoped to one rep over roughly six weeks on purpose. PostgREST caps a response
+ * at 1,000 rows and truncates *silently*, and a half-returned day is worse than
+ * an error because it looks like a lighter day. One rep over six weeks is a few
+ * hundred rows at most; widening this to the whole team, or to a quarter, needs
+ * the paging loop in `lib/route-order.ts:fetchDaysToOrder`.
+ */
+export async function fetchRepDayPlans(
+  supabase: SupabaseClient,
+  repId: string,
+  from: Date,
+  to: Date
+): Promise<Record<string, PlannedDay>> {
+  // Single string literal — a concatenated .select() degrades to
+  // GenericStringError in postgrest-js.
+  //
+  // `stores(…)` and `visits(…)` need no constraint name here: `routes` has one
+  // foreign key to `stores`, and `visits.route_id` is the only one from
+  // `visits` to `routes`. `fetchDayBoard` has to write
+  // `stores!visits_store_id_fkey` only because it embeds from `visits`, which
+  // has two paths to `stores`.
+  const { data, error } = await supabase
+    .from("routes")
+    .select(
+      "id, store_id, scheduled_date, sequence_order, source, stores(name, city), visits(id)"
+    )
+    .eq("rep_id", repId)
+    .gte("scheduled_date", toLocalDateInput(from))
+    .lte("scheduled_date", toLocalDateInput(to));
+  if (error) throw new Error(error.message);
+
+  type StoreRow = { name: string; city: string | null };
+
+  const rows = (data ?? []) as unknown as {
+    id: string;
+    store_id: string;
+    scheduled_date: string;
+    sequence_order: number | null;
+    source: string | null;
+    stores: StoreRow | StoreRow[] | null;
+    visits: { id: string }[] | null;
+  }[];
+
+  const days: Record<string, PlannedDay> = {};
+
+  for (const r of rows) {
+    // postgrest returns an embedded relation as an object or an array depending
+    // on the cardinality it infers; normalise rather than guess.
+    const store = Array.isArray(r.stores) ? r.stores[0] ?? null : r.stores;
+    const key = r.scheduled_date;
+    // Parsed as local midnight. `new Date("2026-09-08")` is UTC midnight, which
+    // west of Greenwich is the evening before — the stop would land in the
+    // wrong cell.
+    (days[key] ??= { date: fromLocalDateInput(key), stops: [], towns: [] }).stops.push({
+      route_id: r.id,
+      store_id: r.store_id,
+      store_name: store?.name ?? "Unknown store",
+      city: store?.city ?? null,
+      sequence: r.sequence_order,
+      // Defaulting to 'cycle' matches the column default: a row written before
+      // `source` existed is the generator's, and calling it a one-off would
+      // promise it survives a re-generate when it will not.
+      source: r.source === "manual" ? "manual" : "cycle",
+      visited: (r.visits ?? []).length > 0,
+    });
+  }
+
+  for (const day of Object.values(days)) {
+    // Same order as `fetchDayBoard`, so this panel and the Today board agree
+    // about one date rather than disagreeing by a row.
+    day.stops.sort((a, b) => {
+      if (a.source !== b.source) return a.source === "manual" ? 1 : -1;
+      if (a.sequence !== null && b.sequence !== null && a.sequence !== b.sequence) {
+        return a.sequence - b.sequence;
+      }
+      return a.store_name.localeCompare(b.store_name);
+    });
+    day.towns = [
+      ...new Set(day.stops.map((s) => s.city).filter((c): c is string => !!c)),
+    ].sort();
+  }
+
+  return days;
+}
+
+/**
+ * The next `sequence_order` for a date.
+ *
+ * `max + 1`, never `count + 1`. A day that has been re-ordered by
+ * `applyStopOrder`, or has had a stop removed, has gaps in its numbering, and
+ * counting hands back a number already in use — the mobile app orders on this
+ * column with no tiebreak, so two stops would compete for one slot.
+ */
+export function nextSequenceFor(day: PlannedDay | undefined): number {
+  return (day?.stops ?? []).reduce((max, s) => Math.max(max, s.sequence ?? 0), 0) + 1;
+}
+
+/**
+ * The last date the generator has written a `'cycle'` route for this rep, or
+ * null when it never has.
+ *
+ * One sentence on the month view depends on it. A November that is empty
+ * because nobody has generated yet and a November that is empty because nothing
+ * is planned look identical, and they are opposite problems.
+ */
+export async function fetchLastGeneratedDate(
+  supabase: SupabaseClient,
+  repId: string
+): Promise<Date | null> {
+  const { data, error } = await supabase
+    .from("routes")
+    .select("scheduled_date")
+    .eq("rep_id", repId)
+    .eq("source", "cycle")
+    .order("scheduled_date", { ascending: false })
+    .limit(1);
+  if (error) throw new Error(error.message);
+  const row = (data ?? [])[0] as { scheduled_date: string } | undefined;
+  return row ? fromLocalDateInput(row.scheduled_date) : null;
+}
+
+/**
+ * The first and last dates a month's grid draws — the Monday on or before the
+ * 1st, through the Sunday on or after the last.
+ *
+ * Exported because the planner has to fetch exactly this range. When the two
+ * were computed separately they had to be kept identical by hand, and the cost
+ * of them drifting is silent: the leading and trailing cells render empty and
+ * look like days with nothing on them.
+ *
+ * Six rows for a 31-day month starting on a Sunday, five or four otherwise —
+ * driven by the dates, not assumed.
+ */
+export function monthGridBounds(month: Date): { start: Date; end: Date } {
+  const first = new Date(month.getFullYear(), month.getMonth(), 1);
+  const last = new Date(month.getFullYear(), month.getMonth() + 1, 0);
+  return {
+    start: addDays(first, -(isoWeekday(first) - 1)),
+    end: addDays(last, 7 - isoWeekday(last)),
+  };
+}
+
+/** One cell of the month grid. */
+export type MonthDay = {
+  date: Date;
+  /** False for the leading and trailing cells owned by a neighbouring month. */
+  inMonth: boolean;
+  /** Strictly before today, local. The past is read-only. */
+  isPast: boolean;
+  isToday: boolean;
+  /** An ISO weekday the org does not work. Marked, never hidden. */
+  isOffDay: boolean;
+  plan: PlannedDay | null;
+};
+
+/**
+ * One month as whole Monday-first weeks.
+ *
+ * All seven columns, unlike `buildCycleCalendar`, which draws only the weekdays
+ * the cycle happens to use. That is right for a pattern and wrong for a
+ * calendar: somebody looking for the 14th needs the 14th where a calendar puts
+ * it, and a non-working day that somehow holds a stop has to be visible or the
+ * mistake is invisible.
+ *
+ * Pure — no data access — so it can be driven directly without a test runner.
+ * `today` is injectable for exactly that reason.
+ *
+ * Every date is built with `new Date(y, m, d)`, never `setMonth`/`setDate`
+ * mutation: `setMonth` on the 31st overflows into the month after next.
+ */
+export function buildMonthCalendar(
+  month: Date,
+  plans: Record<string, PlannedDay>,
+  workingDays: number[],
+  today: Date = new Date()
+): { month: Date; weeks: MonthDay[][] } {
+  const first = new Date(month.getFullYear(), month.getMonth(), 1);
+  const midnight = dayStart(today);
+  const work = new Set(workingDays);
+
+  const { start, end } = monthGridBounds(month);
+
+  const weeks: MonthDay[][] = [];
+  for (let cursor = start; cursor <= end; cursor = addDays(cursor, 7)) {
+    const row: MonthDay[] = [];
+    for (let i = 0; i < 7; i++) {
+      const date = addDays(cursor, i);
+      row.push({
+        date,
+        inMonth: date.getMonth() === first.getMonth(),
+        isPast: date.getTime() < midnight.getTime(),
+        isToday: date.getTime() === midnight.getTime(),
+        isOffDay: !work.has(isoWeekday(date)),
+        plan: plans[toLocalDateInput(date)] ?? null,
+      });
+    }
+    weeks.push(row);
+  }
+
+  return { month: first, weeks };
+}
+
 export async function fetchPlannedStores(
   supabase: SupabaseClient,
   repId: string
