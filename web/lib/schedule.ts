@@ -1037,6 +1037,46 @@ export async function addStop(
   if (error && error.code !== "23505") throw new Error(error.message);
 }
 
+/**
+ * Adds several stops to one rep's day in a single statement.
+ *
+ * `upsert` with `ignoreDuplicates` rather than `insert`, because a plain bulk
+ * insert is all-or-nothing: one store already on the date takes the whole batch
+ * down with a 23505, and the manager loses four good picks to one they had
+ * already made. This keeps `addStop`'s rule — adding a stop that is already
+ * there is a no-op, not an error — across the batch.
+ *
+ * Numbering continues from `firstSequence`, so the picked order is the order
+ * they land in.
+ */
+export async function addStops(
+  supabase: SupabaseClient,
+  orgId: string,
+  repId: string,
+  storeIds: string[],
+  date: Date,
+  firstSequence: number
+): Promise<void> {
+  if (storeIds.length === 0) return;
+  const scheduled = toLocalDateInput(date);
+  const { error } = await supabase.from("routes").upsert(
+    storeIds.map((storeId, i) => ({
+      org_id: orgId,
+      rep_id: repId,
+      store_id: storeId,
+      scheduled_date: scheduled,
+      sequence_order: firstSequence + i,
+      // 'manual' keeps these out of the generator's cleanup — see `addStop`.
+      source: "manual",
+    })),
+    {
+      onConflict: "rep_id,store_id,scheduled_date",
+      ignoreDuplicates: true,
+    }
+  );
+  if (error) throw new Error(error.message);
+}
+
 export async function removeStop(
   supabase: SupabaseClient,
   routeId: string

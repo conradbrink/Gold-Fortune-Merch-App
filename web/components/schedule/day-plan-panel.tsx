@@ -138,11 +138,11 @@ export function DayPlanPanel({
   /** Route ids being removed, plus "add" while an insert is in flight. */
   stopBusy: ReadonlySet<string>;
   /** Resolves true when the stop landed, false when the write failed. */
-  onAdd: (date: Date, storeId: string) => Promise<boolean>;
+  onAdd: (date: Date, storeIds: string[]) => Promise<boolean>;
   onRemove: (stop: DayPlanStop) => void;
   onClose: () => void;
 }) {
-  const [addStoreId, setAddStoreId] = useState("");
+  const [addStoreIds, setAddStoreIds] = useState<string[]>([]);
 
   const stops = plan?.stops ?? [];
   const oneOffs = stops.filter((s) => s.source === "manual").length;
@@ -212,13 +212,14 @@ export function DayPlanPanel({
                 htmlFor="day-add-stop"
                 className="text-xs text-muted-foreground"
               >
-                Add a store to this day
+                Add stores to this day
               </Label>
               <StorePicker
+                multiple
                 id="day-add-stop"
                 stores={storeOptions}
-                value={addStoreId}
-                onChange={setAddStoreId}
+                value={addStoreIds}
+                onChange={setAddStoreIds}
                 placeholder="Search stores…"
                 disabled={!canAddStops || stopBusy.has("add")}
               />
@@ -227,16 +228,22 @@ export function DayPlanPanel({
               type="button"
               size="sm"
               className="gap-1.5"
-              disabled={!addStoreId || !canAddStops || stopBusy.has("add")}
+              disabled={
+                addStoreIds.length === 0 || !canAddStops || stopBusy.has("add")
+              }
               onClick={async () => {
-                const added = await onAdd(date, addStoreId);
+                const added = await onAdd(date, addStoreIds);
                 // Cleared only once it landed, so the picker stays ready for
-                // the next store and a failure does not lose the name.
-                if (added) setAddStoreId("");
+                // the next batch and a failure does not lose the picks.
+                if (added) setAddStoreIds([]);
               }}
             >
               <Plus className="h-3.5 w-3.5" />
-              {stopBusy.has("add") ? "Adding…" : "Add stop"}
+              {stopBusy.has("add")
+                ? "Adding…"
+                : addStoreIds.length > 1
+                  ? `Add ${addStoreIds.length} stops`
+                  : "Add stop"}
             </Button>
           </div>
 

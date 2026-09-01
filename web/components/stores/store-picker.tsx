@@ -37,30 +37,73 @@ function haystack(store: PickableStore): string {
     .toLowerCase();
 }
 
-export function StorePicker({
-  stores,
-  value,
-  onChange,
-  placeholder = "Search stores…",
-  allLabel,
-  id,
-  className,
-  disabled = false,
-}: {
+type CommonProps = {
   stores: PickableStore[];
+  placeholder?: string;
+  id?: string;
+  className?: string;
+  disabled?: boolean;
+};
+
+type SingleProps = CommonProps & {
+  multiple?: false;
   /** The chosen store id, or `""` for none / all. */
   value: string;
   onChange: (id: string) => void;
-  placeholder?: string;
   /**
    * When set, a first option meaning "no filter" — "All stores". Absent on a
    * picker that must produce a store, like adding a stop.
    */
   allLabel?: string;
-  id?: string;
-  className?: string;
-  disabled?: boolean;
-}) {
+};
+
+type MultiProps = CommonProps & {
+  multiple: true;
+  /** The chosen store ids, in the order they were picked. */
+  value: string[];
+  onChange: (ids: string[]) => void;
+  /**
+   * Meaningless when several can be chosen — "all stores" is expressed by
+   * picking them, and an option that silently means "no filter" alongside real
+   * selections reads as a store called "All stores".
+   */
+  allLabel?: never;
+};
+
+/**
+ * Single by default. `multiple` turns each option into a toggle and keeps the
+ * panel open, because choosing five shops one at a time through a panel that
+ * shuts after each is the thing this mode exists to stop.
+ */
+export function StorePicker(props: SingleProps | MultiProps) {
+  const {
+    stores,
+    placeholder = "Search stores…",
+    id,
+    className,
+    disabled = false,
+  } = props;
+  const multiple = props.multiple === true;
+  const allLabel = multiple ? undefined : props.allLabel;
+
+  /**
+   * One shape for both modes, so everything below stops caring which it is.
+   *
+   * Memoised on the prop rather than derived inline: the single-select branch
+   * builds a fresh array on every render, which would rebuild the Set below
+   * every render too.
+   */
+  const selectedIds = useMemo(
+    () =>
+      props.multiple === true
+        ? props.value
+        : props.value
+          ? [props.value]
+          : [],
+    [props.multiple, props.value]
+  );
+  const selected = useMemo(() => new Set(selectedIds), [selectedIds]);
+
   const [open, setOpen] = useState(false);
   const [term, setTerm] = useState("");
   const [active, setActive] = useState(0);
@@ -84,7 +127,7 @@ export function StorePicker({
   const listId = useId();
   const optionId = (i: number) => `${listId}-option-${i}`;
 
-  const chosen = stores.find((s) => s.id === value) ?? null;
+  const chosen = stores.find((s) => selected.has(s.id)) ?? null;
 
   const matches = useMemo(() => {
     const q = term.trim().toLowerCase();
@@ -141,14 +184,38 @@ export function StorePicker({
   }, [active, open]);
 
   function choose(store: PickableStore | null) {
-    onChange(store?.id ?? "");
+    if (props.multiple === true) {
+      // No "all" row in this mode, so a null option cannot arrive.
+      if (!store) return;
+      const next = selected.has(store.id)
+        ? props.value.filter((sid) => sid !== store.id)
+        : [...props.value, store.id];
+      props.onChange(next);
+      // Panel and search term both survive: picking three shops in one town
+      // means typing the town once, not once per shop. Focus goes back to the
+      // input because the click moved it to the option button.
+      inputRef.current?.focus();
+      return;
+    }
+    props.onChange(store?.id ?? "");
     setOpen(false);
     setTerm("");
   }
 
-  const label = chosen
-    ? `${chosen.name}${chosen.city ? ` — ${chosen.city}` : ""}`
-    : allLabel ?? "";
+  /**
+   * What the closed control says. Names the store while there is one to name —
+   * a bare count is uninformative at one — and counts past that, where the
+   * names do not fit and the number is the useful part.
+   */
+  const label = multiple
+    ? selectedIds.length === 0
+      ? ""
+      : selectedIds.length === 1 && chosen
+        ? `${chosen.name}${chosen.city ? ` — ${chosen.city}` : ""}`
+        : `${selectedIds.length} stores selected`
+    : chosen
+      ? `${chosen.name}${chosen.city ? ` — ${chosen.city}` : ""}`
+      : allLabel ?? "";
 
   return (
     <div ref={boxRef} className={cn("relative", className)}>
@@ -265,6 +332,7 @@ export function StorePicker({
             id={listId}
             role="listbox"
             aria-label="Stores"
+            aria-multiselectable={multiple || undefined}
             className="max-h-72 overflow-y-auto py-1"
           >
             {options.length === 0 ? (
@@ -273,7 +341,9 @@ export function StorePicker({
               </li>
             ) : (
               options.map((store, i) => {
-                const selected = (store?.id ?? "") === value;
+                const isChosen = store
+                  ? selected.has(store.id)
+                  : selectedIds.length === 0;
                 return (
                   <li key={store?.id ?? "__all"} role="none">
                     <button
@@ -281,7 +351,7 @@ export function StorePicker({
                       role="option"
                       id={optionId(i)}
                       data-index={i}
-                      aria-selected={selected}
+                      aria-selected={isChosen}
                       onMouseEnter={() => setActive(i)}
                       onClick={() => choose(store)}
                       className={cn(
@@ -289,12 +359,29 @@ export function StorePicker({
                         i === active ? "bg-accent/60" : "hover:bg-accent/40"
                       )}
                     >
-                      <Check
-                        className={cn(
-                          "h-4 w-4 shrink-0",
-                          selected ? "text-foreground" : "invisible"
-                        )}
-                      />
+                      {/* A tick that only ever appears is fine for one choice.
+                          For several, an empty box is what says "this one is
+                          not picked, and could be" — without it a list of
+                          unticked rows looks like nothing is selectable. */}
+                      {multiple ? (
+                        <span
+                          className={cn(
+                            "flex h-4 w-4 shrink-0 items-center justify-center rounded border",
+                            isChosen
+                              ? "border-primary bg-primary text-primary-foreground"
+                              : "border-muted-foreground/40"
+                          )}
+                        >
+                          {isChosen && <Check className="h-3 w-3" />}
+                        </span>
+                      ) : (
+                        <Check
+                          className={cn(
+                            "h-4 w-4 shrink-0",
+                            isChosen ? "text-foreground" : "invisible"
+                          )}
+                        />
+                      )}
                       <span className="min-w-0 flex-1 truncate text-foreground">
                         {store ? store.name : allLabel}
                       </span>
@@ -310,10 +397,31 @@ export function StorePicker({
             )}
           </ul>
 
-          {matches.length < stores.length && (
-            <p className="border-t border-border px-3 py-1.5 text-xs text-muted-foreground">
-              {matches.length} of {stores.length} stores
-            </p>
+          {(matches.length < stores.length || selectedIds.length > 0) && (
+            <div className="flex items-center justify-between gap-2 border-t border-border px-3 py-1.5 text-xs text-muted-foreground">
+              <span>
+                {matches.length < stores.length
+                  ? `${matches.length} of ${stores.length} stores`
+                  : `${stores.length} stores`}
+              </span>
+              {multiple && selectedIds.length > 0 && (
+                <span className="flex items-center gap-2">
+                  <span className="font-medium text-foreground">
+                    {selectedIds.length} selected
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (props.multiple === true) props.onChange([]);
+                      inputRef.current?.focus();
+                    }}
+                    className="underline underline-offset-2 hover:text-foreground"
+                  >
+                    Clear
+                  </button>
+                </span>
+              )}
+            </div>
           )}
         </div>
       )}
