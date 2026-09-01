@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { NativeSelect } from "@/components/ui/native-select";
 import { createClient } from "@/lib/supabase/client";
+import { useIsManager } from "@/lib/use-is-manager";
 import {
   assignStore,
   unassignStore,
@@ -89,6 +90,9 @@ export function CoveragePlanner({
   const supabase = createClient();
 
   const [stores, setStores] = useState<StoreRow[]>([]);
+  /** `store_assignments` writes are manager-only in RLS; this page is not. */
+  const isManager = useIsManager();
+  const readOnly = isManager !== true;
   const [groups, setGroups] = useState<{ id: string; name: string }[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -336,6 +340,17 @@ export function CoveragePlanner({
         )}
       </div>
 
+      {/* Once, at the top. `store_assignments` writes are manager-only in RLS
+          while this page is gated on `team`, so a non-manager can arrive here
+          legitimately and find Apply dead — which without a reason reads as a
+          broken button rather than a decision. */}
+      {readOnly && (
+        <p className="rounded-md border border-border bg-muted/40 px-3 py-2 text-sm text-muted-foreground">
+          Coverage is manager-only. You can see who covers what, but assigning a
+          store or changing a call frequency needs a manager.
+        </p>
+      )}
+
       {error && (
         <p className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
           {error}
@@ -522,7 +537,7 @@ export function CoveragePlanner({
           <Button
             size="sm"
             onClick={runBulk}
-            disabled={busy || (action === "assign" && !actionRep)}
+            disabled={readOnly || busy || (action === "assign" && !actionRep)}
           >
             {busy
               ? `Working ${progress}/${effective.length}…`

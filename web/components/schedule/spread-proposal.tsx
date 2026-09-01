@@ -24,11 +24,14 @@ export function SpreadProposal({
   stores,
   settings,
   onApplied,
+  disabled = false,
 }: {
   stores: PlannedStore[];
   settings: OrgSettings;
   /** Re-read the rep's stores — every one of them may have moved. */
   onApplied: () => Promise<void> | void;
+  /** Writes are refused for this viewer. */
+  disabled?: boolean;
 }) {
   const supabase = createClient();
 
@@ -97,7 +100,12 @@ export function SpreadProposal({
       )}
 
       <div className="flex flex-wrap items-center gap-2">
-        <Button size="sm" variant="outline" onClick={proposeSpread}>
+        <Button
+          size="sm"
+          variant="outline"
+          disabled={disabled}
+          onClick={proposeSpread}
+        >
           <Wand2 className="mr-1.5 h-3.5 w-3.5" />
           Auto-spread days
         </Button>

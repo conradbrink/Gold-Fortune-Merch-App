@@ -18,6 +18,7 @@ import { MonthPlanner } from "@/components/schedule/month-planner";
 import { DayBoard } from "@/components/schedule/day-board";
 import { createClient } from "@/lib/supabase/client";
 import { fetchOrgId } from "@/lib/representatives";
+import { useIsManager } from "@/lib/use-is-manager";
 import { StorePicker } from "@/components/stores/store-picker";
 import { addStops, fetchDayBoard, type DayRep } from "@/lib/schedule";
 
@@ -79,6 +80,8 @@ export default function SchedulePage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [orgId, setOrgId] = useState<string | null>(null);
+  /** Mirrors the RLS check on `routes`; see `lib/use-is-manager.ts`. */
+  const isManager = useIsManager();
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [form, setForm] = useState<{ repId: string; storeIds: string[] }>({
@@ -286,6 +289,7 @@ export default function SchedulePage() {
               reps={dayReps}
               isPast={isBeforeToday(date)}
               onAddStop={openAddStop}
+              canAddStops={isManager === true}
             />
           )}
         </>

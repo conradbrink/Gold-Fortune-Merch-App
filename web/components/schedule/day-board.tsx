@@ -81,11 +81,14 @@ export function DayBoard({
   reps,
   isPast,
   onAddStop,
+  canAddStops,
 }: {
   reps: DayRep[];
   /** The date being shown has already passed, so gaps are misses. */
   isPast: boolean;
   onAddStop: (repId: string) => void;
+  /** `routes` writes are manager-only in RLS; this page is gated on `field_ops`. */
+  canAddStops: boolean;
 }) {
   const working = reps.filter((r) => r.stops.length > 0);
   const idle = reps.filter((r) => r.stops.length === 0);
@@ -97,7 +100,11 @@ export function DayBoard({
           Nobody is scheduled for this day.
         </p>
         {idle.length > 0 && (
-          <IdleReps reps={idle} onAddStop={onAddStop} />
+          <IdleReps
+            reps={idle}
+            onAddStop={onAddStop}
+            canAddStops={canAddStops}
+          />
         )}
       </div>
     );
@@ -150,6 +157,7 @@ export function DayBoard({
 
               <button
                 type="button"
+                disabled={!canAddStops}
                 onClick={() => onAddStop(rep.repId)}
                 className="flex items-center justify-center gap-1.5 border-t border-border px-3 py-2 text-xs font-medium text-muted-foreground hover:bg-muted/50 hover:text-foreground"
               >
@@ -161,7 +169,7 @@ export function DayBoard({
         })}
       </div>
 
-      {idle.length > 0 && <IdleReps reps={idle} onAddStop={onAddStop} />}
+      {idle.length > 0 && <IdleReps reps={idle} onAddStop={onAddStop} canAddStops={canAddStops} />}
     </div>
   );
 }
@@ -170,9 +178,11 @@ export function DayBoard({
 function IdleReps({
   reps,
   onAddStop,
+  canAddStops,
 }: {
   reps: DayRep[];
   onAddStop: (repId: string) => void;
+  canAddStops: boolean;
 }) {
   return (
     <div className="rounded-lg border border-border bg-muted/30 px-3 py-2.5">
@@ -186,6 +196,7 @@ function IdleReps({
             size="sm"
             variant="outline"
             className="h-7 gap-1 text-xs"
+            disabled={!canAddStops}
             onClick={() => onAddStop(r.repId)}
           >
             <Plus className="h-3 w-3" />
