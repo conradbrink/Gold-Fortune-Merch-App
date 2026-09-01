@@ -1270,11 +1270,30 @@ export async function fetchRepDayPlans(
  *
  * `max + 1`, never `count + 1`. A day that has been re-ordered by
  * `applyStopOrder`, or has had a stop removed, has gaps in its numbering, and
- * counting hands back a number already in use — the mobile app orders on this
- * column with no tiebreak, so two stops would compete for one slot.
+ * counting hands back a number already in use — `route_repository.dart` orders
+ * on this column with no tiebreak, so two stops would compete for one slot.
+ *
+ * `projected` is for the case where the row about to be written will share the
+ * date with stops that **do not exist yet**. `generate_routes` numbers its own
+ * cycle stores `1..N` per rep-day with `row_number()` and pays no attention to
+ * anything hand-added, so a stop pinned to a date the generator has not reached
+ * would take 1 and be landed on later. Passing the number of cycle stores the
+ * pattern puts on that date reserves room for them.
+ *
+ * On a date that has already been generated the real rows are the larger of the
+ * two and win, which is the common case. Callers with nothing to project — the
+ * month planner reads real routes, so there is never anything unwritten — leave
+ * it at zero.
  */
-export function nextSequenceFor(day: PlannedDay | undefined): number {
-  return (day?.stops ?? []).reduce((max, s) => Math.max(max, s.sequence ?? 0), 0) + 1;
+export function nextSequenceFor(
+  day: PlannedDay | undefined,
+  projected = 0
+): number {
+  const written = (day?.stops ?? []).reduce(
+    (max, s) => Math.max(max, s.sequence ?? 0),
+    0
+  );
+  return Math.max(written, projected) + 1;
 }
 
 /**
