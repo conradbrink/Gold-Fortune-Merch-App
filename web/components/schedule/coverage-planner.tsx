@@ -10,9 +10,6 @@ import { NativeSelect } from "@/components/ui/native-select";
 import { createClient } from "@/lib/supabase/client";
 import {
   assignStore,
-  fetchAssignments,
-  fetchOrgId,
-  fetchRepDirectory,
   unassignStore,
   type Assignment,
   type RepSummary,
@@ -64,14 +61,35 @@ type BulkAction =
   | "clear-day"
   | "territory";
 
-export function CoveragePlanner({ onChanged }: { onChanged?: () => void }) {
+/**
+ * The rep directory, the assignments and the org id come from the page.
+ *
+ * They were fetched here as well, and the page renders a rep table off exactly
+ * the same three queries — so opening /representatives ran each of them twice,
+ * and every coverage change ran them twice again. Passed down instead: one
+ * fetch, one source of truth, and no window where the table above disagrees
+ * with the planner below about who covers what.
+ *
+ * Stores, groups and territories stay local. The page's `fetchStores` selects
+ * different columns, and a bulk action can change a store's frequency or
+ * territory, so this still owns re-reading them.
+ */
+export function CoveragePlanner({
+  reps,
+  assignments,
+  orgId,
+  onChanged,
+}: {
+  reps: RepSummary[];
+  assignments: Assignment[];
+  orgId: string | null;
+  /** Re-reads what the page owns — call after anything that writes. */
+  onChanged?: () => void;
+}) {
   const supabase = createClient();
 
   const [stores, setStores] = useState<StoreRow[]>([]);
   const [groups, setGroups] = useState<{ id: string; name: string }[]>([]);
-  const [reps, setReps] = useState<RepSummary[]>([]);
-  const [assignments, setAssignments] = useState<Assignment[]>([]);
-  const [orgId, setOrgId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -96,30 +114,24 @@ export function CoveragePlanner({ onChanged }: { onChanged?: () => void }) {
   const [actionDay, setActionDay] = useState("1");
   const [actionMain, setActionMain] = useState("");
 
+  /** Only what this component owns — the page fetches the rest. */
   async function load() {
     setLoading(true);
     try {
-      const [storeRes, groupRes, repRows, assignmentRows, org, territoryRows] =
-        await Promise.all([
-          supabase
-            .from("stores")
-            .select(
-              "id, name, city, store_group_id, visit_frequency, territory_id, sub_territory_id"
-            )
-            .eq("active", true)
-            .order("name"),
-          supabase.from("store_groups").select("id, name").order("name"),
-          fetchRepDirectory(supabase),
-          fetchAssignments(supabase),
-          fetchOrgId(supabase),
-          fetchTerritories(supabase),
-        ]);
+      const [storeRes, groupRes, territoryRows] = await Promise.all([
+        supabase
+          .from("stores")
+          .select(
+            "id, name, city, store_group_id, visit_frequency, territory_id, sub_territory_id"
+          )
+          .eq("active", true)
+          .order("name"),
+        supabase.from("store_groups").select("id, name").order("name"),
+        fetchTerritories(supabase),
+      ]);
       if (storeRes.error) throw new Error(storeRes.error.message);
       setStores((storeRes.data ?? []) as StoreRow[]);
       setGroups((groupRes.data ?? []) as { id: string; name: string }[]);
-      setReps(repRows.filter((r) => r.is_active));
-      setAssignments(assignmentRows);
-      setOrgId(org);
       setTerritories(territoryRows);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
