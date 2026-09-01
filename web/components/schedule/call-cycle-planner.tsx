@@ -15,7 +15,7 @@ import {
 } from "@/lib/representatives";
 import {
   addDays,
-  addStop,
+  addStops,
   isoWeekday,
   occursOn,
   computeWeekLoad,
@@ -334,11 +334,12 @@ export function CallCyclePlanner() {
    *
    * Returns whether it landed, so the picker only clears on success.
    */
-  async function addOneOff(date: Date, storeId: string): Promise<boolean> {
+  async function addOneOff(date: Date, storeIds: string[]): Promise<boolean> {
     if (!orgId || !repId) {
       setError("Could not determine your organisation.");
       return false;
     }
+    if (storeIds.length === 0) return false;
     // Captured before the awaits below, so the whole add belongs to the rep the
     // manager was looking at when they pressed Add.
     const startedRepId = repId;
@@ -380,11 +381,11 @@ export function CallCyclePlanner() {
       );
       const projected = cycleOnDate.length + onDate.length;
 
-      await addStop(
+      await addStops(
         supabase,
         orgId,
         startedRepId,
-        storeId,
+        storeIds,
         date,
         nextSequenceFor(written[dayKey], projected)
       );
