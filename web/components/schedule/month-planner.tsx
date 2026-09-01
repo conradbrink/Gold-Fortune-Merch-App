@@ -496,6 +496,15 @@ export function MonthPlanner() {
 
           {selected && (
             <DayPlanPanel
+              /*
+               * Keyed by date so the panel remounts when another day is opened.
+               * It stays mounted otherwise, and its in-progress store selection
+               * would come with it — pick three shops for the Tuesday, click the
+               * Wednesday, press Add, and they land on the Wednesday. A key is
+               * better than resetting in an effect: it clears every piece of
+               * panel state, including any added later, and costs no render.
+               */
+              key={toLocalDateInput(selected.date)}
               date={selected.date}
               plan={selected.plan}
               storeOptions={storeOptions}

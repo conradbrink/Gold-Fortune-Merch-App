@@ -444,11 +444,18 @@ export function CycleGrid({
                   storesPerDay={storesPerDay}
                   isOffDay={calendar.offDayColumns.includes(day.weekday)}
                   selected={selected?.date.toDateString() === day.date.toDateString()}
-                  onSelect={() =>
+                  onSelect={() => {
                     setSelectedKey((k) =>
                       k === day.date.toDateString() ? null : day.date.toDateString()
-                    )
-                  }
+                    );
+                    // The picker's selection belongs to the day it was made on.
+                    // This grid never remounts, so without this a selection
+                    // built for one date is submitted to whichever date is open
+                    // when Add is pressed. Cleared here rather than from an
+                    // effect on `selectedKey`, which would be a setState in an
+                    // effect for something the click already knows.
+                    setAddStoreIds([]);
+                  }}
                 />
               ))}
             </div>

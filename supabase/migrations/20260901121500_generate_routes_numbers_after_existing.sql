@@ -61,6 +61,16 @@ begin
   if v_role is distinct from 'manager' then
     raise exception 'Only managers can generate schedules';
   end if;
+  -- Explicit, because the range check below cannot do it: `null < 1` is null,
+  -- not true, so a null p_weeks falls straight through it. `v_to` then goes
+  -- null, `generate_series` returns nothing, and the call reports a clean run
+  -- that created zero routes. A null p_dry_run is the same shape — every
+  -- `where not p_dry_run` is null, so nothing is written and nothing says so.
+  -- Both are callable over PostgREST, and silently doing nothing is the worst
+  -- of the available answers.
+  if p_weeks is null or p_dry_run is null then
+    raise exception 'p_weeks and p_dry_run must not be null';
+  end if;
   if p_weeks < 1 or p_weeks > 52 then
     raise exception 'p_weeks must be between 1 and 52';
   end if;
