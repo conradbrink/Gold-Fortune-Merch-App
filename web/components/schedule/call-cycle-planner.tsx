@@ -722,6 +722,7 @@ export function CallCyclePlanner() {
               busy={busy}
               stopBusy={stopBusy}
               canAddStops={orgId !== null && !readOnly}
+              readOnly={readOnly}
               onChangeDay={changeDay}
               onChangeWeek={changeWeek}
               onAddStop={addOneOff}

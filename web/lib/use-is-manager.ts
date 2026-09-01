@@ -35,23 +35,43 @@ export function useIsManager(): boolean | null {
   const [isManager, setIsManager] = useState<boolean | null>(null);
 
   useEffect(() => {
-    let cancelled = false;
     const supabase = createClient();
+    /**
+     * Bumped on every auth change, and captured by each lookup.
+     *
+     * Asking once on mount is not enough: `TopBar` calls `signOut()` before it
+     * navigates, so a mounted schedule page would keep a stale `true` through
+     * the transition and go on offering writes that now have no session behind
+     * them. Resetting to `null` on any change closes the controls immediately,
+     * and the generation check drops the answer from a session that has since
+     * been replaced — a sign-in and a sign-out racing would otherwise be
+     * settled by whichever RPC happened to return last.
+     */
+    let generation = 0;
 
-    void (async () => {
-      const { data, error } = await supabase.rpc("current_role");
-      if (cancelled) return;
-      if (error) {
-        console.error(
-          "useIsManager: the lookup failed, so write controls stay disabled."
-        );
-        return;
-      }
-      setIsManager(data === "manager");
-    })();
+    function refresh() {
+      const mine = ++generation;
+      setIsManager(null);
+      void (async () => {
+        const { data, error } = await supabase.rpc("current_role");
+        if (mine !== generation) return;
+        if (error) {
+          console.error(
+            "useIsManager: the lookup failed, so write controls stay disabled."
+          );
+          return;
+        }
+        setIsManager(data === "manager");
+      })();
+    }
+
+    refresh();
+    const { data: sub } = supabase.auth.onAuthStateChange(() => refresh());
 
     return () => {
-      cancelled = true;
+      // Stops any in-flight lookup landing after unmount.
+      generation++;
+      sub.subscription.unsubscribe();
     };
   }, []);
 

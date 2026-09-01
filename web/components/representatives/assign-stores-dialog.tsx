@@ -214,10 +214,20 @@ export function AssignStoresDialog({
         <DialogHeader>
           <DialogTitle>{rep?.rep_name ?? "Rep"}</DialogTitle>
           <DialogDescription>
-            Tick a store to assign it to this rep. A store can be covered by
-            more than one rep.
+            {isManager === false
+              ? "This rep's round, as it stands. Changing who covers what needs a manager."
+              : "Tick a store to assign it to this rep. A store can be covered by more than one rep."}
           </DialogDescription>
         </DialogHeader>
+
+        {/* The description above already carries the reason, so this only adds
+            the bit it cannot: that the tick boxes are dead on purpose. */}
+        {isManager === false && (
+          <p className="rounded-md border border-border bg-muted/40 px-3 py-2 text-sm text-muted-foreground">
+            Assigning stores is manager-only, so the tick boxes are read-only
+            here.
+          </p>
+        )}
 
         {error && (
           <p className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">

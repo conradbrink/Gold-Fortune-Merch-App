@@ -280,6 +280,17 @@ export default function SchedulePage() {
             )}
           </div>
 
+          {/* Said once here, as on the other two tabs. `routes` writes are
+              manager-only in RLS while this page is gated on `field_ops`, so a
+              disabled "Add stop" with nothing explaining it reads as a broken
+              button rather than a decision. */}
+          {isManager === false && (
+            <p className="rounded-md border border-border bg-muted/40 px-3 py-2 text-sm text-muted-foreground">
+              Scheduling is manager-only. You can see the day as it happens, but
+              adding a stop needs a manager.
+            </p>
+          )}
+
           {loading ? (
             <div className="rounded-lg border border-border bg-card py-16 text-center text-sm text-muted-foreground">
               Loading…
