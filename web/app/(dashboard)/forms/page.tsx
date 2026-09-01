@@ -64,7 +64,12 @@ export default function FormsPage() {
   }
 
   useEffect(() => {
-    loadForms();
+    // Behind an async boundary so the loader's own `setLoading(true)`
+    // is not a synchronous setState in the effect body. Same call, same
+    // tick — `loadForms` still starts before this returns.
+    void (async () => {
+      await loadForms();
+    })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

@@ -144,6 +144,9 @@ export function AssignStoresDialog({
 
   useEffect(() => {
     if (!open || !rep) return;
+    // Reopening on a different rep must reload the form from that rep, not keep
+    // the last one's.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setFullName(rep.rep_name ?? "");
     setEmail(rep.email ?? "");
     setNewPassword("");
@@ -160,6 +163,9 @@ export function AssignStoresDialog({
   useEffect(() => {
     if (!open) return;
     if (query.trim()) {
+      // Expanding on search is a deliberate one-way nudge — the user may
+      // collapse a group again while the query stands.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setExpanded(new Set(groups.map((g) => g.key)));
       return;
     }

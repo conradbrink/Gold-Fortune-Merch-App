@@ -129,7 +129,6 @@ export default function OrdersPage() {
     }
     // The Outstanding PODs tile on the warehouse dashboard links here. Without
     // it that queue is a number with nowhere to go.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     if (params.get("pod") === "outstanding") setPodOnly(true);
   }, []);
 

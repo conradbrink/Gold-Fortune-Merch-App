@@ -78,6 +78,9 @@ export function ImportProductsDialog({
 
   useEffect(() => {
     if (!open) return;
+    // Reopening the dialog must clear the previous run. The alternative is a
+    // `key` at every call site.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setStep("file");
     setFileName("");
     setSheet(null);
@@ -102,6 +105,9 @@ export function ImportProductsDialog({
   // column updates every row's action live.
   useEffect(() => {
     if (!sheet || !map) return;
+    // `drafts` is editable after it is derived, so it has to be state rather
+    // than a useMemo.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setDrafts(buildDrafts(sheet.rows, map, existing));
   }, [sheet, map, existing]);
 

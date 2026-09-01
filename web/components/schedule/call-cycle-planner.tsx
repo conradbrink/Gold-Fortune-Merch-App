@@ -175,6 +175,9 @@ export function CallCyclePlanner() {
 
   useEffect(() => {
     if (!repId) {
+      // Clearing when the rep is deselected — leaving the previous rep's round
+      // on screen would misattribute it.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setStores([]);
       setManual([]);
       return;

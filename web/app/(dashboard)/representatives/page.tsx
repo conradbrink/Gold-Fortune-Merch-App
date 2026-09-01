@@ -84,7 +84,12 @@ export default function RepresentativesPage() {
   }, []);
 
   useEffect(() => {
-    load();
+    // Behind an async boundary so the loader's own `setLoading(true)`
+    // is not a synchronous setState in the effect body. Same call, same
+    // tick — `load` still starts before this returns.
+    void (async () => {
+      await load();
+    })();
   }, [load]);
 
   /**

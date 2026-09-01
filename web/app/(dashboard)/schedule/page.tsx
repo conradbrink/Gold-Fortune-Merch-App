@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Plus, ChevronLeft, ChevronRight } from "lucide-react";
+import { ChevronLeft, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { NativeSelect } from "@/components/ui/native-select";
@@ -17,7 +17,6 @@ import { CallCyclePlanner } from "@/components/schedule/call-cycle-planner";
 import { MonthPlanner } from "@/components/schedule/month-planner";
 import { DayBoard } from "@/components/schedule/day-board";
 import { createClient } from "@/lib/supabase/client";
-import { toLocalDateInput } from "@/lib/date-range";
 import { fetchOrgId } from "@/lib/representatives";
 import { StorePicker } from "@/components/stores/store-picker";
 import { addStops, fetchDayBoard, type DayRep } from "@/lib/schedule";
@@ -103,7 +102,12 @@ export default function SchedulePage() {
   useEffect(() => {
     // The planner fetches its own data; skip the day queries while it is shown.
     if (view !== "today") return;
-    loadDay();
+    // Behind an async boundary so the loader's own `setLoading(true)`
+    // is not a synchronous setState in the effect body. Same call, same
+    // tick — `loadDay` still starts before this returns.
+    void (async () => {
+      await loadDay();
+    })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [date, view]);
 

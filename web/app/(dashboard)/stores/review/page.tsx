@@ -88,7 +88,12 @@ export default function StoreReviewPage() {
   }, [supabase]);
 
   useEffect(() => {
-    load();
+    // Behind an async boundary so the loader's own `setLoading(true)`
+    // is not a synchronous setState in the effect body. Same call, same
+    // tick — `load` still starts before this returns.
+    void (async () => {
+      await load();
+    })();
   }, [load]);
 
   const queue = useMemo(() => buildReviewQueue(stores, drift), [stores, drift]);
@@ -125,6 +130,9 @@ export default function StoreReviewPage() {
   // A fresh store means a fresh pin — otherwise the previous store's dragged
   // position silently carries over and could be saved onto the wrong shop.
   useEffect(() => {
+    // Resetting on a change of identity is what this effect is for — see the
+    // comment above.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setDraft(null);
     setError(null);
   }, [item?.store.id]);
@@ -449,7 +457,7 @@ export default function StoreReviewPage() {
                 <p className="font-semibold">Pin moved</p>
                 <p className="mt-0.5 text-xs">
                   {draft.lat.toFixed(5)}, {draft.lng.toFixed(5)} — saving records
-                  this as the store's position and marks it checked by you.
+                  this as the store&rsquo;s position and marks it checked by you.
                 </p>
                 <button
                   type="button"

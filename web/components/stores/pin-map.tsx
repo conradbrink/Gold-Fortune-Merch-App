@@ -47,8 +47,14 @@ export function PinMap({
   const autocomplete = useRef<google.maps.places.Autocomplete | null>(null);
   // Held in a ref so the map's click handler, which is bound once, always calls
   // the current callback rather than the one from its first render.
+  //
+  // Assigned from an effect rather than during render: a ref write during
+  // render is not allowed, and the commit lands long before any click can
+  // arrive — the handler is bound after the map has loaded.
   const onChange = useRef(onPinChange);
-  onChange.current = onPinChange;
+  useEffect(() => {
+    onChange.current = onPinChange;
+  }, [onPinChange]);
 
   const [error, setError] = useState<string | null>(null);
   const [ready, setReady] = useState(false);
@@ -178,7 +184,7 @@ export function PinMap({
       <div
         className={`flex items-center justify-center rounded-lg border border-destructive/40 bg-destructive/10 p-6 text-center text-sm text-destructive ${className ?? ""}`}
       >
-        {error} Check the key's referrer restrictions and that the Maps
+        {error} Check the key&rsquo;s referrer restrictions and that the Maps
         JavaScript API is enabled.
       </div>
     );

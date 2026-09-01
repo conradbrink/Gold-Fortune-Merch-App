@@ -357,10 +357,19 @@ export default function StoresPage() {
   }
 
   useEffect(() => {
-    loadData();
+    // Behind an async boundary so the loader's own `setLoading(true)`
+    // is not a synchronous setState in the effect body. Same call, same
+    // tick — `loadData` still starts before this returns.
+    void (async () => {
+      await loadData();
+    })();
     fetchOrgId(supabase).then(setOrgId).catch(() => setOrgId(null));
     // Seeded from `?q=` so the header search lands here already filtered.
     const q = new URLSearchParams(window.location.search).get("q");
+    // Seeding from `?q=` has to be an effect: a lazy useState initialiser would
+    // read the query string on the client only, and the two renders would
+    // disagree.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     if (q) setSearch(q);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
