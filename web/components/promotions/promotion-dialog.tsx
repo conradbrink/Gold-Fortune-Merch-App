@@ -91,6 +91,9 @@ export function PromotionDialog({
     //
     // It also leaves the form unsaveable until the load succeeds: Save is
     // disabled on an empty name, so a failure cannot be written anywhere.
+    // Clearing before the load is the fix for the stale-form bug described
+    // above; deriving instead would reintroduce it.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setError(null);
     setQuery("");
     setName("");
@@ -186,6 +189,9 @@ export function PromotionDialog({
   // A search that leaves matches hidden inside collapsed groups is a search
   // that does nothing.
   useEffect(() => {
+    // Expanding on search is a deliberate one-way nudge, not derived state —
+    // the user may collapse a group again while the query stands.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     if (query.trim() !== "") setExpanded(new Set(groups.map((g) => g.key)));
   }, [query, groups]);
 

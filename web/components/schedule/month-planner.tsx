@@ -20,7 +20,7 @@ import {
   type OrgSettings,
 } from "@/lib/org-settings";
 import {
-  addStop,
+  addStops,
   buildMonthCalendar,
   fetchLastGeneratedDate,
   fetchRepDayPlans,
@@ -242,11 +242,12 @@ export function MonthPlanner() {
    * duplicate (the unique index on rep/store/date), so inventing a row would put
    * a second copy of a store on screen that the database does not have.
    */
-  async function addToDay(date: Date, storeId: string): Promise<boolean> {
+  async function addToDay(date: Date, storeIds: string[]): Promise<boolean> {
     if (!orgId) {
       setError("Could not determine your organisation.");
       return false;
     }
+    if (storeIds.length === 0) return false;
     // Captured before the await, so the write and its read-back both belong to
     // the rep and month the manager was looking at when they pressed Add.
     const startedRepId = repId;
@@ -254,11 +255,19 @@ export function MonthPlanner() {
     markStopBusy("add");
     setError(null);
     try {
-      // max + 1 over the rows actually on the day. Counting them would reuse a
+      // max + 1 over the rows actually on the day, then one number per store in
+      // the order they were picked. Counting the rows instead would reuse a
       // number on any day that has been re-ordered or has had a stop removed,
       // and the rep's phone sorts on this column with no tiebreak.
       const sequence = nextSequenceFor(plans[toLocalDateInput(date)]);
-      await addStop(supabase, orgId, startedRepId, storeId, date, sequence);
+      await addStops(
+        supabase,
+        orgId,
+        startedRepId,
+        storeIds,
+        date,
+        sequence
+      );
       await refreshDay(date, startedRepId, startedMonth);
       return true;
     } catch (e) {
@@ -487,6 +496,15 @@ export function MonthPlanner() {
 
           {selected && (
             <DayPlanPanel
+              /*
+               * Keyed by date so the panel remounts when another day is opened.
+               * It stays mounted otherwise, and its in-progress store selection
+               * would come with it — pick three shops for the Tuesday, click the
+               * Wednesday, press Add, and they land on the Wednesday. A key is
+               * better than resetting in an effect: it clears every piece of
+               * panel state, including any added later, and costs no render.
+               */
+              key={toLocalDateInput(selected.date)}
               date={selected.date}
               plan={selected.plan}
               storeOptions={storeOptions}

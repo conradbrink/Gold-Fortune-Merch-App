@@ -226,14 +226,14 @@ export function CycleGrid({
   onChangeDay: (store: PlannedStore, day: number | null) => void;
   onChangeWeek: (store: PlannedStore, week: number) => void;
   /** Resolves true when the stop landed, false when the write failed. */
-  onAddStop: (date: Date, storeId: string) => Promise<boolean>;
+  onAddStop: (date: Date, storeIds: string[]) => Promise<boolean>;
   onRemoveStop: (stop: ManualStop) => void;
 }) {
   // Keyed by date rather than by object identity: the calendar is rebuilt on every
   // edit, so holding the day itself would leave the panel showing a stale list.
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
   /** The store chosen in the panel's picker, before it is added. */
-  const [addStoreId, setAddStoreId] = useState("");
+  const [addStoreIds, setAddStoreIds] = useState<string[]>([]);
 
   const calendar = useMemo(
     () => buildCycleCalendar(stores, weeks, workingDays, manual),
@@ -444,11 +444,18 @@ export function CycleGrid({
                   storesPerDay={storesPerDay}
                   isOffDay={calendar.offDayColumns.includes(day.weekday)}
                   selected={selected?.date.toDateString() === day.date.toDateString()}
-                  onSelect={() =>
+                  onSelect={() => {
                     setSelectedKey((k) =>
                       k === day.date.toDateString() ? null : day.date.toDateString()
-                    )
-                  }
+                    );
+                    // The picker's selection belongs to the day it was made on.
+                    // This grid never remounts, so without this a selection
+                    // built for one date is submitted to whichever date is open
+                    // when Add is pressed. Cleared here rather than from an
+                    // effect on `selectedKey`, which would be a setState in an
+                    // effect for something the click already knows.
+                    setAddStoreIds([]);
+                  }}
                 />
               ))}
             </div>
@@ -660,17 +667,18 @@ export function CycleGrid({
                 htmlFor="cycle-add-stop"
                 className="text-xs text-muted-foreground"
               >
-                Add a stop to this date
+                Add stops to this date
               </Label>
               {/* Every store, not just this rep's. A one-off is usually cover
                   — somebody else's outlet, or one nobody is assigned to yet —
                   and restricting it to the rep's own round would rule out the
                   case the feature exists for. */}
               <StorePicker
+                multiple
                 id="cycle-add-stop"
                 stores={storeOptions}
-                value={addStoreId}
-                onChange={setAddStoreId}
+                value={addStoreIds}
+                onChange={setAddStoreIds}
                 placeholder="Search stores…"
                 disabled={!canAddStops || stopBusy.has("add")}
               />
@@ -679,17 +687,23 @@ export function CycleGrid({
               type="button"
               size="sm"
               className="gap-1.5"
-              disabled={!addStoreId || !canAddStops || stopBusy.has("add")}
+              disabled={
+                addStoreIds.length === 0 || !canAddStops || stopBusy.has("add")
+              }
               onClick={async () => {
-                const added = await onAddStop(selected.date, addStoreId);
+                const added = await onAddStop(selected.date, addStoreIds);
                 // Only cleared once it landed. A failed add that also wiped the
-                // picker would leave the manager retyping a name they had just
-                // found, with nothing on screen saying which store it was.
-                if (added) setAddStoreId("");
+                // picker would leave the manager retyping names they had just
+                // found, with nothing on screen saying which stores they were.
+                if (added) setAddStoreIds([]);
               }}
             >
               <Plus className="h-3.5 w-3.5" />
-              {stopBusy.has("add") ? "Adding…" : "Add stop"}
+              {stopBusy.has("add")
+                ? "Adding…"
+                : addStoreIds.length > 1
+                  ? `Add ${addStoreIds.length} stops`
+                  : "Add stop"}
             </Button>
           </div>
 

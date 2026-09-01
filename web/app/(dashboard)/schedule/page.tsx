@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Plus, ChevronLeft, ChevronRight } from "lucide-react";
+import { ChevronLeft, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { NativeSelect } from "@/components/ui/native-select";
@@ -17,10 +17,9 @@ import { CallCyclePlanner } from "@/components/schedule/call-cycle-planner";
 import { MonthPlanner } from "@/components/schedule/month-planner";
 import { DayBoard } from "@/components/schedule/day-board";
 import { createClient } from "@/lib/supabase/client";
-import { toLocalDateInput } from "@/lib/date-range";
 import { fetchOrgId } from "@/lib/representatives";
 import { StorePicker } from "@/components/stores/store-picker";
-import { addStop, fetchDayBoard, type DayRep } from "@/lib/schedule";
+import { addStops, fetchDayBoard, type DayRep } from "@/lib/schedule";
 
 /**
  * Day-month-year with the weekday, because a schedule is read as "which day of
@@ -82,7 +81,10 @@ export default function SchedulePage() {
   const [orgId, setOrgId] = useState<string | null>(null);
 
   const [dialogOpen, setDialogOpen] = useState(false);
-  const [form, setForm] = useState({ repId: "", storeId: "" });
+  const [form, setForm] = useState<{ repId: string; storeIds: string[] }>({
+    repId: "",
+    storeIds: [],
+  });
   const [saving, setSaving] = useState(false);
 
   async function loadDay() {
@@ -100,7 +102,12 @@ export default function SchedulePage() {
   useEffect(() => {
     // The planner fetches its own data; skip the day queries while it is shown.
     if (view !== "today") return;
-    loadDay();
+    // Behind an async boundary so the loader's own `setLoading(true)`
+    // is not a synchronous setState in the effect body. Same call, same
+    // tick — `loadDay` still starts before this returns.
+    void (async () => {
+      await loadDay();
+    })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [date, view]);
 
@@ -128,7 +135,7 @@ export default function SchedulePage() {
   }, [dayReps, date]);
 
   function openAddStop(repId: string) {
-    setForm({ repId, storeId: "" });
+    setForm({ repId, storeIds: [] });
     setDialogOpen(true);
   }
 
@@ -142,10 +149,12 @@ export default function SchedulePage() {
     try {
       // Append to the end of that rep's day. Order is the rep's to choose, but
       // sequence_order still needs a sane value for the eventual mobile fix.
+      // max + 1, never count + 1 — a day that has been re-ordered or has lost a
+      // stop has gaps, and counting hands back a number already in use.
       const existing = dayReps.find((r) => r.repId === form.repId)?.stops ?? [];
       const next =
         existing.reduce((max, s) => Math.max(max, s.sequence ?? 0), 0) + 1;
-      await addStop(supabase, orgId, form.repId, form.storeId, date, next);
+      await addStops(supabase, orgId, form.repId, form.storeIds, date, next);
       setDialogOpen(false);
       await loadDay();
     } catch (e) {
@@ -285,7 +294,7 @@ export default function SchedulePage() {
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Add stop — {formatDisplayDate(date)}</DialogTitle>
+            <DialogTitle>Add stops — {formatDisplayDate(date)}</DialogTitle>
             <DialogDescription>
               No time is set. The rep decides when to call, as long as the store
               gets visited.
@@ -310,16 +319,17 @@ export default function SchedulePage() {
               </NativeSelect>
             </div>
             <div className="space-y-1.5">
-              <Label htmlFor="stop-store">Store</Label>
+              <Label htmlFor="stop-store">Stores</Label>
               {/* Searchable rather than a dropdown of 230. Finding one outlet
                   meant scrolling the estate in alphabetical order, on the one
                   screen where somebody is usually working from a name a rep has
                   just said to them over the phone. */}
               <StorePicker
+                multiple
                 id="stop-store"
                 stores={stores}
-                value={form.storeId}
-                onChange={(storeId) => setForm({ ...form, storeId })}
+                value={form.storeIds}
+                onChange={(storeIds) => setForm({ ...form, storeIds })}
                 placeholder="Search stores…"
               />
             </div>
@@ -327,9 +337,15 @@ export default function SchedulePage() {
           <DialogFooter>
             <Button
               onClick={handleAddStop}
-              disabled={saving || !form.repId || !form.storeId || !orgId}
+              disabled={
+                saving || !form.repId || form.storeIds.length === 0 || !orgId
+              }
             >
-              {saving ? "Adding…" : "Add stop"}
+              {saving
+                ? "Adding…"
+                : form.storeIds.length > 1
+                  ? `Add ${form.storeIds.length} stops`
+                  : "Add stop"}
             </Button>
             <Button variant="outline" onClick={() => setDialogOpen(false)}>
               Cancel

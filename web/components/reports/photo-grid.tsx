@@ -25,6 +25,9 @@ export function PhotoGrid({
   useEffect(() => {
     let cancelled = false;
     if (allPaths.length === 0) {
+      // Signed URLs are fetched, not derived; the reset clears the previous
+      // group's before the request goes out.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setUrls({});
       return;
     }

@@ -84,8 +84,20 @@ export default function RepresentativesPage() {
   }, []);
 
   useEffect(() => {
-    load();
+    // Behind an async boundary so the loader's own `setLoading(true)`
+    // is not a synchronous setState in the effect body. Same call, same
+    // tick — `load` still starts before this returns.
+    void (async () => {
+      await load();
+    })();
   }, [load]);
+
+  /**
+   * Memoised, not filtered inline at the call site: it feeds a `useMemo`
+   * dependency inside the planner, and a fresh array on every render would
+   * rebuild that map every render.
+   */
+  const activeReps = useMemo(() => reps.filter((r) => r.is_active), [reps]);
 
   // Seeded from `?q=` so the header search can land on this page already
   // filtered. Read from window rather than useSearchParams, which would force
@@ -242,7 +254,14 @@ export default function RepresentativesPage() {
           only mean anything once stores have a rep — which put the setup step
           inside the screen that depends on it. The table above says who covers
           what one rep at a time; this says it for the whole estate at once. */}
-      <CoveragePlanner onChanged={load} />
+      {/* Fed from this page's own fetch — the planner used to repeat the rep,
+          assignment and org queries the table above already runs. */}
+      <CoveragePlanner
+        reps={activeReps}
+        assignments={assignments}
+        orgId={orgId}
+        onChanged={load}
+      />
 
       <AssignStoresDialog
         rep={selected}

@@ -155,7 +155,12 @@ export default function ActivitiesPage() {
   }, [range.from, range.to, repId, storeId, onlyFlagged]);
 
   useEffect(() => {
-    loadFirstPage();
+    // Behind an async boundary so the loader's own `setLoading(true)`
+    // is not a synchronous setState in the effect body. Same call, same
+    // tick — `loadFirstPage` still starts before this returns.
+    void (async () => {
+      await loadFirstPage();
+    })();
   }, [loadFirstPage]);
 
   async function loadMore() {
