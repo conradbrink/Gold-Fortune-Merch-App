@@ -34,6 +34,7 @@ export function PlanStoreList({
   onChangeDay,
   onChangeWeek,
   onChangeFrequency,
+  disabled = false,
 }: {
   groups: { city: string; stores: PlannedStore[] }[];
   query: string;
@@ -43,6 +44,8 @@ export function PlanStoreList({
   onChangeDay: (s: PlannedStore, day: number | null) => void;
   onChangeWeek: (s: PlannedStore, week: number) => void;
   onChangeFrequency: (s: PlannedStore, frequency: VisitFrequency) => void;
+  /** Writes are refused for this viewer; show the plan, do not offer to edit. */
+  disabled?: boolean;
 }) {
   return (
       <>
@@ -115,7 +118,7 @@ export function PlanStoreList({
                       <NativeSelect
                         id={`day-${s.assignment_id}`}
                         value={s.day_of_week === null ? "" : String(s.day_of_week)}
-                        disabled={busy.has(s.assignment_id)}
+                        disabled={disabled || busy.has(s.assignment_id)}
                         onChange={(e) =>
                           onChangeDay(
                             s,
@@ -142,7 +145,7 @@ export function PlanStoreList({
                       <NativeSelect
                         id={`freq-${s.assignment_id}`}
                         value={s.visit_frequency}
-                        disabled={busy.has(s.assignment_id)}
+                        disabled={disabled || busy.has(s.assignment_id)}
                         title="Frequency belongs to the store, so this changes it for every rep who covers it."
                         onChange={(e) =>
                           onChangeFrequency(s, e.target.value as VisitFrequency)
@@ -170,7 +173,9 @@ export function PlanStoreList({
                           id={`week-${s.assignment_id}`}
                           value={String(s.week_of_cycle ?? 1)}
                           disabled={
-                            busy.has(s.assignment_id) || s.day_of_week === null
+                            disabled ||
+                            busy.has(s.assignment_id) ||
+                            s.day_of_week === null
                           }
                           onChange={(e) => onChangeWeek(s, Number(e.target.value))}
                         >

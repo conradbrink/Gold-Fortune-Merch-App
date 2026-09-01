@@ -7,6 +7,7 @@ import { NativeSelect } from "@/components/ui/native-select";
 import { WeekLoadStrip } from "@/components/schedule/week-load-strip";
 import { InsightsPanel } from "@/components/reports/insights-panel";
 import { createClient } from "@/lib/supabase/client";
+import { useIsManager } from "@/lib/use-is-manager";
 import { toLocalDateInput } from "@/lib/date-range";
 import {
   fetchOrgId,
@@ -82,6 +83,9 @@ export function CallCyclePlanner() {
   const [reps, setReps] = useState<RepSummary[]>([]);
   const [repId, setRepId] = useState("");
   const [stores, setStores] = useState<PlannedStore[]>([]);
+  /** Mirrors the RLS check on `routes` and `store_assignments`. */
+  const isManager = useIsManager();
+  const readOnly = isManager !== true;
   /**
    * The rep on screen right now, for the guard that runs after an await. State
    * captured in a closure would still be the value from the render that started
@@ -538,6 +542,19 @@ export function CallCyclePlanner() {
         </p>
       )}
 
+      {/* Said once, at the top, rather than as a tooltip on each dead control.
+          `routes` and `store_assignments` are manager-only in RLS while this
+          page is gated on `field_ops`, so somebody can legitimately arrive here
+          and be unable to change anything — and a screen full of disabled
+          selects with no explanation reads as a broken page. */}
+      {readOnly && (
+        <p className="rounded-md border border-border bg-muted/40 px-3 py-2 text-sm text-muted-foreground">
+          Scheduling is manager-only. You can read the call cycle and see what
+          it produces, but changing a day, a frequency or generating routes
+          needs a manager.
+        </p>
+      )}
+
       <div className="flex flex-wrap items-end gap-3 rounded-lg border border-border bg-card p-3">
         <div className="min-w-[200px] flex-1 space-y-1.5">
           <Label htmlFor="plan-rep">Representative</Label>
@@ -578,7 +595,7 @@ export function CallCyclePlanner() {
         <GenerateScheduleDialog
           weeks={weeks}
           repName={selectedRep?.rep_name ?? null}
-          disabled={loadingReps}
+          disabled={loadingReps || readOnly}
         />
       </div>
 
@@ -613,9 +630,10 @@ export function CallCyclePlanner() {
               stores={stores}
               settings={settings}
               onApplied={reloadStores}
+              disabled={readOnly}
             />
 
-            <RouteOrderProposal weeks={weeks} />
+            <RouteOrderProposal weeks={weeks} disabled={readOnly} />
 
             <WeekLoadStrip days={load} storesPerDay={settings.storesPerDay} />
 
@@ -703,7 +721,8 @@ export function CallCyclePlanner() {
               workingDays={settings.workingDays}
               busy={busy}
               stopBusy={stopBusy}
-              canAddStops={orgId !== null}
+              canAddStops={orgId !== null && !readOnly}
+              readOnly={readOnly}
               onChangeDay={changeDay}
               onChangeWeek={changeWeek}
               onAddStop={addOneOff}
@@ -720,6 +739,7 @@ export function CallCyclePlanner() {
               onChangeDay={changeDay}
               onChangeWeek={changeWeek}
               onChangeFrequency={changeFrequency}
+              disabled={readOnly}
             />
           )}
 

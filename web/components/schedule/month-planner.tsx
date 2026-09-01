@@ -8,6 +8,7 @@ import { NativeSelect } from "@/components/ui/native-select";
 import { MonthGrid } from "@/components/schedule/month-grid";
 import { DayPlanPanel } from "@/components/schedule/day-plan-panel";
 import { createClient } from "@/lib/supabase/client";
+import { useIsManager } from "@/lib/use-is-manager";
 import { fromLocalDateInput, toLocalDateInput } from "@/lib/date-range";
 import {
   fetchOrgId,
@@ -89,6 +90,8 @@ export function MonthPlanner() {
   }, [repId, month]);
 
   const [orgId, setOrgId] = useState<string | null>(null);
+  /** Mirrors the RLS check on `routes`; see `lib/use-is-manager.ts`. */
+  const isManager = useIsManager();
   const [settings, setSettings] = useState<OrgSettings>(DEFAULT_ORG_SETTINGS);
   /** Every active store. A hand-added stop is often one this rep does not cover. */
   const [storeOptions, setStoreOptions] = useState<
@@ -509,8 +512,23 @@ export function MonthPlanner() {
               plan={selected.plan}
               storeOptions={storeOptions}
               storesPerDay={settings.storesPerDay}
-              readOnly={selected.isPast || !selected.inMonth}
-              canAddStops={orgId !== null && repId !== ""}
+              /* Three reasons a day cannot be edited, and they are not the
+                 same reason. Routes are manager-only in RLS while /schedule is
+                 gated on `field_ops`, so a non-manager can reach this screen
+                 and would otherwise be handed a raw policy error on Add. */
+              readOnly={
+                selected.isPast || !selected.inMonth || isManager !== true
+              }
+              readOnlyNote={
+                isManager !== true
+                  ? "Scheduling is manager-only. You can see the plan, but adding or removing a stop needs a manager."
+                  : selected.isPast
+                    ? "This day has passed. Stops on it are the record of what was planned — adding one now would create a call the rep’s phone never showed them, and removing one would delete the evidence that it was missed."
+                    : "This day is outside the month being shown. Open its own month to change it."
+              }
+              canAddStops={
+                orgId !== null && repId !== "" && isManager === true
+              }
               stopBusy={stopBusy}
               onAdd={addToDay}
               onRemove={(stop) => removeFromDay(selected.date, stop)}

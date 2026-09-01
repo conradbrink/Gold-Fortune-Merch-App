@@ -205,6 +205,7 @@ export function CycleGrid({
   onChangeWeek,
   onAddStop,
   onRemoveStop,
+  readOnly = false,
 }: {
   stores: PlannedStore[];
   /** One-off stops for this rep across the horizon. */
@@ -228,6 +229,12 @@ export function CycleGrid({
   /** Resolves true when the stop landed, false when the write failed. */
   onAddStop: (date: Date, storeIds: string[]) => Promise<boolean>;
   onRemoveStop: (stop: ManualStop) => void;
+  /**
+   * Writes are refused for this viewer. `canAddStops` covered only the one-off
+   * picker, which left the day and week selects and Remove live — every one of
+   * them reaches a write the policy will reject.
+   */
+  readOnly?: boolean;
 }) {
   // Keyed by date rather than by object identity: the calendar is rebuilt on every
   // edit, so holding the day itself would leave the panel showing a stale list.
@@ -539,7 +546,7 @@ export function CycleGrid({
                     <NativeSelect
                       id={`grid-day-${s.assignment_id}`}
                       value={String(s.day_of_week ?? "")}
-                      disabled={busy.has(s.assignment_id)}
+                      disabled={readOnly || busy.has(s.assignment_id)}
                       onChange={(e) =>
                         onChangeDay(
                           s,
@@ -570,7 +577,7 @@ export function CycleGrid({
                       <NativeSelect
                         id={`grid-week-${s.assignment_id}`}
                         value={String(s.week_of_cycle ?? 1)}
-                        disabled={busy.has(s.assignment_id)}
+                        disabled={readOnly || busy.has(s.assignment_id)}
                         onChange={(e) => onChangeWeek(s, Number(e.target.value))}
                       >
                         {s.visit_frequency === "biweekly" ? (
@@ -637,7 +644,7 @@ export function CycleGrid({
                     variant="ghost"
                     size="sm"
                     className="gap-1.5 text-muted-foreground hover:text-destructive"
-                    disabled={m.visited || stopBusy.has(m.route_id)}
+                    disabled={readOnly || m.visited || stopBusy.has(m.route_id)}
                     // A visited stop is not removable: deleting the route sets
                     // `visits.route_id` to null and leaves a check-in that no
                     // longer says what it was for. `generate_routes` refuses to

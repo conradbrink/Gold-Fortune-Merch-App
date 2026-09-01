@@ -21,6 +21,7 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { createClient } from "@/lib/supabase/client";
+import { useIsManager } from "@/lib/use-is-manager";
 import {
   assignStore,
   changeRepEmail,
@@ -82,6 +83,8 @@ export function AssignStoresDialog({
     () => new Set()
   );
   const [error, setError] = useState<string | null>(null);
+  /** Mirrors the RLS check on `store_assignments`; see `lib/use-is-manager.ts`. */
+  const isManager = useIsManager();
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
   const [newPassword, setNewPassword] = useState("");
@@ -177,6 +180,7 @@ export function AssignStoresDialog({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, rep?.rep_id, query]);
 
+  /** Mirrors the RLS check on `store_assignments`. */
   async function run(storeId: string, fn: () => Promise<void>) {
     setBusyStores((prev) => new Set(prev).add(storeId));
     setError(null);
@@ -210,10 +214,20 @@ export function AssignStoresDialog({
         <DialogHeader>
           <DialogTitle>{rep?.rep_name ?? "Rep"}</DialogTitle>
           <DialogDescription>
-            Tick a store to assign it to this rep. A store can be covered by
-            more than one rep.
+            {isManager === false
+              ? "This rep's round, as it stands. Changing who covers what needs a manager."
+              : "Tick a store to assign it to this rep. A store can be covered by more than one rep."}
           </DialogDescription>
         </DialogHeader>
+
+        {/* The description above already carries the reason, so this only adds
+            the bit it cannot: that the tick boxes are dead on purpose. */}
+        {isManager === false && (
+          <p className="rounded-md border border-border bg-muted/40 px-3 py-2 text-sm text-muted-foreground">
+            Assigning stores is manager-only, so the tick boxes are read-only
+            here.
+          </p>
+        )}
 
         {error && (
           <p className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
@@ -578,7 +592,9 @@ export function AssignStoresDialog({
                         >
                           <Checkbox
                             checked={Boolean(mine)}
-                            disabled={busy || !orgId}
+                            // `store_assignments` is manager-only in RLS while
+                            // this page is gated on `team`.
+                            disabled={busy || !orgId || isManager !== true}
                             aria-label={`Assign ${s.name}`}
                             onCheckedChange={() =>
                               run(s.id, () =>

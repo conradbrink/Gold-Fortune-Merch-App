@@ -18,6 +18,7 @@ import { MonthPlanner } from "@/components/schedule/month-planner";
 import { DayBoard } from "@/components/schedule/day-board";
 import { createClient } from "@/lib/supabase/client";
 import { fetchOrgId } from "@/lib/representatives";
+import { useIsManager } from "@/lib/use-is-manager";
 import { StorePicker } from "@/components/stores/store-picker";
 import { addStops, fetchDayBoard, type DayRep } from "@/lib/schedule";
 
@@ -79,6 +80,8 @@ export default function SchedulePage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [orgId, setOrgId] = useState<string | null>(null);
+  /** Mirrors the RLS check on `routes`; see `lib/use-is-manager.ts`. */
+  const isManager = useIsManager();
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [form, setForm] = useState<{ repId: string; storeIds: string[] }>({
@@ -277,6 +280,17 @@ export default function SchedulePage() {
             )}
           </div>
 
+          {/* Said once here, as on the other two tabs. `routes` writes are
+              manager-only in RLS while this page is gated on `field_ops`, so a
+              disabled "Add stop" with nothing explaining it reads as a broken
+              button rather than a decision. */}
+          {isManager === false && (
+            <p className="rounded-md border border-border bg-muted/40 px-3 py-2 text-sm text-muted-foreground">
+              Scheduling is manager-only. You can see the day as it happens, but
+              adding a stop needs a manager.
+            </p>
+          )}
+
           {loading ? (
             <div className="rounded-lg border border-border bg-card py-16 text-center text-sm text-muted-foreground">
               Loading…
@@ -286,6 +300,7 @@ export default function SchedulePage() {
               reps={dayReps}
               isPast={isBeforeToday(date)}
               onAddStop={openAddStop}
+              canAddStops={isManager === true}
             />
           )}
         </>

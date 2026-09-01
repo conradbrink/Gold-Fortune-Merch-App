@@ -120,6 +120,7 @@ export function DayPlanPanel({
   storeOptions,
   storesPerDay,
   readOnly,
+  readOnlyNote,
   canAddStops,
   stopBusy,
   onAdd,
@@ -132,6 +133,8 @@ export function DayPlanPanel({
   storeOptions: PickableStore[];
   storesPerDay: number;
   /** The date has passed, or belongs to another month. Read but do not change. */
+  /** Why it is read-only, in the panel's own voice. */
+  readOnlyNote: string;
   readOnly: boolean;
   /** False until the org is known — `routes` cannot be written without it. */
   canAddStops: boolean;
@@ -196,11 +199,11 @@ export function DayPlanPanel({
       )}
 
       {readOnly ? (
-        <p className="text-xs text-muted-foreground">
-          This day has passed. Stops on it are the record of what was planned —
-          adding one now would create a call the rep&rsquo;s phone never showed
-          them, and removing one would delete the evidence that it was missed.
-        </p>
+        /* The reason comes from the parent: a day can be read-only because it
+           has passed, or because the viewer cannot write routes at all, and
+           telling somebody "this day has passed" about tomorrow would send them
+           looking for a bug that is not there. */
+        <p className="text-xs text-muted-foreground">{readOnlyNote}</p>
       ) : (
         <>
           {/* Offered on every day, including empty ones — a blank Tuesday is

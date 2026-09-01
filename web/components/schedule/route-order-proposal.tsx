@@ -23,7 +23,14 @@ import {
  * ones that already exist, and a manager who has just moved a store between days
  * wants to re-order without creating anything.
  */
-export function RouteOrderProposal({ weeks }: { weeks: number }) {
+export function RouteOrderProposal({
+  weeks,
+  disabled = false,
+}: {
+  weeks: number;
+  /** Writes are refused for this viewer. */
+  disabled?: boolean;
+}) {
   const supabase = createClient();
 
   /** Non-null while a proposed stop order is waiting to be accepted. */
@@ -97,7 +104,7 @@ export function RouteOrderProposal({ weeks }: { weeks: number }) {
           size="sm"
           variant="outline"
           onClick={proposeOrder}
-          disabled={orderingBusy !== null}
+          disabled={disabled || orderingBusy !== null}
         >
           <Route className="mr-1.5 h-3.5 w-3.5" />
           {orderingBusy === "planning"
