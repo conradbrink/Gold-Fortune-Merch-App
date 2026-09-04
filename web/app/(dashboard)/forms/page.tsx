@@ -144,14 +144,19 @@ export default function FormsPage() {
           // history, and leaving it would mean the retry the dialog invites
           // creates a second one beside it. If the delete fails too, the
           // message says which state the manager is in.
-          const { error: undoError } = await supabase
+          // `select("id")`, as `handleDelete` does: a delete RLS filters out
+          // deletes nothing and reports success, and the message below must
+          // not say "not created" over a template that is still there.
+          const { data: undone, error: undoError } = await supabase
             .from("form_templates")
             .delete()
-            .eq("id", created.id);
+            .eq("id", created.id)
+            .select("id");
+          const rolledBack = !undoError && (undone?.length ?? 0) > 0;
           throw new Error(
-            undoError
-              ? `The form was created but its questions were not: ${fieldsError.message}. Open it from the list and add them by hand.`
-              : `The form was not created — its questions were refused: ${fieldsError.message}`
+            rolledBack
+              ? `The form was not created — its questions were refused: ${fieldsError.message}`
+              : `The form was created but its questions were not: ${fieldsError.message}. Open it from the list and add them by hand.`
           );
         }
       }

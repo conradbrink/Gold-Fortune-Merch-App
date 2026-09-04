@@ -333,18 +333,19 @@ export async function fetchFormResponseRows(
       })
     );
     rows.push(...page);
-    // A short page is the last page. Asking again after a full one costs a
-    // round trip that usually returns nothing, and is what makes the count
-    // right when the total is an exact multiple of the page size.
-    if (page.length < RESPONSE_PAGE) return { rows, truncated: false };
-    // `>`, not `>=`. The ceiling is a multiple of the page size, so a period
-    // holding exactly that many submissions fills the last page without a
-    // short one to say so — and `>=` would then stamp "the newest 20,000
+    // The ceiling first, and `>` rather than `>=`. First, because a short
+    // final page can itself carry the rows past the ceiling — 20,001 to
+    // 20,499 in total — and returning it as "the last page, complete" would
+    // hand over more than the ceiling with no note saying so. `>`, because
+    // the ceiling is a multiple of the page size: exactly that many fills the
+    // last page without a short one, and `>=` would stamp "the newest 20,000
     // only" on a file that holds every response. One more round trip in that
     // single case buys the true answer.
     if (rows.length > RESPONSE_CEILING) {
       return { rows: rows.slice(0, RESPONSE_CEILING), truncated: true };
     }
+    // A short page is the last page.
+    if (page.length < RESPONSE_PAGE) return { rows, truncated: false };
     const last = page[page.length - 1];
     after = { at: last.submitted_at, id: last.submission_id };
   }

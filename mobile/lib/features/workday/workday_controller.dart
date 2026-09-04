@@ -99,6 +99,14 @@ class WorkdayController extends AsyncNotifier<WorkdaySession?> {
     _trackingMode = await LocationTracking.currentMode();
     if (superseded()) return;
 
+    // While `currentMode()` was out, an older start may have listened and,
+    // finding itself superseded, queued its own cancel. Listening now would
+    // overlap that cancel — the exact race this controller exists to avoid —
+    // so wait for the queue to drain, then ask once more whether this start
+    // is still the one that matters.
+    await (_cancelling ?? Future<void>.value());
+    if (superseded()) return;
+
     final stream = LocationTracking.stream(_trackingMode);
     if (stream == null) {
       ref.notifyListeners();
@@ -128,9 +136,11 @@ class WorkdayController extends AsyncNotifier<WorkdaySession?> {
 
     // Listening is itself an await-free step, but a stop can have landed while
     // the stream was being built. Cancelling here rather than keeping it is the
-    // difference between a stray service and none.
+    // difference between a stray service and none — and it goes through the
+    // same queue as every other cancel, so the start that superseded this one
+    // waits for it before listening.
     if (superseded()) {
-      await _cancelSubscription(sub);
+      await _enqueueCancel(sub);
       return;
     }
 
@@ -186,10 +196,19 @@ class WorkdayController extends AsyncNotifier<WorkdaySession?> {
   Future<void> _cancelPings() {
     final sub = _pingSub;
     _pingSub = null;
+    if (sub == null) return _cancelling ?? Future<void>.value();
+    return _enqueueCancel(sub);
+  }
+
+  /// Appends one cancel to the queue and returns a future for the whole queue.
+  ///
+  /// The one place a cancel is allowed to start. `_cancelPings` and the
+  /// superseded-start path both come through here, which is what lets
+  /// `_startTracking` wait on `_cancelling` and know it has waited for
+  /// *every* cancel, not only the ones that went through `_pingSub`.
+  Future<void> _enqueueCancel(StreamSubscription<Position> sub) {
     final previous = _cancelling ?? Future<void>.value();
-    final next = sub == null
-        ? previous
-        : previous.then((_) => _cancelSubscription(sub));
+    final next = previous.then((_) => _cancelSubscription(sub));
     _cancelling = next;
     return next.whenComplete(() {
       if (identical(_cancelling, next)) _cancelling = null;
