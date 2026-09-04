@@ -44,12 +44,22 @@ class FormTemplate {
   final String id;
   final String name;
   final String? description;
+
+  /// Whether this form must be submitted before the rep can check out.
+  ///
+  /// Every active template used to block the check-out, so this exists to make
+  /// that a choice a manager makes per form rather than a consequence of the
+  /// form existing. An optional form is still offered, still stored and still
+  /// reported on — it just never holds anybody at a door.
+  final bool required;
+
   final List<FormFieldDef> fields;
 
   const FormTemplate({
     required this.id,
     required this.name,
     this.description,
+    required this.required,
     required this.fields,
   });
 
@@ -57,6 +67,7 @@ class FormTemplate {
         'id': id,
         'name': name,
         'description': description,
+        'required': required,
         'form_fields': fields.map((f) => f.toMap()).toList(),
       };
 
@@ -71,6 +82,11 @@ class FormTemplate {
       id: map['id'] as String,
       name: map['name'] as String,
       description: map['description'] as String?,
+      // Missing means a cache written before the column existed, and every
+      // form was compulsory then — so `true` is what that cache actually
+      // meant. Defaulting to `false` would quietly unlock the daily audit for
+      // any rep who opened the app offline after upgrading.
+      required: map['required'] as bool? ?? true,
       fields: fields,
     );
   }

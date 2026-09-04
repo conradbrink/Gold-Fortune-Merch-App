@@ -53,7 +53,7 @@ class FormRepository {
       final rows = await _client
           .from('form_templates')
           .select(
-              'id, name, description, form_fields(id, label, field_type, options, required, sort_order)')
+              'id, name, description, required, form_fields(id, label, field_type, options, required, sort_order)')
           .eq('active', true)
           .order('name', ascending: true);
 

@@ -12,6 +12,8 @@
 //    matches no row, PostgREST calls it success, and the entry was deleted with
 //    the check-out inside it.
 
+import 'dart:io';
+
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:gf_merch_rep/data/local/app_database.dart';
@@ -255,6 +257,33 @@ void detailScreenTests() {
 
   // What to do when a check-out replay updates no row. Three causes, and
   // getting them wrong costs either a wedged queue or a rep's lost work.
+  // A drain that meets bad signal must wait, not spend the entry's attempts.
+  // FLUTTER-D: a TLS handshake cut by the network is not a SocketException,
+  // and eight of them in a row had a location ping reported as given up.
+  group('isTransientNetworkFailure', () {
+    test('the three shapes a dropped link takes are transient', () {
+      expect(
+          isTransientNetworkFailure(const SocketException('unreachable')),
+          isTrue);
+      expect(
+          isTransientNetworkFailure(
+              const HandshakeException('Connection terminated during handshake')),
+          isTrue);
+      expect(
+          isTransientNetworkFailure(
+              const HttpException('Connection closed before full header')),
+          isTrue);
+    });
+
+    test('a missing file is the entry\'s fault and still counts', () {
+      expect(
+          isTransientNetworkFailure(
+              const FileSystemException('Cannot open file', '/gone.jpg')),
+          isFalse);
+      expect(isTransientNetworkFailure(StateError('not synced yet')), isFalse);
+    });
+  });
+
   group('checkOutAlreadyRecorded', () {
     test('no visit at all is the check-in not having landed', () {
       // Retryable, and must stay so: this entry is the only record the rep

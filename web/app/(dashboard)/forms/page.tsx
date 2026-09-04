@@ -23,8 +23,11 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { NativeSelect } from "@/components/ui/native-select";
+import { Checkbox } from "@/components/ui/checkbox";
 import { createClient } from "@/lib/supabase/client";
 import type { Tables } from "@/lib/supabase/types";
+import { FORM_PRESETS, findPreset } from "@/lib/form-presets";
 
 type FormTemplate = Tables<"form_templates"> & { submissions: number };
 
@@ -36,6 +39,10 @@ export default function FormsPage() {
   const [saving, setSaving] = useState(false);
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
+  /** "" for a blank form, otherwise a key from FORM_PRESETS. */
+  const [presetKey, setPresetKey] = useState("");
+  /** Compulsory forms block the rep's check-out. Off unless chosen. */
+  const [required, setRequired] = useState(false);
   /** The form the manager has asked to remove, pending confirmation. */
   const [pending, setPending] = useState<FormTemplate | null>(null);
   const [busy, setBusy] = useState(false);
@@ -73,27 +80,81 @@ export default function FormsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  /**
+   * Creates the template, and its questions too when a preset was chosen.
+   *
+   * Two writes rather than one, because `form_fields` needs the template's id.
+   * If the fields fail the template survives with none — recoverable in the
+   * builder, and better than a rollback that loses the manager's typing. The
+   * error says which half happened.
+   */
   async function handleCreate() {
     setSaving(true);
-    const { data: userData } = await supabase.auth.getUser();
-    const { data: profileRow } = await supabase
-      .from("profiles")
-      .select("org_id")
-      .eq("id", userData.user!.id)
-      .single();
+    setError(null);
+    try {
+      const { data: userData } = await supabase.auth.getUser();
+      const { data: profileRow } = await supabase
+        .from("profiles")
+        .select("org_id")
+        .eq("id", userData.user!.id)
+        .single();
 
-    await supabase.from("form_templates").insert({
-      org_id: profileRow!.org_id,
-      name,
-      description: description || null,
-      created_by: userData.user!.id,
-    });
+      const preset = presetKey ? findPreset(presetKey) : undefined;
+      const { data: created, error: insertError } = await supabase
+        .from("form_templates")
+        .insert({
+          org_id: profileRow!.org_id,
+          name,
+          description: description || null,
+          required,
+          created_by: userData.user!.id,
+        })
+        .select("id")
+        .single();
+      if (insertError) throw new Error(insertError.message);
 
-    setSaving(false);
-    setDialogOpen(false);
-    setName("");
-    setDescription("");
-    loadForms();
+      if (preset && created) {
+        const { error: fieldsError } = await supabase.from("form_fields").insert(
+          preset.fields.map((f, i) => ({
+            form_template_id: created.id,
+            label: f.label,
+            field_type: f.field_type,
+            required: f.required,
+            options: f.options ?? null,
+            // Never a metric. See the note in lib/form-presets.ts: a
+            // competitor's price is not our price accuracy.
+            metric_key: f.metric_key ?? null,
+            sort_order: i,
+          }))
+        );
+        if (fieldsError) {
+          throw new Error(
+            `The form was created but its questions were not: ${fieldsError.message}`
+          );
+        }
+      }
+
+      setDialogOpen(false);
+      setName("");
+      setDescription("");
+      setPresetKey("");
+      setRequired(false);
+      await loadForms();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  /** Fills the name and description in from a preset, leaving both editable. */
+  function handlePresetChange(key: string) {
+    setPresetKey(key);
+    const preset = key ? findPreset(key) : undefined;
+    if (!preset) return;
+    setName(preset.name);
+    setDescription(preset.description);
+    setRequired(preset.required);
   }
 
   /**
@@ -175,6 +236,29 @@ export default function FormsPage() {
             </DialogHeader>
             <div className="space-y-3">
               <div className="space-y-1.5">
+                <Label htmlFor="form-preset">Start from</Label>
+                <NativeSelect
+                  id="form-preset"
+                  value={presetKey}
+                  onChange={(e) => handlePresetChange(e.target.value)}
+                >
+                  <option value="">A blank form</option>
+                  {FORM_PRESETS.map((p) => (
+                    <option key={p.key} value={p.key}>
+                      {p.name}
+                    </option>
+                  ))}
+                </NativeSelect>
+                {/* The blueprint is a starting point: the questions it creates
+                    are ordinary fields, editable and deletable afterwards. */}
+                {presetKey && (
+                  <p className="text-xs text-muted-foreground">
+                    {findPreset(presetKey)?.blurb} Every question can be edited
+                    or removed afterwards.
+                  </p>
+                )}
+              </div>
+              <div className="space-y-1.5">
                 <Label htmlFor="form-name">Name</Label>
                 <Input id="form-name" value={name} onChange={(e) => setName(e.target.value)} />
               </div>
@@ -186,8 +270,28 @@ export default function FormsPage() {
                   onChange={(e) => setDescription(e.target.value)}
                 />
               </div>
+              <div className="flex items-start gap-2">
+                <Checkbox
+                  id="form-required"
+                  checked={required}
+                  onCheckedChange={(checked) => setRequired(checked === true)}
+                />
+                <div className="space-y-0.5">
+                  <Label htmlFor="form-required" className="font-normal">
+                    Compulsory
+                  </Label>
+                  <p className="text-xs text-muted-foreground">
+                    Reps cannot check out of a store until this form is
+                    submitted for that visit. Leave it off for occasional
+                    surveys.
+                  </p>
+                </div>
+              </div>
             </div>
             <DialogFooter>
+              {error && (
+                <p className="mr-auto text-xs text-destructive">{error}</p>
+              )}
               <Button
                 onClick={handleCreate}
                 disabled={saving || !name}
@@ -242,6 +346,15 @@ export default function FormsPage() {
                           Archived
                         </Badge>
                       )}
+                      {/* Said on the list, not only in the builder: whether a
+                          form holds a rep at the door is the fact a manager
+                          scanning this page most needs. */}
+                      <Badge
+                        variant="outline"
+                        className="font-normal text-muted-foreground"
+                      >
+                        {form.required ? "Compulsory" : "Optional"}
+                      </Badge>
                     </div>
                   </TableCell>
                   <TableCell className="text-sm">{form.submissions}</TableCell>

@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { callRpc } from "@/lib/rpc";
-import type { DateRange } from "@/lib/date-range";
+import { toLocalDateTime, type DateRange } from "@/lib/date-range";
+import type { ExportSheet } from "@/lib/export";
 
 /**
  * Report fetchers.
@@ -245,6 +246,197 @@ export async function fetchFormReport(
       p_store_ids: filters.storeIds?.length ? filters.storeIds : null,
     })
   );
+}
+
+/**
+ * One filled-in form: who, where, when, and every answer.
+ *
+ * `answers` is keyed by `form_field_id` rather than by label, because two
+ * questions on one template are allowed to carry the same label — the price
+ * survey has two "Product Name/Puffs + Price" fields — and keying by label
+ * would silently merge them.
+ */
+export type FormResponseRow = {
+  submission_id: string;
+  submitted_at: string;
+  rep_name: string | null;
+  store_name: string | null;
+  store_group: string | null;
+  city: string | null;
+  visit_status: string | null;
+  answers: Record<string, string | null> | null;
+};
+
+/** One round trip's worth. The RPC refuses more than 2,000. */
+const RESPONSE_PAGE = 500;
+
+/**
+ * The point at which this stops being a spreadsheet.
+ *
+ * Excel's own limit is 1,048,576 rows, so this is not that — it is the point
+ * where a browser holding the whole export in memory and an `xlsx` writer
+ * building it in one pass stop being reasonable. Reaching it is reported to
+ * the caller and written into the file's own header, because an export that
+ * quietly stops is worse than one that says where it stopped.
+ */
+const RESPONSE_CEILING = 20_000;
+
+/**
+ * Every submission of one form template in a period, newest first.
+ *
+ * The module header says pulling `form_responses` to the browser would mean
+ * shipping thousands of rows, and that is still true and still the reason the
+ * *charts* aggregate in Postgres. This is the deliberate exception: an export
+ * somebody pressed a button for, narrowed to one template and one date range,
+ * where the whole point is the individual rows. It is not on the page's load
+ * path — nothing fetches it until Export is clicked.
+ *
+ * Walks the RPC's keyset cursor to the end rather than taking one capped page,
+ * so "every response" is the truth. `truncated` is only ever true at the
+ * ceiling above.
+ */
+export async function fetchFormResponseRows(
+  supabase: SupabaseClient,
+  templateId: string,
+  range: DateRange,
+  filters: { repIds?: string[]; storeIds?: string[] } = {}
+): Promise<{ rows: FormResponseRow[]; truncated: boolean }> {
+  const rows: FormResponseRow[] = [];
+  let after: { at: string; id: string } | null = null;
+
+  for (;;) {
+    // Annotated, and it has to be: `after` is read in the arguments below and
+    // written from this page's last row, so inferring the type here would mean
+    // resolving a cycle TypeScript refuses (TS7022).
+    const page: FormResponseRow[] = unwrap<FormResponseRow>(
+      await callRpc(supabase, "form_response_rows", {
+        p_template_id: templateId,
+        p_from: range.from.toISOString(),
+        p_to: range.to.toISOString(),
+        p_rep_ids: filters.repIds?.length ? filters.repIds : null,
+        p_store_ids: filters.storeIds?.length ? filters.storeIds : null,
+        p_limit: RESPONSE_PAGE,
+        p_after_submitted_at: after?.at ?? null,
+        p_after_id: after?.id ?? null,
+      })
+    );
+    rows.push(...page);
+    // A short page is the last page. Asking again after a full one costs a
+    // round trip that usually returns nothing, and is what makes the count
+    // right when the total is an exact multiple of the page size.
+    if (page.length < RESPONSE_PAGE) return { rows, truncated: false };
+    if (rows.length >= RESPONSE_CEILING) {
+      return { rows: rows.slice(0, RESPONSE_CEILING), truncated: true };
+    }
+    const last = page[page.length - 1];
+    after = { at: last.submitted_at, id: last.submission_id };
+  }
+}
+
+/**
+ * The per-response export, as a sheet.
+ *
+ * Pure, and separate from the page for a reason: this is the only description
+ * of what the file actually looks like, and a function that takes fields and
+ * rows can be checked against fixtures without a signed-in session or a
+ * database.
+ *
+ * Columns are the six facts about the submission followed by one per question,
+ * in the template's own order. `fields` should be every field including
+ * photos — a photo question exports its storage path, which is at least a
+ * handle on the image, where omitting the column says nothing at all.
+ */
+export function buildFormResponsesSheet(
+  fields: FieldReport[],
+  rows: FormResponseRow[],
+  opts: { context: string[]; truncated?: boolean; orgName?: string }
+): ExportSheet {
+  const headers = formFieldHeaders(fields);
+  const questions = fields.map((f) => ({
+    header: headers.get(f.field_id) ?? f.label,
+    key: f.field_id,
+    // A number question exports as a number, so the column sums and sorts.
+    // Everything else — an option, Yes/No, a price typed into a text box — is
+    // text, and a text column of prices is still every price.
+    numeric: f.field_type === "number",
+  }));
+
+  return {
+    orgName: opts.orgName,
+    title: "Form responses",
+    filename: "gf-form-responses",
+    context: [
+      ...opts.context,
+      `${rows.length} submission${rows.length === 1 ? "" : "s"}`,
+      // Written into the file, not only shown in the browser: the person who
+      // opens it next week is not necessarily the person who exported it.
+      opts.truncated
+        ? `NOTE: the newest ${rows.length} submissions only — narrow the date range for the rest`
+        : null,
+    ].filter((line): line is string => line !== null),
+    columns: [
+      { header: "Submitted", key: "submitted" },
+      { header: "Store", key: "store" },
+      { header: "Chain", key: "group" },
+      { header: "Town", key: "city" },
+      { header: "Rep", key: "rep" },
+      { header: "Visit status", key: "status" },
+      ...questions,
+    ],
+    rows: rows.map((r) => {
+      const answers = r.answers ?? {};
+      // Keyed by field id, which is a uuid and so cannot collide with the six
+      // fixed keys above.
+      const row: Record<string, string | number | null | undefined> = {
+        submitted: toLocalDateTime(r.submitted_at),
+        store: r.store_name ?? "",
+        group: r.store_group ?? "",
+        city: r.city ?? "",
+        rep: r.rep_name ?? "",
+        status: r.visit_status ?? "",
+      };
+      for (const q of questions) {
+        // Reps type prices on several lines — "ating bar \np299" is real data
+        // from the price survey. Flattened for the same reason
+        // `summariseFieldStats` flattens: a newline inside a cell is a row
+        // opened up in the PDF and a two-line cell in Excel, and the answer
+        // reads no worse on one line.
+        const answer = (answers[q.key] ?? "").replace(/\s+/g, " ").trim();
+        // `Number("")` is 0, so a blank answer would become a nought that
+        // averages. Blank stays blank.
+        const asNumber = answer === "" ? Number.NaN : Number(answer);
+        row[q.key] = q.numeric && Number.isFinite(asNumber) ? asNumber : answer;
+      }
+      return row;
+    }),
+  };
+}
+
+/**
+ * A column heading per field, with repeated labels numbered.
+ *
+ * The price survey really does have ten fields all labelled "Product
+ * Name/Puffs + Price". Ten identically headed columns is a spreadsheet nobody
+ * can read, and the fields are distinct questions in a fixed order, so they
+ * are numbered in that order: "… (1)" through "… (10)". A label that appears
+ * once is left exactly as the manager wrote it.
+ */
+export function formFieldHeaders(fields: FieldReport[]): Map<string, string> {
+  const total = new Map<string, number>();
+  for (const f of fields) total.set(f.label, (total.get(f.label) ?? 0) + 1);
+
+  const seen = new Map<string, number>();
+  const headers = new Map<string, string>();
+  for (const f of fields) {
+    if ((total.get(f.label) ?? 0) < 2) {
+      headers.set(f.field_id, f.label);
+      continue;
+    }
+    const n = (seen.get(f.label) ?? 0) + 1;
+    seen.set(f.label, n);
+    headers.set(f.field_id, `${f.label} (${n})`);
+  }
+  return headers;
 }
 
 export async function fetchCoverageGaps(

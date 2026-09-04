@@ -753,6 +753,7 @@ export type Database = {
           id: string
           name: string
           org_id: string
+          required: boolean
           updated_at: string
         }
         Insert: {
@@ -763,6 +764,7 @@ export type Database = {
           id?: string
           name: string
           org_id: string
+          required?: boolean
           updated_at?: string
         }
         Update: {
@@ -773,6 +775,7 @@ export type Database = {
           id?: string
           name?: string
           org_id?: string
+          required?: boolean
           updated_at?: string
         }
         Relationships: [
@@ -5299,6 +5302,7 @@ export type Database = {
           p_only_flagged?: boolean
           p_rep_ids?: string[]
           p_store_ids?: string[]
+          p_template_id?: string
           p_to: string
         }
         Returns: {
@@ -5323,6 +5327,7 @@ export type Database = {
           p_from: string
           p_rep_ids?: string[]
           p_store_ids?: string[]
+          p_template_id?: string
           p_to: string
         }
         Returns: Json

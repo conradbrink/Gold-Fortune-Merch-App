@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:geolocator/geolocator.dart';
 
@@ -33,7 +34,7 @@ class WorkdayController extends AsyncNotifier<WorkdaySession?> {
     // Must outlive any one screen — navigating to a store shouldn't wipe the
     // active session or drop the location subscription.
     ref.keepAlive();
-    ref.onDispose(() => _pingSub?.cancel());
+    ref.onDispose(() => unawaited(_cancelPings()));
 
     final user = ref.watch(currentUserProvider);
     if (user == null) {
@@ -88,8 +89,7 @@ class WorkdayController extends AsyncNotifier<WorkdaySession?> {
     final generation = ++_trackingGeneration;
     bool superseded() => generation != _trackingGeneration;
 
-    await _pingSub?.cancel();
-    _pingSub = null;
+    await _cancelPings();
     if (superseded()) return;
 
     _trackingMode = await LocationTracking.currentMode();
@@ -126,7 +126,7 @@ class WorkdayController extends AsyncNotifier<WorkdaySession?> {
     // the stream was being built. Cancelling here rather than keeping it is the
     // difference between a stray service and none.
     if (superseded()) {
-      await sub.cancel();
+      await _cancelSubscription(sub);
       return;
     }
 
@@ -162,8 +162,36 @@ class WorkdayController extends AsyncNotifier<WorkdaySession?> {
     // Invalidate any start still in flight *before* awaiting, or it can finish
     // afterwards and hand back a subscription this stop was meant to prevent.
     _trackingGeneration++;
-    await _pingSub?.cancel();
+    await _cancelPings();
+  }
+
+  Future<void> _cancelPings() async {
+    final sub = _pingSub;
     _pingSub = null;
+    if (sub != null) await _cancelSubscription(sub);
+  }
+
+  /// Cancels a position subscription, accepting that it may already be gone.
+  ///
+  /// geolocator's Android side throws `PlatformException(No active stream to
+  /// cancel)` when the stream it is asked to cancel never started — which is
+  /// what happens after Android refuses the foreground service (`Service.
+  /// startForeground() not allowed`, the app being in the background when the
+  /// controller rebuilt after a low-memory kill). The stream errors, the
+  /// platform side tears itself down, and the next cancel here has nothing to
+  /// cancel. That is the outcome a cancel wants, and 42 of them came off two
+  /// handsets in a week as unhandled errors (FLUTTER-C) for reporting it as a
+  /// failure.
+  ///
+  /// Only `PlatformException` is caught. Anything else a cancel throws is
+  /// unknown and should still be seen.
+  static Future<void> _cancelSubscription(
+      StreamSubscription<Position> sub) async {
+    try {
+      await sub.cancel();
+    } on PlatformException {
+      // Already stopped. Nothing to do and nothing to report.
+    }
   }
 
   /// One position from the stream, rate-limited into at most one written ping.

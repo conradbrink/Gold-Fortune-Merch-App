@@ -31,6 +31,8 @@ import 'package:gf_merch_rep/features/forms/form_fill_screen.dart';
 const _template = FormTemplate(
   id: 'template-1',
   name: 'Merchandising Conditions Audit',
+  // The daily audit is compulsory, as it is in production.
+  required: true,
   fields: [
     FormFieldDef(
       id: 'f-photo',

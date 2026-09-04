@@ -461,10 +461,18 @@ class _StoreDetailScreenState extends ConsumerState<StoreDetailScreen> {
             return const Center(child: Text('Visit not found.'));
           }
 
-          // Outstanding forms gate the check-out. If templates can't be read
-          // at all (no connection, nothing cached) the list is empty and the
-          // gate stays open — a rep must never be stranded at a store by a
-          // form we can't even show them.
+          // Outstanding **compulsory** forms gate the check-out. If templates
+          // can't be read at all (no connection, nothing cached) the list is
+          // empty and the gate stays open — a rep must never be stranded at a
+          // store by a form we can't even show them.
+          //
+          // `t.required` is what makes this a manager's choice rather than a
+          // consequence of a form existing. An optional form still appears in
+          // the list below and can still be filled in; it just never holds the
+          // rep at the door. Before this, publishing an occasional survey
+          // meant every rep in the country had to answer it at every store to
+          // be able to leave — and the fastest way out of a gate like that is
+          // to answer it falsely.
           final templates =
               ref.watch(formTemplatesProvider).value ?? const <FormTemplate>[];
           final submitted = rv.visitClientGeneratedId != null
@@ -474,8 +482,9 @@ class _StoreDetailScreenState extends ConsumerState<StoreDetailScreen> {
                       .value ??
                   const <String>{}
               : const <String>{};
-          final outstanding =
-              templates.where((t) => !submitted.contains(t.id)).toList();
+          final outstanding = templates
+              .where((t) => t.required && !submitted.contains(t.id))
+              .toList();
 
           // Why the primary action is unavailable, or null when it's allowed.
           final String? blockedReason;
@@ -837,7 +846,11 @@ class _FormsSection extends ConsumerWidget {
                     subtitle: Text(
                       done
                           ? 'Submitted'
-                          : '${t.fields.length} question${t.fields.length == 1 ? '' : 's'}',
+                          // Said before they open it, because it answers the
+                          // question a rep in a hurry is actually asking: can
+                          // I leave without this one?
+                          : '${t.fields.length} question${t.fields.length == 1 ? '' : 's'} · '
+                              '${t.required ? 'required before check-out' : 'optional'}',
                       style: const TextStyle(fontSize: 12),
                     ),
                     trailing: done || readOnly

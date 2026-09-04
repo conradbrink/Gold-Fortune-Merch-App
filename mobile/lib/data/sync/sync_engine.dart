@@ -50,6 +50,19 @@ List<OutboxEntry> replayableEntries(
   return replayable;
 }
 
+/// A failure that says nothing about the entry and everything about the link.
+///
+/// The drain stops and waits on these rather than charging the entry an
+/// attempt: a socket that never opened, a TLS handshake the network cut short,
+/// an HTTP connection closed mid-response. All three are the phone passing out
+/// of coverage, and all three are `IOException`s — but so is a missing file,
+/// which *is* the entry's fault and must count, so the list is explicit rather
+/// than the base class.
+///
+/// Top-level so it can be tested without a database.
+bool isTransientNetworkFailure(Object error) =>
+    error is SocketException || error is TlsException || error is HttpException;
+
 /// Whether a queued check-out has already been recorded on the visit, and can
 /// therefore be dropped from the outbox instead of retried forever.
 ///
@@ -150,11 +163,18 @@ class SyncEngine {
         try {
           await _replay(entry);
           await _db.deleteEntry(entry.id);
-        } on SocketException {
-          // No network mid-drain: stop, keep everything queued, try later.
-          await _emit(SyncState.offline);
-          return;
         } catch (e, stack) {
+          // No network mid-drain: stop, keep everything queued, try later.
+          //
+          // This used to be `on SocketException` alone, and a TLS handshake
+          // cut by a dropped cellular link is not a SocketException. It fell
+          // through to the branch below, counted as one of the entry's eight
+          // attempts, and after eight bad moments of signal a location ping
+          // that had done nothing wrong was reported as given up (FLUTTER-D).
+          if (isTransientNetworkFailure(e)) {
+            await _emit(SyncState.offline);
+            return;
+          }
           final attempts = entry.attempts + 1;
           await _db.recordFailure(entry.id, attempts, e.toString());
 
@@ -301,9 +321,20 @@ class SyncEngine {
           }
           data['workday_session_id'] = session['id'];
         }
-        await _client
-            .from('location_pings')
-            .upsert(data, onConflict: 'client_generated_id');
+        // `ignoreDuplicates`, and it is load-bearing. A plain upsert is
+        // `insert … on conflict do update`, and the update half runs under the
+        // table's UPDATE policy — which `location_pings` does not have. So a
+        // ping retried after a lost acknowledgement, whose row was already
+        // there, was refused with "violates row-level security policy (USING
+        // expression)" on every attempt, burned all eight, and was reported as
+        // lost work (FLUTTER-6, FLUTTER-A, three reps). It was never lost: the
+        // conflict *is* the proof it landed. A ping is immutable, so "do
+        // nothing" on conflict is the whole truth, not a shortcut.
+        await _client.from('location_pings').upsert(
+          data,
+          onConflict: 'client_generated_id',
+          ignoreDuplicates: true,
+        );
         break;
 
       case OutboxType.salesVisitStart:
@@ -355,9 +386,15 @@ class SyncEngine {
               .maybeSingle();
           data['visit_id'] = visit?['id'];
         }
-        await _client
-            .from('promotion_checks')
-            .upsert(data, onConflict: 'client_generated_id');
+        // Same trap as the location ping above: `promotion_checks` has an
+        // INSERT policy and no UPDATE policy, so a retry that meets its own
+        // earlier row must not take the update path. A check cannot be edited
+        // afterwards by design, so nothing is given up here.
+        await _client.from('promotion_checks').upsert(
+          data,
+          onConflict: 'client_generated_id',
+          ignoreDuplicates: true,
+        );
         break;
 
       default:

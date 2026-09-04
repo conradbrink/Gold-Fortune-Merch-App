@@ -42,6 +42,8 @@ export type FeedFilters = {
   to: Date;
   repIds?: string[] | null;
   storeIds?: string[] | null;
+  /** Only events whose visit carries a submission of this form template. */
+  templateId?: string | null;
   onlyFlagged?: boolean;
 };
 
@@ -51,6 +53,7 @@ function baseArgs(f: FeedFilters) {
     p_to: f.to.toISOString(),
     p_rep_ids: f.repIds?.length ? f.repIds : null,
     p_store_ids: f.storeIds?.length ? f.storeIds : null,
+    p_template_id: f.templateId || null,
   };
 }
 

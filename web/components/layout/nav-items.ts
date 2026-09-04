@@ -149,6 +149,22 @@ export const navGroups: NavGroup[] = [
         icon: Boxes,
         permission: "warehouse",
       },
+      // Moved out of Resources, and it belongs here: Inventory is how much of
+      // a line is in the building, Products is what the line *is* — price,
+      // pack size, code — and the two are read together and edited together.
+      //
+      // ⚠️ It keeps `resources`, not `warehouse`. Moving an item between
+      // groups is a change to where it appears, not to who may open it: the
+      // group heading grants nothing, `visibleNavGroups` filters per item, and
+      // `canAccessPath` still refuses `/products` to anyone without
+      // `resources`. A clerk who could not open Products yesterday still
+      // cannot see it here today.
+      {
+        href: "/products",
+        label: "Products",
+        icon: Package,
+        permission: "resources",
+      },
       // Reachable by clerks on purpose: adding the driver who started this
       // morning should not wait for a manager, and RLS already permits it. The
       // manager-only tabs inside are gated by the page and by RLS.
@@ -237,9 +253,11 @@ export const navGroups: NavGroup[] = [
     ],
   },
   {
+    // Products used to head this group; it now sits with Inventory under
+    // Warehouse & Fulfilment. What is left is the two reference destinations —
+    // the forms reps fill in and the files they are given.
     label: "Resources",
     items: [
-      { href: "/products", label: "Products", icon: Package, permission: "resources" },
       { href: "/forms", label: "Forms", icon: FileText, permission: "resources" },
       { href: "/files", label: "Files", icon: Folder, permission: "resources" },
     ],
