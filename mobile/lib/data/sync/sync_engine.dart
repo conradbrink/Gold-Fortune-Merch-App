@@ -59,9 +59,20 @@ List<OutboxEntry> replayableEntries(
 /// which *is* the entry's fault and must count, so the list is explicit rather
 /// than the base class.
 ///
+/// Two subclasses are carved back out. A `CertificateException` is a
+/// `TlsException`, and a `RedirectException` is an `HttpException`, and
+/// neither clears up by waiting: a certificate the phone will not trust is the
+/// same certificate an hour later, and a redirect loop is a server, not a
+/// signal. Treating those as transient would park the drain in "offline"
+/// forever with the queue untouched and nobody told.
+///
 /// Top-level so it can be tested without a database.
-bool isTransientNetworkFailure(Object error) =>
-    error is SocketException || error is TlsException || error is HttpException;
+bool isTransientNetworkFailure(Object error) {
+  if (error is SocketException) return true;
+  if (error is TlsException) return error is! CertificateException;
+  if (error is HttpException) return error is! RedirectException;
+  return false;
+}
 
 /// Whether a queued check-out has already been recorded on the visit, and can
 /// therefore be dropped from the outbox instead of retried forever.

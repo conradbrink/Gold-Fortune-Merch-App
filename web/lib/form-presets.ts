@@ -19,7 +19,12 @@ export type PresetField = {
   label: string;
   field_type: FormFieldType;
   required: boolean;
-  /** Comma-separated choices, for `multiple_choice` only. */
+  /**
+   * The choices offered, for `multiple_choice` only. Stored as a JSON array
+   * in `form_fields.options` — the builder's comma-separated input is parsed
+   * into this shape before it is written, and this is the shape the phone
+   * reads.
+   */
   options?: string[];
   /**
    * Left `null` on every field of every preset so far, and for the competitor

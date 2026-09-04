@@ -337,7 +337,12 @@ export async function fetchFormResponseRows(
     // round trip that usually returns nothing, and is what makes the count
     // right when the total is an exact multiple of the page size.
     if (page.length < RESPONSE_PAGE) return { rows, truncated: false };
-    if (rows.length >= RESPONSE_CEILING) {
+    // `>`, not `>=`. The ceiling is a multiple of the page size, so a period
+    // holding exactly that many submissions fills the last page without a
+    // short one to say so — and `>=` would then stamp "the newest 20,000
+    // only" on a file that holds every response. One more round trip in that
+    // single case buys the true answer.
+    if (rows.length > RESPONSE_CEILING) {
       return { rows: rows.slice(0, RESPONSE_CEILING), truncated: true };
     }
     const last = page[page.length - 1];

@@ -36,8 +36,8 @@ type ExportMenuProps = {
   disabled?: boolean;
   label?: string;
 } & (
-  | { build: ExportVariant["build"]; variants?: never }
-  | { variants: ExportVariant[]; build?: never }
+  | { build: ExportVariant["build"]; variants?: undefined }
+  | { variants: ExportVariant[]; build?: undefined }
 );
 
 const FORMATS: { format: ExportFormat; label: string; Icon: typeof Table2 }[] = [
@@ -71,8 +71,11 @@ export function ExportMenu({
   const [error, setError] = useState<string | null>(null);
 
   // A single `build` is a one-variant menu, so there is one code path below
-  // rather than a branch that renders the items twice.
-  const groups: ExportVariant[] = variants ?? [{ build }];
+  // rather than a branch that renders the items twice. The union above makes
+  // "neither" unrepresentable to the compiler; the `undefined` check is for
+  // the caller who spreads props through an `any` and defeats it.
+  const groups: ExportVariant[] =
+    variants ?? (build === undefined ? [] : [{ build }]);
 
   async function run(variant: ExportVariant, format: ExportFormat) {
     setError(null);

@@ -282,6 +282,21 @@ void detailScreenTests() {
           isFalse);
       expect(isTransientNetworkFailure(StateError('not synced yet')), isFalse);
     });
+
+    // The two subclasses that look like their transient parents and are not:
+    // a certificate the phone rejects is rejected again next time, and a
+    // redirect loop is the server's doing. Waiting on either parks the drain
+    // in "offline" with the queue untouched.
+    test('a bad certificate and a redirect loop are not transient', () {
+      expect(
+          isTransientNetworkFailure(
+              const CertificateException('self-signed', null)),
+          isFalse);
+      expect(
+          isTransientNetworkFailure(
+              RedirectException('Redirect loop detected', const [])),
+          isFalse);
+    });
   });
 
   group('checkOutAlreadyRecorded', () {

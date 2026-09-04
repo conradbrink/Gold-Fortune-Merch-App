@@ -83,31 +83,42 @@ export default function FormsPage() {
   /**
    * Creates the template, and its questions too when a preset was chosen.
    *
-   * Two writes rather than one, because `form_fields` needs the template's id.
-   * If the fields fail the template survives with none — recoverable in the
-   * builder, and better than a rollback that loses the manager's typing. The
-   * error says which half happened.
+   * Two writes rather than one, because `form_fields` needs the template's id,
+   * and the client has no transaction to put them in. So the second write's
+   * failure undoes the first: a template with no questions is not a form, and
+   * one left behind would be joined by another on the retry the still-open
+   * dialog invites. The manager's typing survives either way — the dialog
+   * stays open with it.
    */
   async function handleCreate() {
     setSaving(true);
     setError(null);
     try {
+      // Checked, not asserted. An expired session gives `user: null`, and a
+      // profile RLS hides gives `data: null` with an error — the `!` that used
+      // to sit here turned both into "Cannot read properties of null", which
+      // is not a message a manager can act on.
       const { data: userData } = await supabase.auth.getUser();
-      const { data: profileRow } = await supabase
+      const userId = userData.user?.id;
+      if (!userId) throw new Error("Your session has expired. Sign in again.");
+      const { data: profileRow, error: profileError } = await supabase
         .from("profiles")
         .select("org_id")
-        .eq("id", userData.user!.id)
+        .eq("id", userId)
         .single();
+      if (profileError || !profileRow) {
+        throw new Error("Could not read your organisation. Try again.");
+      }
 
       const preset = presetKey ? findPreset(presetKey) : undefined;
       const { data: created, error: insertError } = await supabase
         .from("form_templates")
         .insert({
-          org_id: profileRow!.org_id,
+          org_id: profileRow.org_id,
           name,
           description: description || null,
           required,
-          created_by: userData.user!.id,
+          created_by: userId,
         })
         .select("id")
         .single();
@@ -128,8 +139,19 @@ export default function FormsPage() {
           }))
         );
         if (fieldsError) {
+          // Take the empty template back out before saying so. Nothing has
+          // been submitted against it, so the delete cannot be refused for
+          // history, and leaving it would mean the retry the dialog invites
+          // creates a second one beside it. If the delete fails too, the
+          // message says which state the manager is in.
+          const { error: undoError } = await supabase
+            .from("form_templates")
+            .delete()
+            .eq("id", created.id);
           throw new Error(
-            `The form was created but its questions were not: ${fieldsError.message}`
+            undoError
+              ? `The form was created but its questions were not: ${fieldsError.message}. Open it from the list and add them by hand.`
+              : `The form was not created — its questions were refused: ${fieldsError.message}`
           );
         }
       }

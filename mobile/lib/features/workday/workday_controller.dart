@@ -34,7 +34,11 @@ class WorkdayController extends AsyncNotifier<WorkdaySession?> {
     // Must outlive any one screen — navigating to a store shouldn't wipe the
     // active session or drop the location subscription.
     ref.keepAlive();
-    ref.onDispose(() => unawaited(_cancelPings()));
+    // `_stopTracking`, not a bare cancel: it bumps the generation first, so a
+    // `_startTracking` still inside `currentMode()` when the controller is
+    // disposed fails its next check instead of installing a subscription that
+    // nobody owns and nothing will ever cancel.
+    ref.onDispose(() => unawaited(_stopTracking()));
 
     final user = ref.watch(currentUserProvider);
     if (user == null) {
@@ -165,10 +169,31 @@ class WorkdayController extends AsyncNotifier<WorkdaySession?> {
     await _cancelPings();
   }
 
-  Future<void> _cancelPings() async {
+  /// The cancel still in flight, if any. See [_cancelPings].
+  Future<void>? _cancelling;
+
+  /// Releases the current subscription and waits for the platform to agree.
+  ///
+  /// Every caller awaits the *same* future. `_pingSub` is cleared
+  /// synchronously so nothing else can grab the subscription, but a cancel on
+  /// geolocator's Android side is a channel round trip, and a
+  /// `_startTracking` that came in behind an earlier cancel used to find
+  /// `_pingSub` already null, skip straight past it, and open a new stream
+  /// while the old one was still being torn down. Overlapping a listen with
+  /// an unfinished cancel is the race the "No active stream" error lives in.
+  /// Chaining onto the in-flight cancel means a replacement subscription is
+  /// never created until the previous one has actually gone.
+  Future<void> _cancelPings() {
     final sub = _pingSub;
     _pingSub = null;
-    if (sub != null) await _cancelSubscription(sub);
+    final previous = _cancelling ?? Future<void>.value();
+    final next = sub == null
+        ? previous
+        : previous.then((_) => _cancelSubscription(sub));
+    _cancelling = next;
+    return next.whenComplete(() {
+      if (identical(_cancelling, next)) _cancelling = null;
+    });
   }
 
   /// Cancels a position subscription, accepting that it may already be gone.
@@ -183,16 +208,25 @@ class WorkdayController extends AsyncNotifier<WorkdaySession?> {
   /// handsets in a week as unhandled errors (FLUTTER-C) for reporting it as a
   /// failure.
   ///
-  /// Only `PlatformException` is caught. Anything else a cancel throws is
-  /// unknown and should still be seen.
+  /// Only *that* exception is swallowed, matched on its message. A
+  /// `PlatformException` with any other story — a channel that is gone, a
+  /// plugin in a state nobody has seen — is still unknown, and rethrown so it
+  /// is still seen.
   static Future<void> _cancelSubscription(
       StreamSubscription<Position> sub) async {
     try {
       await sub.cancel();
-    } on PlatformException {
+    } on PlatformException catch (e) {
+      if (!isAlreadyCancelled(e)) rethrow;
       // Already stopped. Nothing to do and nothing to report.
     }
   }
+
+  /// Whether a cancel failed only because there was nothing left to cancel.
+  ///
+  /// Package-visible for the test; the message is geolocator's own text.
+  static bool isAlreadyCancelled(PlatformException e) =>
+      (e.message ?? '').contains('No active stream to cancel');
 
   /// One position from the stream, rate-limited into at most one written ping.
   ///
