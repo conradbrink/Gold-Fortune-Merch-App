@@ -642,9 +642,12 @@ export default function ReportsPage() {
             onChange={(e) => setTemplateId(e.target.value || null)}
           >
             {templates.length === 0 && <option value="">No templates</option>}
+            {/* Archived forms are offered, and say so: this page reads what
+                was submitted, and a form taken off the phones last week still
+                has last month's answers. */}
             {templates.map((t) => (
               <option key={t.id} value={t.id}>
-                {t.name}
+                {t.active ? t.name : `${t.name} (archived)`}
               </option>
             ))}
           </NativeSelect>

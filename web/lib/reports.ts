@@ -169,7 +169,7 @@ export type TrendPointRow = {
   avg_facings: number | null;
 };
 
-export type FormTemplate = { id: string; name: string };
+export type FormTemplate = { id: string; name: string; active: boolean };
 
 /**
  * Perfect Store index — the FMCG standard composite.
@@ -219,13 +219,25 @@ function unwrap<T>(res: { data: unknown; error: { message: string } | null }): T
   return (res.data ?? []) as T[];
 }
 
+/**
+ * Every template, archived ones included — the Reports page reads history.
+ *
+ * It used to take only `active = true`, and the day the Price Survey was
+ * archived its hundred submissions became unexportable: the form the export
+ * was built for was the one form the picker would not offer. A form retired
+ * last month was still filled in the month before, and archiving is meant to
+ * take it off the reps' phones, not out of the record.
+ *
+ * Active first, so the picker's default — the first row — is a form somebody
+ * is still filling in rather than one nobody is.
+ */
 export async function fetchFormTemplates(
   supabase: SupabaseClient
 ): Promise<FormTemplate[]> {
   const { data, error } = await supabase
     .from("form_templates")
-    .select("id, name")
-    .eq("active", true)
+    .select("id, name, active")
+    .order("active", { ascending: false })
     .order("name", { ascending: true });
   if (error) throw new Error(error.message);
   return (data ?? []) as FormTemplate[];
