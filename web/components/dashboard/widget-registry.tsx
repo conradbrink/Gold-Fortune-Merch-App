@@ -32,6 +32,11 @@ import {
   type RepDayDetail,
   type RepDayDistance,
   type RepDayTimes,
+  mondayOf,
+  shiftDay,
+  summariseWeek,
+  type RepWeek,
+  reportingDay,
 } from "@/lib/dashboard";
 
 /**
@@ -254,8 +259,13 @@ export const WIDGETS: WidgetDefinition[] = [
       "When each rep starts, closes and how long they work — from the day's evidence, not from what anyone typed.",
     span: 4,
     source: "dayTimes",
-    render: ({ dayTimes, dayDetail, dayDistance }) => (
-      <WorkingDay rows={dayTimes} detail={dayDetail} distance={dayDistance} />
+    render: ({ dayTimes, dayDetail, dayDistance, range }) => (
+      <WorkingDay
+        rows={dayTimes}
+        detail={dayDetail}
+        distance={dayDistance}
+        range={range}
+      />
     ),
   },
   {
@@ -583,14 +593,24 @@ function formatDayLabel(localDay: string): string {
   });
 }
 
+/** `2026-08-31` → `Mon 31 Aug – Sun 6 Sep`. */
+function formatWeekLabel(monday: string): string {
+  return `${formatDayLabel(monday)} – ${formatDayLabel(shiftDay(monday, 6))}`;
+}
+
+/** Picker values: a day is its own date; a week is its Monday, prefixed. */
+const WEEK_PREFIX = "week:";
+
 function WorkingDay({
   rows,
   detail,
   distance,
+  range,
 }: {
   rows: RepDayTimes[];
   detail: RepDayDetail[];
   distance: RepDayDistance[];
+  range: DateRange;
 }) {
   /** Road metres by rep and local day, for the two tables below. */
   const kmFor = useMemo(() => {
@@ -624,9 +644,11 @@ function WorkingDay({
   /**
    * "" is the average, which is the default and the answer to "how does this
    * team work". A specific date answers a different question — "what happened on
-   * Tuesday" — so it is a deliberate choice rather than the landing state.
+   * Tuesday" — and a week a third: "how did last week go", Monday to Sunday,
+   * which is the unit a manager actually reviews in. Each is a deliberate
+   * choice rather than the landing state.
    */
-  const [chosenDay, setChosenDay] = useState("");
+  const [chosen, setChosen] = useState("");
 
   // Newest first: a manager checking a specific day is nearly always checking a
   // recent one. Derived from the rows themselves, so the list only ever offers
@@ -635,11 +657,17 @@ function WorkingDay({
     () => [...new Set(detail.map((d) => d.local_day))].sort().reverse(),
     [detail]
   );
+  // The weeks those days fall in, by their Mondays. Same rule: only weeks with
+  // a worked day in them, and always Monday-start — never the locale's.
+  const weeks = useMemo(
+    () => [...new Set(days.map(mondayOf))].sort().reverse(),
+    [days]
+  );
 
   /**
    * The selection, but only if the current range still contains it.
    *
-   * `chosenDay` outlives a range change — the card is not remounted — so a date
+   * `chosen` outlives a range change — the card is not remounted — so a date
    * picked under "90 days" can vanish from `days` when the range narrows. The
    * `<select>` would then hold a value matching no option and render blank,
    * while the card took the single-day path with nothing in it: "0 reps worked"
@@ -647,9 +675,44 @@ function WorkingDay({
    * activity. Derived rather than reset in an effect, so there is no frame where
    * the two disagree.
    */
-  const day = chosenDay !== "" && days.includes(chosenDay) ? chosenDay : "";
+  const day = chosen !== "" && days.includes(chosen) ? chosen : "";
+  const week =
+    chosen.startsWith(WEEK_PREFIX) && weeks.includes(chosen.slice(WEEK_PREFIX.length))
+      ? chosen.slice(WEEK_PREFIX.length)
+      : "";
+  const picked = day !== "" ? day : week !== "" ? WEEK_PREFIX + week : "";
 
-  const chosen = useMemo(
+  const weekSummary = useMemo(
+    () => (week === "" ? null : summariseWeek(detail, distance, week)),
+    [detail, distance, week]
+  );
+  /**
+   * How many of the week's seven days the selected range actually covers.
+   *
+   * Under "7 days" on a Thursday, "this week" is Monday to Thursday, and a
+   * total headed Mon–Sun over four days of data would read as a quiet week
+   * rather than a short one. The count is against the *range*, not against
+   * days worked — a Saturday nobody worked is still a day the range covered.
+   */
+  const weekDaysInRange = useMemo(() => {
+    if (week === "") return 7;
+    // Both ends in the reporting timezone, because `local_day` is. The range
+    // is built from the viewer's own midnight, and for a viewer outside CAT
+    // the calendar date of that instant is not the Gaborone date the rows
+    // are keyed to — off by one at either end, and the note wrong with it.
+    // The last covered day is the day of the instant just before the
+    // exclusive end.
+    const from = reportingDay(range.from.toISOString());
+    const last = reportingDay(new Date(+range.to - 1).toISOString());
+    let n = 0;
+    for (let i = 0; i < 7; i++) {
+      const d = shiftDay(week, i);
+      if (d >= from && d <= last) n += 1;
+    }
+    return n;
+  }, [week, range.from, range.to]);
+
+  const chosenDay = useMemo(
     () =>
       day === ""
         ? []
@@ -676,19 +739,28 @@ function WorkingDay({
             </label>
             <select
               id="working-day-picker"
-              value={day}
-              onChange={(e) => setChosenDay(e.target.value)}
+              value={picked}
+              onChange={(e) => setChosen(e.target.value)}
               className="rounded-md border border-border bg-background px-2 py-1 text-xs text-foreground"
             >
               <option value="">
                 Average of {company.days} rep-
                 {company.days === 1 ? "day" : "days"}
               </option>
-              {days.map((d) => (
-                <option key={d} value={d}>
-                  {formatDayLabel(d)}
-                </option>
-              ))}
+              <optgroup label="Weeks (Mon – Sun)">
+                {weeks.map((w) => (
+                  <option key={w} value={WEEK_PREFIX + w}>
+                    Week of {formatDayLabel(w)}
+                  </option>
+                ))}
+              </optgroup>
+              <optgroup label="Days">
+                {days.map((d) => (
+                  <option key={d} value={d}>
+                    {formatDayLabel(d)}
+                  </option>
+                ))}
+              </optgroup>
             </select>
           </div>
         )}
@@ -704,8 +776,8 @@ function WorkingDay({
               {formatDayLabel(day)}
             </p>
             <p className="mt-0.5 text-xs text-muted-foreground">
-              {chosen.length} rep{chosen.length === 1 ? "" : "s"} worked. These
-              are the actual first and last activity of that day, not an
+              {chosenDay.length} rep{chosenDay.length === 1 ? "" : "s"} worked.
+              These are the actual first and last activity of that day, not an
               average.
             </p>
 
@@ -721,7 +793,7 @@ function WorkingDay({
                   </tr>
                 </thead>
                 <tbody>
-                  {chosen.map((d) => (
+                  {chosenDay.map((d) => (
                     <tr
                       key={`${d.rep_id}-${d.local_day}`}
                       className="border-b border-border/60"
@@ -757,11 +829,51 @@ function WorkingDay({
             {/* Named rather than implied: a rep missing from this table did not
                 work that day, which is a different thing from a missing record
                 and is worth being able to tell apart at a glance. */}
-            {chosen.length < rows.length && (
+            {chosenDay.length < rows.length && (
               <p className="mt-2 text-xs text-muted-foreground">
-                {rows.length - chosen.length} rep
-                {rows.length - chosen.length === 1 ? "" : "s"} recorded no
+                {rows.length - chosenDay.length} rep
+                {rows.length - chosenDay.length === 1 ? "" : "s"} recorded no
                 activity on this day.
+              </p>
+            )}
+          </>
+        ) : weekSummary !== null ? (
+          <>
+            <p className="text-sm font-semibold text-foreground">
+              {formatWeekLabel(weekSummary.monday)}
+            </p>
+            <p className="mt-0.5 text-xs text-muted-foreground">
+              {weekSummary.reps.length} rep
+              {weekSummary.reps.length === 1 ? "" : "s"} worked,{" "}
+              {weekSummary.repDays} rep-{weekSummary.repDays === 1 ? "day" : "days"}{" "}
+              in all. Starts, closes and length are each rep&rsquo;s average over
+              the days they worked that week; driving is the week&rsquo;s total.
+            </p>
+            {/* Said before the numbers, not after: a total over four days of a
+                seven-day heading reads as a quiet week unless told otherwise. */}
+            {weekDaysInRange < 7 && (
+              <p className="mt-1 text-xs text-muted-foreground">
+                Only {weekDaysInRange}{" "}of this week&rsquo;s 7 days fall
+                inside the selected period. Widen the range to see the whole
+                week.
+              </p>
+            )}
+            <RepAveragesTable
+              rows={weekSummary.reps}
+              driving={
+                new Map(
+                  weekSummary.reps.map((r) => [
+                    r.rep_id,
+                    { metres: r.road_metres ?? 0, settled: r.settled },
+                  ])
+                )
+              }
+            />
+            {weekSummary.reps.length < rows.length && (
+              <p className="mt-2 text-xs text-muted-foreground">
+                {rows.length - weekSummary.reps.length} rep
+                {rows.length - weekSummary.reps.length === 1 ? "" : "s"} recorded
+                no activity this week.
               </p>
             )}
           </>
@@ -805,72 +917,103 @@ function WorkingDay({
               positions. A dash means that day has not been worked out yet.
             </p>
 
-            <div className="mt-4 overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-border text-left text-xs text-muted-foreground">
-                    <th className="py-2 font-medium">Rep</th>
-                    <th className="py-2 text-right font-medium">Days</th>
-                    <th className="py-2 text-right font-medium">Starts</th>
-                    <th className="py-2 text-right font-medium">Closes</th>
-                    <th className="py-2 text-right font-medium">Length</th>
-                    <th className="py-2 text-right font-medium">Driving</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {rows.map((r) => (
-                    <tr key={r.rep_id} className="border-b border-border/60">
-                      <td className="py-2 text-foreground">
-                        {r.rep_name ?? "Unnamed rep"}
-                      </td>
-                      <td className="py-2 text-right tabular-nums text-muted-foreground">
-                        {r.days_worked}
-                      </td>
-                      <td className="py-2 text-right tabular-nums text-foreground">
-                        {formatTimeOfDay(r.avg_start_seconds)}
-                      </td>
-                      <td className="py-2 text-right tabular-nums text-foreground">
-                        {formatTimeOfDay(r.avg_end_seconds)}
-                      </td>
-                      <td className="py-2 text-right tabular-nums text-muted-foreground">
-                        {formatDuration(Number(r.avg_length_seconds ?? 0))}
-                      </td>
-                      <td className="py-2 text-right tabular-nums text-foreground">
-                        {(() => {
-                          const t = totalFor.get(r.rep_id);
-                          if (!t || t.settled === 0) return <span className="text-muted-foreground">—</span>;
-                          return (
-                            <>
-                              {formatKm(t.metres)}
-                              {/* Counted against the rep's *working days*, the
-                                  number in the column two to the left — not
-                                  against workday sessions, which is a smaller and
-                                  unexplained figure on screen.
-                                  
-                                  The gap is itself worth seeing: a distance needs
-                                  a workday session, and a rep who worked by every
-                                  other measure but never pressed Start has no
-                                  route to measure. */}
-                              {t.settled < r.days_worked && (
-                                <span
-                                  className="ml-1 text-xs font-normal text-muted-foreground"
-                                  title={`${t.settled} of ${r.days_worked} working days have a road distance. A day only has one if the rep started a workday on it.`}
-                                >
-                                  ({t.settled}/{r.days_worked})
-                                </span>
-                              )}
-                            </>
-                          );
-                        })()}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+            <RepAveragesTable
+              rows={rows}
+              driving={
+                new Map(
+                  [...totalFor.entries()].map(([id, t]) => [
+                    id,
+                    { metres: t.metres, settled: t.settled },
+                  ])
+                )
+              }
+            />
           </>
         )}
       </CardContent>
     </Card>
+  );
+}
+
+/**
+ * Per-rep averages over a stretch of days — the whole range, or one week.
+ *
+ * One table for both rather than two copies of the same six columns, so the
+ * week reads exactly like the range it is a slice of. `driving` is keyed by
+ * rep: the metres over the settled days and how many of the rep's days were
+ * settled, which is what makes the total honest.
+ */
+function RepAveragesTable({
+  rows,
+  driving,
+}: {
+  rows: (RepDayTimes | RepWeek)[];
+  driving: Map<string, { metres: number; settled: number }>;
+}) {
+  return (
+    <div className="mt-4 overflow-x-auto">
+      <table className="w-full text-sm">
+        <thead>
+          <tr className="border-b border-border text-left text-xs text-muted-foreground">
+            <th className="py-2 font-medium">Rep</th>
+            <th className="py-2 text-right font-medium">Days</th>
+            <th className="py-2 text-right font-medium">Starts</th>
+            <th className="py-2 text-right font-medium">Closes</th>
+            <th className="py-2 text-right font-medium">Length</th>
+            <th className="py-2 text-right font-medium">Driving</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((r) => {
+            const t = driving.get(r.rep_id);
+            return (
+              <tr key={r.rep_id} className="border-b border-border/60">
+                <td className="py-2 text-foreground">
+                  {r.rep_name ?? "Unnamed rep"}
+                </td>
+                <td className="py-2 text-right tabular-nums text-muted-foreground">
+                  {r.days_worked}
+                </td>
+                <td className="py-2 text-right tabular-nums text-foreground">
+                  {formatTimeOfDay(r.avg_start_seconds)}
+                </td>
+                <td className="py-2 text-right tabular-nums text-foreground">
+                  {formatTimeOfDay(r.avg_end_seconds)}
+                </td>
+                <td className="py-2 text-right tabular-nums text-muted-foreground">
+                  {formatDuration(Number(r.avg_length_seconds ?? 0))}
+                </td>
+                <td className="py-2 text-right tabular-nums text-foreground">
+                  {!t || t.settled === 0 ? (
+                    <span className="text-muted-foreground">—</span>
+                  ) : (
+                    <>
+                      {formatKm(t.metres)}
+                      {/* Counted against the rep's *working days*, the number
+                          in the column two to the left — not against workday
+                          sessions, which is a smaller and unexplained figure on
+                          screen.
+
+                          The gap is itself worth seeing: a distance needs a
+                          workday session, and a rep who worked by every other
+                          measure but never pressed Start has no route to
+                          measure. */}
+                      {t.settled < r.days_worked && (
+                        <span
+                          className="ml-1 text-xs font-normal text-muted-foreground"
+                          title={`${t.settled} of ${r.days_worked} working days have a road distance. A day only has one if the rep started a workday on it.`}
+                        >
+                          ({t.settled}/{r.days_worked})
+                        </span>
+                      )}
+                    </>
+                  )}
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
   );
 }
