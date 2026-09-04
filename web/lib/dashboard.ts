@@ -1,6 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { callRpc } from "@/lib/rpc";
-import type { DateRange } from "@/lib/date-range";
+import { fromLocalDateInput, toLocalDateInput, type DateRange } from "@/lib/date-range";
 
 export type PeriodMetrics = {
   visits_total: number;
@@ -282,6 +282,133 @@ export function companyDayTimes(rows: RepDayTimes[]): {
     length: length / days,
     days,
   };
+}
+
+/**
+ * The Monday of the week a local day falls in, as `YYYY-MM-DD`.
+ *
+ * Monday, always — never the locale's idea of a week start. The team's week is
+ * the trading week, and a summary that began on Sunday would put the last day
+ * of one week at the top of the next.
+ *
+ * `getDay()` counts from Sunday as 0, so Monday-start means Sunday is the
+ * *last* day of its week: six back, not none.
+ */
+export function mondayOf(localDay: string): string {
+  const d = fromLocalDateInput(localDay);
+  d.setDate(d.getDate() - ((d.getDay() + 6) % 7));
+  return toLocalDateInput(d);
+}
+
+/** `localDay` shifted by `n` calendar days, as `YYYY-MM-DD`. */
+export function shiftDay(localDay: string, n: number): string {
+  const d = fromLocalDateInput(localDay);
+  d.setDate(d.getDate() + n);
+  return toLocalDateInput(d);
+}
+
+/** One rep's week: the same shape as a range average, plus the driving. */
+export type RepWeek = RepDayTimes & {
+  /** Road metres over the settled days. Null when no day in the week is settled. */
+  road_metres: number | null;
+  /** How many of `days_worked` have a road distance. */
+  settled: number;
+};
+
+export type WeekSummary = {
+  /** `YYYY-MM-DD` of the Monday and the Sunday. */
+  monday: string;
+  sunday: string;
+  /** Per rep, alphabetical, reps with no day in the week omitted. */
+  reps: RepWeek[];
+  /** Every rep-day in the week, for the headline. */
+  repDays: number;
+};
+
+/**
+ * One Monday-to-Sunday week, summarised per rep from the rep-days on hand.
+ *
+ * Computed in the browser from `RepDayDetail`, which the card already holds
+ * for the whole range, rather than by another RPC: a week is a filter over
+ * rows that are already here, and a round trip per selection would make the
+ * picker feel broken on a slow connection — the same reason the day view is
+ * built this way.
+ *
+ * The averages are plain means over the rep's days that week, so this is
+ * `rep_day_times` restricted to seven days: the same numbers the range
+ * average shows, over a shorter range. Driving is summed over settled days
+ * only, with `settled` carried so the total can say how much of the week it
+ * actually covers.
+ */
+export function summariseWeek(
+  detail: RepDayDetail[],
+  distance: RepDayDistance[],
+  monday: string
+): WeekSummary {
+  const sunday = shiftDay(monday, 6);
+  const inWeek = (day: string) => day >= monday && day <= sunday;
+
+  const km = new Map<string, number | null>();
+  for (const d of distance) {
+    if (inWeek(d.local_day)) km.set(`${d.rep_id}|${d.local_day}`, d.road_metres);
+  }
+
+  const acc = new Map<
+    string,
+    {
+      rep_name: string | null;
+      days: number;
+      start: number;
+      end: number;
+      length: number;
+      timed: number;
+      metres: number;
+      settled: number;
+    }
+  >();
+  let repDays = 0;
+  for (const d of detail) {
+    if (!inWeek(d.local_day)) continue;
+    repDays += 1;
+    const a = acc.get(d.rep_id) ?? {
+      rep_name: d.rep_name,
+      days: 0,
+      start: 0,
+      end: 0,
+      length: 0,
+      timed: 0,
+      metres: 0,
+      settled: 0,
+    };
+    a.days += 1;
+    if (d.start_seconds !== null && d.end_seconds !== null) {
+      a.timed += 1;
+      a.start += Number(d.start_seconds);
+      a.end += Number(d.end_seconds);
+      a.length += Number(d.length_seconds ?? 0);
+    }
+    const metres = km.get(`${d.rep_id}|${d.local_day}`);
+    if (metres !== undefined && metres !== null) {
+      a.metres += metres;
+      a.settled += 1;
+    }
+    acc.set(d.rep_id, a);
+  }
+
+  const reps: RepWeek[] = [...acc.entries()]
+    .map(([rep_id, a]) => ({
+      rep_id,
+      rep_name: a.rep_name,
+      days_worked: a.days,
+      avg_start_seconds: a.timed ? a.start / a.timed : null,
+      avg_end_seconds: a.timed ? a.end / a.timed : null,
+      avg_length_seconds: a.timed ? a.length / a.timed : null,
+      road_metres: a.settled ? a.metres : null,
+      settled: a.settled,
+    }))
+    .sort((x, y) => (x.rep_name ?? "").localeCompare(y.rep_name ?? ""));
+
+  return { monday, sunday, reps, repDays };
 }
 
 /** Seconds since midnight as a clock time. Never rendered as "00:00" for null. */
