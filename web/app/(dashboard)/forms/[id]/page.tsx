@@ -100,6 +100,13 @@ export default function FormDetailPage() {
   const [rowError, setRowError] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<FormField | null>(null);
   /**
+   * Kept apart from `rowError` on purpose: this is a write to the *template*,
+   * and a failure to make a form compulsory must not be reported under the
+   * question the manager last touched.
+   */
+  const [templateError, setTemplateError] = useState<string | null>(null);
+  const [savingRequired, setSavingRequired] = useState(false);
+  /**
    * Which impact lookup is still wanted.
    *
    * A counter rather than the question's id, because the id does not identify
@@ -378,6 +385,36 @@ export default function FormDetailPage() {
     );
   }
 
+  /**
+   * Compulsory or optional, written straight through.
+   *
+   * Optimism would be wrong here: this is the switch that decides whether a rep
+   * can leave a store, so the checkbox must not show a state the database
+   * refused. `select("id")` is how the refusal is seen at all — an update
+   * blocked by RLS changes nothing and still reports success.
+   */
+  async function handleSetRequired(next: boolean) {
+    if (!template) return;
+    setSavingRequired(true);
+    setTemplateError(null);
+    try {
+      const { data, error: updateError } = await supabase
+        .from("form_templates")
+        .update({ required: next })
+        .eq("id", template.id)
+        .select("id");
+      if (updateError) throw new Error(updateError.message);
+      if (!data || data.length === 0) {
+        throw new Error("Nothing was saved — you may not have permission.");
+      }
+      setTemplate({ ...template, required: next });
+    } catch (e) {
+      setTemplateError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setSavingRequired(false);
+    }
+  }
+
   return (
     <div className="space-y-4">
       <Button variant="ghost" size="sm" className="gap-1.5" onClick={() => router.push("/forms")}>
@@ -391,6 +428,30 @@ export default function FormDetailPage() {
           <p className="text-sm text-muted-foreground">{template.description}</p>
         )}
       </div>
+
+      <Card>
+        <CardContent className="flex items-start gap-2 py-3">
+          <Checkbox
+            id="template-required"
+            checked={template.required}
+            disabled={savingRequired}
+            onCheckedChange={(checked) => void handleSetRequired(checked === true)}
+          />
+          <div className="space-y-0.5">
+            <Label htmlFor="template-required" className="font-normal">
+              Compulsory
+            </Label>
+            <p className="text-xs text-muted-foreground">
+              {template.required
+                ? "Reps cannot check out of a store until this form is submitted for that visit."
+                : "Reps can fill this in when it is relevant. It never blocks a check-out."}
+            </p>
+            {templateError && (
+              <p className="text-xs text-destructive">{templateError}</p>
+            )}
+          </div>
+        </CardContent>
+      </Card>
 
       <div className="flex items-center justify-between">
         <h2 className="text-sm font-semibold text-foreground">Fields</h2>

@@ -76,6 +76,8 @@ export default function ActivitiesPage() {
   const [range, setRange] = useState<DateRange>(() => rangeForPreset("30d"));
   const [repId, setRepId] = useState("all");
   const [storeId, setStoreId] = useState("all");
+  /** A form template id, or "all". Narrows to visits where it was submitted. */
+  const [templateId, setTemplateId] = useState("all");
   const [onlyFlagged, setOnlyFlagged] = useState(false);
 
   const [events, setEvents] = useState<ActivityEvent[]>([]);
@@ -91,23 +93,40 @@ export default function ActivitiesPage() {
   const [stores, setStores] = useState<
     { id: string; name: string; city: string | null }[]
   >([]);
+  /**
+   * Archived forms included. This filter reads history, and a form that was
+   * retired last month was still filled in the month before — hiding it would
+   * make those visits unfindable. The label says which are archived.
+   */
+  const [templates, setTemplates] = useState<
+    { id: string; name: string; active: boolean }[]
+  >([]);
 
   // Filter dropdown options — fetched once, independent of the feed.
   useEffect(() => {
     let cancelled = false;
     async function loadOptions() {
-      const [{ data: repRows }, { data: storeRows }] = await Promise.all([
-        supabase
-          .from("profiles")
-          .select("id, full_name")
-          .eq("role", "rep")
-          .order("full_name"),
-        // `city` is here for the store picker's search, which matches on the
-        // town as well as the name — a manager often knows an outlet by where
-        // it is before they know what it is called.
-        supabase.from("stores").select("id, name, city").order("name"),
-      ]);
+      const [{ data: repRows }, { data: storeRows }, { data: templateRows }] =
+        await Promise.all([
+          supabase
+            .from("profiles")
+            .select("id, full_name")
+            .eq("role", "rep")
+            .order("full_name"),
+          // `city` is here for the store picker's search, which matches on the
+          // town as well as the name — a manager often knows an outlet by where
+          // it is before they know what it is called.
+          supabase.from("stores").select("id, name, city").order("name"),
+          supabase.from("form_templates").select("id, name, active").order("name"),
+        ]);
       if (cancelled) return;
+      setTemplates(
+        (templateRows ?? []).map((t) => ({
+          id: t.id,
+          name: t.name,
+          active: t.active,
+        }))
+      );
       setReps(
         (repRows ?? []).map((r) => ({
           id: r.id,
@@ -131,6 +150,7 @@ export default function ActivitiesPage() {
       to: range.to,
       repIds: repId === "all" ? null : [repId],
       storeIds: storeId === "all" ? null : [storeId],
+      templateId: templateId === "all" ? null : templateId,
       onlyFlagged,
     };
     setLoading(true);
@@ -152,7 +172,7 @@ export default function ActivitiesPage() {
       setLoading(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [range.from, range.to, repId, storeId, onlyFlagged]);
+  }, [range.from, range.to, repId, storeId, templateId, onlyFlagged]);
 
   useEffect(() => {
     // Behind an async boundary so the loader's own `setLoading(true)`
@@ -173,6 +193,7 @@ export default function ActivitiesPage() {
           to: range.to,
           repIds: repId === "all" ? null : [repId],
           storeIds: storeId === "all" ? null : [storeId],
+          templateId: templateId === "all" ? null : templateId,
           onlyFlagged,
         },
         PAGE_SIZE,
@@ -208,9 +229,12 @@ export default function ActivitiesPage() {
         storeId !== "all"
           ? `Store: ${stores.find((st) => st.id === storeId)?.name ?? storeId}`
           : "All stores",
+        templateId !== "all"
+          ? `Form submitted: ${templates.find((t) => t.id === templateId)?.name ?? templateId}`
+          : null,
         onlyFlagged ? "Discrepancies only — off site and invalid GPS" : "Every event",
         `${events.length} of ${total} events loaded`,
-      ],
+      ].filter((line): line is string => line !== null),
       filename: onlyFlagged ? "gf-discrepancies" : "gf-activities",
       columns: [
         { header: "When", key: "when" },
@@ -305,6 +329,22 @@ export default function ActivitiesPage() {
             allLabel="All stores"
             placeholder="All stores"
           />
+        </div>
+        <div className="w-full sm:w-56">
+          {/* Visits where this form was submitted. A sales call has no visit
+              and drops out under it, as it does under the store filter. */}
+          <NativeSelect
+            aria-label="Filter by form submitted"
+            value={templateId}
+            onChange={(e) => setTemplateId(e.target.value)}
+          >
+            <option value="all">All forms</option>
+            {templates.map((t) => (
+              <option key={t.id} value={t.id}>
+                {t.active ? t.name : `${t.name} (archived)`}
+              </option>
+            ))}
+          </NativeSelect>
         </div>
       </div>
 

@@ -29,9 +29,11 @@ import {
   type DateRange,
 } from "@/lib/date-range";
 import {
+  buildFormResponsesSheet,
   fetchComplianceTrends,
   fetchCoverageGaps,
   fetchFormReport,
+  fetchFormResponseRows,
   fetchFormTemplates,
   fetchRepScorecard,
   fetchPerfectStoreScore,
@@ -339,7 +341,15 @@ export default function ReportsPage() {
    * table, and a spreadsheet of storage paths would be a worse answer than
    * saying so.
    */
-  function sheetForTab(): ExportSheet | null {
+  /**
+   * The filter lines that go above every table this page exports.
+   *
+   * Shared by both Form-tab exports rather than rebuilt: the per-response file
+   * and the question summary come from the same filters, and two copies of
+   * these lines is how one of them ends up stating a filter that no longer
+   * exists.
+   */
+  function exportContext(): string[] {
     // The chain reaches four of the six exportable tabs. It is written into the
     // context lines only for those — a "Chain: Choppies Group" heading over the
     // rep scorecard would be exactly the lie the note below warns about.
@@ -362,13 +372,48 @@ export default function ReportsPage() {
               : null,
           ]
         : [];
-    const context = [
+    return [
       `${toLocalDateInput(range.from)} to ${toLocalDateInput(dayBefore(range.to))}`,
       chainLine,
       ...formFilters,
     ].filter((line): line is string => line !== null);
+  }
 
-    const base = { context, orgName: "Gold Fortune Merchandising" };
+  /**
+   * Every submission of the selected form, one row each.
+   *
+   * The other export on this page — and until now the *only* one — is
+   * `sheetForTab`'s Form case: a row per question, with five of its answers
+   * previewed in a cell. That is a picture of the charts, and the charts are
+   * already on screen. This is the file somebody actually asked for: 100
+   * submissions in 100 rows, with the store, the rep and the date beside each
+   * one, so it sorts and pivots like data.
+   *
+   * Fetched here rather than in `load`, because nothing on the page needs it —
+   * a manager who never opens this menu should never pay for the rows. The
+   * shaping is `buildFormResponsesSheet`, next to the fetcher and away from the
+   * component, so the file's own structure can be checked without a session.
+   */
+  async function formResponsesSheet(): Promise<ExportSheet | null> {
+    if (!templateId) return null;
+    const { rows, truncated } = await fetchFormResponseRows(
+      supabase,
+      templateId,
+      range,
+      {
+        repIds: repId ? [repId] : undefined,
+        storeIds: storeId ? [storeId] : undefined,
+      }
+    );
+    return buildFormResponsesSheet(form, rows, {
+      context: exportContext(),
+      truncated,
+      orgName: "Gold Fortune Merchandising",
+    });
+  }
+
+  function sheetForTab(): ExportSheet | null {
+    const base = { context: exportContext(), orgName: "Gold Fortune Merchandising" };
 
     switch (tab) {
       case "score":
@@ -554,8 +599,18 @@ export default function ReportsPage() {
             submitted in the selected period
           </p>
         </div>
+        {/* The Form tab is the one tab with two honest answers to "export
+            this": the responses themselves, and the summary of them that used
+            to be the only option. Responses first — it is what people mean. */}
         <ExportMenu
-          build={sheetForTab}
+          variants={
+            tab === "form"
+              ? [
+                  { label: "Every response", build: formResponsesSheet },
+                  { label: "Question summary", build: sheetForTab },
+                ]
+              : [{ build: sheetForTab }]
+          }
           disabled={loading}
           label={`Export ${TABS.find((t) => t.value === tab)?.label ?? ""}`}
         />
@@ -587,9 +642,12 @@ export default function ReportsPage() {
             onChange={(e) => setTemplateId(e.target.value || null)}
           >
             {templates.length === 0 && <option value="">No templates</option>}
+            {/* Archived forms are offered, and say so: this page reads what
+                was submitted, and a form taken off the phones last week still
+                has last month's answers. */}
             {templates.map((t) => (
               <option key={t.id} value={t.id}>
-                {t.name}
+                {t.active ? t.name : `${t.name} (archived)`}
               </option>
             ))}
           </NativeSelect>

@@ -6,10 +6,45 @@ import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
+  DropdownMenuGroup,
   DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { exportSheet, type ExportFormat, type ExportSheet } from "@/lib/export";
+
+/**
+ * One thing this page can export, in three formats.
+ *
+ * `build` may be async because not every export is already on screen. The Form
+ * tab's per-response export is thousands of rows that the page deliberately
+ * does not load until somebody asks for them, so building its sheet means
+ * going to the database — and the menu has to be able to wait for that without
+ * every other call site growing a promise it does not need.
+ */
+export type ExportVariant = {
+  /**
+   * Section heading, when there is more than one thing to export. Omitted for
+   * a single variant: a lone "Export" heading above three formats is furniture.
+   */
+  label?: string;
+  build: () => ExportSheet | null | Promise<ExportSheet | null>;
+};
+
+type ExportMenuProps = {
+  disabled?: boolean;
+  label?: string;
+} & (
+  | { build: ExportVariant["build"]; variants?: undefined }
+  | { variants: ExportVariant[]; build?: undefined }
+);
+
+const FORMATS: { format: ExportFormat; label: string; Icon: typeof Table2 }[] = [
+  { format: "xlsx", label: "Excel (.xlsx)", Icon: FileSpreadsheet },
+  { format: "pdf", label: "PDF — for printing", Icon: FileText },
+  { format: "csv", label: "CSV", Icon: Table2 },
+];
 
 /**
  * Export this page's table as CSV, Excel or PDF.
@@ -21,28 +56,38 @@ import { exportSheet, type ExportFormat, type ExportSheet } from "@/lib/export";
  *
  * Returning `null` from `build` means there is nothing to export; the menu says
  * so rather than handing over an empty file that looks like an answer.
+ *
+ * Pass `variants` instead of `build` when a page has two honest answers to
+ * "export this" — the Form tab has every response and a summary of them — and
+ * each gets its own labelled group of the same three formats.
  */
 export function ExportMenu({
   build,
+  variants,
   disabled = false,
   label = "Export",
-}: {
-  build: () => ExportSheet | null;
-  disabled?: boolean;
-  label?: string;
-}) {
+}: ExportMenuProps) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  async function run(format: ExportFormat) {
+  // A single `build` is a one-variant menu, so there is one code path below
+  // rather than a branch that renders the items twice. The union above makes
+  // "neither" unrepresentable to the compiler; the `undefined` check is for
+  // the caller who spreads props through an `any` and defeats it.
+  const groups: ExportVariant[] =
+    variants ?? (build === undefined ? [] : [{ build }]);
+
+  async function run(variant: ExportVariant, format: ExportFormat) {
     setError(null);
-    const sheet = build();
-    if (!sheet || sheet.rows.length === 0) {
-      setError("There is nothing to export.");
-      return;
-    }
+    // Set before building, not after: an async `build` is a database read, and
+    // the button has to say so while it is out or the click looks ignored.
     setBusy(true);
     try {
+      const sheet = await variant.build();
+      if (!sheet || sheet.rows.length === 0) {
+        setError("There is nothing to export.");
+        return;
+      }
       await exportSheet(sheet, format);
     } catch (e) {
       // The PDF and Excel writers are dynamic imports, so a failure here is
@@ -67,18 +112,23 @@ export function ExportMenu({
           }
         />
         <DropdownMenuContent align="end">
-          <DropdownMenuItem onClick={() => void run("xlsx")}>
-            <FileSpreadsheet className="mr-2 h-4 w-4" />
-            Excel (.xlsx)
-          </DropdownMenuItem>
-          <DropdownMenuItem onClick={() => void run("pdf")}>
-            <FileText className="mr-2 h-4 w-4" />
-            PDF — for printing
-          </DropdownMenuItem>
-          <DropdownMenuItem onClick={() => void run("csv")}>
-            <Table2 className="mr-2 h-4 w-4" />
-            CSV
-          </DropdownMenuItem>
+          {groups.map((variant, i) => (
+            <DropdownMenuGroup key={variant.label ?? i}>
+              {i > 0 && <DropdownMenuSeparator />}
+              {variant.label && (
+                <DropdownMenuLabel>{variant.label}</DropdownMenuLabel>
+              )}
+              {FORMATS.map(({ format, label: formatLabel, Icon }) => (
+                <DropdownMenuItem
+                  key={format}
+                  onClick={() => void run(variant, format)}
+                >
+                  <Icon className="mr-2 h-4 w-4" />
+                  {formatLabel}
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuGroup>
+          ))}
         </DropdownMenuContent>
       </DropdownMenu>
     </div>

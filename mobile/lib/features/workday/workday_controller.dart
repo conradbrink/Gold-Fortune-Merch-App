@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:geolocator/geolocator.dart';
 
@@ -33,7 +34,11 @@ class WorkdayController extends AsyncNotifier<WorkdaySession?> {
     // Must outlive any one screen — navigating to a store shouldn't wipe the
     // active session or drop the location subscription.
     ref.keepAlive();
-    ref.onDispose(() => _pingSub?.cancel());
+    // `_stopTracking`, not a bare cancel: it bumps the generation first, so a
+    // `_startTracking` still inside `currentMode()` when the controller is
+    // disposed fails its next check instead of installing a subscription that
+    // nobody owns and nothing will ever cancel.
+    ref.onDispose(() => unawaited(_stopTracking()));
 
     final user = ref.watch(currentUserProvider);
     if (user == null) {
@@ -88,11 +93,18 @@ class WorkdayController extends AsyncNotifier<WorkdaySession?> {
     final generation = ++_trackingGeneration;
     bool superseded() => generation != _trackingGeneration;
 
-    await _pingSub?.cancel();
-    _pingSub = null;
+    await _cancelPings();
     if (superseded()) return;
 
     _trackingMode = await LocationTracking.currentMode();
+    if (superseded()) return;
+
+    // While `currentMode()` was out, an older start may have listened and,
+    // finding itself superseded, queued its own cancel. Listening now would
+    // overlap that cancel — the exact race this controller exists to avoid —
+    // so wait for the queue to drain, then ask once more whether this start
+    // is still the one that matters.
+    await (_cancelling ?? Future<void>.value());
     if (superseded()) return;
 
     final stream = LocationTracking.stream(_trackingMode);
@@ -124,9 +136,11 @@ class WorkdayController extends AsyncNotifier<WorkdaySession?> {
 
     // Listening is itself an await-free step, but a stop can have landed while
     // the stream was being built. Cancelling here rather than keeping it is the
-    // difference between a stray service and none.
+    // difference between a stray service and none — and it goes through the
+    // same queue as every other cancel, so the start that superseded this one
+    // waits for it before listening.
     if (superseded()) {
-      await sub.cancel();
+      await _enqueueCancel(sub);
       return;
     }
 
@@ -162,9 +176,76 @@ class WorkdayController extends AsyncNotifier<WorkdaySession?> {
     // Invalidate any start still in flight *before* awaiting, or it can finish
     // afterwards and hand back a subscription this stop was meant to prevent.
     _trackingGeneration++;
-    await _pingSub?.cancel();
-    _pingSub = null;
+    await _cancelPings();
   }
+
+  /// The cancel still in flight, if any. See [_cancelPings].
+  Future<void>? _cancelling;
+
+  /// Releases the current subscription and waits for the platform to agree.
+  ///
+  /// Every caller awaits the *same* future. `_pingSub` is cleared
+  /// synchronously so nothing else can grab the subscription, but a cancel on
+  /// geolocator's Android side is a channel round trip, and a
+  /// `_startTracking` that came in behind an earlier cancel used to find
+  /// `_pingSub` already null, skip straight past it, and open a new stream
+  /// while the old one was still being torn down. Overlapping a listen with
+  /// an unfinished cancel is the race the "No active stream" error lives in.
+  /// Chaining onto the in-flight cancel means a replacement subscription is
+  /// never created until the previous one has actually gone.
+  Future<void> _cancelPings() {
+    final sub = _pingSub;
+    _pingSub = null;
+    if (sub == null) return _cancelling ?? Future<void>.value();
+    return _enqueueCancel(sub);
+  }
+
+  /// Appends one cancel to the queue and returns a future for the whole queue.
+  ///
+  /// The one place a cancel is allowed to start. `_cancelPings` and the
+  /// superseded-start path both come through here, which is what lets
+  /// `_startTracking` wait on `_cancelling` and know it has waited for
+  /// *every* cancel, not only the ones that went through `_pingSub`.
+  Future<void> _enqueueCancel(StreamSubscription<Position> sub) {
+    final previous = _cancelling ?? Future<void>.value();
+    final next = previous.then((_) => _cancelSubscription(sub));
+    _cancelling = next;
+    return next.whenComplete(() {
+      if (identical(_cancelling, next)) _cancelling = null;
+    });
+  }
+
+  /// Cancels a position subscription, accepting that it may already be gone.
+  ///
+  /// geolocator's Android side throws `PlatformException(No active stream to
+  /// cancel)` when the stream it is asked to cancel never started — which is
+  /// what happens after Android refuses the foreground service (`Service.
+  /// startForeground() not allowed`, the app being in the background when the
+  /// controller rebuilt after a low-memory kill). The stream errors, the
+  /// platform side tears itself down, and the next cancel here has nothing to
+  /// cancel. That is the outcome a cancel wants, and 42 of them came off two
+  /// handsets in a week as unhandled errors (FLUTTER-C) for reporting it as a
+  /// failure.
+  ///
+  /// Only *that* exception is swallowed, matched on its message. A
+  /// `PlatformException` with any other story — a channel that is gone, a
+  /// plugin in a state nobody has seen — is still unknown, and rethrown so it
+  /// is still seen.
+  static Future<void> _cancelSubscription(
+      StreamSubscription<Position> sub) async {
+    try {
+      await sub.cancel();
+    } on PlatformException catch (e) {
+      if (!isAlreadyCancelled(e)) rethrow;
+      // Already stopped. Nothing to do and nothing to report.
+    }
+  }
+
+  /// Whether a cancel failed only because there was nothing left to cancel.
+  ///
+  /// Package-visible for the test; the message is geolocator's own text.
+  static bool isAlreadyCancelled(PlatformException e) =>
+      (e.message ?? '').contains('No active stream to cancel');
 
   /// One position from the stream, rate-limited into at most one written ping.
   ///
