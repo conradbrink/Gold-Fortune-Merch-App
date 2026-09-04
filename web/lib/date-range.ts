@@ -49,19 +49,6 @@ export function toLocalDate(iso: string | null | undefined): string {
   return Number.isNaN(+d) ? "" : toLocalDateInput(d);
 }
 
-/**
- * The day before an exclusive end, as a calendar operation.
- *
- * `new Date(+to - 86_400_000)` is a day of milliseconds, and a day is not
- * always that many — across a daylight-saving boundary it lands on the wrong
- * date. Botswana keeps no daylight saving; the next tenant may not be so lucky.
- */
-export function dayBefore(exclusiveEnd: Date): Date {
-  const d = new Date(exclusiveEnd);
-  d.setDate(d.getDate() - 1);
-  return d;
-}
-
 /** Parses a `YYYY-MM-DD` input value as local midnight, not UTC midnight. */
 export function fromLocalDateInput(value: string): Date {
   const [y, m, d] = value.split("-").map(Number);

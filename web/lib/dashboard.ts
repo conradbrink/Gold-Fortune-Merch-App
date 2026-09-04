@@ -233,7 +233,7 @@ export async function fetchRepDayDistance(
  * outside CAT. Everyone is in Botswana today, which is exactly why this would
  * have gone unnoticed.
  */
-function reportingDay(iso: string): string {
+export function reportingDay(iso: string): string {
   return new Intl.DateTimeFormat("en-CA", {
     timeZone: "Africa/Gaborone",
     year: "numeric",

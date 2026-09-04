@@ -16,7 +16,7 @@ import { StatTile } from "@/components/dashboard/stat-tile";
 import { CoverageDonut } from "@/components/dashboard/coverage-donut";
 import { RepMap } from "@/components/dashboard/rep-map";
 import type { LiveReps } from "@/lib/live-reps";
-import { dayBefore, toLocalDateInput, type DateRange } from "@/lib/date-range";
+import { toLocalDateInput, type DateRange } from "@/lib/date-range";
 import type { ReportTab } from "@/lib/report-tabs";
 import { UnitsTrendChart } from "@/components/dashboard/units-trend-chart";
 import { SettleDriving } from "@/components/workday/settle-driving";
@@ -36,6 +36,7 @@ import {
   shiftDay,
   summariseWeek,
   type RepWeek,
+  reportingDay,
 } from "@/lib/dashboard";
 
 /**
@@ -695,8 +696,14 @@ function WorkingDay({
    */
   const weekDaysInRange = useMemo(() => {
     if (week === "") return 7;
-    const from = toLocalDateInput(range.from);
-    const last = toLocalDateInput(dayBefore(range.to));
+    // Both ends in the reporting timezone, because `local_day` is. The range
+    // is built from the viewer's own midnight, and for a viewer outside CAT
+    // the calendar date of that instant is not the Gaborone date the rows
+    // are keyed to — off by one at either end, and the note wrong with it.
+    // The last covered day is the day of the instant just before the
+    // exclusive end.
+    const from = reportingDay(range.from.toISOString());
+    const last = reportingDay(new Date(+range.to - 1).toISOString());
     let n = 0;
     for (let i = 0; i < 7; i++) {
       const d = shiftDay(week, i);
