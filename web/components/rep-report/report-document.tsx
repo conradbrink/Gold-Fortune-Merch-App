@@ -136,9 +136,11 @@ export function RepPerformanceReport({
               value={String(served.neverServed)}
               emphasis={served.neverServed > 0 ? "warn" : undefined}
               note={
-                missed.length > 0
-                  ? `Of ${missed.length} rounds missed on the day; ${served.caughtUp} were gone back to`
-                  : "Every planned visit was made"
+                missed.length === 0
+                  ? "Every planned visit was made"
+                  : served.caughtUp > 0
+                    ? `Of ${missed.length} round${missed.length === 1 ? "" : "s"} missed on the day; ${served.caughtUp} gone back to`
+                    : `${missed.length} round${missed.length === 1 ? "" : "s"} missed on the day, none gone back to`
               }
             />
             <Kpi
@@ -556,8 +558,10 @@ function MissedStores({ missed }: { missed: MissedVisit[] }) {
         Stores missed
         <span className="rr-h2-note">
           {missed.length} planned visit{missed.length === 1 ? "" : "s"} not completed on the
-          day · <strong>{neverReturned} never served</strong>, listed first ·
-          the rest were gone back to
+          day · <strong>{neverReturned} never served</strong>
+          {neverReturned < missed.length
+            ? ", listed first · the rest were gone back to"
+            : " · none were gone back to"}
         </span>
       </h2>
       <div className={twoColumn ? "rr-missed rr-missed-split" : "rr-missed"}>
