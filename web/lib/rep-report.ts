@@ -522,22 +522,33 @@ export function storesNeedingAttention(
 
   // 1. Missed a visit at a shop with money behind it. Value is this period's
   //    sales where there are any, and otherwise the last order before the miss.
-  /** Stores where every missed visit was later caught up. Not a problem. */
-  const wentBack = new Set(
-    [...new Set(missed.map((m) => m.storeId))].filter((id) =>
-      missed.filter((m) => m.storeId === id).every((m) => m.visitedAt !== null)
-    )
-  );
+  /**
+   * Rounds at each store that nobody ever made.
+   *
+   * Counted per store rather than read from `store.missed`, which counts every
+   * round that slipped whether or not the rep went back. A store planned three
+   * times, missed three times and returned to once belongs on this list — two
+   * rounds really were never made — but saying "missed 3 planned visits and
+   * never went back" about it is false in both halves.
+   */
+  const neverByStore = new Map<string, number>();
+  for (const m of missed) {
+    if (m.visitedAt !== null) continue;
+    neverByStore.set(m.storeId, (neverByStore.get(m.storeId) ?? 0) + 1);
+  }
   const valued = stores
-    .filter((s) => s.missed > 0 && !wentBack.has(s.storeId))
-    .map((s) => ({ store: s, value: Math.max(s.salesNet, previousByStore.get(s.storeId) ?? 0) }))
-    .filter((r) => r.value > 0)
+    .map((s) => ({
+      store: s,
+      never: neverByStore.get(s.storeId) ?? 0,
+      value: Math.max(s.salesNet, previousByStore.get(s.storeId) ?? 0),
+    }))
+    .filter((r) => r.never > 0 && r.value > 0)
     .sort((a, b) => b.value - a.value);
-  for (const { store, value } of valued) {
+  for (const { store, never, value } of valued) {
     add(
       store,
       1,
-      `Missed ${store.missed} planned visit${store.missed === 1 ? "" : "s"} and never went back — ${money(value)} in recent sales`
+      `${never} planned visit${never === 1 ? "" : "s"} never made — ${money(value)} in recent sales`
     );
   }
 
