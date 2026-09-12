@@ -248,8 +248,9 @@ export default function RepPerformancePage() {
             { header: "Chain", key: "group" },
             { header: "Town", key: "city" },
             { header: "Planned date", key: "planned" },
+            { header: "Went back on", key: "wentBack" },
             { header: "Reason", key: "reason" },
-            { header: "Last visit", key: "last" },
+            { header: "Last visit before", key: "last" },
             { header: "Previous sales", key: "previous", numeric: true },
           ],
           rows: report.missed.map((m) => ({
@@ -257,6 +258,10 @@ export default function RepPerformancePage() {
             group: m.storeGroup ?? "",
             city: m.city ?? "",
             planned: m.plannedDate,
+            // The word, not a blank: a spreadsheet filtered on an empty cell
+            // is a different operation from one filtered on "Never", and this
+            // is the column somebody will sort by.
+            wentBack: toLocalDate(m.visitedAt) || "Never",
             reason: m.reason ?? "Reason not recorded",
             last: toLocalDate(m.lastVisitAt) || "",
             previous: m.previousSales,

@@ -38,6 +38,7 @@ import {
   markPacked,
   assignDispatchRep,
   dispatchOrder,
+  PartialDispatchError,
   markDelivered,
   returnUndelivered,
   cancelOrder,
@@ -212,6 +213,8 @@ export default function OrderDetailPage() {
   const [driverId, setDriverId] = useState("");
   const [vehicleId, setVehicleId] = useState("");
   const [carrierName, setCarrierName] = useState("");
+  /** Whose phone this delivery lands on. Empty means nobody's, which is legal. */
+  const [dispatchRepId, setDispatchRepId] = useState("");
   const [tracking, setTracking] = useState("");
   const [expectedOn, setExpectedOn] = useState("");
   const [receivedBy, setReceivedBy] = useState("");
@@ -338,6 +341,23 @@ export default function OrderDetailPage() {
       setDialog(null);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
+      // A refusal leaves the screen true and the dialog is the right place to
+      // stay. A *partial* dispatch does not: the order went out, so what is on
+      // screen is stale — and the dialog is covering the delivery card the
+      // message just told the user to go and use. Close it and reload, keeping
+      // the error, which is the whole point of the message.
+      if (e instanceof PartialDispatchError) {
+        setDialog(null);
+        // Its own try: `reload` is a network call, and if it fails here its
+        // error would replace the one that actually matters — the one saying
+        // the order went out and must not be dispatched again. Showing a stale
+        // card under the right message beats a fresh card under the wrong one.
+        try {
+          await reload();
+        } catch {
+          /* keep the dispatch error; the card stays stale until the next load */
+        }
+      }
     } finally {
       setBusy(false);
     }
@@ -630,7 +650,26 @@ export default function OrderDetailPage() {
             </>
           )}
           {o.status === "packed" && (
-            <Button onClick={() => setDialog("dispatch")} disabled={busy}>
+            <Button
+              onClick={() => {
+                /*
+                 * The order already knows whose it is — 36 of this week's 59
+                 * dispatches came from an order with a rep on it — so the
+                 * dialog opens on that answer rather than on "Nobody" and the
+                 * warehouse only has to act when the delivery is going to
+                 * somebody else. Falls back to nobody when the order's rep is
+                 * not a currently active rep, because a native select whose
+                 * value matches no option silently shows the first one, which
+                 * would claim a delivery for whoever heads the list.
+                 */
+                const ordersRep = o.rep_id ?? "";
+                setDispatchRepId(
+                  reps.some((r) => r.id === ordersRep) ? ordersRep : ""
+                );
+                setDialog("dispatch");
+              }}
+              disabled={busy}
+            >
               Dispatch
             </Button>
           )}
@@ -1357,6 +1396,32 @@ export default function OrderDetailPage() {
             <p className="text-sm text-muted-foreground">
               Name a driver, a vehicle, or a courier — at least one.
             </p>
+            {/* First, and above the driver, because it is the question the
+                warehouse forgets: the driver carries the stock, the rep is who
+                sees the delivery on their phone. Asked here because this is the
+                moment somebody knows the answer — when it was only a select on
+                the dispatch card afterwards, 62 dispatches got a driver and not
+                one got a rep. */}
+            <div>
+              <Label htmlFor="dispatch-rep">Rep who is handling it</Label>
+              <NativeSelect
+                id="dispatch-rep"
+                value={dispatchRepId}
+                onChange={(e) => setDispatchRepId(e.target.value)}
+              >
+                <option value="">Nobody — the warehouse handles it</option>
+                {reps.map((r) => (
+                  <option key={r.id} value={r.id}>
+                    {r.full_name ?? "Unnamed rep"}
+                  </option>
+                ))}
+              </NativeSelect>
+              <p className="mt-1 text-xs text-muted-foreground">
+                A rep named here sees this delivery in the app. Leave it as
+                Nobody and it stays with the warehouse; you can hand it over
+                later from the delivery below.
+              </p>
+            </div>
             <div>
               <Label htmlFor="driver">Driver</Label>
               <NativeSelect id="driver" value={driverId} onChange={(e) => setDriverId(e.target.value)}>
@@ -1420,8 +1485,14 @@ export default function OrderDetailPage() {
                       carrierName,
                       trackingReference: tracking,
                       expectedDeliveryOn: expectedOn,
+                      assignedRepId: dispatchRepId || null,
                     }),
-                  "Dispatched."
+                  dispatchRepId
+                    ? `Dispatched, and it is on ${
+                        reps.find((r) => r.id === dispatchRepId)?.full_name ??
+                        "that rep"
+                      }'s phone.`
+                    : "Dispatched. Nobody has been given it yet."
                 )
               }
               disabled={busy}

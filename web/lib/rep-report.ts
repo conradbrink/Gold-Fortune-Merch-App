@@ -92,6 +92,17 @@ export type MissedVisit = {
   plannedDate: string;
   /** Null means the application recorded no reason — not that there was none. */
   reason: string | null;
+  /**
+   * The unscheduled return trip credited to this round, or null if there was
+   * none.
+   *
+   * `route_catchups` in the database decides it: only a visit with no
+   * `route_id` of its own can pay off a missed round, and one visit pays off
+   * exactly one. Crediting *any* later visit would have counted the store's
+   * next scheduled round twice — 37 of Atang's 40 apparent catch-ups were
+   * exactly that.
+   */
+  visitedAt: string | null;
   lastVisitAt: string | null;
   previousSales: number | null;
 };
@@ -215,6 +226,7 @@ export async function fetchRepReport(
       city: (m.city as string | null) ?? null,
       plannedDate: String(m.planned_date),
       reason: (m.reason as string | null) ?? null,
+      visitedAt: (m.visited_at as string | null) ?? null,
       lastVisitAt: (m.last_visit_at as string | null) ?? null,
       previousSales: num(m.previous_sales),
     })),
@@ -284,6 +296,27 @@ const WEIGHTS: { key: ScoreKey; label: string; weight: number }[] = [
   { key: "compliance", label: "App / data compliance", weight: 10 },
 ];
 
+/**
+ * Rounds the rep actually served, and the rate.
+ *
+ * `completedPlanned` is what the database reports: rounds done on the day. A
+ * round the rep went back for on an unscheduled visit was also served, and the
+ * owner asked for it to count — so it is added here, once, and every figure on
+ * the page reads from this rather than doing the sum again. `schedule_adherence`
+ * makes the same addition in SQL, so the Adherence tab agrees.
+ */
+export function visitsServed(summary: RepSummary, missed: MissedVisit[]) {
+  const caughtUp = missed.filter((m) => m.visitedAt !== null).length;
+  const served = summary.completedPlanned + caughtUp;
+  return {
+    caughtUp,
+    served,
+    /** Never served: not on the day, and never returned to. */
+    neverServed: missed.length - caughtUp,
+    rate: summary.plannedVisits > 0 ? served / summary.plannedVisits : null,
+  };
+}
+
 /** Mean of the values that are not null, or null when none are. */
 function meanOf(values: (number | null)[]): number | null {
   const present = values.filter((v): v is number => v !== null);
@@ -328,8 +361,10 @@ export function merchandisingCompliance(s: RepSummary): number | null {
  */
 export function computeScore(
   summary: RepSummary,
-  stores: RepStore[]
+  stores: RepStore[],
+  missed: MissedVisit[]
 ): RepScoreResult {
+  const served = visitsServed(summary, missed);
   const plannedStores = stores.filter((s) => s.planned > 0);
   const coveredStores = plannedStores.filter((s) => s.completed > 0);
 
@@ -348,8 +383,11 @@ export function computeScore(
       basis: "No sales target is recorded for this rep",
     },
     visits: {
-      value: pct(summary.completedPlanned, summary.plannedVisits),
-      basis: `${summary.completedPlanned} of ${summary.plannedVisits} planned visits completed`,
+      value: pct(served.served, summary.plannedVisits),
+      basis:
+        served.caughtUp > 0
+          ? `${served.served} of ${summary.plannedVisits} planned visits served — ${summary.completedPlanned} on the day, ${served.caughtUp} gone back to`
+          : `${summary.completedPlanned} of ${summary.plannedVisits} planned visits completed`,
     },
     coverage: {
       value: pct(coveredStores.length, plannedStores.length),
@@ -484,16 +522,33 @@ export function storesNeedingAttention(
 
   // 1. Missed a visit at a shop with money behind it. Value is this period's
   //    sales where there are any, and otherwise the last order before the miss.
+  /**
+   * Rounds at each store that nobody ever made.
+   *
+   * Counted per store rather than read from `store.missed`, which counts every
+   * round that slipped whether or not the rep went back. A store planned three
+   * times, missed three times and returned to once belongs on this list — two
+   * rounds really were never made — but saying "missed 3 planned visits and
+   * never went back" about it is false in both halves.
+   */
+  const neverByStore = new Map<string, number>();
+  for (const m of missed) {
+    if (m.visitedAt !== null) continue;
+    neverByStore.set(m.storeId, (neverByStore.get(m.storeId) ?? 0) + 1);
+  }
   const valued = stores
-    .filter((s) => s.missed > 0)
-    .map((s) => ({ store: s, value: Math.max(s.salesNet, previousByStore.get(s.storeId) ?? 0) }))
-    .filter((r) => r.value > 0)
+    .map((s) => ({
+      store: s,
+      never: neverByStore.get(s.storeId) ?? 0,
+      value: Math.max(s.salesNet, previousByStore.get(s.storeId) ?? 0),
+    }))
+    .filter((r) => r.never > 0 && r.value > 0)
     .sort((a, b) => b.value - a.value);
-  for (const { store, value } of valued) {
+  for (const { store, never, value } of valued) {
     add(
       store,
       1,
-      `Missed ${store.missed} planned visit${store.missed === 1 ? "" : "s"} — ${money(value)} in recent sales`
+      `${never} planned visit${never === 1 ? "" : "s"} never made — ${money(value)} in recent sales`
     );
   }
 
@@ -582,8 +637,11 @@ export function managementSummary(
       : `${s.repName ?? "The rep"} recorded no delivered sales in this period`
   );
   if (s.plannedVisits > 0) {
+    const served = visitsServed(s, missed);
     first.push(
-      `completed ${s.completedPlanned} of ${s.plannedVisits} planned visits (${Math.round((s.completedPlanned / s.plannedVisits) * 100)}%)`
+      served.caughtUp > 0
+        ? `served ${served.served} of ${s.plannedVisits} planned visits (${Math.round((served.rate ?? 0) * 100)}%), ${served.caughtUp} of them by going back on an unscheduled visit`
+        : `completed ${s.completedPlanned} of ${s.plannedVisits} planned visits (${Math.round((served.rate ?? 0) * 100)}%)`
     );
   } else {
     first.push("had no visits planned in this period");
@@ -598,15 +656,25 @@ export function managementSummary(
     );
   }
   if (s.missedVisits > 0) {
+    const neverWentBack = visitsServed(s, missed).neverServed;
+    // A shop worth calling out is one with money behind it that **nobody went
+    // back to**. Counting the ones the rep returned to would put stores in the
+    // management summary that were served four days later, which is the
+    // overstatement this whole column exists to remove.
     const highValue = new Set(
       missed
-        .filter((m) => (m.previousSales ?? 0) >= HIGH_VALUE_MISS)
+        .filter((m) => m.visitedAt === null && (m.previousSales ?? 0) >= HIGH_VALUE_MISS)
         .map((m) => m.storeId)
     ).size;
+    const caught = s.missedVisits - neverWentBack;
+    const missedClause =
+      caught > 0
+        ? `${s.missedVisits} planned visit${s.missedVisits === 1 ? " was" : "s were"} missed on the day, ${caught} of which the rep went back for`
+        : `${s.missedVisits} planned visit${s.missedVisits === 1 ? " was" : "s were"} missed`;
     const clause =
       highValue > 0
-        ? `${s.missedVisits} planned visit${s.missedVisits === 1 ? " was" : "s were"} missed, including ${highValue} store${highValue === 1 ? "" : "s"} with more than ${moneyShort(HIGH_VALUE_MISS)} in previous sales`
-        : `${s.missedVisits} planned visit${s.missedVisits === 1 ? " was" : "s were"} missed`;
+        ? `${missedClause} — ${highValue} store${highValue === 1 ? "" : "s"} with more than ${moneyShort(HIGH_VALUE_MISS)} in previous sales ${highValue === 1 ? "was" : "were"} never returned to`
+        : missedClause;
     second.push(second.length > 0 ? `but ${clause}` : capitalise(clause));
   }
   if (second.length > 0) sentences.push(`${second.join(", ")}.`);
