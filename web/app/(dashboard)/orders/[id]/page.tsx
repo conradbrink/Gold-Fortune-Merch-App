@@ -212,6 +212,8 @@ export default function OrderDetailPage() {
   const [driverId, setDriverId] = useState("");
   const [vehicleId, setVehicleId] = useState("");
   const [carrierName, setCarrierName] = useState("");
+  /** Whose phone this delivery lands on. Empty means nobody's, which is legal. */
+  const [dispatchRepId, setDispatchRepId] = useState("");
   const [tracking, setTracking] = useState("");
   const [expectedOn, setExpectedOn] = useState("");
   const [receivedBy, setReceivedBy] = useState("");
@@ -1357,6 +1359,32 @@ export default function OrderDetailPage() {
             <p className="text-sm text-muted-foreground">
               Name a driver, a vehicle, or a courier — at least one.
             </p>
+            {/* First, and above the driver, because it is the question the
+                warehouse forgets: the driver carries the stock, the rep is who
+                sees the delivery on their phone. Asked here because this is the
+                moment somebody knows the answer — when it was only a select on
+                the dispatch card afterwards, 62 dispatches got a driver and not
+                one got a rep. */}
+            <div>
+              <Label htmlFor="dispatch-rep">Rep who is handling it</Label>
+              <NativeSelect
+                id="dispatch-rep"
+                value={dispatchRepId}
+                onChange={(e) => setDispatchRepId(e.target.value)}
+              >
+                <option value="">Nobody — the warehouse handles it</option>
+                {reps.map((r) => (
+                  <option key={r.id} value={r.id}>
+                    {r.full_name ?? "Unnamed rep"}
+                  </option>
+                ))}
+              </NativeSelect>
+              <p className="mt-1 text-xs text-muted-foreground">
+                A rep named here sees this delivery in the app. Leave it as
+                Nobody and it stays with the warehouse; you can hand it over
+                later from the delivery below.
+              </p>
+            </div>
             <div>
               <Label htmlFor="driver">Driver</Label>
               <NativeSelect id="driver" value={driverId} onChange={(e) => setDriverId(e.target.value)}>
@@ -1420,8 +1448,14 @@ export default function OrderDetailPage() {
                       carrierName,
                       trackingReference: tracking,
                       expectedDeliveryOn: expectedOn,
+                      assignedRepId: dispatchRepId || null,
                     }),
-                  "Dispatched."
+                  dispatchRepId
+                    ? `Dispatched, and it is on ${
+                        reps.find((r) => r.id === dispatchRepId)?.full_name ??
+                        "that rep"
+                      }'s phone.`
+                    : "Dispatched. Nobody has been given it yet."
                 )
               }
               disabled={busy}

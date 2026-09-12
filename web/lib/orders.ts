@@ -735,7 +735,31 @@ export const markPacked = (supabase: Client, orderId: string, acceptShort = fals
     p_accept_short: acceptShort,
   });
 
-export const dispatchOrder = (
+/**
+ * Send the order out, and say whose job it is.
+ *
+ * `assignedRepId` is the reason this is a function and not a one-liner. The
+ * driver takes the stock; the *rep* is the one who sees the delivery on their
+ * phone, and until somebody is named nobody does. Those were two separate
+ * actions on two different parts of the screen — dispatching asked for a
+ * driver, and the rep was a select further down the dispatch card that you had
+ * to know to go back for. On the live data that produced 62 dispatches with a
+ * driver and **zero** with a rep, in 119 dispatches over six weeks: the
+ * warehouse was never asked the question at the moment it had the answer.
+ *
+ * Two calls rather than one, deliberately. Giving `order_dispatch` a rep
+ * parameter would make it atomic, but adding a parameter to an existing
+ * function is an overload rather than a replacement — every current caller
+ * would start failing with "could not choose the best candidate function"
+ * until the old signature was dropped. `order_dispatch` already returns the
+ * `dispatch_id`, so the second call is exact rather than a guess.
+ *
+ * The failure between them is the case worth spelling out: if the assignment
+ * is refused the order **is** dispatched, and the caller must be told that in
+ * those words, or the obvious reaction is to press Dispatch again and put a
+ * second dispatch on the same order.
+ */
+export async function dispatchOrder(
   supabase: Client,
   orderId: string,
   carrier: {
@@ -744,9 +768,10 @@ export const dispatchOrder = (
     carrierName?: string | null;
     trackingReference?: string | null;
     expectedDeliveryOn?: string | null;
+    assignedRepId?: string | null;
   }
-) =>
-  callRpc(supabase, "order_dispatch", {
+): Promise<Jsonish> {
+  const result = await callRpc(supabase, "order_dispatch", {
     p_order_id: orderId,
     p_driver_id: carrier.driverId || undefined,
     p_vehicle_id: carrier.vehicleId || undefined,
@@ -754,6 +779,28 @@ export const dispatchOrder = (
     p_tracking_reference: carrier.trackingReference || undefined,
     p_expected_delivery_on: carrier.expectedDeliveryOn || undefined,
   });
+
+  if (!carrier.assignedRepId) return result;
+
+  const dispatchId = result.dispatch_id;
+  if (typeof dispatchId !== "string") {
+    throw new Error(
+      "The order was dispatched, but it could not be given to a rep — " +
+        "the dispatch id came back missing. Set the rep on the delivery below."
+    );
+  }
+
+  try {
+    await assignDispatchRep(supabase, dispatchId, carrier.assignedRepId);
+  } catch (e) {
+    throw new Error(
+      `The order was dispatched, but it could not be given to a rep: ${
+        e instanceof Error ? e.message : String(e)
+      } Set the rep on the delivery below — do not dispatch again.`
+    );
+  }
+  return result;
+}
 
 export const markDelivered = (
   supabase: Client,
