@@ -38,6 +38,7 @@ import {
   markPacked,
   assignDispatchRep,
   dispatchOrder,
+  PartialDispatchError,
   markDelivered,
   returnUndelivered,
   cancelOrder,
@@ -340,6 +341,23 @@ export default function OrderDetailPage() {
       setDialog(null);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
+      // A refusal leaves the screen true and the dialog is the right place to
+      // stay. A *partial* dispatch does not: the order went out, so what is on
+      // screen is stale — and the dialog is covering the delivery card the
+      // message just told the user to go and use. Close it and reload, keeping
+      // the error, which is the whole point of the message.
+      if (e instanceof PartialDispatchError) {
+        setDialog(null);
+        // Its own try: `reload` is a network call, and if it fails here its
+        // error would replace the one that actually matters — the one saying
+        // the order went out and must not be dispatched again. Showing a stale
+        // card under the right message beats a fresh card under the wrong one.
+        try {
+          await reload();
+        } catch {
+          /* keep the dispatch error; the card stays stale until the next load */
+        }
+      }
     } finally {
       setBusy(false);
     }

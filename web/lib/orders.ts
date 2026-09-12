@@ -736,6 +736,24 @@ export const markPacked = (supabase: Client, orderId: string, acceptShort = fals
   });
 
 /**
+ * The order went out, but it was not given to anybody.
+ *
+ * Its own type because the caller has to treat it differently from a refusal:
+ * a refused dispatch leaves the screen as it was and the dialog is the right
+ * place to stay, while this one means the order **has** changed and the page
+ * is now showing a state that no longer exists — including hiding the very
+ * control the message tells you to use.
+ */
+export class PartialDispatchError extends Error {
+  /** Always true. Present so the check reads as a fact, not a type cast. */
+  readonly orderWasDispatched = true;
+  constructor(message: string) {
+    super(message);
+    this.name = "PartialDispatchError";
+  }
+}
+
+/**
  * Send the order out, and say whose job it is.
  *
  * `assignedRepId` is the reason this is a function and not a one-liner. The
@@ -784,16 +802,16 @@ export async function dispatchOrder(
 
   const dispatchId = result.dispatch_id;
   if (typeof dispatchId !== "string") {
-    throw new Error(
-      "The order was dispatched, but it could not be given to a rep — " +
-        "the dispatch id came back missing. Set the rep on the delivery below."
+    throw new PartialDispatchError(
+      "The order was dispatched, but it could not be given to a rep — the " +
+        "dispatch id came back missing. Set the rep on the delivery below."
     );
   }
 
   try {
     await assignDispatchRep(supabase, dispatchId, carrier.assignedRepId);
   } catch (e) {
-    throw new Error(
+    throw new PartialDispatchError(
       `The order was dispatched, but it could not be given to a rep: ${
         e instanceof Error ? e.message : String(e)
       } Set the rep on the delivery below — do not dispatch again.`

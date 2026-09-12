@@ -224,21 +224,37 @@ create table if not exists ops.waiting (
 -- Foreign keys after every table exists, so the order above cannot matter, and
 -- guarded so the whole file is idempotent — which is what let it be proved by
 -- replaying it into a throwaway schema rather than argued about.
+--
+-- Each guard is scoped to its own table with `conrelid`, not just to the
+-- constraint name. `pg_constraint` is database-wide and constraint names are
+-- only unique per table, so a bare `conname` test finds a same-named
+-- constraint in *any* schema — including `ops` itself — and skips creating the
+-- one that is actually missing. That is not hypothetical: proving this file
+-- meant replaying it into a second schema alongside `ops`, and the names had
+-- to be rewritten by hand to get around exactly this.
 do $$
 begin
-  if not exists (select 1 from pg_constraint where conname = 'goals_area_id_fkey') then
+  if not exists (select 1 from pg_constraint
+                  where conname = 'goals_area_id_fkey'
+                    and conrelid = 'ops.goals'::regclass) then
     alter table ops.goals add constraint goals_area_id_fkey
       foreign key (area_id) references ops.areas(id) on delete cascade;
   end if;
-  if not exists (select 1 from pg_constraint where conname = 'findings_area_id_fkey') then
+  if not exists (select 1 from pg_constraint
+                  where conname = 'findings_area_id_fkey'
+                    and conrelid = 'ops.findings'::regclass) then
     alter table ops.findings add constraint findings_area_id_fkey
       foreign key (area_id) references ops.areas(id) on delete set null;
   end if;
-  if not exists (select 1 from pg_constraint where conname = 'actions_area_id_fkey') then
+  if not exists (select 1 from pg_constraint
+                  where conname = 'actions_area_id_fkey'
+                    and conrelid = 'ops.actions'::regclass) then
     alter table ops.actions add constraint actions_area_id_fkey
       foreign key (area_id) references ops.areas(id) on delete set null;
   end if;
-  if not exists (select 1 from pg_constraint where conname = 'actions_goal_id_fkey') then
+  if not exists (select 1 from pg_constraint
+                  where conname = 'actions_goal_id_fkey'
+                    and conrelid = 'ops.actions'::regclass) then
     alter table ops.actions add constraint actions_goal_id_fkey
       foreign key (goal_id) references ops.goals(id) on delete set null;
   end if;
