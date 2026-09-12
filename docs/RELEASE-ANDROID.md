@@ -138,7 +138,11 @@ Output: `mobile/build/app/outputs/flutter-apk/app-release.apk`.
 
 ```bash
 cd mobile
-unzip -p build/app/outputs/flutter-apk/app-release.apk assets/flutter_assets/NOTICES >/dev/null && echo "APK readable"
+# `NOTICES.Z`, not `NOTICES`. Flutter compresses it, and this line asked for a
+# path that has not existed for several versions — so the readability check
+# reported "APK unreadable" on a perfectly good 1.1.8 build. `unzip -l` proves
+# the archive is readable without depending on any one entry's name.
+unzip -l build/app/outputs/flutter-apk/app-release.apk >/dev/null && echo "APK readable"
 
 # The production Supabase URL must be in there, and localhost must not.
 # These EXIT NON-ZERO on failure rather than printing a count you might skim
