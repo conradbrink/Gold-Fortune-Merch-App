@@ -1,4 +1,5 @@
 import {
+  visitsServed,
   classifyScore,
   clockTime,
   computeScore,
@@ -55,15 +56,22 @@ export function RepPerformanceReport({
   meta: ReportMeta;
 }) {
   const { summary, days, missed, stores } = report;
-  const score = computeScore(summary, stores);
+  const served = visitsServed(summary, missed);
+  const score = computeScore(summary, stores, missed);
   const merch = merchandisingCompliance(summary);
   const top = topStores(stores);
   const attention = storesNeedingAttention(stores, missed);
 
-  const completionRate =
-    summary.plannedVisits > 0 ? summary.completedPlanned / summary.plannedVisits : null;
+  const completionRate = served.rate;
   const salesPerVisit =
     summary.completedVisits > 0 ? summary.salesNet / summary.completedVisits : null;
+  /**
+   * Missed on the day and never gone back to.
+   *
+   * The number that matters. A flat "79 missed" counts a store the rep
+   * returned to on Thursday the same as one nobody has seen since — and on the
+   * live data about half of every missed visit is the first kind.
+   */
   const plannedStores = stores.filter((s) => s.planned > 0).length;
   const coveredStores = stores.filter((s) => s.planned > 0 && s.completed > 0).length;
 
@@ -97,31 +105,43 @@ export function RepPerformanceReport({
               label="Visit completion"
               value={percent(completionRate)}
               note={
-                summary.plannedVisits > 0
-                  ? `${summary.completedPlanned} of ${summary.plannedVisits} planned visits`
-                  : "No planned visits during this period"
+                summary.plannedVisits === 0
+                  ? "No planned visits during this period"
+                  : served.caughtUp > 0
+                    ? `${served.served} of ${summary.plannedVisits} served · ${served.caughtUp} by going back`
+                    : `${served.served} of ${summary.plannedVisits} planned visits`
               }
             />
-            {/* "Store visits", not "Stores visited", and "Visits missed",
-                not "Stores missed". Both figures count planned *visits* — one
-                store contributes several over a month — so the store wording
-                asked a question the number underneath did not answer, and the
-                first card contradicted its own note. The values are the ones
-                the report is specified to show; only the labels changed. */}
+            {/* "Store visits", not "Stores visited": both figures count planned
+                *visits* — one store contributes several over a month — so the
+                store wording asked a question the number underneath did not
+                answer. And "served" rather than "completed", because a round
+                the rep went back for on an unscheduled visit counts now; the
+                card below names what is left over. */}
             <Kpi
               label="Store visits"
-              value={`${summary.completedPlanned} / ${summary.plannedVisits}`}
+              value={`${served.served} / ${summary.plannedVisits}`}
               note={
                 plannedStores > 0
-                  ? `Completed / planned · ${coveredStores} of ${plannedStores} stores reached`
-                  : "Completed / planned store visits"
+                  ? `Served / planned · ${coveredStores} of ${plannedStores} stores reached`
+                  : "Served / planned store visits"
               }
             />
+            {/* The alarming number, and now the honest one. It used to read
+                "Visits missed: 79" and count every round that slipped, whether
+                or not the rep went back — which on this data was about half of
+                them. This counts only the rounds nobody ever made. */}
             <Kpi
-              label="Visits missed"
-              value={String(summary.missedVisits)}
-              emphasis={summary.missedVisits > 0 ? "warn" : undefined}
-              note="Planned visits not completed"
+              label="Never served"
+              value={String(served.neverServed)}
+              emphasis={served.neverServed > 0 ? "warn" : undefined}
+              note={
+                missed.length === 0
+                  ? "Every planned visit was made"
+                  : served.caughtUp > 0
+                    ? `Of ${missed.length} round${missed.length === 1 ? "" : "s"} missed on the day; ${served.caughtUp} gone back to`
+                    : `${missed.length} round${missed.length === 1 ? "" : "s"} missed on the day, none gone back to`
+              }
             />
             <Kpi
               label="Sales per visit"
@@ -271,8 +291,9 @@ export function RepPerformanceReport({
               <tbody>
                 <Row label="Stores assigned" value={String(summary.storesAssigned)} />
                 <Row label="Planned visits" value={String(summary.plannedVisits)} />
-                <Row label="Completed visits (planned)" value={String(summary.completedPlanned)} />
-                <Row label="Missed visits" value={String(summary.missedVisits)} />
+                <Row label="Completed on the day" value={String(summary.completedPlanned)} />
+                <Row label="Gone back to (unscheduled)" value={String(served.caughtUp)} />
+                <Row label="Never served" value={String(served.neverServed)} />
                 <Row
                   label="Unplanned visits completed"
                   value={String(summary.unplannedVisits)}
@@ -523,6 +544,10 @@ function MissedStores({ missed }: { missed: MissedVisit[] }) {
     );
   }
 
+  // Same definition the scorecard uses: no credited catch-up means nobody ever
+  // made this round. `visitsServed` is not reached for here because this
+  // component has the rows and not the summary.
+  const neverReturned = missed.filter((m) => m.visitedAt === null).length;
   const twoColumn = missed.length >= MISSED_TWO_COLUMN_FROM;
   const half = Math.ceil(missed.length / 2);
   const columns = twoColumn ? [missed.slice(0, half), missed.slice(half)] : [missed];
@@ -532,8 +557,11 @@ function MissedStores({ missed }: { missed: MissedVisit[] }) {
       <h2 className="rr-h2">
         Stores missed
         <span className="rr-h2-note">
-          {missed.length} planned visit{missed.length === 1 ? "" : "s"} not completed ·
-          highest previous sales first · every one is listed
+          {missed.length} planned visit{missed.length === 1 ? "" : "s"} not completed on the
+          day · <strong>{neverReturned} never served</strong>
+          {neverReturned < missed.length
+            ? ", listed first · the rest were gone back to"
+            : " · none were gone back to"}
         </span>
       </h2>
       <div className={twoColumn ? "rr-missed rr-missed-split" : "rr-missed"}>
@@ -543,8 +571,8 @@ function MissedStores({ missed }: { missed: MissedVisit[] }) {
               <tr>
                 <th>Store</th>
                 <th>Planned</th>
+                <th>Went back</th>
                 <th>Reason</th>
-                <th>Last visit</th>
                 <th className="rr-num">Prev. sales</th>
               </tr>
             </thead>
@@ -555,10 +583,17 @@ function MissedStores({ missed }: { missed: MissedVisit[] }) {
                       place where a second line per row costs a page. */}
                   <td className="rr-store">{m.storeName}</td>
                   <td>{shortDate(m.plannedDate)}</td>
+                  {/* The column that changes what this table means. "Never"
+                      is the finding; a date is a store that was served late.
+                      It replaces "Last visit" — the last visit *before* the
+                      planned day answers a question nobody was asking once
+                      this one is on the page. */}
+                  <td className={m.visitedAt ? undefined : "rr-never"}>
+                    {m.visitedAt ? shortDate(m.visitedAt) : "Never"}
+                  </td>
                   <td className={m.reason ? undefined : "rr-row-muted"}>
                     {m.reason ?? "Reason not recorded"}
                   </td>
-                  <td>{m.lastVisitAt ? shortDate(m.lastVisitAt) : "—"}</td>
                   <td className="rr-num">
                     {m.previousSales === null ? "—" : moneyShort(m.previousSales)}
                   </td>
