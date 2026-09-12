@@ -632,7 +632,26 @@ export default function OrderDetailPage() {
             </>
           )}
           {o.status === "packed" && (
-            <Button onClick={() => setDialog("dispatch")} disabled={busy}>
+            <Button
+              onClick={() => {
+                /*
+                 * The order already knows whose it is — 36 of this week's 59
+                 * dispatches came from an order with a rep on it — so the
+                 * dialog opens on that answer rather than on "Nobody" and the
+                 * warehouse only has to act when the delivery is going to
+                 * somebody else. Falls back to nobody when the order's rep is
+                 * not a currently active rep, because a native select whose
+                 * value matches no option silently shows the first one, which
+                 * would claim a delivery for whoever heads the list.
+                 */
+                const ordersRep = o.rep_id ?? "";
+                setDispatchRepId(
+                  reps.some((r) => r.id === ordersRep) ? ordersRep : ""
+                );
+                setDialog("dispatch");
+              }}
+              disabled={busy}
+            >
               Dispatch
             </Button>
           )}
