@@ -138,7 +138,21 @@ Output: `mobile/build/app/outputs/flutter-apk/app-release.apk`.
 
 ```bash
 cd mobile
-unzip -p build/app/outputs/flutter-apk/app-release.apk assets/flutter_assets/NOTICES >/dev/null && echo "APK readable"
+# `unzip -t`, and neither of the two things this line said before it.
+#
+# It asked `unzip -p` for `assets/flutter_assets/NOTICES`, a path Flutter has
+# not shipped for several versions — it is `NOTICES.Z` — so the check reported
+# "APK unreadable" for a perfectly good 1.1.8 build. Replacing it with
+# `unzip -l` fixed the false alarm and put a weaker check in its place: `-l`
+# reads only the central directory and never touches the entry data.
+#
+# Demonstrated rather than argued. One byte overwritten in the middle of the
+# real 1.1.8 APK: `unzip -t` exits 2, `unzip -l` exits 0. The corrupted archive
+# would have shipped.
+#
+# `-t` tests every entry's compressed data against its CRC, which is what
+# "readable" was always meant to mean.
+unzip -t build/app/outputs/flutter-apk/app-release.apk >/dev/null && echo "APK intact"
 
 # The production Supabase URL must be in there, and localhost must not.
 # These EXIT NON-ZERO on failure rather than printing a count you might skim
