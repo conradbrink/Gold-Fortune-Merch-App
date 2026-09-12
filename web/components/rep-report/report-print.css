@@ -1,0 +1,879 @@
+/*
+ * The Rep Performance Report's sheet — A4 portrait, on screen and on paper.
+ *
+ * One stylesheet rather than Tailwind utilities in the markup, because every
+ * rule here has a print counterpart a few lines below it and the two have to be
+ * read together. It is imported by the report page only, so the `[data-app-*]`
+ * rules never apply to any other screen.
+ *
+ * Three things it is deliberately built around:
+ *
+ * 1. **Millimetres.** The sheet is 210mm wide on screen and on paper, so what a
+ *    manager sees is the page that comes out of the printer, including where it
+ *    breaks. Sizing in `rem` and hoping is how a "2-page report" becomes three.
+ *
+ * 2. **One palette, and it survives a monochrome printer.** Navy ink, a gold
+ *    rule, and greys. Nothing carries meaning by colour alone: a missed day is
+ *    an empty outline as well as a gold mark, a null figure is the word "Not
+ *    tracked" as well as a lighter grey.
+ *
+ * 3. **The sheet does not follow the theme.** A document is white. Dark mode
+ *    changes the app around it and leaves the page itself alone, which is also
+ *    what makes the print output predictable.
+ */
+
+.rr {
+  /* Ink, not theme tokens: these values are printed. */
+  --rr-ink: #1b2340;
+  --rr-ink-soft: #4a5368;
+  --rr-ink-faint: #79819a;
+  --rr-rule: #c9ced9;
+  --rr-rule-soft: #e4e7ee;
+  --rr-gold: #c9962c;
+  --rr-wash: #f4f5f8;
+  --rr-warn: #9a2f2f;
+
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8mm;
+  color: var(--rr-ink);
+  font-size: 3.1mm;
+  line-height: 1.35;
+  -webkit-font-smoothing: antialiased;
+}
+
+.rr-sheet {
+  position: relative;
+  box-sizing: border-box;
+  /* A flex column purely so the manager's writing area can absorb whatever is
+     left of the page. A report whose second sheet holds four missed visits
+     instead of eighty otherwise ended two thirds of the way down with a third
+     of a page of nothing under it — the "huge empty space" a printed document
+     should not have. Nothing else grows: every other block keeps its natural
+     height, and when the sheet is taller than a page there is no free space to
+     distribute, so the long case is untouched. */
+  display: flex;
+  flex-direction: column;
+  width: 210mm;
+  min-height: 297mm;
+  padding: 13mm 13mm 14mm;
+  background: #fff;
+  box-shadow: 0 1px 3px rgb(0 0 0 / 12%), 0 8px 24px rgb(0 0 0 / 8%);
+}
+
+/* --------------------------------------------------------------------- */
+/* Header                                                                 */
+/* --------------------------------------------------------------------- */
+
+.rr-head {
+  border-bottom: 0.8mm solid var(--rr-ink);
+  padding-bottom: 2.4mm;
+  margin-bottom: 4mm;
+}
+
+.rr-head-top {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 6mm;
+}
+
+.rr-wordmark {
+  font-size: 4.6mm;
+  font-weight: 700;
+  letter-spacing: 0.35mm;
+  text-transform: uppercase;
+  color: var(--rr-ink);
+}
+
+.rr-title {
+  margin: 0.6mm 0 0;
+  font-size: 3.4mm;
+  font-weight: 600;
+  letter-spacing: 0.18mm;
+  text-transform: uppercase;
+  color: var(--rr-gold);
+}
+
+.rr-head-generated {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  font-size: 2.6mm;
+  color: var(--rr-ink-faint);
+}
+
+.rr-head-generated strong {
+  font-weight: 600;
+  color: var(--rr-ink-soft);
+}
+
+.rr-meta {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 3mm;
+  margin: 3mm 0 0;
+}
+
+.rr-meta div {
+  min-width: 0;
+}
+
+.rr-meta dt {
+  font-size: 2.3mm;
+  font-weight: 600;
+  letter-spacing: 0.22mm;
+  text-transform: uppercase;
+  color: var(--rr-ink-faint);
+}
+
+.rr-meta dd {
+  margin: 0.5mm 0 0;
+  font-size: 3mm;
+  font-weight: 600;
+  color: var(--rr-ink);
+}
+
+/* A page-two running head, so a detached second sheet still says what it is. */
+.rr-runhead {
+  display: flex;
+  justify-content: space-between;
+  gap: 6mm;
+  padding-bottom: 1.8mm;
+  margin-bottom: 4mm;
+  border-bottom: 0.5mm solid var(--rr-ink);
+  font-size: 2.5mm;
+  font-weight: 600;
+  letter-spacing: 0.12mm;
+  text-transform: uppercase;
+  color: var(--rr-ink-faint);
+}
+
+.rr-foot {
+  position: absolute;
+  left: 13mm;
+  right: 13mm;
+  bottom: 8mm;
+  display: flex;
+  justify-content: space-between;
+  gap: 6mm;
+  padding-top: 1.6mm;
+  border-top: 0.2mm solid var(--rr-rule);
+  font-size: 2.4mm;
+  color: var(--rr-ink-faint);
+}
+
+/* --------------------------------------------------------------------- */
+/* Blocks and headings                                                    */
+/* --------------------------------------------------------------------- */
+
+.rr-block {
+  margin-bottom: 3.4mm;
+  break-inside: avoid;
+}
+
+.rr-h2 {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 2mm;
+  margin: 0 0 1.8mm;
+  padding-bottom: 1mm;
+  border-bottom: 0.2mm solid var(--rr-rule);
+  font-size: 2.7mm;
+  font-weight: 700;
+  letter-spacing: 0.25mm;
+  text-transform: uppercase;
+  color: var(--rr-ink);
+}
+
+.rr-h2-note {
+  flex: 1;
+  min-width: 0;
+  font-size: 2.4mm;
+  font-weight: 400;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--rr-ink-faint);
+}
+
+.rr-two {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6mm;
+  margin-bottom: 3.4mm;
+}
+
+.rr-two > .rr-block {
+  margin-bottom: 0;
+}
+
+/* --------------------------------------------------------------------- */
+/* KPI scorecard                                                          */
+/* --------------------------------------------------------------------- */
+
+.rr-kpis {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  /* Hairline gaps filled by the wash: eight cards with eight borders is the
+     "excessive cards" look the brief rules out, and a shared grid line is one
+     rule instead of sixteen. */
+  gap: 0.3mm;
+  background: var(--rr-rule);
+  border: 0.3mm solid var(--rr-rule);
+}
+
+.rr-kpi {
+  background: #fff;
+  padding: 2.2mm 2.4mm 2.4mm;
+  min-width: 0;
+}
+
+.rr-kpi-label {
+  font-size: 2.3mm;
+  font-weight: 600;
+  letter-spacing: 0.2mm;
+  text-transform: uppercase;
+  color: var(--rr-ink-faint);
+}
+
+.rr-kpi-value {
+  margin-top: 0.8mm;
+  font-size: 5.2mm;
+  font-weight: 700;
+  line-height: 1.1;
+  letter-spacing: -0.1mm;
+  color: var(--rr-ink);
+}
+
+/* "Target not set" is a sentence, not a figure; it must not read as one. */
+.rr-kpi-value-muted {
+  font-size: 3.4mm;
+  font-weight: 600;
+  color: var(--rr-ink-faint);
+}
+
+.rr-kpi-note {
+  margin-top: 0.8mm;
+  font-size: 2.4mm;
+  color: var(--rr-ink-soft);
+}
+
+.rr-kpi-warn .rr-kpi-value {
+  color: var(--rr-warn);
+}
+
+.rr-kpi-score {
+  background: var(--rr-wash);
+}
+
+.rr-kpi-score .rr-kpi-note {
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.18mm;
+  color: var(--rr-ink);
+}
+
+/* --------------------------------------------------------------------- */
+/* Score and breakdown                                                    */
+/* --------------------------------------------------------------------- */
+
+.rr-score {
+  display: grid;
+  grid-template-columns: 42mm 1fr;
+  gap: 6mm;
+  align-items: start;
+}
+
+.rr-score-figure {
+  border: 0.3mm solid var(--rr-ink);
+  border-top: 1.2mm solid var(--rr-gold);
+  padding: 2.6mm 2.6mm 3mm;
+  text-align: center;
+}
+
+.rr-score-number {
+  font-size: 13mm;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: -0.4mm;
+}
+
+.rr-score-outof {
+  display: block;
+  font-size: 2.6mm;
+  font-weight: 500;
+  letter-spacing: 0.2mm;
+  color: var(--rr-ink-faint);
+}
+
+.rr-score-band {
+  margin-top: 1.6mm;
+  font-size: 3.2mm;
+  font-weight: 700;
+  letter-spacing: 0.3mm;
+  text-transform: uppercase;
+}
+
+.rr-score-scale {
+  margin: 1.8mm 0 0;
+  font-size: 2.2mm;
+  line-height: 1.4;
+  color: var(--rr-ink-faint);
+}
+
+.rr-score-breakdown {
+  min-width: 0;
+}
+
+/* --------------------------------------------------------------------- */
+/* Tables                                                                 */
+/* --------------------------------------------------------------------- */
+
+.rr-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 2.7mm;
+}
+
+.rr-table th,
+.rr-table td {
+  text-align: left;
+  padding: 1.1mm 1.6mm 1.1mm 0;
+  border-bottom: 0.2mm solid var(--rr-rule-soft);
+  vertical-align: top;
+}
+
+/* A gutter between adjacent columns. Every cell's own padding is on its right
+   edge, so the first column of a pair had a gap and the second did not — which
+   ran "Result" into "Measured from" in the score breakdown's header. */
+.rr-table th + th,
+.rr-table td + td {
+  padding-left: 1.8mm;
+}
+
+.rr-table thead th {
+  border-bottom: 0.35mm solid var(--rr-ink);
+  font-size: 2.3mm;
+  font-weight: 700;
+  letter-spacing: 0.18mm;
+  text-transform: uppercase;
+  color: var(--rr-ink-soft);
+  white-space: nowrap;
+}
+
+.rr-table tbody tr:last-child th,
+.rr-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.rr-num {
+  text-align: right;
+  /* Gutter on the left, none on the right: a right-aligned column's own
+     padding-right would push the figures away from the edge they align to,
+     while dropping the left gutter entirely ran the score breakdown's headers
+     together as "WEIGHTAPPLIEDRESULT". */
+  padding-left: 2.4mm !important;
+  padding-right: 0 !important;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.rr-table-tight th,
+.rr-table-tight td {
+  padding-top: 0.85mm;
+  padding-bottom: 0.85mm;
+}
+
+.rr-table-kv {
+  font-size: 2.6mm;
+}
+
+.rr-table-kv th,
+.rr-table-kv td {
+  padding-top: 0.7mm;
+  padding-bottom: 0.7mm;
+}
+
+.rr-table-kv th {
+  font-weight: 500;
+  color: var(--rr-ink-soft);
+}
+
+.rr-table-kv td {
+  font-weight: 700;
+}
+
+.rr-basis {
+  font-size: 2.4mm;
+  color: var(--rr-ink-faint);
+}
+
+.rr-row-muted,
+.rr-row-muted td,
+.rr-row-muted th {
+  color: var(--rr-ink-faint);
+}
+
+.rr-footnote {
+  margin: 1.6mm 0 0;
+  font-size: 2.3mm;
+  line-height: 1.4;
+  color: var(--rr-ink-faint);
+}
+
+/* --------------------------------------------------------------------- */
+/* Charts                                                                 */
+/* --------------------------------------------------------------------- */
+
+.rr-chart {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.rr-chart-empty {
+  padding: 6mm 0;
+  text-align: center;
+  font-size: 2.9mm;
+  color: var(--rr-ink-faint);
+  border: 0.2mm dashed var(--rr-rule);
+}
+
+/* --------------------------------------------------------------------- */
+/* Attendance strip                                                       */
+/* --------------------------------------------------------------------- */
+
+.rr-strip {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 0.3mm;
+  background: var(--rr-rule);
+  border: 0.3mm solid var(--rr-rule);
+}
+
+.rr-cell {
+  background: #fff;
+  padding: 1.8mm 2mm;
+  min-width: 0;
+}
+
+.rr-cell-label {
+  font-size: 2.2mm;
+  font-weight: 600;
+  letter-spacing: 0.16mm;
+  text-transform: uppercase;
+  color: var(--rr-ink-faint);
+}
+
+.rr-cell-value {
+  margin-top: 0.6mm;
+  font-size: 4mm;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.rr-cell-note {
+  margin-top: 0.4mm;
+  font-size: 2.2mm;
+  color: var(--rr-ink-faint);
+}
+
+/* --------------------------------------------------------------------- */
+/* Missed stores                                                          */
+/* --------------------------------------------------------------------- */
+
+.rr-missed-split {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 5mm;
+  align-items: start;
+}
+
+/*
+ * The densest table in the report, and the numbers are load-bearing.
+ *
+ * In the split layout a column is 89mm wide and five columns of store name,
+ * date, reason, date and money do not fit on one line in it — so a row is two
+ * lines and the only lever left is how tall a line is. At 1.35 (the document's
+ * line-height) a row was 7.8mm and seventy-nine missed visits ran to 334mm;
+ * at 1.18 the same rows come to 268mm, which is the difference between a
+ * report that turns the page once and one that turns it twice.
+ *
+ * The header is allowed to wrap for the same reason: `white-space: nowrap` on
+ * "Prev. sales" was reserving 17.6mm of a 89mm table for a heading, and that
+ * width comes out of the store name on every row beneath it.
+ */
+.rr-table-dense {
+  font-size: 2.25mm;
+  line-height: 1.18;
+}
+
+.rr-table-dense th,
+.rr-table-dense td {
+  padding: 0.55mm 1.1mm 0.55mm 0;
+}
+
+.rr-table-dense thead th {
+  font-size: 2.1mm;
+  white-space: normal;
+}
+
+/* The table head repeats on every sheet a long list runs onto. */
+.rr-table-dense thead {
+  display: table-header-group;
+}
+
+.rr-table-dense tr {
+  break-inside: avoid;
+}
+
+.rr-store {
+  font-weight: 600;
+}
+
+.rr-good {
+  margin: 0;
+  padding: 3mm;
+  border: 0.3mm solid var(--rr-ink);
+  border-left: 1.2mm solid var(--rr-gold);
+  background: var(--rr-wash);
+  font-size: 3.1mm;
+  font-weight: 600;
+}
+
+.rr-empty {
+  margin: 0;
+  padding: 2mm 0;
+  font-size: 2.7mm;
+  color: var(--rr-ink-faint);
+}
+
+/* --------------------------------------------------------------------- */
+/* Merchandising, top stores, attention                                   */
+/* --------------------------------------------------------------------- */
+
+.rr-headline {
+  display: flex;
+  align-items: baseline;
+  gap: 2.2mm;
+  padding-bottom: 1.6mm;
+  margin-bottom: 1.2mm;
+  border-bottom: 0.2mm solid var(--rr-rule-soft);
+}
+
+.rr-headline-value {
+  font-size: 7mm;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: -0.2mm;
+}
+
+.rr-headline-label {
+  font-size: 2.4mm;
+  color: var(--rr-ink-soft);
+}
+
+/*
+ * The rank comes from a counter, not from the list marker.
+ *
+ * `display: flex` on an `li` replaces `list-item`, and with it the marker —
+ * so the top three stores rendered as an unnumbered list under a heading that
+ * implies a ranking. A counter in `::before` is a flex item like the other
+ * two and numbers them back.
+ */
+.rr-ranked {
+  margin: 0;
+  padding-left: 0;
+  list-style: none;
+  counter-reset: rank;
+  font-size: 2.9mm;
+}
+
+.rr-ranked li {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 2.5mm;
+  padding: 1mm 0;
+  border-bottom: 0.2mm solid var(--rr-rule-soft);
+  counter-increment: rank;
+}
+
+.rr-ranked li::before {
+  content: counter(rank) ".";
+  flex: none;
+  width: 4mm;
+  font-weight: 700;
+  color: var(--rr-ink-faint);
+}
+
+.rr-ranked-name {
+  flex: 1;
+}
+
+.rr-ranked li:last-child {
+  border-bottom: none;
+}
+
+.rr-ranked-name {
+  font-weight: 600;
+  min-width: 0;
+}
+
+
+.rr-ranked-value {
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.rr-attention {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 2.7mm;
+}
+
+.rr-attention li {
+  padding: 0.9mm 0 0.9mm 2mm;
+  border-bottom: 0.2mm solid var(--rr-rule-soft);
+  border-left: 0.8mm solid var(--rr-gold);
+  margin-bottom: 0.8mm;
+}
+
+.rr-attention li:last-child {
+  border-bottom: none;
+  margin-bottom: 0;
+}
+
+.rr-attention-name {
+  display: block;
+  font-weight: 700;
+}
+
+.rr-attention-reason {
+  display: block;
+  color: var(--rr-ink-soft);
+}
+
+/* --------------------------------------------------------------------- */
+/* Management summary and comments                                        */
+/* --------------------------------------------------------------------- */
+
+.rr-verdict {
+  display: flex;
+  align-items: baseline;
+  gap: 3mm;
+  margin-bottom: 1.6mm;
+}
+
+.rr-verdict-score {
+  font-size: 7mm;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.rr-verdict-band {
+  font-size: 3.4mm;
+  font-weight: 700;
+  letter-spacing: 0.3mm;
+  text-transform: uppercase;
+  color: var(--rr-gold);
+}
+
+.rr-prose {
+  margin: 0;
+  font-size: 3mm;
+  line-height: 1.45;
+  max-width: 165mm;
+}
+
+.rr-comments {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  /* The footer is absolutely positioned at the foot of the sheet, so the
+     writing area must stop above it rather than run underneath. */
+  padding-bottom: 4mm;
+}
+
+/*
+ * Ruled writing paper, not three rules spread across whatever is left.
+ *
+ * The area grows to absorb the rest of the page, and three `<span>` borders
+ * distributed across it left 45mm between lines — too far apart to write on.
+ * A repeating gradient rules the box at a fixed 8mm pitch however tall it
+ * turns out to be, which is what a manager actually needs. If a printer drops
+ * background images the block degrades to plain space, which is still usable.
+ */
+.rr-lines {
+  flex: 1;
+  min-height: 16mm;
+  margin: 2.5mm 0 4mm;
+  background-image: repeating-linear-gradient(
+    to bottom,
+    transparent 0,
+    transparent 7.7mm,
+    var(--rr-rule) 7.7mm,
+    var(--rr-rule) 8mm
+  );
+}
+
+.rr-sign {
+  display: grid;
+  grid-template-columns: 1fr 60mm;
+  gap: 8mm;
+}
+
+.rr-sign > div {
+  display: flex;
+  align-items: flex-end;
+  gap: 2mm;
+}
+
+.rr-sign-label {
+  font-size: 2.6mm;
+  font-weight: 700;
+  letter-spacing: 0.2mm;
+  text-transform: uppercase;
+  white-space: nowrap;
+  color: var(--rr-ink-soft);
+}
+
+.rr-sign-rule {
+  flex: 1;
+  border-bottom: 0.3mm solid var(--rr-ink);
+  height: 5mm;
+}
+
+/* --------------------------------------------------------------------- */
+/* Screen only                                                            */
+/* --------------------------------------------------------------------- */
+
+/* The sheet is fixed at 210mm; a narrow viewport scrolls to it rather than
+   reflowing, because a reflowed A4 page is no longer the page that prints. */
+.rr-viewport {
+  overflow-x: auto;
+  padding: 6mm 0;
+  background: var(--rr-wash, #f4f5f8);
+}
+
+/* --------------------------------------------------------------------- */
+/* Print                                                                  */
+/* --------------------------------------------------------------------- */
+
+@page {
+  size: A4 portrait;
+  /* The sheet carries its own 13mm padding, so the page margin is the printer's
+     unprintable edge and nothing else. Doubling them would shrink the content
+     box and reflow every break that was checked on screen. */
+  margin: 0;
+}
+
+@media print {
+  html,
+  body {
+    height: auto !important;
+    overflow: visible !important;
+    background: #fff !important;
+  }
+
+  /* The application shell, hidden without touching any other page's markup:
+     the dashboard layout carries these two attributes and nothing else does.
+     Everything beside the main region — sidebar, mobile nav, top bar — goes,
+     and the scroll container that would otherwise clip the report to its own
+     height is unwound. */
+  [data-app-shell] {
+    display: block !important;
+    min-height: 0 !important;
+    height: auto !important;
+  }
+
+  [data-app-shell] > :not([data-app-body]) {
+    display: none !important;
+  }
+
+  [data-app-body] > :not([data-app-main]) {
+    display: none !important;
+  }
+
+  [data-app-main] {
+    display: block !important;
+    overflow: visible !important;
+    padding: 0 !important;
+    background: #fff !important;
+  }
+
+  /* The controls, the buttons and anything else that only makes sense on a
+     screen. Marked in the markup rather than guessed at from tag names. */
+  [data-print-hide] {
+    display: none !important;
+  }
+
+  .rr-viewport {
+    overflow: visible !important;
+    padding: 0 !important;
+    background: #fff !important;
+  }
+
+  .rr {
+    display: block;
+    gap: 0;
+  }
+
+  /* The sheet keeps its screen geometry exactly — same width, same 13mm
+     padding — so what was checked on screen is what comes out of the printer.
+     `@page`'s margin is 0 precisely so that the sheet's own padding *is* the
+     page margin; setting both would shrink the content box and reflow every
+     break. */
+  .rr-sheet {
+    box-shadow: none;
+    /* 296, not 297. The page box is exactly 297mm tall with a zero margin, and
+       a sheet of exactly that height is one rounding error away from pushing a
+       blank page out between every pair. A millimetre of slack is invisible
+       and cannot do that. */
+    height: 296mm;
+    break-after: page;
+  }
+
+  /* The last sheet may be longer than a page — a rep with a hundred missed
+     visits — and a fixed height would clip the overflow rather than carry it
+     onto another page. It is the one sheet allowed to grow. */
+  .rr-sheet:last-child {
+    height: auto;
+    min-height: 296mm;
+    break-after: auto;
+  }
+
+  /* Keep the ink. Without this most browsers drop background fills when
+     printing and the KPI grid loses its rules, the score card loses its gold
+     edge, and the charts lose their bars. */
+  .rr,
+  .rr * {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  /* Nothing may straddle a break except the missed-visit list, which is
+     allowed to run on rather than be truncated. */
+  .rr-block,
+  .rr-two > section,
+  .rr-score,
+  .rr-kpis,
+  .rr-strip {
+    break-inside: avoid;
+  }
+
+  .rr-missed,
+  .rr-missed-split,
+  .rr-missed table,
+  .rr-missed tbody {
+    break-inside: auto;
+  }
+
+  .rr-h2 {
+    break-after: avoid;
+  }
+}
