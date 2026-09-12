@@ -92,6 +92,14 @@ export type MissedVisit = {
   plannedDate: string;
   /** Null means the application recorded no reason — not that there was none. */
   reason: string | null;
+  /**
+   * When the rep went back, or null if they never did.
+   *
+   * The earliest closed visit at the store by this rep on or after the planned
+   * date. Around half of every missed visit on the live data has one, which is
+   * why a flat list of misses read about twice as bad as the truth.
+   */
+  visitedAt: string | null;
   lastVisitAt: string | null;
   previousSales: number | null;
 };
@@ -215,6 +223,7 @@ export async function fetchRepReport(
       city: (m.city as string | null) ?? null,
       plannedDate: String(m.planned_date),
       reason: (m.reason as string | null) ?? null,
+      visitedAt: (m.visited_at as string | null) ?? null,
       lastVisitAt: (m.last_visit_at as string | null) ?? null,
       previousSales: num(m.previous_sales),
     })),
@@ -484,8 +493,14 @@ export function storesNeedingAttention(
 
   // 1. Missed a visit at a shop with money behind it. Value is this period's
   //    sales where there are any, and otherwise the last order before the miss.
+  /** Stores where every missed visit was later caught up. Not a problem. */
+  const wentBack = new Set(
+    [...new Set(missed.map((m) => m.storeId))].filter((id) =>
+      missed.filter((m) => m.storeId === id).every((m) => m.visitedAt !== null)
+    )
+  );
   const valued = stores
-    .filter((s) => s.missed > 0)
+    .filter((s) => s.missed > 0 && !wentBack.has(s.storeId))
     .map((s) => ({ store: s, value: Math.max(s.salesNet, previousByStore.get(s.storeId) ?? 0) }))
     .filter((r) => r.value > 0)
     .sort((a, b) => b.value - a.value);
@@ -493,7 +508,7 @@ export function storesNeedingAttention(
     add(
       store,
       1,
-      `Missed ${store.missed} planned visit${store.missed === 1 ? "" : "s"} — ${money(value)} in recent sales`
+      `Missed ${store.missed} planned visit${store.missed === 1 ? "" : "s"} and never went back — ${money(value)} in recent sales`
     );
   }
 
@@ -598,15 +613,25 @@ export function managementSummary(
     );
   }
   if (s.missedVisits > 0) {
+    const neverWentBack = missed.filter((m) => m.visitedAt === null).length;
+    // A shop worth calling out is one with money behind it that **nobody went
+    // back to**. Counting the ones the rep returned to would put stores in the
+    // management summary that were served four days later, which is the
+    // overstatement this whole column exists to remove.
     const highValue = new Set(
       missed
-        .filter((m) => (m.previousSales ?? 0) >= HIGH_VALUE_MISS)
+        .filter((m) => m.visitedAt === null && (m.previousSales ?? 0) >= HIGH_VALUE_MISS)
         .map((m) => m.storeId)
     ).size;
+    const caught = s.missedVisits - neverWentBack;
+    const missedClause =
+      caught > 0
+        ? `${s.missedVisits} planned visit${s.missedVisits === 1 ? " was" : "s were"} missed on the day, ${caught} of which the rep went back for`
+        : `${s.missedVisits} planned visit${s.missedVisits === 1 ? " was" : "s were"} missed`;
     const clause =
       highValue > 0
-        ? `${s.missedVisits} planned visit${s.missedVisits === 1 ? " was" : "s were"} missed, including ${highValue} store${highValue === 1 ? "" : "s"} with more than ${moneyShort(HIGH_VALUE_MISS)} in previous sales`
-        : `${s.missedVisits} planned visit${s.missedVisits === 1 ? " was" : "s were"} missed`;
+        ? `${missedClause} — ${highValue} store${highValue === 1 ? "" : "s"} with more than ${moneyShort(HIGH_VALUE_MISS)} in previous sales ${highValue === 1 ? "was" : "were"} never returned to`
+        : missedClause;
     second.push(second.length > 0 ? `but ${clause}` : capitalise(clause));
   }
   if (second.length > 0) sentences.push(`${second.join(", ")}.`);

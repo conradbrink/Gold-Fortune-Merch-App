@@ -543,6 +543,14 @@
   font-weight: 600;
 }
 
+/* "Never" is the one word in this table a manager must not skim past, so it
+   carries the alert colour and the weight. A date in the same column is a
+   store that was served late, which is ordinary and reads as ordinary. */
+.rr-never {
+  font-weight: 700;
+  color: var(--rr-warn);
+}
+
 .rr-good {
   margin: 0;
   padding: 3mm;

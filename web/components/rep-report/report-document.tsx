@@ -64,6 +64,14 @@ export function RepPerformanceReport({
     summary.plannedVisits > 0 ? summary.completedPlanned / summary.plannedVisits : null;
   const salesPerVisit =
     summary.completedVisits > 0 ? summary.salesNet / summary.completedVisits : null;
+  /**
+   * Missed on the day and never gone back to.
+   *
+   * The number that matters. A flat "79 missed" counts a store the rep
+   * returned to on Thursday the same as one nobody has seen since — and on the
+   * live data about half of every missed visit is the first kind.
+   */
+  const neverReturned = missed.filter((m) => m.visitedAt === null).length;
   const plannedStores = stores.filter((s) => s.planned > 0).length;
   const coveredStores = stores.filter((s) => s.planned > 0 && s.completed > 0).length;
 
@@ -121,7 +129,11 @@ export function RepPerformanceReport({
               label="Visits missed"
               value={String(summary.missedVisits)}
               emphasis={summary.missedVisits > 0 ? "warn" : undefined}
-              note="Planned visits not completed"
+              note={
+                summary.missedVisits > 0
+                  ? `${neverReturned} never returned to · ${summary.missedVisits - neverReturned} caught up later`
+                  : "Planned visits not completed"
+              }
             />
             <Kpi
               label="Sales per visit"
@@ -523,6 +535,7 @@ function MissedStores({ missed }: { missed: MissedVisit[] }) {
     );
   }
 
+  const neverReturned = missed.filter((m) => m.visitedAt === null).length;
   const twoColumn = missed.length >= MISSED_TWO_COLUMN_FROM;
   const half = Math.ceil(missed.length / 2);
   const columns = twoColumn ? [missed.slice(0, half), missed.slice(half)] : [missed];
@@ -532,8 +545,9 @@ function MissedStores({ missed }: { missed: MissedVisit[] }) {
       <h2 className="rr-h2">
         Stores missed
         <span className="rr-h2-note">
-          {missed.length} planned visit{missed.length === 1 ? "" : "s"} not completed ·
-          highest previous sales first · every one is listed
+          {missed.length} planned visit{missed.length === 1 ? "" : "s"} not completed on the
+          day · <strong>{neverReturned} never returned to</strong>, listed first ·
+          every one is shown
         </span>
       </h2>
       <div className={twoColumn ? "rr-missed rr-missed-split" : "rr-missed"}>
@@ -543,8 +557,8 @@ function MissedStores({ missed }: { missed: MissedVisit[] }) {
               <tr>
                 <th>Store</th>
                 <th>Planned</th>
+                <th>Went back</th>
                 <th>Reason</th>
-                <th>Last visit</th>
                 <th className="rr-num">Prev. sales</th>
               </tr>
             </thead>
@@ -555,10 +569,17 @@ function MissedStores({ missed }: { missed: MissedVisit[] }) {
                       place where a second line per row costs a page. */}
                   <td className="rr-store">{m.storeName}</td>
                   <td>{shortDate(m.plannedDate)}</td>
+                  {/* The column that changes what this table means. "Never"
+                      is the finding; a date is a store that was served late.
+                      It replaces "Last visit" — the last visit *before* the
+                      planned day answers a question nobody was asking once
+                      this one is on the page. */}
+                  <td className={m.visitedAt ? undefined : "rr-never"}>
+                    {m.visitedAt ? shortDate(m.visitedAt) : "Never"}
+                  </td>
                   <td className={m.reason ? undefined : "rr-row-muted"}>
                     {m.reason ?? "Reason not recorded"}
                   </td>
-                  <td>{m.lastVisitAt ? shortDate(m.lastVisitAt) : "—"}</td>
                   <td className="rr-num">
                     {m.previousSales === null ? "—" : moneyShort(m.previousSales)}
                   </td>
