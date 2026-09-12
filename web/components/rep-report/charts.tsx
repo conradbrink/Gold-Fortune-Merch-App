@@ -182,7 +182,11 @@ export function PlannedVsCompletedChart({ days }: { days: RepDay[] }) {
                 <text x={cx} y={H - 12} textAnchor="middle" fontSize={9} fill={LABEL}>
                   {dayLabel(d.day)}
                 </text>
-                <text x={cx} y={H - 3} textAnchor="middle" fontSize={8} fill={RULE}>
+                {/* LABEL, not RULE. The weekday is text and RULE is a
+                    hairline grey — about 1.9:1 on the white sheet, which is
+                    unreadable on screen and close to invisible in print. The
+                    smaller size still separates it from the date above. */}
+                <text x={cx} y={H - 3} textAnchor="middle" fontSize={8} fill={LABEL}>
                   {weekdayInitial(d.day)}
                 </text>
               </>

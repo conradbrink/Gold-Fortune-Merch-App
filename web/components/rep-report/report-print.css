@@ -3,8 +3,18 @@
  *
  * One stylesheet rather than Tailwind utilities in the markup, because every
  * rule here has a print counterpart a few lines below it and the two have to be
- * read together. It is imported by the report page only, so the `[data-app-*]`
- * rules never apply to any other screen.
+ * read together.
+ *
+ * ⚠️ **Being imported by one page does not scope it to that page.** The App
+ * Router keeps a route's global stylesheet loaded after you navigate away —
+ * deliberately, to avoid a flash on the way back — so every rule here is live
+ * on every dashboard screen the manager visits afterwards. The `.rr-*` rules
+ * are harmless, because nothing else carries those classes. The shell rules
+ * are not: unscoped, they would strip the sidebar from a printed Orders page.
+ * They are therefore under `body[data-rep-report]`, which the report page sets
+ * while it is mounted and removes when it is not. `@page` cannot be scoped by
+ * a selector at all, so it does not live here — the page injects and removes
+ * it. See `app/(dashboard)/reports/rep-performance/page.tsx`.
  *
  * Three things it is deliberately built around:
  *
@@ -764,14 +774,6 @@
 /* Print                                                                  */
 /* --------------------------------------------------------------------- */
 
-@page {
-  size: A4 portrait;
-  /* The sheet carries its own 13mm padding, so the page margin is the printer's
-     unprintable edge and nothing else. Doubling them would shrink the content
-     box and reflow every break that was checked on screen. */
-  margin: 0;
-}
-
 @media print {
   html,
   body {
@@ -785,21 +787,21 @@
      Everything beside the main region — sidebar, mobile nav, top bar — goes,
      and the scroll container that would otherwise clip the report to its own
      height is unwound. */
-  [data-app-shell] {
+  body[data-rep-report] [data-app-shell] {
     display: block !important;
     min-height: 0 !important;
     height: auto !important;
   }
 
-  [data-app-shell] > :not([data-app-body]) {
+  body[data-rep-report] [data-app-shell] > :not([data-app-body]) {
     display: none !important;
   }
 
-  [data-app-body] > :not([data-app-main]) {
+  body[data-rep-report] [data-app-body] > :not([data-app-main]) {
     display: none !important;
   }
 
-  [data-app-main] {
+  body[data-rep-report] [data-app-main] {
     display: block !important;
     overflow: visible !important;
     padding: 0 !important;
@@ -808,7 +810,7 @@
 
   /* The controls, the buttons and anything else that only makes sense on a
      screen. Marked in the markup rather than guessed at from tag names. */
-  [data-print-hide] {
+  body[data-rep-report] [data-print-hide] {
     display: none !important;
   }
 

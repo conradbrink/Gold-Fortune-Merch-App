@@ -682,9 +682,17 @@ export function percentOf100(v: number | null | undefined, digits = 0): string {
  */
 export function clockTime(seconds: number | null | undefined): string {
   if (seconds === null || seconds === undefined || !Number.isFinite(seconds)) return "—";
-  const total = Math.round(seconds);
+  // Clamped, not wrapped, and not blanked.
+  //
+  // Every input is an average of times-of-day, so it is always under 86,400 —
+  // but `round` can land exactly on it, and `% 24` then printed a rep who
+  // closes at 23:59 every night as starting their day at **00:00**, which is
+  // the opposite of the truth. An em dash would be no better: this report uses
+  // that to mean "nothing measured this", and something was measured. 23:59 is
+  // within a second of the real figure and cannot be misread.
+  const total = Math.min(Math.round(seconds), 86_399);
   if (total < 0) return "—";
-  const h = Math.floor(total / 3600) % 24;
+  const h = Math.floor(total / 3600);
   const m = Math.floor((total % 3600) / 60);
   return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
 }

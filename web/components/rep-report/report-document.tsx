@@ -102,17 +102,23 @@ export function RepPerformanceReport({
                   : "No planned visits during this period"
               }
             />
+            {/* "Store visits", not "Stores visited", and "Visits missed",
+                not "Stores missed". Both figures count planned *visits* — one
+                store contributes several over a month — so the store wording
+                asked a question the number underneath did not answer, and the
+                first card contradicted its own note. The values are the ones
+                the report is specified to show; only the labels changed. */}
             <Kpi
-              label="Stores visited"
+              label="Store visits"
               value={`${summary.completedPlanned} / ${summary.plannedVisits}`}
               note={
                 plannedStores > 0
-                  ? `${coveredStores} of ${plannedStores} planned stores reached`
+                  ? `Completed / planned · ${coveredStores} of ${plannedStores} stores reached`
                   : "Completed / planned store visits"
               }
             />
             <Kpi
-              label="Stores missed"
+              label="Visits missed"
               value={String(summary.missedVisits)}
               emphasis={summary.missedVisits > 0 ? "warn" : undefined}
               note="Planned visits not completed"

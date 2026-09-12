@@ -94,8 +94,40 @@ function orderTerritories(rows: Territory[]): { id: string; label: string }[] {
   return out;
 }
 
+/**
+ * The A4 page box, and the marker that scopes the shell's print rules.
+ *
+ * Both live here rather than in `report-print.css` because the App Router does
+ * not unload a route's global stylesheet when you navigate away from it. Left
+ * in the stylesheet, `@page { margin: 0 }` would still be in force when the
+ * manager printed the Orders page an hour later, and their output would run
+ * into the printer's unprintable edge. `@page` cannot be narrowed by a
+ * selector, so the only way to scope it is to add and remove the rule itself.
+ *
+ * The body marker is the same idea for the rules that *can* be scoped: the
+ * stylesheet hides the sidebar and the top bar only under
+ * `body[data-rep-report]`, which exists exactly while this page is mounted.
+ */
+function usePrintPageBox() {
+  useEffect(() => {
+    document.body.dataset.repReport = "true";
+    const style = document.createElement("style");
+    style.media = "print";
+    // The sheet carries its own 13mm padding, so the page margin is the
+    // printer's unprintable edge and nothing else. Setting both would shrink
+    // the content box and reflow every break that was measured on screen.
+    style.textContent = "@page { size: A4 portrait; margin: 0; }";
+    document.head.appendChild(style);
+    return () => {
+      delete document.body.dataset.repReport;
+      style.remove();
+    };
+  }, []);
+}
+
 export default function RepPerformancePage() {
   const supabase = createClient();
+  usePrintPageBox();
 
   const [reps, setReps] = useState<Rep[]>([]);
   const [territories, setTerritories] = useState<Territory[]>([]);
@@ -134,6 +166,11 @@ export default function RepPerformancePage() {
           supabase.auth.getUser(),
         ]);
         if (repRows.error) throw new Error(repRows.error.message);
+        // Checked too, and not only the reps: a failed territories read left
+        // `terrRows.data` null, the picker showing nothing but "All
+        // territories", and the manager with no way to know the filter list
+        // had not loaded rather than being empty.
+        if (terrRows.error) throw new Error(terrRows.error.message);
         setReps((repRows.data ?? []) as Rep[]);
         setTerritories((terrRows.data ?? []) as Territory[]);
         if (name) setOrgName(name);
