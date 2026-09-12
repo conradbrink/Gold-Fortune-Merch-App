@@ -15,5 +15,13 @@
 # Node
 node_modules/
 
+# Next.js build output.
+#
+# `web/.gitignore` covers `web/.next`, which is where it belongs. This entry is
+# for the one at the *root*, which appears whenever `next build` is run from
+# here instead of from `web/` — it is not a real build, just a trace directory,
+# and it has already been committed once by a `git add -A`.
+.next/
+
 # Logs
 *.log

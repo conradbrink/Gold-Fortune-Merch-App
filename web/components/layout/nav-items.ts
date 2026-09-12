@@ -26,6 +26,7 @@ import {
   ShieldAlert,
   SlidersHorizontal,
   UserRound,
+  UserCheck,
   ShieldCheck,
   Building2,
 } from "lucide-react";
@@ -92,6 +93,16 @@ export const navGroups: NavGroup[] = [
     items: [
       { href: "/sales", label: "Sales", icon: TrendingUp, permission: "insights" },
       { href: "/reports", label: "Reports", icon: BarChart3, permission: "insights" },
+      // Directly under Reports, because it is one: the same visits, orders and
+      // audits, cut to one rep and one period and laid out for printing rather
+      // than for browsing. `canAccessPath` resolves `/reports/rep-performance`
+      // through the `/reports` prefix, so it needs no entry of its own there.
+      {
+        href: "/reports/rep-performance",
+        label: "Rep performance",
+        icon: UserCheck,
+        permission: "insights",
+      },
       // Moved out of Warehouse & Fulfilment. It reads as warehouse work
       // because of its URL, but it ranks staff by fulfilment time and
       // accuracy — which is the same kind of thing as Sales, and not the

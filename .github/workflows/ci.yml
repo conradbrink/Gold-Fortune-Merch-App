@@ -127,11 +127,20 @@ jobs:
         # Gated at `critical`, not `high`, and that is a deliberate choice
         # rather than laziness.
         #
-        # As of 30 July 2026 the tree has 12 high advisories from three roots:
-        # brace-expansion and postcss (both reached only through the eslint and
-        # Tailwind build chains — they never ship to a user) and sharp, which
-        # Next uses for server-side image optimisation and is the only one with
-        # real runtime exposure.
+        # As of 12 September 2026 the tree has 4 high advisories, from four
+        # roots — traced with `npm explain`, because the July version of this
+        # note guessed at where they came from:
+        #
+        #   brace-expansion  minimatch <- @ts-morph/common <- ts-morph <- shadcn
+        #   fast-uri         ajv <- @modelcontextprotocol/sdk <- shadcn
+        #   js-yaml          @eslint/eslintrc <- eslint
+        #   nanoid           postcss, required by @tailwindcss/postcss AND next
+        #
+        # Sharp is no longer among them. Taking next 16.3.5 for the two
+        # critical advisories brought sharp 0.35.4 and libvips 1.3.3 with it,
+        # which clears the libheif and libvips CVEs — the one root of the three
+        # named in July that genuinely had runtime exposure — and dropped the
+        # postcss Next used to vendor.
         #
         # Gating at `high` would therefore fail every pull request from the
         # first day, and a permanently red gate is one everybody learns to
@@ -139,7 +148,7 @@ jobs:
         # passes today, so this blocks on the things that genuinely must stop a
         # merge, while the report below keeps the highs visible.
         #
-        # Raise this to `high` once those three are resolved.
+        # Raise this to `high` once the remaining four are resolved.
         run: npm audit --audit-level=critical
 
       - name: Report high and moderate advisories
