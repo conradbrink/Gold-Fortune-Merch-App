@@ -3,6 +3,10 @@
     {
       "path": "/api/workday/road-distance",
       "schedule": "0 21 * * *"
+    },
+    {
+      "path": "/api/workday/auto-end",
+      "schedule": "30 17 * * *"
     }
   ]
 }

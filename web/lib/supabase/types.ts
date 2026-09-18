@@ -3607,6 +3607,7 @@ export type Database = {
       }
       workday_sessions: {
         Row: {
+          auto_ended_at: string | null
           client_generated_id: string
           created_at: string
           distance_meters: number
@@ -3627,6 +3628,7 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          auto_ended_at: string | null
           client_generated_id: string
           created_at?: string
           distance_meters?: number
@@ -3647,6 +3649,7 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          auto_ended_at?: string | null
           client_generated_id?: string
           created_at?: string
           distance_meters?: number
@@ -5365,6 +5368,17 @@ export type Database = {
       can_see_file: {
         Args: { p_audience: string; p_file_id: string }
         Returns: boolean
+      }
+      auto_end_overdue_workdays: {
+        Args: { p_cutoff?: string }
+        Returns: {
+          session_id: string
+          rep_id: string
+          started_at: string
+          ended_at: string
+          distance_meters: number
+          legs: number
+        }[]
       }
       close_abandoned_workday: { Args: { p_session_id: string }; Returns: Json }
       compliance_trends: {

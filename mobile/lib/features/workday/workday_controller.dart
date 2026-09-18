@@ -3,9 +3,12 @@ import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:geolocator/geolocator.dart';
 
+import '../../core/location_service.dart';
 import '../../core/location_tracking.dart';
+import '../../core/monitoring.dart';
 import '../../core/providers.dart';
 import '../../data/models/workday_session.dart';
+import 'workday_auto_end.dart';
 import 'workday_trail.dart';
 
 export '../../core/location_tracking.dart'
@@ -46,7 +49,10 @@ class WorkdayController extends AsyncNotifier<WorkdaySession?> {
         if (ref.mounted) ref.notifyListeners();
       },
     );
-    ref.onDispose(() => trail.detach(_token));
+    ref.onDispose(() {
+      trail.detach(_token);
+      _autoEndTimer?.cancel();
+    });
 
     final user = ref.watch(currentUserProvider);
     if (user == null) {
@@ -62,6 +68,9 @@ class WorkdayController extends AsyncNotifier<WorkdaySession?> {
       // mid-round starts recording again the moment the app is reopened — and
       // leaves a trail that is already running alone.
       unawaited(trail.ensureRunning(reason: 'build'));
+      // And ends the day at 19:30 — at once, if a phone woken the next
+      // morning is still holding yesterday open.
+      _armAutoEnd(session);
     } else {
       unawaited(trail.stop(reason: 'no-open-day'));
       // Only worth asking when there is no open day: a rep with a session
@@ -82,6 +91,43 @@ class WorkdayController extends AsyncNotifier<WorkdaySession?> {
   /// collapsing them would put a Start button in front of a rep who has
   /// already gone home.
   bool get isClosedForToday => _closedToday;
+
+  bool _autoEnded = false;
+
+  /// True when today's day was ended by the 19:30 rule rather than by the
+  /// rep, so the banner can say so instead of leaving them to wonder.
+  bool get wasAutoEnded => _autoEnded;
+
+  Timer? _autoEndTimer;
+
+  /// Schedules the day to end itself at the cut-off in [workday_auto_end.dart].
+  ///
+  /// A timer on this instance, re-armed by every build: Riverpod recreates the
+  /// controller on rebuild and `onDispose` cancels the old one, so there is
+  /// never more than one. A `Timer` in a suspended isolate fires when the app
+  /// comes forward, and a phone that was killed is caught by the next
+  /// `build` — the wait is zero for a day already past its cut-off.
+  void _armAutoEnd(WorkdaySession session) {
+    _autoEndTimer?.cancel();
+    _autoEndTimer = Timer(
+      untilAutoEnd(now: DateTime.now(), startedAt: session.startedAt),
+      () => unawaited(_autoEnd()),
+    );
+  }
+
+  Future<void> _autoEnd() async {
+    if (!ref.mounted) return;
+    final session = state.value;
+    if (session == null) return;
+    // The clock can have moved under a long timer. Ask again rather than
+    // trust that firing means due.
+    if (!isPastAutoEnd(now: DateTime.now(), startedAt: session.startedAt)) {
+      _armAutoEnd(session);
+      return;
+    }
+    Monitoring.event('workday.auto_end');
+    await endWorkday(automatic: true);
+  }
 
   /// One position from the stream, rate-limited into at most one written ping.
   ///
@@ -153,31 +199,49 @@ class WorkdayController extends AsyncNotifier<WorkdaySession?> {
       trail.lastPingPosition = null;
       trail.lastPingAt = null;
       await trail.ensureRunning(reason: 'start');
+      _autoEnded = false;
+      _armAutoEnd(session);
       return session;
     });
   }
 
-  Future<void> endWorkday() async {
+  /// Ends the open day.
+  ///
+  /// [automatic] is the 19:30 rule: the day ends as of the cut-off, not now,
+  /// with the last position the trail saw rather than a fresh fix — the phone
+  /// may be in a pocket, and a fix it cannot get must not stop the day from
+  /// ending. A rep pressing End gets the old behaviour: a fresh fix, and the
+  /// location error surfaced if there is one.
+  Future<void> endWorkday({bool automatic = false}) async {
     final profile = ref.read(profileProvider).value;
     final session = state.value;
     if (profile == null || session == null) return;
+    _autoEndTimer?.cancel();
 
     state = const AsyncLoading();
     state = await AsyncValue.guard(() async {
+      final trail = _trail;
       final repo = ref.read(workdayRepositoryProvider);
       await repo.endWorkday(
         orgId: profile.orgId,
         repId: profile.id,
         session: session,
         distanceMeters: session.distanceMeters,
+        endedAt: automatic
+            ? autoEndCutoffFor(session.startedAt)
+            : DateTime.now(),
+        position: automatic
+            ? trail.lastPingPosition
+            : await LocationService.getCurrentPosition(),
+        automatic: automatic,
       );
-      final trail = _trail;
-      await trail.stop(reason: 'end');
+      await trail.stop(reason: automatic ? 'auto-end' : 'end');
       trail.lastPingPosition = null;
       trail.lastPingAt = null;
       // Set immediately so the banner flips to "finished for today" on this
       // frame, rather than only after the next rebuild re-reads it.
       _closedToday = true;
+      _autoEnded = automatic;
       return null;
     });
   }
