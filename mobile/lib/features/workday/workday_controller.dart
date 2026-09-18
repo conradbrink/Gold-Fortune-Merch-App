@@ -1,48 +1,56 @@
 import 'dart:async';
 
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:geolocator/geolocator.dart';
 
 import '../../core/location_tracking.dart';
 import '../../core/providers.dart';
 import '../../data/models/workday_session.dart';
+import 'workday_trail.dart';
 
 export '../../core/location_tracking.dart'
     show kLocationPingInterval, LocationTrackingMode;
 
 class WorkdayController extends AsyncNotifier<WorkdaySession?> {
-  StreamSubscription<Position>? _pingSub;
-  Position? _lastPingPosition;
-  /// When the last ping was *written*, to enforce [kMinPingSpacing].
-  DateTime? _lastPingAt;
-  LocationTrackingMode _trackingMode = LocationTrackingMode.unavailable;
+  /// Names this instance to the trail. Riverpod 3 makes a new notifier on
+  /// every rebuild, and the trail must know which one to stop listening to.
+  final Object _token = Object();
 
-  /// Bumped by every start and every stop, so an in-flight start can tell that
-  /// it has been overtaken. See [_startTracking].
-  int _trackingGeneration = 0;
+  WorkdayTrail get _trail => ref.read(workdayTrailProvider);
 
   /// How much of the trail this rep's permissions actually allow.
   ///
   /// Read by the banner so a rep granting only "while using the app" is told
   /// their route stops recording when they put the phone away, rather than the
   /// manager discovering the gap a week later.
-  LocationTrackingMode get trackingMode => _trackingMode;
+  LocationTrackingMode get trackingMode => _trail.mode;
 
   @override
   Future<WorkdaySession?> build() async {
     // Must outlive any one screen — navigating to a store shouldn't wipe the
     // active session or drop the location subscription.
     ref.keepAlive();
-    // `_stopTracking`, not a bare cancel: it bumps the generation first, so a
-    // `_startTracking` still inside `currentMode()` when the controller is
-    // disposed fails its next check instead of installing a subscription that
-    // nobody owns and nothing will ever cancel.
-    ref.onDispose(() => unawaited(_stopTracking()));
+
+    // The subscription lives on the trail, not here, and this is why: this
+    // method re-runs on every auth event, and the notifier is recreated with
+    // it. When the subscription was a field of the notifier, every rebuild
+    // cancelled it and opened another — in the background, where Android
+    // refuses the foreground service, and where nothing could see the refusal
+    // (FLUTTER-C). The trail keeps one subscription across all of that; a
+    // controller only tells it who to deliver positions to.
+    final trail = _trail;
+    trail.attach(
+      _token,
+      onPosition: _onPosition,
+      onModeChanged: () {
+        if (ref.mounted) ref.notifyListeners();
+      },
+    );
+    ref.onDispose(() => trail.detach(_token));
 
     final user = ref.watch(currentUserProvider);
     if (user == null) {
-      unawaited(_stopTracking());
+      unawaited(trail.stop(reason: 'signed-out'));
       return null;
     }
 
@@ -51,10 +59,11 @@ class WorkdayController extends AsyncNotifier<WorkdaySession?> {
 
     if (session != null) {
       // Resubscribes after a cold start, so a rep whose phone was killed
-      // mid-round starts recording again the moment the app is reopened.
-      unawaited(_startTracking());
+      // mid-round starts recording again the moment the app is reopened — and
+      // leaves a trail that is already running alone.
+      unawaited(trail.ensureRunning(reason: 'build'));
     } else {
-      unawaited(_stopTracking());
+      unawaited(trail.stop(reason: 'no-open-day'));
       // Only worth asking when there is no open day: a rep with a session
       // running is plainly not finished, and this would be a wasted request
       // on every rebuild.
@@ -74,188 +83,17 @@ class WorkdayController extends AsyncNotifier<WorkdaySession?> {
   /// already gone home.
   bool get isClosedForToday => _closedToday;
 
-  /// Subscribes to the platform's position stream for the open day.
-  ///
-  /// Replaces a `Timer.periodic`, which is the whole point of this change: a
-  /// Dart timer stops when Android suspends the process, and measurement against
-  /// production showed the old one delivering **3.6%** of the pings it promised,
-  /// with 14 of 23 sessions recording none at all. The platform keeps sampling
-  /// where a timer cannot — see `core/location_tracking.dart` for what that does
-  /// and does not guarantee.
-  Future<void> _startTracking() async {
-    // Claim this attempt. `currentMode()` is a channel round trip, and `build()`
-    // re-runs on sign-out — so a start begun before sign-out can resume *after*
-    // `_stopTracking` has already cancelled everything, and assign a fresh
-    // subscription with nobody left to own it. That subscription holds the
-    // foreground service open: a rep who has signed out keeps a "Workday in
-    // progress" notice and keeps sampling GPS. The token is what makes a start
-    // abandonable partway through.
-    final generation = ++_trackingGeneration;
-    bool superseded() => generation != _trackingGeneration;
-
-    await _cancelPings();
-    if (superseded()) return;
-
-    _trackingMode = await LocationTracking.currentMode();
-    if (superseded()) return;
-
-    // While `currentMode()` was out, an older start may have listened and,
-    // finding itself superseded, queued its own cancel. Listening now would
-    // overlap that cancel — the exact race this controller exists to avoid —
-    // so wait for the queue to drain, then ask once more whether this start
-    // is still the one that matters.
-    await (_cancelling ?? Future<void>.value());
-    if (superseded()) return;
-
-    final stream = LocationTracking.stream(_trackingMode);
-    if (stream == null) {
-      ref.notifyListeners();
-      return;
-    }
-
-    final sub = stream.listen(
-      _onPosition,
-      // A stream error is how a mid-day revocation arrives: permission taken
-      // away, or location services switched off, while the day is open. Dropping
-      // it silently left the banner still promising "recording every 5 min" after
-      // recording had stopped — the one thing the notice exists to prevent.
-      //
-      // The subscription is deliberately *not* torn down: a transient fix
-      // failure must not end the day, and `cancelOnError: false` keeps the
-      // stream alive so it resumes if the rep restores the grant.
-      // Synchronous, and the refresh fired from inside it. `Stream.listen` does
-      // not await what `onError` returns, so an `async` callback that throws —
-      // `currentMode()` hitting a dead platform channel, say — becomes an
-      // unhandled asynchronous error and takes the zone down. The work is
-      // started here and its failure caught there.
-      onError: (_) {
-        unawaited(_refreshTrackingMode());
-      },
-      cancelOnError: false,
-    );
-
-    // Listening is itself an await-free step, but a stop can have landed while
-    // the stream was being built. Cancelling here rather than keeping it is the
-    // difference between a stray service and none — and it goes through the
-    // same queue as every other cancel, so the start that superseded this one
-    // waits for it before listening.
-    if (superseded()) {
-      await _enqueueCancel(sub);
-      return;
-    }
-
-    _pingSub = sub;
-    ref.notifyListeners();
-  }
-
-  /// Re-reads the grant after the stream has complained.
-  ///
-  /// A stream error is how a mid-day revocation arrives — permission taken away,
-  /// or location services switched off, while the day is open. Left unread, the
-  /// banner goes on promising "recording your route every 5 min" after recording
-  /// has stopped, which is the false reassurance the notice exists to remove.
-  ///
-  /// Its own failure is swallowed on purpose: not knowing the mode is no reason
-  /// to end a rep's day, and the next error or restart asks again.
-  Future<void> _refreshTrackingMode() async {
-    try {
-      final mode = await LocationTracking.currentMode();
-      if (mode != _trackingMode) {
-        _trackingMode = mode;
-        ref.notifyListeners();
-      }
-    } catch (_) {
-      // Deliberately ignored — see above.
-    }
-  }
-
-  /// Ends the subscription, which is what stops the foreground service and
-  /// clears its notification. A rep who has finished for the day must not be
-  /// left with a "Workday in progress" notice, or a service still sampling GPS.
-  Future<void> _stopTracking() async {
-    // Invalidate any start still in flight *before* awaiting, or it can finish
-    // afterwards and hand back a subscription this stop was meant to prevent.
-    _trackingGeneration++;
-    await _cancelPings();
-  }
-
-  /// The cancel still in flight, if any. See [_cancelPings].
-  Future<void>? _cancelling;
-
-  /// Releases the current subscription and waits for the platform to agree.
-  ///
-  /// Every caller awaits the *same* future. `_pingSub` is cleared
-  /// synchronously so nothing else can grab the subscription, but a cancel on
-  /// geolocator's Android side is a channel round trip, and a
-  /// `_startTracking` that came in behind an earlier cancel used to find
-  /// `_pingSub` already null, skip straight past it, and open a new stream
-  /// while the old one was still being torn down. Overlapping a listen with
-  /// an unfinished cancel is the race the "No active stream" error lives in.
-  /// Chaining onto the in-flight cancel means a replacement subscription is
-  /// never created until the previous one has actually gone.
-  Future<void> _cancelPings() {
-    final sub = _pingSub;
-    _pingSub = null;
-    if (sub == null) return _cancelling ?? Future<void>.value();
-    return _enqueueCancel(sub);
-  }
-
-  /// Appends one cancel to the queue and returns a future for the whole queue.
-  ///
-  /// The one place a cancel is allowed to start. `_cancelPings` and the
-  /// superseded-start path both come through here, which is what lets
-  /// `_startTracking` wait on `_cancelling` and know it has waited for
-  /// *every* cancel, not only the ones that went through `_pingSub`.
-  Future<void> _enqueueCancel(StreamSubscription<Position> sub) {
-    final previous = _cancelling ?? Future<void>.value();
-    final next = previous.then((_) => _cancelSubscription(sub));
-    _cancelling = next;
-    return next.whenComplete(() {
-      if (identical(_cancelling, next)) _cancelling = null;
-    });
-  }
-
-  /// Cancels a position subscription, accepting that it may already be gone.
-  ///
-  /// geolocator's Android side throws `PlatformException(No active stream to
-  /// cancel)` when the stream it is asked to cancel never started — which is
-  /// what happens after Android refuses the foreground service (`Service.
-  /// startForeground() not allowed`, the app being in the background when the
-  /// controller rebuilt after a low-memory kill). The stream errors, the
-  /// platform side tears itself down, and the next cancel here has nothing to
-  /// cancel. That is the outcome a cancel wants, and 42 of them came off two
-  /// handsets in a week as unhandled errors (FLUTTER-C) for reporting it as a
-  /// failure.
-  ///
-  /// Only *that* exception is swallowed, matched on its message. A
-  /// `PlatformException` with any other story — a channel that is gone, a
-  /// plugin in a state nobody has seen — is still unknown, and rethrown so it
-  /// is still seen.
-  static Future<void> _cancelSubscription(
-      StreamSubscription<Position> sub) async {
-    try {
-      await sub.cancel();
-    } on PlatformException catch (e) {
-      if (!isAlreadyCancelled(e)) rethrow;
-      // Already stopped. Nothing to do and nothing to report.
-    }
-  }
-
-  /// Whether a cancel failed only because there was nothing left to cancel.
-  ///
-  /// Package-visible for the test; the message is geolocator's own text.
-  static bool isAlreadyCancelled(PlatformException e) =>
-      (e.message ?? '').contains('No active stream to cancel');
-
   /// One position from the stream, rate-limited into at most one written ping.
   ///
-  /// Now that sampling is time-based this is the *only* rate limit — the 75 m
-  /// distance filter that used to bound a stationary rep is gone, so without
+  /// Sampling is time-based, so this is the *only* rate limit — the 75 m
+  /// distance filter that used to bound a stationary rep is gone, and without
   /// [shouldRecordPing] every fix the platform produced would be written.
   Future<void> _onPosition(Position position) async {
+    if (!ref.mounted) return;
+    final trail = _trail;
     final now = DateTime.now();
-    if (!shouldRecordPing(now: now, lastPingAt: _lastPingAt)) return;
-    _lastPingAt = now;
+    if (!shouldRecordPing(now: now, lastPingAt: trail.lastPingAt)) return;
+    trail.lastPingAt = now;
     await _ping(position);
   }
 
@@ -265,22 +103,23 @@ class WorkdayController extends AsyncNotifier<WorkdaySession?> {
     if (session == null || profile == null) return;
 
     try {
+      final trail = _trail;
       final repo = ref.read(workdayRepositoryProvider);
       final result = await repo.recordIntervalPing(
         orgId: profile.orgId,
         repId: profile.id,
         sessionClientId: session.clientGeneratedId,
-        last: _lastPingPosition,
+        last: trail.lastPingPosition,
         position: position,
       );
-      _lastPingPosition = result.position;
+      trail.lastPingPosition = result.position;
       // Mileage accrues locally so it stays correct with no connection, and
       // is cached so a restart mid-day doesn't reset the odometer.
       final updated = session.copyWith(
         distanceMeters: session.distanceMeters + result.legMeters,
       );
       await repo.cacheActiveSession(updated);
-      state = AsyncData(updated);
+      if (ref.mounted) state = AsyncData(updated);
     } catch (_) {
       // A single failed write (offline, permission revoked mid-day) must not
       // tear down the subscription — the next position from the stream tries
@@ -310,9 +149,10 @@ class WorkdayController extends AsyncNotifier<WorkdaySession?> {
         orgId: profile.orgId,
         repId: profile.id,
       );
-      _lastPingPosition = null;
-      _lastPingAt = null;
-      await _startTracking();
+      final trail = _trail;
+      trail.lastPingPosition = null;
+      trail.lastPingAt = null;
+      await trail.ensureRunning(reason: 'start');
       return session;
     });
   }
@@ -331,9 +171,10 @@ class WorkdayController extends AsyncNotifier<WorkdaySession?> {
         session: session,
         distanceMeters: session.distanceMeters,
       );
-      await _stopTracking();
-      _lastPingPosition = null;
-      _lastPingAt = null;
+      final trail = _trail;
+      await trail.stop(reason: 'end');
+      trail.lastPingPosition = null;
+      trail.lastPingAt = null;
       // Set immediately so the banner flips to "finished for today" on this
       // frame, rather than only after the next rebuild re-reads it.
       _closedToday = true;
@@ -344,5 +185,5 @@ class WorkdayController extends AsyncNotifier<WorkdaySession?> {
 
 final workdayControllerProvider =
     AsyncNotifierProvider<WorkdayController, WorkdaySession?>(
-  WorkdayController.new,
-);
+      WorkdayController.new,
+    );
