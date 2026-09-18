@@ -194,23 +194,38 @@ class WorkdayRepository {
     return session;
   }
 
+  /// Ends the day as of [endedAt].
+  ///
+  /// [position] is where the rep was: a fresh fix when they pressed End, the
+  /// last one the trail saw when the day ended itself, or nothing at all.
+  /// Only a rep's own end writes a `workday_end` ping — an automatic end
+  /// happens at 19:30 whether or not the phone is awake, and a ping stamped
+  /// with whenever it did wake would put the rep somewhere at a time they
+  /// were not being tracked.
+  ///
+  /// [automatic] marks the row so the office can tell a day that ended itself
+  /// from one the rep closed; a rep's own end clears the mark, because it is
+  /// the one that stands even when the server closed the day first.
   Future<void> endWorkday({
     required String orgId,
     required String repId,
     required WorkdaySession session,
     required double distanceMeters,
+    required DateTime endedAt,
+    Position? position,
+    bool automatic = false,
   }) async {
-    final position = await LocationService.getCurrentPosition();
-    final endedAt = DateTime.now();
+    if (position != null && !automatic) {
+      await queuePing(
+        orgId: orgId,
+        repId: repId,
+        sessionClientId: session.clientGeneratedId,
+        position: position,
+        source: 'workday_end',
+      );
+    }
 
-    await queuePing(
-      orgId: orgId,
-      repId: repId,
-      sessionClientId: session.clientGeneratedId,
-      position: position,
-      source: 'workday_end',
-    );
-
+    final duration = endedAt.difference(session.startedAt).inSeconds;
     await _db.enqueue(
       entityType: OutboxType.workdayEnd,
       clientGeneratedId: session.clientGeneratedId,
@@ -218,10 +233,13 @@ class WorkdayRepository {
         'client_generated_id': session.clientGeneratedId,
         'changes': {
           'ended_at': endedAt.toUtc().toIso8601String(),
-          'end_lat': position.latitude,
-          'end_lng': position.longitude,
+          'end_lat': position?.latitude,
+          'end_lng': position?.longitude,
           'distance_meters': distanceMeters,
-          'duration_seconds': endedAt.difference(session.startedAt).inSeconds,
+          'duration_seconds': duration < 0 ? 0 : duration,
+          'auto_ended_at': automatic
+              ? DateTime.now().toUtc().toIso8601String()
+              : null,
         },
       }),
     );

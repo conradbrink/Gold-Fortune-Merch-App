@@ -190,6 +190,9 @@ class _WorkdayBannerState extends ConsumerState<WorkdayBanner> {
     // there is nothing to start until tomorrow.
     final finishedForToday = !active &&
         ref.watch(workdayControllerProvider.notifier).isClosedForToday;
+    final endedItself =
+        finishedForToday &&
+        ref.watch(workdayControllerProvider.notifier).wasAutoEnded;
     // Only the user's own start/end shows a busy label; the provider's first
     // load just disables the button briefly.
     final isLoading = _pending;
@@ -257,6 +260,10 @@ class _WorkdayBannerState extends ConsumerState<WorkdayBanner> {
                     Text(
                       active
                           ? _trackingLine(trackingMode)
+                          : endedItself
+                          ? 'Your workday was ended automatically at '
+                                '19:30. Your next workday can be started '
+                                'tomorrow.'
                           : finishedForToday
                               ? 'You have finished for today. Your next '
                                   'workday can be started tomorrow.'
