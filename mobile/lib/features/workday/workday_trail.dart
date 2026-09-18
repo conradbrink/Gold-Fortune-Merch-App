@@ -135,6 +135,10 @@ class WorkdayTrail {
   Future<void> restart({required String reason}) async {
     _generation++;
     await _cancelCurrent();
+    // A stop can land while that cancel is out. `_start` claims a fresh
+    // generation of its own, so the token alone would not notice — and the
+    // day would end with the foreground service still running.
+    if (!_wanted) return;
     await _start(reason);
   }
 
@@ -175,7 +179,9 @@ class WorkdayTrail {
     // foreground service open. The token is what makes a start abandonable
     // partway through.
     final generation = ++_generation;
-    bool superseded() => generation != _generation;
+    // Overtaken by a newer start or stop — or by the day ending, which is a
+    // stop whether or not its generation bump has been seen yet.
+    bool superseded() => generation != _generation || !_wanted;
 
     await _cancelCurrent();
     if (superseded()) return;

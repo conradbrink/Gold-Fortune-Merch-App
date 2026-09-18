@@ -35,13 +35,22 @@ class Harness {
   Harness({
     this.lifecycle = AppLifecycleState.resumed,
     this.mode = LocationTrackingMode.background,
+    this.cancelGate,
   }) {
     trail = WorkdayTrail(
       currentMode: () async => mode,
       openStream: (_) {
-        controller = StreamController<Position>.broadcast(
+        // Single-subscription on purpose: its `cancel()` waits for the
+        // `onCancel` future, as the platform channel's does, so the gate can
+        // hold a cancel open. A broadcast controller's would return at once.
+        controller = StreamController<Position>(
           onListen: () => opened++,
-          onCancel: () => cancelled++,
+          onCancel: () async {
+            cancelled++;
+            // A cancel on the Android side is a channel round trip; the gate
+            // lets a test hold one open and land something else meanwhile.
+            await cancelGate?.future;
+          },
         );
         return controller!.stream;
       },
@@ -51,6 +60,7 @@ class Harness {
   }
 
   late final WorkdayTrail trail;
+  final Completer<void>? cancelGate;
   AppLifecycleState? lifecycle;
   LocationTrackingMode mode;
   DateTime now = DateTime(2026, 9, 18, 8, 0);
@@ -248,6 +258,27 @@ void main() {
       expect(h.trail.isRunning, isFalse);
       // Whatever was opened has been closed again: no stray service.
       expect(h.opened, h.cancelled);
+    });
+
+    // CodeRabbit on #61: `restart` awaits its cancel, then `_start` claims a
+    // fresh generation — so a stop that landed during the cancel was not
+    // seen, and the day ended with the service still sampling.
+    test('a stop that lands during a restart wins', () async {
+      final gate = Completer<void>();
+      final h = Harness(cancelGate: gate)..attach();
+      await h.trail.ensureRunning(reason: 'start');
+
+      final restarting = h.trail.restart(reason: 'resume-stalled');
+      await Future<void>.delayed(Duration.zero);
+      final stopping = h.trail.stop(reason: 'end');
+      gate.complete();
+      await restarting;
+      await stopping;
+
+      expect(h.trail.isRunning, isFalse);
+      expect(h.trail.isWanted, isFalse);
+      expect(h.opened, 1);
+      expect(h.cancelled, 1);
     });
 
     test('the newest owner keeps receiving after a stale detach', () async {
