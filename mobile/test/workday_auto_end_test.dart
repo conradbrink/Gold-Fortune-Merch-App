@@ -30,7 +30,7 @@ void main() {
   test(
     'a day that began yesterday is over as of yesterday, whatever the hour',
     () {
-      // Jerry's 17 September day, seen by a phone at 08:00 on the 18th.
+      // A day left open overnight, seen by the phone at 08:00 the next morning.
       expect(
         isPastAutoEnd(now: DateTime(2026, 9, 18, 8, 0), startedAt: start),
         isTrue,

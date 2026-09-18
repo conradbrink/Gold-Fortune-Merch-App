@@ -8,8 +8,8 @@ import type { Database } from "@/lib/supabase/types";
  * A rep who forgets to end their day leaves the phone sampling GPS all night
  * and the day out of every total: the attendance report has a shift with no
  * end, and the nightly road-distance job — which settles only finished days —
- * never gets to it. Jerry Habana's 17 September 2026 day was still open the
- * next afternoon. The rule lives in the database (`auto_end_overdue_workdays`)
+ * never gets to it. It happened in September 2026. The rule lives in the
+ * database (`auto_end_overdue_workdays`)
  * so that the phone, which ends its own day at the same moment, and this job,
  * which catches a phone that was dead, write the same answer: the cut-off on
  * the day the session started, in the organisation's timezone.

@@ -158,11 +158,7 @@ class SyncStatus {
   final int pending;
   final String? message;
 
-  const SyncStatus({
-    required this.state,
-    required this.pending,
-    this.message,
-  });
+  const SyncStatus({required this.state, required this.pending, this.message});
 }
 
 /// Drains the local outbox against Supabase. Triggered by connectivity
@@ -327,21 +323,23 @@ class SyncEngine {
           // Only the entry type and its id are reported. Never the payload:
           // it holds store data, GPS fixes and answers.
           if (attempts >= kMaxAttempts) {
-            unawaited(Monitoring.report(
-              e,
-              stack,
-              feature: 'sync',
-              data: {
-                'entity_type': entry.entityType,
-                'attempts': attempts,
-                'given_up': true,
-              },
-            ));
+            unawaited(
+              Monitoring.report(
+                e,
+                stack,
+                feature: 'sync',
+                data: {
+                  'entity_type': entry.entityType,
+                  'attempts': attempts,
+                  'given_up': true,
+                },
+              ),
+            );
           } else {
-            Monitoring.event('sync.retry', data: {
-              'entity_type': entry.entityType,
-              'attempts': attempts,
-            });
+            Monitoring.event(
+              'sync.retry',
+              data: {'entity_type': entry.entityType, 'attempts': attempts},
+            );
           }
 
           // Stop on first failure so ordering is preserved — a check-out
@@ -472,12 +470,32 @@ class SyncEngine {
 
       case OutboxType.workdayEnd:
         // Same silent-success hazard as the check-out above.
-        final session = await _client
+        final changes = data['changes'] as Map<String, dynamic>;
+        final sessionClientId = data['client_generated_id'] as String;
+        // An end the day gave itself at the cut-off must never replace an end
+        // somebody chose — the rep's own, or a manager's on the web — that
+        // landed first. A rep's own end stays unconditional, because it is
+        // the one that stands even over a cut-off the server already applied.
+        final automatic = changes['auto_ended_at'] != null;
+        var update = _client
             .from('workday_sessions')
-            .update(data['changes'] as Map<String, dynamic>)
-            .eq('client_generated_id', data['client_generated_id'] as String)
-            .select('id');
+            .update(changes)
+            .eq('client_generated_id', sessionClientId);
+        if (automatic) update = update.isFilter('ended_at', null);
+        final session = await update.select('id');
         if (session.isEmpty) {
+          if (automatic) {
+            final existing = await _client
+                .from('workday_sessions')
+                .select('id, ended_at')
+                .eq('client_generated_id', sessionClientId)
+                .maybeSingle();
+            if (existing != null && existing['ended_at'] != null) {
+              // Already ended by someone. This entry is satisfied, not failed.
+              Monitoring.event('sync.auto_end_superseded');
+              break;
+            }
+          }
           throw StateError('Workday start not synced yet; will retry.');
         }
         break;
@@ -523,11 +541,13 @@ class SyncEngine {
         // lost work (FLUTTER-6, FLUTTER-A, three reps). It was never lost: the
         // conflict *is* the proof it landed. A ping is immutable, so "do
         // nothing" on conflict is the whole truth, not a shortcut.
-        await _client.from('location_pings').upsert(
-          data,
-          onConflict: 'client_generated_id',
-          ignoreDuplicates: true,
-        );
+        await _client
+            .from('location_pings')
+            .upsert(
+              data,
+              onConflict: 'client_generated_id',
+              ignoreDuplicates: true,
+            );
         break;
 
       case OutboxType.salesVisitStart:
@@ -583,11 +603,13 @@ class SyncEngine {
         // INSERT policy and no UPDATE policy, so a retry that meets its own
         // earlier row must not take the update path. A check cannot be edited
         // afterwards by design, so nothing is given up here.
-        await _client.from('promotion_checks').upsert(
-          data,
-          onConflict: 'client_generated_id',
-          ignoreDuplicates: true,
-        );
+        await _client
+            .from('promotion_checks')
+            .upsert(
+              data,
+              onConflict: 'client_generated_id',
+              ignoreDuplicates: true,
+            );
         break;
 
       default:
@@ -631,11 +653,7 @@ class SyncEngine {
       // arrive out of sequence, and two reps offline at once would collide.
       final number = await _client.rpc(
         'next_document_number',
-        params: {
-          'p_org_id': orgId,
-          'p_doc_type': 'order',
-          'p_prefix': 'SO',
-        },
+        params: {'p_org_id': orgId, 'p_doc_type': 'order', 'p_prefix': 'SO'},
       );
 
       final inserted = await _client
@@ -707,18 +725,20 @@ class SyncEngine {
     // them: `client_generated_id` is unique across the whole table, so a
     // concurrent drain could insert between the look and the write and turn a
     // retry into a hard failure. One statement has no window.
-    await _client.from('order_lines').upsert(
-      [
-        for (final raw in lines)
-          {
-            ...Map<String, dynamic>.from(raw as Map),
-            'org_id': orgId,
-            'order_id': orderId,
-          }
-      ],
-      onConflict: 'client_generated_id',
-      ignoreDuplicates: true,
-    );
+    await _client
+        .from('order_lines')
+        .upsert(
+          [
+            for (final raw in lines)
+              {
+                ...Map<String, dynamic>.from(raw as Map),
+                'org_id': orgId,
+                'order_id': orderId,
+              },
+          ],
+          onConflict: 'client_generated_id',
+          ignoreDuplicates: true,
+        );
   }
 
   Future<void> _replayFormSubmission(Map<String, dynamic> data) async {
@@ -821,7 +841,9 @@ class SyncEngine {
     }
 
     final storagePath = '$orgId/$repId/$visitId/$clientGeneratedId.jpg';
-    await _client.storage.from('visit-photos').upload(
+    await _client.storage
+        .from('visit-photos')
+        .upload(
           storagePath,
           file,
           fileOptions: const FileOptions(upsert: true),

@@ -1,11 +1,11 @@
 -- A workday nobody ends, ends itself at 19:30.
 --
--- Jerry Habana's 17 September 2026 day was still open the next afternoon. The
--- phone's foreground service kept sampling all night — interval pings at
--- 22:00, 23:00, 02:00, 04:00 — the day never reached the nightly road-distance
--- job (which only settles finished days), and the attendance report had a
--- shift with no end. The owner asked for an automatic end at 7pm or 7:30pm;
--- this is 7:30, and the phone (`workday_auto_end.dart`) uses the same figure.
+-- A rep who forgets to end their day leaves it open all night: the phone's
+-- foreground service keeps sampling, the day never reaches the nightly
+-- road-distance job (which only settles finished days), and the attendance
+-- report has a shift with no end. That happened in September 2026. The owner
+-- asked for an automatic end at 7pm or 7:30pm; this is 7:30, and the phone
+-- (`workday_auto_end.dart`) uses the same figure.
 --
 -- Closed *as of the cut-off on the day the session started*, in the
 -- organisation's timezone — never as of when this happened to run. A job that

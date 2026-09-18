@@ -3628,7 +3628,7 @@ export type Database = {
           updated_at: string
         }
         Insert: {
-          auto_ended_at: string | null
+          auto_ended_at?: string | null
           client_generated_id: string
           created_at?: string
           distance_meters?: number

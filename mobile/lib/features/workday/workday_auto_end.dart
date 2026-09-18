@@ -1,9 +1,9 @@
 /// When an open workday ends itself.
 ///
 /// A rep who forgets to end their day leaves the foreground service sampling
-/// GPS all night: Jerry Habana's 17 September 2026 day was still open the next
-/// afternoon, with interval pings at 22:00, 23:00, 02:00 and 04:00. The owner's
-/// instruction was "auto end at 7pm, or 7:30" — this is the 7:30.
+/// GPS all night, and the day out of every total. It happened in September
+/// 2026. The owner's instruction was "auto end at 7pm, or 7:30" — this is the
+/// 7:30.
 ///
 /// Two halves, and they must agree. The **server** closes any day still open
 /// past this time in the organisation's timezone (`auto_end_overdue_workdays`,

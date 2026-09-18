@@ -107,12 +107,15 @@ class WorkdayController extends AsyncNotifier<WorkdaySession?> {
   /// never more than one. A `Timer` in a suspended isolate fires when the app
   /// comes forward, and a phone that was killed is caught by the next
   /// `build` — the wait is zero for a day already past its cut-off.
-  void _armAutoEnd(WorkdaySession session) {
+  ///
+  /// [retryAfter] is the floor on the wait after an end that *failed*: an
+  /// automatic end that could not be written must try again, but not in a
+  /// tight loop.
+  void _armAutoEnd(WorkdaySession session, {Duration? retryAfter}) {
     _autoEndTimer?.cancel();
-    _autoEndTimer = Timer(
-      untilAutoEnd(now: DateTime.now(), startedAt: session.startedAt),
-      () => unawaited(_autoEnd()),
-    );
+    var wait = untilAutoEnd(now: DateTime.now(), startedAt: session.startedAt);
+    if (retryAfter != null && wait < retryAfter) wait = retryAfter;
+    _autoEndTimer = Timer(wait, () => unawaited(_autoEnd()));
   }
 
   Future<void> _autoEnd() async {
@@ -216,10 +219,9 @@ class WorkdayController extends AsyncNotifier<WorkdaySession?> {
     final profile = ref.read(profileProvider).value;
     final session = state.value;
     if (profile == null || session == null) return;
-    _autoEndTimer?.cancel();
 
     state = const AsyncLoading();
-    state = await AsyncValue.guard(() async {
+    final result = await AsyncValue.guard(() async {
       final trail = _trail;
       final repo = ref.read(workdayRepositoryProvider);
       await repo.endWorkday(
@@ -235,6 +237,9 @@ class WorkdayController extends AsyncNotifier<WorkdaySession?> {
             : await LocationService.getCurrentPosition(),
         automatic: automatic,
       );
+      // Only once the end is on its way. Cancelled any earlier, a fix that
+      // could not be had would leave the day open with nothing left to end it.
+      _autoEndTimer?.cancel();
       await trail.stop(reason: automatic ? 'auto-end' : 'end');
       trail.lastPingPosition = null;
       trail.lastPingAt = null;
@@ -244,6 +249,24 @@ class WorkdayController extends AsyncNotifier<WorkdaySession?> {
       _autoEnded = automatic;
       return null;
     });
+
+    if (result.hasError) {
+      // Two states on purpose. The error first, so the banner's listener
+      // shows it; then the open day back, because it *is* still open and a
+      // bare error state reads as "not started". And the rule stays armed —
+      // an automatic end that failed is tried again after a pause, not at
+      // once, so a repository that keeps throwing cannot spin.
+      state = result;
+      state = AsyncData(session);
+      if (ref.mounted) {
+        _armAutoEnd(
+          session,
+          retryAfter: automatic ? const Duration(minutes: 5) : null,
+        );
+      }
+      return;
+    }
+    state = result;
   }
 }
 
