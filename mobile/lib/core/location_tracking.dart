@@ -36,6 +36,8 @@
 /// and much heavier piece of work.
 library;
 
+import 'dart:ui' show AppLifecycleState;
+
 import 'package:geolocator/geolocator.dart';
 
 /// How often the platform is asked for a position while a workday is open.
@@ -197,4 +199,58 @@ class LocationTracking {
   /// Opens the system page where "Allow all the time" can be granted.
   static Future<bool> openPermissionSettings() =>
       Geolocator.openAppSettings();
+}
+
+/// Whether the platform will let the trail start right now.
+///
+/// Android 12 and later refuse to start a foreground service from an app that
+/// is not in the foreground, and the refusal is exactly what Sentry showed:
+/// `Service.startForeground() not allowed due to mAllowStartForeground false`,
+/// 89 times off two handsets between 31 August and 18 September (FLUTTER-C),
+/// every one of them with the app backgrounded an hour or more and most of
+/// them a second or two after Android's low-memory signal. Filed as fatal,
+/// because of *where* the error surfaces: Flutter's `EventChannel` reports a
+/// refused `listen` through `FlutterError.reportError`, not through the
+/// stream. Neither the stream's error handler nor a try/catch around the
+/// subscribe ever sees it — the subscription simply sits there, dead, and the
+/// cancel that eventually follows fails too ("No active stream to cancel"),
+/// which is the half of this that 1.1.8 tried and failed to catch. The only
+/// reliable move is not to ask while backgrounded, and to ask on resume.
+///
+/// [state] is null before the first lifecycle message arrives — in practice a
+/// cold start in the foreground — and that is let through: refusing it would
+/// delay every day's trail until the first resume. `inactive` is a visible
+/// activity that is not in front (a system dialog over it, the permission
+/// prompt itself), still foreground as far as Android is concerned.
+bool canStartTrail(AppLifecycleState? state) {
+  switch (state) {
+    case null:
+    case AppLifecycleState.resumed:
+    case AppLifecycleState.inactive:
+      return true;
+    case AppLifecycleState.hidden:
+    case AppLifecycleState.paused:
+    case AppLifecycleState.detached:
+      return false;
+  }
+}
+
+/// How long a running trail may go without a fix before it is presumed dead.
+///
+/// Two of the sampling interval, so one late fix does not count. A trail that
+/// has gone this long is one the platform stopped feeding — the foreground
+/// service refused in the background, or a "while using the app" grant that
+/// Android suspended — and is restarted the next time the app comes forward.
+const kTrailStallAfter = Duration(minutes: 10);
+
+/// Whether a trail that is nominally running should be restarted on resume.
+///
+/// Measured from the last position, or from the start when none has arrived.
+/// Pure so the rule can be tested without a clock or a platform channel.
+bool trailLooksStalled({
+  required DateTime now,
+  required DateTime startedAt,
+  DateTime? lastPositionAt,
+}) {
+  return now.difference(lastPositionAt ?? startedAt) > kTrailStallAfter;
 }

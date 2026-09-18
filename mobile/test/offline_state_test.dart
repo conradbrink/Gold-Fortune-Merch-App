@@ -15,6 +15,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'package:gf_merch_rep/data/local/app_database.dart';
 import 'package:gf_merch_rep/data/local/outbox_types.dart';
@@ -40,11 +41,12 @@ OutboxEntry entry(
   int attempts = 0,
   int id = 0,
   int createdSecond = 0,
+  String payload = '{}',
 }) {
   return OutboxEntry(
     id: id,
     entityType: type,
-    payload: '{}',
+    payload: payload,
     clientGeneratedId: clientId,
     createdAt: DateTime.utc(2026, 7, 29, 8, 0, createdSecond),
     attempts: attempts,
@@ -197,6 +199,87 @@ void main() {
       expect(replayable.map((e) => e.entityType), [OutboxType.visitCheckIn]);
     });
   });
+
+  // A ping names its workday and a form names its visit, each in the payload
+  // and each under a client id of its own — so `replayableEntries`, which goes
+  // by id, could not see that they were waiting on something. Forty-seven
+  // pings off one handset were replayed against a session the server had
+  // never received, eight times each, while the rep's check-ins queued behind
+  // them (FLUTTER-3).
+  group('dependencyKeyOf', () {
+    test('a ping depends on its workday start', () {
+      final ping = entry(
+        OutboxType.locationPing,
+        'ping-1',
+        payload: '{"workday_session_client_id": "day-1", "lat": 1}',
+      );
+      expect(
+        dependencyKeyOf(ping),
+        outboxEntryKey(OutboxType.workdayStart, 'day-1'),
+      );
+    });
+
+    test('a ping outside any workday depends on nothing', () {
+      final ping = entry(
+        OutboxType.locationPing,
+        'ping-1',
+        payload: '{"workday_session_client_id": null, "lat": 1}',
+      );
+      expect(dependencyKeyOf(ping), isNull);
+    });
+
+    test('a form depends on its check-in', () {
+      final form = entry(
+        OutboxType.formSubmission,
+        'form-1',
+        payload: '{"visit_client_generated_id": "visit-abc"}',
+      );
+      expect(
+        dependencyKeyOf(form),
+        outboxEntryKey(OutboxType.visitCheckIn, 'visit-abc'),
+      );
+    });
+
+    test('the start, not the end, is what a ping waits for', () {
+      final ping = entry(
+        OutboxType.locationPing,
+        'ping-1',
+        payload: '{"workday_session_client_id": "day-1"}',
+      );
+      expect(
+        dependencyKeyOf(ping),
+        isNot(outboxEntryKey(OutboxType.workdayEnd, 'day-1')),
+      );
+    });
+
+    test('same-id dependants and independent work report nothing', () {
+      expect(dependencyKeyOf(entry(OutboxType.visitCheckOut, 'v')), isNull);
+      expect(dependencyKeyOf(entry(OutboxType.workdayEnd, 'd')), isNull);
+      expect(dependencyKeyOf(entry(OutboxType.orderCreate, 'o')), isNull);
+      // Deliberately: a check is recorded without its visit rather than held.
+      expect(
+        dependencyKeyOf(
+          entry(
+            OutboxType.promotionCheck,
+            'p',
+            payload: '{"visit_client_generated_id": "visit-abc"}',
+          ),
+        ),
+        isNull,
+      );
+    });
+
+    test('a payload that cannot be read is not a dependency', () {
+      expect(
+        dependencyKeyOf(entry(OutboxType.locationPing, 'p', payload: '{')),
+        isNull,
+      );
+      expect(
+        dependencyKeyOf(entry(OutboxType.locationPing, 'p', payload: '[]')),
+        isNull,
+      );
+    });
+  });
 }
 
 // The store detail screen renders from whichever is further along: what the
@@ -287,6 +370,21 @@ void detailScreenTests() {
     // a certificate the phone rejects is rejected again next time, and a
     // redirect loop is the server's doing. Waiting on either parks the drain
     // in "offline" with the queue untouched.
+    // The expensive one. An expired token is refreshed before any request,
+    // and a refresh that fails for want of a network is an
+    // AuthRetryableFetchException, not a SocketException. Counted as the
+    // entry's fault, eight sync runs through a dead patch of signal gave up on
+    // a rep's workday start — and the report of it was scrubbed as offline
+    // noise, so nobody heard until the day's check-ins arrived two days late.
+    test('a token refresh that failed offline is the link, not the entry', () {
+      expect(
+        isTransientNetworkFailure(
+          AuthRetryableFetchException(message: 'Connection failed'),
+        ),
+        isTrue,
+      );
+    });
+
     test('a bad certificate and a redirect loop are not transient', () {
       expect(
           isTransientNetworkFailure(

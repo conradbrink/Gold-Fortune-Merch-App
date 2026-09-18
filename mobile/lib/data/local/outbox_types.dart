@@ -37,3 +37,11 @@ class OutboxType {
   /// out of sequence — or twice, if two reps were offline at once.
   static const orderCreate = 'order_create';
 }
+
+/// One queued operation, named by what it is and what it is about.
+///
+/// The sync engine needs to ask "is the workday start for session X still on
+/// this phone?" and the answer is not "is X's id in the queue" — a session's
+/// *end* carries the same id. Keying by type as well is what tells them apart.
+String outboxEntryKey(String entityType, String clientGeneratedId) =>
+    '$entityType:$clientGeneratedId';

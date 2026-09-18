@@ -5,6 +5,8 @@ import 'package:drift/native.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
+import 'outbox_types.dart';
+
 part 'app_database.g.dart';
 
 /// Pending writes captured on-device. Each row is one self-contained
@@ -188,6 +190,40 @@ class AppDatabase extends _$AppDatabase {
         .map((r) => r.read(outboxEntries.clientGeneratedId))
         .whereType<String>()
         .toSet();
+  }
+
+  /// Every queued operation, capped or not, as `type:client id`.
+  ///
+  /// The drain uses this to hold back an entry whose *parent* is still on the
+  /// phone — a location ping whose workday start has not landed, a form whose
+  /// check-in has not — rather than replaying it into a server that cannot
+  /// know what it refers to. See `dependencyKeyOf` in the sync engine.
+  Future<Set<String>> queuedEntryKeys() async {
+    final query = selectOnly(outboxEntries, distinct: true)
+      ..addColumns([outboxEntries.entityType, outboxEntries.clientGeneratedId]);
+    final rows = await query.get();
+    return {
+      for (final r in rows)
+        outboxEntryKey(
+          r.read(outboxEntries.entityType)!,
+          r.read(outboxEntries.clientGeneratedId)!,
+        ),
+    };
+  }
+
+  /// Gives every entry that has used up its attempts a fresh set.
+  ///
+  /// Called once per new build of the app, and only then. An entry stops being
+  /// retried after [maxAttempts] failures because retrying it forever would
+  /// wedge the queue — but the one thing that can change the outcome is a new
+  /// build that fixes the reason it failed, and until this existed nothing on
+  /// the phone ever tried again. A rep's workday start that stalled on 1.1.8
+  /// would have sat there, holding back every ping of the day, on 1.1.9 and
+  /// 1.2.0 and every build after. Returns how many were re-armed.
+  Future<int> rearmStalled(int maxAttempts) {
+    return (update(outboxEntries)
+          ..where((t) => t.attempts.isBiggerOrEqualValue(maxAttempts)))
+        .write(const OutboxEntriesCompanion(attempts: Value(0)));
   }
 
   Stream<int> watchPendingCount() {

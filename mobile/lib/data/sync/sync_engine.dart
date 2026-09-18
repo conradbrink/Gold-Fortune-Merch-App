@@ -3,6 +3,8 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:connectivity_plus/connectivity_plus.dart';
+import 'package:flutter/foundation.dart' show visibleForTesting;
+import 'package:package_info_plus/package_info_plus.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../local/app_database.dart';
@@ -27,6 +29,11 @@ const kMaxAttempts = 8;
 /// PostgREST reports as success, and the entry would then be deleted with the
 /// rep's check-out inside it.
 ///
+/// This is the *same-id* half of the rule. An entry can also depend on one
+/// with a different id, named in its payload — a ping on its workday start,
+/// a form on its check-in — and the drain holds those back using
+/// [dependencyKeyOf], because the outbox key is what they share.
+///
 /// [alreadyStalled] carries the ids of entries the caller filtered out before
 /// getting here. A drain asks the database to leave capped entries out of its
 /// window — otherwise they fill it — which means this function can no longer see
@@ -50,6 +57,49 @@ List<OutboxEntry> replayableEntries(
   return replayable;
 }
 
+/// The queued operation this entry cannot land without, if it has one.
+///
+/// [replayableEntries] holds back work that shares a *client id* with a stalled
+/// entry — a check-out behind its check-in. It cannot see the other kind of
+/// dependency, the one written into the payload: a location ping names its
+/// workday session, a form submission names its visit, and each has a client
+/// id of its own. So a ping whose workday start had given up was replayed
+/// anyway, asked the server for a session it had never heard of, and threw
+/// "Workday not synced yet" — eight times, then reported as lost work, then the
+/// next ping did the same. Forty-seven of those came off one handset in two
+/// days (FLUTTER-3), and because the drain stops at the first failure, the
+/// rep's check-ins sat behind that wall and reached the server one to two
+/// days late.
+///
+/// Keyed by type as well as id, because a session's start and its end share
+/// an id and only the start is what a ping is waiting for. A promotion check
+/// deliberately has no entry here: it is recorded without its visit on
+/// purpose (see the replay). Null for an entry that depends on nothing.
+String? dependencyKeyOf(OutboxEntry entry) {
+  final String parentType;
+  final String payloadKey;
+  switch (entry.entityType) {
+    case OutboxType.locationPing:
+      parentType = OutboxType.workdayStart;
+      payloadKey = 'workday_session_client_id';
+    case OutboxType.formSubmission:
+      parentType = OutboxType.visitCheckIn;
+      payloadKey = 'visit_client_generated_id';
+    default:
+      return null;
+  }
+  final Object? decoded;
+  try {
+    decoded = jsonDecode(entry.payload);
+  } on FormatException {
+    return null;
+  }
+  if (decoded is! Map) return null;
+  final parentId = decoded[payloadKey];
+  if (parentId is! String) return null;
+  return outboxEntryKey(parentType, parentId);
+}
+
 /// A failure that says nothing about the entry and everything about the link.
 ///
 /// The drain stops and waits on these rather than charging the entry an
@@ -66,9 +116,22 @@ List<OutboxEntry> replayableEntries(
 /// signal. Treating those as transient would park the drain in "offline"
 /// forever with the queue untouched and nobody told.
 ///
+/// A fourth shape was missed and it was the expensive one. When the access
+/// token has expired — the phone was in a pocket for an hour — the Supabase
+/// client refreshes it before sending anything, and a refresh that fails for
+/// want of a network surfaces as `AuthRetryableFetchException`, not as the
+/// `SocketException` underneath it. That counted as the entry's fault. Eight
+/// sync runs through a dead patch of signal — the timer alone gets there in
+/// sixteen minutes — and the workday start at the head of the queue was given
+/// up on. Worse, nobody heard: the report of that carries the exception's
+/// name, and `Monitoring.scrub` drops anything naming it as offline noise. A
+/// rep's whole day then queued behind a start the server was never going to
+/// see, silently. It is retryable by definition, so it is transient here.
+///
 /// Top-level so it can be tested without a database.
 bool isTransientNetworkFailure(Object error) {
   if (error is SocketException) return true;
+  if (error is AuthRetryableFetchException) return true;
   if (error is TlsException) return error is! CertificateException;
   if (error is HttpException) return error is! RedirectException;
   return false;
@@ -105,10 +168,30 @@ class SyncStatus {
 /// Drains the local outbox against Supabase. Triggered by connectivity
 /// regained, app foreground, and a slow safety-net timer.
 class SyncEngine {
-  SyncEngine(this._db, this._client);
+  SyncEngine(this._db, this._client, {Future<String?> Function()? readBuild})
+    : _readBuild = readBuild ?? _installedBuild;
 
   final AppDatabase _db;
   final SupabaseClient _client;
+
+  /// The running build's number, or null when it cannot be read.
+  ///
+  /// Injectable so a test can pretend to be an upgrade without a platform
+  /// channel.
+  final Future<String?> Function() _readBuild;
+
+  static Future<String?> _installedBuild() async {
+    try {
+      return (await PackageInfo.fromPlatform()).buildNumber;
+    } catch (_) {
+      // No build number is no reason not to sync. The re-arm simply waits for
+      // a launch that can read one.
+      return null;
+    }
+  }
+
+  /// Key/value slot recording the last build that re-armed stalled entries.
+  static const _rearmedBuildKey = 'outbox_rearmed_for_build';
 
   final _statusController = StreamController<SyncStatus>.broadcast();
   Stream<SyncStatus> get status => _statusController.stream;
@@ -134,7 +217,33 @@ class SyncEngine {
     // Safety net for cases connectivity events miss (captive portals, flaky
     // signal that never reports a transition).
     _timer = Timer.periodic(const Duration(minutes: 2), (_) => sync());
-    unawaited(sync());
+    // A new build gets one more go at anything that gave up on the old one,
+    // before the first drain looks at the queue.
+    unawaited(rearmForNewBuild().whenComplete(sync));
+  }
+
+  /// Gives stalled entries their attempts back, once per build.
+  ///
+  /// An entry that has used up [kMaxAttempts] is never retried, and that is
+  /// right for as long as nothing has changed — the ninth attempt would fail
+  /// like the eighth. A new build is the one thing that changes it: the reason
+  /// an entry failed may have been fixed in the code, and until this existed
+  /// the phone never found out. Returns how many entries were re-armed; zero
+  /// when there were none or the build has been seen before.
+  @visibleForTesting
+  Future<int> rearmForNewBuild() async {
+    final build = await _readBuild();
+    if (build == null) return 0;
+    if (await _db.getValue(_rearmedBuildKey) == build) return 0;
+    final rearmed = await _db.rearmStalled(kMaxAttempts);
+    await _db.setValue(_rearmedBuildKey, build);
+    if (rearmed > 0) {
+      Monitoring.event(
+        'sync.rearmed',
+        data: {'entries': rearmed, 'build': build},
+      );
+    }
+    return rearmed;
   }
 
   void dispose() {
@@ -170,10 +279,30 @@ class SyncEngine {
 
       await _emit(SyncState.syncing);
 
+      // Everything still on the phone, by type and id, so an entry can be asked
+      // whether the thing it depends on has landed yet. Entries that land in
+      // this very drain are struck off as they go — a ping queued straight
+      // after its workday start must not wait a whole extra drain for it.
+      final queued = await _db.queuedEntryKeys();
+      final landed = <String>{};
+
       for (final entry in replayableEntries(entries, alreadyStalled: stalled)) {
+        // A parent still on the phone — stalled, or somehow not yet replayed —
+        // means the server cannot resolve this entry. Replaying it would only
+        // spend an attempt on a foregone failure and stop the drain for
+        // everything behind it. Held back, at no cost, and looked at again
+        // next time.
+        final dependency = dependencyKeyOf(entry);
+        if (dependency != null &&
+            queued.contains(dependency) &&
+            !landed.contains(dependency)) {
+          continue;
+        }
+
         try {
-          await _replay(entry);
+          await _replay(entry, queued: queued);
           await _db.deleteEntry(entry.id);
+          landed.add(outboxEntryKey(entry.entityType, entry.clientGeneratedId));
         } catch (e, stack) {
           // No network mid-drain: stop, keep everything queued, try later.
           //
@@ -228,15 +357,52 @@ class SyncEngine {
     }
   }
 
-  Future<void> _replay(OutboxEntry entry) async {
+  /// Replays one entry. [queued] is every operation still on the phone, keyed
+  /// as [outboxEntryKey], so a replay can tell "not landed yet" from "gone".
+  Future<void> _replay(
+    OutboxEntry entry, {
+    Set<String> queued = const {},
+  }) async {
     final data = jsonDecode(entry.payload) as Map<String, dynamic>;
 
     switch (entry.entityType) {
       case OutboxType.visitCheckIn:
-        // Upsert on the idempotency key so a retry can't duplicate a visit.
-        await _client
+        // Insert, or do nothing. This was a plain upsert on the idempotency
+        // key, and the update half of an upsert is what bit: a rep who checks
+        // in twice on the same visit — the second tap after the first had
+        // already landed — queued a second entry carrying the same client id
+        // and a *later* time, and `on conflict do update` walked it into the
+        // guard in `20260729151556_lock_privilege_and_gps_fields`, which
+        // refuses to let a recorded check-in time change. Permanently, so it
+        // burned all eight attempts and was reported as a lost check-in
+        // (FLUTTER-6 on 1.1.8) — while the check-out for that visit, sharing
+        // its id, waited behind it. The recorded check-in is the one that
+        // stands; a conflict is proof the visit is there.
+        final inserted = await _client
             .from('visits')
-            .upsert(data, onConflict: 'client_generated_id');
+            .upsert(
+              data,
+              onConflict: 'client_generated_id',
+              ignoreDuplicates: true,
+            )
+            .select('id');
+        if (inserted.isNotEmpty) break;
+
+        // The row was already there. Either a manager pre-created the visit
+        // for the route — no check-in on it yet, and this entry supplies one
+        // — or it carries a check-in already, in which case this entry is
+        // satisfied, not failed. The filter is what keeps the guard out of
+        // it: an update that matches nothing is not refused, and matching
+        // nothing is the whole answer when the row is already checked in.
+        final claimed = await _client
+            .from('visits')
+            .update(data)
+            .eq('client_generated_id', data['client_generated_id'] as String)
+            .isFilter('checkin_at', null)
+            .select('id');
+        if (claimed.isEmpty) {
+          Monitoring.event('sync.checkin_already_recorded');
+        }
         break;
 
       case OutboxType.visitCheckOut:
@@ -328,9 +494,25 @@ class SyncEngine {
               .eq('client_generated_id', sessionClientId)
               .maybeSingle();
           if (session == null) {
-            throw StateError('Workday not synced yet; will retry.');
+            // The drain holds a ping back while its workday start is still on
+            // the phone, so getting here with no session normally means the
+            // start is *gone* — never queued, or cleared with the app's data
+            // — and no amount of retrying will conjure it. Recorded without
+            // the session link rather than given up on: the live map reads a
+            // rep's pings by time, and a position with no day attached is
+            // worth a great deal more than eight failures and a report.
+            final startKey = outboxEntryKey(
+              OutboxType.workdayStart,
+              sessionClientId,
+            );
+            if (queued.contains(startKey)) {
+              throw StateError('Workday not synced yet; will retry.');
+            }
+            Monitoring.event('sync.ping_without_session');
+            data['workday_session_id'] = null;
+          } else {
+            data['workday_session_id'] = session['id'];
           }
-          data['workday_session_id'] = session['id'];
         }
         // `ignoreDuplicates`, and it is load-bearing. A plain upsert is
         // `insert … on conflict do update`, and the update half runs under the
