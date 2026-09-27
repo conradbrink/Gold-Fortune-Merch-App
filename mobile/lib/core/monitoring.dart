@@ -201,15 +201,17 @@ class Monitoring {
   /// though it fell over. The message is read as well as the type, as above:
   /// the same failure arrives inside a `GoException` when the redirect is
   /// what asked for the token.
+  ///
+  /// Only the *root* exception is asked. `exceptions` is a chain, not a list
+  /// of separate errors, and the root's mechanism is what Sentry reads as the
+  /// event's handled state — a refused refresh buried under some other
+  /// failure that the app genuinely left standing is still that failure.
   static bool _isServerSideSignOut(SentryEvent event) {
-    for (final exception in event.exceptions ?? const <SentryException>[]) {
-      final text = '${exception.type}: ${exception.value}';
-      if (text.contains(_refusedAuthFailure) &&
-          text.contains(_refusedRefreshToken)) {
-        return true;
-      }
-    }
-    return false;
+    final root = _rootException(event);
+    if (root == null) return false;
+    final text = '${root.type}: ${root.value}';
+    return text.contains(_refusedAuthFailure) &&
+        text.contains(_refusedRefreshToken);
   }
 
   static const _refusedAuthFailure = 'AuthApiException';
@@ -217,12 +219,26 @@ class Monitoring {
 
   static void _reportAsSignOut(SentryEvent event) {
     event.level = SentryLevel.warning;
-    for (final exception in event.exceptions ?? const <SentryException>[]) {
-      // The mechanism is what Sentry reads as "crashed". The SDK's own
-      // sign-out is the handling; the throw that followed it is how gotrue
-      // tells its caller, not a failure the app left standing.
-      exception.mechanism?.handled = true;
+    // The mechanism is what Sentry reads as "crashed". The SDK's own sign-out
+    // is the handling; the throw that followed it is how gotrue tells its
+    // caller, not a failure the app left standing.
+    _rootException(event)?.mechanism?.handled = true;
+  }
+
+  /// The exception that was actually thrown, wherever the SDK put it.
+  ///
+  /// sentry-dart flattens a chain before `beforeSend` runs. With exception
+  /// grouping on — the default — the flat list is *reversed*, so the root
+  /// comes last and is the one numbered `exceptionId: 0` with no parent. With
+  /// grouping off nothing is numbered and the root stays first. An event
+  /// carrying a single exception is its own root either way.
+  static SentryException? _rootException(SentryEvent event) {
+    final exceptions = event.exceptions;
+    if (exceptions == null || exceptions.isEmpty) return null;
+    for (final exception in exceptions) {
+      if (exception.mechanism?.exceptionId == 0) return exception;
     }
+    return exceptions.first;
   }
 
   /// Whether a *header* carries a credential.
