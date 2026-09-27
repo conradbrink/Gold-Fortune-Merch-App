@@ -19,6 +19,8 @@ SentryEvent eventWith(SentryRequest? request, {String environment = 'production'
 }
 
 void main() {
+  signOutTests();
+
   test('a debug build never reaches the shared issue stream', () {
     final event = eventWith(null, environment: 'development');
     expect(Monitoring.scrub(event, Hint()), isNull);
@@ -176,5 +178,138 @@ void main() {
       ),
     ];
     expect(Monitoring.scrub(event, Hint()), isNotNull);
+  });
+}
+
+// FLUTTER-7 on 1.1.10: a refresh the server refused outright, filed as a
+// fatal crash — from a handset that had signed the rep out and carried on
+// running. The SDK removes the session and emits `signedOut` before it
+// rethrows, so what reaches PlatformDispatcher.onError is a message, not a
+// failure left standing.
+void signOutTests() {
+  SentryEvent unhandled(SentryException exception) {
+    final event = eventWith(null);
+    event.level = SentryLevel.fatal;
+    exception.mechanism = Mechanism(
+      type: 'PlatformDispatcher.onError',
+      handled: false,
+    );
+    event.exceptions = [exception];
+    return event;
+  }
+
+  test('a refresh the server refused is a sign-out, not a crash', () {
+    final event = unhandled(
+      SentryException(
+        type: 'AuthApiException',
+        value: 'AuthApiException(message: Invalid Refresh Token: Refresh '
+            'Token Not Found, statusCode: 400, code: refresh_token_not_found)',
+      ),
+    );
+
+    final out = Monitoring.scrub(event, Hint())!;
+
+    expect(out.level, SentryLevel.warning);
+    expect(out.exceptions!.single.mechanism!.handled, isTrue);
+  });
+
+  test('the same refusal wrapped by go_router is downgraded too', () {
+    final event = unhandled(
+      SentryException(
+        type: 'GoException',
+        value: 'GoException: Exception during redirect: '
+            'AuthApiException(message: Invalid Refresh Token: Refresh Token '
+            'Not Found, statusCode: 400, code: refresh_token_not_found)',
+      ),
+    );
+
+    final out = Monitoring.scrub(event, Hint())!;
+
+    expect(out.level, SentryLevel.warning);
+    expect(out.exceptions!.single.mechanism!.handled, isTrue);
+  });
+
+  test('a refused refresh buried under another failure is not a sign-out', () {
+    // `exceptions` is a chain, and Sentry reads the root's mechanism as the
+    // event's handled state. A refused refresh that some other error wrapped
+    // and the app then left standing is that other error, and stays fatal.
+    // Laid out as sentry-dart lays a grouped chain out: reversed, root last.
+    final event = eventWith(null);
+    event.level = SentryLevel.fatal;
+    final cause = SentryException(
+      type: 'AuthApiException',
+      value: 'AuthApiException(message: Invalid Refresh Token: Refresh Token '
+          'Not Found, statusCode: 400, code: refresh_token_not_found)',
+    )..mechanism = Mechanism(
+        type: 'chained',
+        handled: false,
+        exceptionId: 1,
+        parentId: 0,
+      );
+    final root = SentryException(
+      type: 'StateError',
+      value: 'Bad state: the day was closed under the visit',
+    )..mechanism = Mechanism(
+        type: 'PlatformDispatcher.onError',
+        handled: false,
+        exceptionId: 0,
+        isExceptionGroup: true,
+      );
+    event.exceptions = [cause, root];
+
+    final out = Monitoring.scrub(event, Hint())!;
+
+    expect(out.level, SentryLevel.fatal);
+    expect(root.mechanism!.handled, isFalse);
+    expect(cause.mechanism!.handled, isFalse);
+  });
+
+  test('a refused refresh at the root of a grouped chain is found last', () {
+    final event = eventWith(null);
+    event.level = SentryLevel.fatal;
+    final cause = SentryException(
+      type: 'ClientException',
+      value: 'ClientException: 400 from /auth/v1/token',
+    )..mechanism = Mechanism(
+        type: 'chained',
+        handled: false,
+        exceptionId: 1,
+        parentId: 0,
+      );
+    final root = SentryException(
+      type: 'AuthApiException',
+      value: 'AuthApiException(message: Invalid Refresh Token: Refresh Token '
+          'Not Found, statusCode: 400, code: refresh_token_not_found)',
+    )..mechanism = Mechanism(
+        type: 'PlatformDispatcher.onError',
+        handled: false,
+        exceptionId: 0,
+        isExceptionGroup: true,
+      );
+    event.exceptions = [cause, root];
+
+    final out = Monitoring.scrub(event, Hint())!;
+
+    expect(out.level, SentryLevel.warning);
+    expect(root.mechanism!.handled, isTrue);
+    expect(cause.mechanism!.handled, isFalse,
+        reason: 'only the root carries the handled state Sentry reads');
+  });
+
+  test('any other unhandled auth failure keeps its level', () {
+    // Only the refused refresh token is a sign-out. A different API failure
+    // escaping to the root is still whatever Sentry said it was.
+    final event = unhandled(
+      SentryException(
+        type: 'AuthApiException',
+        value: 'AuthApiException(message: Invalid login credentials, '
+            'statusCode: 400, code: invalid_credentials)',
+      ),
+    );
+
+    final out = Monitoring.scrub(event, Hint())!;
+
+    expect(out.level, SentryLevel.fatal);
+    expect(out.exceptions!.single.mechanism!.handled, isFalse);
   });
 }

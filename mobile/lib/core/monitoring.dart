@@ -119,6 +119,7 @@ class Monitoring {
     if (event.environment == 'development') return null;
 
     if (_isRetryableNetworkNoise(event)) return null;
+    if (_isServerSideSignOut(event)) _reportAsSignOut(event);
 
     // Mutated in place rather than through `copyWith`, which 9.x deprecated.
     //
@@ -184,6 +185,61 @@ class Monitoring {
   }
 
   static const _retryableAuthFailure = 'AuthRetryableFetchException';
+
+  /// A refresh the server refused outright: the token is gone, not stale.
+  ///
+  /// Arrives fatal and unhandled by the same route as the retryable one
+  /// above — gotrue rethrows after it has acted — but by the time it reaches
+  /// `PlatformDispatcher.onError` the SDK has removed the session and emitted
+  /// `signedOut`, the router has put the rep on the login screen, and the app
+  /// is still running. What happened is that the server signed a rep out
+  /// (FLUTTER-7 on 1.1.10: one handset, first launch of the morning,
+  /// `refresh_token_not_found` — the session had been revoked overnight).
+  ///
+  /// Worth knowing, so it is kept; not a crash, so it goes as a warning that
+  /// says what it is, rather than a fatal that makes the release look as
+  /// though it fell over. The message is read as well as the type, as above:
+  /// the same failure arrives inside a `GoException` when the redirect is
+  /// what asked for the token.
+  ///
+  /// Only the *root* exception is asked. `exceptions` is a chain, not a list
+  /// of separate errors, and the root's mechanism is what Sentry reads as the
+  /// event's handled state — a refused refresh buried under some other
+  /// failure that the app genuinely left standing is still that failure.
+  static bool _isServerSideSignOut(SentryEvent event) {
+    final root = _rootException(event);
+    if (root == null) return false;
+    final text = '${root.type}: ${root.value}';
+    return text.contains(_refusedAuthFailure) &&
+        text.contains(_refusedRefreshToken);
+  }
+
+  static const _refusedAuthFailure = 'AuthApiException';
+  static const _refusedRefreshToken = 'Invalid Refresh Token';
+
+  static void _reportAsSignOut(SentryEvent event) {
+    event.level = SentryLevel.warning;
+    // The mechanism is what Sentry reads as "crashed". The SDK's own sign-out
+    // is the handling; the throw that followed it is how gotrue tells its
+    // caller, not a failure the app left standing.
+    _rootException(event)?.mechanism?.handled = true;
+  }
+
+  /// The exception that was actually thrown, wherever the SDK put it.
+  ///
+  /// sentry-dart flattens a chain before `beforeSend` runs. With exception
+  /// grouping on — the default — the flat list is *reversed*, so the root
+  /// comes last and is the one numbered `exceptionId: 0` with no parent. With
+  /// grouping off nothing is numbered and the root stays first. An event
+  /// carrying a single exception is its own root either way.
+  static SentryException? _rootException(SentryEvent event) {
+    final exceptions = event.exceptions;
+    if (exceptions == null || exceptions.isEmpty) return null;
+    for (final exception in exceptions) {
+      if (exception.mechanism?.exceptionId == 0) return exception;
+    }
+    return exceptions.first;
+  }
 
   /// Whether a *header* carries a credential.
   ///
