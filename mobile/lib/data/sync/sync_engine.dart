@@ -641,13 +641,35 @@ class SyncEngine {
 
     final existing = await _client
         .from('orders')
-        .select('id')
+        .select('id, status')
         .eq('client_generated_id', clientId)
         .maybeSingle();
 
     String orderId;
     if (existing != null) {
       orderId = existing['id'] as String;
+
+      // An order the warehouse has already dealt with is finished, whatever
+      // this phone still holds for it. `order_lines_insert` admits a line only
+      // while its order is `new`, so once the warehouse has confirmed the
+      // order — or cancelled it — nothing queued here can be written, and
+      // nothing should be: the warehouse's version is the record now.
+      //
+      // Written for the orders taken on 1.1.3, whose headers landed in August
+      // with no lines (see the upsert below). The warehouse typed the lines in
+      // by hand and delivered some, and cancelled the rest as "old system";
+      // the entries stayed on two reps' phones. Every new build then re-armed
+      // them: eight refused attempts each, a report each, and — because the
+      // drain stops at a failure — nothing else on the phone moved until they
+      // were spent. Half an hour after every install (FLUTTER-8, 1.1.10).
+      final status = existing['status'] as String?;
+      if (status != 'new') {
+        Monitoring.event(
+          'sync.order_already_processed',
+          data: {'status': status},
+        );
+        return;
+      }
     } else {
       // Drawn here, not on the phone. A number handed out while offline would
       // arrive out of sequence, and two reps offline at once would collide.

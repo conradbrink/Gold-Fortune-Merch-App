@@ -119,6 +119,7 @@ class Monitoring {
     if (event.environment == 'development') return null;
 
     if (_isRetryableNetworkNoise(event)) return null;
+    if (_isServerSideSignOut(event)) _reportAsSignOut(event);
 
     // Mutated in place rather than through `copyWith`, which 9.x deprecated.
     //
@@ -184,6 +185,45 @@ class Monitoring {
   }
 
   static const _retryableAuthFailure = 'AuthRetryableFetchException';
+
+  /// A refresh the server refused outright: the token is gone, not stale.
+  ///
+  /// Arrives fatal and unhandled by the same route as the retryable one
+  /// above — gotrue rethrows after it has acted — but by the time it reaches
+  /// `PlatformDispatcher.onError` the SDK has removed the session and emitted
+  /// `signedOut`, the router has put the rep on the login screen, and the app
+  /// is still running. What happened is that the server signed a rep out
+  /// (FLUTTER-7 on 1.1.10: one handset, first launch of the morning,
+  /// `refresh_token_not_found` — the session had been revoked overnight).
+  ///
+  /// Worth knowing, so it is kept; not a crash, so it goes as a warning that
+  /// says what it is, rather than a fatal that makes the release look as
+  /// though it fell over. The message is read as well as the type, as above:
+  /// the same failure arrives inside a `GoException` when the redirect is
+  /// what asked for the token.
+  static bool _isServerSideSignOut(SentryEvent event) {
+    for (final exception in event.exceptions ?? const <SentryException>[]) {
+      final text = '${exception.type}: ${exception.value}';
+      if (text.contains(_refusedAuthFailure) &&
+          text.contains(_refusedRefreshToken)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  static const _refusedAuthFailure = 'AuthApiException';
+  static const _refusedRefreshToken = 'Invalid Refresh Token';
+
+  static void _reportAsSignOut(SentryEvent event) {
+    event.level = SentryLevel.warning;
+    for (final exception in event.exceptions ?? const <SentryException>[]) {
+      // The mechanism is what Sentry reads as "crashed". The SDK's own
+      // sign-out is the handling; the throw that followed it is how gotrue
+      // tells its caller, not a failure the app left standing.
+      exception.mechanism?.handled = true;
+    }
+  }
 
   /// Whether a *header* carries a credential.
   ///
