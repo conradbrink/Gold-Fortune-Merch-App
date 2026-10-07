@@ -104,18 +104,27 @@ let pending: Promise<CompanyConfig | null> | null = null;
 /** The answer once known, so a component mounting later starts with it. */
 let resolved: CompanyConfig | null | undefined;
 
+/** Bumped by every new request and every refresh; a write needs the latest. */
+let generation = 0;
+
 function loadCompanyConfig(): Promise<CompanyConfig | null> {
   if (pending === null) {
+    // Each write below checks it still belongs to the current request: a load
+    // that started before `refreshCompanyConfig()` must not put the old
+    // configuration back in the cache, nor clear a newer request when it fails
+    // (CodeRabbit on #74, second pass).
+    const request = ++generation;
     pending = (async () => {
       const { data, error } = await createClient().rpc("my_company_config");
       if (error) {
         // Not cached: the next caller tries again rather than inheriting a
         // transient failure for the rest of the session.
-        pending = null;
+        if (generation === request) pending = null;
         throw error;
       }
-      resolved = parseCompanyConfig(data);
-      return resolved;
+      const parsed = parseCompanyConfig(data);
+      if (generation === request) resolved = parsed;
+      return parsed;
     })();
   }
   return pending;
@@ -131,6 +140,7 @@ export function getCompanyConfig(): Promise<CompanyConfig | null> {
 
 /** Forget the cached configuration, so the next reader fetches it again. */
 export function refreshCompanyConfig(): void {
+  generation++;
   pending = null;
   resolved = undefined;
 }

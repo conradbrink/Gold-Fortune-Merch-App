@@ -79,6 +79,10 @@ export function CompensationDialog({
     open && (existing !== null || currency !== "")
       ? existing?.employee_id ?? "new"
       : null;
+  // Until then the fields are locked rather than editable: anything typed
+  // before the currency arrived would be wiped by the reset above (CodeRabbit
+  // on #74, second pass).
+  const waitingForCurrency = open && openKey === null;
   if (openKey !== openedFor) {
     setOpenedFor(openKey);
     if (open) {
@@ -121,7 +125,10 @@ export function CompensationDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-6">
+        <fieldset disabled={waitingForCurrency} className="space-y-6">
+          {waitingForCurrency && (
+            <p className="text-sm text-muted-foreground">Loading the company&apos;s currency…</p>
+          )}
           <FormSection title="Pay">
             <Field label="Currency">
               <Input
@@ -256,7 +263,7 @@ export function CompensationDialog({
               />
             </Field>
           </FormSection>
-        </div>
+        </fieldset>
 
         {error && (
           <p className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
@@ -268,7 +275,7 @@ export function CompensationDialog({
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={busy}>
             Cancel
           </Button>
-          <Button onClick={save} disabled={busy}>
+          <Button onClick={save} disabled={busy || waitingForCurrency}>
             {busy ? "Saving…" : "Save pay details"}
           </Button>
         </DialogFooter>

@@ -186,14 +186,25 @@ export async function fetchRepDayDistance(
   const DAY_MS = 24 * 60 * 60 * 1000;
   const firstDay = reportingDay(range.from.toISOString(), timeZone);
   const lastDay = reportingDay(new Date(+range.to - 1).toISOString(), timeZone);
-  const { data: raw, error } = await supabase
-    .from("workday_sessions")
-    .select("rep_id, started_at, road_distance_meters")
-    .gte("started_at", new Date(+range.from - DAY_MS).toISOString())
-    .lt("started_at", new Date(+range.to + DAY_MS).toISOString())
-    .order("started_at", { ascending: true });
-  if (error) throw new Error(error.message);
-  const data = (raw ?? []).filter((r) => {
+  // Paged: the padding days count toward PostgREST's 1,000-row cap, and a
+  // response cut short there would drop the end of the range without an
+  // error (CodeRabbit on #74, second pass).
+  const PAGE = 1000;
+  const raw: { rep_id: string; started_at: string; road_distance_meters: number | null }[] = [];
+  for (let from = 0; ; from += PAGE) {
+    const { data: page, error } = await supabase
+      .from("workday_sessions")
+      .select("rep_id, started_at, road_distance_meters")
+      .gte("started_at", new Date(+range.from - DAY_MS).toISOString())
+      .lt("started_at", new Date(+range.to + DAY_MS).toISOString())
+      .order("started_at", { ascending: true })
+      .order("id", { ascending: true })
+      .range(from, from + PAGE - 1);
+    if (error) throw new Error(error.message);
+    raw.push(...(page ?? []));
+    if ((page ?? []).length < PAGE) break;
+  }
+  const data = raw.filter((r) => {
     const day = reportingDay(r.started_at as string, timeZone);
     return day >= firstDay && day <= lastDay;
   });
