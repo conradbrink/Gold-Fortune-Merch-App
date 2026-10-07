@@ -36,6 +36,9 @@ Branch names: `fix/location-not-saving`, `fix/offline-sync`,
 - [ ] Security suite passes: paste `supabase/tests/security_regression.sql`
       into the SQL editor — it rolls back and must raise
       "ALL SECURITY CHECKS PASSED"
+- [ ] Module suite passes: paste `supabase/tests/module_enforcement.sql` — must
+      raise "ALL MODULE CHECKS PASSED". A table or function "with no module"
+      means a migration skipped rule 4 in `supabase/README.md`.
 - [ ] Tenant isolation suite passes: paste `supabase/tests/tenant_isolation.sql`
       the same way — it stages a second company, rolls back, and must raise
       "ALL TENANT ISOLATION CHECKS PASSED". Read its "Not proven" list too.

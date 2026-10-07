@@ -66,13 +66,17 @@ declare
   v_info text := '';
   v_unproven text := '';
   v_tables_checked int := 0; v_funcs_checked int := 0;
+  v_funcs_refused text := ''; v_funcs_broken text := '';
 
   -- T2's list. Any public table without `org_id` that is not here stops the run.
   -- Above companies by design. `platform_*` have no API access at all; T2
   -- checks that B's users cannot read them.
   c_global constant text[] := array['organizations','app_permissions','app_releases',
                                      'service_flags','rate_limits',
-                                     'platform_admins','platform_audit_log'];
+                                     'platform_admins','platform_audit_log',
+                                     -- the module and settings catalogue (Stage 2)
+                                     'modules','module_dependencies',
+                                     'setting_definitions','module_assignments'];
   c_children constant text[] := array['form_fields','form_responses','promotion_products',
                                        'promotion_stores','file_groups','file_reps',
                                        'hr_review_ratings','job_role_permissions',
@@ -419,7 +423,7 @@ begin
     'sub', b_mgr, 'role', 'authenticated')::text, true);
 
   for f in
-    select p.oid, p.proname, p.proargnames, p.proargtypes::oid[] as types, p.pronargs
+    select p.oid, p.proname, p.proargnames, string_to_array(p.proargtypes::text, ' ')::oid[] as types, p.pronargs
       from pg_proc p join pg_namespace n on n.oid = p.pronamespace
      where n.nspname = 'public'
        and p.prokind = 'f'
@@ -468,14 +472,26 @@ begin
                      f.proname, v_args)
         into v_txt;
       foreach v_tok in array a_tokens loop
-        if position(v_tok in v_txt) > 0 then
+        -- An id we passed in coming back is an echo, not a leak:
+        -- rep_performance_summary(<A's rep>) returns that rep_id with no name
+        -- and all zeros (checked 8 Oct 2026). Anything else of A's is a leak.
+        if position(v_tok in v_txt) > 0 and position(v_tok in v_args) = 0 then
           v_fail := v_fail || format('T5 %s(%s): result contains Company A data (%s)%s',
                                      f.proname, v_args, left(v_tok, 40), E'\n');
           exit;
         end if;
       end loop;
     exception when others then
-      null;  -- refused, or the guessed arguments did not fit: neither is a leak
+      -- Not a leak either way, but say which: a refusal (permission, module)
+      -- is the guard working; anything else means the guessed arguments did
+      -- not fit and this function was NOT tested. Until 8 Oct 2026 the
+      -- argument types were read off by one, so almost every call landed
+      -- here, silently, and was counted as coverage.
+      if sqlstate = '42501' then
+        v_funcs_refused := v_funcs_refused || f.proname || ' ';
+      else
+        v_funcs_broken := v_funcs_broken || format('%s (%s) ', f.proname, sqlstate);
+      end if;
     end;
     reset role;
   end loop;
@@ -523,6 +539,12 @@ begin
                   v_funcs_checked, E'\n');
   if v_unproven <> '' then
     v_txt := v_txt || E'\nNot proven (no data to leak):\n' || v_unproven;
+  end if;
+  if v_funcs_refused <> '' then
+    v_txt := v_txt || E'\nFunctions that refused B outright (guard working):\n  ' || v_funcs_refused || E'\n';
+  end if;
+  if v_funcs_broken <> '' then
+    v_txt := v_txt || E'\nFunctions NOT tested (call failed for another reason):\n  ' || v_funcs_broken || E'\n';
   end if;
   if v_info <> '' then
     v_txt := v_txt || E'\nInserts refused by something other than RLS (not a leak, but '
