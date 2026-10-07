@@ -29,6 +29,7 @@ import {
   UserCheck,
   ShieldCheck,
   Building2,
+  Navigation,
 } from "lucide-react";
 import {
   can,
@@ -125,6 +126,10 @@ export const navGroups: NavGroup[] = [
     label: "Field Operations",
     items: [
       { href: "/schedule", label: "Schedule", icon: Calendar, permission: "field_ops" },
+      // Gated by `insights`, not `field_ops`: `location_pings` and `visits`
+      // are readable by the manager role only, so anyone else would be shown
+      // an empty map that looks like nobody is working.
+      { href: "/tracking", label: "Tracking", icon: Navigation, permission: "insights" },
       {
         // One destination, two names in the old menu. The feed is where a
         // manager starts, and the per-visit drill-down hangs off it.
