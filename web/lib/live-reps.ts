@@ -101,6 +101,19 @@ export type Freshness = "fresh" | "recent" | "stale";
  * #74: both maps still said "20 minutes" after the thresholds became the
  * company's interval).
  */
+/**
+ * The map key's two labels, from the same thresholds the dots use: "Within
+ * 20 min" / "Within 90 min" at a 5-minute interval. Before the company's
+ * interval is known the dots are all amber, so the key says so plainly.
+ */
+export function freshnessKey(intervalMinutes: number | null): { fresh: string; recent: string } {
+  if (intervalMinutes === null) return { fresh: "Newest", recent: "Recent" };
+  return {
+    fresh: `Within ${intervalMinutes * FRESH_INTERVALS} min`,
+    recent: `Within ${intervalMinutes * STALE_INTERVALS} min`,
+  };
+}
+
 export function freshnessExplained(intervalMinutes: number | null): string {
   if (intervalMinutes === null) return "Green is recent, amber older, grey oldest.";
   return `Green within ${intervalMinutes * FRESH_INTERVALS} minutes, amber within ${
