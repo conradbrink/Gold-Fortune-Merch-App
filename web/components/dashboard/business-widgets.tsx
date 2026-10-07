@@ -122,7 +122,7 @@ function Tile({
       href={href}
       className={
         primary
-          ? "flex flex-col gap-2 rounded-xl bg-primary p-4 text-primary-foreground transition-opacity hover:opacity-95"
+          ? "flex flex-col gap-2 rounded-xl bg-primary p-4 text-primary-foreground transition-opacity hover:opacity-95 sm:col-span-2 xl:col-span-1"
           : "flex flex-col gap-2 rounded-xl bg-card p-4 ring-1 ring-foreground/10 transition-colors hover:bg-muted/40"
       }
     >
@@ -165,7 +165,12 @@ export function Headline({
     : null;
 
   return (
-    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-5">
+    // One row of five on a wide screen; below that the revenue tile takes the
+    // full width and the other four pair up, so no tile is ever left alone on
+    // a row (2 + 2 + 1 at laptop widths looked broken, seen on production).
+    // xl rather than lg: the sidebar takes ~14rem, so at lg the five would be
+    // too narrow for their sublines.
+    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-5">
       <Tile
         primary
         href="/sales"
