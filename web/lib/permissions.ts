@@ -154,24 +154,31 @@ export function homeFor(
   // without the warehouse module must not be sent to /warehouse.
   reachable: (href: string) => boolean = () => true
 ): string {
-  const order: [PermissionCode, string][] = [
-    ["dashboard", "/"],
-    ["warehouse", "/warehouse"],
-    ["hr", "/hr"],
-    ["insights", "/sales"],
-    ["field_ops", "/schedule"],
-    ["sales_coverage", "/stores"],
-    ["team", "/representatives"],
-    ["resources", "/products"],
+  // Several homes where one page needs a module the company may not have:
+  // `insights` lives on /sales with distribution, /reports with reports and
+  // /tracking always; `warehouse` on /warehouse or, without that add-on,
+  // /orders; `resources` on /products or /files. Sending such a person to /rep-notice
+  // while a page they may open exists contradicts the proxy (CodeRabbit on #74).
+  const order: [PermissionCode, string[]][] = [
+    ["dashboard", ["/"]],
+    ["warehouse", ["/warehouse", "/orders"]],
+    ["hr", ["/hr"]],
+    ["insights", ["/sales", "/reports", "/tracking"]],
+    ["field_ops", ["/schedule"]],
+    ["sales_coverage", ["/stores"]],
+    ["team", ["/representatives"]],
+    ["resources", ["/products", "/files"]],
     // Last, and only because `permissionForPath` lets these two open a page on
     // their own. Somebody holding nothing but `hr_settings` was sent to
     // /rep-notice from the site root while /hr/settings would have loaded for
     // them — a landing page that contradicts the proxy standing next to it.
-    ["hr_settings", "/hr/settings"],
-    ["company_settings", "/settings/company"],
+    ["hr_settings", ["/hr/settings"]],
+    ["company_settings", ["/settings/company"]],
   ];
-  for (const [permission, href] of order) {
-    if (can(permissions, permission) && reachable(href)) return href;
+  for (const [permission, hrefs] of order) {
+    if (!can(permissions, permission)) continue;
+    const href = hrefs.find((h) => reachable(h));
+    if (href) return href;
   }
   return "/rep-notice";
 }

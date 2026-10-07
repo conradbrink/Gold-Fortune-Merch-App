@@ -21,6 +21,7 @@ import {
   type DashboardSummary,
 } from "@/lib/dashboard";
 import { achievedFor, MEASURES, type Measure, type TargetProgress } from "@/lib/targets";
+import { toLocalDateInput, type DateRange } from "@/lib/date-range";
 
 /**
  * The redesigned dashboard's cards: the headline row, sales, the orders
@@ -402,16 +403,20 @@ const DOT: Record<ReturnType<typeof freshnessOf>, string> = {
   fresh: "bg-emerald-500",
   recent: "bg-amber-500",
   stale: "bg-muted-foreground/50",
+  unknown: "bg-slate-300 dark:bg-slate-600",
 };
 
 export function FieldTeamCard({
   liveReps,
   summary,
   business,
+  range,
 }: {
   liveReps: LiveReps;
   summary: DashboardSummary | null;
   business: BusinessSummary | null;
+  /** The dashboard's range, handed to the off-site list so it shows the same check-ins. */
+  range: DateRange;
 }) {
   const t = useTerms();
   // Ages tick on their own, as on the rep map: the dashboard stays open, and
@@ -486,7 +491,22 @@ export function FieldTeamCard({
         />
         <MiniStat
           label={`Check-ins over ${business?.field.off_site_m ?? 500} m from ${lower(t.site.one)}`}
-          value={business ? business.field.flagged_checkins : "—"}
+          value={
+            business ? (
+              <Link
+                href={`/visits/off-site?${new URLSearchParams({
+                  from: toLocalDateInput(range.from),
+                  to: toLocalDateInput(range.to),
+                }).toString()}`}
+                className="hover:underline"
+                title={`See which ${lower(t.staff.many)}, ${lower(t.site.many)} and how far`}
+              >
+                {business.field.flagged_checkins}
+              </Link>
+            ) : (
+              "—"
+            )
+          }
           tone={business && business.field.flagged_checkins > 0 ? "bad" : undefined}
         />
       </div>

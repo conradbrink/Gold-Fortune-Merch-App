@@ -62,7 +62,7 @@ declare
 
   t record; f record;
   v_n int; v_total int; v_row jsonb; v_txt text; v_cols text; v_args text;
-  v_who text; v_tok text;
+  v_who text; v_tok text; v_alt text; v_txt2 text;
 
   v_fail text := '';
   v_info text := '';
@@ -491,6 +491,18 @@ begin
   reset role;
 
   ------------------------------------------------ T5 every callable function
+  -- The canary: a function that leaks *only* under an id it is given — it
+  -- echoes the id and answers 1 for A's store, 0 for any other. Nothing of A's
+  -- appears in its result except the id the suite passed in, which is exactly
+  -- the case the echo rule below must not wave through (CodeRabbit on #74).
+  -- T5 must flag it, or the suite fails: a check that cannot see a keyed leak
+  -- is not one.
+  create function public.zz_t5_canary(p_store uuid)
+  returns table(store_id uuid, found int)
+  language sql stable security definer set search_path to 'public'
+  as $canary$ select p_store, (select count(*)::int from public.stores where id = p_store) $canary$;
+  grant execute on function public.zz_t5_canary(uuid) to authenticated;
+
   perform set_config('request.jwt.claims', json_build_object(
     'sub', b_mgr, 'role', 'authenticated')::text, true);
 
@@ -545,11 +557,27 @@ begin
                      f.proname, v_args)
         into v_txt;
       foreach v_tok in array a_tokens loop
-        -- An id we passed in coming back is an echo, not a leak:
-        -- rep_performance_summary(<A's rep>) returns that rep_id with no name
-        -- and all zeros (checked 8 Oct 2026). Anything else of A's is a leak.
-        if position(v_tok in v_txt) > 0 and position(v_tok in v_args) = 0 then
+        continue when position(v_tok in v_txt) = 0;
+        if position(v_tok in v_args) = 0 then
           v_fail := v_fail || format('T5 %s(%s): result contains Company A data (%s)%s',
+                                     f.proname, v_args, left(v_tok, 40), E'\n');
+          exit;
+        end if;
+        -- An id we passed in coming back may be a plain echo:
+        -- rep_performance_summary(<A's rep>) returns that rep_id with all
+        -- zeros. Or it may key a leak — the row for that id, with A's figures.
+        -- Tell them apart by asking again with the id swapped for one that
+        -- exists nowhere: an echo answers the same, id aside; a leak does not.
+        v_alt := gen_random_uuid()::text;
+        begin
+          execute format('select coalesce(jsonb_agg(to_jsonb(x))::text, '''') from public.%I(%s) x',
+                         f.proname, replace(v_args, v_tok, v_alt))
+            into v_txt2;
+        exception when others then
+          v_txt2 := '(raised ' || sqlstate || ')';
+        end;
+        if replace(v_txt, v_tok, '<id>') is distinct from replace(v_txt2, v_alt, '<id>') then
+          v_fail := v_fail || format('T5 %s(%s): answers differently for Company A''s id (%s)%s',
                                      f.proname, v_args, left(v_tok, 40), E'\n');
           exit;
         end if;
@@ -572,6 +600,14 @@ begin
     end;
     reset role;
   end loop;
+
+  -- The canary must have been caught, and is then taken out of the tally.
+  if position('T5 zz_t5_canary(' in v_fail) > 0 then
+    v_fail := regexp_replace(v_fail, 'T5 zz_t5_canary\([^\n]*\n', '');
+    v_funcs_checked := v_funcs_checked - 1;
+  else
+    v_fail := v_fail || 'T5 cannot detect a keyed leak: the canary passed' || E'\n';
+  end if;
 
   -- T5 calls stable and immutable functions only: a volatile one may write,
   -- and guessed arguments are no basis for a write. Name what was skipped so

@@ -531,3 +531,37 @@ export function formatMoneyShort(n: number): string {
   if (Math.abs(n) >= 1000) return `P ${Math.round(n / 1000).toLocaleString("en-GB")}k`;
   return formatMoney(n);
 }
+
+/** One check-in the dashboard counts as off site. */
+export type OffsiteCheckin = {
+  visit_id: string;
+  checkin_at: string;
+  rep_id: string;
+  rep_name: string | null;
+  store_id: string;
+  store_name: string;
+  distance_m: number;
+  gps_accuracy_m: number | null;
+  checkin_lat: number | null;
+  checkin_lng: number | null;
+  store_lat: number | null;
+  store_lng: number | null;
+  off_site_m: number;
+};
+
+/**
+ * The check-ins behind the dashboard's off-site count, newest first. The rule
+ * lives only in `offsite_checkins`, which `dashboard_business` counts, so this
+ * list and that number cannot disagree for the same range.
+ */
+export async function fetchOffsiteCheckins(
+  supabase: SupabaseClient,
+  range: DateRange
+): Promise<OffsiteCheckin[]> {
+  const { data, error } = await callRpc(supabase, "offsite_checkins", {
+    p_from: range.from.toISOString(),
+    p_to: range.to.toISOString(),
+  });
+  if (error) throw new Error(error.message);
+  return (data ?? []) as OffsiteCheckin[];
+}

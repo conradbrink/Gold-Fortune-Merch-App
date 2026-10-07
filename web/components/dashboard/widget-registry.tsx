@@ -236,7 +236,7 @@ export const WIDGETS: WidgetDefinition[] = [
     source: "liveReps",
     render: (d) =>
       d.liveReps && (
-        <FieldTeamCard liveReps={d.liveReps} summary={d.summary} business={d.business?.summary ?? null} />
+        <FieldTeamCard liveReps={d.liveReps} summary={d.summary} business={d.business?.summary ?? null} range={d.range} />
       ),
   },
   {

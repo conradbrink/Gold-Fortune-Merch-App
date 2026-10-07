@@ -32,8 +32,13 @@ import {
   type RepDay,
 } from "@/lib/tracking";
 
-const PIN = { fresh: "#10b981", recent: "#f59e0b", stale: "#9ca3af" } as const;
-const DOT = { fresh: "bg-emerald-500", recent: "bg-amber-500", stale: "bg-muted-foreground/50" } as const;
+const PIN = { fresh: "#10b981", recent: "#f59e0b", stale: "#9ca3af", unknown: "#cbd5e1" } as const;
+const DOT = {
+  fresh: "bg-emerald-500",
+  recent: "bg-amber-500",
+  stale: "bg-muted-foreground/50",
+  unknown: "bg-slate-300 dark:bg-slate-600",
+} as const;
 const ORDER_PIN = "#2563eb";
 
 /**
