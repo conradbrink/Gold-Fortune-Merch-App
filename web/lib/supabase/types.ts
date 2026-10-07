@@ -362,6 +362,63 @@ export type Database = {
         }
         Relationships: []
       }
+      company_terminology: {
+        Row: {
+          article: string | null
+          key: string
+          org_id: string
+          plural: string
+          singular: string
+          updated_at: string
+          updated_by: string | null
+        }
+        Insert: {
+          article?: string | null
+          key: string
+          org_id: string
+          plural: string
+          singular: string
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Update: {
+          article?: string | null
+          key?: string
+          org_id?: string
+          plural?: string
+          singular?: string
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Relationships: []
+      }
+      term_definitions: {
+        Row: {
+          article: string | null
+          description: string
+          key: string
+          plural: string
+          singular: string
+          sort_order: number
+        }
+        Insert: {
+          article?: string | null
+          description: string
+          key: string
+          plural: string
+          singular: string
+          sort_order?: number
+        }
+        Update: {
+          article?: string | null
+          description?: string
+          key?: string
+          plural?: string
+          singular?: string
+          sort_order?: number
+        }
+        Relationships: []
+      }
       module_assignments: {
         Row: {
           kind: string
@@ -2012,6 +2069,7 @@ export type Database = {
           seller_vat_number: string | null
           seller_phone: string | null
           seller_email: string | null
+          seller_logo_path: string | null
           customer_name: string
           customer_address: string | null
           footer: string | null
@@ -2041,6 +2099,7 @@ export type Database = {
           seller_vat_number?: string | null
           seller_phone?: string | null
           seller_email?: string | null
+          seller_logo_path?: string | null
           customer_name: string
           customer_address?: string | null
           footer?: string | null
@@ -2070,6 +2129,7 @@ export type Database = {
           seller_vat_number?: string | null
           seller_phone?: string | null
           seller_email?: string | null
+          seller_logo_path?: string | null
           customer_name?: string
           customer_address?: string | null
           footer?: string | null
@@ -2380,6 +2440,7 @@ export type Database = {
           id: string
           industry: string | null
           legal_name: string | null
+          logo_path: string | null
           name: string
           stores_per_day: number
           timezone: string
@@ -2400,6 +2461,7 @@ export type Database = {
           id?: string
           industry?: string | null
           legal_name?: string | null
+          logo_path?: string | null
           name: string
           stores_per_day?: number
           timezone?: string
@@ -2420,6 +2482,7 @@ export type Database = {
           id?: string
           industry?: string | null
           legal_name?: string | null
+          logo_path?: string | null
           name?: string
           stores_per_day?: number
           timezone?: string

@@ -78,7 +78,9 @@ declare
                                      'platform_admins','platform_audit_log',
                                      -- the module and settings catalogue (Stage 2)
                                      'modules','module_dependencies',
-                                     'setting_definitions','module_assignments'];
+                                     'setting_definitions','module_assignments',
+                                     -- the terminology catalogue (Stage 3)
+                                     'term_definitions'];
   c_children constant text[] := array['form_fields','form_responses','promotion_products',
                                        'promotion_stores','file_groups','file_reps',
                                        'hr_review_ratings','job_role_permissions',
@@ -426,7 +428,7 @@ begin
   perform set_config('request.jwt.claims', json_build_object(
     'sub', b_mgr, 'role', 'authenticated')::text, true);
   set local role authenticated;
-  foreach v_txt in array array['visit-photos','files','fulfilment-docs','hr-documents'] loop
+  foreach v_txt in array array['visit-photos','files','fulfilment-docs','hr-documents','branding'] loop
     begin
       insert into storage.objects (bucket_id, name, owner)
       values (v_txt, a_org::text || '/' || a_emp::text || '/isolation-test.jpg', b_mgr);

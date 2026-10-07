@@ -3,10 +3,13 @@
 import { useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { toModuleSet, type ModuleSet } from "@/lib/modules";
+import { DEFAULT_TERMS, parseTerms, type Terms } from "@/lib/terms";
+import { parseBranding, type Branding } from "@/lib/branding";
 
 /**
- * The signed-in user's company configuration: which modules it has and every
- * setting's effective value (`my_company_config()` in the database).
+ * The signed-in user's company configuration: which modules it has, every
+ * setting's effective value, its words for things and its branding
+ * (`my_company_config()` in the database).
  *
  * Same contract as `usePermissions`: `null` while it loads or if the lookup
  * failed, and callers render nothing module-dependent until it resolves —
@@ -17,6 +20,11 @@ import { toModuleSet, type ModuleSet } from "@/lib/modules";
  * top bar and the dashboard all mount at once, and each asking separately would
  * triple a call that cannot change between them. `refreshCompanyConfig` drops
  * the cached answer after the settings page saves.
+ *
+ * The dashboard layout fetches the configuration on the server and seeds this
+ * cache (`seedCompanyConfig`) before any client component renders, so the
+ * company's words, colours and name are there on the first paint rather than
+ * flickering in from the defaults.
  *
  * Chrome, not access control: `proxy.ts` and the database's module gates
  * decide what is served and read.
@@ -39,6 +47,8 @@ export type CompanyConfig = {
   settings: CompanySettings;
   timezone: string;
   vatRate: number;
+  terms: Terms;
+  branding: Branding;
 };
 
 /**
@@ -97,6 +107,8 @@ export function parseCompanyConfig(raw: unknown): CompanyConfig | null {
     },
     timezone: typeof r.timezone === "string" && r.timezone !== "" ? r.timezone : "UTC",
     vatRate: Number.isFinite(Number(r.vat_rate)) ? Number(r.vat_rate) : 0,
+    terms: parseTerms(r.terms),
+    branding: parseBranding(r.branding),
   };
 }
 
@@ -129,6 +141,19 @@ export function getCompanyConfig(): Promise<CompanyConfig | null> {
   return loadCompanyConfig();
 }
 
+/**
+ * Put the server's answer in the cache before anything renders. Called by the
+ * dashboard shell with the payload the server layout fetched; a payload that
+ * does not parse leaves the cache alone, so the client fetches as before.
+ */
+export function seedCompanyConfig(raw: unknown): void {
+  if (resolved !== undefined) return;
+  const parsed = parseCompanyConfig(raw);
+  if (parsed === null) return;
+  resolved = parsed;
+  pending = Promise.resolve(parsed);
+}
+
 /** Forget the cached configuration, so the next reader fetches it again. */
 export function refreshCompanyConfig(): void {
   pending = null;
@@ -157,4 +182,18 @@ export function useCompanyConfig(): CompanyConfig | null {
   }, []);
 
   return config;
+}
+
+/**
+ * The company's words, the neutral defaults until the configuration is known.
+ * Unlike modules, a default word is a fine placeholder: it is never a wrong
+ * answer about what the company may do.
+ */
+export function useTerms(): Terms {
+  return useCompanyConfig()?.terms ?? DEFAULT_TERMS;
+}
+
+/** The company's branding, or null until the configuration is known. */
+export function useBranding(): Branding | null {
+  return useCompanyConfig()?.branding ?? null;
 }
