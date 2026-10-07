@@ -259,7 +259,7 @@ export default function ReviewPage() {
           <ArrowLeft className="mr-1.5 h-4 w-4" /> Performance
         </Button>
         <div className="flex flex-wrap items-center gap-3">
-          <h1 className="text-2xl font-bold tracking-tight text-foreground">
+          <h1 className="text-xl font-semibold tracking-tight text-foreground">
             {review.employee?.full_name ?? "Review"} — {label}
           </h1>
           <Badge variant={isDraft ? "outline" : "default"} className="font-normal">
