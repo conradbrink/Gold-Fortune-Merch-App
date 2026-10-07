@@ -474,7 +474,8 @@ export type BusinessSummary = {
     lapsed_60d: number;
     longest_unvisited: { id: string; name: string; city: string | null; days: number | null }[];
   };
-  field: { flagged_checkins: number };
+  /** Off-site check-ins: confirmed store, beyond off_site_m after GPS error. */
+  field: { flagged_checkins: number; off_site_m: number };
 };
 
 export async function fetchBusinessSummary(
