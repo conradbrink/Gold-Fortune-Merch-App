@@ -20,19 +20,28 @@ import {
   fetchRepsForOrder,
   fetchVatRate,
   matchProducts,
+  netPrice,
   orderTotals,
   unitPriceFor,
   RECEIVED_VIA,
 } from "@/lib/orders";
 import { fetchStockOnHand, type StockLine } from "@/lib/warehouse";
 
-type Draft = { key: string; productId: string; qty: string; unitPrice: string };
+type Draft = {
+  key: string;
+  productId: string;
+  qty: string;
+  unitPrice: string;
+  /** Percentage off `unitPrice`; blank means none. */
+  discount: string;
+};
 
 const blankLine = (): Draft => ({
   key: crypto.randomUUID(),
   productId: "",
   qty: "1",
   unitPrice: "",
+  discount: "",
 });
 
 /**
@@ -72,6 +81,7 @@ export default function NewOrderPage() {
   const [contactPhone, setContactPhone] = useState("");
   const [requiredBy, setRequiredBy] = useState("");
   const [notes, setNotes] = useState("");
+  const [deliveryAddress, setDeliveryAddress] = useState("");
   const [repId, setRepId] = useState("");
   const [invoiceNumber, setInvoiceNumber] = useState("");
 
@@ -141,7 +151,7 @@ export default function NewOrderPage() {
   const totals = orderTotals(
     lines.map((l) => ({
       qty: Number(l.qty) || 0,
-      unitPrice: Number(l.unitPrice) || 0,
+      unitPrice: netPrice(Number(l.unitPrice) || 0, Number(l.discount) || 0),
     })),
     vatRate
   );
@@ -166,7 +176,12 @@ export default function NewOrderPage() {
           l.key === existing.key ? { ...l, qty: String((Number(l.qty) || 0) + 1) } : l
         );
       }
-      const line = { productId: p.id, qty: "1", unitPrice: price != null ? price : "" };
+      const line = {
+        productId: p.id,
+        qty: "1",
+        unitPrice: price != null ? price : "",
+        discount: "",
+      };
       const empty = prev.find((l) => !l.productId);
       return empty
         ? prev.map((l) => (l.key === empty.key ? { ...l, ...line } : l))
@@ -247,6 +262,10 @@ export default function NewOrderPage() {
     // One line per product is a database constraint; catching it here gives a
     // sentence instead of a unique-violation.
     const ids = filled.map((l) => l.productId);
+    if (filled.some((l) => Number(l.discount) < 0 || Number(l.discount) > 100)) {
+      setError("A discount is a percentage between 0 and 100.");
+      return;
+    }
     if (new Set(ids).size !== ids.length) {
       setError("The same product appears on more than one line. Combine them into one.");
       return;
@@ -262,12 +281,14 @@ export default function NewOrderPage() {
         contactPhone,
         requiredBy: requiredBy || null,
         notes,
+        deliveryAddress: deliveryAddress.trim() || null,
         repId: repId || null,
         invoiceNumber: invoiceNumber.trim() || null,
         lines: filled.map((l) => ({
           productId: l.productId,
           qty: Number(l.qty),
           unitPrice: l.unitPrice === "" ? null : Number(l.unitPrice),
+          discountPct: Number(l.discount) || 0,
         })),
       });
       router.push(`/orders/${id}`);
@@ -465,6 +486,15 @@ export default function NewOrderPage() {
             />
           </div>
           <div className="sm:col-span-2">
+            <Label htmlFor="delivery">Delivery address</Label>
+            <Input
+              id="delivery"
+              value={deliveryAddress}
+              onChange={(e) => setDeliveryAddress(e.target.value)}
+              placeholder="Leave blank to deliver to the store"
+            />
+          </div>
+          <div className="sm:col-span-2">
             <Label htmlFor="notes">Notes</Label>
             <Input
               id="notes"
@@ -540,7 +570,7 @@ export default function NewOrderPage() {
             const short = available !== null && wanted > available;
             const chosen = products.find((p) => p.id === l.productId);
             return (
-              <div key={l.key} className="grid gap-2 sm:grid-cols-[1fr_6rem_7rem_2.5rem]">
+              <div key={l.key} className="grid gap-2 sm:grid-cols-[1fr_5rem_7rem_5.5rem_2.5rem]">
                 <div>
                   <NativeSelect
                     value={l.productId}
@@ -612,6 +642,22 @@ export default function NewOrderPage() {
                   placeholder="Per unit"
                   aria-label="Price per unit"
                 />
+                <div className="relative">
+                  <Input
+                    type="number"
+                    min={0}
+                    max={100}
+                    step="0.5"
+                    value={l.discount}
+                    onChange={(e) => update(l.key, { discount: e.target.value })}
+                    placeholder="0"
+                    aria-label="Discount percentage"
+                    className="pr-7"
+                  />
+                  <span className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">
+                    % off
+                  </span>
+                </div>
                 <Button
                   variant="ghost"
                   size="icon"

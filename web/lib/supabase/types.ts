@@ -1238,6 +1238,8 @@ export type Database = {
           created_at: string
           id: string
           line_status: string
+          list_price: number | null
+          discount_pct: number
           order_id: string
           org_id: string
           product_id: string
@@ -1254,6 +1256,8 @@ export type Database = {
           created_at?: string
           id?: string
           line_status?: string
+          list_price?: number | null
+          discount_pct?: number
           order_id: string
           org_id: string
           product_id: string
@@ -1270,6 +1274,8 @@ export type Database = {
           created_at?: string
           id?: string
           line_status?: string
+          list_price?: number | null
+          discount_pct?: number
           order_id?: string
           org_id?: string
           product_id?: string
@@ -1373,6 +1379,7 @@ export type Database = {
           confirmed_by: string | null
           contact_name: string | null
           contact_phone: string | null
+          delivery_address: string | null
           created_at: string
           created_by: string | null
           delivered_at: string | null
@@ -1413,6 +1420,7 @@ export type Database = {
           confirmed_by?: string | null
           contact_name?: string | null
           contact_phone?: string | null
+          delivery_address?: string | null
           created_at?: string
           created_by?: string | null
           delivered_at?: string | null
@@ -1453,6 +1461,7 @@ export type Database = {
           confirmed_by?: string | null
           contact_name?: string | null
           contact_phone?: string | null
+          delivery_address?: string | null
           created_at?: string
           created_by?: string | null
           delivered_at?: string | null

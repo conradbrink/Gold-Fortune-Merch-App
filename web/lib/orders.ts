@@ -603,6 +603,17 @@ export async function fetchVatRate(supabase: Client): Promise<number> {
 }
 
 /**
+ * A line's price after its discount, rounded to the cent.
+ *
+ * The same arithmetic as `order_lines_apply_discount` in the database, which
+ * is what actually stores the figure — this only previews it, and the two have
+ * to agree to the cent or the total on screen is not the total saved.
+ */
+export function netPrice(listPrice: number, discountPct: number) {
+  return Math.round(listPrice * (1 - discountPct / 100) * 100) / 100;
+}
+
+/**
  * Subtotal, VAT and total from VAT-exclusive line prices.
  *
  * One place, because three screens show these numbers and three
@@ -673,12 +684,15 @@ export async function createManualOrder(
     contactPhone?: string;
     requiredBy?: string | null;
     notes?: string;
+    /** Null means deliver to the store's own address. */
+    deliveryAddress?: string | null;
     /** Whose account this is. Null is legitimate — plenty of orders arrive
         from a shop with no rep attached to them. */
     repId?: string | null;
     /** The accounting system's invoice number, when it already exists. */
     invoiceNumber?: string | null;
-    lines: { productId: string; qty: number; unitPrice: number | null }[];
+    /** `unitPrice` is before the discount; the database derives the net. */
+    lines: { productId: string; qty: number; unitPrice: number | null; discountPct?: number }[];
   }
 ): Promise<string> {
   if (input.lines.length === 0) {
@@ -703,6 +717,7 @@ export async function createManualOrder(
       contact_phone: input.contactPhone || null,
       required_by: input.requiredBy || null,
       notes: input.notes || null,
+      delivery_address: input.deliveryAddress || null,
       rep_id: input.repId || null,
       invoice_number: input.invoiceNumber || null,
       client_generated_id: crypto.randomUUID(),
@@ -720,6 +735,7 @@ export async function createManualOrder(
       product_id: l.productId,
       qty_ordered: l.qty,
       unit_price: l.unitPrice,
+      discount_pct: l.discountPct ?? 0,
       client_generated_id: crypto.randomUUID(),
     }))
   );
