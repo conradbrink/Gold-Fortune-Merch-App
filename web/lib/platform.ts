@@ -152,3 +152,71 @@ export async function getCompany(orgId: string): Promise<PlatformCompanyDetail |
     })),
   };
 }
+
+// ------------------------------------------------------------ Add company
+
+export type IndustryTemplate = { code: string; name: string; description: string };
+
+/** The active industry templates, in display order. */
+export async function listTemplates(): Promise<IndustryTemplate[]> {
+  const { data, error } = await platformAdminClient()
+    .from("industry_templates")
+    .select("code, name, description")
+    .eq("is_active", true)
+    .order("sort_order");
+  if (error) throw error;
+  return data ?? [];
+}
+
+/** `template_defaults()`: the merged proposal for the chosen industries, unparsed. */
+export async function templateDefaults(codes: string[]): Promise<unknown> {
+  const { data, error } = await platformAdminClient().rpc("template_defaults", { p_templates: codes });
+  if (error) throw error;
+  return data;
+}
+
+/** Which module needs which switched on first. */
+export async function moduleDependencies(): Promise<{ module: string; requires: string }[]> {
+  const { data, error } = await platformAdminClient()
+    .from("module_dependencies")
+    .select("module_code, requires_code");
+  if (error) throw error;
+  return (data ?? []).map((d) => ({ module: d.module_code, requires: d.requires_code }));
+}
+
+export type SettingDefinition = {
+  key: string;
+  label: string;
+  description: string;
+  valueType: string;
+  min: number | null;
+  max: number | null;
+};
+
+/** The settings catalogue, for the defaults step. */
+export async function settingDefinitions(): Promise<SettingDefinition[]> {
+  const { data, error } = await platformAdminClient()
+    .from("setting_definitions")
+    .select("key, label, description, value_type, min_value, max_value")
+    .order("sort_order");
+  if (error) throw error;
+  return (data ?? []).map((d) => ({
+    key: d.key,
+    label: d.label,
+    description: d.description,
+    valueType: d.value_type,
+    min: d.min_value,
+    max: d.max_value,
+  }));
+}
+
+/** Every module a company can have (not `core`, which is always on). */
+export async function moduleCatalogue(): Promise<{ code: string; name: string; built: boolean; planType: string }[]> {
+  const { data, error } = await platformAdminClient()
+    .from("modules")
+    .select("code, name, is_built, plan_type")
+    .neq("plan_type", "core")
+    .order("sort_order");
+  if (error) throw error;
+  return (data ?? []).map((m) => ({ code: m.code, name: m.name, built: m.is_built, planType: m.plan_type }));
+}
