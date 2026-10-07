@@ -27,6 +27,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { ErrorBanner } from "@/components/warehouse/stat-tile";
+import { OrderInvoice } from "@/components/orders/order-invoice";
 import { fetchOrgId } from "@/lib/representatives";
 import { STATUS_LABELS, fetchLocations, type StockLocation } from "@/lib/warehouse";
 import {
@@ -971,7 +972,7 @@ export default function OrderDetailPage() {
                   that rang the office is nobody's call — and hiding the row
                   makes it look like the screen forgot to load it. */}
               <Row label="Rep" value={detail.repName ?? "No rep"} />
-              <Row label="Invoice" value={o.invoice_number ?? "Not yet raised"} />
+              <OrderInvoice orderId={o.id} status={o.status} invoiceNumber={o.invoice_number} />
               {o.contact_name && <Row label="Contact" value={o.contact_name} />}
               {o.contact_phone && <Row label="Phone" value={o.contact_phone} />}
               {o.required_by && <Row label="Required by" value={o.required_by} />}

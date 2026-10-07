@@ -29,6 +29,8 @@ import {
   UserCheck,
   ShieldCheck,
   Building2,
+  Receipt,
+  Repeat,
 } from "lucide-react";
 import {
   can,
@@ -154,6 +156,10 @@ export const navGroups: NavGroup[] = [
         icon: ClipboardCheck,
         permission: "warehouse",
       },
+      // Beside Orders: an invoice is made from an order that has gone out,
+      // and a recurring order places orders. Same people, same permission.
+      { href: "/invoices", label: "Tax invoices", icon: Receipt, permission: "warehouse" },
+      { href: "/recurring-orders", label: "Recurring orders", icon: Repeat, permission: "warehouse" },
       {
         href: "/inventory",
         label: "Inventory",

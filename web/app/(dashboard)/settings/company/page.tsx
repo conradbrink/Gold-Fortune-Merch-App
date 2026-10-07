@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { Plus, MoreHorizontal } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
@@ -61,6 +62,11 @@ export default function CompanyProfilePage() {
     support_email: "",
     vat_rate: "",
     timezone: "",
+    tax_number: "",
+    vat_number: "",
+    phone: "",
+    invoice_terms_days: "30",
+    invoice_footer: "",
   });
   /** Planning capacity. Kept separate: it saves with its own button, because
       it changes what the whole schedule is measured against. */
@@ -94,6 +100,11 @@ export default function CompanyProfilePage() {
         support_email: orgRow.support_email ?? "",
         vat_rate: String(orgRow.vat_rate ?? 0),
         timezone: orgRow.timezone ?? "Africa/Gaborone",
+        tax_number: orgRow.tax_number ?? "",
+        vat_number: orgRow.vat_number ?? "",
+        phone: orgRow.phone ?? "",
+        invoice_terms_days: String(orgRow.invoice_terms_days ?? 30),
+        invoice_footer: orgRow.invoice_footer ?? "",
       });
     }
 
@@ -170,6 +181,11 @@ export default function CompanyProfilePage() {
         support_email: form.support_email || null,
         vat_rate: Number(form.vat_rate) || 0,
         timezone: form.timezone,
+        tax_number: form.tax_number.trim() || null,
+        vat_number: form.vat_number.trim() || null,
+        phone: form.phone.trim() || null,
+        invoice_terms_days: Math.max(0, Math.min(365, Math.round(Number(form.invoice_terms_days) || 0))),
+        invoice_footer: form.invoice_footer.trim() || null,
       })
       .eq("id", org.id);
     setSaving(false);
@@ -260,6 +276,57 @@ export default function CompanyProfilePage() {
                   value={form.support_email}
                   onChange={(e) => setForm({ ...form, support_email: e.target.value })}
                 />
+              </div>
+              {/* Printed on every tax invoice, and copied onto it when it is
+                  issued — changing these never alters an invoice already out. */}
+              <div className="space-y-1.5">
+                <Label htmlFor="phone">Phone</Label>
+                <Input
+                  id="phone"
+                  value={form.phone}
+                  onChange={(e) => setForm({ ...form, phone: e.target.value })}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="tax-number">Taxpayer number (TIN)</Label>
+                <Input
+                  id="tax-number"
+                  value={form.tax_number}
+                  onChange={(e) => setForm({ ...form, tax_number: e.target.value })}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="vat-number">VAT registration number</Label>
+                <Input
+                  id="vat-number"
+                  value={form.vat_number}
+                  onChange={(e) => setForm({ ...form, vat_number: e.target.value })}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="terms">Invoice payment terms (days)</Label>
+                <Input
+                  id="terms"
+                  type="number"
+                  min={0}
+                  max={365}
+                  value={form.invoice_terms_days}
+                  onChange={(e) => setForm({ ...form, invoice_terms_days: e.target.value })}
+                />
+              </div>
+              <div className="space-y-1.5 sm:col-span-2">
+                <Label htmlFor="invoice-footer">Invoice footer</Label>
+                <Textarea
+                  id="invoice-footer"
+                  rows={3}
+                  value={form.invoice_footer}
+                  onChange={(e) => setForm({ ...form, invoice_footer: e.target.value })}
+                  placeholder="Bank details and payment instructions, printed at the foot of every invoice"
+                />
+                <p className="text-xs text-muted-foreground">
+                  The name, address, TIN, VAT number, phone and footer are copied onto each tax
+                  invoice when it is issued, so changing them never alters one already sent.
+                </p>
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="vat-rate">VAT rate (%)</Label>
