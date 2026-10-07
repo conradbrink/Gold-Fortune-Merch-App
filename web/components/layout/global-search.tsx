@@ -6,6 +6,8 @@ import { Search, X } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { can, type PermissionSet } from "@/lib/permissions";
 import { cn } from "@/lib/utils";
+import { useTerms } from "@/lib/use-company-config";
+import { lower } from "@/lib/terms";
 
 /**
  * Global search across the five things a manager looks for by name.
@@ -31,8 +33,12 @@ import { cn } from "@/lib/utils";
  * queried at all rather than queried and hidden.
  */
 
+/**
+ * What a hit is. `site` and `staff` are shown in the company's words; the
+ * others are product vocabulary and are shown as written.
+ */
 type Hit = {
-  kind: "Outlet" | "Rep" | "Line" | "Form" | "File";
+  kind: "site" | "staff" | "Line" | "Form" | "File";
   id: string;
   label: string;
   detail: string | null;
@@ -89,6 +95,7 @@ export function GlobalSearch({
 }) {
   const router = useRouter();
   const supabase = createClient();
+  const t = useTerms();
 
   // Read once per render and closed over by `run`, which deliberately has an
   // empty dependency list so the debounce is not restarted on every keystroke.
@@ -103,7 +110,7 @@ export function GlobalSearch({
   // the queries exists to remove.
   const sources = [
     ...(canOutlets ? ["places"] : []),
-    ...(canReps ? ["reps"] : []),
+    ...(canReps ? [lower(t.staff.many)] : []),
     ...(canResources ? ["products", "forms", "files"] : []),
   ];
   const placeholder =
@@ -202,14 +209,14 @@ export function GlobalSearch({
 
         const found: Hit[] = [
           ...(stores.data ?? []).map((s) => ({
-            kind: "Outlet" as const,
+            kind: "site" as const,
             id: s.id,
             label: s.name,
             detail: s.city,
             href: `/stores?q=${encodeURIComponent(s.name)}`,
           })),
           ...(reps.data ?? []).map((r) => ({
-            kind: "Rep" as const,
+            kind: "staff" as const,
             id: r.id,
             label: r.full_name ?? r.email ?? "Unnamed",
             detail: r.email,
@@ -386,7 +393,11 @@ export function GlobalSearch({
                     )}
                   >
                     <span className="w-14 shrink-0 text-xs uppercase tracking-wide text-muted-foreground">
-                      {hit.kind}
+                      {hit.kind === "site"
+                        ? t.site.one
+                        : hit.kind === "staff"
+                          ? t.staff.one
+                          : hit.kind}
                     </span>
                     <span className="min-w-0 flex-1 truncate text-foreground">
                       {hit.label}

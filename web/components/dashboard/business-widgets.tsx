@@ -517,7 +517,7 @@ export function StoreHealthCard({ business }: { business: BusinessSummary }) {
         <MiniStat label="Not visited in 30 days" value={h.not_visited_30d} tone={h.not_visited_30d > 0 ? "bad" : undefined} />
       </div>
       <div className="flex flex-col border-t">
-        <span className="pb-1.5 pt-3 text-xs text-muted-foreground">Visit these first</span>
+        <span className="pb-1.5 pt-3 text-xs text-muted-foreground">Go to these first</span>
         {h.longest_unvisited.length === 0 ? (
           <p className="py-2 text-sm text-muted-foreground">Every active {lower(t.site.one)} was visited in the last 30 days.</p>
         ) : (

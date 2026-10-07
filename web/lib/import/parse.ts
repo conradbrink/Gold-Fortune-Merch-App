@@ -58,7 +58,7 @@ export async function parseSpreadsheet(file: File): Promise<ParsedSheet> {
   });
 
   if (grid.length < 2) {
-    throw new Error("That sheet has no data rows — expected a header row and at least one store.");
+    throw new Error("That sheet has no data rows — expected a header row and at least one row below it.");
   }
 
   const headers = (grid[0] as unknown[]).map((h, i) => {

@@ -30,8 +30,10 @@ import { UploadFileDialog } from "@/components/files/upload-dialog";
 import { AudienceControl } from "@/components/files/audience-control";
 import { createClient } from "@/lib/supabase/client";
 import { fetchOrgId, fetchRepDirectory, type RepSummary } from "@/lib/representatives";
+import { lower, withArticle } from "@/lib/terms";
+import { useTerms } from "@/lib/use-company-config";
 import {
-  AUDIENCE_LABELS,
+  audienceLabels,
   deleteFile,
   fetchFiles,
   formatBytes,
@@ -50,6 +52,8 @@ import {
  */
 export default function FilesPage() {
   const supabase = createClient();
+  const terms = useTerms();
+  const audiences = audienceLabels(terms);
 
   const [files, setFiles] = useState<FileRow[]>([]);
   const [reps, setReps] = useState<RepSummary[]>([]);
@@ -205,7 +209,8 @@ export default function FilesPage() {
             Files
           </h1>
           <p className="text-sm text-muted-foreground">
-            Planograms, price lists and notices. Reps see these on their phone.
+            Planograms, price lists and notices. {terms.staff.many} see these on
+            their phone.
           </p>
         </div>
         <Button className="gap-1.5" onClick={() => setUploadOpen(true)} disabled={!orgId}>
@@ -235,9 +240,9 @@ export default function FilesPage() {
             aria-label="Filter by audience"
           >
             <option value="all">Any audience</option>
-            {(Object.keys(AUDIENCE_LABELS) as Audience[]).map((a) => (
+            {(Object.keys(audiences) as Audience[]).map((a) => (
               <option key={a} value={a}>
-                {AUDIENCE_LABELS[a]}
+                {audiences[a]}
               </option>
             ))}
           </NativeSelect>
@@ -252,9 +257,10 @@ export default function FilesPage() {
         <div className="space-y-2 rounded-lg border border-border bg-card py-16 text-center">
           <p className="text-sm font-medium text-foreground">No files yet.</p>
           <p className="mx-auto max-w-md text-sm text-muted-foreground">
-            Upload a planogram or price list and choose who it is for. Tagging a
-            chain means whoever covers those stores sees it, including after you
-            move stores between reps.
+            Upload a planogram or price list and choose who it is for. Tagging{" "}
+            {withArticle(terms, "site_group")} means whoever covers those{" "}
+            {lower(terms.site.many)} sees it, including after you move{" "}
+            {lower(terms.site.many)} between {lower(terms.staff.many)}.
           </p>
         </div>
       ) : (
@@ -357,8 +363,9 @@ export default function FilesPage() {
             Delete “{confirmDelete.name}”?
           </p>
           <p className="text-xs text-foreground">
-            It disappears from every rep&rsquo;s phone. Copies already downloaded
-            to a phone stay there until that rep next opens the app.
+            It disappears from every {lower(terms.staff.one)}&rsquo;s phone.
+            Copies already downloaded to a phone stay there until that{" "}
+            {lower(terms.staff.one)} next opens the app.
           </p>
           <div className="flex flex-wrap gap-2">
             <Button

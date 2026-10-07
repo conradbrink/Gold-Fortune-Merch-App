@@ -18,7 +18,7 @@ import { AdherenceTable } from "@/components/reports/adherence-table";
 import { StorePicker } from "@/components/stores/store-picker";
 import { REPORT_TAB_VALUES, reportTabs, type ReportTab } from "@/lib/report-tabs";
 import { useTerms } from "@/lib/use-company-config";
-import { lower } from "@/lib/terms";
+import { lower, withArticle, type Terms } from "@/lib/terms";
 import { fileSlug } from "@/lib/export-filename";
 import { ExportMenu } from "@/components/export-menu";
 import type { ExportSheet } from "@/lib/export";
@@ -94,14 +94,22 @@ const CHAIN_AWARE_TABS: ReportTab[] = ["score", "oos", "coverage", "trends"];
  * filtered by store and template already and simply have no chain concept, so
  * telling somebody they are "one row per rep" is nonsense they cannot act on.
  */
-const CHAIN_UNFILTERED_REASON: Partial<Record<ReportTab, string>> = {
-  reps: "this report is one row per rep, and a rep works more than one chain, so narrowing it needs their visits recounted rather than rows removed.",
-  adherence:
-    "this report is one row per rep, and a rep works more than one chain, so narrowing it needs their visits recounted rather than rows removed.",
-  form: "form results are grouped by question, not by store. Use the store picker above to narrow them.",
-  photos:
-    "the gallery is grouped by store already. Use the store picker above to narrow it.",
-};
+function chainUnfilteredReason(t: Terms, tab: ReportTab): string {
+  const site = lower(t.site.one);
+  const group = lower(t.site_group.one);
+  const perStaff = `this report is one row per ${lower(t.staff.one)}, and ${withArticle(t, "staff")} works more than one ${group}, so narrowing it needs their ${lower(t.job.many)} recounted rather than rows removed.`;
+  switch (tab) {
+    case "reps":
+    case "adherence":
+      return perStaff;
+    case "form":
+      return `form results are grouped by question, not by ${site}. Use the ${site} picker above to narrow them.`;
+    case "photos":
+      return `the gallery is grouped by ${site} already. Use the ${site} picker above to narrow it.`;
+    default:
+      return `this report is not filtered by ${group}.`;
+  }
+}
 
 export default function ReportsPage() {
   const supabase = createClient();
@@ -632,12 +640,12 @@ export default function ReportsPage() {
             pickers below, because unlike those it narrows most of the page
             rather than only the Form tab. */}
         <NativeSelect
-          aria-label="Chain"
+          aria-label={terms.site_group.one}
           className="w-[13rem]"
           value={storeGroupId}
           onChange={(e) => setStoreGroupId(e.target.value)}
         >
-          <option value="">All chains</option>
+          <option value="">All {lower(terms.site_group.many)}</option>
           {storeGroups.map((g) => (
             <option key={g.id} value={g.id}>
               {g.name}
@@ -662,12 +670,12 @@ export default function ReportsPage() {
             ))}
           </NativeSelect>
           <NativeSelect
-            aria-label="Rep"
+            aria-label={terms.staff.one}
             className="w-[11rem]"
             value={repId}
             onChange={(e) => setRepId(e.target.value)}
           >
-            <option value="">All reps</option>
+            <option value="">All {lower(terms.staff.many)}</option>
             {reps.map((r) => (
               <option key={r.id} value={r.id}>
                 {r.full_name ?? "Unnamed"}
@@ -679,8 +687,8 @@ export default function ReportsPage() {
             stores={stores}
             value={storeId}
             onChange={setStoreId}
-            allLabel="All stores"
-            placeholder="All stores"
+            allLabel={`All ${lower(terms.site.many)}`}
+            placeholder={`All ${lower(terms.site.many)}`}
           />
         </div>
       </div>
@@ -698,7 +706,7 @@ export default function ReportsPage() {
       <InsightsPanel
         request={{ reportType: "reports", range, templateId }}
         title="Manager briefing"
-        blurb="Summarise this period’s coverage, rep performance and compliance metrics, and surface anomalies worth acting on."
+        blurb={`Summarise this period’s coverage, ${lower(terms.staff.one)} performance and compliance metrics, and surface anomalies worth acting on.`}
       />
 
       {/* Ordered by what a manager acts on first: which store is worst, what is
@@ -714,8 +722,8 @@ export default function ReportsPage() {
           per rep. */}
       {chainName && !CHAIN_AWARE_TABS.includes(tab) && (
         <div className="rounded-md border border-border bg-muted/40 px-4 py-2 text-sm text-muted-foreground">
-          Showing all chains. {chainName} cannot be applied here yet —{" "}
-          {CHAIN_UNFILTERED_REASON[tab] ?? "this report is not filtered by chain."}
+          Showing all {lower(terms.site_group.many)}. {chainName} cannot be applied here yet —{" "}
+          {chainUnfilteredReason(terms, tab)}
         </div>
       )}
 
@@ -735,12 +743,12 @@ export default function ReportsPage() {
         <TabsContent value="score" className="mt-4">
           <Card>
             <CardHeader className="pb-2">
-              <CardTitle className="text-base">Perfect Store score</CardTitle>
+              <CardTitle className="text-base">Perfect {terms.site.one} score</CardTitle>
               <p className="text-xs text-muted-foreground">
                 Availability, planogram, price accuracy and stock condition
-                averaged into one index, worst store first. Promotional displays
-                are excluded — they track whether a promo was running, not
-                whether the store executed.
+                averaged into one index, worst {lower(terms.site.one)} first.
+                Promotional displays are excluded — they track whether a promo
+                was running, not whether the {lower(terms.site.one)} executed.
               </p>
             </CardHeader>
             <CardContent className="px-0">
@@ -754,8 +762,8 @@ export default function ReportsPage() {
             <CardHeader className="pb-2">
               <CardTitle className="text-base">Out-of-stock hotspots</CardTitle>
               <p className="text-xs text-muted-foreground">
-                &ldquo;Worst run&rdquo; is the longest unbroken sequence of visits
-                that found an empty shelf — the difference between a chronic
+                &ldquo;Worst run&rdquo; is the longest unbroken sequence of{" "}
+                {lower(terms.job.many)} that found an empty shelf — the difference between a chronic
                 supply problem and an unlucky day.
               </p>
             </CardHeader>
@@ -770,8 +778,8 @@ export default function ReportsPage() {
             <CardHeader className="pb-2">
               <CardTitle className="text-base">Schedule adherence</CardTitle>
               <p className="text-xs text-muted-foreground">
-                Planned routes versus visits actually completed. Future-dated
-                routes are excluded.
+                Planned routes versus {lower(terms.job.many)} actually completed.
+                Future-dated routes are excluded.
               </p>
             </CardHeader>
             <CardContent className="px-0">
@@ -799,10 +807,10 @@ export default function ReportsPage() {
         <TabsContent value="coverage" className="mt-4">
           <Card>
             <CardHeader className="pb-2">
-              <CardTitle className="text-base">Store coverage</CardTitle>
+              <CardTitle className="text-base">{terms.site.one} coverage</CardTitle>
               <p className="text-xs text-muted-foreground">
-                Ranked by longest gap. &ldquo;Last visit&rdquo; looks across all
-                history, not just this period.
+                Ranked by longest gap. &ldquo;Last {lower(terms.job.one)}&rdquo;
+                looks across all history, not just this period.
               </p>
             </CardHeader>
             <CardContent className="px-0">
@@ -814,7 +822,7 @@ export default function ReportsPage() {
         <TabsContent value="reps" className="mt-4">
           <Card>
             <CardHeader className="pb-2">
-              <CardTitle className="text-base">Rep scorecard</CardTitle>
+              <CardTitle className="text-base">{terms.staff.one} scorecard</CardTitle>
             </CardHeader>
             <CardContent className="px-0">
               {loading ? <SkeletonRows /> : <RepScorecardTable rows={scores} />}

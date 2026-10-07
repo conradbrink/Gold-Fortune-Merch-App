@@ -25,6 +25,8 @@ import {
   type Measure,
   type TargetProgress,
 } from "@/lib/targets";
+import { useTerms } from "@/lib/use-company-config";
+import { lower } from "@/lib/terms";
 
 type Draft = { measure: Measure; target: string };
 
@@ -49,6 +51,7 @@ function fmt(value: number, measure: Measure) {
  */
 export default function TargetsPage() {
   const supabase = createClient();
+  const t = useTerms();
   const [orgId, setOrgId] = useState<string | null>(null);
   const [month, setMonth] = useState(() => monthStart());
   const [rows, setRows] = useState<TargetProgress[]>([]);
@@ -158,7 +161,7 @@ export default function TargetsPage() {
         <div>
           <h1 className="text-xl font-semibold tracking-tight text-foreground">Sales targets</h1>
           <p className="text-sm text-muted-foreground">
-            A monthly target per rep. Progress counts delivered orders, excluding VAT, less
+            A monthly target per {lower(t.staff.one)}. Progress counts delivered orders, excluding VAT, less
             returns.
           </p>
         </div>
@@ -179,7 +182,7 @@ export default function TargetsPage() {
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>Rep</TableHead>
+              <TableHead>{t.staff.one}</TableHead>
               <TableHead className="w-48">Measure</TableHead>
               <TableHead className="w-36">Target</TableHead>
               <TableHead className="text-right">Achieved</TableHead>
@@ -188,7 +191,7 @@ export default function TargetsPage() {
           </TableHeader>
           <TableBody>
             {loading && <EmptyRow colSpan={5}>Loading…</EmptyRow>}
-            {!loading && rows.length === 0 && <EmptyRow colSpan={5}>No active reps.</EmptyRow>}
+            {!loading && rows.length === 0 && <EmptyRow colSpan={5}>No active {lower(t.staff.many)}.</EmptyRow>}
             {!loading &&
               rows.map((r) => {
                 const d = drafts[r.rep_id] ?? { measure: "revenue" as Measure, target: "" };

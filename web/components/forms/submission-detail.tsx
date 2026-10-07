@@ -5,6 +5,7 @@ import { Check, X, ImageOff } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { signPhotos } from "@/lib/photos";
 import { cn } from "@/lib/utils";
+import { useTerms } from "@/lib/use-company-config";
 
 type FieldMeta = {
   label: string;
@@ -145,6 +146,7 @@ function AnswerValue({
   row: ResponseRow;
   photoUrls: Record<string, string>;
 }) {
+  const t = useTerms();
   const type = row.field?.field_type;
 
   if (type === "photo") {
@@ -164,7 +166,7 @@ function AnswerValue({
             next/image's optimizer cannot cache usefully. */}
         <img
           src={url}
-          alt={row.field?.label ?? "Visit photo"}
+          alt={row.field?.label ?? `${t.job.one} photo`}
           loading="lazy"
           className="ml-auto h-28 w-auto rounded-md border border-border object-cover transition-opacity hover:opacity-85"
         />

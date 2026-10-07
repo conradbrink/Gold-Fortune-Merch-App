@@ -9,6 +9,8 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import type { PerfectStore } from "@/lib/reports";
+import { lower } from "@/lib/terms";
+import { useTerms } from "@/lib/use-company-config";
 
 /**
  * Perfect Store index — one 0–100 score per store, worst first.
@@ -22,10 +24,11 @@ import type { PerfectStore } from "@/lib/reports";
  * something nobody can act on.
  */
 export function PerfectStoreTable({ rows }: { rows: PerfectStore[] }) {
+  const t = useTerms();
   if (rows.length === 0) {
     return (
       <p className="py-10 text-center text-sm text-muted-foreground">
-        No active stores to score.
+        No active {lower(t.site.many)} to score.
       </p>
     );
   }
@@ -34,7 +37,7 @@ export function PerfectStoreTable({ rows }: { rows: PerfectStore[] }) {
     <Table>
       <TableHeader>
         <TableRow>
-          <TableHead>Store</TableHead>
+          <TableHead>{t.site.one}</TableHead>
           <TableHead className="text-right">Score</TableHead>
           <TableHead className="hidden sm:table-cell text-right">Availability</TableHead>
           <TableHead className="hidden md:table-cell text-right">Planogram</TableHead>

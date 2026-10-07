@@ -33,6 +33,8 @@ import { DocumentDialog } from "@/components/hr/document-dialog";
 import { CaseDialog } from "@/components/hr/case-dialog";
 import { WarningDialog } from "@/components/hr/warning-dialog";
 import { createClient } from "@/lib/supabase/client";
+import { useTerms } from "@/lib/use-company-config";
+import { lower } from "@/lib/terms";
 import { useHrLoad } from "@/lib/hr/use-load";
 import { usePermissions } from "@/lib/use-permissions";
 import { can } from "@/lib/permissions";
@@ -111,6 +113,7 @@ import {
  */
 export default function EmployeeProfilePage() {
   const supabase = createClient();
+  const terms = useTerms();
   const params = useParams<{ id: string }>();
   const id = params.id;
   const permissions = usePermissions();
@@ -383,7 +386,7 @@ export default function EmployeeProfilePage() {
                       "—"
                     )}
                   </Detail>
-                  <Detail label="Territory">{employee.territory?.name ?? "—"}</Detail>
+                  <Detail label={terms.territory.one}>{employee.territory?.name ?? "—"}</Detail>
                   <Detail label="Employment type">
                     {EMPLOYMENT_TYPE_LABELS[
                       employee.employment_type as keyof typeof EMPLOYMENT_TYPE_LABELS
@@ -509,8 +512,9 @@ export default function EmployeeProfilePage() {
             <MiniStat label="Hours" value={formatDuration(totals.workedSeconds)} />
           </div>
           <p className="text-xs text-muted-foreground">
-            Last 90 days, derived from Start workday / Stop working, store visits
-            and approved leave. A day with visits but no workday session is
+            Last 90 days, derived from Start workday / Stop working,{" "}
+            {lower(terms.site.one)} {lower(terms.job.many)} and approved leave. A
+            day with {lower(terms.job.many)} but no workday session is
             <span className="font-medium text-foreground"> incomplete</span>, not
             absent.
           </p>

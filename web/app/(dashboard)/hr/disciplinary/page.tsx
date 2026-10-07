@@ -19,6 +19,8 @@ import {
 } from "@/components/ui/table";
 import { CaseDialog } from "@/components/hr/case-dialog";
 import { createClient } from "@/lib/supabase/client";
+import { useTerms } from "@/lib/use-company-config";
+import { lower } from "@/lib/terms";
 import { useHrLoad } from "@/lib/hr/use-load";
 import { formatDateOnly } from "@/lib/format-date";
 import { fetchEmployees, fetchOrgId, type EmployeeRow } from "@/lib/hr/employees";
@@ -51,6 +53,7 @@ import { lookupLabel, lookupsOfKind } from "@/lib/hr/types";
  */
 export default function HrDisciplinaryPage() {
   const supabase = createClient();
+  const terms = useTerms();
   const router = useRouter();
 
   const [dashboard, setDashboard] = useState<DisciplinaryDashboard | null>(null);
@@ -256,7 +259,10 @@ export default function HrDisciplinaryPage() {
             <Breakdown title="By incident type" rows={dashboard?.by_type ?? []} />
             <Breakdown title="By severity" rows={dashboard?.by_severity ?? []} />
             <Breakdown title="By department" rows={dashboard?.by_department ?? []} />
-            <Breakdown title="By territory" rows={dashboard?.by_territory ?? []} />
+            <Breakdown
+              title={`By ${lower(terms.territory.one)}`}
+              rows={dashboard?.by_territory ?? []}
+            />
           </div>
         </TabsContent>
 

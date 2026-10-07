@@ -24,7 +24,7 @@ import { StorePicker } from "@/components/stores/store-picker";
 import { ExportMenu } from "@/components/export-menu";
 import type { ExportSheet } from "@/lib/export";
 import { useTerms } from "@/lib/use-company-config";
-import { lower } from "@/lib/terms";
+import { lower, withArticle } from "@/lib/terms";
 import {
   LocationVerdict,
   verdictStyles,
@@ -133,7 +133,7 @@ export default function ActivitiesPage() {
       setReps(
         (repRows ?? []).map((r) => ({
           id: r.id,
-          label: r.full_name ?? "Unnamed rep",
+          label: r.full_name ?? `Unnamed ${lower(terms.staff.one)}`,
         }))
       );
       setStores(
@@ -280,7 +280,8 @@ export default function ActivitiesPage() {
                 to confirm against — the old wording promised a verdict for every
                 row on the page, including the ones that cannot have one. */}
             Every check-in, check-out and sales call across your team, with
-            location and store verification where there is a store to verify.
+            location and {lower(terms.site.one)} verification where there is{" "}
+            {withArticle(terms, "site")} to verify.
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -308,11 +309,11 @@ export default function ActivitiesPage() {
       <div className="flex flex-wrap items-center gap-2 sm:gap-3">
         <div className="w-full sm:w-56">
           <NativeSelect
-            aria-label="Filter by rep"
+            aria-label={`Filter by ${lower(terms.staff.one)}`}
             value={repId}
             onChange={(e) => setRepId(e.target.value)}
           >
-            <option value="all">All reps</option>
+            <option value="all">All {lower(terms.staff.many)}</option>
             {reps.map((r) => (
               <option key={r.id} value={r.id}>
                 {r.label}
@@ -328,8 +329,8 @@ export default function ActivitiesPage() {
             stores={stores}
             value={storeId === "all" ? "" : storeId}
             onChange={(id) => setStoreId(id === "" ? "all" : id)}
-            allLabel="All stores"
-            placeholder="All stores"
+            allLabel={`All ${lower(terms.site.many)}`}
+            placeholder={`All ${lower(terms.site.many)}`}
           />
         </div>
         <div className="w-full sm:w-56">
@@ -354,7 +355,7 @@ export default function ActivitiesPage() {
       {summary && summary.total > 0 && (
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
           <SummaryTile
-            label="Confirmed at store"
+            label={`Confirmed at ${lower(terms.site.one)}`}
             value={summary.at_store ?? 0}
             tone="good"
           />
@@ -373,7 +374,7 @@ export default function ActivitiesPage() {
           <TableHeader>
             <TableRow className="hover:bg-transparent">
               <TableHead>Event</TableHead>
-              <TableHead className="hidden sm:table-cell">Rep</TableHead>
+              <TableHead className="hidden sm:table-cell">{terms.staff.one}</TableHead>
               <TableHead>When</TableHead>
               <TableHead>Location</TableHead>
             </TableRow>
@@ -404,7 +405,7 @@ export default function ActivitiesPage() {
                   className="py-10 text-center text-sm text-muted-foreground"
                 >
                   {onlyFlagged
-                    ? "No location discrepancies in this period — every check-in was at the store."
+                    ? `No location discrepancies in this period — every check-in was at the ${lower(terms.site.one)}.`
                     : "No activity in this period. Try widening the date range."}
                 </TableCell>
               </TableRow>
@@ -430,7 +431,7 @@ export default function ActivitiesPage() {
                     tabIndex={0}
                     role="button"
                     className="cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ring"
-                    title={isSales ? "View this sales call" : "View this visit"}
+                    title={isSales ? "View this sales call" : `View this ${lower(terms.job.one)}`}
                   >
                     <TableCell className="min-w-[190px]">
                       <div className="flex items-center gap-2.5">
@@ -550,6 +551,7 @@ function ActivityDialog({
   event: ActivityEvent | null;
   onClose: () => void;
 }) {
+  const terms = useTerms();
   return (
     <Dialog open={event !== null} onOpenChange={(o) => !o && onClose()}>
       <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-2xl">
@@ -613,10 +615,10 @@ function ActivityDialog({
                       distanceM={event.distance_m}
                     />
                   </Row>
-                  <Row label="Distance from store">
+                  <Row label={`Distance from ${lower(terms.site.one)}`}>
                     {formatDistance(event.distance_m)}
                   </Row>
-                  <Row label="Store geofence">
+                  <Row label={`${terms.site.one} geofence`}>
                     {event.geofence_radius_m === null
                       ? "—"
                       : `${event.geofence_radius_m} m`}
@@ -629,8 +631,8 @@ function ActivityDialog({
                 </dl>
                 {event.verdict === "unknown" && (
                   <p className="mt-2 text-xs text-muted-foreground">
-                    No position was recorded, so this visit cannot be confirmed
-                    either way.
+                    No position was recorded, so this {lower(terms.job.one)}{" "}
+                    cannot be confirmed either way.
                   </p>
                 )}
               </div>
@@ -648,7 +650,7 @@ function ActivityDialog({
                 </section>
               ) : (
                 <p className="text-sm text-muted-foreground">
-                  No form was submitted during this visit.
+                  No form was submitted during this {lower(terms.job.one)}.
                 </p>
               ))}
           </>

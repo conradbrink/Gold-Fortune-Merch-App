@@ -9,6 +9,7 @@ import { toLocalDate } from "@/lib/date-range";
 import { ExportMenu } from "@/components/export-menu";
 import type { ExportSheet } from "@/lib/export";
 import { useTerms } from "@/lib/use-company-config";
+import { lower } from "@/lib/terms";
 import {
   Table,
   TableBody,
@@ -60,7 +61,7 @@ export default function SalesPage() {
     let cancelled = false;
     (async () => {
       try {
-        const rows = await fetchSales(supabase);
+        const rows = await fetchSales(supabase, terms);
         if (cancelled) return;
         setSales(rows);
         setError(null);
@@ -73,7 +74,7 @@ export default function SalesPage() {
     return () => {
       cancelled = true;
     };
-  }, [supabase]);
+  }, [supabase, terms]);
 
   // Fixed at first render rather than read inside each calculation, so every
   // figure on the screen is measured against the same instant. A page open
@@ -212,13 +213,13 @@ export default function SalesPage() {
 
           <Card>
             <CardHeader>
-              <CardTitle className="text-base">By rep</CardTitle>
+              <CardTitle className="text-base">By {lower(terms.staff.one)}</CardTitle>
             </CardHeader>
             <CardContent>
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Rep</TableHead>
+                    <TableHead>{terms.staff.one}</TableHead>
                     <TableHead className="text-right">Orders</TableHead>
                     <TableHead className="text-right">Units</TableHead>
                     <TableHead className="text-right">Sales</TableHead>
@@ -267,8 +268,8 @@ export default function SalesPage() {
                   <TableRow>
                     <TableHead>Order</TableHead>
                     <TableHead>Delivered</TableHead>
-                    <TableHead>Store</TableHead>
-                    <TableHead>Rep</TableHead>
+                    <TableHead>{terms.site.one}</TableHead>
+                    <TableHead>{terms.staff.one}</TableHead>
                     <TableHead className="text-right">Units</TableHead>
                     <TableHead className="text-right">Sales</TableHead>
                   </TableRow>

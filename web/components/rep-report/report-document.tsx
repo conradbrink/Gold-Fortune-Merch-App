@@ -460,7 +460,7 @@ export function RepPerformanceReport({
           </div>
         </section>
 
-        <Footer meta={meta} section="2 · Store execution" />
+        <Footer meta={meta} section={`2 · ${t.site.one} execution`} />
       </section>
     </article>
   );

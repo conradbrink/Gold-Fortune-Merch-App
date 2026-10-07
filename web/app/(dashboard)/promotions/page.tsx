@@ -39,6 +39,8 @@ import {
   type PromotionSummary,
   type Verdict,
 } from "@/lib/promotions";
+import { useTerms } from "@/lib/use-company-config";
+import { count, lower, possessive, withArticle } from "@/lib/terms";
 
 function formatDate(iso: string): string {
   // Split into parts rather than `new Date(iso)` — that parses as midnight UTC
@@ -52,6 +54,7 @@ function formatDate(iso: string): string {
 
 export default function PromotionsPage() {
   const supabase = createClient();
+  const t = useTerms();
 
   const [rows, setRows] = useState<PromotionSummary[]>([]);
   const [loading, setLoading] = useState(true);
@@ -127,7 +130,8 @@ export default function PromotionsPage() {
             Promotions
           </h1>
           <p className="text-sm text-muted-foreground">
-            Deals running at named outlets, confirmed by the rep standing there.
+            Deals running at named {lower(t.site.many)}, confirmed by the{" "}
+            {lower(t.staff.one)} standing there.
           </p>
         </div>
         <Button
@@ -156,7 +160,7 @@ export default function PromotionsPage() {
               <TableHead>Promotion</TableHead>
               <TableHead className="hidden md:table-cell">Runs</TableHead>
               <TableHead className="text-right">Lines</TableHead>
-              <TableHead className="text-right">Outlets</TableHead>
+              <TableHead className="text-right">{t.site.many}</TableHead>
               <TableHead className="text-right">Checked</TableHead>
               <TableHead className="text-right">Running</TableHead>
               <TableHead />
@@ -178,8 +182,8 @@ export default function PromotionsPage() {
                     No promotions yet.
                   </p>
                   <p className="mt-1 text-sm text-muted-foreground">
-                    Create one and it appears on a rep&apos;s phone at every outlet
-                    it covers, for the dates it runs.
+                    Create one and it appears on {possessive(withArticle(t, "staff"))} phone
+                    at every {lower(t.site.one)} it covers, for the dates it runs.
                   </p>
                 </TableCell>
               </TableRow>
@@ -269,7 +273,7 @@ export default function PromotionsPage() {
             Delete “{confirmDelete.name}”?
           </p>
           <p className="mt-1 text-xs text-foreground">
-            Every answer reps have recorded against it goes too. Switching it off
+            Every answer {lower(t.staff.many)} have recorded against it goes too. Switching it off
             keeps the record and simply stops it appearing on any phone.
           </p>
           <div className="mt-2 flex gap-2">
@@ -323,7 +327,7 @@ export default function PromotionsPage() {
               <p className="text-sm text-muted-foreground">
                 {formatDate(detail.starts_on)} – {formatDate(detail.ends_on)} ·{" "}
                 {detail.products} line{detail.products === 1 ? "" : "s"} ·{" "}
-                {detail.stores} outlet{detail.stores === 1 ? "" : "s"}
+                {count(t, "site", detail.stores)}
               </p>
 
               <div className="flex flex-wrap gap-1.5">

@@ -23,10 +23,12 @@ import {
   RECURRING_STATUS,
   type RecurringListRow,
 } from "@/lib/recurring";
+import { useTerms } from "@/lib/use-company-config";
 
 /** Every standing order, the next due first. */
 export default function RecurringOrdersPage() {
   const supabase = createClient();
+  const t = useTerms();
   const router = useRouter();
   const [rows, setRows] = useState<RecurringListRow[]>([]);
   const [status, setStatus] = useState("active");
@@ -76,7 +78,7 @@ export default function RecurringOrdersPage() {
           <TableHeader>
             <TableRow>
               <TableHead>Name</TableHead>
-              <TableHead>Store</TableHead>
+              <TableHead>{t.site.one}</TableHead>
               <TableHead>How often</TableHead>
               <TableHead className="text-right">Products</TableHead>
               <TableHead className="text-right">Placed</TableHead>

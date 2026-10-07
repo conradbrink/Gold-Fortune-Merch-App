@@ -88,7 +88,7 @@ async function authorise(id: string) {
   if (victim.role !== "rep" && victim.role !== "warehouse") {
     return {
       error: Response.json(
-        { error: "Only field reps and warehouse staff can be changed here." },
+        { error: "Only field staff and warehouse staff can be changed here." },
         { status: 400 }
       ),
     };
@@ -158,7 +158,7 @@ async function changeEmail(admin: SupabaseClient, id: string, raw: string) {
             error:
               `The profile could not be updated (${profileError.message}) and the ` +
               `sign-in address could not be put back (${rollbackError.message}). ` +
-              `This rep now signs in with ${email} while the directory still shows ` +
+              `This person now signs in with ${email} while the directory still shows ` +
               `${previous}.`,
           },
           { status: 500 }
@@ -301,7 +301,7 @@ export async function PATCH(
     return Response.json({ id, is_active: body.is_active });
   } catch (reason) {
     const message =
-      reason instanceof Error ? reason.message : "Unexpected error updating rep.";
+      reason instanceof Error ? reason.message : "Unexpected error updating this person.";
     return Response.json({ error: message }, { status: 500 });
   }
 }
@@ -334,7 +334,7 @@ export async function DELETE(
     return Response.json({ deleted: id });
   } catch (reason) {
     const message =
-      reason instanceof Error ? reason.message : "Unexpected error deleting rep.";
+      reason instanceof Error ? reason.message : "Unexpected error deleting this person.";
     return Response.json({ error: message }, { status: 500 });
   }
 }

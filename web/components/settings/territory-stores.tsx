@@ -19,6 +19,8 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { createClient } from "@/lib/supabase/client";
+import { useTerms } from "@/lib/use-company-config";
+import { capital, lower, withArticle } from "@/lib/terms";
 import {
   DRAG_TYPES,
   fetchTerritoryStores,
@@ -49,6 +51,7 @@ export function TerritoryStores({
   onChanged: () => void;
 }) {
   const supabase = createClient();
+  const t = useTerms();
 
   const [stores, setStores] = useState<TerritoryStore[] | null>(null);
   const [loading, setLoading] = useState(true);
@@ -81,7 +84,7 @@ export function TerritoryStores({
     setMoving((prev) => new Set(prev).add(store.id));
     setError(null);
     try {
-      await setStoreTerritory(supabase, store.id, territoryId);
+      await setStoreTerritory(supabase, store.id, territoryId, t);
       await load();
       onChanged();
     } catch (e) {
@@ -108,7 +111,7 @@ export function TerritoryStores({
     <div className="border-t border-border bg-background/40 px-3 py-3 pl-11">
       <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
         <h4 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-          Stores in {territory.name}
+          {t.site.many} in {territory.name}
         </h4>
         <div className="flex items-center gap-2">
           {(stores?.length ?? 0) > 8 && (
@@ -117,15 +120,15 @@ export function TerritoryStores({
               <Input
                 value={filter}
                 onChange={(e) => setFilter(e.target.value)}
-                placeholder="Filter these stores"
+                placeholder={`Filter these ${lower(t.site.many)}`}
                 className="h-8 w-48 pl-7 text-sm"
-                aria-label={`Filter stores in ${territory.name}`}
+                aria-label={`Filter ${lower(t.site.many)} in ${territory.name}`}
               />
             </div>
           )}
           <Button size="sm" variant="outline" className="gap-1.5" onClick={() => setAdding(true)}>
             <Plus className="h-3.5 w-3.5" />
-            Add stores
+            Add {lower(t.site.many)}
           </Button>
         </div>
       </div>
@@ -137,19 +140,19 @@ export function TerritoryStores({
       )}
 
       {loading ? (
-        <p className="py-3 text-sm text-muted-foreground">Loading stores…</p>
+        <p className="py-3 text-sm text-muted-foreground">Loading {lower(t.site.many)}…</p>
       ) : stores === null ? (
         <Button size="sm" variant="outline" onClick={load}>
           Retry
         </Button>
       ) : stores.length === 0 ? (
         <p className="py-3 text-sm text-muted-foreground">
-          No stores in {territory.name} yet. Use <span className="font-medium">Add stores</span> to
-          put some here.
+          No {lower(t.site.many)} in {territory.name} yet. Use{" "}
+          <span className="font-medium">Add {lower(t.site.many)}</span> to put some here.
         </p>
       ) : visible.length === 0 ? (
         <p className="py-3 text-sm text-muted-foreground">
-          No store here matches &ldquo;{filter.trim()}&rdquo;.
+          No {lower(t.site.one)} here matches &ldquo;{filter.trim()}&rdquo;.
         </p>
       ) : (
         <ul className="space-y-1">
@@ -240,6 +243,7 @@ function AddStoresDialog({
   onAdded: () => Promise<void>;
 }) {
   const supabase = createClient();
+  const t = useTerms();
 
   const [term, setTerm] = useState("");
   const [results, setResults] = useState<TerritoryStore[]>([]);
@@ -276,9 +280,9 @@ function AddStoresDialog({
         setResults(found);
         setNames(
           Object.fromEntries(
-            ((territories.data ?? []) as { id: string; name: string }[]).map((t) => [
-              t.id,
-              t.name,
+            ((territories.data ?? []) as { id: string; name: string }[]).map((row) => [
+              row.id,
+              row.name,
             ])
           )
         );
@@ -301,7 +305,7 @@ function AddStoresDialog({
     try {
       // Sub cleared: a sub belongs to one main, so carrying the old one across
       // is the disagreement `stores_enforce_territory` refuses anyway.
-      await setStoreTerritory(supabase, store.id, main.id);
+      await setStoreTerritory(supabase, store.id, main.id, t);
       setResults((prev) => prev.filter((s) => s.id !== store.id));
       await onAdded();
     } catch (e) {
@@ -315,12 +319,13 @@ function AddStoresDialog({
     <Dialog open={open} onOpenChange={(o) => !busy && onOpenChange(o)}>
       <DialogContent className="grid-cols-1 max-h-[85vh] overflow-y-auto sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle>Add stores to {main.name}</DialogTitle>
+          <DialogTitle>Add {lower(t.site.many)} to {main.name}</DialogTitle>
         </DialogHeader>
 
         <p className="text-sm text-muted-foreground">
-          Search the estate and add a store here. A store belongs to one territory,
-          so adding it moves it out of the one it is in now.
+          Search the estate and add {withArticle(t, "site")} here.{" "}
+          {capital(withArticle(t, "site"))} belongs to one {lower(t.territory.one)}, so
+          adding it moves it out of the one it is in now.
         </p>
 
         {error && (
@@ -335,7 +340,7 @@ function AddStoresDialog({
             id="add-store-search"
             value={term}
             onChange={(e) => setTerm(e.target.value)}
-            placeholder="e.g. Choppies, or Kasane"
+            placeholder="e.g. Riverside branch, or Kasane"
           />
         </div>
 
@@ -345,7 +350,7 @@ function AddStoresDialog({
           <p className="py-4 text-center text-sm text-muted-foreground">
             {term.trim()
               ? `Nothing outside ${main.name} matches “${term.trim()}”.`
-              : `Every store is already in ${main.name}.`}
+              : `Every ${lower(t.site.one)} is already in ${main.name}.`}
           </p>
         ) : (
           <ul className="space-y-1">
@@ -360,8 +365,8 @@ function AddStoresDialog({
                     {store.city ?? "No town"}
                     {" · "}
                     {store.territory_id
-                      ? `in ${names[store.territory_id] ?? "another territory"}`
-                      : "no territory"}
+                      ? `in ${names[store.territory_id] ?? `another ${lower(t.territory.one)}`}`
+                      : `no ${lower(t.territory.one)}`}
                   </span>
                 </span>
                 <Button size="sm" variant="outline" disabled={busy} onClick={() => add(store)}>

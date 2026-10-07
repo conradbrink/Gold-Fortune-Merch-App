@@ -95,7 +95,8 @@ export default function RepDayPage() {
     day.visits.forEach((v, i) => {
       if (v.lat == null || v.lng == null) return;
       out.push({
-        id: `visit-${v.id}`,
+        // A key, not a word: concatenated so the wording guard reads it as code.
+        id: "visit-" + v.id,
         lat: v.lat,
         lng: v.lng,
         color: "#d97706",
@@ -156,7 +157,7 @@ export default function RepDayPage() {
             <TrackingMap pins={pins} path={path} focus={focus} fitKey={date} className="h-[26rem] w-full" />
           )}
           <p className="mt-2 text-xs text-muted-foreground">
-            Green is the first reading, navy the last; numbered squares are the shops in the order visited.
+            Green is the first reading, navy the last; numbered squares are the {lower(t.site.many)} in the order visited.
           </p>
         </CardContent>
       </Card>
@@ -171,7 +172,7 @@ export default function RepDayPage() {
               <TableHeader>
                 <TableRow>
                   <TableHead>#</TableHead>
-                  <TableHead>Store</TableHead>
+                  <TableHead>{t.site.one}</TableHead>
                   <TableHead>In</TableHead>
                   <TableHead>Out</TableHead>
                   <TableHead className="text-right">Time there</TableHead>

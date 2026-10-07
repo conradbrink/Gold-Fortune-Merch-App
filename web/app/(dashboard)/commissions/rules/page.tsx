@@ -22,6 +22,8 @@ import {
 import { ErrorBanner, EmptyRow } from "@/components/warehouse/stat-tile";
 import { fetchOrgId } from "@/lib/representatives";
 import { fetchRepsForOrder, fetchStoresForOrder } from "@/lib/orders";
+import { useTerms } from "@/lib/use-company-config";
+import { lower, withArticle } from "@/lib/terms";
 import {
   BASIS_LABELS,
   deleteRule,
@@ -96,6 +98,7 @@ function toDraft(r: CommissionRule): Draft {
  */
 export default function CommissionRulesPage() {
   const supabase = createClient();
+  const terms = useTerms();
   const [orgId, setOrgId] = useState<string | null>(null);
   const [rules, setRules] = useState<CommissionRule[]>([]);
   const [reps, setReps] = useState<{ id: string; full_name: string }[]>([]);
@@ -130,8 +133,8 @@ export default function CommissionRulesPage() {
     load();
   }, [load]);
 
-  const repName = (id: string | null) => reps.find((r) => r.id === id)?.full_name ?? "a rep";
-  const storeName = (id: string | null) => stores.find((s) => s.id === id)?.name ?? "a store";
+  const repName = (id: string | null) => reps.find((r) => r.id === id)?.full_name ?? withArticle(terms, "staff");
+  const storeName = (id: string | null) => stores.find((s) => s.id === id)?.name ?? withArticle(terms, "site");
 
   async function save() {
     if (!editing || !orgId) return;
@@ -163,8 +166,8 @@ export default function CommissionRulesPage() {
       if (tiers.some((t, i) => i > 0 && (tiers[i - 1].to === null || t.from < (tiers[i - 1].to as number))))
         return setError("Tier ranges overlap. Each tier must start at or after the previous one ends.");
     }
-    if (d.appliesTo === "rep" && !d.repId) return setError("Choose the rep this rule is for.");
-    if (d.appliesTo === "store" && !d.storeId) return setError("Choose the store this rule is for.");
+    if (d.appliesTo === "rep" && !d.repId) return setError(`Choose the ${lower(terms.staff.one)} this rule is for.`);
+    if (d.appliesTo === "store" && !d.storeId) return setError(`Choose the ${lower(terms.site.one)} this rule is for.`);
 
     setSaving(true);
     try {
@@ -212,7 +215,8 @@ export default function CommissionRulesPage() {
           <h1 className="mt-1 text-xl font-semibold tracking-tight text-foreground">Commission rules</h1>
           <p className="text-sm text-muted-foreground">
             Each delivered order earns from the highest-priority rule that matches it. A rule for
-            one rep or store beats a rule for everyone at the same priority.
+            one {lower(terms.staff.one)} or {lower(terms.site.one)} beats a rule for everyone at the
+            same priority.
           </p>
         </div>
         {!editing && (
@@ -307,15 +311,15 @@ export default function CommissionRulesPage() {
               <Label htmlFor="applies">Applies to</Label>
               <NativeSelect id="applies" value={editing.draft.appliesTo} onChange={(e) => set({ appliesTo: e.target.value as Draft["appliesTo"] })}>
                 <option value="all">All orders</option>
-                <option value="rep">One rep</option>
-                <option value="store">One store</option>
+                <option value="rep">{`One ${lower(terms.staff.one)}`}</option>
+                <option value="store">{`One ${lower(terms.site.one)}`}</option>
               </NativeSelect>
             </div>
             {editing.draft.appliesTo === "rep" && (
               <div>
-                <Label htmlFor="rep">Rep</Label>
+                <Label htmlFor="rep">{terms.staff.one}</Label>
                 <NativeSelect id="rep" value={editing.draft.repId} onChange={(e) => set({ repId: e.target.value })}>
-                  <option value="">Choose a rep</option>
+                  <option value="">{`Choose ${withArticle(terms, "staff")}`}</option>
                   {reps.map((r) => (
                     <option key={r.id} value={r.id}>
                       {r.full_name}
@@ -326,9 +330,9 @@ export default function CommissionRulesPage() {
             )}
             {editing.draft.appliesTo === "store" && (
               <div>
-                <Label htmlFor="store">Store</Label>
+                <Label htmlFor="store">{terms.site.one}</Label>
                 <NativeSelect id="store" value={editing.draft.storeId} onChange={(e) => set({ storeId: e.target.value })}>
-                  <option value="">Choose a store</option>
+                  <option value="">{`Choose ${withArticle(terms, "site")}`}</option>
                   {stores.map((s) => (
                     <option key={s.id} value={s.id}>
                       {s.name}

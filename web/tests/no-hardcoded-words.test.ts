@@ -68,6 +68,22 @@ function isCodeArgument(node: ts.Node): boolean {
   return CODE_CALLS.has(name);
 }
 
+/** Anywhere inside a console.* call: a log line for operators, not a screen. */
+function inConsoleCall(node: ts.Node): boolean {
+  for (let n: ts.Node | undefined = node.parent; n; n = n.parent) {
+    if (
+      ts.isCallExpression(n) &&
+      ts.isPropertyAccessExpression(n.expression) &&
+      ts.isIdentifier(n.expression.expression) &&
+      n.expression.expression.text === "console"
+    ) {
+      return true;
+    }
+    if (ts.isFunctionDeclaration(n) || ts.isSourceFile(n)) return false;
+  }
+  return false;
+}
+
 function inTypeOrImport(node: ts.Node): boolean {
   for (let n: ts.Node | undefined = node.parent; n; n = n.parent) {
     if (ts.isImportDeclaration(n) || ts.isExportDeclaration(n) || ts.isTypeNode(n)) return true;
@@ -103,12 +119,12 @@ export function findHardcodedWords(file: string, source: string): Finding[] {
       const p = node.parent;
       const isKey = p && (ts.isPropertyAssignment(p) || ts.isPropertySignature(p)) && p.name === node;
       const isJsxAttr = p && ts.isJsxAttribute(p);
-      if (!isKey && !isJsxAttr && !inTypeOrImport(node) && !isCodeArgument(node) &&
+      if (!isKey && !isJsxAttr && !inTypeOrImport(node) && !isCodeArgument(node) && !inConsoleCall(node) &&
           !node.text.startsWith("/") && prose(node.text)) {
         report(node, node.text);
       }
     } else if (ts.isTemplateExpression(node)) {
-      if (!isCodeArgument(node)) {
+      if (!isCodeArgument(node) && !inConsoleCall(node)) {
         const parts = [node.head.text, ...node.templateSpans.map((s) => s.literal.text)];
         const whole = parts.join(" ");
         if (!whole.trimStart().startsWith("/") && /\s/.test(whole)) report(node, whole);

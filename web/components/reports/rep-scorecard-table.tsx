@@ -9,6 +9,8 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { formatDuration, formatRate, type RepScore } from "@/lib/reports";
+import { lower } from "@/lib/terms";
+import { useTerms } from "@/lib/use-company-config";
 
 /**
  * Overall score, with the location-verification pillar surfaced on hover — it
@@ -52,10 +54,11 @@ function RepScoreBadge({
  * a rep for a flat battery.
  */
 export function RepScorecardTable({ rows }: { rows: RepScore[] }) {
+  const t = useTerms();
   if (rows.length === 0) {
     return (
       <p className="py-10 text-center text-sm text-muted-foreground">
-        No rep activity in this period.
+        No {lower(t.staff.one)} activity in this period.
       </p>
     );
   }
@@ -64,11 +67,11 @@ export function RepScorecardTable({ rows }: { rows: RepScore[] }) {
     <Table>
       <TableHeader>
         <TableRow>
-          <TableHead>Rep</TableHead>
+          <TableHead>{t.staff.one}</TableHead>
           <TableHead className="text-right">Completed</TableHead>
           <TableHead className="hidden sm:table-cell text-right">Completion</TableHead>
           <TableHead className="hidden md:table-cell text-right">Avg time</TableHead>
-          <TableHead className="hidden lg:table-cell text-right">Stores</TableHead>
+          <TableHead className="hidden lg:table-cell text-right">{t.site.many}</TableHead>
           <TableHead className="hidden md:table-cell text-right">Forms</TableHead>
           <TableHead className="text-right">Score</TableHead>
         </TableRow>
@@ -77,7 +80,7 @@ export function RepScorecardTable({ rows }: { rows: RepScore[] }) {
         {rows.map((r) => (
           <TableRow key={r.rep_id}>
             <TableCell className="font-medium">
-              {r.rep_name ?? "Unknown rep"}
+              {r.rep_name ?? `Unknown ${lower(t.staff.one)}`}
               <span className="block text-xs text-muted-foreground sm:hidden">
                 {formatRate(r.completion_rate)} completion
               </span>

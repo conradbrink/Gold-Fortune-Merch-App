@@ -69,6 +69,7 @@ function RepRow({
   selected: boolean;
   onSelect: () => void;
 }) {
+  const t = useTerms();
   const minutes = minutesSince(position.recordedAt, now);
   const tone = TONE[freshnessOf(minutes, intervalMinutes)];
 
@@ -92,7 +93,7 @@ function RepRow({
           </span>
           <span
             className={`shrink-0 text-xs tabular-nums ${tone.text}`}
-            title="When this phone last managed to send a position — not proof of where the rep is now. A phone without signal sends its positions later, all together."
+            title={`When this phone last managed to send a position — not proof of where the ${lower(t.staff.one)} is now. A phone without signal sends its positions later, all together.`}
           >
             {describeAge(minutes)}
           </span>

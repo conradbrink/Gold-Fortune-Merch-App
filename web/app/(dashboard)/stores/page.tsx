@@ -44,7 +44,7 @@ import { toLocalDate } from "@/lib/date-range";
 import { ExportMenu } from "@/components/export-menu";
 import type { ExportSheet } from "@/lib/export";
 import { useTerms } from "@/lib/use-company-config";
-import { lower } from "@/lib/terms";
+import { count, lower, noun, possessive, withArticle, type Terms } from "@/lib/terms";
 import {
   findSharedPoints,
   geocodeState,
@@ -53,7 +53,7 @@ import {
 } from "@/lib/geocode";
 import {
   GEOCODE_STATE_ORDER,
-  GEOCODE_STATE_STYLES,
+  geocodeStateStyles,
   GeocodePill,
 } from "@/components/stores/geocode-pill";
 import {
@@ -148,18 +148,20 @@ type SortState = { key: SortKey; dir: "asc" | "desc" };
 
 /** One source of truth for the column names: the header renders these, and the
     export repeats the active one so a sorted file says how it was sorted. */
-const SORT_LABELS: Record<SortKey, string> = {
-  name: "Store",
-  // "Town", not "City", to match the filter above the table and the export
-  // column, both of which have always called it that.
-  town: "Town",
-  location: "Location",
-  group: "Group",
-  cycle: "Call cycle",
-  lastVisit: "Last visited",
-  status: "Status",
-  responsible: "Responsible",
-};
+function sortLabels(t: Terms): Record<SortKey, string> {
+  return {
+    name: t.site.one,
+    // "Town", not "City", to match the filter above the table and the export
+    // column, both of which have always called it that.
+    town: "Town",
+    location: "Location",
+    group: t.site_group.one,
+    cycle: t.schedule_cycle.one,
+    lastVisit: "Last visited",
+    status: "Status",
+    responsible: "Responsible",
+  };
+}
 
 /**
  * A column header that orders the list.
@@ -180,6 +182,7 @@ function SortHeader({
   onSort: (key: SortKey) => void;
   className?: string;
 }) {
+  const terms = useTerms();
   const active = sort.key === sortKey;
   const Icon = !active ? ArrowUpDown : sort.dir === "asc" ? ArrowUp : ArrowDown;
   return (
@@ -194,7 +197,7 @@ function SortHeader({
         onClick={() => onSort(sortKey)}
         className="-mx-1 inline-flex items-center gap-1 rounded px-1 py-0.5 font-medium hover:bg-muted"
       >
-        {SORT_LABELS[sortKey]}
+        {sortLabels(terms)[sortKey]}
         <Icon
           className={`h-3.5 w-3.5 ${active ? "opacity-100" : "opacity-40"}`}
           aria-hidden
@@ -349,7 +352,7 @@ export default function StoresPage() {
     // shadows the global constructor.
     const nameById: Record<string, string> = {};
     for (const r of (repRows ?? []) as { id: string; full_name: string | null }[]) {
-      nameById[r.id] = r.full_name ?? "Unnamed rep";
+      nameById[r.id] = r.full_name ?? `Unnamed ${lower(terms.staff.one)}`;
     }
     setReps(
       Object.entries(nameById)
@@ -758,7 +761,7 @@ export default function StoresPage() {
         .select("id");
       if (error) throw new Error(error.message);
       if ((data?.length ?? 0) === 0) {
-        throw new Error("That group could not be renamed — reload and retry.");
+        throw new Error(`That ${lower(terms.site_group.one)} could not be renamed — reload and retry.`);
       }
       setEditingGroupId(null);
       await loadData();
@@ -831,14 +834,14 @@ export default function StoresPage() {
       (byStore[a.store_id] ??= []).push({
         id: a.id,
         repId: a.rep_id,
-        name: nameById[a.rep_id] ?? "Unknown rep",
+        name: nameById[a.rep_id] ?? `Unknown ${lower(terms.staff.one)}`,
       });
     }
     for (const list of Object.values(byStore)) {
       list.sort((x, y) => x.name.localeCompare(y.name));
     }
     return byStore;
-  }, [assignments, reps]);
+  }, [assignments, reps, terms]);
 
   /** Towns present in the estate, for the filter. 45 of them after the import. */
   const cities = useMemo(() => {
@@ -1008,7 +1011,7 @@ export default function StoresPage() {
   /** The visible list, as a spreadsheet. Same rows, same order, same filters. */
   function buildStoreSheet(): ExportSheet {
     const applied = [
-      groupFilter !== "all" ? `Group: ${groupName(groupFilter === "none" ? null : groupFilter)}` : null,
+      groupFilter !== "all" ? `${terms.site_group.one}: ${groupName(groupFilter === "none" ? null : groupFilter)}` : null,
       cityFilter !== "all"
         ? `Town: ${cityFilter === "none" ? "not recorded" : cityFilter}`
         : null,
@@ -1021,14 +1024,14 @@ export default function StoresPage() {
       context: [
         `${filtered.length} of ${stores.length} ${lower(terms.site.many)}`,
         ...(applied.length > 0 ? applied : ["No filters applied"]),
-        `Sorted by ${SORT_LABELS[sort.key]}, ${
+        `Sorted by ${sortLabels(terms)[sort.key]}, ${
           sort.dir === "asc" ? "ascending" : "descending"
         }`,
       ],
       filename: terms.site.many,
       columns: [
         { header: terms.site.one, key: "name" },
-        { header: "Group", key: "group" },
+        { header: terms.site_group.one, key: "group" },
         { header: "Address", key: "address" },
         { header: "Town", key: "city" },
         { header: terms.region.one, key: "state" },
@@ -1060,10 +1063,11 @@ export default function StoresPage() {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-xl font-semibold tracking-tight text-foreground">
-            Stores
+            {terms.site.many}
           </h1>
           <p className="text-sm text-muted-foreground">
-            Every store you service, organised by retail group.
+            Every {lower(terms.site.one)} you service, organised by{" "}
+            {lower(terms.site_group.one)}.
           </p>
         </div>
       </div>
@@ -1081,10 +1085,12 @@ export default function StoresPage() {
           <p className="flex items-start gap-2 text-sm text-foreground">
             <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
             <span>
-              <span className="font-semibold">{unverified}</span> store
-              {unverified === 1 ? "" : "s"} still on a guessed position. Each one
-              is settled the first time a rep checks in there and sets it from
-              inside the shop — nothing to do here unless one is flagged.
+              <span className="font-semibold">{unverified}</span>{" "}
+              {noun(terms, "site", unverified)} still on a guessed position.
+              Each one is settled the first time{" "}
+              {withArticle(terms, "staff")} checks in there and sets it from
+              inside the {lower(terms.site.one)} — nothing to do here unless one
+              is flagged.
             </span>
           </p>
           {/* `nativeButton={false}` because the render target is an anchor, not
@@ -1101,7 +1107,7 @@ export default function StoresPage() {
       <div className="flex flex-wrap items-center gap-2 sm:gap-3">
         <div className="w-full min-w-0 sm:w-auto sm:flex-1">
           <Input
-            placeholder="Search stores by name, group or address"
+            placeholder={`Search ${lower(terms.site.many)} by name, ${lower(terms.site_group.one)} or address`}
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
@@ -1110,15 +1116,15 @@ export default function StoresPage() {
           <NativeSelect
             value={groupFilter}
             onChange={(e) => setGroupFilter(e.target.value)}
-            aria-label="Filter by store group"
+            aria-label={`Filter by ${lower(terms.site_group.one)}`}
           >
-            <option value="all">All groups</option>
+            <option value="all">All {lower(terms.site_group.many)}</option>
             {groups.map((g) => (
               <option key={g.id} value={g.id}>
                 {g.name}
               </option>
             ))}
-            <option value="none">Ungrouped</option>
+            <option value="none">No {lower(terms.site_group.one)}</option>
           </NativeSelect>
         </div>
         <div className="w-full sm:w-44">
@@ -1156,7 +1162,7 @@ export default function StoresPage() {
               (st) => (stateCounts[st] ?? 0) > 0 || provFilter === st
             ).map((st) => (
               <option key={st} value={st}>
-                {GEOCODE_STATE_STYLES[st].label} ({stateCounts[st] ?? 0})
+                {geocodeStateStyles(terms)[st].label} ({stateCounts[st] ?? 0})
               </option>
             ))}
             {sharedPoints.length > 0 && (
@@ -1205,22 +1211,22 @@ export default function StoresPage() {
           onClick={openCreate}
         >
           <Plus className="h-4 w-4" />
-          New store
+          New {lower(terms.site.one)}
         </Button>
       </div>
 
       <Dialog open={groupDialogOpen} onOpenChange={setGroupDialogOpen}>
         <DialogContent className="max-h-[85vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Store groups</DialogTitle>
+            <DialogTitle>{terms.site_group.many}</DialogTitle>
           </DialogHeader>
 
           <div className="flex items-end gap-2">
             <div className="flex-1 space-y-1.5">
-              <Label htmlFor="group-name">Add a group</Label>
+              <Label htmlFor="group-name">Add {withArticle(terms, "site_group")}</Label>
               <Input
                 id="group-name"
-                placeholder="e.g. Choppies Retail Group"
+                placeholder="e.g. Northgate Holdings"
                 value={groupForm}
                 onChange={(e) => setGroupForm(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && handleCreateGroup()}
@@ -1238,7 +1244,7 @@ export default function StoresPage() {
           {groups.length > 0 && (
             <ul className="divide-y divide-border rounded-lg border border-border">
               {groups.map((g) => {
-                const count = stores.filter(
+                const members = stores.filter(
                   (s) => s.store_group_id === g.id
                 ).length;
                 const busy = groupBusy === g.id;
@@ -1282,16 +1288,16 @@ export default function StoresPage() {
                     >
                       <p className="text-sm text-foreground">
                         Delete <span className="font-medium">{g.name}</span>?
-                        {count > 0 ? (
+                        {members > 0 ? (
                           <span className="text-muted-foreground">
                             {" "}
-                            {count} store{count === 1 ? "" : "s"} will become
+                            {count(terms, "site", members)} will become
                             ungrouped — none are deleted.
                           </span>
                         ) : (
                           <span className="text-muted-foreground">
                             {" "}
-                            It has no stores.
+                            It has no {lower(terms.site.many)}.
                           </span>
                         )}
                       </p>
@@ -1324,7 +1330,7 @@ export default function StoresPage() {
                     <span className="min-w-0 truncate text-sm text-foreground">
                       {g.name}
                       <span className="ml-2 text-xs text-muted-foreground">
-                        {count} store{count === 1 ? "" : "s"}
+                        {count(terms, "site", members)}
                       </span>
                     </span>
                     <div className="flex shrink-0 gap-1">
@@ -1367,11 +1373,13 @@ export default function StoresPage() {
       >
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>{editingId ? "Edit store" : "New store"}</DialogTitle>
+            <DialogTitle>
+              {editingId ? "Edit" : "New"} {lower(terms.site.one)}
+            </DialogTitle>
           </DialogHeader>
           <div className="space-y-3">
             <div className="space-y-1.5">
-              <Label htmlFor="store-group">Store group</Label>
+              <Label htmlFor="store-group">{terms.site_group.one}</Label>
               <NativeSelect
                 id="store-group"
                 value={form.store_group_id}
@@ -1379,21 +1387,21 @@ export default function StoresPage() {
                   setForm({ ...form, store_group_id: e.target.value })
                 }
               >
-                <option value="">Ungrouped</option>
+                <option value="">No {lower(terms.site_group.one)}</option>
                 {groups.map((g) => (
                   <option key={g.id} value={g.id}>
                     {g.name}
                   </option>
                 ))}
-                <option value="__new__">+ Create new group…</option>
+                <option value="__new__">+ Create new {lower(terms.site_group.one)}…</option>
               </NativeSelect>
             </div>
             {form.store_group_id === "__new__" && (
               <div className="space-y-1.5">
-                <Label htmlFor="new-group-name">New group name</Label>
+                <Label htmlFor="new-group-name">New {lower(terms.site_group.one)} name</Label>
                 <Input
                   id="new-group-name"
-                  placeholder="e.g. Choppies Retail Group"
+                  placeholder="e.g. Northgate Holdings"
                   value={newGroupName}
                   onChange={(e) => setNewGroupName(e.target.value)}
                 />
@@ -1407,7 +1415,7 @@ export default function StoresPage() {
                 Reading it is still possible at any width — the mirror line
                 under the store name carries it. */}
             <div className="space-y-1.5">
-              <Label htmlFor="store-frequency">Call cycle</Label>
+              <Label htmlFor="store-frequency">{terms.schedule_cycle.one}</Label>
               <NativeSelect
                 id="store-frequency"
                 value={form.visit_frequency}
@@ -1425,14 +1433,15 @@ export default function StoresPage() {
                   to whoever is looking at it. Said here because the dialog,
                   unlike the planner, gives no hint that a rep is involved. */}
               <p className="text-xs text-muted-foreground">
-                Applies to every rep who covers this store.
+                Applies to every {lower(terms.staff.one)} who covers this{" "}
+                {lower(terms.site.one)}.
               </p>
             </div>
             <div className="space-y-1.5">
-              <Label htmlFor="store-name">Store name</Label>
+              <Label htmlFor="store-name">{terms.site.one} name</Label>
               <Input
                 id="store-name"
-                placeholder="e.g. Choppies Gaborone Main"
+                placeholder="e.g. Riverside branch"
                 value={form.name}
                 onChange={(e) => setForm({ ...form, name: e.target.value })}
               />
@@ -1494,7 +1503,11 @@ export default function StoresPage() {
               disabled={saving || !form.name}
               className="bg-primary text-primary-foreground hover:bg-primary/90"
             >
-              {saving ? "Saving…" : editingId ? "Save changes" : "Create store"}
+              {saving
+                ? "Saving…"
+                : editingId
+                  ? "Save changes"
+                  : `Create ${lower(terms.site.one)}`}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -1512,7 +1525,11 @@ export default function StoresPage() {
         <DialogContent>
           <DialogHeader>
             <DialogTitle>
-              Delete {deleteImpact?.store_name ?? deleteTarget?.name ?? "store"}?
+              Delete{" "}
+              {deleteImpact?.store_name ??
+                deleteTarget?.name ??
+                lower(terms.site.one)}
+              ?
             </DialogTitle>
           </DialogHeader>
 
@@ -1529,13 +1546,13 @@ export default function StoresPage() {
               {deleteImpact.visits + deleteImpact.routes + deleteImpact.assignments ===
               0 ? (
                 <p className="text-sm text-foreground">
-                  Nothing else depends on this store — no visits, routes or rep
+                  Nothing else depends on this {lower(terms.site.one)} — no{" "}
+                  {lower(terms.job.many)}, routes or {lower(terms.staff.one)}{" "}
                   assignments. Safe to remove.
                 </p>
               ) : (
                 <p className="text-sm text-foreground">
-                  This also deletes {deleteImpact.visits} visit
-                  {deleteImpact.visits === 1 ? "" : "s"},{" "}
+                  This also deletes {count(terms, "job", deleteImpact.visits)},{" "}
                   {deleteImpact.submissions} audit
                   {deleteImpact.submissions === 1 ? "" : "s"},{" "}
                   {deleteImpact.photos} photo
@@ -1543,13 +1560,14 @@ export default function StoresPage() {
                   {deleteImpact.routes} scheduled route
                   {deleteImpact.routes === 1 ? "" : "s"}
                   {deleteImpact.reps > 0 &&
-                    `, and removes it from ${deleteImpact.reps} rep${deleteImpact.reps === 1 ? "'s" : "s'"} patch`}
+                    `, and removes it from ${possessive(count(terms, "staff", deleteImpact.reps))} patch`}
                   . Reports covering those dates will change.
                 </p>
               )}
               <p className="text-xs text-muted-foreground">
-                Deactivate instead if the store has simply closed — it keeps the
-                history and only stops new visits being scheduled.
+                Deactivate instead if the {lower(terms.site.one)} has simply
+                closed — it keeps the history and only stops new{" "}
+                {lower(terms.job.many)} being scheduled.
               </p>
             </div>
           )}
@@ -1577,7 +1595,7 @@ export default function StoresPage() {
 
       {loading ? (
         <div className="rounded-lg border border-border bg-card py-16 text-center text-sm text-muted-foreground">
-          Loading stores…
+          Loading {lower(terms.site.many)}…
         </div>
       ) : view === "map" ? (
         <PlacesMap places={filtered} />
@@ -1710,7 +1728,7 @@ export default function StoresPage() {
                       // that is supposed to answer "where".
                       <span
                         className="text-amber-700 dark:text-amber-400"
-                        title="Not schedulable until this store has a town."
+                        title={`Not schedulable until this ${lower(terms.site.one)} has a town.`}
                       >
                         No town
                       </span>
@@ -1748,7 +1766,7 @@ export default function StoresPage() {
                                 {groupName(store.store_group_id)}
                               </>
                             ) : (
-                              "Assign group"
+                              `Assign ${lower(terms.site_group.one)}`
                             )}
                           </button>
                         }
@@ -1758,7 +1776,7 @@ export default function StoresPage() {
                         className="max-h-72 overflow-y-auto"
                       >
                         {groups.length === 0 && (
-                          <DropdownMenuItem disabled>No groups yet</DropdownMenuItem>
+                          <DropdownMenuItem disabled>No {lower(terms.site_group.many)} yet</DropdownMenuItem>
                         )}
                         {groups.map((g) => (
                           <DropdownMenuItem
@@ -1782,7 +1800,7 @@ export default function StoresPage() {
                             onClick={() => setStoreGroup(store, null)}
                           >
                             <Check className="h-3.5 w-3.5 opacity-0" />
-                            Ungrouped
+                            No {lower(terms.site_group.one)}
                           </DropdownMenuItem>
                         )}
                       </DropdownMenuContent>
@@ -1869,7 +1887,7 @@ export default function StoresPage() {
                             >
                               {assignedByStore[store.id]?.length
                                 ? assignedByStore[store.id].map((a) => a.name).join(", ")
-                                : "Assign rep"}
+                                : `Assign ${lower(terms.staff.one)}`}
                             </button>
                           }
                         />
@@ -1884,7 +1902,9 @@ export default function StoresPage() {
                               before anyone can be sent there is a deadlock:
                               nobody can visit the store that needs visiting. */}
                           {reps.length === 0 && (
-                            <DropdownMenuItem disabled>No reps yet</DropdownMenuItem>
+                            <DropdownMenuItem disabled>
+                              No {lower(terms.staff.many)} yet
+                            </DropdownMenuItem>
                           )}
                           {reps.map((r) => {
                             const mine = assignedByStore[store.id]?.find(
@@ -1940,7 +1960,7 @@ export default function StoresPage() {
                           className="gap-2"
                         >
                           <Pencil className="h-4 w-4" />
-                          Edit store
+                          Edit {lower(terms.site.one)}
                         </DropdownMenuItem>
                         <DropdownMenuItem
                           onClick={() =>
@@ -1979,7 +1999,7 @@ export default function StoresPage() {
                     colSpan={9}
                     className="py-10 text-center text-sm text-muted-foreground"
                   >
-                    No stores found.
+                    No {lower(terms.site.many)} found.
                   </TableCell>
                 </TableRow>
               )}
@@ -1989,7 +2009,8 @@ export default function StoresPage() {
       )}
 
       <p className="text-xs text-muted-foreground">
-        {filtered.length} of {stores.length} stores across {groups.length} groups.
+        {filtered.length} of {stores.length} {lower(terms.site.many)} across{" "}
+        {count(terms, "site_group", groups.length)}.
       </p>
 
       <StoreLocationDialog

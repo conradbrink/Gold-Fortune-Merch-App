@@ -26,6 +26,8 @@ import {
   type LowStockAlert,
   type StockPosition,
 } from "@/lib/warehouse";
+import { useTerms } from "@/lib/use-company-config";
+import { withArticle } from "@/lib/terms";
 
 /**
  * The warehouse clerk's home, and a manager's first glance at the floor.
@@ -37,6 +39,7 @@ import {
  */
 export default function WarehousePage() {
   const supabase = createClient();
+  const t = useTerms();
   const [pipeline, setPipeline] = useState<PipelineRow[]>([]);
   const [pods, setPods] = useState<MissingPodRow[]>([]);
   const [lowStock, setLowStock] = useState<LowStockAlert[]>([]);
@@ -147,8 +150,8 @@ export default function WarehousePage() {
                   <EmptyRow colSpan={4}>Loading…</EmptyRow>
                 ) : pipeline.length === 0 ? (
                   <EmptyRow colSpan={4}>
-                    No orders in the last 90 days. Orders captured by a rep or keyed
-                    here will appear as soon as they arrive.
+                    No orders in the last 90 days. Orders captured by{" "}
+                    {withArticle(t, "staff")} or keyed here will appear as soon as they arrive.
                   </EmptyRow>
                 ) : (
                   pipeline.map((r) => (
@@ -234,7 +237,7 @@ export default function WarehousePage() {
             <TableHeader>
               <TableRow>
                 <TableHead>Order</TableHead>
-                <TableHead>Store</TableHead>
+                <TableHead>{t.site.one}</TableHead>
                 <TableHead>Delivered</TableHead>
                 <TableHead>Driver</TableHead>
                 <TableHead>Received by</TableHead>

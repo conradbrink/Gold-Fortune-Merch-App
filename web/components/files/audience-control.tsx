@@ -9,7 +9,9 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { AUDIENCE_LABELS, type Audience, type FileRow } from "@/lib/files";
+import { audienceLabels, type Audience, type FileRow } from "@/lib/files";
+import { lower } from "@/lib/terms";
+import { useTerms } from "@/lib/use-company-config";
 import type { RepSummary } from "@/lib/representatives";
 
 /**
@@ -33,6 +35,8 @@ export function AudienceControl({
   onChange: (audience: Audience, repIds: string[], groupIds: string[]) => void;
 }) {
   const [open, setOpen] = useState(false);
+  const t = useTerms();
+  const labels = audienceLabels(t);
 
   const summary =
     file.audience === "everyone"
@@ -45,7 +49,7 @@ export function AudienceControl({
               .map((r) => r.rep_name ?? "Unnamed")
               .join(", ")
         : file.group_ids.length === 0
-          ? "No chain yet"
+          ? `No ${lower(t.site_group.one)} yet`
           : groups
               .filter((g) => file.group_ids.includes(g.id))
               .map((g) => g.name)
@@ -102,14 +106,14 @@ export function AudienceControl({
             className={`h-3.5 w-3.5 ${file.audience === "everyone" ? "opacity-100" : "opacity-0"}`}
           />
           <Globe className="h-3.5 w-3.5" />
-          {AUDIENCE_LABELS.everyone}
+          {labels.everyone}
         </DropdownMenuItem>
 
         <p className="px-2 pt-2 pb-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-          {AUDIENCE_LABELS.reps}
+          {labels.reps}
         </p>
         {reps.length === 0 && (
-          <DropdownMenuItem disabled>No active reps</DropdownMenuItem>
+          <DropdownMenuItem disabled>No active {lower(t.staff.many)}</DropdownMenuItem>
         )}
         {reps.map((r) => (
           <DropdownMenuItem
@@ -131,10 +135,10 @@ export function AudienceControl({
         ))}
 
         <p className="px-2 pt-2 pb-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-          {AUDIENCE_LABELS.groups}
+          {labels.groups}
         </p>
         {groups.length === 0 && (
-          <DropdownMenuItem disabled>No chains yet</DropdownMenuItem>
+          <DropdownMenuItem disabled>No {lower(t.site_group.many)} yet</DropdownMenuItem>
         )}
         {groups.map((g) => (
           <DropdownMenuItem

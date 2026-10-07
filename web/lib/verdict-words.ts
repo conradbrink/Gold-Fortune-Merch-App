@@ -42,6 +42,8 @@ export function verdictWords(t: Terms): Record<Verdict, VerdictWords> {
     // Not a failure to verify — there is simply nothing to verify against. A
     // prospect is not on the estate, so it has no geofence and no distance.
     prospect: {
+      // Not `t.prospect.one` yet: that would turn Gold Fortune's label into
+      // "Lead", its prospect word, and that change is still to be decided.
       label: "Prospect",
       hint: `A sales call on a shop that is not ${withArticle(t, "client")} yet. Position recorded, but there is no ${site} geofence to measure it against.`,
     },

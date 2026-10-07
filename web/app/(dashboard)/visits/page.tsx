@@ -26,7 +26,7 @@ import { toLocalDateTime } from "@/lib/date-range";
 import { ExportMenu } from "@/components/export-menu";
 import type { ExportSheet } from "@/lib/export";
 import { useTerms } from "@/lib/use-company-config";
-import { lower } from "@/lib/terms";
+import { lower, withArticle } from "@/lib/terms";
 import { createClient } from "@/lib/supabase/client";
 import type { VisitStatus } from "@/lib/mock-data";
 
@@ -138,7 +138,7 @@ function VisitsContent() {
           scheduledStart: route?.scheduled_start_at ?? null,
           scheduledEnd: route?.scheduled_end_at ?? null,
           unscheduled: route === null,
-          storeName: store?.name ?? "Unknown store",
+          storeName: store?.name ?? `Unknown ${lower(terms.site.one)}`,
           repName: rep?.full_name ?? "Unassigned",
           formCount: formCounts[v.id] ?? 0,
         };
@@ -208,12 +208,12 @@ function VisitsContent() {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-xl font-semibold tracking-tight text-foreground">
-            {withForms ? "Visits with Forms Submitted" : "Visits"}
+            {withForms ? `${terms.job.many} with Forms Submitted` : terms.job.many}
           </h1>
           <p className="text-sm text-muted-foreground">
             {withForms
-              ? "Every visit where a rep submitted at least one form."
-              : "Every visit logged across your team."}
+              ? `Every ${lower(terms.job.one)} where ${withArticle(terms, "staff")} submitted at least one form.`
+              : `Every ${lower(terms.job.one)} logged across your team.`}
           </p>
         </div>
         <div className="flex gap-2">
@@ -223,7 +223,7 @@ function VisitsContent() {
             className={withForms ? "" : "bg-primary text-primary-foreground"}
             onClick={() => router.push("/visits")}
           >
-            All visits
+            All {lower(terms.job.many)}
           </Button>
           <Button
             variant={withForms ? "default" : "outline"}
@@ -244,7 +244,7 @@ function VisitsContent() {
       <div className="flex flex-wrap items-center gap-2 sm:gap-3">
         <div className="w-full min-w-0 sm:w-auto sm:flex-1">
           <Input
-            placeholder="Search by store or rep"
+            placeholder={`Search by ${lower(terms.site.one)} or ${lower(terms.staff.one)}`}
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
@@ -268,8 +268,8 @@ function VisitsContent() {
         <Table>
           <TableHeader>
             <TableRow className="hover:bg-transparent">
-              <TableHead>Store</TableHead>
-              <TableHead className="hidden sm:table-cell">Rep</TableHead>
+              <TableHead>{terms.site.one}</TableHead>
+              <TableHead className="hidden sm:table-cell">{terms.staff.one}</TableHead>
               <TableHead>Date &amp; time</TableHead>
               <TableHead>Status</TableHead>
               <TableHead className="hidden lg:table-cell">Duration</TableHead>
@@ -280,14 +280,14 @@ function VisitsContent() {
             {loading ? (
               <TableRow>
                 <TableCell colSpan={6} className="py-10 text-center text-sm text-muted-foreground">
-                  Loading visits…
+                  Loading {lower(terms.job.many)}…
                 </TableCell>
               </TableRow>
             ) : error ? (
               <TableRow>
                 <TableCell colSpan={6} className="py-10 text-center text-sm">
                   <p className="font-medium text-destructive">
-                    Could not load visits
+                    Could not load {lower(terms.job.many)}
                   </p>
                   <p className="mt-1 text-muted-foreground">{error}</p>
                 </TableCell>
@@ -296,8 +296,8 @@ function VisitsContent() {
               <TableRow>
                 <TableCell colSpan={6} className="py-10 text-center text-sm text-muted-foreground">
                   {withForms
-                    ? "No visits have form submissions yet — reps submit forms from the mobile app."
-                    : "No visits match these filters."}
+                    ? `No ${lower(terms.job.many)} have form submissions yet — ${lower(terms.staff.many)} submit forms from the mobile app.`
+                    : `No ${lower(terms.job.many)} match these filters.`}
                 </TableCell>
               </TableRow>
             ) : (
@@ -309,7 +309,7 @@ function VisitsContent() {
                   }
                   title={
                     visit.formCount > 0
-                      ? "View submitted forms for this visit"
+                      ? `View submitted forms for this ${lower(terms.job.one)}`
                       : undefined
                   }
                   className={visit.formCount > 0 ? "cursor-pointer" : undefined}
@@ -326,7 +326,7 @@ function VisitsContent() {
                           </span>
                           {visit.unscheduled && (
                             <span
-                              title="The rep started this visit themselves; it was not on their schedule."
+                              title={`The ${lower(terms.staff.one)} started this ${lower(terms.job.one)} themselves; it was not on their schedule.`}
                               className="shrink-0 rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-800 dark:bg-amber-950 dark:text-amber-300"
                             >
                               Unscheduled
@@ -389,7 +389,7 @@ function VisitsContent() {
       </div>
 
       <p className="text-xs text-muted-foreground">
-        Showing {filtered.length} of {visits.length} visits.
+        Showing {filtered.length} of {visits.length} {lower(terms.job.many)}.
       </p>
 
       <VisitFormsDialog
@@ -419,6 +419,7 @@ function VisitFormsDialog({
   onClose: () => void;
 }) {
   const supabase = createClient();
+  const terms = useTerms();
   const [subs, setSubs] = useState<SubmissionRow[]>([]);
   const [loading, setLoading] = useState(false);
 
@@ -458,7 +459,7 @@ function VisitFormsDialog({
     <Dialog open={visit !== null} onOpenChange={(o) => !o && onClose()}>
       <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-2xl">
         <DialogHeader>
-          <DialogTitle>{visit?.storeName ?? "Visit"}</DialogTitle>
+          <DialogTitle>{visit?.storeName ?? terms.job.one}</DialogTitle>
         </DialogHeader>
 
         {visit && (
@@ -477,7 +478,7 @@ function VisitFormsDialog({
           </p>
         ) : subs.length === 0 ? (
           <p className="py-8 text-center text-sm text-muted-foreground">
-            No forms were submitted during this visit.
+            No forms were submitted during this {lower(terms.job.one)}.
           </p>
         ) : (
           <div className="space-y-5">
@@ -507,11 +508,12 @@ function VisitFormsDialog({
 }
 
 export default function VisitsPage() {
+  const terms = useTerms();
   return (
     <Suspense
       fallback={
         <div className="rounded-lg border border-border bg-card py-16 text-center text-sm text-muted-foreground">
-          Loading visits…
+          Loading {lower(terms.job.many)}…
         </div>
       }
     >

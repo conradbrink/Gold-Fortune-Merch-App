@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { lower, type Terms } from "@/lib/terms";
 
 /**
  * Shared documents — planograms, price lists, notices.
@@ -32,11 +33,18 @@ export type FileRow = {
   group_ids: string[];
 };
 
-export const AUDIENCE_LABELS: Record<Audience, string> = {
-  everyone: "Everyone",
-  reps: "Selected reps",
-  groups: "By chain",
-};
+/**
+ * The audience choices in the company's words: "Selected reps" and "By chain"
+ * at Gold Fortune. The keys stay "reps" and "groups" because they are what the
+ * database stores.
+ */
+export function audienceLabels(t: Terms): Record<Audience, string> {
+  return {
+    everyone: "Everyone",
+    reps: `Selected ${lower(t.staff.many)}`,
+    groups: `By ${lower(t.site_group.one)}`,
+  };
+}
 
 /** 25 MB, matching the bucket's own `file_size_limit`. */
 export const MAX_FILE_BYTES = 26_214_400;

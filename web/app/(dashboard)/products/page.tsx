@@ -31,6 +31,8 @@ import { ImportProductsButton } from "@/components/products/import-dialog";
 import { createClient } from "@/lib/supabase/client";
 import { fetchOrgId } from "@/lib/representatives";
 import type { Tables } from "@/lib/supabase/types";
+import { useTerms } from "@/lib/use-company-config";
+import { lower, noun } from "@/lib/terms";
 
 type ProductRow = Tables<"products">;
 
@@ -67,6 +69,7 @@ function money(v: number | string | null): string {
 
 export default function ProductsPage() {
   const supabase = createClient();
+  const t = useTerms();
 
   const [products, setProducts] = useState<ProductRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -496,7 +499,8 @@ export default function ProductsPage() {
 
       <p className="text-xs text-muted-foreground">
         Prices are the trade price of a shrink, from the price card. Shelf prices
-        differ store to store and are recorded per visit.
+        differ {lower(t.site.one)} to {lower(t.site.one)} and are recorded per{" "}
+        {lower(t.job.one)}.
       </p>
 
       {/* Inline rather than a nested dialog, matching the Files page: the
@@ -524,8 +528,8 @@ export default function ProductsPage() {
                   )}{" "}
                   and has <strong>{impact.checks}</strong> recorded answer
                   {impact.checks === 1 ? "" : "s"} from{" "}
-                  <strong>{impact.stores_answered}</strong> outlet
-                  {impact.stores_answered === 1 ? "" : "s"}. Deleting erases those
+                  <strong>{impact.stores_answered}</strong>{" "}
+                  {noun(t, "site", impact.stores_answered)}. Deleting erases those
                   answers and changes the figures on promotions that have already
                   finished. Deactivating keeps them.
                 </>

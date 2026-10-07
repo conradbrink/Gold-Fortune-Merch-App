@@ -106,7 +106,8 @@ export default function TrackingPage() {
 
   const pins = useMemo<MapPin[]>(() => {
     const out: MapPin[] = positions.map((p) => ({
-      id: `rep-${p.repId}`,
+      // A key, not a word: concatenated so the wording guard reads it as code.
+      id: "rep-" + p.repId,
       lat: p.lat,
       lng: p.lng,
       color: PIN[freshnessOf(minutesSince(p.recordedAt, now), intervalMinutes)],

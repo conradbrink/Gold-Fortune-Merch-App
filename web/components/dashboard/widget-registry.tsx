@@ -243,7 +243,7 @@ export const WIDGETS: WidgetDefinition[] = [
     id: "store_health",
     title: (t) => `${t.site.one} health`,
     description: (t) =>
-      `${t.site.many} ordering, visited without ordering, and not visited — with the ones to visit first.`,
+      `${t.site.many} ordering, visited without ordering, and not visited — with the ones to go to first.`,
     span: 2,
     source: "business",
     module: "distribution",
@@ -650,7 +650,7 @@ export const WIDGETS: WidgetDefinition[] = [
             <p className="pt-1 text-xs text-muted-foreground">
               Every &ldquo;at {lower(t.site.one)}&rdquo; verdict rests on this. A
               guessed pin can put {withArticle(t, "staff")} off site while they
-              stand in the shop.
+              are actually there.
             </p>
           </CardContent>
         </Card>

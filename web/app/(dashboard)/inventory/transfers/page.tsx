@@ -16,9 +16,12 @@ import {
 } from "@/components/ui/table";
 import { ErrorBanner, EmptyRow } from "@/components/warehouse/stat-tile";
 import { fetchTransfers, type TransferListRow } from "@/lib/stock-moves";
+import { useTerms } from "@/lib/use-company-config";
+import { withArticle } from "@/lib/terms";
 
 export default function TransfersPage() {
   const supabase = createClient();
+  const terms = useTerms();
   const [rows, setRows] = useState<TransferListRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -80,7 +83,7 @@ export default function TransfersPage() {
             ) : rows.length === 0 ? (
               <EmptyRow colSpan={6}>
                 No transfers yet. A transfer is for stock moving between two places you
-                own — a second warehouse, a van, or a rep.
+                own — a second warehouse, a van, or {withArticle(terms, "staff")}.
               </EmptyRow>
             ) : (
               rows.map((t) => (

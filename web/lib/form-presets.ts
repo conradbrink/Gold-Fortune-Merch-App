@@ -14,6 +14,7 @@
  */
 
 import type { FormFieldType, MetricKey } from "@/lib/metrics";
+import { lower, type Terms } from "@/lib/terms";
 
 export type PresetField = {
   label: string;
@@ -69,41 +70,50 @@ export type FormPreset = {
  * through the Form tab and its per-response export, which is where they
  * belong.
  */
-const COMPETITOR_PRICE_AUDIT: FormPreset = {
-  key: "competitor-price-audit",
-  name: "Competitor Price Audit",
-  description:
-    "Prices, promotions and shelf presence of competing brands, recorded store by store.",
-  blurb:
-    "Brand, product, price, promotion and a photo — one submission per competitor line seen. Optional, so it never blocks a check-out.",
-  required: false,
-  fields: [
-    { label: "Competitor brand", field_type: "text", required: true },
-    { label: "Product name", field_type: "text", required: true },
-    { label: "Puffs / size", field_type: "text", required: false },
-    // A number, not text, so the export sums and sorts it and the chart on the
-    // Form tab is a price distribution rather than a list of strings.
-    { label: "Shelf price", field_type: "number", required: true },
-    { label: "On promotion?", field_type: "boolean", required: false },
-    {
-      label: "Promotion detail",
-      field_type: "text",
-      required: false,
-    },
-    { label: "Facings on shelf", field_type: "number", required: false },
-    {
-      label: "Shelf position",
-      field_type: "multiple_choice",
-      required: false,
-      options: ["Eye level", "Above eye level", "Below eye level", "Till point", "Not on shelf"],
-    },
-    { label: "Photo of shelf or price tag", field_type: "photo", required: false },
-    { label: "Notes", field_type: "text", required: false },
-  ],
-};
+function competitorPriceAudit(t: Terms): FormPreset {
+  const site = lower(t.site.one);
+  return {
+    key: "competitor-price-audit",
+    name: "Competitor Price Audit",
+    description: `Prices, promotions and shelf presence of competing brands, recorded ${site} by ${site}.`,
+    blurb:
+      "Brand, product, price, promotion and a photo — one submission per competitor line seen. Optional, so it never blocks a check-out.",
+    required: false,
+    fields: [
+      { label: "Competitor brand", field_type: "text", required: true },
+      { label: "Product name", field_type: "text", required: true },
+      { label: "Puffs / size", field_type: "text", required: false },
+      // A number, not text, so the export sums and sorts it and the chart on the
+      // Form tab is a price distribution rather than a list of strings.
+      { label: "Shelf price", field_type: "number", required: true },
+      { label: "On promotion?", field_type: "boolean", required: false },
+      {
+        label: "Promotion detail",
+        field_type: "text",
+        required: false,
+      },
+      { label: "Facings on shelf", field_type: "number", required: false },
+      {
+        label: "Shelf position",
+        field_type: "multiple_choice",
+        required: false,
+        options: ["Eye level", "Above eye level", "Below eye level", "Till point", "Not on shelf"],
+      },
+      { label: "Photo of shelf or price tag", field_type: "photo", required: false },
+      { label: "Notes", field_type: "text", required: false },
+    ],
+  };
+}
 
-export const FORM_PRESETS: FormPreset[] = [COMPETITOR_PRICE_AUDIT];
+/**
+ * The presets in the company's words. A function of the terms because the
+ * description is copied into the new form, so it has to name the company's
+ * places ("store by store" at Gold Fortune, "site by site" by default).
+ */
+export function formPresets(t: Terms): FormPreset[] {
+  return [competitorPriceAudit(t)];
+}
 
-export function findPreset(key: string): FormPreset | undefined {
-  return FORM_PRESETS.find((p) => p.key === key);
+export function findPreset(t: Terms, key: string): FormPreset | undefined {
+  return formPresets(t).find((p) => p.key === key);
 }

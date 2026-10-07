@@ -1,6 +1,8 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { deriveTown, type TownSource } from "@/lib/import/towns";
 import type { VisitFrequency } from "@/lib/schedule";
+import { count, withArticle, type Terms } from "@/lib/terms";
+import { countryName } from "@/lib/geocode-country";
 
 /**
  * Turning an accounting export into an estate of stores.
@@ -77,7 +79,7 @@ const HEADER_HINTS: Record<keyof ColumnMap, string[]> = {
   zip: ["zip", "postal", "post code", "postcode"],
   phone: ["phone", "tel", "mobile", "contact"],
   country: ["country"],
-  rep: ["rep", "merchandiser", "sales rep", "agent", "assigned to"],
+  rep: ["rep", "merchandiser", "agent", "assigned to"],
 };
 
 /**
@@ -170,8 +172,12 @@ function value(row: Record<string, string>, column: string | null): string | nul
  */
 export function buildDrafts(
   rows: Record<string, string>[],
-  map: ColumnMap
+  map: ColumnMap,
+  t: Terms,
+  /** The company's country_code (ISO, e.g. "BW"), or null to accept any. */
+  companyCountry: string | null
 ): StoreDraft[] {
+  const homeName = countryName(companyCountry)?.toLowerCase() ?? null;
   // A bare parent row ("Choppies Group" with no colon) is a chain header that
   // QuickBooks emits alongside its children — not a store.
   const groupNames = new Set(
@@ -197,15 +203,22 @@ export function buildDrafts(
       issues.push("No name");
       include = false;
     } else if (groupNames.has(rawName.trim().toLowerCase())) {
-      issues.push("Chain header, not a store");
+      issues.push(`${t.site_group.one} header, not ${withArticle(t, "site")}`);
       include = false;
     } else if (NOT_A_STORE.test(rawName.trim())) {
       issues.push("Looks like a ledger account");
       include = false;
     }
 
-    // Botswana estate — a South African row is almost certainly not a call.
-    if (country && !/botswana/i.test(country)) {
+    // A row from another country is almost certainly not a call — a South
+    // African depot in a Botswana company's ledger, say. The sheet may name
+    // the country or give its code.
+    if (
+      country &&
+      companyCountry &&
+      country.trim().toUpperCase() !== companyCountry &&
+      !(homeName && country.toLowerCase().includes(homeName))
+    ) {
       issues.push(`Country is ${country}`);
       include = false;
     }
@@ -262,6 +275,7 @@ export async function importStores(
    * call cycle several times over capacity.
    */
   defaultFrequency: VisitFrequency,
+  t: Terms,
   onProgress?: (done: number, total: number) => void
 ): Promise<ImportResult> {
   const accepted = drafts.filter((d) => d.include && d.name);
@@ -340,7 +354,7 @@ export async function importStores(
     const { data, error } = await supabase.from("stores").insert(batch).select("id");
     if (error) {
       throw new Error(
-        `${error.message} — ${storesCreated} store${storesCreated === 1 ? "" : "s"} were already created before this failed.`
+        `${error.message} — ${count(t, "site", storesCreated)} were already created before this failed.`
       );
     }
     storesCreated += data?.length ?? 0;

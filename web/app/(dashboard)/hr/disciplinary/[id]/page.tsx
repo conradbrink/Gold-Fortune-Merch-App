@@ -13,6 +13,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { Detail, Field } from "@/components/hr/field";
 import { WarningDialog } from "@/components/hr/warning-dialog";
 import { createClient } from "@/lib/supabase/client";
+import { useTerms } from "@/lib/use-company-config";
+import { lower } from "@/lib/terms";
 import { useHrLoad } from "@/lib/hr/use-load";
 import { usePermissions } from "@/lib/use-permissions";
 import { can } from "@/lib/permissions";
@@ -54,6 +56,7 @@ import { lookupLabel, lookupsOfKind } from "@/lib/hr/types";
  */
 export default function CasePage() {
   const supabase = createClient();
+  const terms = useTerms();
   const params = useParams<{ id: string }>();
   const id = params.id;
   const permissions = usePermissions();
@@ -408,7 +411,9 @@ export default function CasePage() {
                 <option value="screenshot">Screenshot</option>
                 <option value="attendance">Attendance record</option>
                 <option value="gps">GPS record</option>
-                <option value="store_visit">Store visit</option>
+                <option value="store_visit">
+                  {terms.site.one} {lower(terms.job.one)}
+                </option>
                 <option value="other">Other</option>
               </NativeSelect>
             </Field>

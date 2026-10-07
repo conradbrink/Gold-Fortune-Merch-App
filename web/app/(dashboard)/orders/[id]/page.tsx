@@ -60,6 +60,8 @@ import {
   type AvailabilityRow,
   type ShortfallAction,
 } from "@/lib/orders";
+import { useTerms } from "@/lib/use-company-config";
+import { capital, lower, possessive, withArticle } from "@/lib/terms";
 
 /**
  * What an availability check was a check of: this order, as these lines, at
@@ -90,6 +92,7 @@ type DialogKind =
  */
 export default function OrderDetailPage() {
   const supabase = createClient();
+  const terms = useTerms();
   const params = useParams<{ id: string }>();
   const router = useRouter();
   const orderId = params.id;
@@ -867,7 +870,8 @@ export default function OrderDetailPage() {
                           pricing tiers and the phone does not know which. The
                           placeholder shows the catalogue price as a starting
                           point, not an answer. */}
-                      Set them before confirming — a rep&rsquo;s order arrives unpriced.
+                      Set them before confirming — {withArticle(terms, "staff")}&rsquo;s order arrives
+                      unpriced.
                     </>
                   ) : (
                     "Quantities and prices can be changed until this order is confirmed. After that, stock is reserved against it."
@@ -892,7 +896,7 @@ export default function OrderDetailPage() {
               <div className="mt-2 flex flex-wrap items-end gap-2 rounded-lg border border-dashed border-border p-2.5">
                 <div className="min-w-56 flex-1">
                   <label className="mb-1 block text-xs text-muted-foreground">
-                    Add a product the shop asked for
+                    Add a product the {lower(terms.site.one)} asked for
                   </label>
                   <NativeSelect
                     value={addProductId}
@@ -975,17 +979,26 @@ export default function OrderDetailPage() {
               <CardTitle className="text-base">Order</CardTitle>
             </CardHeader>
             <CardContent className="space-y-1.5 text-sm">
-              <Row label="Source" value={o.source === "rep_app" ? "Rep app" : "Keyed here"} />
-              <Row label="Received via" value={o.received_via.replace("_", " ")} />
+              <Row label="Source" value={o.source === "rep_app" ? `${terms.staff.one} app` : "Keyed here"} />
+              {/* The stored value, read out lower-case as it always has been;
+                  only the one that names the company's people is translated. */}
+              <Row
+                label="Received via"
+                value={
+                  o.received_via === "rep_visit"
+                    ? `${lower(terms.staff.one)} ${lower(terms.job.one)}`
+                    : o.received_via.replace("_", " ")
+                }
+              />
               {/* Always shown. "No rep" is a fact about the order — a shop
                   that rang the office is nobody's call — and hiding the row
                   makes it look like the screen forgot to load it. */}
-              <Row label="Rep" value={detail.repName ?? "No rep"} />
+              <Row label={terms.staff.one} value={detail.repName ?? `No ${lower(terms.staff.one)}`} />
               <OrderInvoice orderId={o.id} status={o.status} invoiceNumber={o.invoice_number} />
               {o.contact_name && <Row label="Contact" value={o.contact_name} />}
               {o.contact_phone && <Row label="Phone" value={o.contact_phone} />}
               {o.required_by && <Row label="Required by" value={o.required_by} />}
-              <Row label="Deliver to" value={o.delivery_address ?? "The store"} />
+              <Row label="Deliver to" value={o.delivery_address ?? `The ${lower(terms.site.one)}`} />
               {/* Set by confirming, so absent on a new order — there is no
                   answer yet, and naming the default here would look like a
                   decision that has been taken. */}
@@ -1111,7 +1124,7 @@ export default function OrderDetailPage() {
                         htmlFor={`assign-${d.id}`}
                         className="shrink-0 text-xs text-muted-foreground"
                       >
-                        Rep
+                        {terms.staff.one}
                       </label>
                       <NativeSelect
                         id={`assign-${d.id}`}
@@ -1127,7 +1140,7 @@ export default function OrderDetailPage() {
                                 e.target.value || null
                               ),
                             e.target.value
-                              ? "The delivery is on that rep's phone now."
+                              ? `The delivery is on that ${possessive(lower(terms.staff.one))} phone now.`
                               : "The delivery is nobody's job now."
                           )
                         }
@@ -1142,13 +1155,13 @@ export default function OrderDetailPage() {
                         {d.assigned_rep_id &&
                           !reps.some((r) => r.id === d.assigned_rep_id) && (
                             <option value={d.assigned_rep_id} disabled>
-                              {d.assigned_rep_name ?? "Unnamed rep"} (no longer
+                              {d.assigned_rep_name ?? `Unnamed ${lower(terms.staff.one)}`} (no longer
                               active)
                             </option>
                           )}
                         {reps.map((r) => (
                           <option key={r.id} value={r.id}>
-                            {r.full_name ?? "Unnamed rep"}
+                            {r.full_name ?? `Unnamed ${lower(terms.staff.one)}`}
                           </option>
                         ))}
                       </NativeSelect>
@@ -1414,7 +1427,7 @@ export default function OrderDetailPage() {
                 the dispatch card afterwards, 62 dispatches got a driver and not
                 one got a rep. */}
             <div>
-              <Label htmlFor="dispatch-rep">Rep who is handling it</Label>
+              <Label htmlFor="dispatch-rep">{terms.staff.one} who is handling it</Label>
               <NativeSelect
                 id="dispatch-rep"
                 value={dispatchRepId}
@@ -1423,12 +1436,12 @@ export default function OrderDetailPage() {
                 <option value="">Nobody — the warehouse handles it</option>
                 {reps.map((r) => (
                   <option key={r.id} value={r.id}>
-                    {r.full_name ?? "Unnamed rep"}
+                    {r.full_name ?? `Unnamed ${lower(terms.staff.one)}`}
                   </option>
                 ))}
               </NativeSelect>
               <p className="mt-1 text-xs text-muted-foreground">
-                A rep named here sees this delivery in the app. Leave it as
+                {capital(withArticle(terms, "staff"))} named here sees this delivery in the app. Leave it as
                 Nobody and it stays with the warehouse; you can hand it over
                 later from the delivery below.
               </p>
@@ -1497,11 +1510,11 @@ export default function OrderDetailPage() {
                       trackingReference: tracking,
                       expectedDeliveryOn: expectedOn,
                       assignedRepId: dispatchRepId || null,
-                    }),
+                    }, terms),
                   dispatchRepId
                     ? `Dispatched, and it is on ${
                         reps.find((r) => r.id === dispatchRepId)?.full_name ??
-                        "that rep"
+                        `that ${lower(terms.staff.one)}`
                       }'s phone.`
                     : "Dispatched. Nobody has been given it yet."
                 )
@@ -1526,12 +1539,13 @@ export default function OrderDetailPage() {
                 id="receivedby"
                 value={receivedBy}
                 onChange={(e) => setReceivedBy(e.target.value)}
-                placeholder="Name of the person at the store"
+                placeholder={`Name of the person at the ${lower(terms.site.one)}`}
               />
             </div>
             <p className="text-sm text-muted-foreground">
-              The full consignment is recorded as delivered. Anything the customer would
-              not take should be handled as a failed delivery instead.
+              The full consignment is recorded as delivered. Anything the{" "}
+              {lower(terms.client.one)} would not take should be handled as a failed delivery
+              instead.
             </p>
           </div>
           <DialogFooter>
@@ -1572,7 +1586,7 @@ export default function OrderDetailPage() {
                 id="failreason"
                 value={reason}
                 onChange={(e) => setReason(e.target.value)}
-                placeholder="Shop closed, customer refused, vehicle broke down…"
+                placeholder={`${terms.site.one} closed, customer refused, vehicle broke down…`}
               />
             </div>
             <label className="flex items-start gap-2 text-sm">

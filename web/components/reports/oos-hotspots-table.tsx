@@ -10,6 +10,7 @@ import {
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { formatRate, type OosHotspot } from "@/lib/reports";
+import { useTerms } from "@/lib/use-company-config";
 
 /**
  * Out-of-stock hotspots.
@@ -20,6 +21,7 @@ import { formatRate, type OosHotspot } from "@/lib/reports";
  * four scattered ones across three months is noise.
  */
 export function OosHotspotsTable({ rows }: { rows: OosHotspot[] }) {
+  const t = useTerms();
   if (rows.length === 0) {
     return (
       <p className="py-10 text-center text-sm text-muted-foreground">
@@ -32,7 +34,7 @@ export function OosHotspotsTable({ rows }: { rows: OosHotspot[] }) {
     <Table>
       <TableHeader>
         <TableRow>
-          <TableHead>Store</TableHead>
+          <TableHead>{t.site.one}</TableHead>
           <TableHead className="text-right">OOS rate</TableHead>
           <TableHead className="hidden sm:table-cell text-right">Occurrences</TableHead>
           <TableHead className="text-right">Worst run</TableHead>

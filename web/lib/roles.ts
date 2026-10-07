@@ -1,3 +1,5 @@
+import { lower, type Terms } from "@/lib/terms";
+
 /**
  * The base role, which is no longer how access is decided.
  *
@@ -20,26 +22,30 @@
  * reaching for `AppRole` to gate a feature, you want `can()` instead.
  */
 
-export type AppRole = "rep" | "manager" | "warehouse" | "hr_manager";
+/** Every value `profiles.role` may hold. */
+export const APP_ROLES = ["rep", "manager", "warehouse", "hr_manager"] as const;
 
-/** Every value `profiles.role` may hold, and what each one means today. */
-export const ROLE_LABELS: Record<AppRole, string> = {
-  rep: "Field rep",
-  manager: "Manager",
-  warehouse: "Warehouse",
-  hr_manager: "HR",
-};
+export type AppRole = (typeof APP_ROLES)[number];
 
 /**
- * The one place a role string from the database is checked.
- *
- * Derived from `ROLE_LABELS` rather than written out again, so adding a role
- * fails to compile until it has a label and every caller starts recognising it
+ * What each role means today, in the company's words: "Field rep" at Gold
+ * Fortune. A `Record` over `AppRole`, so adding a role fails to compile until
+ * it has a label.
+ */
+export function roleLabels(t: Terms): Record<AppRole, string> {
+  return {
+    rep: `Field ${lower(t.staff.one)}`,
+    manager: "Manager",
+    warehouse: "Warehouse",
+    hr_manager: "HR",
+  };
+}
+
+/**
+ * The one place a role string from the database is checked, against the same
+ * list the type is derived from, so every caller starts recognising a new role
  * at the same moment.
  */
 export function isAppRole(value: unknown): value is AppRole {
-  return (
-    typeof value === "string" &&
-    Object.prototype.hasOwnProperty.call(ROLE_LABELS, value)
-  );
+  return typeof value === "string" && (APP_ROLES as readonly string[]).includes(value);
 }

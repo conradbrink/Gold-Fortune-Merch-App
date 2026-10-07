@@ -27,19 +27,22 @@ import { NativeSelect } from "@/components/ui/native-select";
 import { Checkbox } from "@/components/ui/checkbox";
 import { createClient } from "@/lib/supabase/client";
 import type { Tables } from "@/lib/supabase/types";
-import { FORM_PRESETS, findPreset } from "@/lib/form-presets";
+import { formPresets, findPreset } from "@/lib/form-presets";
+import { lower, possessive, withArticle } from "@/lib/terms";
+import { useTerms } from "@/lib/use-company-config";
 
 type FormTemplate = Tables<"form_templates"> & { submissions: number };
 
 export default function FormsPage() {
   const supabase = createClient();
+  const terms = useTerms();
   const [forms, setForms] = useState<FormTemplate[]>([]);
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
-  /** "" for a blank form, otherwise a key from FORM_PRESETS. */
+  /** "" for a blank form, otherwise a key from `formPresets`. */
   const [presetKey, setPresetKey] = useState("");
   /** Compulsory forms block the rep's check-out. Off unless chosen. */
   const [required, setRequired] = useState(false);
@@ -110,7 +113,7 @@ export default function FormsPage() {
         throw new Error("Could not read your organisation. Try again.");
       }
 
-      const preset = presetKey ? findPreset(presetKey) : undefined;
+      const preset = presetKey ? findPreset(terms, presetKey) : undefined;
       const { data: created, error: insertError } = await supabase
         .from("form_templates")
         .insert({
@@ -177,7 +180,7 @@ export default function FormsPage() {
   /** Fills the name and description in from a preset, leaving both editable. */
   function handlePresetChange(key: string) {
     setPresetKey(key);
-    const preset = key ? findPreset(key) : undefined;
+    const preset = key ? findPreset(terms, key) : undefined;
     if (!preset) return;
     setName(preset.name);
     setDescription(preset.description);
@@ -245,7 +248,8 @@ export default function FormsPage() {
             Forms
           </h1>
           <p className="text-sm text-muted-foreground">
-            Build and manage the forms your reps fill out in the field.
+            Build and manage the forms your {lower(terms.staff.many)} fill out in
+            the field.
           </p>
         </div>
         <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
@@ -270,7 +274,7 @@ export default function FormsPage() {
                   onChange={(e) => handlePresetChange(e.target.value)}
                 >
                   <option value="">A blank form</option>
-                  {FORM_PRESETS.map((p) => (
+                  {formPresets(terms).map((p) => (
                     <option key={p.key} value={p.key}>
                       {p.name}
                     </option>
@@ -280,7 +284,7 @@ export default function FormsPage() {
                     are ordinary fields, editable and deletable afterwards. */}
                 {presetKey && (
                   <p className="text-xs text-muted-foreground">
-                    {findPreset(presetKey)?.blurb} Every question can be edited
+                    {findPreset(terms, presetKey)?.blurb} Every question can be edited
                     or removed afterwards.
                   </p>
                 )}
@@ -308,9 +312,10 @@ export default function FormsPage() {
                     Compulsory
                   </Label>
                   <p className="text-xs text-muted-foreground">
-                    Reps cannot check out of a store until this form is
-                    submitted for that visit. Leave it off for occasional
-                    surveys.
+                    {terms.staff.many} cannot check out of{" "}
+                    {withArticle(terms, "site")} until this form is submitted
+                    for that {lower(terms.job.one)}. Leave it off for
+                    occasional surveys.
                   </p>
                 </div>
               </div>
@@ -469,8 +474,10 @@ export default function FormsPage() {
                 </span>
               </p>
               <p className="text-muted-foreground">
-                Archiving takes it off the reps&rsquo; phones and leaves the
-                history intact. You can restore it later.
+                {/* Curly apostrophe, as the sentence always had. */}
+                Archiving takes it off the{" "}
+                {possessive(lower(terms.staff.many)).replace("'", "\u2019")}{" "}
+                phones and leaves the history intact. You can restore it later.
               </p>
             </div>
           ) : (

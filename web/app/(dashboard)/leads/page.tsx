@@ -23,6 +23,8 @@ import {
   type Lead,
   type Stage,
 } from "@/lib/leads";
+import { useTerms } from "@/lib/use-company-config";
+import { lower, possessive, withArticle } from "@/lib/terms";
 
 /**
  * Leads — the pipeline of sales calls on shops that are not customers yet.
@@ -39,6 +41,7 @@ import {
  */
 export default function LeadsPage() {
   const supabase = createClient();
+  const t = useTerms();
 
   const [leads, setLeads] = useState<Lead[]>([]);
   const [loading, setLoading] = useState(true);
@@ -190,7 +193,8 @@ export default function LeadsPage() {
             Leads
           </h1>
           <p className="text-sm text-muted-foreground">
-            Sales calls on shops that are not customers yet · {visible.length}{" "}
+            Sales calls on shops that are not {lower(t.client.many)} yet ·{" "}
+            {visible.length}{" "}
             {visible.length === 1 ? "lead" : "leads"}
             {overdue > 0 && ` · ${overdue} follow-up${overdue === 1 ? "" : "s"} overdue`}
           </p>
@@ -205,9 +209,9 @@ export default function LeadsPage() {
           <NativeSelect
             value={repFilter}
             onChange={(e) => setRepFilter(e.target.value)}
-            aria-label="Filter by rep"
+            aria-label={`Filter by ${lower(t.staff.one)}`}
           >
-            <option value="all">Every rep</option>
+            <option value="all">{`Every ${lower(t.staff.one)}`}</option>
             {reps.map(([id, name]) => (
               <option key={id} value={id}>
                 {name}
@@ -236,8 +240,9 @@ export default function LeadsPage() {
         <div className="rounded-lg border border-border bg-card py-16 text-center">
           <p className="text-sm font-medium text-foreground">No leads yet.</p>
           <p className="mt-1 text-sm text-muted-foreground">
-            A lead appears here when a rep logs a sales visit from the phone —
-            Unscheduled visit → Sales visit.
+            A lead appears here when {withArticle(t, "staff")} logs a sales{" "}
+            {lower(t.job.one)} from the phone — Unscheduled {lower(t.job.one)} → Sales{" "}
+            {lower(t.job.one)}.
           </p>
         </div>
       ) : (
@@ -384,7 +389,7 @@ export default function LeadsPage() {
                           </div>
 
                           <p className="text-[11px] text-muted-foreground">
-                            {lead.rep_name ?? "Unknown rep"} ·{" "}
+                            {lead.rep_name ?? `Unknown ${lower(t.staff.one)}`} ·{" "}
                             {new Date(lead.started_at).toLocaleDateString("en-GB", {
                               day: "numeric",
                               month: "short",
@@ -465,7 +470,8 @@ export default function LeadsPage() {
                 and gone. */}
             {deleteTarget?.status === "in_progress" && (
               <p className="rounded-lg border border-amber-500/40 bg-amber-500/5 p-2.5 text-amber-700 dark:text-amber-500">
-                This call is still in progress. If the rep&apos;s phone is
+                This call is still in progress. If the{" "}
+                {possessive(lower(t.staff.one))} phone is
                 holding it unsent, deleting it now can either recreate the card
                 when the phone next syncs, or leave that phone retrying for ever
                 on a call it cannot finish. Safer to wait until it shows as

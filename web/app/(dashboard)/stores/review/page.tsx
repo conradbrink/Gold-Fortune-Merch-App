@@ -24,11 +24,13 @@ import {
   dataProblems,
   repositionLocation,
   suggestedCentre,
-  REVIEW_REASONS,
+  reviewReasons,
   type DriftSignal,
   type ReviewItem,
 } from "@/lib/store-review";
 import type { Tables } from "@/lib/supabase/types";
+import { useTerms } from "@/lib/use-company-config";
+import { count, lower, possessive } from "@/lib/terms";
 
 type StoreRow = Tables<"stores">;
 
@@ -45,6 +47,9 @@ type StoreRow = Tables<"stores">;
  */
 export default function StoreReviewPage() {
   const supabase = createClient();
+  const t = useTerms();
+  const site = lower(t.site.one);
+  const reasons = useMemo(() => reviewReasons(t), [t]);
 
   const [stores, setStores] = useState<StoreRow[]>([]);
   const [drift, setDrift] = useState<Record<string, DriftSignal>>({});
@@ -143,8 +148,8 @@ export default function StoreReviewPage() {
   );
 
   const problems = useMemo(
-    () => (item ? dataProblems(item.store, stores) : []),
-    [item, stores]
+    () => (item ? dataProblems(item.store, stores, t) : []),
+    [item, stores, t]
   );
 
   const pin = useMemo(() => {
@@ -170,7 +175,7 @@ export default function StoreReviewPage() {
     setBusy(true);
     setError(null);
     try {
-      await confirmLocation(supabase, item.store.id, profileId);
+      await confirmLocation(supabase, item.store.id, profileId, t);
       applyLocally(item.store.id, {
         location_confirmed_at: new Date().toISOString(),
         location_confirmed_by: profileId,
@@ -192,7 +197,8 @@ export default function StoreReviewPage() {
         item.store.id,
         draft.lat,
         draft.lng,
-        profileId
+        profileId,
+        t
       );
       applyLocally(item.store.id, {
         lat: draft.lat,
@@ -245,7 +251,7 @@ export default function StoreReviewPage() {
             <Link
               href="/stores"
               className="text-muted-foreground hover:text-foreground"
-              aria-label="Back to stores"
+              aria-label={`Back to ${lower(t.site.many)}`}
             >
               <ArrowLeft className="h-4 w-4" />
             </Link>
@@ -254,9 +260,10 @@ export default function StoreReviewPage() {
             </h1>
           </div>
           <p className="text-sm text-muted-foreground">
-            Reps set store locations by standing in them. These are the ones
-            that cannot settle themselves — where visits keep landing somewhere
-            else, where two shops share one point, or where the record is too
+            {t.staff.many} set {site} locations by standing in them. These are
+            the ones that cannot settle themselves — where{" "}
+            {lower(t.job.many)} keep landing somewhere else, where two{" "}
+            {lower(t.site.many)} share one point, or where the record is too
             thin to act on.
           </p>
         </div>
@@ -292,14 +299,14 @@ export default function StoreReviewPage() {
           <p className="mt-1 text-sm text-muted-foreground">
             {done > 0
               ? `You settled ${done} in this sitting.`
-              : "No store is drifting, sharing a point, or missing the details needed to place it. Reps will fill in the rest as they visit."}
+              : `No ${site} is drifting, sharing a point, or missing the details needed to place it. ${t.staff.many} will fill in the rest as they visit.`}
           </p>
           <Button
             variant="outline"
             size="sm"
             className="mt-4"
             nativeButton={false}
-            render={<Link href="/stores">Back to stores</Link>}
+            render={<Link href="/stores">Back to {lower(t.site.many)}</Link>}
           />
         </div>
       ) : (
@@ -312,7 +319,7 @@ export default function StoreReviewPage() {
           <div className="mb-4 rounded-lg border border-red-500/40 bg-red-500/10 p-3">
             <p className="flex items-center gap-2 text-sm font-semibold text-red-800 dark:text-red-300">
               <AlertTriangle className="h-4 w-4 shrink-0" />
-              This store&apos;s own details don&apos;t add up
+              This {possessive(site)} own details don&apos;t add up
             </p>
             <ul className="mt-2 space-y-1.5">
               {problems.map((p) => (
@@ -325,9 +332,9 @@ export default function StoreReviewPage() {
               ))}
             </ul>
             <p className="mt-2 text-xs text-red-800/90 dark:text-red-300/90">
-              If you cannot tell which shop this is, skip it and fix the record
-              on the Stores page — a confirmation is a claim that someone
-              checked, and a guess is worse than leaving it unchecked.
+              If you cannot tell which {site} this is, skip it and fix the
+              record on the {t.site.many} page — a confirmation is a claim that
+              someone checked, and a guess is worse than leaving it unchecked.
             </p>
           </div>
         )}
@@ -369,10 +376,10 @@ export default function StoreReviewPage() {
 
             <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 p-3">
               <p className="text-sm font-semibold text-amber-800 dark:text-amber-300">
-                {REVIEW_REASONS[item.reason].label}
+                {reasons[item.reason].label}
               </p>
               <p className="mt-1 text-xs text-amber-800/90 dark:text-amber-300/90">
-                {REVIEW_REASONS[item.reason].blurb}
+                {reasons[item.reason].blurb}
               </p>
               {item.matched && (
                 <p className="mt-2 text-xs text-amber-800/90 dark:text-amber-300/90">
@@ -390,14 +397,14 @@ export default function StoreReviewPage() {
             {item.drift && (
               <div className="rounded-lg border border-border bg-card p-3">
                 <p className="text-sm font-semibold text-foreground">
-                  What the visits show
+                  What the {lower(t.job.many)} show
                 </p>
                 <dl className="mt-2 space-y-1 text-xs">
                   <div className="flex justify-between gap-3">
                     <dt className="text-muted-foreground">Check-ins measured</dt>
                     <dd className="font-medium">
-                      {item.drift.visits} across {item.drift.reps} rep
-                      {item.drift.reps === 1 ? "" : "s"}
+                      {item.drift.visits} across{" "}
+                      {count(t, "staff", item.drift.reps)}
                     </dd>
                   </div>
                   <div className="flex justify-between gap-3">
@@ -423,8 +430,9 @@ export default function StoreReviewPage() {
                   <>
                     <p className="mt-2 text-xs text-muted-foreground">
                       They cluster tightly {Math.round(item.drift.clusterOffsetM)} m
-                      from the recorded point, across more than one rep. That
-                      reads as the record being wrong rather than the visits.
+                      from the recorded point, across more than one{" "}
+                      {lower(t.staff.one)}. That reads as the record being wrong
+                      rather than the {lower(t.job.many)}.
                     </p>
                     <Button
                       size="sm"
@@ -443,10 +451,12 @@ export default function StoreReviewPage() {
                 ) : (
                   <p className="mt-2 text-xs text-muted-foreground">
                     The check-ins are spread out
-                    {item.drift.reps === 1 ? " and all from one rep" : ""}, so
-                    they do not agree on a better position. This may be how the
-                    store is being visited rather than where it is — worth a
-                    word before moving anything.
+                    {item.drift.reps === 1
+                      ? ` and all from one ${lower(t.staff.one)}`
+                      : ""}
+                    , so they do not agree on a better position. This may be how
+                    the {site} is being visited rather than where it is — worth
+                    a word before moving anything.
                   </p>
                 )}
               </div>
@@ -457,7 +467,10 @@ export default function StoreReviewPage() {
                 <p className="font-semibold">Pin moved</p>
                 <p className="mt-0.5 text-xs">
                   {draft.lat.toFixed(5)}, {draft.lng.toFixed(5)} — saving records
-                  this as the store&rsquo;s position and marks it checked by you.
+                  this as the{" "}
+                  {/* The curly apostrophe this sentence has always had. */}
+                  {possessive(site).replace("'", "’")} position and marks
+                  it checked by you.
                 </p>
                 <button
                   type="button"
@@ -512,7 +525,7 @@ export default function StoreReviewPage() {
               </Button>
               <p className="text-center text-xs text-muted-foreground">
                 {pin === null
-                  ? "Click the map to place this shop, or search for it above."
+                  ? `Click the map to place this ${site}, or search for it above.`
                   : "Click or drag the pin to move it."}{" "}
                 Press <kbd className="font-mono">s</kbd> to skip.
               </p>

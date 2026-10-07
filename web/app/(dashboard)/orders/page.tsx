@@ -20,6 +20,8 @@ import {
 import { ErrorBanner, EmptyRow } from "@/components/warehouse/stat-tile";
 import { fetchOrders, type OrderListRow } from "@/lib/orders";
 import { ORDER_STATUSES, STATUS_LABELS } from "@/lib/warehouse";
+import { useTerms } from "@/lib/use-company-config";
+import { lower, withArticle, type Terms } from "@/lib/terms";
 
 /** Which statuses read as "needs somebody to do something". */
 const ACTIVE = new Set(["new", "confirmed", "picking", "packed", "dispatched"]);
@@ -40,26 +42,27 @@ const ACTIVE = new Set(["new", "confirmed", "picking", "packed", "dispatched"]);
  */
 type Stage = "to_deliver" | "needs_pod" | "fulfilled" | "cancelled";
 
-const STAGES: { key: Stage; title: string; blurb: string; loud?: boolean }[] = [
-  {
-    key: "to_deliver",
-    title: "New — needs to be delivered",
-    blurb: "Captured, confirmed, being picked, packed, or on the road.",
-  },
-  {
-    key: "needs_pod",
-    title: "Delivered — needs POD",
-    blurb:
-      "The goods are with the shop and nothing on file proves anyone received them.",
-    loud: true,
-  },
-  {
-    key: "fulfilled",
-    title: "Delivered and fulfilled",
-    blurb: "Signed for, or no proof required. Nothing outstanding.",
-  },
-  { key: "cancelled", title: "Cancelled", blurb: "Called off before delivery." },
-];
+function stages(t: Terms): { key: Stage; title: string; blurb: string; loud?: boolean }[] {
+  return [
+    {
+      key: "to_deliver",
+      title: "New — needs to be delivered",
+      blurb: "Captured, confirmed, being picked, packed, or on the road.",
+    },
+    {
+      key: "needs_pod",
+      title: "Delivered — needs POD",
+      blurb: `The goods are with the ${lower(t.site.one)} and nothing on file proves anyone received them.`,
+      loud: true,
+    },
+    {
+      key: "fulfilled",
+      title: "Delivered and fulfilled",
+      blurb: "Signed for, or no proof required. Nothing outstanding.",
+    },
+    { key: "cancelled", title: "Cancelled", blurb: "Called off before delivery." },
+  ];
+}
 
 function stageOf(o: OrderListRow): Stage {
   if (o.status === "cancelled") return "cancelled";
@@ -100,6 +103,7 @@ function nextStep(o: OrderListRow): string {
 
 export default function OrdersPage() {
   const supabase = createClient();
+  const terms = useTerms();
   const router = useRouter();
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState("all");
@@ -184,7 +188,7 @@ export default function OrdersPage() {
         <div>
           <h1 className="text-xl font-semibold tracking-tight text-foreground">Orders</h1>
           <p className="text-sm text-muted-foreground">
-            Everything captured by a rep or keyed here.
+            Everything captured by {withArticle(terms, "staff")} or keyed here.
           </p>
         </div>
         <Button nativeButton={false} render={<Link href="/orders/new" />}>
@@ -200,7 +204,7 @@ export default function OrdersPage() {
           <Input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search order number, store or contact"
+            placeholder={`Search order number, ${lower(terms.site.one)} or contact`}
             className="pl-8"
           />
         </div>
@@ -243,13 +247,13 @@ export default function OrdersPage() {
               <EmptyRow colSpan={6}>
                 {search.trim() || status !== "all" || podOnly
                   ? "No orders match those filters."
-                  : "No orders yet. Capture one, or wait for a rep to send one in."}
+                  : `No orders yet. Capture one, or wait for ${withArticle(terms, "staff")} to send one in.`}
               </EmptyRow>
             </TableBody>
           </Table>
         </div>
       ) : (
-        STAGES.map((stage) => {
+        stages(terms).map((stage) => {
           const rows = visible.filter((o) => stageOf(o) === stage.key);
           // An empty stage still says its name — "nothing waiting on a POD" is
           // information. Cancelled is the exception: it is not work, so it
@@ -278,7 +282,7 @@ export default function OrdersPage() {
                     <TableRow>
                       <TableHead>Order</TableHead>
                       <TableHead>Captured</TableHead>
-                      <TableHead>Store</TableHead>
+                      <TableHead>{terms.site.one}</TableHead>
                       <TableHead>Status</TableHead>
                       <TableHead>Next step</TableHead>
                       <TableHead className="text-right">Value</TableHead>

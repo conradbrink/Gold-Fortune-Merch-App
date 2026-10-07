@@ -18,6 +18,7 @@ import {
 import { Detail } from "@/components/hr/field";
 import { LeaveRequestDialog } from "@/components/hr/leave-request-dialog";
 import { createClient } from "@/lib/supabase/client";
+import { useTerms } from "@/lib/use-company-config";
 import { useHrLoad } from "@/lib/hr/use-load";
 import { formatDateOnly } from "@/lib/format-date";
 import { toLocalDateInput } from "@/lib/date-range";
@@ -83,6 +84,7 @@ import {
  */
 export default function MyHrPage() {
   const supabase = createClient();
+  const terms = useTerms();
 
   const [tab, setTab] = useState("overview");
   const [me, setMe] = useState<EmployeeRow | null>(null);
@@ -380,7 +382,7 @@ export default function MyHrPage() {
                 <Detail label="Position">{me.position ?? "—"}</Detail>
                 <Detail label="Department">{me.department?.name ?? "—"}</Detail>
                 <Detail label="Manager">{me.manager?.full_name ?? "—"}</Detail>
-                <Detail label="Territory">{me.territory?.name ?? "—"}</Detail>
+                <Detail label={terms.territory.one}>{me.territory?.name ?? "—"}</Detail>
                 <Detail label="Employment type">
                   {EMPLOYMENT_TYPE_LABELS[
                     me.employment_type as keyof typeof EMPLOYMENT_TYPE_LABELS
