@@ -149,7 +149,7 @@ export default function SalesPage() {
     <div className="space-y-6">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Sales</h1>
+          <h1 className="text-xl font-semibold tracking-tight text-foreground">Sales</h1>
           <p className="text-sm text-muted-foreground">
             Counted on the day the goods were delivered, and valued on what
             actually arrived — short-picked and returned units are not in these

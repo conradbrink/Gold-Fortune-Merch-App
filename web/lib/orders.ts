@@ -310,7 +310,9 @@ export async function fetchPickingList(
 export async function fetchOrderableProducts(supabase: Client) {
   const { data, error } = await supabase
     .from("products")
-    .select("id, name, brand, sku_code, units_per_shrink, shrink_price_excl_vat")
+    .select(
+      "id, name, brand, sku_code, unit_barcode, shrink_barcode, units_per_shrink, shrink_price_excl_vat"
+    )
     .eq("active", true)
     .eq("is_stock_tracked", true)
     .order("name");
@@ -320,9 +322,43 @@ export async function fetchOrderableProducts(supabase: Client) {
     name: string;
     brand: string | null;
     sku_code: string | null;
+    unit_barcode: string | null;
+    shrink_barcode: string | null;
     units_per_shrink: number | null;
     shrink_price_excl_vat: number | null;
   }[];
+}
+
+/**
+ * Products matching what was typed into an order's product search.
+ *
+ * Name and brand match anywhere in the text; the codes match from the start,
+ * because a clerk reading a SKU or scanning a barcode has the whole thing and
+ * a code that merely contains "12" is noise. Codes are compared without
+ * spaces, which is how they arrive from a WhatsApp message.
+ */
+export function matchProducts<
+  P extends {
+    name: string;
+    brand: string | null;
+    sku_code: string | null;
+    unit_barcode: string | null;
+    shrink_barcode: string | null;
+  },
+>(products: P[], query: string, limit = 8): P[] {
+  const q = query.trim().toLowerCase();
+  if (!q) return [];
+  const code = q.replace(/\s+/g, "");
+  return products
+    .filter(
+      (p) =>
+        p.name.toLowerCase().includes(q) ||
+        (p.brand ?? "").toLowerCase().includes(q) ||
+        [p.sku_code, p.unit_barcode, p.shrink_barcode].some((c) =>
+          (c ?? "").toLowerCase().replace(/\s+/g, "").startsWith(code)
+        )
+    )
+    .slice(0, limit);
 }
 
 /**
@@ -567,6 +603,24 @@ export async function fetchVatRate(supabase: Client): Promise<number> {
 }
 
 /**
+ * A line's price after its discount, rounded to the cent.
+ *
+ * The same arithmetic as `order_lines_apply_discount` in the database, which
+ * is what actually stores the figure — this only previews it, and the two have
+ * to agree to the cent or the total on screen is not the total saved.
+ */
+export function netPrice(listPrice: number, discountPct: number) {
+  // In whole cents and hundredths of a percent, so the rounding is exact the
+  // way Postgres's numeric round() is. Float arithmetic put 1.005 at
+  // 100.4999… cents and rounded it the other way from the database.
+  const cents = Math.round(listPrice * 100);
+  const keep = 10000 - Math.round(discountPct * 100);
+  const num = cents * keep;
+  const rounded = num >= 0 ? Math.floor((num + 5000) / 10000) : -Math.floor((-num + 5000) / 10000);
+  return rounded / 100;
+}
+
+/**
  * Subtotal, VAT and total from VAT-exclusive line prices.
  *
  * One place, because three screens show these numbers and three
@@ -637,12 +691,15 @@ export async function createManualOrder(
     contactPhone?: string;
     requiredBy?: string | null;
     notes?: string;
+    /** Null means deliver to the store's own address. */
+    deliveryAddress?: string | null;
     /** Whose account this is. Null is legitimate — plenty of orders arrive
         from a shop with no rep attached to them. */
     repId?: string | null;
     /** The accounting system's invoice number, when it already exists. */
     invoiceNumber?: string | null;
-    lines: { productId: string; qty: number; unitPrice: number | null }[];
+    /** `unitPrice` is before the discount; the database derives the net. */
+    lines: { productId: string; qty: number; unitPrice: number | null; discountPct?: number }[];
   }
 ): Promise<string> {
   if (input.lines.length === 0) {
@@ -667,6 +724,7 @@ export async function createManualOrder(
       contact_phone: input.contactPhone || null,
       required_by: input.requiredBy || null,
       notes: input.notes || null,
+      delivery_address: input.deliveryAddress || null,
       rep_id: input.repId || null,
       invoice_number: input.invoiceNumber || null,
       client_generated_id: crypto.randomUUID(),
@@ -684,6 +742,7 @@ export async function createManualOrder(
       product_id: l.productId,
       qty_ordered: l.qty,
       unit_price: l.unitPrice,
+      discount_pct: l.discountPct ?? 0,
       client_generated_id: crypto.randomUUID(),
     }))
   );

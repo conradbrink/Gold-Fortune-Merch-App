@@ -29,6 +29,11 @@ import {
   UserCheck,
   ShieldCheck,
   Building2,
+  Navigation,
+  Receipt,
+  Repeat,
+  Flag,
+  Coins,
 } from "lucide-react";
 import {
   can,
@@ -111,6 +116,11 @@ export const navGroups: NavGroup[] = [
       // the same glyph, which read as one entry duplicated. A gauge also says
       // what it is — fulfilment speed and accuracy, not another report.
       { href: "/warehouse/insights", label: "Warehouse insights", icon: Gauge, permission: "insights" },
+      // Targets and commissions are pay and performance information about
+      // colleagues, so they sit with the rest of the manager-only reporting.
+      // A rep's own figures reach them through RLS, not through these pages.
+      { href: "/targets", label: "Targets", icon: Flag, permission: "insights" },
+      { href: "/commissions", label: "Commissions", icon: Coins, permission: "insights" },
     ],
   },
   {
@@ -125,6 +135,10 @@ export const navGroups: NavGroup[] = [
     label: "Field Operations",
     items: [
       { href: "/schedule", label: "Schedule", icon: Calendar, permission: "field_ops" },
+      // Gated by `insights`, not `field_ops`: `location_pings` and `visits`
+      // are readable by the manager role only, so anyone else would be shown
+      // an empty map that looks like nobody is working.
+      { href: "/tracking", label: "Tracking", icon: Navigation, permission: "insights" },
       {
         // One destination, two names in the old menu. The feed is where a
         // manager starts, and the per-visit drill-down hangs off it.
@@ -152,6 +166,19 @@ export const navGroups: NavGroup[] = [
         href: "/orders",
         label: "Orders",
         icon: ClipboardCheck,
+        permission: "warehouse",
+      },
+      // Beside Orders: an invoice is made from an order that has gone out,
+      // and a recurring order places orders. Same people, same permission.
+      { href: "/invoices", label: "Tax invoices", icon: Receipt, permission: "warehouse" },
+      { href: "/recurring-orders", label: "Recurring orders", icon: Repeat, permission: "warehouse" },
+      // Beside Orders because a quote is an order that has not been agreed
+      // yet, and the same people write both. `/quotes` is not under `/orders`
+      // so the warehouse's order list stays a list of real orders.
+      {
+        href: "/quotes",
+        label: "Quotes",
+        icon: FileText,
         permission: "warehouse",
       },
       {

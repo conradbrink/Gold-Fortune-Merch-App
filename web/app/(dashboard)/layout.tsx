@@ -28,7 +28,7 @@ export default function DashboardLayout({
         <TopBar onOpenNav={() => setNavOpen(true)} />
         <main
           data-app-main
-          className="min-w-0 flex-1 overflow-y-auto bg-background p-4 sm:p-6"
+          className="min-w-0 flex-1 overflow-y-auto bg-background p-4 sm:px-8 sm:py-7"
         >
           {children}
         </main>

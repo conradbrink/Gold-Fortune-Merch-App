@@ -7,6 +7,10 @@
     {
       "path": "/api/workday/auto-end",
       "schedule": "30 17 * * *"
+    },
+    {
+      "path": "/api/orders/recurring",
+      "schedule": "0 4 * * *"
     }
   ]
 }
