@@ -266,6 +266,12 @@ export default function NewOrderPage() {
       setError("A discount is a percentage between 0 and 100.");
       return;
     }
+    // A discount off nothing would be stored with no list price behind it and
+    // then silently not apply when the line is priced later.
+    if (filled.some((l) => Number(l.discount) > 0 && l.unitPrice === "")) {
+      setError("A discounted line needs a price.");
+      return;
+    }
     if (new Set(ids).size !== ids.length) {
       setError("The same product appears on more than one line. Combine them into one.");
       return;

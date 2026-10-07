@@ -171,7 +171,13 @@ export async function createQuote(
       discount_pct: l.discountPct,
     }))
   );
-  fail(linesError);
+  if (linesError) {
+    // Take the empty draft back out, so a retry does not leave a second quote
+    // with nothing on it. Its number is spent; a gap in quote numbers is
+    // harmless, unlike one in invoice numbers.
+    await supabase.from("quotes").delete().eq("id", quoteId);
+    throw new Error(linesError.message);
+  }
   return quoteId;
 }
 

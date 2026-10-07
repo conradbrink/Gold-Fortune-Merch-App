@@ -205,7 +205,9 @@ export default function NewQuotePage() {
               placeholder="Search by name or town"
               autoComplete="off"
               onFocus={() => setStoreOpen(true)}
-              onBlur={() => setStoreOpen(false)}
+              // Delayed, as on the order form: on touch screens blur can land before the
+              // tap, and the list would unmount before the choice registers.
+              onBlur={() => setTimeout(() => setStoreOpen(false), 150)}
               onChange={(e) => {
                 setStoreQuery(e.target.value);
                 setStoreOpen(true);

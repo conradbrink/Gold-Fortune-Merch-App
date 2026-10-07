@@ -610,7 +610,14 @@ export async function fetchVatRate(supabase: Client): Promise<number> {
  * to agree to the cent or the total on screen is not the total saved.
  */
 export function netPrice(listPrice: number, discountPct: number) {
-  return Math.round(listPrice * (1 - discountPct / 100) * 100) / 100;
+  // In whole cents and hundredths of a percent, so the rounding is exact the
+  // way Postgres's numeric round() is. Float arithmetic put 1.005 at
+  // 100.4999… cents and rounded it the other way from the database.
+  const cents = Math.round(listPrice * 100);
+  const keep = 10000 - Math.round(discountPct * 100);
+  const num = cents * keep;
+  const rounded = num >= 0 ? Math.floor((num + 5000) / 10000) : -Math.floor((-num + 5000) / 10000);
+  return rounded / 100;
 }
 
 /**
