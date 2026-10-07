@@ -11,9 +11,10 @@ import { NativeSelect } from "@/components/ui/native-select";
 import { Textarea } from "@/components/ui/textarea";
 import { Field } from "@/components/hr/field";
 import { createClient } from "@/lib/supabase/client";
-import { ROLE_LABELS, type AppRole } from "@/lib/roles";
+import { APP_ROLES, roleLabels } from "@/lib/roles";
+import { useTerms } from "@/lib/use-company-config";
 import {
-  BASE_ROLE_NOTES,
+  baseRoleNotes,
   deleteJobRole,
   groupByArea,
   peopleOnRole,
@@ -60,6 +61,9 @@ export function JobRoleEditor({
   onChanged: () => Promise<void> | void;
 }) {
   const supabase = createClient();
+  const t = useTerms();
+  const labels = roleLabels(t);
+  const notes = baseRoleNotes(t);
   const [selectedId, setSelectedId] = useState<string | null>(
     directory.jobRoles[0]?.id ?? null
   );
@@ -196,14 +200,14 @@ export function JobRoleEditor({
                     placeholder="Field Supervisor"
                   />
                 </Field>
-                <Field label="Base role" hint={BASE_ROLE_NOTES[draft.baseRole]}>
+                <Field label="Base role" hint={notes[draft.baseRole]}>
                   <NativeSelect
                     value={draft.baseRole}
                     onChange={(e) => setDraft({ ...draft, baseRole: e.target.value })}
                   >
-                    {(Object.keys(ROLE_LABELS) as AppRole[]).map((r) => (
+                    {APP_ROLES.map((r) => (
                       <option key={r} value={r}>
-                        {ROLE_LABELS[r]}
+                        {labels[r]}
                       </option>
                     ))}
                   </NativeSelect>

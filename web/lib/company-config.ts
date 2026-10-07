@@ -21,6 +21,8 @@ export type CompanySettings = {
   off_site_distance_m: number;
   invalid_gps_distance_m: number;
   currency_code: string;
+  /** ISO 3166-1 alpha-2, or "" for no country (lib/geocode-country.ts). */
+  country_code: string;
 };
 
 export type CompanyConfig = {
@@ -48,6 +50,7 @@ const SETTING_FALLBACK: CompanySettings = {
   off_site_distance_m: 500,
   invalid_gps_distance_m: 5000,
   currency_code: "BWP",
+  country_code: "",
 };
 
 function obj(v: unknown): Record<string, unknown> {
@@ -86,6 +89,10 @@ export function parseCompanyConfig(raw: unknown): CompanyConfig | null {
         typeof s.currency_code === "string" && /^[A-Z]{3}$/.test(s.currency_code)
           ? s.currency_code
           : f.currency_code,
+      country_code:
+        typeof s.country_code === "string" && /^([A-Z]{2})?$/.test(s.country_code)
+          ? s.country_code
+          : f.country_code,
     },
     timezone: typeof r.timezone === "string" && r.timezone !== "" ? r.timezone : "UTC",
     vatRate: Number.isFinite(Number(r.vat_rate)) ? Number(r.vat_rate) : 0,

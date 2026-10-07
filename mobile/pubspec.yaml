@@ -24,7 +24,7 @@ publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 # The build number MUST rise on every release: Android refuses to install an
 # update whose versionCode is not higher than the installed one, and the failure
 # is a silent "app not installed" on the handset.
-version: 1.1.12+12
+version: 1.1.13+13
 
 environment:
   sdk: ^3.12.2
@@ -140,6 +140,6 @@ flutter_launcher_icons:
   android: true
   ios: false
   image_path: "assets/product_mark.png"
-  adaptive_icon_background: "#1E293B"
+  adaptive_icon_background: "#0F3D3E"
   adaptive_icon_foreground: "assets/product_mark_adaptive_foreground.png"
   min_sdk_android: 24

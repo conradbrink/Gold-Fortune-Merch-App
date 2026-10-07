@@ -22,6 +22,7 @@ import {
 import { ErrorBanner, EmptyRow } from "@/components/warehouse/stat-tile";
 import { exportCsv } from "@/lib/export";
 import { useTerms } from "@/lib/use-company-config";
+import { lower } from "@/lib/terms";
 import {
   byRep,
   fetchCommissions,
@@ -253,7 +254,7 @@ export default function CommissionsPage() {
       <Tabs value={view} onValueChange={(v) => setView(String(v))}>
         <TabsList>
           <TabsTrigger value="list">Commissions</TabsTrigger>
-          <TabsTrigger value="payroll">By rep (payroll)</TabsTrigger>
+          <TabsTrigger value="payroll">By {lower(terms.staff.one)} (payroll)</TabsTrigger>
         </TabsList>
       </Tabs>
 
@@ -268,8 +269,8 @@ export default function CommissionsPage() {
                 </option>
               ))}
             </NativeSelect>
-            <NativeSelect value={rep} onChange={(e) => setRep(e.target.value)} className="w-48" aria-label="Rep">
-              <option value="all">All reps</option>
+            <NativeSelect value={rep} onChange={(e) => setRep(e.target.value)} className="w-48" aria-label={terms.staff.one}>
+              <option value="all">{`All ${lower(terms.staff.many)}`}</option>
               {reps.map(([id, name]) => (
                 <option key={id} value={id}>
                   {name}
@@ -312,7 +313,7 @@ export default function CommissionsPage() {
                       aria-label="Select all"
                     />
                   </TableHead>
-                  <TableHead>Rep</TableHead>
+                  <TableHead>{terms.staff.one}</TableHead>
                   <TableHead>Order</TableHead>
                   <TableHead>Delivered</TableHead>
                   <TableHead className="text-right">Order value</TableHead>
@@ -387,7 +388,7 @@ export default function CommissionsPage() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Rep</TableHead>
+                  <TableHead>{terms.staff.one}</TableHead>
                   <TableHead className="text-right">Orders</TableHead>
                   <TableHead className="text-right">Order value</TableHead>
                   <TableHead className="text-right">Pending</TableHead>

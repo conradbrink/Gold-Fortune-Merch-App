@@ -21,6 +21,7 @@ import {
 import { ErrorBanner, EmptyRow } from "@/components/warehouse/stat-tile";
 import { exportCsv } from "@/lib/export";
 import { useTerms } from "@/lib/use-company-config";
+import { lower } from "@/lib/terms";
 import {
   fetchInvoices,
   money,
@@ -171,7 +172,7 @@ export default function InvoicesPage() {
           <Input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Invoice, order or customer"
+            placeholder={`Invoice, order or ${lower(terms.client.one)}`}
             className="pl-8"
             aria-label="Search invoices"
           />
@@ -196,7 +197,7 @@ export default function InvoicesPage() {
             <TableRow>
               <TableHead>Invoice</TableHead>
               <TableHead>Date</TableHead>
-              <TableHead>Customer</TableHead>
+              <TableHead>{terms.client.one}</TableHead>
               <TableHead>Due</TableHead>
               <TableHead className="text-right">Total</TableHead>
               <TableHead className="text-right">Outstanding</TableHead>

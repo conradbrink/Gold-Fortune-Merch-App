@@ -16,6 +16,8 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { createClient } from "@/lib/supabase/client";
+import { useTerms } from "@/lib/use-company-config";
+import { lower } from "@/lib/terms";
 import { useHrLoad } from "@/lib/hr/use-load";
 import { formatDateOnly } from "@/lib/format-date";
 import { toLocalDateInput } from "@/lib/date-range";
@@ -51,6 +53,7 @@ import { formatClock, formatDuration } from "@/lib/hr/types";
  */
 export default function HrAttendancePage() {
   const supabase = createClient();
+  const terms = useTerms();
 
   const [from, setFrom] = useState(() => {
     const d = new Date();
@@ -125,7 +128,7 @@ export default function HrAttendancePage() {
             Attendance
           </h1>
           <p className="text-sm text-muted-foreground">
-            From Start workday, store visits and approved leave.{" "}
+            From Start workday, {lower(terms.site.one)} {lower(terms.job.many)} and approved leave.{" "}
             {settings
               ? `Day runs ${settings.work_start_time.slice(0, 5)}–${settings.work_end_time.slice(
                   0,
@@ -197,7 +200,7 @@ export default function HrAttendancePage() {
           value={territoryId}
           onChange={(e) => setTerritoryId(e.target.value)}
         >
-          <option value="">All territories</option>
+          <option value="">All {lower(terms.territory.many)}</option>
           {(reference?.territories ?? []).map((t) => (
             <option key={t.id} value={t.id}>
               {t.name}

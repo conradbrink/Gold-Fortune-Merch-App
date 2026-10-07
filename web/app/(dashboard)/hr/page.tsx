@@ -13,6 +13,8 @@ import {
 import { Button } from "@/components/ui/button";
 import { StatTile } from "@/components/dashboard/stat-tile";
 import { createClient } from "@/lib/supabase/client";
+import { useTerms } from "@/lib/use-company-config";
+import { lower } from "@/lib/terms";
 import { useHrLoad } from "@/lib/hr/use-load";
 import {
   fetchHrSummary,
@@ -36,6 +38,7 @@ import { formatScore, periodLabel, ratingBand } from "@/lib/hr/types";
  */
 export default function HrDashboardPage() {
   const supabase = createClient();
+  const terms = useTerms();
   const [summary, setSummary] = useState<HrSummary | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -155,7 +158,7 @@ export default function HrDashboardPage() {
           tone="outline"
           label="Absent"
           value={attendance.absent}
-          sublabel="No workday, no visits, no leave"
+          sublabel={`No workday, no ${lower(terms.job.many)}, no leave`}
           href="/hr/attendance"
         />
         <StatTile

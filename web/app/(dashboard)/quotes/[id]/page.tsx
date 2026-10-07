@@ -26,6 +26,8 @@ import {
   setQuoteStatus,
   type QuoteDetail,
 } from "@/lib/quotes";
+import { useTerms } from "@/lib/use-company-config";
+import { lower } from "@/lib/terms";
 
 /**
  * One quote: what was offered, where it stands, and the way to an order.
@@ -38,6 +40,7 @@ import {
  */
 export default function QuoteDetailPage() {
   const supabase = createClient();
+  const t = useTerms();
   const router = useRouter();
   const { id } = useParams<{ id: string }>();
   const [detail, setDetail] = useState<QuoteDetail | null>(null);
@@ -238,13 +241,13 @@ export default function QuoteDetailPage() {
             <CardTitle className="text-base">Details</CardTitle>
           </CardHeader>
           <CardContent className="space-y-2 text-sm">
-            <Row label="Store" value={detail.storeName ?? "—"} />
-            <Row label="Rep" value={detail.repName ?? "No rep"} />
+            <Row label={t.site.one} value={detail.storeName ?? "—"} />
+            <Row label={t.staff.one} value={detail.repName ?? `No ${lower(t.staff.one)}`} />
             {q.contact_name && <Row label="Contact" value={q.contact_name} />}
             {q.contact_phone && <Row label="Phone" value={q.contact_phone} />}
             <Row label="Created" value={new Date(q.created_at).toLocaleDateString()} />
             <Row label="Valid until" value={q.valid_until ?? "No end date"} />
-            <Row label="Deliver to" value={q.delivery_address ?? "The store"} />
+            <Row label="Deliver to" value={q.delivery_address ?? `The ${lower(t.site.one)}`} />
             {q.notes && <Row label="Notes" value={q.notes} />}
           </CardContent>
         </Card>

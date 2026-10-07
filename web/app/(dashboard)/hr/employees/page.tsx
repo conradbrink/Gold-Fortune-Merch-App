@@ -18,6 +18,7 @@ import {
 } from "@/components/ui/table";
 import { EmployeeDialog } from "@/components/hr/employee-dialog";
 import { createClient } from "@/lib/supabase/client";
+import { useTerms } from "@/lib/use-company-config";
 import { useHrLoad } from "@/lib/hr/use-load";
 import {
   fetchEmployees,
@@ -50,6 +51,7 @@ import { formatDateOnly } from "@/lib/format-date";
  */
 export default function HrEmployeesPage() {
   const supabase = createClient();
+  const terms = useTerms();
 
   const [employees, setEmployees] = useState<EmployeeRow[]>([]);
   const [reference, setReference] = useState<HrReference | null>(null);
@@ -181,7 +183,7 @@ export default function HrEmployeesPage() {
                   <TableHead>Employee</TableHead>
                   <TableHead className="hidden md:table-cell">Department</TableHead>
                   <TableHead className="hidden lg:table-cell">Manager</TableHead>
-                  <TableHead className="hidden lg:table-cell">Territory</TableHead>
+                  <TableHead className="hidden lg:table-cell">{terms.territory.one}</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead className="hidden md:table-cell">Contract</TableHead>
                   <TableHead />

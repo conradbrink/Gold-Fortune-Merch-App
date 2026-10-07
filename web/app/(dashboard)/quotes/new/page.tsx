@@ -23,6 +23,8 @@ import {
   unitPriceFor,
 } from "@/lib/orders";
 import { createQuote } from "@/lib/quotes";
+import { useTerms } from "@/lib/use-company-config";
+import { lower } from "@/lib/terms";
 
 type Product = Awaited<ReturnType<typeof fetchOrderableProducts>>[number];
 type Line = { productId: string; qty: string; price: string; discount: string };
@@ -45,6 +47,7 @@ function defaultValidUntil(today = new Date()) {
  */
 export default function NewQuotePage() {
   const supabase = createClient();
+  const t = useTerms();
   const router = useRouter();
 
   const [orgId, setOrgId] = useState<string | null>(null);
@@ -137,7 +140,7 @@ export default function NewQuotePage() {
     setError(null);
     if (!orgId) return;
     if (!storeId) {
-      setError("Choose the store this quote is for.");
+      setError(`Choose the ${lower(t.site.one)} this quote is for.`);
       return;
     }
     if (lines.length === 0) {
@@ -194,11 +197,11 @@ export default function NewQuotePage() {
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">Customer</CardTitle>
+          <CardTitle className="text-base">{t.client.one}</CardTitle>
         </CardHeader>
         <CardContent className="grid gap-4 sm:grid-cols-2">
           <div className="relative sm:col-span-2">
-            <Label htmlFor="store">Store</Label>
+            <Label htmlFor="store">{t.site.one}</Label>
             <Input
               id="store"
               value={storeQuery}
@@ -233,7 +236,9 @@ export default function NewQuotePage() {
                   </button>
                 ))}
                 {storeMatches.length === 0 && (
-                  <p className="px-3 py-2 text-sm text-muted-foreground">No store matches.</p>
+                  <p className="px-3 py-2 text-sm text-muted-foreground">
+                    No {lower(t.site.one)} matches.
+                  </p>
                 )}
               </div>
             )}
@@ -247,9 +252,9 @@ export default function NewQuotePage() {
             <Input id="phone" value={contactPhone} onChange={(e) => setContactPhone(e.target.value)} />
           </div>
           <div>
-            <Label htmlFor="rep">Rep</Label>
+            <Label htmlFor="rep">{t.staff.one}</Label>
             <NativeSelect id="rep" value={repId} onChange={(e) => setRepId(e.target.value)}>
-              <option value="">No rep</option>
+              <option value="">{`No ${lower(t.staff.one)}`}</option>
               {reps.map((r) => (
                 <option key={r.id} value={r.id}>
                   {r.full_name}
@@ -272,7 +277,7 @@ export default function NewQuotePage() {
               id="delivery"
               value={deliveryAddress}
               onChange={(e) => setDeliveryAddress(e.target.value)}
-              placeholder="Leave blank to deliver to the store"
+              placeholder={`Leave blank to deliver to the ${lower(t.site.one)}`}
             />
           </div>
           <div className="sm:col-span-2">

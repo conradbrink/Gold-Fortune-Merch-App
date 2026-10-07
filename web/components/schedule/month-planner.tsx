@@ -31,6 +31,8 @@ import {
   type DayPlanStop,
   type PlannedDay,
 } from "@/lib/schedule";
+import { useTerms } from "@/lib/use-company-config";
+import { lower, noun } from "@/lib/terms";
 
 /**
  * One rep's month, planned by hand.
@@ -52,6 +54,7 @@ import {
  */
 export function MonthPlanner() {
   const supabase = createClient();
+  const t = useTerms();
 
   const [reps, setReps] = useState<RepSummary[]>([]);
   const [repId, setRepId] = useState("");
@@ -175,7 +178,8 @@ export function MonthPlanner() {
             supabase,
             repId,
             fromLocalDateInput(fromKey),
-            fromLocalDateInput(toKey)
+            fromLocalDateInput(toKey),
+            t
           ),
           fetchLastGeneratedDate(supabase, repId),
         ]);
@@ -225,7 +229,7 @@ export function MonthPlanner() {
 
   /** Re-reads one date. Cheaper than the month, and leaves every other day alone. */
   async function refreshDay(date: Date, startedRepId: string, startedMonth: Date) {
-    const fresh = await fetchRepDayPlans(supabase, startedRepId, date, date);
+    const fresh = await fetchRepDayPlans(supabase, startedRepId, date, date, t);
     if (!stillShowing(startedRepId, startedMonth)) return;
     const key = toLocalDateInput(date);
     setPlans((prev) => {
@@ -383,7 +387,7 @@ export function MonthPlanner() {
 
       <div className="flex flex-wrap items-end justify-between gap-3 rounded-lg border border-border bg-card p-3">
         <div className="min-w-[200px] flex-1 space-y-1.5">
-          <Label htmlFor="month-rep">Representative</Label>
+          <Label htmlFor="month-rep">{t.staff.one}</Label>
           <NativeSelect
             id="month-rep"
             value={repId}
@@ -395,12 +399,12 @@ export function MonthPlanner() {
           >
             {loadingReps && <option value="">Loading…</option>}
             {!loadingReps && reps.length === 0 && (
-              <option value="">No active reps</option>
+              <option value="">No active {lower(t.staff.many)}</option>
             )}
             {reps.map((r) => (
               <option key={r.rep_id} value={r.rep_id}>
                 {r.rep_name ?? "Unnamed"} — {r.assigned_stores}{" "}
-                {r.assigned_stores === 1 ? "store" : "stores"}
+                {noun(t, "site", r.assigned_stores)}
               </option>
             ))}
           </NativeSelect>
@@ -452,7 +456,7 @@ export function MonthPlanner() {
 
       {!loadingReps && reps.length === 0 ? (
         <p className="rounded-lg border border-border bg-card py-10 text-center text-sm text-muted-foreground">
-          No active representatives, so there is nobody to plan for.
+          No active {lower(t.staff.many)}, so there is nobody to plan for.
         </p>
       ) : loadingPlans ? (
         <p className="rounded-lg border border-border bg-card py-10 text-center text-sm text-muted-foreground">
@@ -464,18 +468,19 @@ export function MonthPlanner() {
             <p className="text-sm text-muted-foreground">
               <span className="font-semibold text-foreground">{monthTotal}</span>{" "}
               {monthTotal === 1 ? "stop" : "stops"} for{" "}
-              {selectedRep?.rep_name ?? "this rep"} in{" "}
+              {selectedRep?.rep_name ?? `this ${lower(t.staff.one)}`} in{" "}
               {month.toLocaleDateString("en-GB", { month: "long" })}
             </p>
             {lastGenerated === null ? (
               <p className="text-xs text-muted-foreground">
-                The call cycle has never been generated for this rep, so
-                everything here is what you put on it.
+                The {lower(t.schedule_cycle.one)} has never been generated for
+                this {lower(t.staff.one)}, so everything here is what you put on
+                it.
               </p>
             ) : (
               beyondGenerated && (
                 <p className="text-xs text-muted-foreground">
-                  Call-cycle routes are written through{" "}
+                  {t.schedule_cycle.one} routes are written through{" "}
                   {lastGenerated.toLocaleDateString("en-GB", {
                     day: "numeric",
                     month: "long",
@@ -523,7 +528,7 @@ export function MonthPlanner() {
                 isManager !== true
                   ? "Scheduling is manager-only. You can see the plan, but adding or removing a stop needs a manager."
                   : selected.isPast
-                    ? "This day has passed. Stops on it are the record of what was planned — adding one now would create a call the rep’s phone never showed them, and removing one would delete the evidence that it was missed."
+                    ? `This day has passed. Stops on it are the record of what was planned — adding one now would create a call the ${lower(t.staff.one)}’s phone never showed them, and removing one would delete the evidence that it was missed.`
                     : "This day is outside the month being shown. Open its own month to change it."
               }
               canAddStops={

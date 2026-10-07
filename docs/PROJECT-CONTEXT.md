@@ -125,7 +125,9 @@ field reordering), Visits drill-down, Company Profile (details + team).
 
 ## 4. Mobile app (`mobile/`)
 
-Flutter 3.44.8 / Dart 3.12. Package `com.goldfortune.gf_merch_rep`.
+Flutter 3.44.8 / Dart 3.12. App id `za.co.tickd.app` (was
+`com.goldfortune.gf_merch_rep` up to 1.1.11); the Dart package is still
+`gf_merch_rep`.
 Riverpod 3, go_router, drift, geolocator, image_picker, connectivity_plus, uuid.
 
 **Working and verified on the Android emulator:**

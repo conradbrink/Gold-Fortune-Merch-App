@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "./supabase/types";
+import { lower, type Terms } from "@/lib/terms";
 
 type Client = SupabaseClient<Database>;
 
@@ -156,7 +157,7 @@ export function byRep(sales: Sale[], period?: Period) {
  * somebody asks a slightly different question. If this ever gets slow, that is
  * the moment for the RPC — and by then the questions will have settled.
  */
-export async function fetchSales(supabase: Client): Promise<Sale[]> {
+export async function fetchSales(supabase: Client, t: Terms): Promise<Sale[]> {
   type Row = {
     id: string;
     order_number: string;
@@ -184,9 +185,9 @@ export async function fetchSales(supabase: Client): Promise<Sale[]> {
     const { data, error } = await supabase
       .from("orders")
       .select(
-        "id, order_number, delivered_at, rep_id, vat_rate, " +
-          "stores(name), profiles!orders_rep_id_fkey(full_name), " +
-          "order_lines(qty_delivered, qty_returned, unit_price)"
+        `id, order_number, delivered_at, rep_id, vat_rate,
+         stores(name), profiles!orders_rep_id_fkey(full_name),
+         order_lines(qty_delivered, qty_returned, unit_price)`
       )
       .eq("status", "delivered")
       .not("delivered_at", "is", null)
@@ -219,7 +220,9 @@ export async function fetchSales(supabase: Client): Promise<Sale[]> {
       orderNumber: r.order_number,
       deliveredAt: r.delivered_at,
       repId: r.rep_id,
-      repName: one(r.profiles)?.full_name ?? "No rep",
+      // An order nobody was responsible for still has to land in a row of the
+      // per-person table; it reads "No rep" in the company's own word.
+      repName: one(r.profiles)?.full_name ?? `No ${lower(t.staff.one)}`,
       storeName: one(r.stores)?.name ?? "—",
       units,
       net,

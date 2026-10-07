@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { callRpc } from "@/lib/rpc";
+import { lower, type Terms } from "@/lib/terms";
 
 /**
  * Representatives and store ownership.
@@ -229,7 +230,8 @@ export async function fetchOrgId(supabase: SupabaseClient): Promise<string | nul
 export async function updateRep(
   supabase: SupabaseClient,
   repId: string,
-  patch: { full_name?: string; phone?: string | null; job_title?: string | null }
+  patch: { full_name?: string; phone?: string | null; job_title?: string | null },
+  t: Terms
 ): Promise<void> {
   const { data, error } = await supabase
     .from("profiles")
@@ -238,7 +240,9 @@ export async function updateRep(
     .select("id");
   if (error) throw new Error(error.message);
   if (!data || data.length === 0) {
-    throw new Error("Nothing was saved — you may not have permission to edit this rep.");
+    throw new Error(
+      `Nothing was saved — you may not have permission to edit this ${lower(t.staff.one)}.`
+    );
   }
 }
 
@@ -253,7 +257,8 @@ export async function updateRep(
  */
 export async function setRepActive(
   repId: string,
-  isActive: boolean
+  isActive: boolean,
+  t: Terms
 ): Promise<void> {
   const res = await fetch(`/api/reps/${repId}`, {
     method: "PATCH",
@@ -265,7 +270,7 @@ export async function setRepActive(
   try {
     body = JSON.parse(raw);
   } catch {
-    throw new Error(`Unexpected ${res.status} response from the rep endpoint.`);
+    throw new Error(unexpectedResponse(res.status, t));
   }
   if (!res.ok) {
     const message =
@@ -288,10 +293,19 @@ export function generatePassword(): string {
   return Array.from(bytes, (b) => alphabet[b % alphabet.length]).join("");
 }
 
+/**
+ * What a non-JSON answer from `/api/reps` says: "the rep endpoint" at Gold
+ * Fortune, in whatever the company calls its people elsewhere.
+ */
+function unexpectedResponse(status: number, t: Terms): string {
+  return `Unexpected ${status} response from the ${lower(t.staff.one)} endpoint.`;
+}
+
 /** POST/PATCH against the rep API, unwrapping the error shape it returns. */
 async function callRepApi(
   url: string,
-  init: RequestInit
+  init: RequestInit,
+  t: Terms
 ): Promise<Record<string, unknown>> {
   const res = await fetch(url, init);
   // Read as text first — an error page is HTML, and .json() on it throws a
@@ -301,7 +315,7 @@ async function callRepApi(
   try {
     body = JSON.parse(raw);
   } catch {
-    throw new Error(`Unexpected ${res.status} response from the rep endpoint.`);
+    throw new Error(unexpectedResponse(res.status, t));
   }
   if (!res.ok) {
     const message =
@@ -320,12 +334,20 @@ async function callRepApi(
  * `profiles.email` update from the browser would change the name on screen
  * while the rep still signed in with the old address.
  */
-export async function changeRepEmail(repId: string, email: string): Promise<void> {
-  await callRepApi(`/api/reps/${repId}`, {
-    method: "PATCH",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ email }),
-  });
+export async function changeRepEmail(
+  repId: string,
+  email: string,
+  t: Terms
+): Promise<void> {
+  await callRepApi(
+    `/api/reps/${repId}`,
+    {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email }),
+    },
+    t
+  );
 }
 
 /**
@@ -337,13 +359,18 @@ export async function changeRepEmail(repId: string, email: string): Promise<void
  */
 export async function setRepPassword(
   repId: string,
-  password: string
+  password: string,
+  t: Terms
 ): Promise<void> {
-  await callRepApi(`/api/reps/${repId}`, {
-    method: "PATCH",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ password }),
-  });
+  await callRepApi(
+    `/api/reps/${repId}`,
+    {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ password }),
+    },
+    t
+  );
 }
 
 export type DeleteImpact = {

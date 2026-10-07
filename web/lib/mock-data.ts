@@ -96,7 +96,7 @@ export const couponAvailability = [
 ];
 
 export const formTemplates = [
-  { id: "f1", name: "Merchandising Conditions Audit", submissions: 342, lastUpdated: "2026-07-18" },
+  { id: "f1", name: "Site Conditions Audit", submissions: 342, lastUpdated: "2026-07-18" },
   { id: "f2", name: "New Product Launch Checklist", submissions: 118, lastUpdated: "2026-07-11" },
   { id: "f3", name: "Cooler Door Compliance", submissions: 205, lastUpdated: "2026-06-30" },
   { id: "f4", name: "Competitor Pricing Snapshot", submissions: 76, lastUpdated: "2026-06-22" },
@@ -106,15 +106,15 @@ export type TeamMember = {
   id: string;
   name: string;
   email: string;
-  role: "Admin" | "Manager" | "Rep";
+  role: "Admin" | "Manager" | "Staff";
   status: "Active" | "Invited";
 };
 
 export const teamMembers: TeamMember[] = [
   { id: "u1", name: "Conrad Brink", email: "conrad@example.com", role: "Admin", status: "Active" },
   { id: "u2", name: "Nancy Phillips", email: "nancy.phillips@example.com", role: "Manager", status: "Active" },
-  { id: "u3", name: "David Allen", email: "david.allen@example.com", role: "Rep", status: "Active" },
-  { id: "u4", name: "Devon Smith", email: "devon.smith@example.com", role: "Rep", status: "Invited" },
+  { id: "u3", name: "David Allen", email: "david.allen@example.com", role: "Staff", status: "Active" },
+  { id: "u4", name: "Devon Smith", email: "devon.smith@example.com", role: "Staff", status: "Invited" },
 ];
 
 // Placeholder company, deliberately no real one: a mock that names a customer

@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Tables } from "@/lib/supabase/types";
+import { lower, type Terms } from "@/lib/terms";
 
 /**
  * Reading and changing who may do what.
@@ -278,12 +279,17 @@ export async function reapplyJobRole(
  * what they can read in the modules that have not been converted to permissions
  * yet. Choosing one blind would be a coin flip, so the editor says this.
  */
-export const BASE_ROLE_NOTES: Record<string, string> = {
-  rep: "Signs in to the Android app. In the modules not yet on permissions, sees only their own records.",
-  manager:
-    "No Android app. In the modules not yet on permissions — sales, stores, visits, leads, forms, files — sees everything, whatever the tick boxes below say.",
-  warehouse:
-    "No Android app. In the modules not yet on permissions, sees nothing. The safest base for a role built out of tick boxes.",
-  hr_manager:
-    "No Android app. In the modules not yet on permissions, sees nothing.",
-};
+export function baseRoleNotes(t: Terms): Record<string, string> {
+  // The modules are named by what they hold, in the company's words.
+  const modules = ["sales", t.site.many, t.job.many, t.prospect.many, "forms", "files"]
+    .map(lower)
+    .join(", ");
+  return {
+    rep: "Signs in to the Android app. In the modules not yet on permissions, sees only their own records.",
+    manager: `No Android app. In the modules not yet on permissions — ${modules} — sees everything, whatever the tick boxes below say.`,
+    warehouse:
+      "No Android app. In the modules not yet on permissions, sees nothing. The safest base for a role built out of tick boxes.",
+    hr_manager:
+      "No Android app. In the modules not yet on permissions, sees nothing.",
+  };
+}

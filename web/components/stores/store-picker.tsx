@@ -3,6 +3,8 @@
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { Check, ChevronDown, Search, X } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { count, lower } from "@/lib/terms";
+import { useTerms } from "@/lib/use-company-config";
 
 /**
  * Choose a store by typing part of its name.
@@ -76,9 +78,10 @@ type MultiProps = CommonProps & {
  * shuts after each is the thing this mode exists to stop.
  */
 export function StorePicker(props: SingleProps | MultiProps) {
+  const t = useTerms();
   const {
     stores,
-    placeholder = "Search stores…",
+    placeholder = `Search ${lower(t.site.many)}…`,
     id,
     className,
     disabled = false,
@@ -212,7 +215,7 @@ export function StorePicker(props: SingleProps | MultiProps) {
       ? ""
       : selectedIds.length === 1 && chosen
         ? `${chosen.name}${chosen.city ? ` — ${chosen.city}` : ""}`
-        : `${selectedIds.length} stores selected`
+        : `${count(t, "site", selectedIds.length)} selected`
     : chosen
       ? `${chosen.name}${chosen.city ? ` — ${chosen.city}` : ""}`
       : allLabel ?? "";
@@ -301,7 +304,7 @@ export function StorePicker(props: SingleProps | MultiProps) {
                 }
               }}
               placeholder="Name, town or code"
-              aria-label="Search stores"
+              aria-label={`Search ${lower(t.site.many)}`}
               role="combobox"
               aria-expanded
               aria-controls={listId}
@@ -331,13 +334,13 @@ export function StorePicker(props: SingleProps | MultiProps) {
             ref={listRef}
             id={listId}
             role="listbox"
-            aria-label="Stores"
+            aria-label={t.site.many}
             aria-multiselectable={multiple || undefined}
             className="max-h-72 overflow-y-auto py-1"
           >
             {options.length === 0 ? (
               <li className="px-3 py-3 text-sm text-muted-foreground">
-                No store matches &ldquo;{term.trim()}&rdquo;.
+                No {lower(t.site.one)} matches &ldquo;{term.trim()}&rdquo;.
               </li>
             ) : (
               options.map((store, i) => {
@@ -401,8 +404,8 @@ export function StorePicker(props: SingleProps | MultiProps) {
             <div className="flex items-center justify-between gap-2 border-t border-border px-3 py-1.5 text-xs text-muted-foreground">
               <span>
                 {matches.length < stores.length
-                  ? `${matches.length} of ${stores.length} stores`
-                  : `${stores.length} stores`}
+                  ? `${matches.length} of ${count(t, "site", stores.length)}`
+                  : count(t, "site", stores.length)}
               </span>
               {multiple && selectedIds.length > 0 && (
                 <span className="flex items-center gap-2">

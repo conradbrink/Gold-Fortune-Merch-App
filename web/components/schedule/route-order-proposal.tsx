@@ -11,6 +11,8 @@ import {
   planStopOrder,
   type OrderSummary,
 } from "@/lib/route-order";
+import { useTerms } from "@/lib/use-company-config";
+import { lower, withArticle } from "@/lib/terms";
 
 /**
  * "Shorten the driving" — propose a shorter order within each scheduled day.
@@ -32,6 +34,7 @@ export function RouteOrderProposal({
   disabled?: boolean;
 }) {
   const supabase = createClient();
+  const t = useTerms();
 
   /** Non-null while a proposed stop order is waiting to be accepted. */
   const [order, setOrder] = useState<OrderSummary | null>(null);
@@ -46,7 +49,7 @@ export function RouteOrderProposal({
     try {
       const [anchors, { days, started }] = await Promise.all([
         fetchRepStartAnchors(supabase),
-        fetchDaysToOrder(supabase, weeks),
+        fetchDaysToOrder(supabase, weeks, t),
       ]);
       const summary = planStopOrder(days, anchors);
       setOrder({ ...summary, started });
@@ -73,7 +76,8 @@ export function RouteOrderProposal({
     try {
       const { daysWritten, stopsWritten } = await applyStopOrder(
         supabase,
-        order.days
+        order.days,
+        t
       );
       setOrderDone(
         daysWritten === 0
@@ -113,7 +117,8 @@ export function RouteOrderProposal({
         </Button>
         <span className="text-xs text-muted-foreground">
           Re-orders the stops within each scheduled day, nearest first from
-          where that rep usually starts. Nothing moves between days or reps.
+          where that {lower(t.staff.one)} usually starts. Nothing moves between
+          days or {lower(t.staff.many)}.
         </span>
       </div>
 
@@ -169,8 +174,8 @@ export function RouteOrderProposal({
               {/* Said once, plainly, rather than attached to every figure:
                   this is crow-flies distance and it is not a drive time. */}
               <p className="text-xs text-muted-foreground">
-                Straight-line distance, counted from where each rep usually
-                starts their day. Roads are longer, so treat this as the
+                Straight-line distance, counted from where each{" "}
+                {lower(t.staff.one)} usually starts their day. Roads are longer, so treat this as the
                 shape of the saving rather than the number of kilometres.
               </p>
             </>
@@ -180,8 +185,8 @@ export function RouteOrderProposal({
             <p className="text-xs text-muted-foreground">
               {order.started} day
               {order.started === 1 ? " is" : "s are"} already underway and
-              left alone — renumbering a round a rep has started would move
-              the ground under them.
+              left alone — renumbering a round {withArticle(t, "staff")} has
+              started would move the ground under them.
             </p>
           )}
 

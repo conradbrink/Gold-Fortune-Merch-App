@@ -18,6 +18,8 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { createClient } from "@/lib/supabase/client";
+import { useTerms } from "@/lib/use-company-config";
+import { lower } from "@/lib/terms";
 import { useHrLoad } from "@/lib/hr/use-load";
 import { formatDateOnly } from "@/lib/format-date";
 import { toLocalDateInput } from "@/lib/date-range";
@@ -64,6 +66,7 @@ import {
  */
 export default function HrPerformancePage() {
   const supabase = createClient();
+  const terms = useTerms();
   const router = useRouter();
 
   const [dashboard, setDashboard] = useState<PerformanceDashboard | null>(null);
@@ -224,7 +227,7 @@ export default function HrPerformancePage() {
           value={territoryId}
           onChange={(e) => setTerritoryId(e.target.value)}
         >
-          <option value="">All territories</option>
+          <option value="">All {lower(terms.territory.many)}</option>
           {(reference?.territories ?? []).map((t) => (
             <option key={t.id} value={t.id}>
               {t.name}

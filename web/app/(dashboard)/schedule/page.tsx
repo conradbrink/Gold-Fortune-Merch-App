@@ -21,6 +21,8 @@ import { fetchOrgId } from "@/lib/representatives";
 import { useIsManager } from "@/lib/use-is-manager";
 import { StorePicker } from "@/components/stores/store-picker";
 import { addStops, fetchDayBoard, type DayRep } from "@/lib/schedule";
+import { useTerms } from "@/lib/use-company-config";
+import { lower, noun, possessive, withArticle, type Terms } from "@/lib/terms";
 
 /**
  * Day-month-year with the weekday, because a schedule is read as "which day of
@@ -49,26 +51,30 @@ type View = "today" | "plan" | "cycle";
 
 /** The tabs, in the order the work happens: watch the day, lay out the month,
     then maintain the pattern the month is mostly generated from. */
-const VIEWS: { value: View; label: string; blurb: string }[] = [
-  {
-    value: "today",
-    label: "Today",
-    blurb: "What each rep is covering today, and how far through they are.",
-  },
-  {
-    value: "plan",
-    label: "Plan",
-    blurb: "One rep's month. Click a day to add or remove stores.",
-  },
-  {
-    value: "cycle",
-    label: "Call cycle",
-    blurb: "The recurring pattern dated routes are generated from.",
-  },
-];
+function views(t: Terms): { value: View; label: string; blurb: string }[] {
+  return [
+    {
+      value: "today",
+      label: "Today",
+      blurb: `What each ${lower(t.staff.one)} is covering today, and how far through they are.`,
+    },
+    {
+      value: "plan",
+      label: "Plan",
+      blurb: `One ${possessive(lower(t.staff.one))} month. Click a day to add or remove ${lower(t.site.many)}.`,
+    },
+    {
+      value: "cycle",
+      label: t.schedule_cycle.one,
+      blurb: "The recurring pattern dated routes are generated from.",
+    },
+  ];
+}
 
 export default function SchedulePage() {
   const supabase = createClient();
+  const t = useTerms();
+  const VIEWS = views(t);
   // Three questions, three tabs: is today going to plan, what does this rep's
   // month look like, and what pattern is it generated from. They were two, and
   // the middle one — laying a month out by hand — had nowhere to live, so it
@@ -94,7 +100,7 @@ export default function SchedulePage() {
     setLoading(true);
     setError(null);
     try {
-      setDayReps(await fetchDayBoard(supabase, date));
+      setDayReps(await fetchDayBoard(supabase, date, t));
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -251,7 +257,7 @@ export default function SchedulePage() {
             {!loading && summary.stops > 0 && (
               <p className="text-sm text-muted-foreground">
                 <span className="font-semibold text-foreground">{summary.reps}</span>{" "}
-                {summary.reps === 1 ? "rep" : "reps"} ·{" "}
+                {noun(t, "staff", summary.reps)} ·{" "}
                 <span className="font-semibold text-foreground">{summary.stops}</span>{" "}
                 {summary.stops === 1 ? "stop" : "stops"} ·{" "}
                 <span className="font-semibold text-emerald-700 dark:text-emerald-500">
@@ -311,20 +317,20 @@ export default function SchedulePage() {
           <DialogHeader>
             <DialogTitle>Add stops — {formatDisplayDate(date)}</DialogTitle>
             <DialogDescription>
-              No time is set. The rep decides when to call, as long as the store
-              gets visited.
+              No time is set. The {lower(t.staff.one)} decides when to call, as
+              long as the {lower(t.site.one)} gets visited.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-3">
             <div className="space-y-1.5">
-              <Label htmlFor="stop-rep">Representative</Label>
+              <Label htmlFor="stop-rep">{t.staff.one}</Label>
               <NativeSelect
                 id="stop-rep"
                 value={form.repId}
                 onChange={(e) => setForm({ ...form, repId: e.target.value })}
               >
                 <option value="" disabled>
-                  Select a rep
+                  Select {withArticle(t, "staff")}
                 </option>
                 {dayReps.map((r) => (
                   <option key={r.repId} value={r.repId}>
@@ -334,7 +340,7 @@ export default function SchedulePage() {
               </NativeSelect>
             </div>
             <div className="space-y-1.5">
-              <Label htmlFor="stop-store">Stores</Label>
+              <Label htmlFor="stop-store">{t.site.many}</Label>
               {/* Searchable rather than a dropdown of 230. Finding one outlet
                   meant scrolling the estate in alphabetical order, on the one
                   screen where somebody is usually working from a name a rep has
@@ -345,7 +351,7 @@ export default function SchedulePage() {
                 stores={stores}
                 value={form.storeIds}
                 onChange={(storeIds) => setForm({ ...form, storeIds })}
-                placeholder="Search stores…"
+                placeholder={`Search ${lower(t.site.many)}…`}
               />
             </div>
           </div>

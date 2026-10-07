@@ -1,8 +1,11 @@
 import { createClient } from "@/lib/supabase/server";
 import { enforceRateLimit, requireFeature, LIMITS } from "@/lib/rate-limit";
+import { parseCompanyConfig } from "@/lib/company-config";
+import { countryName, inCountry, normaliseCountry, siteQuery } from "@/lib/geocode-country";
 
 /**
- * Turns store addresses into coordinates.
+ * Turns site addresses into coordinates, in the company's own country
+ * (`country_code`; lib/geocode-country.ts).
  *
  * Server-side because the Google key must never reach a browser bundle — same
  * reasoning as `OPENAI_API_KEY` in `/api/insights`, and `proxy.ts` excludes
@@ -51,18 +54,12 @@ function mentionsTown(address: string, town: string | null): boolean {
   return loose.length >= 5 && a.replace(/[^a-z]/g, "").includes(loose);
 }
 
-/** Botswana's bounding box, give or take. Catches a result on another continent. */
-function inBotswana(lat: number, lng: number): boolean {
-  return lat > -27.5 && lat < -17.5 && lng > 19.5 && lng < 29.5;
-}
+type Hit = { lat: number; lng: number; matched: string; countryCode?: string | null };
 
-async function viaPlaces(
-  key: string,
-  query: string
-): Promise<{ lat: number; lng: number; matched: string } | null> {
+async function viaPlaces(key: string, query: string, country: string | null): Promise<Hit | null> {
   const url = new URL("https://maps.googleapis.com/maps/api/place/textsearch/json");
   url.searchParams.set("query", query);
-  url.searchParams.set("region", "bw");
+  if (country) url.searchParams.set("region", country.toLowerCase());
   url.searchParams.set("key", key);
 
   const res = await fetch(url);
@@ -84,13 +81,14 @@ async function viaPlaces(
   };
 }
 
-async function viaGeocoding(
-  key: string,
-  query: string
-): Promise<{ lat: number; lng: number; matched: string } | null> {
+async function viaGeocoding(key: string, query: string, country: string | null): Promise<Hit | null> {
   const url = new URL("https://maps.googleapis.com/maps/api/geocode/json");
   url.searchParams.set("address", query);
-  url.searchParams.set("region", "bw");
+  if (country) {
+    url.searchParams.set("region", country.toLowerCase());
+    // A filter, not a bias: Geocoding only answers inside the country.
+    url.searchParams.set("components", `country:${country}`);
+  }
   url.searchParams.set("key", key);
 
   const res = await fetch(url);
@@ -99,6 +97,7 @@ async function viaGeocoding(
     results?: {
       formatted_address?: string;
       geometry?: { location?: { lat: number; lng: number } };
+      address_components?: { short_name: string; types: string[] }[];
     }[];
   };
   const hit = json.results?.[0];
@@ -108,6 +107,8 @@ async function viaGeocoding(
     lat: hit.geometry.location.lat,
     lng: hit.geometry.location.lng,
     matched: hit.formatted_address ?? "",
+    countryCode:
+      hit.address_components?.find((c) => c.types.includes("country"))?.short_name ?? null,
   };
 }
 
@@ -153,7 +154,7 @@ export async function POST(request: Request) {
     // Bounded so one request cannot run for minutes or burn quota unnoticed.
     if (storeIds.length > 25) {
       return Response.json(
-        { error: "Send at most 25 stores per request." },
+        { error: "Send at most 25 places per request." },
         { status: 400 }
       );
     }
@@ -177,6 +178,12 @@ export async function POST(request: Request) {
       .in("id", storeIds);
     if (error) throw new Error(error.message);
 
+    // The company's country, from its settings: biases both services, filters
+    // Geocoding, and is what a result is checked against.
+    const { data: rawConfig } = await supabase.rpc("my_company_config");
+    const country = normaliseCountry(parseCompanyConfig(rawConfig)?.settings.country_code);
+    const outside = `Result is outside ${countryName(country) ?? "your country"}`;
+
     const candidates: Candidate[] = [];
 
     for (const s of (stores ?? []) as {
@@ -188,16 +195,19 @@ export async function POST(request: Request) {
     }[]) {
       // Name first: these are named outlets, and the name is what Places
       // matches on. The town disambiguates the many same-named branches.
-      const query = [s.name, s.address, s.city, "Botswana"]
-        .filter(Boolean)
-        .join(", ");
+      const query = siteQuery(s, country);
 
-      let hit = placesKey ? await viaPlaces(placesKey, query) : null;
+      let hit = placesKey ? await viaPlaces(placesKey, query, country) : null;
       let source: "places" | "geocoding" | null = hit ? "places" : null;
 
-      if (!hit && geoKey) {
-        hit = await viaGeocoding(geoKey, query);
-        source = hit ? "geocoding" : null;
+      // Places only biases towards the country. A Places answer elsewhere gets
+      // a second chance from Geocoding, which is filtered to it.
+      if ((!hit || !inCountry(country, { formattedAddress: hit.matched })) && geoKey) {
+        const fallback = await viaGeocoding(geoKey, query, country);
+        if (fallback) {
+          hit = fallback;
+          source = "geocoding";
+        }
       }
 
       if (!hit) {
@@ -214,7 +224,7 @@ export async function POST(request: Request) {
         continue;
       }
 
-      if (!inBotswana(hit.lat, hit.lng)) {
+      if (!inCountry(country, { formattedAddress: hit.matched, countryCode: hit.countryCode })) {
         candidates.push({
           storeId: s.id,
           lat: hit.lat,
@@ -223,7 +233,7 @@ export async function POST(request: Request) {
           matched: hit.matched,
           matchesTown: false,
           expectedTown: s.city,
-          problem: "Result is outside Botswana",
+          problem: outside,
         });
         continue;
       }

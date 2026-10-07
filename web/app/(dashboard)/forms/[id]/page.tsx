@@ -34,6 +34,7 @@ import {
   metricsForFieldType,
 } from "@/lib/metrics";
 import { useTerms } from "@/lib/use-company-config";
+import { lower, noun, withArticle } from "@/lib/terms";
 
 type FormTemplate = Tables<"form_templates">;
 type FormField = Tables<"form_fields">;
@@ -445,8 +446,8 @@ export default function FormDetailPage() {
             </Label>
             <p className="text-xs text-muted-foreground">
               {template.required
-                ? "Reps cannot check out of a store until this form is submitted for that visit."
-                : "Reps can fill this in when it is relevant. It never blocks a check-out."}
+                ? `${terms.staff.many} cannot check out of ${withArticle(terms, "site")} until this form is submitted for that ${lower(terms.job.one)}.`
+                : `${terms.staff.many} can fill this in when it is relevant. It never blocks a check-out.`}
             </p>
             {templateError && (
               <p className="text-xs text-destructive">{templateError}</p>
@@ -681,7 +682,7 @@ export default function FormDetailPage() {
             <div className="space-y-2 text-sm">
               <p className="text-muted-foreground">
                 Nobody has answered this question yet, so nothing recorded is
-                lost. The reps will stop being asked it.
+                lost. The {lower(terms.staff.many)} will stop being asked it.
               </p>
               {/* An unanswered question can still be feeding a card. Saying
                   "nothing is lost" and stopping there would be true of the
@@ -700,8 +701,8 @@ export default function FormDetailPage() {
               <p>
                 This question has <strong>{impact.answers}</strong> recorded
                 answer{impact.answers === 1 ? "" : "s"} from{" "}
-                <strong>{impact.stores_answered}</strong> outlet
-                {impact.stores_answered === 1 ? "" : "s"}
+                <strong>{impact.stores_answered}</strong>{" "}
+                {noun(terms, "site", impact.stores_answered)}
                 {impact.first_answered_at && impact.last_answered_at && (
                   <>
                     , between{" "}

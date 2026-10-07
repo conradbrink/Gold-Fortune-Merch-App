@@ -1,6 +1,8 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { findSharedPoints, geocodeState, type GeocodeState } from "./geocode";
+import { findSharedPoints, geocodeState, type GeocodeState } from "@/lib/geocode";
 import type { Tables } from "./supabase/types";
+import { capital, lower, noun, possessive, withArticle, type Terms } from "@/lib/terms";
+import { centreOf, WIDE_VIEW } from "@/lib/map-centre";
 
 type StoreRow = Tables<"stores">;
 
@@ -69,35 +71,44 @@ export function clusterIsTrustworthy(d: DriftSignal): boolean {
   return d.spreadM <= 75 && d.reps >= 2;
 }
 
-export const REVIEW_REASONS: Record<
-  ReviewReason,
-  { label: string; blurb: string; rank: number }
-> = {
-  drift: {
-    label: "Reps keep checking in somewhere else",
-    blurb:
-      "Visits to this store consistently land a long way from the point on file. Where they land is tightly grouped, which points at the record rather than at the reps — the stored position is probably wrong, and no rep can replace it because a rep set it.",
-    rank: 0,
-  },
-  collapsed: {
-    label: "Same listing as another store",
-    blurb:
-      "Google returned the identical listing for this and at least one other branch, so they share one point. At most one of them can be right, and the others are geofenced somewhere they are not.",
-    rank: 1,
-  },
-  shared: {
-    label: "Shares a point with another store",
-    blurb:
-      "Another store sits on this exact coordinate. That is occasionally genuine — two branches in one centre — but it is worth a look.",
-    rank: 2,
-  },
-  bad_record: {
-    label: "The store's own details are unusable",
-    blurb:
-      "No town, no address, or a name that belongs to another store too. A rep can fix a coordinate by standing in the shop; they cannot fix a row nobody can identify.",
-    rank: 3,
-  },
+/** Worst first: the order the list is worked in. */
+const REVIEW_RANK: Record<ReviewReason, number> = {
+  drift: 0,
+  collapsed: 1,
+  shared: 2,
+  bad_record: 3,
 };
+
+/** What each reason says to the reviewer, in the company's words. */
+export function reviewReasons(
+  t: Terms
+): Record<ReviewReason, { label: string; blurb: string; rank: number }> {
+  const site = lower(t.site.one);
+  const staff = lower(t.staff.one);
+  return {
+    drift: {
+      label: `${t.staff.many} keep checking in somewhere else`,
+      blurb: `${t.job.many} to this ${site} consistently land a long way from the point on file. Where they land is tightly grouped, which points at the record rather than at the ${lower(t.staff.many)} — the stored position is probably wrong, and no ${staff} can replace it because ${withArticle(t, "staff")} set it.`,
+      rank: REVIEW_RANK.drift,
+    },
+    collapsed: {
+      label: `Same listing as another ${site}`,
+      blurb:
+        "Google returned the identical listing for this and at least one other branch, so they share one point. At most one of them can be right, and the others are geofenced somewhere they are not.",
+      rank: REVIEW_RANK.collapsed,
+    },
+    shared: {
+      label: `Shares a point with another ${site}`,
+      blurb: `Another ${site} sits on this exact coordinate. That is occasionally genuine — two branches in one centre — but it is worth a look.`,
+      rank: REVIEW_RANK.shared,
+    },
+    bad_record: {
+      label: `The ${possessive(site)} own details are unusable`,
+      blurb: `No town, no address, or a name that belongs to another ${site} too. ${capital(withArticle(t, "staff"))} can fix a coordinate by standing in the ${site}; they cannot fix a row nobody can identify.`,
+      rank: REVIEW_RANK.bad_record,
+    },
+  };
+}
 
 /**
  * Builds the exceptions list from stores already in memory, plus the drift
@@ -131,7 +142,7 @@ export function buildReviewQueue(
   for (const store of active) {
     const state = geocodeState(store);
     const d = drift[store.id] ?? null;
-    const problems = dataProblems(store, active);
+    const problems = problemKinds(store, active);
 
     // Only genuine exceptions. A store waiting for a rep to reach it is the
     // normal state of most of the estate and belongs nowhere near this list —
@@ -161,8 +172,7 @@ export function buildReviewQueue(
   }
 
   return items.sort((a, b) => {
-    const byRank =
-      REVIEW_REASONS[a.reason].rank - REVIEW_REASONS[b.reason].rank;
+    const byRank = REVIEW_RANK[a.reason] - REVIEW_RANK[b.reason];
     if (byRank !== 0) return byRank;
     // Stable within a reason, and grouped by town so a reviewer who knows
     // Gaborone can work through Gaborone.
@@ -183,26 +193,21 @@ export function buildReviewQueue(
  */
 export type DataProblem = { label: string; detail: string };
 
-export function dataProblems(
-  store: StoreRow,
-  stores: StoreRow[]
-): DataProblem[] {
-  const problems: DataProblem[] = [];
+/**
+ * Which of the problems apply, without the words: the queue only needs to know
+ * whether there are any, and should not need the company's terms to find out.
+ * `sameName` is how many other active rows share the name.
+ */
+type ProblemKind =
+  | { kind: "no_town" }
+  | { kind: "no_address" }
+  | { kind: "same_name"; sameName: number }
+  | { kind: "single_word" };
 
-  if (!store.city) {
-    problems.push({
-      label: "No town on file",
-      detail:
-        "Nothing says which town this shop is in, so there is no way to judge whether a point is even in the right part of the country. It is also unschedulable until this is filled in.",
-    });
-  }
-  if (!store.address) {
-    problems.push({
-      label: "No address",
-      detail:
-        "No street or plot to match against. If you do not recognise the name, this one is better skipped than guessed at.",
-    });
-  }
+function problemKinds(store: StoreRow, stores: StoreRow[]): ProblemKind[] {
+  const kinds: ProblemKind[] = [];
+  if (!store.city) kinds.push({ kind: "no_town" });
+  if (!store.address) kinds.push({ kind: "no_address" });
 
   const sameName = stores.filter(
     (s) =>
@@ -211,24 +216,54 @@ export function dataProblems(
       s.name.trim().toLowerCase() === store.name.trim().toLowerCase()
   );
   if (sameName.length > 0) {
-    problems.push({
-      label: "Another store has this exact name",
-      detail: `${sameName.length} other active store${sameName.length === 1 ? "" : "s"} share this name. Either the import duplicated a row, or two real branches need telling apart before anyone can place them.`,
-    });
+    kinds.push({ kind: "same_name", sameName: sameName.length });
   }
 
   // A name that is only a chain with no branch is the shape that geocodes to
   // the chain's generic listing — the failure that put four Liquoramas on one
   // point.
   if (store.name.trim().split(/\s+/).length < 2) {
-    problems.push({
-      label: "Name is a single word",
-      detail:
-        "A name with no branch in it matches the chain's generic listing rather than this shop, which is how several branches end up sharing one coordinate.",
-    });
+    kinds.push({ kind: "single_word" });
   }
+  return kinds;
+}
 
-  return problems;
+export function dataProblems(
+  store: StoreRow,
+  stores: StoreRow[],
+  t: Terms
+): DataProblem[] {
+  const site = lower(t.site.one);
+  return problemKinds(store, stores).map((p): DataProblem => {
+    switch (p.kind) {
+      case "no_town":
+        return {
+          label: "No town on file",
+          detail: `Nothing says which town this ${site} is in, so there is no way to judge whether a point is even in the right part of the country. It is also unschedulable until this is filled in.`,
+        };
+      case "no_address":
+        return {
+          label: "No address",
+          detail:
+            "No street or plot to match against. If you do not recognise the name, this one is better skipped than guessed at.",
+        };
+      case "same_name":
+        return {
+          label: `Another ${site} has this exact name`,
+          detail: `${p.sameName} other active ${noun(t, "site", p.sameName)} share this name. Either the import duplicated a row, or two real branches need telling apart before anyone can place them.`,
+        };
+      case "single_word":
+        return {
+          label: "Name is a single word",
+          detail: `A name with no branch in it matches the ${possessive(lower(t.site_group.one))} generic listing rather than this ${site}, which is how several branches end up sharing one coordinate.`,
+        };
+    }
+  });
+}
+
+/** Said when an update matched no row — usually a store deleted meanwhile. */
+function notUpdated(t: Terms): string {
+  return `That ${lower(t.site.one)} could not be updated — reload and try again.`;
 }
 
 /**
@@ -241,7 +276,8 @@ export function dataProblems(
 export async function confirmLocation(
   supabase: SupabaseClient,
   storeId: string,
-  profileId: string
+  profileId: string,
+  t: Terms
 ): Promise<void> {
   const { data, error } = await supabase
     .from("stores")
@@ -256,7 +292,7 @@ export async function confirmLocation(
   // confirmation that did not land would quietly drop the store back into the
   // queue on the next load with no explanation.
   if ((data?.length ?? 0) === 0) {
-    throw new Error("That store could not be updated — reload and try again.");
+    throw new Error(notUpdated(t));
   }
 }
 
@@ -278,7 +314,8 @@ export async function repositionLocation(
   storeId: string,
   lat: number,
   lng: number,
-  profileId: string
+  profileId: string,
+  t: Terms
 ): Promise<void> {
   const { data, error } = await supabase
     .from("stores")
@@ -296,12 +333,9 @@ export async function repositionLocation(
     .select("id");
   if (error) throw new Error(error.message);
   if ((data?.length ?? 0) === 0) {
-    throw new Error("That store could not be updated — reload and try again.");
+    throw new Error(notUpdated(t));
   }
 }
-
-/** Where to open the map when a store has no coordinate of its own. */
-export const BOTSWANA_CENTRE = { lat: -24.6282, lng: 25.9231 };
 
 /**
  * A sensible starting view for a store with no point: the middle of the other
@@ -334,7 +368,10 @@ export function suggestedCentre(
     : stores.filter(
         (s) => s.city === store.city && s.lat !== null && s.lng !== null
       );
-  if (pool.length === 0) return BOTSWANA_CENTRE;
+  // Nothing in its town: the middle of every located site the company has,
+  // and with none at all, the wide view (lib/map-centre.ts) — never one
+  // company's capital.
+  if (pool.length === 0) return centreOf(stores) ?? WIDE_VIEW.center;
   return {
     lat: pool.reduce((n, s) => n + (s.lat ?? 0), 0) / pool.length,
     lng: pool.reduce((n, s) => n + (s.lng ?? 0), 0) / pool.length,

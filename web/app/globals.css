@@ -51,8 +51,9 @@
 }
 
 :root {
-  /* The product's default light-theme colours: navy primary, gold/amber accent,
-     red reserved for alerts and misses. Inside the dashboard each company's own
+  /* The product's default light-theme colours, Tickd's: teal primary (#0F3D3E)
+     with sand text, amber accent (#F5A524), red reserved for alerts and misses
+     (the same values as DEFAULT_PRIMARY / DEFAULT_ACCENT in lib/branding.ts). Inside the dashboard each company's own
      primary and accent are laid over these by the layout (`brandStyleSheet` in
      lib/branding.ts); these stay on pages outside it, such as sign-in, and
      whenever the company's configuration could not be read. */
@@ -62,34 +63,34 @@
   --card-foreground: oklch(0.22 0.03 265);
   --popover: oklch(1 0 0);
   --popover-foreground: oklch(0.22 0.03 265);
-  --primary: oklch(0.27 0.09 265);
-  --primary-foreground: oklch(0.97 0.015 90);
+  --primary: #0f3d3e;
+  --primary-foreground: #f7f7f2;
   --secondary: oklch(0.95 0.005 260);
-  --secondary-foreground: oklch(0.27 0.09 265);
+  --secondary-foreground: #0f3d3e;
   --muted: oklch(0.95 0.005 260);
   --muted-foreground: oklch(0.5 0.02 265);
-  --accent: oklch(0.88 0.09 85);
-  --accent-foreground: oklch(0.32 0.08 265);
+  --accent: color-mix(in oklch, #f5a524 30%, white);
+  --accent-foreground: #0f3d3e;
   --destructive: oklch(0.577 0.22 27.325);
   --border: oklch(0.9 0.006 260);
   --input: oklch(0.9 0.006 260);
-  --ring: oklch(0.27 0.09 265);
-  --gold: oklch(0.78 0.15 85);
-  --gold-foreground: oklch(0.27 0.09 265);
-  --chart-1: oklch(0.78 0.15 85);
-  --chart-2: oklch(0.27 0.09 265);
+  --ring: #0f3d3e;
+  --gold: #f5a524;
+  --gold-foreground: #0f172a;
+  --chart-1: #f5a524;
+  --chart-2: #0f3d3e;
   --chart-3: oklch(0.55 0.18 25);
   --chart-4: oklch(0.6 0.09 240);
   --chart-5: oklch(0.7 0.02 260);
   --radius: 0.5rem;
   --sidebar: oklch(0.99 0.002 260);
   --sidebar-foreground: oklch(0.32 0.03 265);
-  --sidebar-primary: oklch(0.27 0.09 265);
-  --sidebar-primary-foreground: oklch(0.97 0.015 90);
-  --sidebar-accent: oklch(0.88 0.09 85);
-  --sidebar-accent-foreground: oklch(0.32 0.08 265);
+  --sidebar-primary: #0f3d3e;
+  --sidebar-primary-foreground: #f7f7f2;
+  --sidebar-accent: color-mix(in oklch, #f5a524 30%, white);
+  --sidebar-accent-foreground: #0f3d3e;
   --sidebar-border: oklch(0.92 0.005 260);
-  --sidebar-ring: oklch(0.27 0.09 265);
+  --sidebar-ring: #0f3d3e;
 }
 
 .dark {

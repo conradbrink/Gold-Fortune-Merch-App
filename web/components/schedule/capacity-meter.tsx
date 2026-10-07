@@ -2,6 +2,8 @@
 
 import { AlertTriangle } from "lucide-react";
 import type { Capacity, OrgSettings } from "@/lib/org-settings";
+import { useTerms } from "@/lib/use-company-config";
+import { lower, noun, withArticle } from "@/lib/terms";
 
 /**
  * Whether the plan is deliverable, shown while it is being built.
@@ -21,6 +23,7 @@ export function CapacityMeter({
   settings: OrgSettings;
   repCount: number;
 }) {
+  const t = useTerms();
   const over = capacity.loadPct > 100;
   const tight = capacity.loadPct > 85 && !over;
 
@@ -35,7 +38,7 @@ export function CapacityMeter({
       <div className="flex flex-wrap items-baseline justify-between gap-2">
         <p className="text-sm font-medium text-foreground">
           {capacity.planned.toLocaleString()} of {capacity.total.toLocaleString()}{" "}
-          visit-slots per 4-week cycle
+          {lower(t.job.one)}-slots per 4-week cycle
         </p>
         <p
           className={[
@@ -61,10 +64,11 @@ export function CapacityMeter({
       </div>
 
       <p className="text-xs text-muted-foreground">
-        {repCount} {repCount === 1 ? "rep" : "reps"} ×{" "}
+        {repCount} {noun(t, "staff", repCount)} ×{" "}
         {settings.workingDays.length}{" "}
         {settings.workingDays.length === 1 ? "day" : "days"} ×{" "}
-        {settings.storesPerDay} stores × 4 weeks
+        {settings.storesPerDay} {noun(t, "site", settings.storesPerDay)} × 4
+        weeks
       </p>
 
       {over && (
@@ -72,9 +76,10 @@ export function CapacityMeter({
           <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
           <span>
             This plan needs {(capacity.planned - capacity.total).toLocaleString()}{" "}
-            more visit-slots than the team has. Reduce how many stores are
-            weekly, raise stores per day in settings, or add a rep — generating
-            now would create routes nobody can complete.
+            more {lower(t.job.one)}-slots than the team has. Reduce how many{" "}
+            {lower(t.site.many)} are weekly, raise {lower(t.site.many)} per day
+            in settings, or add {withArticle(t, "staff")} — generating now would
+            create routes nobody can complete.
           </span>
         </p>
       )}

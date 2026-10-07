@@ -19,11 +19,12 @@ import type { Database } from "@/lib/supabase/types";
  * manager who wants one day closed by hand has the Working day card.
  *
  * ⚠️ Vercel crons run in **UTC only**, and `web/vercel.json` says
- * `30 17 * * *`: 19:30 in Botswana (CAT, UTC+2, no daylight saving). The
- * database does the timezone arithmetic, so a late run — the Hobby plan fires
- * "within the hour" — still closes the day as of 19:30, not as of when it got
- * round to it. What the schedule has to get right is only that it falls after
- * the cut-off for every organisation this serves.
+ * `30 17 * * *`. Since Stage 2 each company has its own cut-off
+ * (`auto_end_time`, in its own timezone) and an hourly database job
+ * (`auto-end-workdays`, pg_cron) does the closing on time for every company.
+ * This daily run is a backstop: the database does the timezone arithmetic, so
+ * however late it fires, a day is closed as of that company's cut-off, never
+ * as of when the job got round to it.
  */
 
 export const runtime = "nodejs";

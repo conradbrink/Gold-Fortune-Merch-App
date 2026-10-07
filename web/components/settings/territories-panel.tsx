@@ -34,6 +34,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { createClient } from "@/lib/supabase/client";
 import { fetchOrgId } from "@/lib/representatives";
+import { useTerms } from "@/lib/use-company-config";
+import { count, lower, noun, withArticle } from "@/lib/terms";
 import { TerritoryStores } from "@/components/settings/territory-stores";
 import {
   createTerritory,
@@ -69,6 +71,7 @@ import {
  */
 export function TerritoriesPanel() {
   const supabase = createClient();
+  const t = useTerms();
 
   const [tree, setTree] = useState<CountryTree[]>([]);
   const [territoryCounts, setTerritoryCounts] = useState<Record<string, number>>({});
@@ -97,12 +100,12 @@ export function TerritoriesPanel() {
     setLoading(true);
     setError(null);
     try {
-      const [t, counts, org] = await Promise.all([
+      const [nextTree, counts, org] = await Promise.all([
         fetchTerritoryTree(supabase),
         fetchTerritoryStoreCounts(supabase),
         fetchOrgId(supabase),
       ]);
-      setTree(t);
+      setTree(nextTree);
       setTerritoryCounts(counts);
       setOrgId(org);
     } catch (e) {
@@ -215,8 +218,8 @@ export function TerritoriesPanel() {
 
     await run(() =>
       accepts === "store"
-        ? setStoreTerritory(supabase, id, targetId)
-        : moveTerritory(supabase, id, targetId)
+        ? setStoreTerritory(supabase, id, targetId, t)
+        : moveTerritory(supabase, id, targetId, t)
     );
   }
 
@@ -224,12 +227,14 @@ export function TerritoriesPanel() {
     <div className="space-y-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h2 className="text-lg font-semibold text-foreground">Territories</h2>
+          <h2 className="text-lg font-semibold text-foreground">{t.territory.many}</h2>
           <p className="text-sm text-muted-foreground">
-            {tree.length} {tree.length === 1 ? "country" : "countries"} ·
-            a country holds regions, a region holds territories, and the stores
-            sit in a territory. Drag a store into another territory, or a
-            territory into another region.
+            {tree.length} {tree.length === 1 ? "country" : "countries"} · a
+            country holds {lower(t.region.many)}, {withArticle(t, "region")} holds{" "}
+            {lower(t.territory.many)}, and the {lower(t.site.many)} sit in{" "}
+            {withArticle(t, "territory")}. Drag {withArticle(t, "site")} into
+            another {lower(t.territory.one)}, or {withArticle(t, "territory")} into
+            another {lower(t.region.one)}.
           </p>
         </div>
         <Button
@@ -301,10 +306,9 @@ export function TerritoriesPanel() {
                       </Badge>
                     )}
                     <span className="ml-2 text-xs text-muted-foreground">
-                      {regions.length}{" "}
-                      {regions.length === 1 ? "region" : "regions"}
+                      {count(t, "region", regions.length)}
                       {" · "}
-                      {countryStores} {countryStores === 1 ? "store" : "stores"}
+                      {count(t, "site", countryStores)}
                     </span>
                   </button>
 
@@ -319,7 +323,7 @@ export function TerritoriesPanel() {
                     }}
                   >
                     <Plus className="h-3.5 w-3.5" />
-                    Region
+                    {t.region.one}
                   </Button>
                   <RowActions
                     territory={country}
@@ -337,7 +341,7 @@ export function TerritoriesPanel() {
 
                 {countryOpen && regions.length === 0 && (
                   <p className="border-t border-border px-3 py-2 pl-11 text-sm text-muted-foreground">
-                    No regions in {country.name} yet.
+                    No {lower(t.region.many)} in {country.name} yet.
                   </p>
                 )}
 
@@ -389,10 +393,9 @@ export function TerritoriesPanel() {
                               </Badge>
                             )}
                             <span className="ml-2 text-xs text-muted-foreground">
-                              {territories.length}{" "}
-                              {territories.length === 1 ? "territory" : "territories"}
+                              {count(t, "territory", territories.length)}
                               {" · "}
-                              {stores} {stores === 1 ? "store" : "stores"}
+                              {count(t, "site", stores)}
                             </span>
                           </button>
 
@@ -407,7 +410,7 @@ export function TerritoriesPanel() {
                             }}
                           >
                             <Plus className="h-3.5 w-3.5" />
-                            Territory
+                            {t.territory.one}
                           </Button>
                           <RowActions
                             territory={region}
@@ -427,14 +430,14 @@ export function TerritoriesPanel() {
 
                         {regionOpen && territories.length === 0 && (
                           <p className="border-t border-border px-3 py-2 pl-11 text-sm text-muted-foreground">
-                            No territories in {region.name} yet.
+                            No {lower(t.territory.many)} in {region.name} yet.
                           </p>
                         )}
 
                         {regionOpen &&
                           territories.map((territory) => {
                             const open = expanded.has(territory.id);
-                            const count = territoryCounts[territory.id] ?? 0;
+                            const storeCount = territoryCounts[territory.id] ?? 0;
                             return (
                               <div
                                 key={territory.id}
@@ -495,7 +498,7 @@ export function TerritoriesPanel() {
                                       </Badge>
                                     )}
                                     <span className="ml-2 text-xs text-muted-foreground">
-                                      {count} {count === 1 ? "store" : "stores"}
+                                      {count(t, "site", storeCount)}
                                     </span>
                                   </button>
 
@@ -551,15 +554,15 @@ export function TerritoriesPanel() {
               {adding?.level === "country"
                 ? "Add a country"
                 : adding?.level === "region"
-                  ? `Add a region in ${adding.parent?.name}`
-                  : `Add a territory in ${adding?.parent?.name}`}
+                  ? `Add ${withArticle(t, "region")} in ${adding.parent?.name}`
+                  : `Add ${withArticle(t, "territory")} in ${adding?.parent?.name}`}
             </DialogTitle>
             <DialogDescription>
               {adding?.level === "country"
                 ? "The top level. Everything else sits inside one."
                 : adding?.level === "region"
-                  ? "A group of territories, the way the country is split for selling."
-                  : "The round a rep drives — normally a town. Stores go in these."}
+                  ? `A group of ${lower(t.territory.many)}, the way the country is split for selling.`
+                  : `The round ${withArticle(t, "staff")} drives — normally a town. ${t.site.many} go in these.`}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-1.5">
@@ -588,7 +591,8 @@ export function TerritoriesPanel() {
                     orgId,
                     newName,
                     adding.parent?.id ?? null,
-                    adding.level
+                    adding.level,
+                    t
                   );
                 });
                 if (ok) setAdding(null);
@@ -626,7 +630,7 @@ export function TerritoriesPanel() {
               onClick={async () => {
                 if (!renaming) return;
                 const ok = await run(() =>
-                  renameTerritory(supabase, renaming.id, renameTo)
+                  renameTerritory(supabase, renaming.id, renameTo, t)
                 );
                 if (ok) setRenaming(null);
               }}
@@ -655,7 +659,7 @@ export function TerritoriesPanel() {
       >
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>Delete {removing?.name ?? "territory"}?</DialogTitle>
+            <DialogTitle>Delete {removing?.name ?? lower(t.territory.one)}?</DialogTitle>
           </DialogHeader>
 
           {impact === null ? (
@@ -676,38 +680,36 @@ export function TerritoriesPanel() {
                   <ul className="ml-6 list-disc space-y-0.5 text-muted-foreground">
                     {impact.stores > 0 && (
                       <li>
-                        {impact.stores} {impact.stores === 1 ? "store" : "stores"}
+                        {count(t, "site", impact.stores)}
                       </li>
                     )}
                     {impact.children > 0 && (
                       <li>
-                        {impact.children} sub-
-                        {impact.children === 1 ? "territory" : "territories"}
+                        {impact.children} sub-{noun(t, "territory", impact.children)}
                       </li>
                     )}
                     {impact.reps > 0 && (
                       <li>
-                        {impact.reps} {impact.reps === 1 ? "rep" : "reps"} assigned
+                        {count(t, "staff", impact.reps)} assigned
                       </li>
                     )}
                     {impact.upcomingRoutes > 0 && (
                       <li>
                         {impact.upcomingRoutes} scheduled{" "}
-                        {impact.upcomingRoutes === 1 ? "visit" : "visits"} still to
-                        come
+                        {noun(t, "job", impact.upcomingRoutes)} still to come
                       </li>
                     )}
                   </ul>
                   <p className="text-muted-foreground">
-                    Move the stores and sub-territories somewhere else first, or
-                    deactivate this instead — that stops it being used for new
+                    Move the {lower(t.site.many)} and sub-{lower(t.territory.many)}{" "}
+                    somewhere else first, or deactivate this instead — that stops it being used for new
                     work and leaves everything already pointing at it alone.
                   </p>
                 </>
               ) : (
                 <p className="text-muted-foreground">
-                  Nothing is using this territory, so it can be removed. This
-                  cannot be undone.
+                  Nothing is using this {lower(t.territory.one)}, so it can be
+                  removed. This cannot be undone.
                 </p>
               )}
             </div>
@@ -730,7 +732,7 @@ export function TerritoriesPanel() {
                 disabled={busy}
                 onClick={async () => {
                   if (!removing) return;
-                  const ok = await run(() => deleteTerritory(supabase, removing.id));
+                  const ok = await run(() => deleteTerritory(supabase, removing.id, t));
                   if (ok) {
                     setRemoving(null);
                     setImpact(null);

@@ -9,6 +9,8 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { formatRate, type Adherence } from "@/lib/reports";
+import { lower } from "@/lib/terms";
+import { useTerms } from "@/lib/use-company-config";
 
 /**
  * Planned routes versus what actually happened.
@@ -17,6 +19,7 @@ import { formatRate, type Adherence } from "@/lib/reports";
  * is not missed, and counting it would make every rep look negligent.
  */
 export function AdherenceTable({ rows }: { rows: Adherence[] }) {
+  const t = useTerms();
   if (rows.length === 0) {
     return (
       <p className="py-10 text-center text-sm text-muted-foreground">
@@ -29,18 +32,18 @@ export function AdherenceTable({ rows }: { rows: Adherence[] }) {
     <Table>
       <TableHeader>
         <TableRow>
-          <TableHead>Rep</TableHead>
+          <TableHead>{t.staff.one}</TableHead>
           <TableHead className="text-right">Adherence</TableHead>
           <TableHead className="hidden sm:table-cell text-right">Planned</TableHead>
           <TableHead className="text-right">Missed</TableHead>
-          <TableHead className="hidden lg:table-cell">Missed visits</TableHead>
+          <TableHead className="hidden lg:table-cell">Missed {lower(t.job.many)}</TableHead>
         </TableRow>
       </TableHeader>
       <TableBody>
         {rows.map((r) => (
           <TableRow key={r.rep_id}>
             <TableCell className="font-medium">
-              {r.rep_name ?? "Unknown rep"}
+              {r.rep_name ?? `Unknown ${lower(t.staff.one)}`}
             </TableCell>
             <TableCell className="text-right tabular-nums">
               <span className={toneFor(r.adherence_rate)}>

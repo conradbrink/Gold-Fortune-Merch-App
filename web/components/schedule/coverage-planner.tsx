@@ -27,6 +27,8 @@ import {
   setStoreTerritory,
   type Territory,
 } from "@/lib/territories";
+import { useTerms } from "@/lib/use-company-config";
+import { count, lower, withArticle } from "@/lib/terms";
 
 /**
  * Coverage: who covers which stores, and how often.
@@ -88,6 +90,7 @@ export function CoveragePlanner({
   onChanged?: () => void;
 }) {
   const supabase = createClient();
+  const t = useTerms();
 
   const [stores, setStores] = useState<StoreRow[]>([]);
   /** `store_assignments` writes are manager-only in RLS; this page is not. */
@@ -176,19 +179,19 @@ export function CoveragePlanner({
    * offer countries as destinations and drop every real territory. */
   const tree = useMemo(() => {
     const regions = territories
-      .filter((t) => t.level === "region")
+      .filter((x) => x.level === "region")
       .sort((a, b) => a.name.localeCompare(b.name));
     return regions.map((region) => ({
       region,
       territories: territories
-        .filter((t) => t.level === "territory" && t.parent_id === region.id)
+        .filter((x) => x.level === "territory" && x.parent_id === region.id)
         .sort((a, b) => a.name.localeCompare(b.name)),
     }));
   }, [territories]);
 
   const territoryName = useMemo(() => {
     const byId: Record<string, string> = {};
-    for (const t of territories) byId[t.id] = t.name;
+    for (const x of territories) byId[x.id] = x.name;
     return byId;
   }, [territories]);
 
@@ -204,7 +207,7 @@ export function CoveragePlanner({
         } else if (territoryFilter.startsWith("region:")) {
           const inRegion = tree
             .find((r) => r.region.id === territoryFilter.slice(7))
-            ?.territories.map((t) => t.id);
+            ?.territories.map((x) => x.id);
           if (!inRegion || !s.territory_id || !inRegion.includes(s.territory_id)) {
             return false;
           }
@@ -305,7 +308,7 @@ export function CoveragePlanner({
                 // Places stores in a territory, and moves them out of whatever
                 // they were in. Choosing a sub implies its main, because the
                 // database refuses a sub without one.
-                await setStoreTerritory(supabase, s.id, actionMain || null);
+                await setStoreTerritory(supabase, s.id, actionMain || null, t);
                 return;
             }
           })
@@ -315,7 +318,7 @@ export function CoveragePlanner({
 
       await load();
       setSelected(new Set());
-      setDone(`Updated ${targets.length} store${targets.length === 1 ? "" : "s"}.`);
+      setDone(`Updated ${count(t, "site", targets.length)}.`);
       onChanged?.();
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -335,7 +338,7 @@ export function CoveragePlanner({
         </p>
         {unassignedCount > 0 && (
           <Badge variant="secondary">
-            {unassignedCount} store{unassignedCount === 1 ? "" : "s"} with no rep
+            {count(t, "site", unassignedCount)} with no {lower(t.staff.one)}
           </Badge>
         )}
       </div>
@@ -346,8 +349,8 @@ export function CoveragePlanner({
           broken button rather than a decision. */}
       {readOnly && (
         <p className="rounded-md border border-border bg-muted/40 px-3 py-2 text-sm text-muted-foreground">
-          Coverage is manager-only. You can see who covers what, but assigning a
-          store or changing a call frequency needs a manager.
+          Coverage is manager-only. You can see who covers what, but assigning{" "}
+          {withArticle(t, "site")} or changing a call frequency needs a manager.
         </p>
       )}
 
@@ -369,8 +372,8 @@ export function CoveragePlanner({
           value={query}
           onChange={(e) => setQuery(e.target.value)}
         />
-        <NativeSelect value={groupFilter} onChange={(e) => setGroupFilter(e.target.value)} aria-label="Filter by chain">
-          <option value="all">All chains</option>
+        <NativeSelect value={groupFilter} onChange={(e) => setGroupFilter(e.target.value)} aria-label={`Filter by ${lower(t.site_group.one)}`}>
+          <option value="all">All {lower(t.site_group.many)}</option>
           {groups.map((g) => (
             <option key={g.id} value={g.id}>{g.name}</option>
           ))}
@@ -382,20 +385,20 @@ export function CoveragePlanner({
         <NativeSelect
           value={territoryFilter}
           onChange={(e) => setTerritoryFilter(e.target.value)}
-          aria-label="Filter by territory"
+          aria-label={`Filter by ${lower(t.territory.one)}`}
         >
-          <option value="all">All territories</option>
+          <option value="all">All {lower(t.territory.many)}</option>
           {tree.map(({ region, territories: inRegion }) => (
             <optgroup key={region.id} label={region.name}>
               <option value={`region:${region.id}`}>All of {region.name}</option>
-              {inRegion.map((t) => (
-                <option key={t.id} value={`t:${t.id}`}>
-                  {t.name}
+              {inRegion.map((x) => (
+                <option key={x.id} value={`t:${x.id}`}>
+                  {x.name}
                 </option>
               ))}
             </optgroup>
           ))}
-          <option value="none">No territory</option>
+          <option value="none">No {lower(t.territory.one)}</option>
         </NativeSelect>
         <NativeSelect value={freqFilter} onChange={(e) => setFreqFilter(e.target.value)} aria-label="Filter by frequency">
           <option value="all">Any frequency</option>
@@ -403,8 +406,8 @@ export function CoveragePlanner({
             <option key={f.value} value={f.value}>{f.label}</option>
           ))}
         </NativeSelect>
-        <NativeSelect value={repFilter} onChange={(e) => setRepFilter(e.target.value)} aria-label="Filter by rep">
-          <option value="all">Any rep</option>
+        <NativeSelect value={repFilter} onChange={(e) => setRepFilter(e.target.value)} aria-label={`Filter by ${lower(t.staff.one)}`}>
+          <option value="all">Any {lower(t.staff.one)}</option>
           <option value="none">Unassigned</option>
           {reps.map((r) => (
             <option key={r.rep_id} value={r.rep_id}>{r.rep_name ?? "Unnamed"}</option>
@@ -443,12 +446,12 @@ export function CoveragePlanner({
               value={action}
               onChange={(e) => setAction(e.target.value as BulkAction)}
             >
-              <option value="assign">Assign to rep</option>
-              <option value="unassign">Remove rep</option>
+              <option value="assign">Assign to {lower(t.staff.one)}</option>
+              <option value="unassign">Remove {lower(t.staff.one)}</option>
               <option value="frequency">Set frequency</option>
               <option value="day">Set day</option>
               <option value="clear-day">Clear day</option>
-              <option value="territory">Move to territory</option>
+              <option value="territory">Move to {lower(t.territory.one)}</option>
             </NativeSelect>
           </div>
 
@@ -456,14 +459,14 @@ export function CoveragePlanner({
             <>
               <div className="w-44 space-y-1">
                 <Label htmlFor="bulk-territory" className="text-xs">
-                  Territory
+                  {t.territory.one}
                 </Label>
                 <NativeSelect
                   id="bulk-territory"
                   value={actionMain}
                   onChange={(e) => setActionMain(e.target.value)}
                 >
-                  <option value="">Out of any territory</option>
+                  <option value="">Out of any {lower(t.territory.one)}</option>
                   {/* Active only. Deactivating a territory means it "stops being
                       offered for new work" (see setTerritoryActive), and moving
                       stores into one is new work. The *filter* dropdown above
@@ -472,10 +475,10 @@ export function CoveragePlanner({
                   {tree.map(({ region, territories: inRegion }) => (
                     <optgroup key={region.id} label={region.name}>
                       {inRegion
-                        .filter((t) => t.active)
-                        .map((t) => (
-                          <option key={t.id} value={t.id}>
-                            {t.name}
+                        .filter((x) => x.active)
+                        .map((x) => (
+                          <option key={x.id} value={x.id}>
+                            {x.name}
                           </option>
                         ))}
                     </optgroup>
@@ -488,14 +491,16 @@ export function CoveragePlanner({
 
           {(action === "assign" || action === "unassign") && (
             <div className="w-44 space-y-1">
-              <Label htmlFor="bulk-rep" className="text-xs">Rep</Label>
+              <Label htmlFor="bulk-rep" className="text-xs">{t.staff.one}</Label>
               <NativeSelect
                 id="bulk-rep"
                 value={actionRep}
                 onChange={(e) => setActionRep(e.target.value)}
               >
                 <option value="">
-                  {action === "unassign" ? "Every rep" : "Select a rep"}
+                  {action === "unassign"
+                    ? `Every ${lower(t.staff.one)}`
+                    : `Select ${withArticle(t, "staff")}`}
                 </option>
                 {reps.map((r) => (
                   <option key={r.rep_id} value={r.rep_id}>{r.rep_name ?? "Unnamed"}</option>
@@ -548,10 +553,12 @@ export function CoveragePlanner({
 
       <div className="max-h-[40vh] overflow-y-auto rounded-md border border-border">
         {loading ? (
-          <p className="py-10 text-center text-sm text-muted-foreground">Loading stores…</p>
+          <p className="py-10 text-center text-sm text-muted-foreground">
+            Loading {lower(t.site.many)}…
+          </p>
         ) : filtered.length === 0 ? (
           <p className="py-10 text-center text-sm text-muted-foreground">
-            No stores match these filters.
+            No {lower(t.site.many)} match these filters.
           </p>
         ) : (
           <ul className="divide-y divide-border">
@@ -578,7 +585,7 @@ export function CoveragePlanner({
                               ? ` › ${territoryName[s.sub_territory_id] ?? "Unknown"}`
                               : ""
                           }`
-                        : "No territory"}{" "}
+                        : `No ${lower(t.territory.one)}`}{" "}
                       · {FREQUENCIES.find((f) => f.value === s.visit_frequency)?.label}
                     </p>
                   </div>
@@ -586,7 +593,9 @@ export function CoveragePlanner({
                     {mine.length > 0 ? (
                       mine.map((m) => m.name).join(", ")
                     ) : (
-                      <span className="text-amber-700 dark:text-amber-400">No rep</span>
+                      <span className="text-amber-700 dark:text-amber-400">
+                        No {lower(t.staff.one)}
+                      </span>
                     )}
                   </p>
                 </li>

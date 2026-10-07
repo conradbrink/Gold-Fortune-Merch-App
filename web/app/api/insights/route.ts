@@ -20,10 +20,11 @@ import {
 import { fetchOrgSettings, type OrgSettings } from "@/lib/org-settings";
 import { parseCompanyConfig } from "@/lib/company-config";
 import { moduleEnabled } from "@/lib/modules";
-import { DEFAULT_TERMS } from "@/lib/terms";
+import { DEFAULT_TERMS, lower, type Terms } from "@/lib/terms";
 import {
   callCyclePrompt,
   noCallCycleBriefing,
+  promptWords,
   reportsLead,
   reportsPrompt,
   type PromptContext,
@@ -50,52 +51,63 @@ const MODEL = process.env.OPENAI_MODEL ?? "gpt-5.5";
 // The prompts themselves are in `lib/insights-prompt.ts`, written in the
 // company's words.
 
-const SCHEMA = {
-  type: "object",
-  properties: {
-    headline: {
-      type: "string",
-      description: "One sentence: the single most important thing this period.",
-    },
-    // No `findings` array: it was the bulk of the length and duplicated what
-    // the charts directly below the panel already show.
-    anomalies: {
-      type: "array",
-      maxItems: 3,
-      description:
-        "At most 3 outliers worth investigating. Empty array if none genuinely stand out — do not pad.",
-      items: {
-        type: "object",
-        properties: {
-          subject: { type: "string", description: "The store, rep or metric." },
-          detail: {
-            type: "string",
-            description: "One sentence, 25 words maximum.",
+/**
+ * The shape the model must answer in. A function of the words because the
+ * model reads the field descriptions too, and "the store, rep or metric" would
+ * pull a cleaning company's briefing back into a retailer's vocabulary.
+ */
+function briefingSchema(words: Terms) {
+  const t = promptWords(words);
+  return {
+    type: "object",
+    properties: {
+      headline: {
+        type: "string",
+        description: "One sentence: the single most important thing this period.",
+      },
+      // No `findings` array: it was the bulk of the length and duplicated what
+      // the charts directly below the panel already show.
+      anomalies: {
+        type: "array",
+        maxItems: 3,
+        description:
+          "At most 3 outliers worth investigating. Empty array if none genuinely stand out — do not pad.",
+        items: {
+          type: "object",
+          properties: {
+            subject: {
+              type: "string",
+              description: `The ${lower(t.site.one)}, ${lower(t.staff.one)} or metric.`,
+            },
+            detail: {
+              type: "string",
+              description: "One sentence, 25 words maximum.",
+            },
+            severity: { type: "string", enum: ["low", "medium", "high"] },
           },
-          severity: { type: "string", enum: ["low", "medium", "high"] },
+          required: ["subject", "detail", "severity"],
+          additionalProperties: false,
         },
-        required: ["subject", "detail", "severity"],
-        additionalProperties: false,
+      },
+      actions: {
+        type: "array",
+        maxItems: 3,
+        description:
+          "At most 3 next steps, highest impact first. Each one sentence, 20 words maximum.",
+        items: { type: "string" },
+      },
+      // Plain string rather than a nullable union: structured outputs support a
+      // narrow slice of JSON Schema, and an empty string reads the same to the UI.
+      data_caveat: {
+        type: "string",
+        description:
+          "Set when the period is too sparse to draw firm conclusions; empty string otherwise.",
       },
     },
-    actions: {
-      type: "array",
-      maxItems: 3,
-      description:
-        "At most 3 next steps, highest impact first. Each one sentence, 20 words maximum.",
-      items: { type: "string" },
-    },
-    // Plain string rather than a nullable union: structured outputs support a
-    // narrow slice of JSON Schema, and an empty string reads the same to the UI.
-    data_caveat: {
-      type: "string",
-      description:
-        "Set when the period is too sparse to draw firm conclusions; empty string otherwise.",
-    },
-  },
-  required: ["headline", "anomalies", "actions", "data_caveat"],
-  additionalProperties: false,
-} as const;
+    required: ["headline", "anomalies", "actions", "data_caveat"],
+    additionalProperties: false,
+  } as const;
+}
 
 /**
  * Strips everything that is not an aggregate.
@@ -275,7 +287,7 @@ export async function POST(request: Request) {
 
       instructions = callCyclePrompt(ctx, settings.storesPerDay);
       userContent =
-        `Call cycle over the next ${weeks} weeks.\n\n` +
+        `${promptWords(ctx.terms).schedule_cycle.one} over the next ${weeks} weeks.\n\n` +
         JSON.stringify(buildCallCyclePayload(days, gaps, weeks, settings));
     } else {
       if (!body.from || !body.to) {
@@ -346,7 +358,7 @@ export async function POST(request: Request) {
         format: {
           type: "json_schema",
           name: "manager_briefing",
-          schema: SCHEMA as unknown as Record<string, unknown>,
+          schema: briefingSchema(ctx.terms) as unknown as Record<string, unknown>,
           strict: true,
         },
       },

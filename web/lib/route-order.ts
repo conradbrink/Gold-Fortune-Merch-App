@@ -2,6 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { callRpc } from "@/lib/rpc";
 import { toLocalDateInput } from "@/lib/date-range";
 import { distanceKm, orderStops, pathLengthKm, type Point } from "@/lib/geo";
+import { capital, lower, withArticle, type Terms } from "@/lib/terms";
 
 /**
  * Re-sequences a day's stops by proximity instead of alphabetically.
@@ -144,7 +145,8 @@ export async function fetchRepStartAnchors(
  */
 export async function fetchDaysToOrder(
   supabase: SupabaseClient,
-  weeks: number
+  weeks: number,
+  t: Terms
 ): Promise<{ days: OrderableDay[]; started: number }> {
   const from = new Date();
   from.setDate(from.getDate() + 1);
@@ -165,7 +167,7 @@ export async function fetchDaysToOrder(
     if (page.length < PAGE) break;
   }
 
-  return groupRouteRows(rows);
+  return groupRouteRows(rows, t);
 }
 
 type Embedded<T> = T | T[] | null;
@@ -216,7 +218,7 @@ async function fetchRoutePage(
   return (data ?? []) as unknown as RouteRow[];
 }
 
-function groupRouteRows(rows: RouteRow[]): {
+function groupRouteRows(rows: RouteRow[], t: Terms): {
   days: OrderableDay[];
   started: number;
 } {
@@ -245,7 +247,7 @@ function groupRouteRows(rows: RouteRow[]): {
     day.stops.push({
       routeId: r.id,
       storeId: r.store_id,
-      storeName: store?.name ?? "Unknown store",
+      storeName: store?.name ?? `Unknown ${lower(t.site.one)}`,
       city: store?.city ?? null,
       sequence: r.sequence_order,
       point:
@@ -359,7 +361,8 @@ export function planStopOrder(
  */
 export async function applyStopOrder(
   supabase: SupabaseClient,
-  plans: DayPlan[]
+  plans: DayPlan[],
+  t: Terms
 ): Promise<{ daysWritten: number; stopsWritten: number }> {
   let daysWritten = 0;
   let stopsWritten = 0;
@@ -378,7 +381,7 @@ export async function applyStopOrder(
       // already started", "not exactly the stops scheduled for that day" — so
       // they are surfaced rather than replaced with something vaguer.
       throw new Error(
-        `${plan.repName ?? "A rep"}'s ${plan.date} was not re-ordered: ${error.message}`
+        `${plan.repName ?? capital(withArticle(t, "staff"))}'s ${plan.date} was not re-ordered: ${error.message}`
       );
     }
 

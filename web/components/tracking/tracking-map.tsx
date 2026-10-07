@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { MapPinOff } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { loadMaps, MAPS_KEY, mapTypeSwitch, rememberMapType } from "@/lib/google-maps";
+import { useSitesView } from "@/lib/map-centre";
 
 export type MapPin = {
   id: string;
@@ -53,19 +54,22 @@ export function TrackingMap({
   const lastFocus = useRef<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [retry, setRetry] = useState(0);
+  // Read before the map is made, so it opens on the company's own sites
+  // rather than opening somewhere else and jumping.
+  const opening = useSitesView();
 
   useEffect(() => {
-    if (!MAPS_KEY || !ref.current) return;
+    if (!MAPS_KEY || !ref.current || !opening) return;
     let cancelled = false;
     loadMaps()
       .then(({ Map, Marker }) => {
         if (cancelled || !ref.current) return;
-        // Botswana until there is something to fit — a map of the Atlantic at
-        // 0,0 reads as broken.
+        // The company's own sites until there is something to fit
+        // (lib/map-centre.ts).
         if (!map.current) {
           map.current = new Map(ref.current, {
-            center: { lat: -24.65, lng: 25.91 },
-            zoom: 7,
+            center: opening.center,
+            zoom: opening.zoom,
             ...mapTypeSwitch(),
             streetViewControl: false,
             fullscreenControl: false,
@@ -150,7 +154,7 @@ export function TrackingMap({
     return () => {
       cancelled = true;
     };
-  }, [pins, path, focus, fitKey, retry]);
+  }, [pins, path, focus, fitKey, retry, opening]);
 
   if (!MAPS_KEY) {
     return (

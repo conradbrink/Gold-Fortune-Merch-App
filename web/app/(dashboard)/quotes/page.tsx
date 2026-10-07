@@ -24,6 +24,8 @@ import {
   QUOTE_STATUS_LABELS,
   type QuoteListRow,
 } from "@/lib/quotes";
+import { useTerms } from "@/lib/use-company-config";
+import { lower } from "@/lib/terms";
 
 /**
  * Every quote, newest first.
@@ -34,6 +36,7 @@ import {
  */
 export default function QuotesPage() {
   const supabase = createClient();
+  const t = useTerms();
   const router = useRouter();
   const [quotes, setQuotes] = useState<QuoteListRow[]>([]);
   const [status, setStatus] = useState("open");
@@ -97,7 +100,7 @@ export default function QuotesPage() {
           <Input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search quote number, store or contact"
+            placeholder={`Search quote number, ${lower(t.site.one)} or contact`}
             className="pl-8"
             aria-label="Search quotes"
           />
@@ -124,7 +127,7 @@ export default function QuotesPage() {
             <TableRow>
               <TableHead>Quote</TableHead>
               <TableHead>Created</TableHead>
-              <TableHead>Store</TableHead>
+              <TableHead>{t.site.one}</TableHead>
               <TableHead>Valid until</TableHead>
               <TableHead>Status</TableHead>
               <TableHead className="text-right">Total</TableHead>

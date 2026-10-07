@@ -14,8 +14,10 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { createClient } from "@/lib/supabase/client";
+import { lower, withArticle } from "@/lib/terms";
+import { useTerms } from "@/lib/use-company-config";
 import {
-  AUDIENCE_LABELS,
+  audienceLabels,
   MAX_FILE_BYTES,
   formatBytes,
   uploadFile,
@@ -48,6 +50,7 @@ export function UploadFileDialog({
   onUploaded: () => void;
 }) {
   const supabase = createClient();
+  const t = useTerms();
   const inputRef = useRef<HTMLInputElement>(null);
 
   const [file, setFile] = useState<File | null>(null);
@@ -109,7 +112,8 @@ export function UploadFileDialog({
         <DialogHeader>
           <DialogTitle>Upload a file</DialogTitle>
           <DialogDescription>
-            Reps open these on their phone, so keep them small where you can.
+            {t.staff.many} open these on their phone, so keep them small where
+            you can.
             Up to {formatBytes(MAX_FILE_BYTES)}.
           </DialogDescription>
         </DialogHeader>
@@ -196,7 +200,7 @@ export function UploadFileDialog({
                   }`}
                 >
                   <Icon className="h-3.5 w-3.5" />
-                  {AUDIENCE_LABELS[value]}
+                  {audienceLabels(t)[value]}
                 </button>
               ))}
             </div>
@@ -205,7 +209,9 @@ export function UploadFileDialog({
           {audience === "reps" && (
             <div className="max-h-40 space-y-1 overflow-y-auto rounded-md border border-border p-2">
               {reps.length === 0 && (
-                <p className="p-2 text-sm text-muted-foreground">No active reps.</p>
+                <p className="p-2 text-sm text-muted-foreground">
+                  No active {lower(t.staff.many)}.
+                </p>
               )}
               {reps.map((r) => (
                 <label
@@ -234,7 +240,9 @@ export function UploadFileDialog({
             <>
               <div className="max-h-40 space-y-1 overflow-y-auto rounded-md border border-border p-2">
                 {groups.length === 0 && (
-                  <p className="p-2 text-sm text-muted-foreground">No chains yet.</p>
+                  <p className="p-2 text-sm text-muted-foreground">
+                    No {lower(t.site_group.many)} yet.
+                  </p>
                 )}
                 {groups.map((g) => (
                   <label
@@ -258,8 +266,9 @@ export function UploadFileDialog({
                 ))}
               </div>
               <p className="text-xs text-muted-foreground">
-                Whoever covers a store in these chains sees the file — including
-                after you move stores between reps.
+                Whoever covers {withArticle(t, "site")} in these{" "}
+                {lower(t.site_group.many)} sees the file — including after you
+                move {lower(t.site.many)} between {lower(t.staff.many)}.
               </p>
             </>
           )}

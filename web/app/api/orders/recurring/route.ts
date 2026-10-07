@@ -11,9 +11,12 @@ import type { Database } from "@/lib/supabase/types";
  * than once per date. `recurring_order_runs` is unique per recurring order and
  * day, so this route running twice in a morning places nothing twice.
  *
- * `web/vercel.json` runs it at `0 4 * * *` — 06:00 in Botswana (UTC+2), and
- * the Hobby plan may fire it any time up to 06:59 — so the morning's standing
- * orders are waiting before the warehouse starts. Same auth as the auto-end
+ * `web/vercel.json` runs it at `0 4 * * *` UTC — chosen as 06:00 for a
+ * company on UTC+2 (Gold Fortune), and the Hobby plan may fire it any time up
+ * to 06:59 — so the morning's standing orders are waiting before the
+ * warehouse starts. Due dates are worked out in each company's own timezone,
+ * so the answer is right everywhere; only the hour it lands differs for a
+ * company far from UTC+2 (an hourly per-company run is a logged follow-up). Same auth as the auto-end
  * job: `Authorization: Bearer $CRON_SECRET`, refused when it is not set.
  */
 

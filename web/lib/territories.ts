@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Tables } from "@/lib/supabase/types";
+import { lower, withArticle, type Terms } from "@/lib/terms";
 
 /**
  * Territories — the sales geography of one organisation.
@@ -58,6 +59,14 @@ export type TerritoryImpact = {
   /** Routes still to come. Past ones are history and are not at risk. */
   upcomingRoutes: number;
 };
+
+/**
+ * The refusal of a duplicate name. Every tier is said with the territory word,
+ * as it always was: the panel calls the whole tree by that name.
+ */
+function duplicateName(name: string, t: Terms): string {
+  return `There is already ${withArticle(t, "territory")} called "${name.trim()}" here.`;
+}
 
 function affected(data: unknown[] | null, what: string): void {
   // PostgREST answers a write that matched nothing with success, so a refusal
@@ -163,7 +172,8 @@ export async function createTerritory(
   name: string,
   parentId: string | null,
   /** Stated, because the trigger checks it against the parent's level. */
-  level: TerritoryLevel
+  level: TerritoryLevel,
+  t: Terms
 ): Promise<Territory> {
   const { data, error } = await supabase
     .from("territories")
@@ -175,7 +185,7 @@ export async function createTerritory(
   if (error) {
     throw new Error(
       error.code === "23505"
-        ? `There is already a territory called "${name.trim()}" here.`
+        ? duplicateName(name, t)
         : error.message
     );
   }
@@ -185,7 +195,8 @@ export async function createTerritory(
 export async function renameTerritory(
   supabase: SupabaseClient,
   id: string,
-  name: string
+  name: string,
+  t: Terms
 ): Promise<void> {
   const { data, error } = await supabase
     .from("territories")
@@ -195,7 +206,7 @@ export async function renameTerritory(
   if (error) {
     throw new Error(
       error.code === "23505"
-        ? `There is already a territory called "${name.trim()}" here.`
+        ? duplicateName(name, t)
         : error.message
     );
   }
@@ -214,7 +225,8 @@ export async function renameTerritory(
 export async function moveTerritory(
   supabase: SupabaseClient,
   territoryId: string,
-  regionId: string
+  regionId: string,
+  t: Terms
 ): Promise<void> {
   const { data, error } = await supabase
     .from("territories")
@@ -222,7 +234,7 @@ export async function moveTerritory(
     .eq("id", territoryId)
     .select("id");
   if (error) throw new Error(error.message);
-  affected(data, "The territory was not moved");
+  affected(data, `The ${lower(t.territory.one)} was not moved`);
 }
 
 /**
@@ -309,7 +321,8 @@ export async function fetchTerritoryImpact(
 export async function setStoreTerritory(
   supabase: SupabaseClient,
   storeId: string,
-  territoryId: string | null
+  territoryId: string | null,
+  t: Terms
 ): Promise<void> {
   const { data, error } = await supabase
     .from("stores")
@@ -317,7 +330,7 @@ export async function setStoreTerritory(
     .eq("id", storeId)
     .select("id");
   if (error) throw new Error(error.message);
-  affected(data, "The store was not moved");
+  affected(data, `The ${lower(t.site.one)} was not moved`);
 }
 
 /** A store as the territory panel needs it: where it is, and what it is called. */
@@ -386,7 +399,8 @@ export async function searchStoresOutside(
 
 export async function deleteTerritory(
   supabase: SupabaseClient,
-  id: string
+  id: string,
+  t: Terms
 ): Promise<void> {
   const { data, error } = await supabase
     .from("territories")
@@ -397,7 +411,7 @@ export async function deleteTerritory(
     // 23503 is the RESTRICT firing — the guard doing its job, not a fault.
     throw new Error(
       error.code === "23503"
-        ? "Still in use. Move its stores and sub-territories out first."
+        ? `Still in use. Move its ${lower(t.site.many)} and sub-${lower(t.territory.many)} out first.`
         : error.message
     );
   }

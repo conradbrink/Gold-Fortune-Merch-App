@@ -21,6 +21,8 @@ import {
   type GeocodeCandidate,
   type SharedPoint,
 } from "@/lib/geocode";
+import { count, lower, noun, withArticle } from "@/lib/terms";
+import { useTerms } from "@/lib/use-company-config";
 
 type Store = { id: string; name: string; city: string | null; address: string | null };
 
@@ -47,6 +49,7 @@ export function GeocodeDialog({
   onDone: () => void;
 }) {
   const supabase = createClient();
+  const t = useTerms();
 
   const [running, setRunning] = useState(false);
   const [done, setDone] = useState(0);
@@ -114,10 +117,10 @@ export function GeocodeDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-2xl">
         <DialogHeader>
-          <DialogTitle>Find store locations</DialogTitle>
+          <DialogTitle>Find {lower(t.site.one)} locations</DialogTitle>
           <DialogDescription>
-            Looks each store up by name and town. Results in the expected town
-            are saved; anything else is listed for you to check.
+            Looks each {lower(t.site.one)} up by name and town. Results in the
+            expected town are saved; anything else is listed for you to check.
           </DialogDescription>
         </DialogHeader>
 
@@ -130,15 +133,14 @@ export function GeocodeDialog({
         {!running && !finished && (
           <div className="space-y-3">
             <p className="text-sm text-foreground">
-              {stores.length} store{stores.length === 1 ? "" : "s"} have no
-              location yet. Without one they cannot geofence, and check-in
-              distance reads as unknown.
+              {count(t, "site", stores.length)} have no location yet. Without
+              one they cannot geofence, and check-in distance reads as unknown.
             </p>
             <p className="rounded-md border border-border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
-              Stores are matched by name first — these are named outlets in
-              known malls, which Google finds far more reliably than a plot
-              number. A result that lands in a different town from the one on
-              record is never saved automatically.
+              {t.site.many} are matched by name first — these are named{" "}
+              {lower(t.site.many)} in known malls, which Google finds far more
+              reliably than a plot number. A result that lands in a different
+              town from the one on record is never saved automatically.
             </p>
           </div>
         )}
@@ -180,7 +182,7 @@ export function GeocodeDialog({
                 return (
                   <li key={c.storeId} className="space-y-1.5 px-3 py-2.5">
                     <p className="text-sm font-medium text-foreground">
-                      {store?.name ?? "Unknown store"}
+                      {store?.name ?? `Unknown ${lower(t.site.one)}`}
                     </p>
                     <p className="text-xs text-muted-foreground">
                       Expected {c.expectedTown ?? "no town"} ·{" "}
@@ -216,7 +218,8 @@ export function GeocodeDialog({
             </ul>
             <p className="text-xs text-muted-foreground">
               Leaving one unsaved is fine. It keeps no location, which is
-              honest, rather than a wrong one that would misreport every visit.
+              honest, rather than a wrong one that would misreport every{" "}
+              {lower(t.job.one)}.
             </p>
           </div>
         )}
@@ -255,6 +258,7 @@ export function SharedPointBanner({
   /** Filters the table down to these stores, so the banner leads somewhere. */
   onShowAll?: () => void;
 }) {
+  const t = useTerms();
   const [busy, setBusy] = useState(false);
   if (points.length === 0) return null;
 
@@ -275,8 +279,9 @@ export function SharedPointBanner({
       <p className="flex items-start gap-2 text-sm text-amber-800 dark:text-amber-300">
         <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
         <span>
-          <span className="font-semibold">{affected}</span> stores share a
-          location with another store, across {points.length} point
+          <span className="font-semibold">{affected}</span>{" "}
+          {lower(t.site.many)} share a location with another{" "}
+          {lower(t.site.one)}, across {points.length} point
           {points.length === 1 ? "" : "s"}. A shared point geofences all of them
           in the same place, so only one can be right.
         </span>
@@ -290,7 +295,7 @@ export function SharedPointBanner({
               rel="noopener noreferrer"
               className="underline"
             >
-              {p.stores.length} stores
+              {count(t, "site", p.stores.length)}
             </a>
             {": "}
             {p.stores.map((s) => s.name).join(", ")}
@@ -340,14 +345,16 @@ export function GeocodeBanner({
   ruledOut?: number;
   onClick: () => void;
 }) {
+  const t = useTerms();
   if (count === 0 && ruledOut === 0) return null;
   return (
     <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2.5">
       <p className="flex items-start gap-2 text-sm text-amber-800 dark:text-amber-300">
         <MapPin className="mt-0.5 h-4 w-4 shrink-0" />
         <span>
-          <span className="font-semibold">{count + ruledOut}</span> store
-          {count + ruledOut === 1 ? " has" : "s have"} no location, so{" "}
+          <span className="font-semibold">{count + ruledOut}</span>{" "}
+          {noun(t, "site", count + ruledOut)}{" "}
+          {count + ruledOut === 1 ? "has" : "have"} no location, so{" "}
           {count + ruledOut === 1 ? "it cannot" : "they cannot"} geofence and
           check-in distance reads as unknown.
           {ruledOut > 0 && (
@@ -357,8 +364,9 @@ export function GeocodeBanner({
               {count + ruledOut === 1 ? "them" : "those"} already had an answer a
               person rejected, so looking{" "}
               {ruledOut === 1 ? "it" : "them"} up again would only find the same
-              wrong shop — {ruledOut === 1 ? "it needs" : "they need"} a human
-              eye or a rep standing in the door.
+              wrong {lower(t.site.one)} —{" "}
+              {ruledOut === 1 ? "it needs" : "they need"} a human eye or{" "}
+              {withArticle(t, "staff")} standing in the door.
             </>
           )}
         </span>

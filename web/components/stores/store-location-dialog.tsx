@@ -9,6 +9,8 @@ import {
 } from "@/components/ui/dialog";
 import { geocodeState, mapsPreview, type SharedPointStore } from "@/lib/geocode";
 import type { Tables } from "@/lib/supabase/types";
+import { capital, lower, withArticle } from "@/lib/terms";
+import { useTerms } from "@/lib/use-company-config";
 import { GeocodePill } from "./geocode-pill";
 
 type StoreRow = Tables<"stores">;
@@ -54,6 +56,8 @@ export function StoreLocationDialog({
   sameResult: boolean;
   onClose: () => void;
 }) {
+  const t = useTerms();
+  const site = lower(t.site.one);
   const state = store ? geocodeState(store) : "missing";
   const located = store?.lat !== null && store?.lng !== null;
 
@@ -61,7 +65,7 @@ export function StoreLocationDialog({
     <Dialog open={store !== null} onOpenChange={(o) => !o && onClose()}>
       <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-2xl">
         <DialogHeader>
-          <DialogTitle>{store?.name ?? "Store location"}</DialogTitle>
+          <DialogTitle>{store?.name ?? `${t.site.one} location`}</DialogTitle>
         </DialogHeader>
 
         {store && (
@@ -111,7 +115,7 @@ export function StoreLocationDialog({
                         </Row>
                       )}
                       <Row label="Captured by">
-                        {capture?.repName ?? "Unknown rep"}
+                        {capture?.repName ?? `Unknown ${lower(t.staff.one)}`}
                       </Row>
                     </>
                   )}
@@ -126,7 +130,7 @@ export function StoreLocationDialog({
               ) : (
                 <>
                   <p className="text-sm text-muted-foreground">
-                    This store has no location, so nothing can be measured
+                    This {site} has no location, so nothing can be measured
                     against it — a check-in here records a distance of unknown.
                   </p>
                   {state === "rejected" && (
@@ -150,16 +154,17 @@ export function StoreLocationDialog({
                       </dl>
                       <p className="mt-2 text-xs text-muted-foreground">
                         Kept on record so the same wrong answer is not accepted a
-                        second time. A rep can set the real position from inside
-                        the shop on their next visit.
+                        second time. {capital(withArticle(t, "staff"))} can set
+                        the real position from inside the {site} on their next{" "}
+                        {lower(t.job.one)}.
                       </p>
                     </div>
                   )}
                   {state === "missing" && (
                     <p className="mt-2 text-xs text-muted-foreground">
-                      No lookup has been run for this store yet. Use “Find
-                      locations” above the list, or let a rep set it from inside
-                      the shop.
+                      No lookup has been run for this {site} yet. Use “Find
+                      locations” above the list, or let{" "}
+                      {withArticle(t, "staff")} set it from inside the {site}.
                     </p>
                   )}
                 </>
@@ -170,18 +175,21 @@ export function StoreLocationDialog({
                 missing. Say so rather than leaving a blank where a name was. */}
             {state === "rep" && capture === null && (
               <p className="text-sm text-muted-foreground">
-                The visit this was captured during has since been removed, so the
-                rep who set it can no longer be named.
+                The {lower(t.job.one)} this was captured during has since been
+                removed, so the {lower(t.staff.one)} who set it can no longer be
+                named.
               </p>
             )}
             {state === "rep" && capture?.checkinAt && (
               <p className="text-sm text-muted-foreground">
-                Captured during a visit that began {formatWhen(capture.checkinAt)}.
+                Captured during {withArticle(t, "job")} that began{" "}
+                {formatWhen(capture.checkinAt)}.
               </p>
             )}
             {state !== "rep" && capture !== null && (
               <p className="text-sm text-muted-foreground">
-                A rep placed a location here during a visit
+                {capital(withArticle(t, "staff"))} placed a location here during{" "}
+                {withArticle(t, "job")}
                 {capture.checkinAt ? ` on ${formatWhen(capture.checkinAt)}` : ""};
                 it has since been replaced or removed.
               </p>
@@ -191,12 +199,12 @@ export function StoreLocationDialog({
               <section>
                 <h3 className="mb-1 text-sm font-semibold text-foreground">
                   {sharedWith.length === 1
-                    ? "Another store sits on this exact point"
-                    : `${sharedWith.length} other stores sit on this exact point`}
+                    ? `Another ${site} sits on this exact point`
+                    : `${sharedWith.length} other ${lower(t.site.many)} sit on this exact point`}
                 </h3>
                 <p className="mb-2 text-sm text-muted-foreground">
                   {sameResult
-                    ? "Google returned the same listing for all of them, so at most one is in the right place. A rep standing in any one of these shops is inside every one of their geofences."
+                    ? `Google returned the same listing for all of them, so at most one is in the right place. ${capital(withArticle(t, "staff"))} standing in any one of these ${lower(t.site.many)} is inside every one of their geofences.`
                     : "They matched different listings that happen to land on the same point. That can be genuine — two branches in one shopping centre — but it is worth an eye."}
                 </p>
                 <ul className="space-y-1.5">

@@ -27,6 +27,8 @@ import {
   type ProductDraft,
   type ProductRow,
 } from "@/lib/import/products";
+import { useTerms } from "@/lib/use-company-config";
+import { withArticle } from "@/lib/terms";
 
 type Step = "file" | "review" | "done";
 type Filter = "attention" | "new" | "updating" | "excluded" | "all";
@@ -62,6 +64,7 @@ export function ImportProductsDialog({
   onImported: () => void;
 }) {
   const supabase = createClient();
+  const t = useTerms();
 
   const [step, setStep] = useState<Step>("file");
   const [fileName, setFileName] = useState("");
@@ -211,7 +214,7 @@ export function ImportProductsDialog({
                 <p className="font-semibold">Which barcode is this?</p>
                 <p className="mt-1 text-xs">
                   This sheet has a column called “Barcode” and neither barcode
-                  field is mapped. Say which it is below — a rep scanning a shelf
+                  field is mapped. Say which it is below — {withArticle(t, "staff")} scanning a shelf
                   reads the barcode on the single item, not the one on the outer
                   shrink, and guessing wrong means a scan that never matches.
                 </p>

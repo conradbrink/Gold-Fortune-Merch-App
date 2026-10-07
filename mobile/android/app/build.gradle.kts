@@ -26,6 +26,8 @@ val hasReleaseKeystore = keystorePropertiesFile.exists() &&
     keystoreProperties.getProperty("storeFile") != null
 
 android {
+    // The code's package, not the app's identity: it stays where MainActivity
+    // lives. Android lets it differ from applicationId below.
     namespace = "com.goldfortune.gf_merch_rep"
     compileSdk = flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
@@ -36,13 +38,38 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.goldfortune.gf_merch_rep"
-        // You can update the following values to match your application needs.
-        // For more information, see: https://flutter.dev/to/review-gradle-config.
+        // The app's identity is set per flavour below.
         minSdk = flutter.minSdkVersion
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
+    }
+
+    // Two builds of the same code (`flutter build apk --flavor <name>`):
+    //
+    //   tickd   — za.co.tickd.app, the app from now on, and the one Google Play
+    //             gets. Its identity is permanent once published.
+    //   legacy  — com.goldfortune.gf_merch_rep, the id every phone had up to
+    //             1.1.12. Built once more (1.1.13) only to walk reps across:
+    //             when Tickd is out it tells them to sync, install Tickd and
+    //             then remove it (lib/core/move_to_tickd.dart). Labelled
+    //             "Tickd (old)" so the two icons can be told apart.
+    //
+    // A different id installs as a NEW app beside the old one, not as an
+    // update to it — see docs/RELEASE-ANDROID.md.
+    flavorDimensions += "app"
+    productFlavors {
+        create("tickd") {
+            dimension = "app"
+            isDefault = true
+            applicationId = "za.co.tickd.app"
+            manifestPlaceholders["appLabel"] = "Tickd"
+        }
+        create("legacy") {
+            dimension = "app"
+            applicationId = "com.goldfortune.gf_merch_rep"
+            manifestPlaceholders["appLabel"] = "Tickd (old)"
+        }
     }
 
     signingConfigs {

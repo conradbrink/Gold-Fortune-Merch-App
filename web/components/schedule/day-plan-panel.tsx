@@ -7,6 +7,8 @@ import { Badge } from "@/components/ui/badge";
 import { Label } from "@/components/ui/label";
 import { StorePicker, type PickableStore } from "@/components/stores/store-picker";
 import type { DayPlanStop, PlannedDay } from "@/lib/schedule";
+import { useTerms } from "@/lib/use-company-config";
+import { capital, lower, withArticle } from "@/lib/terms";
 
 /**
  * One day of one rep's month, opened for editing.
@@ -43,6 +45,7 @@ function StopRow({
   busy: boolean;
   onRemove: () => void;
 }) {
+  const t = useTerms();
   const oneOff = stop.source === "manual";
 
   return (
@@ -72,10 +75,10 @@ function StopRow({
             <Badge
               variant="outline"
               className="shrink-0 gap-1 text-[10px] font-normal text-muted-foreground"
-              title="Written by the call cycle. Generating again may move it or take it away when the pattern changes."
+              title={`Written by the ${lower(t.schedule_cycle.one)}. Generating again may move it or take it away when the pattern changes.`}
             >
               <Repeat className="h-3 w-3" />
-              From call cycle
+              From {lower(t.schedule_cycle.one)}
             </Badge>
           )}
         </p>
@@ -98,12 +101,12 @@ function StopRow({
         disabled={stop.visited || readOnly || busy}
         title={
           stop.visited
-            ? "A rep has already checked in here, so this stop is part of the record now."
+            ? `${capital(withArticle(t, "staff"))} has already checked in here, so this stop is part of the record now.`
             : readOnly
               ? "This day has passed, so its stops cannot be changed."
               : oneOff
                 ? "Remove this one-off stop"
-                : "Remove this stop from this date. The call cycle still holds it, so generating again will put it back."
+                : `Remove this stop from this date. The ${lower(t.schedule_cycle.one)} still holds it, so generating again will put it back.`
         }
         onClick={onRemove}
       >
@@ -145,6 +148,7 @@ export function DayPlanPanel({
   onRemove: (stop: DayPlanStop) => void;
   onClose: () => void;
 }) {
+  const t = useTerms();
   const [addStoreIds, setAddStoreIds] = useState<string[]>([]);
 
   const stops = plan?.stops ?? [];
@@ -215,7 +219,7 @@ export function DayPlanPanel({
                 htmlFor="day-add-stop"
                 className="text-xs text-muted-foreground"
               >
-                Add stores to this day
+                Add {lower(t.site.many)} to this day
               </Label>
               <StorePicker
                 multiple
@@ -223,7 +227,7 @@ export function DayPlanPanel({
                 stores={storeOptions}
                 value={addStoreIds}
                 onChange={setAddStoreIds}
-                placeholder="Search stores…"
+                placeholder={`Search ${lower(t.site.many)}…`}
                 disabled={!canAddStops || stopBusy.has("add")}
               />
             </div>
@@ -251,9 +255,10 @@ export function DayPlanPanel({
           </div>
 
           <p className="text-xs text-muted-foreground">
-            A store added here sits on this date only. It does not join the call
-            cycle, will not repeat, and survives every re-generate. To have a
-            store called on regularly, give it a day on the Call cycle tab.
+            {capital(withArticle(t, "site"))} added here sits on this date only.
+            It does not join the {lower(t.schedule_cycle.one)}, will not repeat,
+            and survives every re-generate. To have {withArticle(t, "site")}{" "}
+            called on regularly, give it a day on the {t.schedule_cycle.one} tab.
           </p>
         </>
       )}

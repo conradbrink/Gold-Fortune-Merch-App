@@ -20,6 +20,8 @@ import {
   fetchSourceStock,
   type SourceStock,
 } from "@/lib/stock-moves";
+import { useTerms } from "@/lib/use-company-config";
+import { lower } from "@/lib/terms";
 
 type Draft = { key: string; sourceKey: string; qty: string; note: string };
 
@@ -47,6 +49,7 @@ const keyOf = (s: SourceStock) => `${s.product_id}::${s.batch_id ?? "none"}`;
  */
 export default function NewAdjustmentPage() {
   const supabase = createClient();
+  const t = useTerms();
   const router = useRouter();
 
   const [orgId, setOrgId] = useState<string | null>(null);
@@ -370,7 +373,7 @@ export default function NewAdjustmentPage() {
               onChange={(e) => setReasonNote(e.target.value)}
               placeholder={
                 isIssue
-                  ? "What it was for — the promotion, the shop, the event"
+                  ? `What it was for — the promotion, the ${lower(t.site.one)}, the event`
                   : "What happened, and who saw it"
               }
             />

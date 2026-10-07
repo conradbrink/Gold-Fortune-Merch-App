@@ -51,7 +51,9 @@ export async function GET() {
     );
   }
 
-  const filename = `gold-fortune-merchandising-${release.versionName}.apk`;
+  // The product's name, not a customer's: every company downloads the same
+  // app, and the label it installs under is "Tickd" too.
+  const filename = `tickd-${release.versionName}.apk`;
 
   return new Response(data, {
     headers: {

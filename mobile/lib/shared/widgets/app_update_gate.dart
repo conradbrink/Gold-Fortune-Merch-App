@@ -4,6 +4,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/app_update.dart';
 import '../../core/env.dart';
+import 'move_to_tickd.dart';
 
 /// Wraps the whole app and reacts to [appUpdateProvider].
 ///
@@ -31,6 +32,11 @@ class AppUpdateGate extends ConsumerWidget {
         );
 
     if (update == null) return child;
+
+    // The old-id build once Tickd is out: a move, not an update.
+    if (update.requirement == UpdateRequirement.moveToTickd) {
+      return MoveToTickdGate(child: child);
+    }
 
     if (update.requirement == UpdateRequirement.required) {
       return _ForcedUpdateScreen(update: update);

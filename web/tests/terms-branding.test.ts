@@ -8,6 +8,7 @@ import {
   TERM_KEYS,
   count,
   lower,
+  noun,
   parseTerms,
   possessive,
   title,
@@ -52,6 +53,12 @@ test("counts pick singular or plural", () => {
   assert.equal(count(goldFortune, "site", 0), "0 stores");
   assert.equal(count(goldFortune, "staff", 2, { label: true }), "2 Reps");
   assert.equal(count(DEFAULT_TERMS, "staff", 1), "1 staff member");
+});
+
+test("noun picks the form a number calls for", () => {
+  assert.equal(noun(goldFortune, "site", 1), "store");
+  assert.equal(noun(goldFortune, "site", 2), "stores");
+  assert.equal(noun(DEFAULT_TERMS, "staff", 0), "staff");
 });
 
 test("articles follow the first letter unless the company overrides", () => {

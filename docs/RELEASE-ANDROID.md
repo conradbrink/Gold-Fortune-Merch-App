@@ -4,9 +4,13 @@ The rep app is Flutter, in `mobile/`. It is distributed as a signed APK from
 the website — not through the Play Store — so there is no review queue and no
 staged rollout. What you upload is what the field gets.
 
-**Package id: `com.goldfortune.gf_merch_rep`.** This is permanent. Changing it
-produces a *different app* that installs alongside the old one instead of
-updating it, and every rep would have to be migrated by hand.
+**Package id: `za.co.tickd.app`** (from 7 Oct 2026; it was
+`com.goldfortune.gf_merch_rep`). This is permanent from its first release, and
+on Google Play it can never change. Changing it produces a *different app* that
+installs alongside the old one instead of updating it — which is exactly what
+the move to `za.co.tickd.app` does once: every rep installs Tickd, signs in, and
+removes the old app only after it shows nothing waiting to sync, because work
+still queued in the old app does not move to the new one.
 
 ---
 
@@ -87,7 +91,7 @@ version: 1.1.0+2
 
 ```bash
 cd mobile
-flutter build apk --release \
+flutter build apk --release --flavor tickd \
   --target-platform android-arm,android-arm64 \
   --dart-define=GF_WEB_BASE_URL=https://<your-production-domain> \
   --dart-define=SENTRY_DSN=<the DSN from Sentry>
@@ -300,6 +304,56 @@ There is no "unpublish". Reps who already installed the bad APK have it.
 
 This is why `versionCode` only ever goes up, and why the download page should
 be checked immediately after publishing.
+
+---
+
+## Part 3 — Moving reps from the old app to Tickd (once)
+
+There are two flavours of the same code, and every build names one
+(`--flavor tickd` or `--flavor legacy`). The APK lands in
+`build/app/outputs/flutter-apk/app-<flavour>-release.apk`.
+
+| Flavour | App id | Label | Version codes |
+|---|---|---|---|
+| `legacy` | `com.goldfortune.gf_merch_rep` | Tickd (old) | 13 only: the bridge |
+| `tickd` | `za.co.tickd.app` | Tickd | **100 and up** |
+
+The two ids are two apps. Tickd installs *beside* the old one, and nothing the
+old app has not yet sent to the server comes across. The bridge release (1.1.13,
+`legacy`) exists to walk each rep over in a safe order. Once the current
+release is 100 or higher, it replaces its "update" strip with "This app is
+moving to Tickd". That opens a checklist:
+
+1. end the day;
+2. send everything (the step goes green only at zero waiting);
+3. install Tickd from the download page;
+4. sign in with the same email and password;
+5. only then uninstall the old app.
+
+Step 5 stays red while anything is open or unsent. It never blocks work, and no
+"Later" can hide it (`lib/core/move_to_tickd.dart`).
+
+**Order — do not skip a step:**
+
+1. **Publish the bridge.** Build `--flavor legacy` (pubspec `1.1.13+13`) and
+   publish it as version code 13 with `min_supported_version_code = 13`. Every
+   phone is then made to install it, so every phone has the move checklist
+   before Tickd exists.
+2. **Wait until every rep is on 1.1.13.** A phone still on 1.1.12 or older
+   offers Tickd's APK as an ordinary "update". It installs a second app with
+   no warning about unsent work.
+3. **Publish Tickd.** Build `--flavor tickd --build-name 1.2.0 --build-number 100`
+   and publish it as version code **100** with
+   `min_supported_version_code = 1`. A floor above 12 would force any phone
+   that missed step 2 onto a download that leaves its unsent work behind. The
+   bridge ignores the floor anyway. From now on the download page serves Tickd,
+   and every old app shows the move.
+4. **Watch the old app's tail.** Reps who have moved stop syncing from
+   `com.goldfortune.gf_merch_rep`. Anyone still on it after a few days needs a
+   call, not a nudge.
+
+Google Play takes the `tickd` flavour only, as an app bundle
+(`flutter build appbundle --release --flavor tickd …`).
 
 ---
 

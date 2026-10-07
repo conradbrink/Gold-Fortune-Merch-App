@@ -31,6 +31,9 @@ import {
   type ImportResult,
   type StoreDraft,
 } from "@/lib/import/stores";
+import { count, lower, withArticle } from "@/lib/terms";
+import { useCompanyConfig, useTerms } from "@/lib/use-company-config";
+import { normaliseCountry } from "@/lib/geocode-country";
 
 type Step = "file" | "review" | "done";
 type Filter = "attention" | "included" | "excluded" | "all";
@@ -61,6 +64,9 @@ export function ImportStoresDialog({
   onImported: () => void;
 }) {
   const supabase = createClient();
+  const t = useTerms();
+  // A row from another country is set aside (lib/import/stores.ts).
+  const homeCountry = normaliseCountry(useCompanyConfig()?.settings.country_code);
   const fileInput = useRef<HTMLInputElement>(null);
 
   const [step, setStep] = useState<Step>("file");
@@ -103,8 +109,8 @@ export function ImportStoresDialog({
     // `drafts` is editable after it is derived, so it has to be state rather
     // than a useMemo.
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    setDrafts(buildDrafts(sheet.rows, map));
-  }, [sheet, map]);
+    setDrafts(buildDrafts(sheet.rows, map, t, homeCountry));
+  }, [sheet, map, t, homeCountry]);
 
   async function handleFile(file: File) {
     setBusy(true);
@@ -155,6 +161,7 @@ export function ImportStoresDialog({
         orgId,
         drafts,
         settings.defaultVisitFrequency,
+        t,
         (done) => setProgress(done)
       );
       setResult(r);
@@ -171,7 +178,7 @@ export function ImportStoresDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-h-[88vh] overflow-y-auto sm:max-w-4xl">
         <DialogHeader>
-          <DialogTitle>Import stores</DialogTitle>
+          <DialogTitle>Import {lower(t.site.many)}</DialogTitle>
           <DialogDescription>
             {step === "file"
               ? "Excel or CSV. The file is read in your browser and never uploaded."
@@ -216,11 +223,11 @@ export function ImportStoresDialog({
               }}
             />
             <p className="text-xs text-muted-foreground">
-              Store names are read from a{" "}
+              {t.site.one} names are read from a{" "}
               <span className="font-medium text-foreground">Parent:Child</span>{" "}
-              column if there is one, so retail chains become store groups
-              automatically. Towns are worked out from the store name and
-              address, not just the city column.
+              column if there is one, so parent accounts become{" "}
+              {lower(t.site_group.many)} automatically. Towns are worked out from
+              the {lower(t.site.one)} name and address, not just the city column.
             </p>
           </div>
         )}
@@ -230,13 +237,13 @@ export function ImportStoresDialog({
             <div className="grid gap-3 rounded-lg border border-border p-3 sm:grid-cols-3">
               {(
                 [
-                  ["name", "Store name"],
+                  ["name", `${t.site.one} name`],
                   ["address", "Address"],
                   ["city", "City"],
                   ["phone", "Phone"],
                   ["state", "State / district"],
                   ["country", "Country"],
-                  ["rep", "Rep (optional)"],
+                  ["rep", `${t.staff.one} (optional)`],
                 ] as [keyof ColumnMap, string][]
               ).map(([field, label]) => (
                 <div key={field} className="space-y-1">
@@ -270,8 +277,8 @@ export function ImportStoresDialog({
               </span>
               {newGroups.length > 0 && (
                 <Badge variant="secondary">
-                  {newGroups.length} store group
-                  {newGroups.length === 1 ? "" : "s"}: {newGroups.join(", ")}
+                  {count(t, "site_group", newGroups.length)}:{" "}
+                  {newGroups.join(", ")}
                 </Badge>
               )}
               {noTown.length > 0 && (
@@ -280,11 +287,12 @@ export function ImportStoresDialog({
             </div>
 
             <p className="rounded-md border border-border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
-              Coordinates are not set — this file has none. These stores will
-              not geofence, and check-in distance will read as unknown rather
-              than as zero, until locations are added. Visit frequency is set to{" "}
-              {settings.defaultVisitFrequency}, which you can change per store
-              or in bulk afterwards.
+              Coordinates are not set — this file has none. These{" "}
+              {lower(t.site.many)} will not geofence, and check-in distance will
+              read as unknown rather than as zero, until locations are added.{" "}
+              {t.job.one} frequency is set to {settings.defaultVisitFrequency},
+              which you can change per {lower(t.site.one)} or in bulk
+              afterwards.
             </p>
 
             <div className="flex flex-wrap gap-1.5">
@@ -357,9 +365,9 @@ export function ImportStoresDialog({
                             }
                           >
                             <option value="">— no town —</option>
-                            {towns.map((t) => (
-                              <option key={t} value={t}>
-                                {t}
+                            {towns.map((town) => (
+                              <option key={town} value={town}>
+                                {town}
                               </option>
                             ))}
                           </NativeSelect>
@@ -384,23 +392,22 @@ export function ImportStoresDialog({
           <div className="space-y-2 rounded-md border border-emerald-500/40 bg-emerald-500/10 px-3 py-3">
             <p className="flex items-center gap-2 text-sm font-medium text-foreground">
               <Check className="h-4 w-4" />
-              Imported {result.storesCreated} store
-              {result.storesCreated === 1 ? "" : "s"}
+              Imported {count(t, "site", result.storesCreated)}
               {result.groupsCreated > 0 &&
-                ` and created ${result.groupsCreated} store group${result.groupsCreated === 1 ? "" : "s"}`}
+                ` and created ${count(t, "site_group", result.groupsCreated)}`}
               .
             </p>
             {result.assignmentsCreated > 0 && (
               <p className="text-xs text-muted-foreground">
-                {result.assignmentsCreated} store
-                {result.assignmentsCreated === 1 ? "" : "s"} assigned to a rep
-                from the sheet.
+                {count(t, "site", result.assignmentsCreated)} assigned to{" "}
+                {withArticle(t, "staff")} from the sheet.
               </p>
             )}
             {result.unmatchedReps.length > 0 && (
               <p className="text-xs text-amber-700 dark:text-amber-400">
-                No rep matched these names, so those stores were left
-                unassigned: {result.unmatchedReps.join(", ")}.
+                No {lower(t.staff.one)} matched these names, so those{" "}
+                {lower(t.site.many)} were left unassigned:{" "}
+                {result.unmatchedReps.join(", ")}.
               </p>
             )}
             {result.skipped > 0 && (
@@ -416,7 +423,7 @@ export function ImportStoresDialog({
             <Button onClick={runImport} disabled={busy || included.length === 0 || !orgId}>
               {busy
                 ? `Importing ${progress}/${included.length}…`
-                : `Import ${included.length} store${included.length === 1 ? "" : "s"}`}
+                : `Import ${count(t, "site", included.length)}`}
             </Button>
           )}
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={busy}>

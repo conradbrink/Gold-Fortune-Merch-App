@@ -21,6 +21,8 @@ import {
   saveRecurringOrder,
   type RecurringDetail,
 } from "@/lib/recurring";
+import { useTerms } from "@/lib/use-company-config";
+import { lower, withArticle } from "@/lib/terms";
 
 type Product = Awaited<ReturnType<typeof fetchOrderableProducts>>[number];
 type Line = { productId: string; qty: string; price: string; discount: string };
@@ -47,6 +49,7 @@ export function RecurringForm({
   onCancel: () => void;
 }) {
   const supabase = createClient();
+  const t = useTerms();
   const r = existing?.recurring;
   const [orgId, setOrgId] = useState<string | null>(null);
   const [stores, setStores] = useState<{ id: string; name: string; city: string | null }[]>([]);
@@ -138,7 +141,7 @@ export function RecurringForm({
     setError(null);
     if (!orgId) return setError("Still loading your company. Try again in a moment.");
     if (!name.trim()) return setError("Give it a name, like “Weekly bread order”.");
-    if (!storeId) return setError("Choose the store.");
+    if (!storeId) return setError(`Choose the ${lower(t.site.one)}.`);
     if (!nextRun) return setError("Choose the date of the first order.");
     if (lines.length === 0) return setError("Add at least one product.");
     if (lines.some((l) => !Number.isInteger(Number(l.qty)) || Number(l.qty) <= 0))
@@ -189,10 +192,10 @@ export function RecurringForm({
             <Input id="rname" value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Weekly top-up" />
           </div>
           <div>
-            <Label htmlFor="rstore-filter">Store</Label>
+            <Label htmlFor="rstore-filter">{t.site.one}</Label>
             <Input id="rstore-filter" value={storeFilter} onChange={(e) => setStoreFilter(e.target.value)} placeholder="Type to narrow the list" className="mb-1.5" />
-            <NativeSelect value={storeId} onChange={(e) => setStoreId(e.target.value)} aria-label="Store">
-              <option value="">Choose a store</option>
+            <NativeSelect value={storeId} onChange={(e) => setStoreId(e.target.value)} aria-label={t.site.one}>
+              <option value="">{`Choose ${withArticle(t, "site")}`}</option>
               {shownStores.map((s) => (
                 <option key={s.id} value={s.id}>
                   {s.name}
@@ -202,9 +205,9 @@ export function RecurringForm({
             </NativeSelect>
           </div>
           <div>
-            <Label htmlFor="rrep">Rep</Label>
+            <Label htmlFor="rrep">{t.staff.one}</Label>
             <NativeSelect id="rrep" value={repId} onChange={(e) => setRepId(e.target.value)}>
-              <option value="">No rep</option>
+              <option value="">{`No ${lower(t.staff.one)}`}</option>
               {reps.map((x) => (
                 <option key={x.id} value={x.id}>
                   {x.full_name}

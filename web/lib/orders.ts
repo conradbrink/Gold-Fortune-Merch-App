@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/lib/supabase/types";
+import { lower, withArticle, type Terms } from "@/lib/terms";
 
 /**
  * Everything the order screens read and do.
@@ -80,14 +81,21 @@ export type OrderDetail = {
 /** Shortfall handling when confirming. `reject` is the safe default. */
 export type ShortfallAction = "reject" | "partial" | "backorder" | "hold";
 
-export const RECEIVED_VIA = [
-  { value: "whatsapp", label: "WhatsApp" },
-  { value: "email", label: "Email" },
-  { value: "phone", label: "Phone" },
-  { value: "in_person", label: "In person" },
-  { value: "rep_visit", label: "Rep visit" },
-  { value: "other", label: "Other" },
-] as const;
+/**
+ * How an order reached the office. The stored values never change; only the
+ * label for an order taken on a call names the company's own people and calls
+ * ("Rep visit").
+ */
+export function receivedViaOptions(t: Terms) {
+  return [
+    { value: "whatsapp", label: "WhatsApp" },
+    { value: "email", label: "Email" },
+    { value: "phone", label: "Phone" },
+    { value: "in_person", label: "In person" },
+    { value: "rep_visit", label: `${t.staff.one} ${lower(t.job.one)}` },
+    { value: "other", label: "Other" },
+  ] as const;
+}
 
 function fail(error: { message: string } | null) {
   if (error) throw new Error(error.message);
@@ -846,7 +854,8 @@ export async function dispatchOrder(
     trackingReference?: string | null;
     expectedDeliveryOn?: string | null;
     assignedRepId?: string | null;
-  }
+  },
+  t: Terms
 ): Promise<Jsonish> {
   const result = await callRpc(supabase, "order_dispatch", {
     p_order_id: orderId,
@@ -859,11 +868,12 @@ export async function dispatchOrder(
 
   if (!carrier.assignedRepId) return result;
 
+  const one = lower(t.staff.one);
   const dispatchId = result.dispatch_id;
   if (typeof dispatchId !== "string") {
     throw new PartialDispatchError(
-      "The order was dispatched, but it could not be given to a rep — the " +
-        "dispatch id came back missing. Set the rep on the delivery below."
+      `The order was dispatched, but it could not be given to ${withArticle(t, "staff")} — the ` +
+        `dispatch id came back missing. Set the ${one} on the delivery below.`
     );
   }
 
@@ -871,9 +881,9 @@ export async function dispatchOrder(
     await assignDispatchRep(supabase, dispatchId, carrier.assignedRepId);
   } catch (e) {
     throw new PartialDispatchError(
-      `The order was dispatched, but it could not be given to a rep: ${
+      `The order was dispatched, but it could not be given to ${withArticle(t, "staff")}: ${
         e instanceof Error ? e.message : String(e)
-      } Set the rep on the delivery below — do not dispatch again.`
+      } Set the ${one} on the delivery below — do not dispatch again.`
     );
   }
   return result;

@@ -22,6 +22,8 @@ import { JobRoleEditor } from "@/components/access/job-role-editor";
 import { createClient } from "@/lib/supabase/client";
 import { useHrLoad } from "@/lib/hr/use-load";
 import { generatePassword } from "@/lib/representatives";
+import { useTerms } from "@/lib/use-company-config";
+import { lower } from "@/lib/terms";
 import {
   applyJobRole,
   createUser,
@@ -57,6 +59,7 @@ import {
  */
 export default function UsersPage() {
   const supabase = createClient();
+  const t = useTerms();
   const [directory, setDirectory] = useState<AccessDirectory | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
@@ -231,13 +234,16 @@ export default function UsersPage() {
                       Check-ins, forms, photos and their round. Granted by the
                       job role, not by a tick box — the app decides by reading
                       the underlying role, so changing this means moving them to
-                      or off a field-rep job role.
+                      or off a field-{lower(t.staff.one)} job role.
                     </span>
                   ) : (
                     <span>
                       Does not use the Android app — it shows them the
-                      &ldquo;this is for reps&rdquo; notice. Only a job role
-                      whose underlying role is <em>rep</em> opens it, and this
+                      &ldquo;this is for {lower(t.staff.many)}&rdquo; notice. Only
+                      a job role whose underlying role is{" "}
+                      {/* The stored role code, as `profiles.role` holds it — a
+                          value, not the company's word for its people. */}
+                      <em>{"rep"}</em> opens it, and this
                       one&rsquo;s is <em>{selected.role}</em>.
                     </span>
                   )}

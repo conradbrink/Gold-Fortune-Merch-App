@@ -15,6 +15,8 @@ import {
   type ManualStop,
   type PlannedStore,
 } from "@/lib/schedule";
+import { useTerms } from "@/lib/use-company-config";
+import { capital, count, lower, noun, withArticle } from "@/lib/terms";
 
 /**
  * The call cycle as dated days: weeks down, working days across.
@@ -236,6 +238,7 @@ export function CycleGrid({
    */
   readOnly?: boolean;
 }) {
+  const t = useTerms();
   // Keyed by date rather than by object identity: the calendar is rebuilt on every
   // edit, so holding the day itself would leave the panel showing a stale list.
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
@@ -287,10 +290,10 @@ export function CycleGrid({
     return (
       <p className="rounded-lg border border-border bg-card py-10 text-center text-sm text-muted-foreground">
         {planned.length === 0
-          ? "No store has a day set, so there is nothing to lay out. "
-          : `${planned.length} store${planned.length === 1 ? " has a day" : "s have days"} set, but none of them fall in the next ${weeks} weeks — check the cycle week on the monthly and fortnightly ones, or widen the horizon. `}
+          ? `No ${lower(t.site.one)} has a day set, so there is nothing to lay out. `
+          : `${count(t, "site", planned.length)} ${planned.length === 1 ? "has a day" : "have days"} set, but none of them fall in the next ${weeks} weeks — check the cycle week on the monthly and fortnightly ones, or widen the horizon. `}
         {unplanned.length > 0 &&
-          `${unplanned.length} assigned store${unplanned.length === 1 ? "" : "s"} ${unplanned.length === 1 ? "is" : "are"} waiting for one.`}
+          `${unplanned.length} assigned ${noun(t, "site", unplanned.length)} ${unplanned.length === 1 ? "is" : "are"} waiting for one.`}
       </p>
     );
   }
@@ -374,7 +377,7 @@ export function CycleGrid({
       {calendar.offDayColumns.length > 0 && (
         <p className="flex items-start gap-1.5 rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-800 dark:text-amber-300">
           <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-          Stores are planned on{" "}
+          {t.site.many} are planned on{" "}
           {calendar.offDayColumns
             .map((d) => WEEKDAYS.find((w) => w.value === d)?.long)
             .join(" and ")}
@@ -651,7 +654,7 @@ export function CycleGrid({
                     // retract these for the same reason.
                     title={
                       m.visited
-                        ? "A rep has already checked in here, so this stop is part of the record now."
+                        ? `${capital(withArticle(t, "staff"))} has already checked in here, so this stop is part of the record now.`
                         : "Remove this one-off stop"
                     }
                     onClick={() => onRemoveStop(m)}
@@ -686,7 +689,7 @@ export function CycleGrid({
                 stores={storeOptions}
                 value={addStoreIds}
                 onChange={setAddStoreIds}
-                placeholder="Search stores…"
+                placeholder={`Search ${lower(t.site.many)}…`}
                 disabled={!canAddStops || stopBusy.has("add")}
               />
             </div>
@@ -715,9 +718,10 @@ export function CycleGrid({
           </div>
 
           <p className="text-xs text-muted-foreground">
-            A stop added here sits on this date only — it does not join the call
-            cycle, will not repeat, and survives every re-generate. To have a
-            store called on regularly, give it a day in the list instead.
+            A stop added here sits on this date only — it does not join the{" "}
+            {lower(t.schedule_cycle.one)}, will not repeat, and survives every
+            re-generate. To have {withArticle(t, "site")} called on regularly,
+            give it a day in the list instead.
           </p>
         </div>
       )}
@@ -725,7 +729,7 @@ export function CycleGrid({
       <p className="text-xs text-muted-foreground">
         Distances are straight-line between stops, in the shortest order found —
         not road distance, and not a drive time. Stops are still listed
-        alphabetically on the rep&rsquo;s phone.
+        alphabetically on the {lower(t.staff.one)}&rsquo;s phone.
       </p>
     </div>
   );

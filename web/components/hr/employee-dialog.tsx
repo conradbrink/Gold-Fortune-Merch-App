@@ -15,6 +15,7 @@ import {
 } from "@/components/ui/dialog";
 import { Field, FormSection } from "@/components/hr/field";
 import { createClient } from "@/lib/supabase/client";
+import { useTerms } from "@/lib/use-company-config";
 import {
   createEmployee,
   updateEmployee,
@@ -70,6 +71,7 @@ export function EmployeeDialog({
   onSaved: () => void;
 }) {
   const supabase = createClient();
+  const terms = useTerms();
   const [form, setForm] = useState<EmployeeInput>(() => blank());
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -275,7 +277,7 @@ export function EmployeeDialog({
               <Input
                 value={form.position ?? ""}
                 onChange={(e) => set("position", e.target.value || null)}
-                placeholder="Merchandiser"
+                placeholder="e.g. Field staff"
               />
             </Field>
             <Field label="Department">
@@ -309,7 +311,7 @@ export function EmployeeDialog({
                 ))}
               </NativeSelect>
             </Field>
-            <Field label="Territory">
+            <Field label={terms.territory.one}>
               <NativeSelect
                 value={form.territory_id ?? ""}
                 onChange={(e) => set("territory_id", e.target.value || null)}

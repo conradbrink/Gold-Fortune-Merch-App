@@ -1,36 +1,52 @@
-"""Draws the product's neutral mark:
+"""Draws the Tickd product mark — the double tick, "seen and done":
 
-* assets/product_mark.png — a rounded square in the product's slate (#1E293B)
-  with a teal (#0EA5A4) tick. The login screen of a phone that has never
-  signed in, and the legacy launcher icon.
-* assets/product_mark_adaptive_foreground.png — the tick alone on a
+* assets/product_mark.png — a rounded teal (#0F3D3E) tile with a sand
+  (#F7F7F2) tick and an amber (#F5A524) tick. The login screen of a phone that
+  has never signed in, the legacy launcher icon, and (copied) the web's
+  public/product-mark.png.
+* assets/product_mark_adaptive_foreground.png — the two ticks alone on a
   transparent canvas, shrunk to 62% about the centre, for Android 8+'s
   adaptive icon. The launcher crops the foreground to roughly its middle
-  two-thirds; the slate comes from `adaptive_icon_background` in pubspec.yaml.
+  two-thirds; the teal comes from `adaptive_icon_background` in pubspec.yaml.
 
-Standard library only, so regenerating it needs nothing installed:
+The geometry is the logo's own (`tickd-mark.svg`, a 64-unit square), drawn
+here with the standard library only, so regenerating needs nothing installed:
 
     python3 tool/make_product_mark.py
 """
 
 import math
 import os
+import shutil
 import struct
 import zlib
 
 SIZE = 256
-RADIUS = 56  # corner radius of the square
+UNIT = SIZE / 64  # the SVG's viewBox is 64 x 64
+RADIUS = 14 * UNIT  # rx of the tile
 SS = 4  # supersampling per axis, for smooth edges
-BG = (0x1E, 0x29, 0x3B)
-FG = (0x0E, 0xA5, 0xA4)
-TICK = [(70, 134), (110, 174), (188, 90)]
-STROKE = 28
+TEAL = (0x0F, 0x3D, 0x3E)
+SAND = (0xF7, 0xF7, 0xF2)
+AMBER = (0xF5, 0xA5, 0x24)
+STROKE = 5.5 * UNIT
+SHIFT = 4.5  # the SVG's translate(4.5 0)
+
+
+def pts(*xy):
+    return [((x + SHIFT) * UNIT, y * UNIT) for x, y in xy]
+
+
+# Drawn in order, the amber tick over the sand one, as in the SVG.
+STROKES = [
+    (SAND, [pts((11, 34), (19, 42), (36, 23))]),
+    (AMBER, [pts((27, 42), (44, 23)), pts((23, 36), (27, 40))]),
+]
 
 
 def in_rounded_square(x, y):
     cx = min(max(x, RADIUS), SIZE - RADIUS)
     cy = min(max(y, RADIUS), SIZE - RADIUS)
-    return (x - cx) ** 2 + (y - cy) ** 2 <= RADIUS ** 2
+    return 0 <= x <= SIZE and 0 <= y <= SIZE and (x - cx) ** 2 + (y - cy) ** 2 <= RADIUS ** 2
 
 
 def dist_to_segment(px, py, a, b):
@@ -41,36 +57,39 @@ def dist_to_segment(px, py, a, b):
     return math.hypot(px - (ax + t * dx), py - (ay + t * dy))
 
 
-def in_tick(x, y):
-    return any(
-        dist_to_segment(x, y, TICK[i], TICK[i + 1]) <= STROKE / 2
-        for i in range(len(TICK) - 1)
-    )
+def on_polyline(x, y, line):
+    # Distance to each segment covers round caps and round joins alike.
+    return any(dist_to_segment(x, y, line[i], line[i + 1]) <= STROKE / 2 for i in range(len(line) - 1))
 
 
-def pixel(x, y, square=True, scale=1.0):
-    bg = fg = 0
+def colour_at(x, y, tile):
+    """The topmost colour at a point, or None where nothing is drawn."""
+    for colour, lines in reversed(STROKES):
+        if any(on_polyline(x, y, line) for line in lines):
+            return colour
+    if tile and in_rounded_square(x, y):
+        return TEAL
+    return None
+
+
+def pixel(x, y, tile=True, scale=1.0):
+    acc = [0, 0, 0]
+    hits = 0
     c = SIZE / 2
     for sy in range(SS):
         for sx in range(SS):
             # Sampled in the mark's own coordinates, so the foreground is the
-            # same tick, only smaller.
+            # same ticks, only smaller.
             px = c + (x + (sx + 0.5) / SS - c) / scale
             py = c + (y + (sy + 0.5) / SS - c) / scale
-            if not square:
-                if in_tick(px, py):
-                    fg += 1
-            elif in_rounded_square(px, py):
-                if in_tick(px, py):
-                    fg += 1
-                else:
-                    bg += 1
-    n = SS * SS
-    cover = bg + fg
-    if cover == 0:
+            colour = colour_at(px, py, tile)
+            if colour is not None:
+                hits += 1
+                for i in range(3):
+                    acc[i] += colour[i]
+    if hits == 0:
         return (0, 0, 0, 0)
-    rgb = tuple(round((BG[i] * bg + FG[i] * fg) / cover) for i in range(3))
-    return rgb + (round(255 * cover / n),)
+    return tuple(round(v / hits) for v in acc) + (round(255 * hits / (SS * SS)),)
 
 
 def png(width, height, rows):
@@ -89,12 +108,17 @@ def png(width, height, rows):
 
 def write(name, **kw):
     rows = [[pixel(x, y, **kw) for x in range(SIZE)] for y in range(SIZE)]
-    out = os.path.join(os.path.dirname(__file__), "..", "assets", name)
+    out = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", "assets", name))
     with open(out, "wb") as f:
         f.write(png(SIZE, SIZE, rows))
-    print("wrote", os.path.normpath(out))
+    print("wrote", out)
+    return out
 
 
 if __name__ == "__main__":
-    write("product_mark.png")
-    write("product_mark_adaptive_foreground.png", square=False, scale=0.62)
+    mark = write("product_mark.png")
+    write("product_mark_adaptive_foreground.png", tile=False, scale=0.62)
+    # The web shows the same mark before sign-in.
+    web = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", "..", "web", "public", "product-mark.png"))
+    shutil.copyfile(mark, web)
+    print("copied to", web)

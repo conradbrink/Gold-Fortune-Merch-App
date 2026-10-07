@@ -20,6 +20,8 @@ import { CoveragePlanner } from "@/components/schedule/coverage-planner";
 import { createClient } from "@/lib/supabase/client";
 import { can } from "@/lib/permissions";
 import { usePermissions } from "@/lib/use-permissions";
+import { useTerms } from "@/lib/use-company-config";
+import { lower, noun } from "@/lib/terms";
 import {
   fetchAssignments,
   fetchOrgId,
@@ -48,6 +50,7 @@ import {
  */
 export default function RepresentativesPage() {
   const supabase = createClient();
+  const t = useTerms();
   const permissions = usePermissions();
   const canAddPeople = permissions !== null && can(permissions, "admin");
 
@@ -126,11 +129,11 @@ export default function RepresentativesPage() {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-xl font-semibold tracking-tight text-foreground">
-            Representatives
+            {t.staff.many}
           </h1>
           <p className="text-sm text-muted-foreground">
-            {reps.length} field {reps.length === 1 ? "rep" : "reps"} · who covers
-            which store
+            {reps.length} field {noun(t, "staff", reps.length)} · who covers
+            which {lower(t.site.one)}
           </p>
         </div>
         {canAddPeople && (
@@ -147,7 +150,7 @@ export default function RepresentativesPage() {
 
       {error && (
         <div className="rounded-md border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive">
-          <p className="font-medium">Could not load representatives</p>
+          <p className="font-medium">Could not load {lower(t.staff.many)}</p>
           <p className="mt-1">{error}</p>
           <Button size="sm" variant="outline" className="mt-2" onClick={load}>
             Retry
@@ -156,7 +159,7 @@ export default function RepresentativesPage() {
       )}
 
       <Input
-        placeholder="Search reps…"
+        placeholder={`Search ${lower(t.staff.many)}…`}
         className="max-w-sm"
         value={query}
         onChange={(e) => setQuery(e.target.value)}
@@ -173,18 +176,18 @@ export default function RepresentativesPage() {
           ) : filtered.length === 0 ? (
             <p className="py-10 text-center text-sm text-muted-foreground">
               {reps.length === 0
-                ? "No field reps in this organisation yet."
-                : `No reps match "${query}".`}
+                ? `No field ${lower(t.staff.many)} in this organisation yet.`
+                : `No ${lower(t.staff.many)} match "${query}".`}
             </p>
           ) : (
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Rep</TableHead>
+                  <TableHead>{t.staff.one}</TableHead>
                   <TableHead className="hidden lg:table-cell">Contact</TableHead>
-                  <TableHead className="text-right">Stores</TableHead>
+                  <TableHead className="text-right">{t.site.many}</TableHead>
                   <TableHead className="hidden md:table-cell text-right">
-                    Visits (30d)
+                    {t.job.many} (30d)
                   </TableHead>
                   <TableHead className="text-right">Last active</TableHead>
                   <TableHead />
@@ -195,7 +198,7 @@ export default function RepresentativesPage() {
                   <TableRow key={r.rep_id}>
                     <TableCell className="font-medium">
                       <span className={r.is_active ? "" : "text-muted-foreground"}>
-                        {r.rep_name ?? "Unnamed rep"}
+                        {r.rep_name ?? `Unnamed ${lower(t.staff.one)}`}
                       </span>
                       {!r.is_active && (
                         <Badge variant="outline" className="ml-2 font-normal">
@@ -203,7 +206,7 @@ export default function RepresentativesPage() {
                         </Badge>
                       )}
                       <span className="block text-xs text-muted-foreground">
-                        {r.job_title ?? "Field rep"}
+                        {r.job_title ?? `Field ${lower(t.staff.one)}`}
                       </span>
                     </TableCell>
                     <TableCell className="hidden lg:table-cell text-sm text-muted-foreground">

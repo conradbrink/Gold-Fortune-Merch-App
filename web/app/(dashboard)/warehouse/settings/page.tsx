@@ -50,6 +50,8 @@ import {
   type ReorderRow,
   type StaffMember,
 } from "@/lib/warehouse-settings";
+import { useTerms } from "@/lib/use-company-config";
+import { lower } from "@/lib/terms";
 
 type Editing =
   | null
@@ -72,6 +74,7 @@ type Editing =
  */
 export default function WarehouseSettingsPage() {
   const supabase = createClient();
+  const t = useTerms();
   const permissions = usePermissions();
   // The tabs behind this are stock locations, reorder levels and warehouse
   // logins — setup rather than day-to-day picking, so they follow the approval
@@ -431,7 +434,7 @@ export default function WarehouseSettingsPage() {
           <TabsContent value="locations" className="mt-4 space-y-3">
             <div className="flex items-center justify-between gap-3">
               <p className="text-sm text-muted-foreground">
-                Vehicle and rep locations are created automatically the first time stock
+                Vehicle and {lower(t.staff.one)} locations are created automatically the first time stock
                 goes to one. Only warehouses are added here.
               </p>
               <Button size="sm" onClick={() => setEditing({ kind: "location", row: {} })}>
@@ -603,7 +606,7 @@ export default function WarehouseSettingsPage() {
             <div className="flex flex-wrap items-start justify-between gap-3">
               <p className="max-w-xl text-sm text-muted-foreground">
                 A warehouse login reaches the warehouse, orders and inventory screens
-                and nothing else — no visits, no GPS, no leads, no settings. Accounts
+                and nothing else — no {lower(t.job.many)}, no GPS, no leads, no settings. Accounts
                 are created with a starting password and handed over directly; there is
                 no invitation email.
               </p>

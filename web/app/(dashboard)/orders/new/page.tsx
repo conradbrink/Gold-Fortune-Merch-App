@@ -23,9 +23,11 @@ import {
   netPrice,
   orderTotals,
   unitPriceFor,
-  RECEIVED_VIA,
+  receivedViaOptions,
 } from "@/lib/orders";
 import { fetchStockOnHand, type StockLine } from "@/lib/warehouse";
+import { useTerms } from "@/lib/use-company-config";
+import { lower } from "@/lib/terms";
 
 type Draft = {
   key: string;
@@ -55,6 +57,7 @@ const blankLine = (): Draft => ({
  */
 export default function NewOrderPage() {
   const supabase = createClient();
+  const t = useTerms();
   const router = useRouter();
 
   const [orgId, setOrgId] = useState<string | null>(null);
@@ -208,7 +211,7 @@ export default function NewOrderPage() {
   async function addStore() {
     if (!orgId) return setError("Could not work out your organisation. Reload and try again.");
     const name = storeQuery.trim();
-    if (!name) return setError("The store needs a name — type it in the search box.");
+    if (!name) return setError(`The ${lower(t.site.one)} needs a name — type it in the search box.`);
     setCreatingStore(true);
     setError(null);
     try {
@@ -244,7 +247,7 @@ export default function NewOrderPage() {
       return;
     }
     if (!storeId) {
-      setError("Choose the store this order is for.");
+      setError(`Choose the ${lower(t.site.one)} this order is for.`);
       return;
     }
     const filled = lines.filter((l) => l.productId && Number(l.qty) > 0);
@@ -320,16 +323,16 @@ export default function NewOrderPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">Customer</CardTitle>
+          <CardTitle className="text-base">{t.client.one}</CardTitle>
         </CardHeader>
         <CardContent className="grid gap-4 sm:grid-cols-2">
           <div className="relative sm:col-span-2">
-            <Label htmlFor="store">Store</Label>
+            <Label htmlFor="store">{t.site.one}</Label>
             <Input
               id="store"
               value={storeQuery}
               disabled={loading}
-              placeholder={loading ? "Loading stores…" : "Search by name or town"}
+              placeholder={loading ? `Loading ${lower(t.site.many)}…` : "Search by name or town"}
               autoComplete="off"
               onFocus={() => setStoreOpen(true)}
               // Delayed so a click on a result lands before the list unmounts.
@@ -367,7 +370,7 @@ export default function NewOrderPage() {
                 ))}
                 {storeMatches.length === 0 && storeQuery.trim() && (
                   <p className="px-3 py-2 text-sm text-muted-foreground">
-                    No store matches &ldquo;{storeQuery.trim()}&rdquo;.
+                    No {lower(t.site.one)} matches &ldquo;{storeQuery.trim()}&rdquo;.
                   </p>
                 )}
                 {storeQuery.trim() && (
@@ -380,7 +383,7 @@ export default function NewOrderPage() {
                       setStoreOpen(false);
                     }}
                   >
-                    + Add &ldquo;{storeQuery.trim()}&rdquo; as a new store
+                    + Add &ldquo;{storeQuery.trim()}&rdquo; as a new {lower(t.site.one)}
                   </button>
                 )}
               </div>
@@ -388,7 +391,7 @@ export default function NewOrderPage() {
             {addingStore && (
               <div className="mt-2 space-y-2 rounded-lg border border-border bg-muted/30 p-3">
                 <p className="text-sm font-medium">
-                  New store: {storeQuery.trim()}
+                  New {lower(t.site.one)}: {storeQuery.trim()}
                 </p>
                 <div className="grid gap-2 sm:grid-cols-2">
                   <Input
@@ -406,7 +409,7 @@ export default function NewOrderPage() {
                 </div>
                 <div className="flex gap-2">
                   <Button size="sm" disabled={creatingStore} onClick={addStore}>
-                    {creatingStore ? "Adding…" : "Add store"}
+                    {creatingStore ? "Adding…" : `Add ${lower(t.site.one)}`}
                   </Button>
                   <Button
                     size="sm"
@@ -418,8 +421,8 @@ export default function NewOrderPage() {
                   </Button>
                 </div>
                 <p className="text-xs text-muted-foreground">
-                  Just enough to take the order. Groups, territory and the map
-                  pin live on the Stores screen.
+                  Just enough to take the order. {t.site_group.many},{" "}
+                  {lower(t.territory.one)} and the map pin live on the {t.site.many} screen.
                 </p>
               </div>
             )}
@@ -431,7 +434,7 @@ export default function NewOrderPage() {
               value={receivedVia}
               onChange={(e) => setReceivedVia(e.target.value)}
             >
-              {RECEIVED_VIA.map((r) => (
+              {receivedViaOptions(t).map((r) => (
                 <option key={r.value} value={r.value}>
                   {r.label}
                 </option>
@@ -465,7 +468,7 @@ export default function NewOrderPage() {
             />
           </div>
           <div>
-            <Label htmlFor="rep">Rep responsible</Label>
+            <Label htmlFor="rep">{t.staff.one} responsible</Label>
             <NativeSelect
               id="rep"
               value={repId}
@@ -474,7 +477,7 @@ export default function NewOrderPage() {
             >
               {/* An order with nobody attached is a real answer, not a missing
                   one — a shop that rang the office is not any rep's call. */}
-              <option value="">No rep</option>
+              <option value="">{`No ${lower(t.staff.one)}`}</option>
               {reps.map((r) => (
                 <option key={r.id} value={r.id}>
                   {r.full_name}
@@ -497,7 +500,7 @@ export default function NewOrderPage() {
               id="delivery"
               value={deliveryAddress}
               onChange={(e) => setDeliveryAddress(e.target.value)}
-              placeholder="Leave blank to deliver to the store"
+              placeholder={`Leave blank to deliver to the ${lower(t.site.one)}`}
             />
           </div>
           <div className="sm:col-span-2">

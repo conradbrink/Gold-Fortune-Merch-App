@@ -1,0 +1,132 @@
+[
+  {
+    "file": "app/(dashboard)/activities/page.tsx",
+    "text": "This shop is not on the estate",
+    "reason": "A sales call is on a prospect business that is not one of the company's sites, so the site term would be wrong; \"shop\" is how Gold Fortune's screen has always described that business and there is no term for it yet."
+  },
+  {
+    "file": "lib/verdict-words.ts",
+    "text": "A sales call on a shop that is not",
+    "reason": "Same as the activities dialog: the business a sales call is on is a prospect, not a site, so the site term would be wrong; Gold Fortune's hint has always said \"shop\"."
+  },
+  {
+    "file": "lib/verdict-words.ts",
+    "text": "Prospect",
+    "reason": "The prospect verdict's label stays \"Prospect\" for now. Using t.prospect.one would change Gold Fortune's label to \"Lead\" (its prospect term); that is to be decided, not slipped in. Not currently flagged by the guard (\"prospect\" is not in its word list) - recorded so the decision is not lost."
+  },
+  {
+    "file": "app/(dashboard)/stores/review/page.tsx",
+    "text": "will fill in the rest as they visit.",
+    "reason": "\"visit\" is the verb here (they go there), not the job term; the staff word in the same sentence comes from the terms."
+  },
+  {
+    "file": "app/(dashboard)/leads/page.tsx",
+    "text": "Sales calls on shops that are not",
+    "reason": "Same as the activities dialog: a lead is a prospect business, not one of the company's sites, so the site term would be wrong; Gold Fortune's subtitle has always said \"shops\". The customer word in the same sentence comes from the terms."
+  },
+  {
+    "file": "lib/receiving.ts",
+    "text": "Customer return",
+    "reason": "A stock-movement reason: goods coming back from whoever bought them. Plain distribution English, like \"supplier delivery\", not the company's word for the billed party."
+  },
+  {
+    "file": "app/(dashboard)/inventory/receive/page.tsx",
+    "text": "customer returns",
+    "reason": "The same stock-movement reason as lib/receiving.ts \"Customer return\", in the page's subtitle."
+  },
+  {
+    "file": "app/(dashboard)/orders/[id]/page.tsx",
+    "text": "customer refused",
+    "reason": "A failed-delivery reason: the person at the door refused the goods. Plain English for whoever was there, not the billed party; the site word in the same placeholder comes from the terms."
+  },
+  {
+    "file": "app/(dashboard)/hr/documents/page.tsx",
+    "text": "management chain",
+    "reason": "\"Management chain\" is the line of managers above an employee, not the site_group term."
+  },
+  {
+    "file": "app/(dashboard)/hr/performance/[id]/page.tsx",
+    "text": "A draft is visible only to its reviewer",
+    "reason": "The sentence ends \"the employee's management chain and HR\": the line of managers above the employee, not the site_group term. (The guard cuts the text before \"chain\", so the entry names its start.)"
+  },
+  {
+    "file": "components/hr/case-dialog.tsx",
+    "text": "management chain",
+    "reason": "\"Management chain\" is the line of managers above an employee, not the site_group term."
+  },
+  {
+    "file": "components/hr/document-dialog.tsx",
+    "text": "management chain",
+    "reason": "\"Management chain\" is the line of managers above an employee, not the site_group term."
+  },
+  {
+    "file": "components/hr/warning-dialog.tsx",
+    "text": "private HR store",
+    "reason": "\"Store\" as in storage: the private file store HR records are kept in, not the site term."
+  },
+  {
+    "file": "lib/hr/employees.ts",
+    "text": "territory:territories!hr_employees_territory_id_fkey",
+    "reason": "A PostgREST select string kept in a constant (shared by three queries), not prose; the guard only recognises it when passed to .select() directly."
+  },
+  {
+    "file": "lib/rep-report.ts",
+    "text": "Merchandising execution",
+    "reason": "Merchandising audits (availability, planogram, price, condition) are retail-execution vocabulary with no term key; the rep report's neutral-terms fixture in tests/rep-report-text.test.ts pins this wording for every company."
+  },
+  {
+    "file": "lib/rep-report.ts",
+    "text": "No merchandising audit was completed",
+    "reason": "Merchandising audits (availability, planogram, price, condition) are retail-execution vocabulary with no term key; the rep report's neutral-terms fixture in tests/rep-report-text.test.ts pins this wording for every company."
+  },
+  {
+    "file": "lib/rep-report.ts",
+    "text": "Merchandising checks passed",
+    "reason": "Merchandising audits (availability, planogram, price, condition) are retail-execution vocabulary with no term key; the rep report's neutral-terms fixture in tests/rep-report-text.test.ts pins this wording for every company."
+  },
+  {
+    "file": "lib/rep-report.ts",
+    "text": "Merchandising compliance was",
+    "reason": "Merchandising audits (availability, planogram, price, condition) are retail-execution vocabulary with no term key; the rep report's neutral-terms fixture in tests/rep-report-text.test.ts pins this wording for every company."
+  },
+  {
+    "file": "components/rep-report/report-document.tsx",
+    "text": "Merchandising execution",
+    "reason": "The section heading for the score line of the same name in lib/rep-report.ts: Merchandising audits (availability, planogram, price, condition) are retail-execution vocabulary with no term key; the rep report's neutral-terms fixture in tests/rep-report-text.test.ts pins this wording for every company."
+  },
+  {
+    "file": "components/rep-report/report-document.tsx",
+    "text": "Overall merchandising compliance",
+    "reason": "The headline of the merchandising section: Merchandising audits (availability, planogram, price, condition) are retail-execution vocabulary with no term key; the rep report's neutral-terms fixture in tests/rep-report-text.test.ts pins this wording for every company."
+  },
+  {
+    "file": "lib/insights-prompt.ts",
+    "text": "its customers",
+    "reason": "Names the concept the company's own customer word is then given for (its customers \"<client term>\"); the word the model is told to use comes from the terms. Pinned by tests/insights-prompt.test.ts."
+  },
+  {
+    "file": "lib/insights-prompt.ts",
+    "text": "field names say store or rep",
+    "reason": "Refers to the payload's fixed JSON keys (\"store\", \"rep\") so the model translates them into the company's words; the keys themselves cannot change."
+  },
+  {
+    "file": "lib/insights-prompt.ts",
+    "text": "a field-merchandising manager at an FMCG company",
+    "reason": "Said only when the company has the Distribution module (ctx.merchandising); without it the prompt uses the neutral wording. Pinned by tests/insights-prompt.test.ts."
+  },
+  {
+    "file": "lib/insights-prompt.ts",
+    "text": "merchandising audits",
+    "reason": "Said only when the company has the Distribution module (ctx.merchandising); without it the prompt uses the neutral wording. Pinned by tests/insights-prompt.test.ts."
+  },
+  {
+    "file": "lib/insights-prompt.ts",
+    "text": "field-merchandising team at an FMCG company",
+    "reason": "Said only when the company has the Distribution module (ctx.merchandising); without it the prompt uses the neutral wording. Pinned by tests/insights-prompt.test.ts."
+  },
+  {
+    "file": "app/download/page.tsx",
+    "text": "Play Store",
+    "reason": "Google's Play Store, a product name, not a site"
+  }
+]

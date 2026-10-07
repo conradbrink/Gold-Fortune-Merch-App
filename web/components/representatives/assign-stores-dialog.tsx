@@ -22,6 +22,8 @@ import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { createClient } from "@/lib/supabase/client";
 import { useIsManager } from "@/lib/use-is-manager";
+import { useTerms } from "@/lib/use-company-config";
+import { capital, count, lower, possessive, withArticle } from "@/lib/terms";
 import {
   assignStore,
   changeRepEmail,
@@ -100,6 +102,8 @@ export function AssignStoresDialog({
   const [deleting, setDeleting] = useState(false);
 
   const supabase = createClient();
+  const t = useTerms();
+  const staff = lower(t.staff.one);
 
   /** This rep's assignments, by store. */
   const mineByStore = useMemo(() => {
@@ -212,11 +216,11 @@ export function AssignStoresDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-xl">
         <DialogHeader>
-          <DialogTitle>{rep?.rep_name ?? "Rep"}</DialogTitle>
+          <DialogTitle>{rep?.rep_name ?? t.staff.one}</DialogTitle>
           <DialogDescription>
             {isManager === false
-              ? "This rep's round, as it stands. Changing who covers what needs a manager."
-              : "Tick a store to assign it to this rep. A store can be covered by more than one rep."}
+              ? `This ${possessive(staff)} round, as it stands. Changing who covers what needs a manager.`
+              : `Tick ${withArticle(t, "site")} to assign it to this ${staff}. ${capital(withArticle(t, "site"))} can be covered by more than one ${staff}.`}
           </DialogDescription>
         </DialogHeader>
 
@@ -224,8 +228,8 @@ export function AssignStoresDialog({
             the bit it cannot: that the tick boxes are dead on purpose. */}
         {isManager === false && (
           <p className="rounded-md border border-border bg-muted/40 px-3 py-2 text-sm text-muted-foreground">
-            Assigning stores is manager-only, so the tick boxes are read-only
-            here.
+            Assigning {lower(t.site.many)} is manager-only, so the tick boxes
+            are read-only here.
           </p>
         )}
 
@@ -282,7 +286,7 @@ export function AssignStoresDialog({
               <Input
                 id="rep-title"
                 value={jobTitle}
-                placeholder="Field merchandiser"
+                placeholder="e.g. Field staff"
                 onChange={(e) => {
                   setJobTitle(e.target.value);
                   setSavedDetails(false);
@@ -320,7 +324,7 @@ export function AssignStoresDialog({
                   setSavingEmail(true);
                   setError(null);
                   try {
-                    await changeRepEmail(rep.rep_id, email.trim());
+                    await changeRepEmail(rep.rep_id, email.trim(), t);
                     setEmailSaved(true);
                     onChanged();
                   } catch (e) {
@@ -372,7 +376,7 @@ export function AssignStoresDialog({
                   setSavingPassword(true);
                   setError(null);
                   try {
-                    await setRepPassword(rep.rep_id, newPassword);
+                    await setRepPassword(rep.rep_id, newPassword, t);
                     setPasswordSaved(true);
                   } catch (e) {
                     setError(e instanceof Error ? e.message : String(e));
@@ -419,7 +423,7 @@ export function AssignStoresDialog({
                     full_name: fullName.trim(),
                     phone: phone.trim() || null,
                     job_title: jobTitle.trim() || null,
-                  });
+                  }, t);
                   setSavedDetails(true);
                   onChanged();
                 } catch (e) {
@@ -438,7 +442,7 @@ export function AssignStoresDialog({
                 onClick={async () => {
                   setError(null);
                   try {
-                    await setRepActive(rep.rep_id, !rep.is_active);
+                    await setRepActive(rep.rep_id, !rep.is_active, t);
                     onChanged();
                     onOpenChange(false);
                   } catch (e) {
@@ -446,13 +450,13 @@ export function AssignStoresDialog({
                   }
                 }}
               >
-                {rep.is_active ? "Deactivate rep" : "Reactivate rep"}
+                {rep.is_active ? `Deactivate ${staff}` : `Reactivate ${staff}`}
               </Button>
             )}
           </div>
           <p className="text-xs text-muted-foreground">
-            Deactivating keeps their visit history — it only stops new work being
-            assigned.
+            Deactivating keeps their {lower(t.job.one)} history — it only stops
+            new work being assigned.
           </p>
 
           {/* Deleting cascades through visits, audits, photos and workdays, so
@@ -476,8 +480,8 @@ export function AssignStoresDialog({
               </Button>
               <p className="flex items-start gap-1.5 text-xs text-destructive">
                 <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-                This erases the rep and all of their visits, audits and photos.
-                It cannot be undone.
+                This erases the {staff} and all of their {lower(t.job.many)},
+                audits and photos. It cannot be undone.
               </p>
             </div>
           )}
@@ -485,14 +489,14 @@ export function AssignStoresDialog({
           {rep && impact && (
             <div className="space-y-2 rounded-md border border-destructive/40 bg-destructive/10 p-3">
               <p className="text-sm font-medium text-destructive">
-                Permanently delete {impact.rep_name ?? "this rep"}?
+                Permanently delete {impact.rep_name ?? `this ${staff}`}?
               </p>
               <p className="text-xs text-foreground">
-                This also deletes {impact.visits} visit
-                {impact.visits === 1 ? "" : "s"}, {impact.submissions} audit
+                This also deletes {count(t, "job", impact.visits)},{" "}
+                {impact.submissions} audit
                 {impact.submissions === 1 ? "" : "s"}, {impact.photos} photo
-                {impact.photos === 1 ? "" : "s"}, {impact.workdays} workday
-                {impact.workdays === 1 ? "" : "s"} and {impact.routes} scheduled
+                {impact.photos === 1 ? "" : "s"},{" "}
+                {count(t, "workday", impact.workdays)} and {impact.routes} scheduled
                 route{impact.routes === 1 ? "" : "s"}. Reports covering those
                 dates will change. This cannot be undone.
               </p>
@@ -530,7 +534,7 @@ export function AssignStoresDialog({
         </div>
 
         <Input
-          placeholder="Search chains, stores or cities…"
+          placeholder={`Search ${lower(t.site_group.many)}, ${lower(t.site.many)} or cities…`}
           value={query}
           onChange={(e) => setQuery(e.target.value)}
         />
@@ -538,7 +542,7 @@ export function AssignStoresDialog({
         <div className="divide-y divide-border rounded-md border border-border">
           {groups.length === 0 && (
             <p className="py-8 text-center text-sm text-muted-foreground">
-              No stores match &ldquo;{query}&rdquo;.
+              No {lower(t.site.many)} match &ldquo;{query}&rdquo;.
             </p>
           )}
 
@@ -564,7 +568,7 @@ export function AssignStoresDialog({
                     {g.name}
                   </span>
                   <span className="text-xs text-muted-foreground">
-                    {g.stores.length} {g.stores.length === 1 ? "store" : "stores"}
+                    {count(t, "site", g.stores.length)}
                   </span>
                   {assignedHere > 0 && (
                     <Badge variant="secondary" className="shrink-0">

@@ -1,6 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 
+import 'move_to_tickd.dart';
 import 'providers.dart';
 import 'supabase_client.dart';
 
@@ -16,6 +17,11 @@ enum UpdateRequirement {
   /// until it is replaced — this exists for a security or compatibility fix
   /// that cannot be left running in the field.
   required,
+
+  /// Only in the old-id build, once Tickd is out: not an update but a move to
+  /// a different app, which this one walks the rep through
+  /// (core/move_to_tickd.dart). Never blocks work.
+  moveToTickd,
 }
 
 class AppUpdateInfo {
@@ -82,6 +88,7 @@ final appUpdateProvider = FutureProvider<AppUpdateInfo?>((ref) async {
     minSupportedVersionCode: minSupported,
     postponedVersionCode: postponed,
     notes: notes,
+    legacyBuild: isLegacyBuild,
   );
 });
 
@@ -97,6 +104,7 @@ AppUpdateInfo? decideUpdate({
   required int minSupportedVersionCode,
   required int? postponedVersionCode,
   List<String> notes = const [],
+  bool legacyBuild = false,
 }) {
   AppUpdateInfo info(UpdateRequirement requirement) => AppUpdateInfo(
         requirement: requirement,
@@ -105,6 +113,14 @@ AppUpdateInfo? decideUpdate({
         installedVersionCode: installedVersionCode,
         notes: notes,
       );
+
+  // The old app, once Tickd is out: the move, before anything else. Not the
+  // forced floor — a rep with unsynced work must never be locked out of the
+  // app that holds it — and not "postponed", which would let one tap hide it
+  // for good.
+  if (legacyBuild && releaseVersionCode >= kTickdFirstVersionCode) {
+    return info(UpdateRequirement.moveToTickd);
+  }
 
   // The forced floor is checked against the installed build, not against the
   // newest release, so an old handset is blocked even if the rep happens to

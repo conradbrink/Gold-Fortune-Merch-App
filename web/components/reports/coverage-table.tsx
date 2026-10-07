@@ -10,6 +10,8 @@ import {
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import type { CoverageGap } from "@/lib/reports";
+import { lower } from "@/lib/terms";
+import { useTerms } from "@/lib/use-company-config";
 
 /**
  * Stores ranked by how long they have gone unvisited.
@@ -19,10 +21,11 @@ import type { CoverageGap } from "@/lib/reports";
  * look neglected.
  */
 export function CoverageTable({ rows }: { rows: CoverageGap[] }) {
+  const t = useTerms();
   if (rows.length === 0) {
     return (
       <p className="py-10 text-center text-sm text-muted-foreground">
-        No active stores to report on.
+        No active {lower(t.site.many)} to report on.
       </p>
     );
   }
@@ -31,11 +34,11 @@ export function CoverageTable({ rows }: { rows: CoverageGap[] }) {
     <Table>
       <TableHeader>
         <TableRow>
-          <TableHead>Store</TableHead>
-          <TableHead className="hidden sm:table-cell">Group</TableHead>
+          <TableHead>{t.site.one}</TableHead>
+          <TableHead className="hidden sm:table-cell">{t.site_group.one}</TableHead>
           <TableHead className="hidden md:table-cell">Responsible</TableHead>
-          <TableHead className="text-right">Visits in period</TableHead>
-          <TableHead className="text-right">Last visit</TableHead>
+          <TableHead className="text-right">{t.job.many} in period</TableHead>
+          <TableHead className="text-right">Last {lower(t.job.one)}</TableHead>
         </TableRow>
       </TableHeader>
       <TableBody>

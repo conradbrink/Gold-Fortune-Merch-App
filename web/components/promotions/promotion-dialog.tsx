@@ -23,6 +23,8 @@ import {
   type PromotionInput,
 } from "@/lib/promotions";
 import type { Tables } from "@/lib/supabase/types";
+import { useTerms } from "@/lib/use-company-config";
+import { count, lower } from "@/lib/terms";
 
 type ProductRow = Tables<"products">;
 
@@ -47,6 +49,7 @@ export function PromotionDialog({
   onSaved: () => void;
 }) {
   const supabase = createClient();
+  const t = useTerms();
 
   const [name, setName] = useState("");
   const [brief, setBrief] = useState("");
@@ -262,7 +265,7 @@ export function PromotionDialog({
             />
           </div>
           <div className="space-y-1.5">
-            <Label>What should the rep be looking for?</Label>
+            <Label>What should the {lower(t.staff.one)} be looking for?</Label>
             <Input
               value={brief}
               placeholder="e.g. Gondola end display, shelf talkers on all facings"
@@ -327,10 +330,10 @@ export function PromotionDialog({
 
         <section>
           <h3 className="mb-1.5 text-sm font-semibold text-foreground">
-            Outlets ({storeIds.size} of {stores.length})
+            {t.site.many} ({storeIds.size} of {stores.length})
           </h3>
           <Input
-            placeholder="Search chains, outlets or towns…"
+            placeholder={`Search ${lower(t.site_group.many)}, ${lower(t.site.many)} or towns…`}
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             className="mb-2"
@@ -409,7 +412,7 @@ export function PromotionDialog({
             </p>
             {removedAnswered > 0 && (
               <p className="mt-1">
-                {removedAnswered} outlet{removedAnswered === 1 ? "" : "s"} you are
+                {count(t, "site", removedAnswered)} you are
                 removing {removedAnswered === 1 ? "has" : "have"} already been
                 checked. Their answers will disappear from this promotion&apos;s
                 figures.
@@ -418,7 +421,7 @@ export function PromotionDialog({
             {started && addedProducts > 0 && (
               <p className="mt-1">
                 This promotion has already started and you are adding{" "}
-                {addedProducts} line{addedProducts === 1 ? "" : "s"}. Every outlet
+                {addedProducts} line{addedProducts === 1 ? "" : "s"}. Every {lower(t.site.one)}
                 will read as only partly checked until the new one
                 {addedProducts === 1 ? " is" : "s are"} answered too.
               </p>
