@@ -95,7 +95,7 @@ export default function InvoicesPage() {
     for (const r of rows) {
       if (r.status === "void") continue;
       issued += Number(r.total);
-      const o = Number(r.balance?.outstanding ?? r.total);
+      const o = Number(r.balance?.outstanding ?? 0);
       outstanding += o;
       if (o > 0 && r.due_date < today) overdue += o;
     }

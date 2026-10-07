@@ -33,10 +33,15 @@ export function OrderInvoice({
 
   useEffect(() => {
     let cancelled = false;
+    // `checked` only on success: a failed lookup must not read as "no invoice"
+    // and offer to issue one for an order that may already have it.
     fetchInvoiceForOrder(supabase, orderId)
-      .then((inv) => !cancelled && setInvoice(inv))
-      .catch(() => !cancelled && setInvoice(null))
-      .finally(() => !cancelled && setChecked(true));
+      .then((inv) => {
+        if (cancelled) return;
+        setInvoice(inv);
+        setChecked(true);
+      })
+      .catch((e) => !cancelled && setError(e instanceof Error ? e.message : String(e)));
     return () => {
       cancelled = true;
     };

@@ -136,7 +136,7 @@ export function RecurringForm({
 
   async function save() {
     setError(null);
-    if (!orgId) return;
+    if (!orgId) return setError("Still loading your company. Try again in a moment.");
     if (!name.trim()) return setError("Give it a name, like “Weekly bread order”.");
     if (!storeId) return setError("Choose the store.");
     if (!nextRun) return setError("Choose the date of the first order.");

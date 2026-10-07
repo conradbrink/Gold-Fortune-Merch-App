@@ -5955,6 +5955,10 @@ export type Database = {
         Args: Record<PropertyKey, never>
         Returns: { placed_recurring_order: string; placed_order: string }[]
       }
+      recurring_order_save: {
+        Args: { p_id: string | null; p_row: Json; p_lines: Json }
+        Returns: string
+      }
       recurring_order_run_now: {
         Args: { p_id: string }
         Returns: string

@@ -125,6 +125,12 @@ export default function RecurringOrderPage() {
                 run(async () => {
                   if (!window.confirm("Place this order now, as a new order for the warehouse?")) return;
                   const orderId = await placeNow(supabase, r.id);
+                  // The RPC raises when nothing was placed; this guards the
+                  // navigation anyway, because "/orders/null" is a dead end.
+                  if (!orderId) {
+                    await load();
+                    throw new Error("No order was placed. It may already have run today.");
+                  }
                   router.push(`/orders/${orderId}`);
                 })
               }
@@ -160,7 +166,7 @@ export default function RecurringOrderPage() {
 
       <ErrorBanner message={error} />
 
-      {r.status === "active" && r.next_run < new Date().toISOString().slice(0, 10) && (
+      {r.status === "active" && r.next_run < localToday() && (
         <p className="rounded-lg border border-amber-500/40 bg-amber-500/5 p-2.5 text-sm text-amber-700 dark:text-amber-500">
           The next date has passed. It will be placed on the next morning run, once — not once for each missed date.
         </p>
@@ -214,6 +220,12 @@ export default function RecurringOrderPage() {
       </Card>
     </div>
   );
+}
+
+/** Today as YYYY-MM-DD in the browser's own zone; toISOString would give UTC's. */
+function localToday() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
 function ProductRow({ productId, qty, price, discount }: { productId: string; qty: number; price: number | null; discount: number }) {

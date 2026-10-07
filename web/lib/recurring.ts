@@ -1,5 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { Database } from "@/lib/supabase/types";
+import type { Database, Json } from "@/lib/supabase/types";
 
 /**
  * Standing orders a store receives on a schedule.
@@ -93,56 +93,42 @@ export type RecurringInput = {
 };
 
 /**
- * Creates or replaces a recurring order and its lines. The lines are replaced
- * wholesale — a standing order is short, and diffing it buys nothing.
+ * Creates or replaces a recurring order and all its lines in one call.
+ *
+ * One RPC, so one transaction: replacing the lines used to be a delete and an
+ * insert in two requests, and a failed insert left the order with no products
+ * — the next morning's run then placed nothing. `recurring_order_save` is
+ * security invoker, so the same policies decide what may be written.
  */
 export async function saveRecurringOrder(
   supabase: Client,
-  orgId: string,
+  _orgId: string,
   input: RecurringInput,
   id?: string
 ): Promise<string> {
   if (input.lines.length === 0) throw new Error("Add at least one product.");
-  const row = {
-    name: input.name,
-    store_id: input.storeId,
-    rep_id: input.repId,
-    contact_name: input.contactName,
-    contact_phone: input.contactPhone,
-    frequency: input.frequency,
-    next_run: input.nextRun,
-    max_runs: input.maxRuns,
-    notes: input.notes,
-  };
-  let recurringId = id;
-  if (id) {
-    const { error } = await supabase
-      .from("recurring_orders")
-      .update({ ...row, updated_at: new Date().toISOString() })
-      .eq("id", id);
-    fail(error);
-    const { error: delError } = await supabase.from("recurring_order_lines").delete().eq("recurring_order_id", id);
-    fail(delError);
-  } else {
-    const { data, error } = await supabase
-      .from("recurring_orders")
-      .insert({ org_id: orgId, ...row })
-      .select("id")
-      .single();
-    fail(error);
-    recurringId = (data as { id: string }).id;
-  }
-  const { error: linesError } = await supabase.from("recurring_order_lines").insert(
-    input.lines.map((l) => ({
-      recurring_order_id: recurringId as string,
+  const { data, error } = await supabase.rpc("recurring_order_save", {
+    p_id: id ?? null,
+    p_row: {
+      name: input.name,
+      store_id: input.storeId,
+      rep_id: input.repId ?? "",
+      contact_name: input.contactName,
+      contact_phone: input.contactPhone,
+      frequency: input.frequency,
+      next_run: input.nextRun,
+      max_runs: input.maxRuns == null ? "" : String(input.maxRuns),
+      notes: input.notes,
+    } as unknown as Json,
+    p_lines: input.lines.map((l) => ({
       product_id: l.productId,
       qty: l.qty,
-      unit_price: l.unitPrice,
-      discount_pct: l.discountPct,
-    }))
-  );
-  fail(linesError);
-  return recurringId as string;
+      unit_price: l.unitPrice == null ? "" : String(l.unitPrice),
+      discount_pct: String(l.discountPct),
+    })) as unknown as Json,
+  });
+  fail(error);
+  return data as string;
 }
 
 export async function setRecurringStatus(supabase: Client, id: string, status: "active" | "paused" | "ended") {
