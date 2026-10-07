@@ -23,7 +23,7 @@
 --
 -- Rewrites are exact-match and exactly-once, as in neutral_messages.
 --
--- Rollback: supabase/rollback/<this version>_country_and_neutral_defaults.down.sql.
+-- Rollback: supabase/rollback/20261007165133_country_and_neutral_defaults.down.sql.
 
 insert into public.setting_definitions
   (key, label, description, value_type, default_value, min_value, max_value, pattern, sort_order) values
