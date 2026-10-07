@@ -28,7 +28,7 @@
          was, because a new id installs as a second app beside the first and
          abandons whatever its outbox had not yet synced. -->
     <application
-        android:label="Field Teams"
+        android:label="Tickd"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
         <activity

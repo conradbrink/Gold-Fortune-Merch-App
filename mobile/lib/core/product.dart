@@ -3,10 +3,10 @@ import 'dart:ui' show Color;
 /// The product's own identity, for the one place the app cannot yet know whose
 /// it is: the login screen of a phone that has never signed in. Everywhere
 /// else the company's name, logo and colours take over (see `Branding`).
-const kProductName = 'Field Teams';
+const kProductName = 'Tickd';
 
-/// The neutral mark shown beside [kProductName]. Generated, not drawn: see
-/// `tool/make_product_mark.py`.
+/// The Tickd double-tick mark shown beside [kProductName]. Generated from the
+/// logo's geometry, not drawn by hand: see `tool/make_product_mark.py`.
 const kProductMarkAsset = 'assets/product_mark.png';
 
 /// The product palette, for a company that has not chosen its own colours and

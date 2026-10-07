@@ -16,7 +16,7 @@ const geistMono = Geist_Mono({
 
 // The product's name, not a company's: the browser title and the link preview
 // are seen before sign-in, by every company's staff alike. The template lets a
-// page name itself ("Download the app · Field Teams") without repeating it.
+// page name itself ("Download the app · Tickd") without repeating it.
 export const metadata: Metadata = {
   title: { default: PRODUCT_NAME, template: `%s · ${PRODUCT_NAME}` },
   description: PRODUCT_TAGLINE,

@@ -52,8 +52,8 @@ export async function GET() {
   }
 
   // The product's name, not a customer's: every company downloads the same
-  // app, and the label it installs under is "Field Teams" too.
-  const filename = `field-teams-${release.versionName}.apk`;
+  // app, and the label it installs under is "Tickd" too.
+  const filename = `tickd-${release.versionName}.apk`;
 
   return new Response(data, {
     headers: {
