@@ -145,7 +145,10 @@ class _StoreDetailScreenState extends ConsumerState<StoreDetailScreen> {
               '${terms.site.oneLower}. This was recorded for your manager.'
           : metres != null
               ? 'Checked in (${metres.round()}m from ${terms.site.oneLower}).'
-              : 'Checked in.';
+              : result.noFix
+                  ? 'Checked in — your phone had no fresh GPS position, so '
+                      'none was recorded.'
+                  : 'Checked in.';
       ScaffoldMessenger.of(context)
         ..hideCurrentSnackBar()
         ..showSnackBar(SnackBar(
@@ -371,7 +374,11 @@ class _StoreDetailScreenState extends ConsumerState<StoreDetailScreen> {
 
     setState(() => _locating = true);
     try {
-      final position = await LocationService.getCurrentPosition();
+      // A pin is what every later check-in is measured against, so an old
+      // fallback fix is refused here rather than written as the shop.
+      final position = await LocationService.getCurrentPosition(
+        maxFallbackAge: kMaxFallbackFixAge,
+      );
 
       // Checked before asking rather than after: there is no point walking the
       // rep through a confirmation the server is going to refuse. The same

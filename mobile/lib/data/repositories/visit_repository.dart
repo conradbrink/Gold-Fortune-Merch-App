@@ -18,10 +18,14 @@ class CheckInResult {
   final double? distanceFromStoreM;
   final bool outsideGeofence;
 
+  /// No fresh GPS fix, so the check-in was recorded without a position.
+  final bool noFix;
+
   const CheckInResult({
     required this.clientGeneratedId,
     this.distanceFromStoreM,
     required this.outsideGeofence,
+    this.noFix = false,
   });
 }
 
@@ -41,10 +45,14 @@ class VisitRepository {
     required RouteVisit routeVisit,
     String? workdaySessionClientId,
   }) async {
-    final position = await LocationService.getCurrentPosition();
+    // Null when only an old fix exists: the visit then records no position
+    // rather than the last shop's (see LocationService.getCheckInPosition).
+    final position = await LocationService.getCheckInPosition();
 
     double? distance;
-    if (routeVisit.storeLat != null && routeVisit.storeLng != null) {
+    if (position != null &&
+        routeVisit.storeLat != null &&
+        routeVisit.storeLng != null) {
       distance = LocationService.distanceBetween(
         position.latitude,
         position.longitude,
@@ -70,9 +78,9 @@ class VisitRepository {
         'store_id': routeVisit.storeId,
         'status': 'checked_in',
         'checkin_at': checkinAt.toUtc().toIso8601String(),
-        'checkin_lat': position.latitude,
-        'checkin_lng': position.longitude,
-        'checkin_gps_accuracy_m': position.accuracy,
+        'checkin_lat': position?.latitude,
+        'checkin_lng': position?.longitude,
+        'checkin_gps_accuracy_m': position?.accuracy,
         'checkin_distance_from_store_m': distance,
         'client_generated_id': clientId,
       }),
@@ -82,7 +90,7 @@ class VisitRepository {
     // and their position is not recorded. The visit row keeps its own
     // coordinates either way — that is the visit's evidence, not a trail.
     final session = workdaySessionClientId;
-    if (session != null) {
+    if (session != null && position != null) {
       await _workdayRepo.queuePing(
         orgId: orgId,
         repId: repId,
@@ -110,6 +118,7 @@ class VisitRepository {
       distanceFromStoreM: distance,
       outsideGeofence:
           distance != null && distance > routeVisit.geofenceRadiusM,
+      noFix: position == null,
     );
   }
 
