@@ -14,6 +14,102 @@ export type Database = {
   }
   public: {
     Tables: {
+      quote_lines: {
+        Row: {
+          id: string
+          org_id: string
+          quote_id: string
+          product_id: string
+          qty: number
+          list_price: number
+          discount_pct: number
+          unit_price: number | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          org_id: string
+          quote_id: string
+          product_id: string
+          qty: number
+          list_price: number
+          discount_pct?: number
+          unit_price?: number | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          org_id?: string
+          quote_id?: string
+          product_id?: string
+          qty?: number
+          list_price?: number
+          discount_pct?: number
+          unit_price?: number | null
+          created_at?: string
+        }
+        Relationships: []
+      }
+      quotes: {
+        Row: {
+          id: string
+          org_id: string
+          quote_number: string
+          store_id: string
+          contact_name: string | null
+          contact_phone: string | null
+          rep_id: string | null
+          status: string
+          valid_until: string | null
+          delivery_address: string | null
+          notes: string | null
+          vat_rate: number
+          converted_order_id: string | null
+          converted_at: string | null
+          created_by: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          org_id: string
+          quote_number: string
+          store_id: string
+          contact_name?: string | null
+          contact_phone?: string | null
+          rep_id?: string | null
+          status?: string
+          valid_until?: string | null
+          delivery_address?: string | null
+          notes?: string | null
+          vat_rate?: number
+          converted_order_id?: string | null
+          converted_at?: string | null
+          created_by?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          org_id?: string
+          quote_number?: string
+          store_id?: string
+          contact_name?: string | null
+          contact_phone?: string | null
+          rep_id?: string | null
+          status?: string
+          valid_until?: string | null
+          delivery_address?: string | null
+          notes?: string | null
+          vat_rate?: number
+          converted_order_id?: string | null
+          converted_at?: string | null
+          created_by?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       app_releases: {
         Row: {
           created_at: string
@@ -1238,8 +1334,7 @@ export type Database = {
           created_at: string
           id: string
           line_status: string
-          list_price: number | null
-          discount_pct: number
+          unit_cost_excl_vat: number | null
           order_id: string
           org_id: string
           product_id: string
@@ -1250,14 +1345,15 @@ export type Database = {
           qty_reserved: number
           qty_returned: number
           unit_price: number | null
+          list_price: number | null
+          discount_pct: number
         }
         Insert: {
           client_generated_id: string
           created_at?: string
           id?: string
           line_status?: string
-          list_price?: number | null
-          discount_pct?: number
+          unit_cost_excl_vat?: number | null
           order_id: string
           org_id: string
           product_id: string
@@ -1268,14 +1364,15 @@ export type Database = {
           qty_reserved?: number
           qty_returned?: number
           unit_price?: number | null
+          list_price?: number | null
+          discount_pct?: number
         }
         Update: {
           client_generated_id?: string
           created_at?: string
           id?: string
           line_status?: string
-          list_price?: number | null
-          discount_pct?: number
+          unit_cost_excl_vat?: number | null
           order_id?: string
           org_id?: string
           product_id?: string
@@ -1286,6 +1383,8 @@ export type Database = {
           qty_reserved?: number
           qty_returned?: number
           unit_price?: number | null
+          list_price?: number | null
+          discount_pct?: number
         }
         Relationships: [
           {
@@ -1311,58 +1410,23 @@ export type Database = {
           },
         ]
       }
-      quote_lines: {
+      commission_rules: {
         Row: {
           id: string
           org_id: string
-          quote_id: string
-          product_id: string
-          qty: number
-          list_price: number
-          discount_pct: number
-          unit_price: number | null
-          created_at: string
-        }
-        Insert: {
-          id?: string
-          org_id: string
-          quote_id: string
-          product_id: string
-          qty: number
-          list_price: number
-          discount_pct?: number
-          unit_price?: number | null
-          created_at?: string
-        }
-        Update: {
-          id?: string
-          org_id?: string
-          quote_id?: string
-          product_id?: string
-          qty?: number
-          list_price?: number
-          discount_pct?: number
-          unit_price?: number | null
-          created_at?: string
-        }
-        Relationships: []
-      }
-      quotes: {
-        Row: {
-          id: string
-          org_id: string
-          quote_number: string
-          store_id: string
-          contact_name: string | null
-          contact_phone: string | null
+          name: string
+          description: string | null
+          kind: string
+          rate: number | null
+          fixed_amount: number | null
+          tiers: Json | null
+          basis: string
+          applies_to: string
           rep_id: string | null
-          status: string
-          valid_until: string | null
-          delivery_address: string | null
-          notes: string | null
-          vat_rate: number
-          converted_order_id: string | null
-          converted_at: string | null
+          store_id: string | null
+          min_order_value: number
+          priority: number
+          active: boolean
           created_by: string | null
           created_at: string
           updated_at: string
@@ -1370,18 +1434,19 @@ export type Database = {
         Insert: {
           id?: string
           org_id: string
-          quote_number: string
-          store_id: string
-          contact_name?: string | null
-          contact_phone?: string | null
+          name: string
+          description?: string | null
+          kind?: string
+          rate?: number | null
+          fixed_amount?: number | null
+          tiers?: Json | null
+          basis?: string
+          applies_to?: string
           rep_id?: string | null
-          status?: string
-          valid_until?: string | null
-          delivery_address?: string | null
-          notes?: string | null
-          vat_rate?: number
-          converted_order_id?: string | null
-          converted_at?: string | null
+          store_id?: string | null
+          min_order_value?: number
+          priority?: number
+          active?: boolean
           created_by?: string | null
           created_at?: string
           updated_at?: string
@@ -1389,18 +1454,115 @@ export type Database = {
         Update: {
           id?: string
           org_id?: string
-          quote_number?: string
-          store_id?: string
-          contact_name?: string | null
-          contact_phone?: string | null
+          name?: string
+          description?: string | null
+          kind?: string
+          rate?: number | null
+          fixed_amount?: number | null
+          tiers?: Json | null
+          basis?: string
+          applies_to?: string
           rep_id?: string | null
+          store_id?: string | null
+          min_order_value?: number
+          priority?: number
+          active?: boolean
+          created_by?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      commissions: {
+        Row: {
+          id: string
+          org_id: string
+          order_id: string
+          rep_id: string
+          rule_id: string | null
+          rule_name: string
+          delivered_at: string
+          order_value: number
+          basis_amount: number
+          rate: number | null
+          amount: number
+          status: string
+          calculated_at: string
+          approved_by: string | null
+          approved_at: string | null
+          paid_by: string | null
+          paid_at: string | null
+        }
+        Insert: {
+          id?: string
+          org_id: string
+          order_id: string
+          rep_id: string
+          rule_id?: string | null
+          rule_name: string
+          delivered_at: string
+          order_value: number
+          basis_amount: number
+          rate?: number | null
+          amount: number
           status?: string
-          valid_until?: string | null
-          delivery_address?: string | null
-          notes?: string | null
-          vat_rate?: number
-          converted_order_id?: string | null
-          converted_at?: string | null
+          calculated_at?: string
+          approved_by?: string | null
+          approved_at?: string | null
+          paid_by?: string | null
+          paid_at?: string | null
+        }
+        Update: {
+          id?: string
+          org_id?: string
+          order_id?: string
+          rep_id?: string
+          rule_id?: string | null
+          rule_name?: string
+          delivered_at?: string
+          order_value?: number
+          basis_amount?: number
+          rate?: number | null
+          amount?: number
+          status?: string
+          calculated_at?: string
+          approved_by?: string | null
+          approved_at?: string | null
+          paid_by?: string | null
+          paid_at?: string | null
+        }
+        Relationships: []
+      }
+      sales_targets: {
+        Row: {
+          id: string
+          org_id: string
+          rep_id: string
+          period_month: string
+          measure: string
+          target: number
+          created_by: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          org_id: string
+          rep_id: string
+          period_month: string
+          measure?: string
+          target: number
+          created_by?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          org_id?: string
+          rep_id?: string
+          period_month?: string
+          measure?: string
+          target?: number
           created_by?: string | null
           created_at?: string
           updated_at?: string
@@ -1475,7 +1637,6 @@ export type Database = {
           confirmed_by: string | null
           contact_name: string | null
           contact_phone: string | null
-          delivery_address: string | null
           created_at: string
           created_by: string | null
           delivered_at: string | null
@@ -1506,6 +1667,7 @@ export type Database = {
           store_id: string
           updated_at: string
           vat_rate: number
+          delivery_address: string | null
         }
         Insert: {
           cancel_reason?: string | null
@@ -1516,7 +1678,6 @@ export type Database = {
           confirmed_by?: string | null
           contact_name?: string | null
           contact_phone?: string | null
-          delivery_address?: string | null
           created_at?: string
           created_by?: string | null
           delivered_at?: string | null
@@ -1547,6 +1708,7 @@ export type Database = {
           store_id: string
           updated_at?: string
           vat_rate?: number
+          delivery_address?: string | null
         }
         Update: {
           cancel_reason?: string | null
@@ -1557,7 +1719,6 @@ export type Database = {
           confirmed_by?: string | null
           contact_name?: string | null
           contact_phone?: string | null
-          delivery_address?: string | null
           created_at?: string
           created_by?: string | null
           delivered_at?: string | null
@@ -1588,6 +1749,7 @@ export type Database = {
           store_id?: string
           updated_at?: string
           vat_rate?: number
+          delivery_address?: string | null
         }
         Relationships: [
           {
@@ -5402,6 +5564,10 @@ export type Database = {
       }
     }
     Functions: {
+      quote_convert: {
+        Args: { p_quote_id: string }
+        Returns: string
+      }
       activity_feed: {
         Args: {
           p_from: string
@@ -5667,9 +5833,27 @@ export type Database = {
         Args: { p_order_id: string; p_reason: string }
         Returns: Json
       }
-      quote_convert: {
-        Args: { p_quote_id: string }
-        Returns: string
+      sales_target_progress: {
+        Args: { p_month: string }
+        Returns: {
+          rep_id: string
+          rep_name: string
+          measure: string | null
+          target: number | null
+          orders: number
+          units: number
+          revenue_excl_vat: number
+          gross_profit: number
+          uncosted_units: number
+        }[]
+      }
+      commissions_recalculate: {
+        Args: { p_from: string; p_to: string }
+        Returns: number
+      }
+      commissions_set_status: {
+        Args: { p_ids: string[]; p_status: string }
+        Returns: number
       }
       order_confirm: {
         Args: {

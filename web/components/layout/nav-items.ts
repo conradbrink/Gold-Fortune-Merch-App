@@ -30,6 +30,8 @@ import {
   ShieldCheck,
   Building2,
   Navigation,
+  Flag,
+  Coins,
 } from "lucide-react";
 import {
   can,
@@ -112,6 +114,11 @@ export const navGroups: NavGroup[] = [
       // the same glyph, which read as one entry duplicated. A gauge also says
       // what it is — fulfilment speed and accuracy, not another report.
       { href: "/warehouse/insights", label: "Warehouse insights", icon: Gauge, permission: "insights" },
+      // Targets and commissions are pay and performance information about
+      // colleagues, so they sit with the rest of the manager-only reporting.
+      // A rep's own figures reach them through RLS, not through these pages.
+      { href: "/targets", label: "Targets", icon: Flag, permission: "insights" },
+      { href: "/commissions", label: "Commissions", icon: Coins, permission: "insights" },
     ],
   },
   {
