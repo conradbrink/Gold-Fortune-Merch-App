@@ -15,6 +15,7 @@ import {
   type LiveReps,
   type RepPosition,
   freshnessKey,
+  FRESHNESS_PENDING,
 } from "@/lib/live-reps";
 
 /**
@@ -53,6 +54,11 @@ const TONE: Record<
     dot: "bg-muted-foreground/50",
     text: "text-muted-foreground",
     pin: "#9ca3af",
+  },
+  unknown: {
+    dot: "bg-slate-300 dark:bg-slate-600",
+    text: "text-muted-foreground",
+    pin: "#cbd5e1",
   },
 };
 
@@ -141,6 +147,7 @@ export function RepMap({ data }: { data: LiveReps }) {
   // edge, shown neutral (`recent`) rather than guessed.
   const intervalMinutes = useCompanyConfig()?.settings.gps_ping_interval_minutes ?? null;
   const t = useTerms();
+  const freshness = freshnessKey(intervalMinutes);
 
   const positions = data.positions;
   const chosen = useMemo(
@@ -382,17 +389,21 @@ export function RepMap({ data }: { data: LiveReps }) {
             still holds; it lives in the title on each row's age and in
             lib/live-reps.ts, rather than as prose under every map. */}
         {positions.length > 0 && (
+          freshness === null ? (
+            <p className="mt-2 text-xs text-muted-foreground">{FRESHNESS_PENDING}</p>
+          ) : (
           <p className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
             <span className="flex items-center gap-1.5">
-              <span className="h-2 w-2 rounded-full bg-emerald-500" aria-hidden /> {freshnessKey(intervalMinutes).fresh}
+              <span className="h-2 w-2 rounded-full bg-emerald-500" aria-hidden /> {freshness.fresh}
             </span>
             <span className="flex items-center gap-1.5">
-              <span className="h-2 w-2 rounded-full bg-amber-500" aria-hidden /> {freshnessKey(intervalMinutes).recent}
+              <span className="h-2 w-2 rounded-full bg-amber-500" aria-hidden /> {freshness.recent}
             </span>
             <span className="flex items-center gap-1.5">
               <span className="h-2 w-2 rounded-full bg-muted-foreground/50" aria-hidden /> Older
             </span>
           </p>
+          )
         )}
       </CardContent>
     </Card>
