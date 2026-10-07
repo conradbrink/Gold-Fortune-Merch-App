@@ -50,8 +50,10 @@ export type RepDay = {
   orders: DayOrder[];
   /** Metres, from `workday_trail`; null when no workday was recorded. */
   distanceM: number | null;
-  /** Seconds of open workday, from `workday_trail`. */
+  /** Seconds of workday, from `workday_trail`; an open day counts up to now. */
   activeSeconds: number | null;
+  /** A workday that started on this date has not been ended yet. */
+  dayOpen: boolean;
 };
 
 function fail(error: { message: string } | null) {
@@ -158,10 +160,30 @@ export async function fetchRepDay(supabase: Client, repId: string, date: string)
       status: o.status,
     })),
     distanceM: sessions.length ? sessions.reduce((n, s) => n + Number(s.trail_m ?? 0), 0) : null,
-    activeSeconds: sessions.length
-      ? sessions.reduce((n, s) => n + Number(s.duration_seconds ?? 0), 0)
-      : null,
+    activeSeconds: sessions.length ? sessions.reduce((n, s) => n + sessionSeconds(s, to), 0) : null,
+    dayOpen: sessions.some((s) => !s.ended_at),
   };
+}
+
+/**
+ * How long one workday session has run.
+ *
+ * `duration_seconds` is written only when a day is ended, so an open day read
+ * from it is 0h 0m — which is what the Tracking card showed for a rep halfway
+ * through their round. An open session is counted from its start to now, and
+ * one left open on an earlier date (nobody pressed End) to the end of that
+ * date, so it cannot keep growing for days.
+ */
+function sessionSeconds(
+  s: { started_at: string; ended_at: string | null; duration_seconds: number | null },
+  dayEnd: string
+) {
+  if (s.duration_seconds != null && s.ended_at) return Number(s.duration_seconds);
+  const start = new Date(s.started_at).getTime();
+  const end = s.ended_at
+    ? new Date(s.ended_at).getTime()
+    : Math.min(Date.now(), new Date(dayEnd).getTime());
+  return Math.max(0, Math.round((end - start) / 1000));
 }
 
 /** Every order placed today with a store position, for the live map's order layer. */
