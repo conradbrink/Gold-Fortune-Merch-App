@@ -5,6 +5,7 @@ import { MapPinOff, RefreshCw } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { loadMaps, MAPS_KEY } from "@/lib/google-maps";
+import { useCompanyConfig } from "@/lib/use-company-config";
 import {
   describeAge,
   describeSource,
@@ -17,10 +18,10 @@ import {
 /**
  * Where the team is, refreshed while the page is open.
  *
- * The phones sample every five minutes on a platform location stream, and this
- * re-reads every sixty seconds, so a dot is normally minutes old rather than
- * hours. **The age is still given the same weight as the position**, because a
- * five-minute cadence is a promise the phone makes and not one the network
+ * The phones sample at the company's GPS interval on a platform location
+ * stream, and this re-reads every sixty seconds, so a dot is normally minutes
+ * old rather than hours. **The age is still given the same weight as the
+ * position**, because the cadence is a promise the phone makes and not one the network
  * keeps: a rep in a dead spot queues fixes in an outbox and they land in a burst
  * later. A dot with no age beside it would claim a certainty that does not
  * exist.
@@ -56,16 +57,18 @@ const TONE: Record<
 function RepRow({
   position,
   now,
+  intervalMinutes,
   selected,
   onSelect,
 }: {
   position: RepPosition;
   now: number;
+  intervalMinutes: number | null;
   selected: boolean;
   onSelect: () => void;
 }) {
   const minutes = minutesSince(position.recordedAt, now);
-  const tone = TONE[freshnessOf(minutes)];
+  const tone = TONE[freshnessOf(minutes, intervalMinutes)];
 
   return (
     <button
@@ -128,6 +131,11 @@ export function RepMap({ data }: { data: LiveReps }) {
     return () => clearInterval(t);
   }, []);
 
+  // The company's GPS interval sets what counts as fresh. The dashboard only
+  // renders cards once the configuration is known, so null is a first-render
+  // edge, shown neutral (`recent`) rather than guessed.
+  const intervalMinutes = useCompanyConfig()?.settings.gps_ping_interval_minutes ?? null;
+
   const positions = data.positions;
   const chosen = useMemo(
     () => positions.find((p) => p.repId === selected) ?? null,
@@ -180,7 +188,7 @@ export function RepMap({ data }: { data: LiveReps }) {
 
         const bounds = new google.maps.LatLngBounds();
         for (const p of positions) {
-          const tone = TONE[freshnessOf(minutesSince(p.recordedAt, now))];
+          const tone = TONE[freshnessOf(minutesSince(p.recordedAt, now), intervalMinutes)];
           const marker = new Marker({
             position: { lat: p.lat, lng: p.lng },
             map: mapObj.current,
@@ -251,7 +259,7 @@ export function RepMap({ data }: { data: LiveReps }) {
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [positions, selected, retry]);
+  }, [positions, selected, retry, intervalMinutes]);
 
   const anyOpenDay =
     positions.some((p) => p.dayOpen) || data.missing.some((m) => m.dayOpen);
@@ -260,10 +268,9 @@ export function RepMap({ data }: { data: LiveReps }) {
     <Card>
       <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2 space-y-0">
         <CardTitle className="text-base">Where the team is</CardTitle>
-        {/* Two claims, and only one of them is true today. The refresh is ours
-            and happens now; the five-minute cadence needs an app build that has
-            not reached the handsets, so it is stated as a destination rather
-            than a fact. */}
+        {/* Only the refresh is claimed: it is ours. The phones' cadence is a
+            company setting and the network decides when fixes arrive, so each
+            row shows its own age instead. */}
         <span className="text-xs text-muted-foreground">
           Latest position · refreshed every minute
         </span>
@@ -297,6 +304,7 @@ export function RepMap({ data }: { data: LiveReps }) {
                   key={p.repId}
                   position={p}
                   now={now}
+                  intervalMinutes={intervalMinutes}
                   selected={selected === p.repId}
                   onSelect={() =>
                     setSelected((s) => (s === p.repId ? null : p.repId))

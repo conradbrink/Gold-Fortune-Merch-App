@@ -49,6 +49,11 @@ jobs:
       - name: Typecheck
         run: npx tsc --noEmit
 
+      - name: Unit tests
+        # Node's own runner over TypeScript with the types stripped: no test
+        # framework to install. See web/tests/alias.mjs for the `@/` paths.
+        run: npm test
+
       - name: Lint
         # ⚠️ REPORTING ONLY, and this must not stay that way.
         #

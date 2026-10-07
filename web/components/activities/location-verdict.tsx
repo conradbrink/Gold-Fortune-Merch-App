@@ -40,13 +40,13 @@ export const VERDICT_STYLES: Record<Verdict, VerdictStyle> = {
     label: "Off site",
     icon: MapPinOff,
     className: "bg-red-50 text-red-700 dark:bg-red-950 dark:text-red-300",
-    hint: "More than 500 m from the store — a genuine discrepancy worth checking.",
+    hint: "Further from the store than your company's off-site distance — a genuine discrepancy worth checking.",
   },
   invalid_gps: {
     label: "Invalid GPS",
     icon: AlertTriangle,
     className: "bg-secondary text-muted-foreground",
-    hint: "Reading is over 5 km out and cannot be true. Treated as a faulty fix, not as behaviour.",
+    hint: "Further out than your company's implausible-GPS distance, so it cannot be true. Treated as a faulty fix, not as behaviour.",
   },
   unknown: {
     label: "No fix",

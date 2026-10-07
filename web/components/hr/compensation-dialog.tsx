@@ -15,6 +15,7 @@ import {
 } from "@/components/ui/dialog";
 import { Field, FormSection } from "@/components/hr/field";
 import { createClient } from "@/lib/supabase/client";
+import { useCompanyConfig } from "@/lib/use-company-config";
 import {
   saveCompensation,
   type CompensationInput,
@@ -57,7 +58,9 @@ export function CompensationDialog({
   onSaved: () => void;
 }) {
   const supabase = createClient();
-  const [form, setForm] = useState<CompensationInput>(() => blank());
+  // A new pay record starts in the company's currency (company settings).
+  const currency = useCompanyConfig()?.settings.currency_code ?? "";
+  const [form, setForm] = useState<CompensationInput>(() => blank(currency));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -71,7 +74,7 @@ export function CompensationDialog({
   if (openKey !== openedFor) {
     setOpenedFor(openKey);
     if (open) {
-      setForm(existing ? fromRow(existing) : blank());
+      setForm(existing ? fromRow(existing) : blank(currency));
       setError(null);
     }
   }
@@ -266,9 +269,9 @@ export function CompensationDialog({
   );
 }
 
-function blank(): CompensationInput {
+function blank(currency: string): CompensationInput {
   return {
-    currency: "BWP",
+    currency,
     basic_salary: null,
     pay_frequency: "monthly",
     commission_structure: null,

@@ -10,7 +10,12 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { WIDGETS, findWidget } from "@/components/dashboard/widget-registry";
+import {
+  WIDGETS,
+  findWidget,
+  widgetAvailable,
+} from "@/components/dashboard/widget-registry";
+import type { ModuleSet } from "@/lib/modules";
 
 /**
  * Choosing which cards the dashboard shows, and in what order.
@@ -21,6 +26,7 @@ import { WIDGETS, findWidget } from "@/components/dashboard/widget-registry";
  * way to move anything — the same reason the form builder keeps both.
  */
 export function CustomiseDashboard({
+  modules,
   open,
   onOpenChange,
   layout,
@@ -29,6 +35,8 @@ export function CustomiseDashboard({
   saving,
   error,
 }: {
+  /** The company's modules; cards for modules it lacks are not offered. */
+  modules: ModuleSet | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   /** The layout in force, copied into the draft each time the dialog opens. */
@@ -68,7 +76,9 @@ export function CustomiseDashboard({
     setSeeded(false);
   }
 
-  const hidden = WIDGETS.filter((w) => !draft.includes(w.id));
+  const hidden = WIDGETS.filter(
+    (w) => !draft.includes(w.id) && modules !== null && widgetAvailable(w, modules)
+  );
 
   function move(index: number, direction: -1 | 1) {
     const target = index + direction;
@@ -124,7 +134,9 @@ export function CustomiseDashboard({
           )}
           {draft.map((id, index) => {
             const widget = findWidget(id);
-            if (!widget) return null;
+            // A saved card whose module was since switched off stays in the
+            // stored layout (it comes back if the module does) but is not listed.
+            if (!widget || (modules !== null && !widgetAvailable(widget, modules))) return null;
             return (
               <div
                 key={id}

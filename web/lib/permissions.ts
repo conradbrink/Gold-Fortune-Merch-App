@@ -140,7 +140,14 @@ export function canAccessPath(permissions: PermissionSet, pathname: string): boo
  * permission is their own working day — which is every field rep, and which is
  * why that page still explains that the real work happens in the phone app.
  */
-export function homeFor(permissions: PermissionSet): string {
+export function homeFor(
+  permissions: PermissionSet,
+  // Whether the company has the destination's module (`lib/modules.ts`
+  // `canReachPath`). Passed in rather than imported so this file and
+  // `modules.ts` do not import each other. A warehouse clerk at a company
+  // without the warehouse module must not be sent to /warehouse.
+  reachable: (href: string) => boolean = () => true
+): string {
   const order: [PermissionCode, string][] = [
     ["dashboard", "/"],
     ["warehouse", "/warehouse"],
@@ -158,7 +165,7 @@ export function homeFor(permissions: PermissionSet): string {
     ["company_settings", "/settings/company"],
   ];
   for (const [permission, href] of order) {
-    if (can(permissions, permission)) return href;
+    if (can(permissions, permission) && reachable(href)) return href;
   }
   return "/rep-notice";
 }

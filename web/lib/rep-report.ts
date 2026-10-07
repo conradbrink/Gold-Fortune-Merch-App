@@ -1,3 +1,4 @@
+import { formatMoney, formatMoneyShort } from "@/lib/money";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { callRpc } from "@/lib/rpc";
 import type { DateRange } from "@/lib/date-range";
@@ -488,6 +489,7 @@ const MIN_OOS_CHECKS = 2;
 export function storesNeedingAttention(
   stores: RepStore[],
   missed: MissedVisit[],
+  currency: string,
   limit = 3
 ): AttentionStore[] {
   /** The best previous-sales figure the missed list knows for each store. */
@@ -548,7 +550,7 @@ export function storesNeedingAttention(
     add(
       store,
       1,
-      `${never} planned visit${never === 1 ? "" : "s"} never made — ${money(value)} in recent sales`
+      `${never} planned visit${never === 1 ? "" : "s"} never made — ${money(value, currency)} in recent sales`
     );
   }
 
@@ -564,14 +566,14 @@ export function storesNeedingAttention(
     if (s.priorSalesNet <= 0) continue;
     if (s.salesNet >= s.priorSalesNet * DECLINE_THRESHOLD) continue;
     const drop = Math.round((1 - s.salesNet / s.priorSalesNet) * 100);
-    add(s, 3, `Sales down ${drop}% on the previous period (${money(s.priorSalesNet)} → ${money(s.salesNet)})`);
+    add(s, 3, `Sales down ${drop}% on the previous period (${money(s.priorSalesNet, currency)} → ${money(s.salesNet, currency)})`);
   }
 
   // 4. Visited, bought nothing, and used to buy.
   for (const s of stores) {
     if (s.visits === 0 || s.salesNet > 0) continue;
     if (s.priorSalesNet <= 0) continue;
-    add(s, 4, `Visited ${s.visits} time${s.visits === 1 ? "" : "s"}, no sales — ${money(s.priorSalesNet)} the period before`);
+    add(s, 4, `Visited ${s.visits} time${s.visits === 1 ? "" : "s"}, no sales — ${money(s.priorSalesNet, currency)} the period before`);
   }
 
   // 5. Merchandising checks mostly failing.
@@ -625,7 +627,8 @@ const HIGH_VALUE_MISS = 5000;
 export function managementSummary(
   summary: RepSummary,
   score: RepScoreResult,
-  missed: MissedVisit[]
+  missed: MissedVisit[],
+  currency: string
 ): string {
   const s = summary;
   const sentences: string[] = [];
@@ -633,7 +636,7 @@ export function managementSummary(
   const first: string[] = [];
   first.push(
     s.salesNet > 0
-      ? `${s.repName ?? "The rep"} generated ${money(s.salesNet)} from ${s.salesOrders} delivered order${s.salesOrders === 1 ? "" : "s"}`
+      ? `${s.repName ?? "The rep"} generated ${money(s.salesNet, currency)} from ${s.salesOrders} delivered order${s.salesOrders === 1 ? "" : "s"}`
       : `${s.repName ?? "The rep"} recorded no delivered sales in this period`
   );
   if (s.plannedVisits > 0) {
@@ -673,7 +676,7 @@ export function managementSummary(
         : `${s.missedVisits} planned visit${s.missedVisits === 1 ? " was" : "s were"} missed`;
     const clause =
       highValue > 0
-        ? `${missedClause} — ${highValue} store${highValue === 1 ? "" : "s"} with more than ${moneyShort(HIGH_VALUE_MISS)} in previous sales ${highValue === 1 ? "was" : "were"} never returned to`
+        ? `${missedClause} — ${highValue} store${highValue === 1 ? "" : "s"} with more than ${moneyShort(HIGH_VALUE_MISS, currency)} in previous sales ${highValue === 1 ? "was" : "were"} never returned to`
         : missedClause;
     second.push(second.length > 0 ? `but ${clause}` : capitalise(clause));
   }
@@ -708,25 +711,16 @@ function listOf(items: string[]): string {
 // ---------------------------------------------------------------------------
 
 /**
- * Pula, as the business writes it: `P101,223.50`.
- *
- * `Intl.NumberFormat` with `currency: "BWP"` renders "BWP 101,223.50" in most
- * locales and "P101,223.50" in almost none, so the symbol is prepended to a
- * plain grouped number — which is what the Sales page does and what appears on
- * the company's own paperwork.
+ * Money in the company's currency, as the business writes it: `P101,223.50`.
+ * See `lib/money.ts` for why the symbol is not left to `Intl`.
  */
-export function money(n: number | null | undefined): string {
-  if (n === null || n === undefined || !Number.isFinite(n)) return "—";
-  return `P${n.toLocaleString("en-GB", {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  })}`;
+export function money(n: number | null | undefined, currency: string): string {
+  return formatMoney(n, currency);
 }
 
-/** The same figure with the thebe dropped, for a dense table cell. */
-export function moneyShort(n: number | null | undefined): string {
-  if (n === null || n === undefined || !Number.isFinite(n)) return "—";
-  return `P${Math.round(n).toLocaleString("en-GB")}`;
+/** The same figure without the cents, for a dense table cell. */
+export function moneyShort(n: number | null | undefined, currency: string): string {
+  return formatMoneyShort(n, currency);
 }
 
 /** `0.7937` → `79%`. Null is an em dash, never a false 0%. */

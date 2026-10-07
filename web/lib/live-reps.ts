@@ -15,10 +15,16 @@ import type { SupabaseClient } from "@supabase/supabase-js";
  * ships, without this file changing: more `interval` rows, smaller ages.
  */
 
-/** How stale a reading is allowed to be before it stops being "now"-ish. */
-export const FRESH_MINUTES = 20;
-/** Past this, the reading says where someone *was*, not where they are. */
-export const STALE_MINUTES = 90;
+/**
+ * How stale a reading may be before it stops being "now"-ish, and past which
+ * it says where someone *was*: four and eighteen GPS intervals. Derived from
+ * the company's `gps_ping_interval_minutes` rather than fixed, because a
+ * company pinging every 20 minutes would otherwise see every rep as stale. At
+ * Gold Fortune's 5 minutes these are the 20 and 90 minutes the map has always
+ * used.
+ */
+export const FRESH_INTERVALS = 4;
+export const STALE_INTERVALS = 18;
 
 export type PingSource =
   | "checkin"
@@ -89,9 +95,10 @@ export function describeSource(source: PingSource, store: string | null): string
 
 export type Freshness = "fresh" | "recent" | "stale";
 
-export function freshnessOf(minutes: number): Freshness {
-  if (minutes <= FRESH_MINUTES) return "fresh";
-  if (minutes <= STALE_MINUTES) return "recent";
+export function freshnessOf(minutes: number, intervalMinutes: number | null): Freshness {
+  if (intervalMinutes === null) return "recent";
+  if (minutes <= intervalMinutes * FRESH_INTERVALS) return "fresh";
+  if (minutes <= intervalMinutes * STALE_INTERVALS) return "recent";
   return "stale";
 }
 

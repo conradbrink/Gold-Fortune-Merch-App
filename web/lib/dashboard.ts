@@ -172,7 +172,9 @@ export type RepDayDistance = {
  */
 export async function fetchRepDayDistance(
   supabase: SupabaseClient,
-  range: DateRange
+  range: DateRange,
+  /** The company's timezone — the one `rep_day_times_per_day` groups by. */
+  timeZone: string
 ): Promise<RepDayDistance[]> {
   const { data, error } = await supabase
     .from("workday_sessions")
@@ -207,7 +209,7 @@ export async function fetchRepDayDistance(
     started_at: string;
     road_distance_meters: number | null;
   }[]) {
-    const local_day = reportingDay(r.started_at);
+    const local_day = reportingDay(r.started_at, timeZone);
     const key = `${r.rep_id}|${local_day}`;
     const acc =
       byDay.get(key) ?? { rep_id: r.rep_id, local_day, metres: 0, missing: false };
@@ -226,16 +228,15 @@ export async function fetchRepDayDistance(
 /**
  * The local date of a timestamp, in the timezone the reporting is keyed to.
  *
- * **Not the browser's timezone.** `rep_day_times_per_day` converts to
- * `Africa/Gaborone` in SQL before grouping, and this key is matched against
- * those rows — so deriving it from the manager's own clock would put the driving
- * on the wrong day, or on no day at all, for anyone opening the dashboard from
- * outside CAT. Everyone is in Botswana today, which is exactly why this would
- * have gone unnoticed.
+ * **Not the browser's timezone.** `rep_day_times_per_day` converts to the
+ * company's timezone (`organizations.timezone`, via `org_timezone`) in SQL
+ * before grouping, and this key is matched against those rows — so deriving it
+ * from the manager's own clock would put the driving on the wrong day, or on no
+ * day at all, for anyone opening the dashboard from another zone.
  */
-export function reportingDay(iso: string): string {
+export function reportingDay(iso: string, timeZone: string): string {
   return new Intl.DateTimeFormat("en-CA", {
-    timeZone: "Africa/Gaborone",
+    timeZone,
     year: "numeric",
     month: "2-digit",
     day: "2-digit",

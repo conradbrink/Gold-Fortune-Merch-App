@@ -56,6 +56,183 @@ export type Database = {
         }
         Relationships: []
       }
+      company_modules: {
+        Row: {
+          enabled: boolean
+          enabled_at: string | null
+          module_code: string
+          org_id: string
+          updated_at: string
+          updated_by: string | null
+        }
+        Insert: {
+          enabled?: boolean
+          enabled_at?: string | null
+          module_code: string
+          org_id: string
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Update: {
+          enabled?: boolean
+          enabled_at?: string | null
+          module_code?: string
+          org_id?: string
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Relationships: []
+      }
+      company_settings: {
+        Row: {
+          key: string
+          org_id: string
+          updated_at: string
+          updated_by: string | null
+          value: Json
+        }
+        Insert: {
+          key: string
+          org_id: string
+          updated_at?: string
+          updated_by?: string | null
+          value: Json
+        }
+        Update: {
+          key?: string
+          org_id?: string
+          updated_at?: string
+          updated_by?: string | null
+          value?: Json
+        }
+        Relationships: []
+      }
+      module_assignments: {
+        Row: {
+          kind: string
+          module_code: string
+          name: string
+        }
+        Insert: {
+          kind: string
+          module_code: string
+          name: string
+        }
+        Update: {
+          kind?: string
+          module_code?: string
+          name?: string
+        }
+        Relationships: []
+      }
+      module_dependencies: {
+        Row: {
+          module_code: string
+          requires_code: string
+        }
+        Insert: {
+          module_code: string
+          requires_code: string
+        }
+        Update: {
+          module_code?: string
+          requires_code?: string
+        }
+        Relationships: []
+      }
+      modules: {
+        Row: {
+          code: string
+          description: string
+          is_built: boolean
+          monthly_price: number | null
+          name: string
+          plan_type: string
+          sort_order: number
+        }
+        Insert: {
+          code: string
+          description: string
+          is_built?: boolean
+          monthly_price?: number | null
+          name: string
+          plan_type: string
+          sort_order?: number
+        }
+        Update: {
+          code?: string
+          description?: string
+          is_built?: boolean
+          monthly_price?: number | null
+          name?: string
+          plan_type?: string
+          sort_order?: number
+        }
+        Relationships: []
+      }
+      setting_definitions: {
+        Row: {
+          default_value: Json
+          description: string
+          key: string
+          label: string
+          max_value: number | null
+          min_value: number | null
+          pattern: string | null
+          sort_order: number
+          value_type: string
+        }
+        Insert: {
+          default_value: Json
+          description: string
+          key: string
+          label: string
+          max_value?: number | null
+          min_value?: number | null
+          pattern?: string | null
+          sort_order?: number
+          value_type: string
+        }
+        Update: {
+          default_value?: Json
+          description?: string
+          key?: string
+          label?: string
+          max_value?: number | null
+          min_value?: number | null
+          pattern?: string | null
+          sort_order?: number
+          value_type?: string
+        }
+        Relationships: []
+      }
+      platform_audit_log: {
+        Row: {
+          action: string
+          actor_id: string
+          created_at: string
+          detail: Json
+          id: number
+          target_org_id: string | null
+        }
+        Insert: {
+          action: string
+          actor_id: string
+          created_at?: string
+          detail?: Json
+          id?: never
+          target_org_id?: string | null
+        }
+        Update: {
+          action?: string
+          actor_id?: string
+          created_at?: string
+          detail?: Json
+          id?: never
+          target_org_id?: string | null
+        }
+        Relationships: []
+      }
       dashboard_layouts: {
         Row: {
           org_id: string
@@ -6125,6 +6302,11 @@ export type Database = {
       my_permissions: { Args: never; Returns: string[] }
       is_platform_admin: { Args: never; Returns: boolean }
       caller_may_read_org: { Args: { p_org: string }; Returns: boolean }
+      module_enabled: { Args: { p_code: string }; Returns: boolean }
+      require_module: { Args: { p_code: string }; Returns: boolean }
+      company_setting: { Args: { p_key: string }; Returns: Json }
+      org_setting: { Args: { p_key: string; p_org: string }; Returns: Json }
+      my_company_config: { Args: never; Returns: Json }
       assign_dispatch_rep: {
         Args: { p_dispatch: string; p_rep: string | null }
         Returns: undefined

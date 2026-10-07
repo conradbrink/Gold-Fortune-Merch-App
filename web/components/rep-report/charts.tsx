@@ -1,5 +1,6 @@
 import type { RepDay } from "@/lib/rep-report";
 import { moneyShort } from "@/lib/rep-report";
+import { currencyName } from "@/lib/money";
 
 /**
  * The report's two graphs, drawn by hand in SVG.
@@ -208,7 +209,7 @@ export function PlannedVsCompletedChart({ days }: { days: RepDay[] }) {
  * look like a gentle slope. Points are marked so a single day's sale in an
  * otherwise empty week is visible at all.
  */
-export function DailySalesChart({ days }: { days: RepDay[] }) {
+export function DailySalesChart({ days, currency }: { days: RepDay[]; currency: string }) {
   const rows = days.filter((d) => !d.inFuture);
   const total = rows.reduce((a, d) => a + d.salesNet, 0);
   if (rows.length === 0 || total === 0) {
@@ -228,14 +229,14 @@ export function DailySalesChart({ days }: { days: RepDay[] }) {
 
   return (
     <svg viewBox={`0 0 ${W} ${H}`} className="rr-chart" role="img"
-         aria-label="Delivered sales in Pula, by day">
+         aria-label={`Delivered sales in ${currencyName(currency)}, by day`}>
       {ticks.map((t) => {
         const y = p.y + p.h - (t / max) * p.h;
         return (
           <g key={t}>
             <line x1={p.x} y1={y} x2={p.x + p.w} y2={y} stroke={RULE} strokeWidth={0.8} />
             <text x={p.x - 6} y={y + 3} textAnchor="end" fontSize={9} fill={LABEL}>
-              {t === 0 ? "0" : moneyShort(t)}
+              {t === 0 ? "0" : moneyShort(t, currency)}
             </text>
           </g>
         );

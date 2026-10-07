@@ -23,7 +23,8 @@ export type PlatformCompany = {
   lastWorkdayAt: string | null;
 };
 
-function adminClient() {
+/** The service-role client. Server-only; see the header. */
+export function platformAdminClient() {
   return createAdminClient<Database>(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!,
@@ -32,7 +33,7 @@ function adminClient() {
 }
 
 export async function listCompanies(): Promise<PlatformCompany[]> {
-  const admin = adminClient();
+  const admin = platformAdminClient();
 
   const [{ data: orgs, error: orgError }, { data: people, error: peopleError }] =
     await Promise.all([
@@ -74,4 +75,62 @@ export async function listCompanies(): Promise<PlatformCompany[]> {
       lastWorkdayAt: last[i],
     };
   });
+}
+
+export type PlatformModule = {
+  code: string;
+  name: string;
+  description: string;
+  planType: string;
+  isBuilt: boolean;
+  enabled: boolean;
+  requires: string[];
+};
+
+export type PlatformCompanyDetail = {
+  id: string;
+  name: string;
+  modules: PlatformModule[];
+  recentChanges: { action: string; detail: unknown; createdAt: string }[];
+};
+
+/** One company, with every module in the catalogue and whether it has it. */
+export async function getCompany(orgId: string): Promise<PlatformCompanyDetail | null> {
+  const admin = platformAdminClient();
+  const [org, catalogue, deps, mine, log] = await Promise.all([
+    admin.from("organizations").select("id, name").eq("id", orgId).maybeSingle(),
+    admin.from("modules").select("*").order("sort_order"),
+    admin.from("module_dependencies").select("module_code, requires_code"),
+    admin.from("company_modules").select("module_code, enabled").eq("org_id", orgId),
+    admin
+      .from("platform_audit_log")
+      .select("action, detail, created_at")
+      .eq("target_org_id", orgId)
+      .order("created_at", { ascending: false })
+      .limit(10),
+  ]);
+  for (const r of [org, catalogue, deps, mine, log]) if (r.error) throw r.error;
+  if (!org.data) return null;
+
+  const on = new Map((mine.data ?? []).map((m) => [m.module_code, m.enabled]));
+  return {
+    id: org.data.id,
+    name: org.data.name,
+    modules: (catalogue.data ?? []).map((m) => ({
+      code: m.code,
+      name: m.name,
+      description: m.description,
+      planType: m.plan_type,
+      isBuilt: m.is_built,
+      enabled: m.plan_type === "core" || on.get(m.code) === true,
+      requires: (deps.data ?? [])
+        .filter((d) => d.module_code === m.code)
+        .map((d) => d.requires_code),
+    })),
+    recentChanges: (log.data ?? []).map((l) => ({
+      action: l.action,
+      detail: l.detail,
+      createdAt: l.created_at,
+    })),
+  };
 }

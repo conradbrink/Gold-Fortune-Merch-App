@@ -9,6 +9,7 @@ import { Label } from "@/components/ui/label";
 import { NativeSelect } from "@/components/ui/native-select";
 import { ExportMenu } from "@/components/export-menu";
 import { RepPerformanceReport, type ReportMeta } from "@/components/rep-report/report-document";
+import { useCompanyConfig } from "@/lib/use-company-config";
 import "@/components/rep-report/report-print.css";
 import { createClient } from "@/lib/supabase/client";
 import { fetchOrgName } from "@/lib/org-settings";
@@ -143,6 +144,7 @@ export default function RepPerformancePage() {
 
   const [report, setReport] = useState<RepReport | null>(null);
   const [meta, setMeta] = useState<ReportMeta | null>(null);
+  const company = useCompanyConfig();
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   /** Which Generate press this is; a slow earlier one must not win. */
@@ -193,6 +195,13 @@ export default function RepPerformancePage() {
 
   const generate = useCallback(async () => {
     if (!repId) return;
+    // Every amount on the report is in the company's currency; without it the
+    // report cannot be written.
+    if (!company) {
+      setError("Your company settings are still loading. Try again in a moment.");
+      return;
+    }
+    const currency = company.settings.currency_code;
     const runId = ++runSeq.current;
     setGenerating(true);
     setError(null);
@@ -217,6 +226,7 @@ export default function RepPerformancePage() {
         to: lastDay(range),
         managerName,
         generatedAt: new Date(),
+        currency,
       });
     } catch (e) {
       if (runId !== runSeq.current) return;
@@ -227,7 +237,7 @@ export default function RepPerformancePage() {
       if (runId === runSeq.current) setGenerating(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [repId, range, territoryId, orgName, managerName, reps, territoryOptions]);
+  }, [repId, range, territoryId, orgName, managerName, reps, territoryOptions, company]);
 
   const exportVariants = useMemo(() => {
     if (!report || !meta) return [];

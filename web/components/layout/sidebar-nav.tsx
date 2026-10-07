@@ -10,6 +10,7 @@ import { activeHref, visibleNavGroups } from "@/components/layout/nav-items";
 import { createClient } from "@/lib/supabase/client";
 import { fetchOrgName } from "@/lib/org-settings";
 import { usePermissions } from "@/lib/use-permissions";
+import { useCompanyConfig } from "@/lib/use-company-config";
 import { can } from "@/lib/permissions";
 
 /** Remembered across navigations and reloads — a width you have to re-set on
@@ -32,9 +33,11 @@ export function SidebarContent({
 }) {
   const pathname = usePathname();
   const permissions = usePermissions();
-  // Empty until the permissions are known — see `usePermissions` for why this does not
-  // fall back to the manager menu.
-  const groups = permissions ? visibleNavGroups(permissions) : [];
+  const company = useCompanyConfig();
+  // Empty until both are known — see `usePermissions` for why this does not
+  // fall back to the manager menu, and `useCompanyConfig` for the modules.
+  const groups =
+    permissions && company ? visibleNavGroups(permissions, company.modules) : [];
   const current = activeHref(pathname);
 
   /**
