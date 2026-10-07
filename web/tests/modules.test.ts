@@ -56,6 +56,17 @@ test("nobody is sent home to a page of a module their company lacks", () => {
   assert.equal(homeFor(admin, (h) => canReachPath(coreOnly, h)), "/");
 });
 
+test("a permission with a page in another module still has a home", () => {
+  const reportsOnly = toModuleSet({ reports: true });
+  const analyst = toPermissionSet(["insights"]);
+  assert.equal(homeFor(analyst, (h) => canReachPath(everything, h)), "/sales");
+  assert.equal(homeFor(analyst, (h) => canReachPath(reportsOnly, h)), "/reports");
+  const librarian = toPermissionSet(["resources"]);
+  assert.equal(homeFor(librarian, (h) => canReachPath(everything, h)), "/products");
+  assert.equal(homeFor(librarian, (h) => canReachPath(coreOnly, h)), "/files");
+  assert.equal(homeFor(analyst, (h) => canReachPath(coreOnly, h)), "/rep-notice");
+});
+
 test("the sidebar offers no page of a module the company lacks", () => {
   const admin = toPermissionSet(["admin"]);
   const hrefs = (modules: ReturnType<typeof toModuleSet>) =>

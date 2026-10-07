@@ -95,27 +95,33 @@ export function describeSource(source: PingSource, store: string | null): string
 
 export type Freshness = "fresh" | "recent" | "stale";
 
-/**
- * The colour key in words, from the same thresholds `freshnessOf` uses, so
- * the explanation under a map cannot drift from its colours (CodeRabbit on
- * #74: both maps still said "20 minutes" after the thresholds became the
- * company's interval).
- */
+/** Said instead of a key while the company's GPS interval is unknown. */
+export const FRESHNESS_PENDING = "Ages appear once the company's GPS interval has loaded.";
+
 /**
  * The map key's two labels, from the same thresholds the dots use: "Within
- * 20 min" / "Within 90 min" at a 5-minute interval. Before the company's
- * interval is known the dots are all amber, so the key says so plainly.
+ * 20 min" / "Within 90 min" at a 5-minute interval. Null while the interval is
+ * unknown: every dot is then amber, and a key naming green and grey groups
+ * would describe dots that cannot appear (CodeRabbit on #74).
  */
-export function freshnessKey(intervalMinutes: number | null): { fresh: string; recent: string } {
-  if (intervalMinutes === null) return { fresh: "Newest", recent: "Recent" };
+export function freshnessKey(
+  intervalMinutes: number | null
+): { fresh: string; recent: string } | null {
+  if (intervalMinutes === null) return null;
   return {
     fresh: `Within ${intervalMinutes * FRESH_INTERVALS} min`,
     recent: `Within ${intervalMinutes * STALE_INTERVALS} min`,
   };
 }
 
+/**
+ * The colour key in words, from the same thresholds `freshnessOf` uses, so
+ * the explanation under a map cannot drift from its colours (CodeRabbit on
+ * #74: both maps still said "20 minutes" after the thresholds became the
+ * company's interval).
+ */
 export function freshnessExplained(intervalMinutes: number | null): string {
-  if (intervalMinutes === null) return "Green is recent, amber older, grey oldest.";
+  if (intervalMinutes === null) return FRESHNESS_PENDING;
   return `Green within ${intervalMinutes * FRESH_INTERVALS} minutes, amber within ${
     intervalMinutes * STALE_INTERVALS
   }, grey older.`;
