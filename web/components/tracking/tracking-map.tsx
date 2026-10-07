@@ -5,6 +5,20 @@ import { MapPinOff } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { loadMaps, MAPS_KEY } from "@/lib/google-maps";
 
+/** Remembered per device, like the sidebar's width — a choice you have to
+    re-make on every page is worse than no choice at all. */
+const MAP_TYPE_KEY = "gf.trackingMapType";
+
+function savedMapType(): "roadmap" | "hybrid" {
+  try {
+    return window.localStorage.getItem(MAP_TYPE_KEY) === "hybrid" ? "hybrid" : "roadmap";
+  } catch {
+    // Storage can be blocked (private windows, site data cleared); the map
+    // simply opens on the road map.
+    return "roadmap";
+  }
+}
+
 export type MapPin = {
   id: string;
   lat: number;
@@ -66,9 +80,29 @@ export function TrackingMap({
           map.current = new Map(ref.current, {
             center: { lat: -24.65, lng: 25.91 },
             zoom: 7,
-            mapTypeControl: false,
+            // Map / Satellite. "hybrid" rather than plain satellite: imagery with
+            // the street and place names still on it, because a rep's route
+            // over unnamed rooftops answers less than the same route over a
+            // named street. In much of Botswana the road map is sparse and the
+            // imagery shows far more of where somebody actually was.
+            mapTypeId: savedMapType(),
+            mapTypeControl: true,
+            mapTypeControlOptions: {
+              mapTypeIds: ["roadmap", "hybrid"],
+              style: google.maps.MapTypeControlStyle.HORIZONTAL_BAR,
+              // Top left: the live page's rep card sits over the top right.
+              position: google.maps.ControlPosition.TOP_LEFT,
+            },
             streetViewControl: false,
             fullscreenControl: false,
+          });
+          const created = map.current;
+          created.addListener("maptypeid_changed", () => {
+            try {
+              window.localStorage.setItem(MAP_TYPE_KEY, String(created.getMapTypeId()));
+            } catch {
+              // Not remembered; nothing else depends on it.
+            }
           });
         }
         for (const m of markers.current) m.setMap(null);
