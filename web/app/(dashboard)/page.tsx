@@ -42,6 +42,7 @@ import {
   saveLayout,
 } from "@/lib/dashboard-layout";
 import { fetchOrgId } from "@/lib/representatives";
+import { AccountCards } from "@/components/dashboard/account-cards";
 
 /**
  * The dashboard is composed, not fixed.
@@ -418,6 +419,7 @@ export default function InsightsDashboardPage() {
 
   return (
     <div className="space-y-4">
+      <AccountCards />
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-xl font-semibold tracking-tight text-foreground">

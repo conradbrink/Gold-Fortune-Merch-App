@@ -1,6 +1,6 @@
 import "server-only";
 import { createClient as createAdminClient } from "@supabase/supabase-js";
-import type { Database } from "@/lib/supabase/types";
+import type { Database, Json } from "@/lib/supabase/types";
 
 /**
  * The platform operator's view: every company on the service.
@@ -250,4 +250,49 @@ export async function termDefinitions(): Promise<TermLabel[]> {
     .order("sort_order");
   if (error) throw error;
   return (data ?? []).map((d) => ({ key: d.key, label: d.singular, description: d.description }));
+}
+
+// ------------------------------------------------------------ Trials (Stage 5)
+
+/** One of the service's own settings (`platform_settings`), or null when unset. */
+export async function platformSetting(key: string): Promise<Json | null> {
+  const { data, error } = await platformAdminClient()
+    .from("platform_settings")
+    .select("value")
+    .eq("key", key)
+    .maybeSingle();
+  if (error) throw error;
+  return data?.value ?? null;
+}
+
+/** The trial length in days. Throws when it is not set: a trial must never start with a made-up length. */
+export async function trialDays(): Promise<number> {
+  const v = await platformSetting("trial_days");
+  const n = typeof v === "number" ? v : Number(v);
+  if (!Number.isInteger(n) || n < 1) throw new Error("platform_settings.trial_days is not set.");
+  return n;
+}
+
+export type SalesContact = { email: string | null; whatsapp: string | null; pricingUrl: string | null };
+
+/** Where "Talk to us" and "View plans" point; each null when not set. */
+export async function salesContact(): Promise<SalesContact> {
+  const [email, whatsapp, pricingUrl] = await Promise.all([
+    platformSetting("sales_email"),
+    platformSetting("sales_whatsapp"),
+    platformSetting("pricing_url"),
+  ]);
+  const text = (v: Json | null) => (typeof v === "string" && v.trim() ? v.trim() : null);
+  return { email: text(email), whatsapp: text(whatsapp), pricingUrl: text(pricingUrl) };
+}
+
+/** A company's trial end, or null when it is not on a trial. */
+export async function companyTrialEnd(orgId: string): Promise<string | null> {
+  const { data, error } = await platformAdminClient()
+    .from("company_account")
+    .select("trial_ends_at")
+    .eq("org_id", orgId)
+    .maybeSingle();
+  if (error) throw error;
+  return data?.trial_ends_at ?? null;
 }

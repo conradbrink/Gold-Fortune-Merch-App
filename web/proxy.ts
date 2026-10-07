@@ -63,6 +63,13 @@ export async function proxy(request: NextRequest) {
     matchesPrefix(request.nextUrl.pathname, "/forgot-password") ||
     matchesPrefix(request.nextUrl.pathname, "/reset-password");
 
+  // The free-trial sign-up (Stage 5) is public, and has to be: it is where a
+  // company comes into being, so nobody arriving there has a login yet. Its
+  // server actions limit attempts per address and per email, and build the
+  // company in the database in one transaction. Someone already signed in is
+  // sent to their own dashboard, as from /login.
+  const isSignupPage = matchesPrefix(request.nextUrl.pathname, "/signup");
+
   // The platform operator's area. A session is still required (it is not in
   // the anonymous list below), but it is exempt from the permission map: that
   // map is about what a person may do inside their own company, and the
@@ -74,13 +81,13 @@ export async function proxy(request: NextRequest) {
   // checks below for the reason /rep-notice is: it is where they send people.
   const isNotEnabledPage = matchesPrefix(request.nextUrl.pathname, "/not-enabled");
 
-  if (!user && !isLoginPage && !isDownloadPage && !isPasswordResetPage) {
+  if (!user && !isLoginPage && !isDownloadPage && !isPasswordResetPage && !isSignupPage) {
     const url = request.nextUrl.clone();
     url.pathname = "/login";
     return NextResponse.redirect(url);
   }
 
-  if (user && isLoginPage) {
+  if (user && (isLoginPage || isSignupPage)) {
     const url = request.nextUrl.clone();
     url.pathname = "/";
     return NextResponse.redirect(url);
