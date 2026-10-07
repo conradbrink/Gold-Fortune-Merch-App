@@ -1,10 +1,10 @@
 @import "tailwindcss";
 
 @theme {
-  --color-teal-950: #0a2a2b;
-  --color-teal-900: #0f3d3e;
-  --color-teal-800: #165254;
-  --color-teal-700: #1f6b6d;
+  --color-teal-950: #0e3839;
+  --color-teal-900: #165455;
+  --color-teal-800: #1e6667;
+  --color-teal-700: #257374;
   --color-teal-100: #dcebea;
   --color-teal-50: #eef5f4;
   --color-amber-500: #f5a524;

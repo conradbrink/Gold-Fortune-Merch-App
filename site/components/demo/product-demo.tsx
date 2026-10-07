@@ -4,6 +4,8 @@ import {
   BatteryMedium,
   Camera,
   Check,
+  ChevronLeft,
+  ChevronRight,
   MapPin,
   Pause,
   Play,
@@ -93,7 +95,7 @@ const groups = [
   "Proof they were there, for every client",
   "No more mystery kilometres on the bakkie",
   "Know about a missed job the same day",
-  "Your team can't fake it anymore",
+  "Proof your clients can trust",
   "Your business, out of WhatsApp",
   "Your team doesn't need new phones",
   "No more payday arguments",
@@ -210,7 +212,7 @@ const beats: Beat[] = [
   },
   {
     group: 4,
-    caption: "So is a visit too short to be real.",
+    caption: "So is a visit that's too short.",
     browser: { url: "app.tickd.co.za/visits/short", src: dash("d9-short-visits"), focus: "75% 45%", zoom: 1.35 },
     points: ["Visits under 5 minutes, flagged", "By person and by site, ready to export"],
   },
@@ -260,7 +262,7 @@ const beats: Beat[] = [
     headline: "Quotes in a minute",
     caption: "Lines, discounts, VAT and totals worked out. When the client says yes, it becomes a job or an order.",
     browser: { url: "app.tickd.co.za/quotes/QT-317", src: dash("o1-quote"), focus: "72% 22%", zoom: 1.3 },
-    points: ["Discounts, VAT and totals worked out", "Track it: sent, accepted or declined", "Convert to an order in one click"],
+    points: ["Discounts, VAT and totals worked out", "See it: sent, accepted or declined", "Convert to an order in one click"],
   },
   {
     group: OFFICE,
@@ -355,6 +357,17 @@ export function ProductDemo() {
   const [reduced, setReduced] = useState(false);
   const [visible, setVisible] = useState(true);
   const ref = useRef<HTMLDivElement>(null);
+  const swipe = useRef<{ x: number; y: number } | null>(null);
+
+  // Swipe (or drag with a mouse) left for the next slide, right for the one before.
+  const go = (d: number) => setStep((s) => (s + d + beats.length + 1) % (beats.length + 1));
+  const onSwipeEnd = (x: number, y: number) => {
+    const start = swipe.current;
+    swipe.current = null;
+    if (!start) return;
+    const dx = x - start.x;
+    if (Math.abs(dx) > 40 && Math.abs(dx) > Math.abs(y - start.y) * 1.5) go(dx < 0 ? 1 : -1);
+  };
 
   useEffect(() => {
     const mq = window.matchMedia("(prefers-reduced-motion: reduce)");
@@ -397,7 +410,13 @@ export function ProductDemo() {
 
   return (
     <figure ref={ref} className="mx-auto grid w-full max-w-[30rem] gap-4">
-      <div className="relative h-[39rem] overflow-hidden rounded-[2rem] bg-teal-950 ring-1 ring-white/10">
+      <div
+        className="relative h-[39rem] touch-pan-y select-none overflow-hidden rounded-[2rem] bg-teal-950 ring-1 ring-white/10"
+        onPointerDown={(e) => (swipe.current = { x: e.clientX, y: e.clientY })}
+        onPointerUp={(e) => onSwipeEnd(e.clientX, e.clientY)}
+        onPointerCancel={() => (swipe.current = null)}
+        onDragStart={(e) => e.preventDefault()}
+      >
         {/* backdrop */}
         <div
           aria-hidden="true"
@@ -411,7 +430,7 @@ export function ProductDemo() {
         {!end && (
           <p
             key={`h-${headline}`}
-            className="tk-in absolute inset-x-5 top-4 z-30 text-center font-display text-lg font-extrabold leading-tight text-sand"
+            className="tk-in absolute inset-x-5 top-4 z-30 text-center font-display text-base font-extrabold leading-tight text-sand sm:text-lg"
             aria-hidden="true"
           >
             {headline}
@@ -541,6 +560,22 @@ export function ProductDemo() {
               <span className="col-span-8 text-xs font-semibold text-muted">Your team</span>
               <span className="text-xs font-semibold text-muted">Your office</span>
             </div>
+            <button
+              type="button"
+              onClick={() => go(-1)}
+              aria-label="Previous slide"
+              className="grid size-8 shrink-0 place-items-center rounded-full text-teal-800 ring-1 ring-line hover:bg-white"
+            >
+              <ChevronLeft className="size-4" />
+            </button>
+            <button
+              type="button"
+              onClick={() => go(1)}
+              aria-label="Next slide"
+              className="grid size-8 shrink-0 place-items-center rounded-full text-teal-800 ring-1 ring-line hover:bg-white"
+            >
+              <ChevronRight className="size-4" />
+            </button>
             <button
               type="button"
               onClick={() => setPaused((p) => !p)}

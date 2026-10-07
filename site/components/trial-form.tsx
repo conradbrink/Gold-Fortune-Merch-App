@@ -1,15 +1,21 @@
 "use client";
 
 import { useState } from "react";
-import { contactHref, site, trialMessage } from "@/lib/site";
+import { contactHref, site, trialMessage, type Billing } from "@/lib/site";
 
 const sizes = ["1 to 5", "6 to 10", "11 to 20", "More than 20"];
+const plans: [Billing, string][] = [
+  ["yearly", "Yearly (2 months free)"],
+  ["monthly", "Monthly"],
+];
 
 // No backend: the form opens WhatsApp (or email until the WhatsApp line
 // exists) with the details filled in, so the owner sends it themselves.
 export function TrialForm() {
   const [values, setValues] = useState({ name: "", business: "", phone: "", size: sizes[0] });
+  const [plan, setPlan] = useState<Billing>("yearly");
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [sent, setSent] = useState(false);
 
   const set = (k: keyof typeof values) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     setValues((v) => ({ ...v, [k]: e.target.value }));
@@ -30,8 +36,10 @@ export function TrialForm() {
       `Name: ${values.name.trim()}`,
       `Business: ${values.business.trim()}`,
       `WhatsApp: ${values.phone.trim()}`,
-      `People in the field: ${values.size}`,
+      `Team size: ${values.size}`,
+      `Plan: ${plans.find(([b]) => b === plan)?.[1]}`,
     ].join("\n");
+    setSent(true);
     window.location.href = contactHref(message, `${site.name} trial: ${values.business.trim()}`);
   }
 
@@ -43,12 +51,12 @@ export function TrialForm() {
   return (
     <form noValidate onSubmit={submit} className="grid gap-4 sm:grid-cols-2">
       <label className={label}>
-        Your name
+        Name
         <input className={field} autoComplete="name" value={values.name} onChange={set("name")} aria-invalid={!!errors.name} />
         {err("name")}
       </label>
       <label className={label}>
-        Business name
+        Business
         <input className={field} autoComplete="organization" value={values.business} onChange={set("business")} aria-invalid={!!errors.business} />
         {err("business")}
       </label>
@@ -58,22 +66,48 @@ export function TrialForm() {
         {err("phone")}
       </label>
       <label className={label}>
-        People in the field
+        Team size
         <select className={field} value={values.size} onChange={set("size")}>
           {sizes.map((s) => (
             <option key={s}>{s}</option>
           ))}
         </select>
       </label>
+      <fieldset className="grid gap-1.5 sm:col-span-2">
+        <legend className="mb-1.5 text-sm font-medium text-teal-100">Plan</legend>
+        <div role="radiogroup" className="flex rounded-full bg-white/10 p-1 sm:inline-flex sm:justify-self-start">
+          {plans.map(([b, label]) => (
+            <button
+              key={b}
+              type="button"
+              role="radio"
+              aria-checked={plan === b}
+              onClick={() => setPlan(b)}
+              className={`min-h-11 whitespace-nowrap rounded-full px-4 py-2 text-sm font-semibold transition sm:flex-none sm:px-5 ${
+                b === "yearly" ? "flex-1" : "flex-none"
+              } ${
+                plan === b ? "bg-amber-500 text-teal-950" : "text-teal-100 hover:bg-white/10"
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      </fieldset>
       <button
         type="submit"
-        className="justify-self-start rounded-full bg-amber-500 px-6 py-3.5 font-semibold text-teal-950 transition hover:bg-amber-400 sm:col-span-2"
+        className="w-full rounded-full bg-amber-500 px-6 py-4 text-lg font-semibold text-teal-950 transition hover:bg-amber-400 sm:col-span-2 sm:w-auto sm:justify-self-start sm:py-3.5 sm:text-base"
       >
-        Start my free {site.trialDays}-day trial
+        Start free
       </button>
       <p className="text-sm text-teal-100 sm:col-span-2">
-        Next: we message you on WhatsApp to set up your account. Your team installs the app and taps start.
+        Free for {site.trialDays} days. We&apos;ll WhatsApp you to set up.
       </p>
+      {sent && (
+        <p role="status" className="font-display text-xl font-bold text-amber-400 sm:col-span-2">
+          You&apos;re {site.name} in. We&apos;ll WhatsApp you soon.
+        </p>
+      )}
     </form>
   );
 }

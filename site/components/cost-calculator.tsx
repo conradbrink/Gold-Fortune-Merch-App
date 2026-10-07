@@ -13,7 +13,7 @@ const num = (v: string) => Math.max(0, Number(v) || 0);
 
 export function CostCalculator() {
   const [staff, setStaff] = useState("10");
-  const [lost, setLost] = useState("2");
+  const [lost, setLost] = useState("1");
   const [currency, setCurrency] = useState<Currency>("R");
   const [rate, setRate] = useState(String(defaultRate.R));
 
@@ -26,15 +26,15 @@ export function CostCalculator() {
     <div className="grid gap-8 rounded-2xl bg-white p-6 ring-1 ring-line md:grid-cols-2 md:p-8">
       <div className="grid gap-4">
         <label className="grid gap-1.5 text-sm font-medium">
-          People working in the field
+          People in the field
           <input className={field} type="number" min={1} max={500} inputMode="numeric" value={staff} onChange={(e) => setStaff(e.target.value)} />
         </label>
         <label className="grid gap-1.5 text-sm font-medium">
-          Hours each person loses a day
+          Hours lost a day to delays and admin
           <input className={field} type="number" min={0} max={8} step={0.25} inputMode="decimal" value={lost} onChange={(e) => setLost(e.target.value)} />
         </label>
         <div className="grid gap-1.5 text-sm font-medium">
-          <label htmlFor="rate">What one hour of their time costs you</label>
+          <label htmlFor="rate">Pay per hour</label>
           <div className="grid grid-cols-[6.5rem_1fr] gap-2">
             <select
               aria-label="Currency"
@@ -53,26 +53,22 @@ export function CostCalculator() {
           </div>
         </div>
         <p className="text-sm text-muted">
-          Based on {WORKING_DAYS} working days a month. The default rate is South Africa&apos;s national minimum wage,
-          R30.23 an hour from 1 March 2026.
+          {WORKING_DAYS} work days a month. R30.23 is the SA minimum wage.
         </p>
       </div>
       <div aria-live="polite" className="grid content-center gap-2 border-t border-line pt-6 md:border-l md:border-t-0 md:pl-8 md:pt-0">
-        <span className="text-xs font-semibold uppercase tracking-widest text-muted">You pay for, every month</span>
-        <span className="font-display text-5xl font-extrabold tabular-nums text-flag sm:text-6xl">{fmt(hours)} hours</span>
-        <span className="text-lg">
-          that you never get. That&apos;s{" "}
-          <strong>
+        <p className="text-xl leading-snug sm:text-2xl">
+          That&apos;s{" "}
+          <strong className="block font-display text-5xl font-extrabold tabular-nums text-flag sm:text-6xl">
+            {fmt(hours)} hours
+          </strong>
+          a month you&apos;re paying for and could win back. That&apos;s about{" "}
+          <strong className="tabular-nums text-flag">
             {currency}
             {fmt(monthly)}
           </strong>{" "}
-          a month, or{" "}
-          <strong>
-            {currency}
-            {fmt(monthly * 12)}
-          </strong>{" "}
-          a year.
-        </span>
+          a month.
+        </p>
       </div>
     </div>
   );

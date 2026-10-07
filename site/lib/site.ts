@@ -4,7 +4,9 @@
 export const site = {
   name: "Tickd",
   tagline: "Proof, not promises.",
-  headline: "See what your field team actually did today.",
+  headline: "Every job Tickd off. Except you.",
+  // The plain answer to "what is this?", for anyone landing cold.
+  whatItIs: "The app for teams that work on site.",
   trialDays: 14,
   url: "https://tickd.co.za",
   appUrl: "https://app.tickd.co.za",
@@ -25,32 +27,37 @@ export function contactHref(message: string, subject = message): string {
   return `mailto:${site.email}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(message)}`;
 }
 
-export const trialMessage = `Hi, I'd like to start the free ${site.trialDays}-day ${site.name} trial.`;
-
-// Prices in rand, including VAT (owner, 7 Oct 2026). Amounts from requirements doc Draft v6, section 2.
-export const pricing = {
-  currency: "R",
-  base: 1499,
-  includedUsers: 3,
-  perExtraUser: 349,
-  businessPlanFrom: 20,
-  addOns: [
-    {
-      name: "HR",
-      price: "R199 / month",
-      detail: "Leave, employee records and documents for up to 5 employees. R499 for 6 to 30.",
-    },
-    {
-      name: "Warehouse and deliveries",
-      price: "R499 / warehouse / month",
-      detail: "Stock, picking, dispatch and proof of delivery. Includes 2 warehouse or driver users.",
-    },
-  ],
+// Lines marked [CONFIRM] in ~/Downloads/site-copy-final-v7.md stay off the
+// site until Conrad says yes. Flip one to true to show it.
+export const confirmed = {
+  // Card 1: only once the team can deliver it.
+  doneForYou: false,
+  // "The Tickd promise": once the exact rule is written down.
+  promise: false,
+  // "Is it legal?": once checked against POPIA.
+  legalFaq: false,
 } as const;
 
-export function monthlyPrice(users: number): number {
-  const extra = Math.max(0, users - pricing.includedUsers);
-  return pricing.base + extra * pricing.perExtraUser;
+export const trialMessage = `Hi, I'd like to start the free ${site.trialDays}-day ${site.name} trial.`;
+
+// Prices in rand, including VAT. ~/Downloads/pricing-implementation.md:
+// yearly is 2 months free; setup is free on yearly and charged once on
+// monthly; "Done for you" is the anchor plan.
+export const pricing = {
+  currency: "R",
+  includedUsers: 3,
+  monthly: { base: 1499, perExtra: 349 },
+  yearly: { base: 14990, perExtra: 3490 },
+  setupValue: 2500,
+  doneForYou: 14990,
+} as const;
+
+export type Billing = "monthly" | "yearly";
+
+/** What a team of `users` pays per period on the given billing. */
+export function planPrice(users: number, billing: Billing): number {
+  const p = pricing[billing];
+  return p.base + Math.max(0, users - pricing.includedUsers) * p.perExtra;
 }
 
 export function rand(amount: number): string {

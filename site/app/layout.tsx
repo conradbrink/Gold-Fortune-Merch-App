@@ -12,14 +12,14 @@ const outfit = Outfit({
 const inter = Inter({ subsets: ["latin"], variable: "--font-inter" });
 
 const description =
-  "See what your field team actually did today, and what they sold. One app for your people in the field, one dashboard for you, with GPS check-ins and camera-only photos they can't fake. Runs on low-cost Android phones, works with no signal. Built for Southern Africa.";
+  "Tickd is the app for teams that work on site. Your team checks in at every job and takes photos. You see where they are, how long they stay and what got done. Then you invoice and get paid, all in one app. Made for Southern Africa.";
 
 export const metadata: Metadata = {
   metadataBase: new URL(site.url),
-  title: `${site.name} | ${site.headline}`,
+  title: `${site.name} | ${site.whatItIs}`,
   description,
   openGraph: {
-    title: `${site.name}: ${site.headline}`,
+    title: `${site.name}: ${site.whatItIs}`,
     description,
     siteName: site.name,
     locale: "en_ZA",
@@ -28,7 +28,7 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: "#0f3d3e",
+  themeColor: "#165455",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
