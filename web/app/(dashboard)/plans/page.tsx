@@ -51,7 +51,9 @@ export default async function PlansPage() {
             {trial.kind !== "none" && account?.trial_ends_at
               ? `${trial.kind === "ended" ? "It ended" : "It ends"} on ${dateFormat.format(new Date(account.trial_ends_at))}. `
               : ""}
-            Everything keeps working while we sort out a plan with you. Talk to us about the plan that fits your team.
+            {trial.kind === "none"
+              ? "Talk to us about changing your plan."
+              : "Everything keeps working while we sort out a plan with you. Talk to us about the plan that fits your team."}
           </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-wrap gap-3">
