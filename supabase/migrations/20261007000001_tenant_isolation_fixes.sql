@@ -1,0 +1,321 @@
+-- Close what stops a second company from being safe, and from existing at all.
+--
+-- Found on 7 October 2026 while preparing the platform for more than one
+-- company, by `supabase/tests/tenant_isolation.sql` — the first suite that
+-- stages a Company B and attacks Company A from it. Everything here was
+-- harmless while Gold Fortune was the only organisation in the database, which
+-- is why none of it showed. Rollback: `supabase/rollback/<this version>.down.sql`
+-- restores every definition below verbatim.
+--
+-- 1. **No new company could be created.** `provision_organization` (fired by
+--    the insert trigger on `organizations`) still seeds review categories with
+--    `on conflict (org_id, lower(name))`. `20260828065322_review_scorecards`
+--    moved categories under a scorecard, made `template_id` NOT NULL and
+--    replaced that unique index with `(template_id, lower(name))` — so since
+--    28 August every `insert into organizations` has failed with 42P10. It now
+--    creates one scorecard, "General", and seeds categories under it.
+--    The categories are deliberately not Gold Fortune's (store coverage,
+--    merchandising execution): a new company could be a cleaning firm.
+--    Industry-specific scorecards arrive with the industry templates.
+--
+-- 2. `file_groups_select` was `current_org_id() is not null` — any signed-in
+--    user, in any company, could read every company's file-to-chain links.
+--    `file_reps_select` let a manager of any company read every company's
+--    file-to-rep links. Both now also require `file_in_my_org(file_id)`, the
+--    security-definer check the write policies already use (definer, so it
+--    reads `files` without re-entering these policies — see
+--    `20260728190554_fix_files_policy_recursion`).
+--
+-- 3. `hr_can_view_employee` returned true for **any** employee id when the
+--    caller held `hr`, and `hr_manages_employee` would walk any company's
+--    reporting chain. Every table policy pairs them with `org_id =
+--    current_org_id()`, so no row leaked — but `hr_documents_upload` in storage
+--    leans on `hr_can_view_employee` for the employee half of the path. Both
+--    now answer false for an employee of another company.
+--
+-- 4. `org_timezone`, `hr_working_days`, `hr_leave_year_of` and
+--    `hr_current_leave_year` take a company id and would answer for any
+--    company. They now return null for a signed-in caller asking about a
+--    company not their own. Service-role callers are unaffected — the auto-end
+--    job (`auto_end_overdue_workdays`) works across every company on purpose.
+
+------------------------------------------------------------------ 1. provisioning
+
+create or replace function public.provision_organization(p_org uuid)
+returns void
+language plpgsql
+security definer
+set search_path to 'public'
+as $function$
+declare r record; v_scorecard uuid;
+begin
+  if p_org is null then return; end if;
+
+  insert into public.job_roles (org_id, name, code, description, base_role, is_system, sort_order)
+  values
+    (p_org, 'Administrator', 'administrator',
+     'Everything, including creating people and granting permissions.', 'manager', true, 10),
+    (p_org, 'Operations Manager', 'operations_manager',
+     'Runs the field: schedule, visits, stores, reps and the warehouse.', 'manager', true, 20),
+    (p_org, 'CFO', 'cfo',
+     'Finance oversight: the warehouse and fulfilment side, and HR.', 'warehouse', true, 30),
+    (p_org, 'HR Manager', 'hr_manager',
+     'The HR module only. Reads salaries, dates of birth and disciplinary files.', 'hr_manager', true, 40),
+    (p_org, 'Warehouse Clerk', 'warehouse_clerk',
+     'Receiving, picking, dispatch and stock counts.', 'warehouse', true, 50),
+    (p_org, 'Sales Rep', 'sales_rep',
+     'Works in the mobile app. Their own working day and their own HR record.', 'rep', true, 60)
+  on conflict do nothing;
+
+  for r in
+    select * from (values
+      ('administrator',      'admin'),
+      ('operations_manager', 'dashboard'),
+      ('operations_manager', 'insights'),
+      ('operations_manager', 'sales_coverage'),
+      ('operations_manager', 'field_ops'),
+      ('operations_manager', 'team'),
+      ('operations_manager', 'resources'),
+      ('operations_manager', 'warehouse'),
+      ('operations_manager', 'warehouse_approve'),
+      ('operations_manager', 'workday'),
+      ('cfo',                'warehouse'),
+      ('cfo',                'warehouse_approve'),
+      ('cfo',                'hr'),
+      ('cfo',                'workday'),
+      ('hr_manager',         'hr'),
+      ('hr_manager',         'hr_settings'),
+      ('hr_manager',         'workday'),
+      ('warehouse_clerk',    'warehouse'),
+      ('warehouse_clerk',    'workday'),
+      ('sales_rep',          'workday')
+    ) as v(role_code, permission_code)
+  loop
+    insert into public.job_role_permissions (job_role_id, permission_code)
+    select jr.id, r.permission_code
+      from public.job_roles jr
+     where jr.org_id = p_org and jr.code = r.role_code
+    on conflict do nothing;
+  end loop;
+
+  -- HR defaults, unchanged.
+  insert into public.hr_settings (org_id) values (p_org) on conflict (org_id) do nothing;
+
+  insert into public.hr_departments (org_id, name, code, sort_order)
+  select p_org, v.name, v.code, v.sort_order from (values
+    ('Field Sales', 'FIELD', 10), ('Warehouse & Logistics', 'WHSE', 20),
+    ('Management', 'MGMT', 30),   ('Administration', 'ADMIN', 40)
+  ) as v(name, code, sort_order)
+  on conflict do nothing;
+
+  insert into public.hr_leave_types (org_id, name, code, is_paid, requires_document, deducts_from_balance, sort_order)
+  select p_org, v.name, v.code, v.is_paid, v.requires_document, v.deducts, v.sort_order from (values
+    ('Annual Leave', 'annual', true, false, true, 10),
+    ('Sick Leave', 'sick', true, true, true, 20),
+    ('Family Responsibility Leave', 'family', true, false, true, 30),
+    ('Unpaid Leave', 'unpaid', false, false, false, 40),
+    ('Other', 'other', true, false, true, 50)
+  ) as v(name, code, is_paid, requires_document, deducts, sort_order)
+  on conflict (org_id, code) do nothing;
+
+  -- Categories hang off a scorecard since 28 August. One general scorecard;
+  -- the industry templates will bring their own.
+  insert into public.hr_review_templates (org_id, name, description, sort_order)
+  values (p_org, 'General', 'The standard scorecard. Edit or add scorecards per department.', 10)
+  on conflict (org_id, lower(name)) do nothing;
+
+  select id into v_scorecard
+    from public.hr_review_templates
+   where org_id = p_org and lower(name) = 'general';
+
+  insert into public.hr_review_categories (org_id, template_id, name, description, sort_order)
+  select p_org, v_scorecard, v.name, v.description, v.sort_order from (values
+    ('Quality of Work', 'The standard of the work delivered, first time.', 10),
+    ('Attendance & Reliability', 'Starting and ending the working day, punctuality, availability.', 20),
+    ('Reporting Accuracy', 'Forms, photos and records completed correctly and on time.', 30),
+    ('Customer Relationships', 'How clients and their staff experience working with this person.', 40),
+    ('Teamwork', 'Working with colleagues and the office.', 50),
+    ('Professional Conduct', 'Presentation, company property, and adherence to policy.', 60)
+  ) as v(name, description, sort_order)
+  on conflict (template_id, lower(name)) do nothing;
+
+  insert into public.hr_lookups (org_id, kind, code, label, sort_order, meta)
+  select p_org, v.kind, v.code, v.label, v.sort_order, v.meta::jsonb from (values
+    ('incident_type','attendance','Attendance',10,'{}'),
+    ('incident_type','late_arrival','Late Arrival',20,'{}'),
+    ('incident_type','absence','Absence',30,'{}'),
+    ('incident_type','misconduct','Misconduct',40,'{}'),
+    ('incident_type','poor_performance','Poor Performance',50,'{}'),
+    ('incident_type','policy_violation','Policy Violation',60,'{}'),
+    ('incident_type','customer_complaint','Customer Complaint',70,'{}'),
+    ('incident_type','asset_issue','Property/Asset Issue',80,'{}'),
+    ('incident_type','insubordination','Insubordination',90,'{}'),
+    ('incident_type','other','Other',100,'{}'),
+    ('severity','minor','Minor',10,'{"rank": 1}'),
+    ('severity','moderate','Moderate',20,'{"rank": 2}'),
+    ('severity','serious','Serious',30,'{"rank": 3}'),
+    ('severity','gross_misconduct','Gross Misconduct',40,'{"rank": 4}'),
+    ('case_status','open','Open',10,'{}'),
+    ('case_status','under_investigation','Under Investigation',20,'{}'),
+    ('case_status','employee_response_required','Employee Response Required',30,'{"awaiting_employee": true}'),
+    ('case_status','hearing_scheduled','Hearing Scheduled',40,'{"awaiting_hearing": true}'),
+    ('case_status','outcome_pending','Outcome Pending',50,'{"awaiting_hearing": true}'),
+    ('case_status','closed','Closed',60,'{"terminal": true}'),
+    ('warning_type','verbal','Verbal Warning',10,'{}'),
+    ('warning_type','written','Written Warning',20,'{"requires_document": true}'),
+    ('warning_type','final_written','Final Written Warning',30,'{"requires_document": true}'),
+    ('warning_type','other','Other',40,'{}'),
+    ('outcome','no_action','No Action',10,'{}'),
+    ('outcome','verbal_warning','Verbal Warning',20,'{"warning_type": "verbal"}'),
+    ('outcome','written_warning','Written Warning',30,'{"warning_type": "written"}'),
+    ('outcome','final_written_warning','Final Written Warning',40,'{"warning_type": "final_written"}'),
+    ('outcome','further_action','Further Action',50,'{}'),
+    ('outcome','suspension','Suspension',60,'{}'),
+    ('outcome','termination','Termination',70,'{}'),
+    ('outcome','other','Other',80,'{}'),
+    ('document_category','employment_contract','Employment Contract',10,'{"tracks_contract": true}'),
+    ('document_category','id_passport','ID / Passport',20,'{}'),
+    ('document_category','drivers_licence','Driver''s Licence',30,'{}'),
+    ('document_category','medical','Medical Document',40,'{}'),
+    ('document_category','certificate','Certificate',50,'{}'),
+    ('document_category','warning','Warning / HR Document',60,'{}'),
+    ('document_category','other','Other',70,'{}')
+  ) as v(kind, code, label, sort_order, meta)
+  on conflict (org_id, kind, code) do nothing;
+end;
+$function$;
+
+------------------------------------------------------------- 2. file link tables
+
+drop policy if exists file_groups_select on public.file_groups;
+create policy file_groups_select on public.file_groups
+  for select
+  using (public.file_in_my_org(file_id));
+
+drop policy if exists file_reps_select on public.file_reps;
+create policy file_reps_select on public.file_reps
+  for select
+  using (
+    rep_id = (select auth.uid())
+    or ((select public."current_role"()) = 'manager' and public.file_in_my_org(file_id))
+  );
+
+------------------------------------------------------------------ 3. HR helpers
+
+create or replace function public.hr_can_view_employee(p_employee_id uuid)
+returns boolean
+language sql
+stable
+security definer
+set search_path to 'public'
+as $function$
+  select exists (
+           select 1 from public.hr_employees e
+            where e.id = p_employee_id and e.org_id = public.current_org_id()
+         )
+     and (   public.hr_is_hr()
+          or p_employee_id = public.hr_my_employee_id()
+          or public.hr_manages_employee(p_employee_id))
+$function$;
+
+create or replace function public.hr_manages_employee(p_employee_id uuid)
+returns boolean
+language sql
+stable
+security definer
+set search_path to 'public'
+as $function$
+  with recursive chain as (
+    select e.id, e.manager_id, 1 as depth
+      from public.hr_employees e
+     where e.id = p_employee_id
+       and e.org_id = public.current_org_id()
+    union all
+    select m.id, m.manager_id, c.depth + 1
+      from public.hr_employees m
+      join chain c on m.id = c.manager_id
+     where c.depth < 6
+  )
+  select exists (
+    select 1 from chain
+     where chain.manager_id = public.hr_my_employee_id()
+  )
+$function$;
+
+---------------------------------------------- 4. helpers that take a company id
+--
+-- "Asking about your own company, or not a signed-in user at all." The second
+-- half keeps the service role (the auto-end cron, the road-distance job) and
+-- direct database sessions working across every company, as they must.
+
+create or replace function public.caller_may_read_org(p_org uuid)
+returns boolean
+language sql
+stable
+security definer
+set search_path to 'public'
+as $function$
+  select coalesce(auth.role(), '') <> 'authenticated'
+      or p_org = public.current_org_id()
+$function$;
+
+revoke all on function public.caller_may_read_org(uuid) from public, anon;
+grant execute on function public.caller_may_read_org(uuid) to authenticated, service_role;
+
+comment on function public.caller_may_read_org is
+  'True when a function taking a company id may answer: the caller is asking about their own company, or is not a signed-in user (service role, database session).';
+
+create or replace function public.org_timezone(p_org uuid)
+returns text
+language sql
+stable
+security definer
+set search_path to 'public'
+as $function$
+  select case when public.caller_may_read_org(p_org) then
+    coalesce((select o.timezone from public.organizations o where o.id = p_org), 'UTC')
+  end
+$function$;
+
+create or replace function public.hr_working_days(p_org uuid, p_from date, p_to date)
+returns numeric
+language sql
+stable
+security definer
+set search_path to 'public'
+as $function$
+  select case when public.caller_may_read_org(p_org) then
+    (select count(*)::numeric
+       from generate_series(p_from, p_to, interval '1 day') d
+      where extract(isodow from d)::smallint = any(
+        coalesce((select workweek from public.hr_settings where org_id = p_org),
+                 '{1,2,3,4,5}'::smallint[])))
+  end
+$function$;
+
+create or replace function public.hr_leave_year_of(p_org uuid, p_date date)
+returns integer
+language sql
+stable
+security definer
+set search_path to 'public'
+as $function$
+  select case when public.caller_may_read_org(p_org) then
+    case
+      when extract(month from p_date)::int
+           >= coalesce((select leave_year_start_month from public.hr_settings where org_id = p_org), 1)
+      then extract(year from p_date)::int
+      else extract(year from p_date)::int - 1
+    end
+  end
+$function$;
+
+create or replace function public.hr_current_leave_year(p_org uuid)
+returns integer
+language sql
+stable
+security definer
+set search_path to 'public'
+as $function$
+  select public.hr_leave_year_of(p_org, current_date)
+$function$;

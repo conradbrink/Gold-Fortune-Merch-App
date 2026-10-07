@@ -6123,6 +6123,8 @@ export type Database = {
       assign_default_permissions: { Args: never; Returns: unknown }
       has_permission: { Args: { p_code: string }; Returns: boolean }
       my_permissions: { Args: never; Returns: string[] }
+      is_platform_admin: { Args: never; Returns: boolean }
+      caller_may_read_org: { Args: { p_org: string }; Returns: boolean }
       assign_dispatch_rep: {
         Args: { p_dispatch: string; p_rep: string | null }
         Returns: undefined

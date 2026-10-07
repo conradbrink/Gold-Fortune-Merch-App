@@ -36,6 +36,9 @@ Branch names: `fix/location-not-saving`, `fix/offline-sync`,
 - [ ] Security suite passes: paste `supabase/tests/security_regression.sql`
       into the SQL editor — it rolls back and must raise
       "ALL SECURITY CHECKS PASSED"
+- [ ] Tenant isolation suite passes: paste `supabase/tests/tenant_isolation.sql`
+      the same way — it stages a second company, rolls back, and must raise
+      "ALL TENANT ISOLATION CHECKS PASSED". Read its "Not proven" list too.
 - [ ] All five CI checks green on the PR
 
 ## 4. Testing

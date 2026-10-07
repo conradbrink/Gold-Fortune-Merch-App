@@ -1,7 +1,7 @@
 -- Security regression suite.
 --
 -- Every check here corresponds to a hole that was open on 29 or 30 July 2026, or
--- to an invariant a new table has to hold. **31 checks** — 1-18 are the 29 July
+-- to an invariant a new table has to hold. **32 checks** — 1-18 are the 29 July
 -- audit; 19-20 the `territory_reps` tenancy gap, 21-22 the per-user
 -- `dashboard_layouts`, 23-24 `territories_enforce_shape` ignoring dependents on
 -- UPDATE, and 25-26 the territory shape and tenancy invariants, all found in
@@ -10,7 +10,8 @@
 -- and the order/adjustment tables it brought with it. 31 is the 3 August
 -- `rep_id` grant: a rep must not be able to hand their own order to a
 -- colleague, and the thing stopping them is row visibility rather than any
--- policy clause, so it is pinned before a policy rewrite loses it.
+-- policy clause, so it is pinned before a policy rewrite loses it. 32 is the
+-- report RPC guard of 7 October 2026.
 --
 -- 25 and 26 are invariants about the *data*, not attacks: the races that could
 -- produce those states need two interleaved sessions to stage, which one
@@ -693,6 +694,20 @@ begin
   -- checks 28-30 pass while proving nothing whatever about the warehouse role.
   update public.profiles set role = 'warehouse', is_active = true where id = v_rep;
 
+  -- And the clerk's permissions. Since `20260826152011_create_permission_model`
+  -- the warehouse tables ask `has_permission('warehouse')`, not the role
+  -- string, so a re-roled rep still holding a rep's grants is refused by
+  -- `stock_adjustments_insert` before check 30 reaches the gate it is about.
+  -- Nobody saw this until 7 October 2026: from 28 August the suite aborted at
+  -- check 19 (`provision_organization` could not create the foreign org), so it
+  -- never got this far. Grants copied from the system "Warehouse Clerk" role.
+  delete from public.profile_permissions where profile_id = v_rep;
+  insert into public.profile_permissions (profile_id, permission_code)
+  select v_rep, jrp.permission_code
+    from public.job_role_permissions jrp
+    join public.job_roles jr on jr.id = jrp.job_role_id
+   where jr.org_id = v_org and jr.code = 'warehouse_clerk';
+
   -- The field data the clerk must not reach. Seeded here, not searched for: a
   -- count of zero against an empty table is the textbook probe that passes for
   -- the wrong reason. The visit from the top of the file would do, but leads and
@@ -970,6 +985,16 @@ begin
 
   update public.profiles set role = 'rep', is_active = true where id = v_rep;
 
+  -- Back to a rep's grants too. The clerk's `warehouse` permission would
+  -- otherwise survive the re-role, and `orders_update` admits a warehouse
+  -- holder — so 31 would fail for a reason that has nothing to do with it.
+  delete from public.profile_permissions where profile_id = v_rep;
+  insert into public.profile_permissions (profile_id, permission_code)
+  select v_rep, jrp.permission_code
+    from public.job_role_permissions jrp
+    join public.job_roles jr on jr.id = jrp.job_role_id
+   where jr.org_id = v_org and jr.code = 'sales_rep';
+
   perform set_config('request.jwt.claims',
     json_build_object('sub', v_rep, 'role', 'authenticated')::text, true);
   set local role authenticated;
@@ -991,6 +1016,68 @@ begin
   end if;
 
   reset role;
+
+  ---------------------------------------- 32. report RPCs need `insights`
+  --
+  -- `20261007…_guard_report_rpcs` put `require_permission('insights')` into
+  -- the seven report functions that relied on RLS alone, whose RLS is scoped to
+  -- the organisation — so any rep could call them through PostgREST and read
+  -- every colleague's figures. The guard must raise 42501 for a rep (32), and
+  -- must not have broken the report for a manager who holds the permission
+  -- (32b). Matched on SQLSTATE so that some other error — a renamed argument,
+  -- a dropped function — is not counted as the refusal.
+
+  declare
+    fn text;
+    v_tpl uuid := (select id from public.form_templates where org_id = v_org limit 1);
+    calls text[] := array[
+      'rep_scorecard(now() - interval ''30 days'', now())',
+      'schedule_adherence(now() - interval ''30 days'', now())',
+      'coverage_gaps(now() - interval ''30 days'', now())',
+      'perfect_store_score(now() - interval ''30 days'', now())',
+      'oos_hotspots(now() - interval ''30 days'', now())',
+      'compliance_trends(now() - interval ''30 days'', now(), ''day'', null)',
+      'form_report(null, now() - interval ''30 days'', now(), null, null)',
+      -- Both: with a null template the planner can prove the query empty, which
+      -- is how the first, CTE-folded version of the guard was skipped.
+      format('form_report(%L, now() - interval ''30 days'', now(), null, null)', v_tpl)];
+  begin
+    update public.profiles set role = 'rep', is_active = true where id = v_rep;
+    perform set_config('request.jwt.claims',
+      json_build_object('sub', v_rep, 'role', 'authenticated')::text, true);
+    set local role authenticated;
+    if public.has_permission('insights') then
+      raise exception 'Fixtures broken: the check-32 rep holds insights.';
+    end if;
+    foreach fn in array calls loop
+      begin
+        execute 'select count(*) from public.' || fn into v_n;
+        v_fail := v_fail || '32. a rep could call ' || split_part(fn, '(', 1) || E'\n';
+      exception
+        when insufficient_privilege then null;  -- the guard
+        when others then
+          v_fail := v_fail || '32. ' || split_part(fn, '(', 1) || ' failed for the wrong reason: '
+                           || sqlerrm || E'\n';
+      end;
+    end loop;
+    reset role;
+
+    perform set_config('request.jwt.claims',
+      json_build_object('sub', v_mgr, 'role', 'authenticated')::text, true);
+    set local role authenticated;
+    if not public.has_permission('insights') then
+      raise exception 'Fixtures broken: the check-32b manager lacks insights.';
+    end if;
+    foreach fn in array calls loop
+      begin
+        execute 'select count(*) from public.' || fn into v_n;
+      exception when others then
+        v_fail := v_fail || '32b. a manager with insights could NOT call '
+                         || split_part(fn, '(', 1) || ': ' || sqlerrm || E'\n';
+      end;
+    end loop;
+    reset role;
+  end;
 
   ------------------------------------------------------------------- verdict
 
