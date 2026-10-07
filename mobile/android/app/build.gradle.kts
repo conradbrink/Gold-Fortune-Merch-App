@@ -38,17 +38,38 @@ android {
     }
 
     defaultConfig {
-        // The app's identity on phones and on Google Play — permanent once
-        // published. Tickd's own (7 Oct 2026), replacing
-        // com.goldfortune.gf_merch_rep: this installs as a NEW app beside the
-        // old one, not as an update to it (docs/RELEASE-ANDROID.md).
-        applicationId = "za.co.tickd.app"
-        // You can update the following values to match your application needs.
-        // For more information, see: https://flutter.dev/to/review-gradle-config.
+        // The app's identity is set per flavour below.
         minSdk = flutter.minSdkVersion
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
+    }
+
+    // Two builds of the same code (`flutter build apk --flavor <name>`):
+    //
+    //   tickd   — za.co.tickd.app, the app from now on, and the one Google Play
+    //             gets. Its identity is permanent once published.
+    //   legacy  — com.goldfortune.gf_merch_rep, the id every phone had up to
+    //             1.1.12. Built once more (1.1.13) only to walk reps across:
+    //             when Tickd is out it tells them to sync, install Tickd and
+    //             then remove it (lib/core/move_to_tickd.dart). Labelled
+    //             "Tickd (old)" so the two icons can be told apart.
+    //
+    // A different id installs as a NEW app beside the old one, not as an
+    // update to it — see docs/RELEASE-ANDROID.md.
+    flavorDimensions += "app"
+    productFlavors {
+        create("tickd") {
+            dimension = "app"
+            isDefault = true
+            applicationId = "za.co.tickd.app"
+            manifestPlaceholders["appLabel"] = "Tickd"
+        }
+        create("legacy") {
+            dimension = "app"
+            applicationId = "com.goldfortune.gf_merch_rep"
+            manifestPlaceholders["appLabel"] = "Tickd (old)"
+        }
     }
 
     signingConfigs {

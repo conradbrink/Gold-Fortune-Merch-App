@@ -28,7 +28,7 @@
          was, because a new id installs as a second app beside the first and
          abandons whatever its outbox had not yet synced. -->
     <application
-        android:label="Tickd"
+        android:label="${appLabel}"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
         <activity
