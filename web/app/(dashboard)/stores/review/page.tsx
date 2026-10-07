@@ -249,7 +249,7 @@ export default function StoreReviewPage() {
             >
               <ArrowLeft className="h-4 w-4" />
             </Link>
-            <h1 className="text-2xl font-bold tracking-tight text-foreground">
+            <h1 className="text-xl font-semibold tracking-tight text-foreground">
               Location exceptions
             </h1>
           </div>
