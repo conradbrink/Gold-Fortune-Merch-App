@@ -259,7 +259,14 @@ begin
       if v_n > 0 then
         v_fail := v_fail || format('T1 update %s: B changed %s of A''s rows%s', t.tbl, v_n, E'\n');
       end if;
-    exception when others then null;
+    exception
+      when insufficient_privilege then null;   -- no grant at all: the right refusal
+      when others then
+        -- RLS filters A's rows out silently, so an error here means a row got
+        -- past the filter and something else stopped it: the tenancy guard is
+        -- not what held, and the report must say so (CodeRabbit on #69/#74).
+        v_unproven := v_unproven || format('  T1 update %s: refused by %s, not RLS: %s%s',
+                                           t.tbl, sqlstate, left(sqlerrm, 80), E'\n');
     end;
 
     begin
@@ -268,7 +275,14 @@ begin
       if v_n > 0 then
         v_fail := v_fail || format('T1 delete %s: B deleted %s of A''s rows%s', t.tbl, v_n, E'\n');
       end if;
-    exception when others then null;
+    exception
+      when insufficient_privilege then null;   -- no grant at all: the right refusal
+      when others then
+        -- RLS filters A's rows out silently, so an error here means a row got
+        -- past the filter and something else stopped it: the tenancy guard is
+        -- not what held, and the report must say so (CodeRabbit on #69/#74).
+        v_unproven := v_unproven || format('  T1 delete %s: refused by %s, not RLS: %s%s',
+                                           t.tbl, sqlstate, left(sqlerrm, 80), E'\n');
     end;
 
     -- Insert a copy of a real A row, still marked as A's. Fresh ids so a

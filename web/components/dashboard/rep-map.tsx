@@ -6,7 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { loadMaps, MAPS_KEY, mapTypeSwitch, rememberMapType } from "@/lib/google-maps";
 import { useCompanyConfig, useTerms } from "@/lib/use-company-config";
-import { capital, lower, withArticle } from "@/lib/terms";
+import { lower, withArticle } from "@/lib/terms";
 import {
   describeAge,
   describeSource,
@@ -14,7 +14,7 @@ import {
   minutesSince,
   type LiveReps,
   type RepPosition,
-  freshnessExplained,
+  freshnessKey,
 } from "@/lib/live-reps";
 
 /**
@@ -90,7 +90,10 @@ function RepRow({
           <span className="truncate text-sm font-medium text-foreground">
             {position.repName}
           </span>
-          <span className={`shrink-0 text-xs tabular-nums ${tone.text}`}>
+          <span
+            className={`shrink-0 text-xs tabular-nums ${tone.text}`}
+            title="When this phone last managed to send a position — not proof of where the rep is now. A phone without signal sends its positions later, all together."
+          >
             {describeAge(minutes)}
           </span>
         </span>
@@ -374,14 +377,21 @@ export function RepMap({ data }: { data: LiveReps }) {
           </div>
         )}
 
-        {/* Said plainly, once, at the bottom. The gap is real until the location
-            build ships, and a card that hid it would be quietly wrong for weeks. */}
+        {/* A key, not a paragraph. The caveat it replaced (an age is when a
+            phone last managed to send, not proof of where somebody is now)
+            still holds; it lives in the title on each row's age and in
+            lib/live-reps.ts, rather than as prose under every map. */}
         {positions.length > 0 && (
-          <p className="mt-2 text-xs text-muted-foreground">
-            {freshnessExplained(intervalMinutes)} {capital(withArticle(t, "staff"))} with no signal queues
-            positions on the phone and they
-            arrive together later, so an age is what a phone last managed to
-            send — not proof of where somebody is now.
+          <p className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
+            <span className="flex items-center gap-1.5">
+              <span className="h-2 w-2 rounded-full bg-emerald-500" aria-hidden /> {freshnessKey(intervalMinutes).fresh}
+            </span>
+            <span className="flex items-center gap-1.5">
+              <span className="h-2 w-2 rounded-full bg-amber-500" aria-hidden /> {freshnessKey(intervalMinutes).recent}
+            </span>
+            <span className="flex items-center gap-1.5">
+              <span className="h-2 w-2 rounded-full bg-muted-foreground/50" aria-hidden /> Older
+            </span>
           </p>
         )}
       </CardContent>
