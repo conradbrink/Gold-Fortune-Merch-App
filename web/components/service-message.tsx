@@ -27,7 +27,7 @@ export function ServiceMessage({
         {/* The product, not the company: an error page cannot count on knowing
             who is signed in, and the global boundary renders with nothing
             loaded at all. */}
-        <ProductBrand priority />
+        <ProductBrand />
 
         <div className="space-y-4 rounded-lg border border-border bg-card p-6 shadow-sm">
           <h2 className="text-base font-semibold text-foreground">{title}</h2>

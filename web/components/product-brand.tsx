@@ -15,12 +15,10 @@ import { PRODUCT_MARK, PRODUCT_NAME, PRODUCT_TAGLINE } from "@/lib/product";
 export function ProductBrand({
   size = 56,
   subtitle = PRODUCT_TAGLINE,
-  priority = false,
 }: {
   size?: number;
   /** The line under the name; the tagline unless a page has a better one. */
   subtitle?: string;
-  priority?: boolean;
 }) {
   return (
     <div className="flex flex-col items-center gap-3 text-center">
@@ -30,7 +28,8 @@ export function ProductBrand({
         width={size}
         height={size}
         className={size > 56 ? "rounded-xl" : "rounded-lg"}
-        priority={priority}
+        // Always the first thing on its page: lazy loading made it pop in late.
+        loading="eager"
       />
       <div>
         <h1 className="text-xl font-bold text-foreground">{PRODUCT_NAME}</h1>

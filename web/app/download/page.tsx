@@ -34,7 +34,7 @@ export default async function DownloadPage() {
   return (
     <div className="min-h-screen bg-secondary/40 px-4 py-10">
       <div className="mx-auto w-full max-w-lg space-y-6">
-        <ProductBrand size={64} subtitle="Android app for field staff" priority />
+        <ProductBrand size={64} subtitle="Android app for field staff" />
 
         {release ? (
           <>
