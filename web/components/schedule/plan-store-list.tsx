@@ -12,6 +12,8 @@ import {
   type PlannedStore,
   type VisitFrequency,
 } from "@/lib/schedule";
+import { useTerms } from "@/lib/use-company-config";
+import { count, lower } from "@/lib/terms";
 
 /**
  * The call cycle as a list of shops, grouped by town.
@@ -47,13 +49,14 @@ export function PlanStoreList({
   /** Writes are refused for this viewer; show the plan, do not offer to edit. */
   disabled?: boolean;
 }) {
+  const t = useTerms();
   return (
       <>
         <Input
           // A placeholder is not an accessible name, and it disappears as soon
           // as anybody types.
-          aria-label="Search stores or cities"
-          placeholder="Search stores or cities…"
+          aria-label={`Search ${lower(t.site.many)} or cities`}
+          placeholder={`Search ${lower(t.site.many)} or cities…`}
           value={query}
           onChange={(e) => onQueryChange(e.target.value)}
         />
@@ -61,7 +64,7 @@ export function PlanStoreList({
         <div className="space-y-4">
           {groups.length === 0 && (
             <p className="rounded-lg border border-border bg-card py-8 text-center text-sm text-muted-foreground">
-              No stores match &ldquo;{query}&rdquo;.
+              No {lower(t.site.many)} match &ldquo;{query}&rdquo;.
             </p>
           )}
 
@@ -76,7 +79,7 @@ export function PlanStoreList({
                   {g.city}
                 </span>
                 <span className="text-xs text-muted-foreground">
-                  {g.stores.length} {g.stores.length === 1 ? "store" : "stores"}
+                  {count(t, "site", g.stores.length)}
                 </span>
               </div>
 
@@ -146,7 +149,7 @@ export function PlanStoreList({
                         id={`freq-${s.assignment_id}`}
                         value={s.visit_frequency}
                         disabled={disabled || busy.has(s.assignment_id)}
-                        title="Frequency belongs to the store, so this changes it for every rep who covers it."
+                        title={`Frequency belongs to the ${lower(t.site.one)}, so this changes it for every ${lower(t.staff.one)} who covers it.`}
                         onChange={(e) =>
                           onChangeFrequency(s, e.target.value as VisitFrequency)
                         }

@@ -2,6 +2,8 @@
 
 import { AlertTriangle, MapPin } from "lucide-react";
 import { WEEKDAYS, type DayLoad } from "@/lib/schedule";
+import { useTerms } from "@/lib/use-company-config";
+import { count, noun } from "@/lib/terms";
 
 /**
  * Mon–Sun load for one rep's call cycle.
@@ -22,6 +24,7 @@ export function WeekLoadStrip({
   /** From org settings — what counts as a full day differs per business. */
   storesPerDay: number;
 }) {
+  const t = useTerms();
   const overloaded = days.filter((d) => d.peakStores > storesPerDay);
   const split = days.filter((d) => d.peakCities > 1);
 
@@ -59,7 +62,7 @@ export function WeekLoadStrip({
                   {d.peakStores}
                 </p>
                 <p className="text-[11px] text-muted-foreground">
-                  {empty ? "no stops" : d.peakStores === 1 ? "store" : "stores"}
+                  {empty ? "no stops" : noun(t, "site", d.peakStores)}
                 </p>
 
                 {!empty && (
@@ -94,7 +97,7 @@ export function WeekLoadStrip({
           number the manager actually set. */}
       <p className="text-xs text-muted-foreground">
         Peak load on any single occurrence of that day. A full day is{" "}
-        {storesPerDay} stores.
+        {count(t, "site", storesPerDay)}.
       </p>
 
       {(overloaded.length > 0 || split.length > 0) && (

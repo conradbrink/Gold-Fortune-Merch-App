@@ -2,6 +2,12 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { callRpc } from "@/lib/rpc";
 import { fromLocalDateInput, toLocalDateInput } from "@/lib/date-range";
 import { clusterByProximity, shortestPathKm, toPoint } from "@/lib/geo";
+import { count, lower, type Terms } from "@/lib/terms";
+
+/** The name shown for a store whose row the caller cannot see or no longer exists. */
+function unknownSite(t: Terms): string {
+  return `Unknown ${lower(t.site.one)}`;
+}
 
 /**
  * Call cycle (journey plan) — the recurring pattern the schedule is generated
@@ -811,7 +817,8 @@ async function writeDay(
  */
 export async function applySpread(
   supabase: SupabaseClient,
-  assignments: SpreadAssignment[]
+  assignments: SpreadAssignment[],
+  t: Terms
 ): Promise<void> {
   const BATCH = 8;
   const missed: SpreadAssignment[] = [];
@@ -836,7 +843,7 @@ export async function applySpread(
 
   if (stillMissing.length > 0) {
     throw new Error(
-      `${stillMissing.length} store${stillMissing.length === 1 ? "" : "s"} could not be updated (${stillMissing
+      `${count(t, "site", stillMissing.length)} could not be updated (${stillMissing
         .slice(0, 3)
         .join(", ")}${stillMissing.length > 3 ? "…" : ""}). They may have been unassigned since the plan was proposed — reload and try again.`
     );
@@ -890,7 +897,8 @@ function endOfDay(d: Date): Date {
  */
 export async function fetchDayBoard(
   supabase: SupabaseClient,
-  date: Date
+  date: Date,
+  t: Terms
 ): Promise<DayRep[]> {
   const dateStr = toLocalDateInput(date);
   const dayStart = new Date(date.getFullYear(), date.getMonth(), date.getDate());
@@ -950,7 +958,7 @@ export async function fetchDayBoard(
     (byRep[r.rep_id] ??= []).push({
       id: r.id,
       storeId: r.store_id,
-      storeName: store?.name ?? "Unknown store",
+      storeName: store?.name ?? unknownSite(t),
       city: store?.city ?? null,
       sequence: r.sequence_order,
       status: visit?.checkout_at
@@ -979,7 +987,7 @@ export async function fetchDayBoard(
     (byRep[v.rep_id] ??= []).push({
       id: v.id,
       storeId: v.store_id,
-      storeName: store?.name ?? "Unknown store",
+      storeName: store?.name ?? unknownSite(t),
       city: store?.city ?? null,
       sequence: null,
       status: v.checkout_at ? "done" : "in_progress",
@@ -993,7 +1001,7 @@ export async function fetchDayBoard(
   return ((repRows ?? []) as { id: string; full_name: string | null }[])
     .map((r) => ({
       repId: r.id,
-      repName: r.full_name ?? "Unnamed rep",
+      repName: r.full_name ?? `Unnamed ${lower(t.staff.one)}`,
       stops: (byRep[r.id] ?? []).sort((a, b) => {
         // Planned stops first, in sequence; ad-hoc appended in check-in order.
         if (a.adHoc !== b.adHoc) return a.adHoc ? 1 : -1;
@@ -1108,7 +1116,8 @@ export async function fetchManualStops(
   supabase: SupabaseClient,
   repId: string,
   from: Date,
-  to: Date
+  to: Date,
+  t: Terms
 ): Promise<ManualStop[]> {
   // Single string literal — a concatenated .select() degrades to
   // GenericStringError in postgrest-js.
@@ -1144,7 +1153,7 @@ export async function fetchManualStops(
       return {
         route_id: r.id,
         store_id: r.store_id,
-        store_name: store?.name ?? "Unknown store",
+        store_name: store?.name ?? unknownSite(t),
         city: store?.city ?? null,
         // Parsed as local midnight. `new Date("2026-09-08")` is UTC midnight,
         // which in CAT is 02:00 the same day but west of Greenwich is the
@@ -1231,7 +1240,8 @@ export async function fetchRepDayPlans(
   supabase: SupabaseClient,
   repId: string,
   from: Date,
-  to: Date
+  to: Date,
+  t: Terms
 ): Promise<Record<string, PlannedDay>> {
   // Single string literal — a concatenated .select() degrades to
   // GenericStringError in postgrest-js.
@@ -1276,7 +1286,7 @@ export async function fetchRepDayPlans(
     (days[key] ??= { date: fromLocalDateInput(key), stops: [], towns: [] }).stops.push({
       route_id: r.id,
       store_id: r.store_id,
-      store_name: store?.name ?? "Unknown store",
+      store_name: store?.name ?? unknownSite(t),
       city: store?.city ?? null,
       sequence: r.sequence_order,
       // Defaulting to 'cycle' matches the column default: a row written before
@@ -1443,7 +1453,8 @@ export function buildMonthCalendar(
 
 export async function fetchPlannedStores(
   supabase: SupabaseClient,
-  repId: string
+  repId: string,
+  t: Terms
 ): Promise<PlannedStore[]> {
   const { data, error } = await supabase
     .from("store_assignments")
@@ -1480,7 +1491,7 @@ export async function fetchPlannedStores(
       return {
         assignment_id: r.id,
         store_id: r.store_id,
-        store_name: store?.name ?? "Unknown store",
+        store_name: store?.name ?? unknownSite(t),
         city: store?.city ?? null,
         state: store?.state ?? null,
         active: store?.active ?? false,

@@ -7,6 +7,8 @@ import { createClient } from "@/lib/supabase/client";
 import { WEEKDAYS, applySpread, autoSpreadDays } from "@/lib/schedule";
 import type { PlannedStore, SpreadResult } from "@/lib/schedule";
 import type { OrgSettings } from "@/lib/org-settings";
+import { useTerms } from "@/lib/use-company-config";
+import { count, lower } from "@/lib/terms";
 
 /**
  * "Auto-spread days" — propose a day for every store, then accept or discard.
@@ -34,6 +36,7 @@ export function SpreadProposal({
   disabled?: boolean;
 }) {
   const supabase = createClient();
+  const t = useTerms();
 
   /**
    * The proposal, kept together with the exact `stores` array it was computed
@@ -81,7 +84,7 @@ export function SpreadProposal({
     setApplying(true);
     setError(null);
     try {
-      await applySpread(supabase, spread.assignments);
+      await applySpread(supabase, spread.assignments, t);
       await onApplied();
       setSpread(null);
     } catch (e) {
@@ -110,7 +113,7 @@ export function SpreadProposal({
           Auto-spread days
         </Button>
         <span className="text-xs text-muted-foreground">
-          Groups stores by how close together they are and fills each day to{" "}
+          Groups {lower(t.site.many)} by how close together they are and fills each day to{" "}
           {settings.storesPerDay}, putting outlying towns on a day of their
           own. You can change anything after.
         </span>
@@ -123,8 +126,7 @@ export function SpreadProposal({
                 a null day so they are cleared rather than left where they
                 were — which meant this count included the very stores the
                 next sentence says did not fit. The two disagreed. */}
-            Proposed: {placedCount} store
-            {placedCount === 1 ? "" : "s"} over{" "}
+            Proposed: {count(t, "site", placedCount)} over{" "}
             {spread.daysUsed} of {spread.daysAvailable} working days, peak{" "}
             {Math.max(0, ...Object.values(spread.peakByDay))} on a day.
           </p>
@@ -143,8 +145,8 @@ export function SpreadProposal({
                 )
                 .join(", ")}
               . There is not enough work to fill those days at this
-              frequency — either they take more stores, or this rep does not
-              need the whole week.
+              frequency — either they take more {lower(t.site.many)}, or this{" "}
+              {lower(t.staff.one)} does not need the whole week.
             </p>
           )}
 
@@ -190,17 +192,16 @@ export function SpreadProposal({
           {spread.overflow.length > 0 && (
             <p className="flex items-start gap-1.5 text-xs text-destructive">
               <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-              {spread.overflow.length} store
-              {spread.overflow.length === 1 ? "" : "s"} did not fit in the
+              {count(t, "site", spread.overflow.length)} did not fit in the
               week and {spread.overflow.length === 1 ? "was" : "were"} left
               unplanned. Reduce their frequency, add a working day, or move
-              them to another rep.
+              them to another {lower(t.staff.one)}.
             </p>
           )}
 
           <div className="flex flex-wrap gap-2">
             <Button size="sm" onClick={acceptSpread} disabled={applying}>
-              {applying ? "Applying…" : "Apply to all stores"}
+              {applying ? "Applying…" : `Apply to all ${lower(t.site.many)}`}
             </Button>
             <Button size="sm" variant="outline" onClick={() => setSpread(null)}>
               Discard

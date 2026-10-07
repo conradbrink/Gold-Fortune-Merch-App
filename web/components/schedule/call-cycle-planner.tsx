@@ -47,6 +47,8 @@ import { SpreadProposal } from "@/components/schedule/spread-proposal";
 import { RouteOrderProposal } from "@/components/schedule/route-order-proposal";
 import { PlanStoreList } from "@/components/schedule/plan-store-list";
 import { CycleGrid } from "@/components/schedule/cycle-grid";
+import { useTerms } from "@/lib/use-company-config";
+import { count, lower, noun } from "@/lib/terms";
 
 /**
  * The call-cycle planner: pick a rep, give each of their stores a day and a
@@ -79,6 +81,7 @@ function manualWindow(): [Date, Date] {
 
 export function CallCyclePlanner() {
   const supabase = createClient();
+  const t = useTerms();
 
   const [reps, setReps] = useState<RepSummary[]>([]);
   const [repId, setRepId] = useState("");
@@ -191,8 +194,8 @@ export function CallCyclePlanner() {
     (async () => {
       try {
         const [rows, oneOffs] = await Promise.all([
-          fetchPlannedStores(supabase, repId),
-          fetchManualStops(supabase, repId, ...manualWindow()),
+          fetchPlannedStores(supabase, repId, t),
+          fetchManualStops(supabase, repId, ...manualWindow(), t),
         ]);
         if (!cancelled) {
           setStores(rows);
@@ -375,7 +378,7 @@ export function CallCyclePlanner() {
        * are scoped to this one date.
        */
       const dayKey = toLocalDateInput(date);
-      const written = await fetchRepDayPlans(supabase, startedRepId, date, date);
+      const written = await fetchRepDayPlans(supabase, startedRepId, date, date, t);
 
       const cycleOnDate = stores.filter(
         (s) =>
@@ -402,7 +405,8 @@ export function CallCyclePlanner() {
       const fresh = await fetchManualStops(
         supabase,
         startedRepId,
-        ...manualWindow()
+        ...manualWindow(),
+        t
       );
       // There are now two awaits before this lands and the rep select stays live
       // throughout, so a late read-back would paint the previous rep's one-offs
@@ -522,7 +526,7 @@ export function CallCyclePlanner() {
     const startedRepId = repIdRef.current;
     if (!startedRepId) return;
     try {
-      const rows = await fetchPlannedStores(supabase, startedRepId);
+      const rows = await fetchPlannedStores(supabase, startedRepId, t);
       if (startedRepId !== repIdRef.current) return;
       setStores(rows);
     } catch (e) {
@@ -549,15 +553,15 @@ export function CallCyclePlanner() {
           selects with no explanation reads as a broken page. */}
       {readOnly && (
         <p className="rounded-md border border-border bg-muted/40 px-3 py-2 text-sm text-muted-foreground">
-          Scheduling is manager-only. You can read the call cycle and see what
-          it produces, but changing a day, a frequency or generating routes
-          needs a manager.
+          Scheduling is manager-only. You can read the{" "}
+          {lower(t.schedule_cycle.one)} and see what it produces, but changing
+          a day, a frequency or generating routes needs a manager.
         </p>
       )}
 
       <div className="flex flex-wrap items-end gap-3 rounded-lg border border-border bg-card p-3">
         <div className="min-w-[200px] flex-1 space-y-1.5">
-          <Label htmlFor="plan-rep">Representative</Label>
+          <Label htmlFor="plan-rep">{t.staff.one}</Label>
           <NativeSelect
             id="plan-rep"
             value={repId}
@@ -566,12 +570,12 @@ export function CallCyclePlanner() {
           >
             {loadingReps && <option value="">Loading…</option>}
             {!loadingReps && reps.length === 0 && (
-              <option value="">No active reps</option>
+              <option value="">No active {lower(t.staff.many)}</option>
             )}
             {reps.map((r) => (
               <option key={r.rep_id} value={r.rep_id}>
                 {r.rep_name ?? "Unnamed"} — {r.assigned_stores}{" "}
-                {r.assigned_stores === 1 ? "store" : "stores"}
+                {noun(t, "site", r.assigned_stores)}
               </option>
             ))}
           </NativeSelect>
@@ -613,7 +617,7 @@ export function CallCyclePlanner() {
         <InsightsPanel
           request={{ reportType: "call_cycle", weeks }}
           title="Plan review"
-          blurb="Review the whole team's call cycle: days that span two cities, days carrying more stops than fit, stores nobody covers, and stores with no day set."
+          blurb={`Review the whole team's ${lower(t.schedule_cycle.one)}: days that span two cities, days carrying more stops than fit, ${lower(t.site.many)} nobody covers, and ${lower(t.site.many)} with no day set.`}
           staleHint="Horizon changed since this was generated — regenerate to refresh."
           clearMessage="Nothing in the plan looks wrong."
         />
@@ -642,13 +646,13 @@ export function CallCyclePlanner() {
                 <span className="font-semibold text-foreground">
                   {plannedVisits}
                 </span>{" "}
-                visits planned over {weeks} weeks
+                {noun(t, "job", plannedVisits)} planned over {weeks} weeks
               </span>
               {unplanned.length > 0 && (
                 <span className="inline-flex items-center gap-1.5 rounded-md border border-amber-500/40 bg-amber-500/10 px-2 py-1 text-xs text-amber-800 dark:text-amber-300">
                   <AlertTriangle className="h-3.5 w-3.5" />
-                  {unplanned.length} store{unplanned.length === 1 ? "" : "s"} with
-                  no day — {unplanned.length === 1 ? "it" : "they"} will never be
+                  {count(t, "site", unplanned.length)} with no day —{" "}
+                  {unplanned.length === 1 ? "it" : "they"} will never be
                   scheduled
                 </span>
               )}
@@ -665,17 +669,18 @@ export function CallCyclePlanner() {
           recurring round they may not want. */}
       {selectedRep && !loadingStores && stores.length === 0 && (
         <p className="rounded-lg border border-border bg-card px-4 py-10 text-center text-sm text-muted-foreground">
-          {selectedRep.rep_name ?? "This rep"} has no stores assigned, so there
-          is no pattern to lay out. Assign stores on the Representatives page to
-          build a recurring round — or plan their days one at a time on the{" "}
+          {selectedRep.rep_name ?? `This ${lower(t.staff.one)}`} has no{" "}
+          {lower(t.site.many)} assigned, so there is no pattern to lay out.
+          Assign {lower(t.site.many)} on the {t.staff.many} page to build a
+          recurring round — or plan their days one at a time on the{" "}
           <span className="font-medium text-foreground">Plan</span> tab, which
-          needs no call cycle.
+          needs no {lower(t.schedule_cycle.one)}.
         </p>
       )}
 
       {loadingStores && (
         <p className="rounded-lg border border-border bg-card py-10 text-center text-sm text-muted-foreground">
-          Loading call cycle…
+          Loading {lower(t.schedule_cycle.one)}…
         </p>
       )}
 
@@ -686,7 +691,7 @@ export function CallCyclePlanner() {
               {(
                 [
                   ["days", "By day"],
-                  ["stores", "By store"],
+                  ["stores", `By ${lower(t.site.one)}`],
                 ] as const
               ).map(([value, label]) => (
                 <button
@@ -745,8 +750,8 @@ export function CallCyclePlanner() {
 
           {inactive.length > 0 && (
             <p className="text-xs text-muted-foreground">
-              {inactive.length} assigned store
-              {inactive.length === 1 ? " is" : "s are"} deactivated and excluded
+              {inactive.length} assigned {noun(t, "site", inactive.length)}{" "}
+              {inactive.length === 1 ? "is" : "are"} deactivated and excluded
               from generation.
             </p>
           )}

@@ -13,6 +13,8 @@ import {
 } from "@/components/ui/dialog";
 import { createClient } from "@/lib/supabase/client";
 import { generateRoutes, type GenerateResult } from "@/lib/schedule";
+import { useTerms } from "@/lib/use-company-config";
+import { count, lower, withArticle } from "@/lib/terms";
 
 /**
  * "Generate schedule" — the button and the dialog behind it.
@@ -36,6 +38,7 @@ export function GenerateScheduleDialog({
   disabled?: boolean;
 }) {
   const supabase = createClient();
+  const t = useTerms();
 
   const [genOpen, setGenOpen] = useState(false);
   const [preview, setPreview] = useState<GenerateResult | null>(null);
@@ -97,8 +100,8 @@ export function GenerateScheduleDialog({
         <DialogHeader>
           <DialogTitle>Generate schedule</DialogTitle>
           <DialogDescription>
-            This covers every rep in the organisation, not just{" "}
-            {repName ?? "the selected rep"}.
+            This covers every {lower(t.staff.one)} in the organisation, not
+            just {repName ?? `the selected ${lower(t.staff.one)}`}.
           </DialogDescription>
         </DialogHeader>
 
@@ -113,8 +116,8 @@ export function GenerateScheduleDialog({
             {preview.created === 0 && preview.removed === 0 ? (
               <p className="text-foreground">
                 Nothing to change. Every date in the next {weeks} weeks that
-                the call cycle calls for already has a route — or no store has
-                a day set yet.
+                the {lower(t.schedule_cycle.one)} calls for already has a route
+                — or no {lower(t.site.one)} has a day set yet.
               </p>
             ) : (
               <>
@@ -123,8 +126,7 @@ export function GenerateScheduleDialog({
                     Creates{" "}
                     <span className="font-semibold">{preview.created}</span>{" "}
                     route{preview.created === 1 ? "" : "s"} for{" "}
-                    {preview.reps_covered} rep
-                    {preview.reps_covered === 1 ? "" : "s"}, from{" "}
+                    {count(t, "staff", preview.reps_covered)}, from{" "}
                     {preview.first_date} to {preview.last_date}.
                   </p>
                 )}
@@ -139,9 +141,10 @@ export function GenerateScheduleDialog({
                   </p>
                 )}
                 <p className="text-xs text-muted-foreground">
-                  Nothing in the past is touched, nothing a rep has already
-                  checked into, and no stop added by hand. No visit records
-                  are created — a visit belongs to a check-in.
+                  Nothing in the past is touched, nothing{" "}
+                  {withArticle(t, "staff")} has already checked into, and no
+                  stop added by hand. No {lower(t.job.one)} records are created
+                  — {withArticle(t, "job")} belongs to a check-in.
                 </p>
               </>
             )}
