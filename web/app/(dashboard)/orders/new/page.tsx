@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Trash2, Plus } from "lucide-react";
+import { Trash2, Plus, Search } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -19,6 +19,7 @@ import {
   fetchStoresForOrder,
   fetchRepsForOrder,
   fetchVatRate,
+  matchProducts,
   orderTotals,
   unitPriceFor,
   RECEIVED_VIA,
@@ -54,6 +55,9 @@ export default function NewOrderPage() {
       id: string;
       name: string;
       brand: string | null;
+      sku_code: string | null;
+      unit_barcode: string | null;
+      shrink_barcode: string | null;
       units_per_shrink: number | null;
       shrink_price_excl_vat: number | null;
     }[]
@@ -83,6 +87,7 @@ export default function NewOrderPage() {
   const [newStoreAddress, setNewStoreAddress] = useState("");
   const [creatingStore, setCreatingStore] = useState(false);
   const [lines, setLines] = useState<Draft[]>([blankLine()]);
+  const [productQuery, setProductQuery] = useState("");
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -142,6 +147,33 @@ export default function NewOrderPage() {
   );
 
   const usedProducts = new Set(lines.map((l) => l.productId).filter(Boolean));
+  const productMatches = matchProducts(products, productQuery);
+
+  /**
+   * Puts a searched-for product on the order.
+   *
+   * Picking one already on the order adds one to that line rather than making
+   * a second line for it — the per-line picker hides used products for the
+   * same reason. Otherwise it fills the first empty line, so the blank line
+   * the form starts with is used rather than left behind.
+   */
+  function addFromSearch(p: (typeof products)[number]) {
+    const price = unitPriceFor(p);
+    setLines((prev) => {
+      const existing = prev.find((l) => l.productId === p.id);
+      if (existing) {
+        return prev.map((l) =>
+          l.key === existing.key ? { ...l, qty: String((Number(l.qty) || 0) + 1) } : l
+        );
+      }
+      const line = { productId: p.id, qty: "1", unitPrice: price != null ? price : "" };
+      const empty = prev.find((l) => !l.productId);
+      return empty
+        ? prev.map((l) => (l.key === empty.key ? { ...l, ...line } : l))
+        : [...prev, { key: crypto.randomUUID(), ...line }];
+    });
+    setProductQuery("");
+  }
 
   // Name or town, case-blind, capped so the list stays a list. The full set is
   // already in memory — 211 stores is a couple of kilobytes — so this is a
@@ -455,6 +487,52 @@ export default function NewOrderPage() {
               before capturing orders.
             </p>
           )}
+
+          <div className="relative">
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              value={productQuery}
+              onChange={(e) => setProductQuery(e.target.value)}
+              onKeyDown={(e) => {
+                // Enter takes the top match, which is what a barcode scanner
+                // sends after the code — scan, scan, scan builds the order.
+                if (e.key === "Enter" && productMatches[0]) {
+                  e.preventDefault();
+                  addFromSearch(productMatches[0]);
+                }
+              }}
+              placeholder="Search by product name, SKU or barcode"
+              aria-label="Search products"
+              className="pl-9"
+            />
+            {productQuery.trim() && (
+              <div className="absolute z-10 mt-1 max-h-64 w-full overflow-y-auto rounded-lg border border-border bg-card shadow-md">
+                {productMatches.map((p) => (
+                  <button
+                    key={p.id}
+                    type="button"
+                    className="flex w-full items-center justify-between gap-3 px-3 py-2 text-left text-sm hover:bg-muted"
+                    onClick={() => addFromSearch(p)}
+                  >
+                    <span className="min-w-0 truncate">
+                      {p.name}
+                      {p.brand && <span className="text-muted-foreground"> — {p.brand}</span>}
+                    </span>
+                    {p.sku_code && (
+                      <span className="shrink-0 font-mono text-xs text-muted-foreground">
+                        {p.sku_code}
+                      </span>
+                    )}
+                  </button>
+                ))}
+                {productMatches.length === 0 && (
+                  <p className="px-3 py-2 text-sm text-muted-foreground">
+                    No product matches &ldquo;{productQuery.trim()}&rdquo;.
+                  </p>
+                )}
+              </div>
+            )}
+          </div>
 
           {lines.map((l) => {
             const available = l.productId ? (availableFor.get(l.productId) ?? 0) : null;

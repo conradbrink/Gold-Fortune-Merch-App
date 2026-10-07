@@ -310,7 +310,9 @@ export async function fetchPickingList(
 export async function fetchOrderableProducts(supabase: Client) {
   const { data, error } = await supabase
     .from("products")
-    .select("id, name, brand, sku_code, units_per_shrink, shrink_price_excl_vat")
+    .select(
+      "id, name, brand, sku_code, unit_barcode, shrink_barcode, units_per_shrink, shrink_price_excl_vat"
+    )
     .eq("active", true)
     .eq("is_stock_tracked", true)
     .order("name");
@@ -320,9 +322,43 @@ export async function fetchOrderableProducts(supabase: Client) {
     name: string;
     brand: string | null;
     sku_code: string | null;
+    unit_barcode: string | null;
+    shrink_barcode: string | null;
     units_per_shrink: number | null;
     shrink_price_excl_vat: number | null;
   }[];
+}
+
+/**
+ * Products matching what was typed into an order's product search.
+ *
+ * Name and brand match anywhere in the text; the codes match from the start,
+ * because a clerk reading a SKU or scanning a barcode has the whole thing and
+ * a code that merely contains "12" is noise. Codes are compared without
+ * spaces, which is how they arrive from a WhatsApp message.
+ */
+export function matchProducts<
+  P extends {
+    name: string;
+    brand: string | null;
+    sku_code: string | null;
+    unit_barcode: string | null;
+    shrink_barcode: string | null;
+  },
+>(products: P[], query: string, limit = 8): P[] {
+  const q = query.trim().toLowerCase();
+  if (!q) return [];
+  const code = q.replace(/\s+/g, "");
+  return products
+    .filter(
+      (p) =>
+        p.name.toLowerCase().includes(q) ||
+        (p.brand ?? "").toLowerCase().includes(q) ||
+        [p.sku_code, p.unit_barcode, p.shrink_barcode].some((c) =>
+          (c ?? "").toLowerCase().replace(/\s+/g, "").startsWith(code)
+        )
+    )
+    .slice(0, limit);
 }
 
 /**
