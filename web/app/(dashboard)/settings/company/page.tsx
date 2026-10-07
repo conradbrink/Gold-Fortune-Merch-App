@@ -191,7 +191,7 @@ export default function CompanyProfilePage() {
   return (
     <div className="space-y-4">
       <div>
-        <h1 className="text-2xl font-bold tracking-tight text-foreground">
+        <h1 className="text-xl font-semibold tracking-tight text-foreground">
           Company Profile
         </h1>
         <p className="text-sm text-muted-foreground">

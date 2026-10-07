@@ -423,7 +423,7 @@ export default function FormDetailPage() {
       </Button>
 
       <div>
-        <h1 className="text-2xl font-bold tracking-tight text-foreground">{template.name}</h1>
+        <h1 className="text-xl font-semibold tracking-tight text-foreground">{template.name}</h1>
         {template.description && (
           <p className="text-sm text-muted-foreground">{template.description}</p>
         )}
