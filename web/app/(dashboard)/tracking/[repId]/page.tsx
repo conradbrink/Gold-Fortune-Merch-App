@@ -51,12 +51,20 @@ export default function RepDayPage() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    let cancelled = false;
     supabase
       .from("profiles")
       .select("full_name")
       .eq("id", repId)
       .maybeSingle()
-      .then(({ data }) => setName((data as { full_name: string } | null)?.full_name ?? "Rep"));
+      .then(({ data, error: e }) => {
+        if (cancelled) return;
+        if (e) setError(e.message);
+        else setName((data as { full_name: string } | null)?.full_name ?? "Unknown rep");
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [supabase, repId]);
 
   useEffect(() => {

@@ -49,6 +49,8 @@ export function TrackingMap({
   const markers = useRef<google.maps.Marker[]>([]);
   const line = useRef<google.maps.Polyline | null>(null);
   const lastFit = useRef<string | number | null>(null);
+  /** The focus last zoomed to, so a minute's refresh does not undo the reader's panning. */
+  const lastFocus = useRef<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [retry, setRetry] = useState(0);
 
@@ -119,7 +121,10 @@ export function TrackingMap({
           for (const pt of path) bounds.extend(pt);
         }
 
-        if (focus) {
+        const focusKey = focus ? `${focus.lat},${focus.lng}` : null;
+        if (!focusKey) lastFocus.current = null;
+        if (focus && lastFocus.current !== focusKey) {
+          lastFocus.current = focusKey;
           const SPAN = 0.004;
           map.current.fitBounds(
             new google.maps.LatLngBounds(
@@ -128,7 +133,7 @@ export function TrackingMap({
             ),
             24
           );
-        } else if (lastFit.current !== fitKey && !bounds.isEmpty()) {
+        } else if (!focus && lastFit.current !== fitKey && !bounds.isEmpty()) {
           lastFit.current = fitKey;
           const ne = bounds.getNorthEast();
           const sw = bounds.getSouthWest();

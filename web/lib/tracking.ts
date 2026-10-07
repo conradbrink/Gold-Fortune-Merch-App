@@ -209,7 +209,9 @@ export function timelineOf(day: RepDay): TimelineEntry[] {
   for (const o of day.orders) {
     out.push({ at: o.createdAt, kind: "order", text: `Order ${o.orderNumber} at ${o.storeName}`, href: `/orders/${o.id}` });
   }
-  return out.sort((a, b) => a.at.localeCompare(b.at));
+  // By instant, not by string: timestamps arrive with differing fractional
+  // precision, and two in the same second can sort the wrong way as text.
+  return out.sort((a, b) => new Date(a.at).getTime() - new Date(b.at).getTime());
 }
 
 export function formatKm(m: number | null) {

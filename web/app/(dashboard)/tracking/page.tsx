@@ -48,7 +48,10 @@ export default function TrackingPage() {
   const [showOrders, setShowOrders] = useState(true);
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState<string | null>(null);
-  const [day, setDay] = useState<RepDay | null>(null);
+  // Kept with the rep it belongs to, so a new selection never shows the
+  // previous rep's day under the new rep's name while it loads.
+  const [day, setDay] = useState<{ repId: string; day: RepDay } | null>(null);
+  const [tick, setTick] = useState(0);
   const [fitKey, setFitKey] = useState(0);
   const [now, setNow] = useState(() => Date.now());
   const [error, setError] = useState<string | null>(null);
@@ -59,6 +62,7 @@ export default function TrackingPage() {
       setData(live);
       setOrders(o);
       setNow(Date.now());
+      setTick((t) => t + 1);
       setError(null);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -76,12 +80,13 @@ export default function TrackingPage() {
     if (!selected) return;
     let cancelled = false;
     fetchRepDay(supabase, selected, todayDate())
-      .then((d) => !cancelled && setDay(d))
+      .then((d) => !cancelled && setDay({ repId: selected, day: d }))
       .catch((e) => !cancelled && setError(e instanceof Error ? e.message : String(e)));
     return () => {
       cancelled = true;
     };
-  }, [supabase, selected]);
+    // `tick` re-reads the card with the minute poll, like the map.
+  }, [supabase, selected, tick]);
 
   const q = query.trim().toLowerCase();
   const positions = useMemo(
@@ -196,7 +201,7 @@ export default function TrackingPage() {
           {chosen && (
             <RepCard
               rep={chosen}
-              day={day?.pings !== undefined && selected === chosen.repId ? day : null}
+              day={day?.repId === chosen.repId ? day.day : null}
               now={now}
               onClose={() => { setSelected(null); setDay(null); setFitKey((k) => k + 1); }}
             />
