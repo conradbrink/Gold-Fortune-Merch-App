@@ -106,14 +106,17 @@ export default function OffsiteCheckinsPage() {
     cur.n += 1;
     return m.set(r.rep_id, cur);
   }, new Map<string, { name: string; n: number }>())].sort((a, b) => b[1].n - a[1].n);
-  const shown = repId ? rows.filter((r) => r.rep_id === repId) : rows;
+  // A rep picked in another range may have nothing in this one; fall back to
+  // everyone rather than an empty list with no chip lit.
+  const activeRep = byRep.some(([id]) => id === repId) ? repId : "";
+  const shown = activeRep ? rows.filter((r) => r.rep_id === activeRep) : rows;
 
   const lastDay = new Date(range.to);
   lastDay.setDate(lastDay.getDate() - 1);
   const rangeLabel = `${toLocalDateInput(range.from)} to ${toLocalDateInput(lastDay)}`;
 
   function buildSheet(): ExportSheet {
-    const repName = byRep.find(([id]) => id === repId)?.[1].name;
+    const repName = byRep.find(([id]) => id === activeRep)?.[1].name;
     return {
       title: "Off-site check-ins",
       orgName: "Gold Fortune Merchandising",
@@ -161,11 +164,11 @@ export default function OffsiteCheckinsPage() {
 
       {byRep.length > 0 && (
         <div className="flex flex-wrap gap-1.5">
-          <Button size="sm" variant={repId === "" ? "default" : "outline"} onClick={() => setRepId("")}>
+          <Button size="sm" variant={activeRep === "" ? "default" : "outline"} onClick={() => setRepId("")}>
             Everyone · {rows.length}
           </Button>
           {byRep.map(([id, r]) => (
-            <Button key={id} size="sm" variant={repId === id ? "default" : "outline"} onClick={() => setRepId(id)}>
+            <Button key={id} size="sm" variant={activeRep === id ? "default" : "outline"} onClick={() => setRepId(id)}>
               {r.name} · {r.n}
             </Button>
           ))}
