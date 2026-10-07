@@ -525,7 +525,6 @@ begin
       end;
     end loop;
 
-    v_funcs_checked := v_funcs_checked + 1;
     set local role authenticated;
     begin
       execute format('select coalesce(jsonb_agg(to_jsonb(x))::text, '''') from public.%I(%s) x',
@@ -541,6 +540,9 @@ begin
           exit;
         end if;
       end loop;
+      -- Counted only once its result has been searched, or below once it has
+      -- refused B; a call that broke is listed, not counted (CodeRabbit on #69).
+      v_funcs_checked := v_funcs_checked + 1;
     exception when others then
       -- Not a leak either way, but say which: a refusal (permission, module)
       -- is the guard working; anything else means the guessed arguments did
@@ -548,6 +550,7 @@ begin
       -- argument types were read off by one, so almost every call landed
       -- here, silently, and was counted as coverage.
       if sqlstate = '42501' then
+        v_funcs_checked := v_funcs_checked + 1;
         v_funcs_refused := v_funcs_refused || f.proname || ' ';
       else
         v_funcs_broken := v_funcs_broken || format('%s (%s) ', f.proname, sqlstate);

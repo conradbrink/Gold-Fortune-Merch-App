@@ -186,14 +186,25 @@ export async function fetchRepDayDistance(
   const DAY_MS = 24 * 60 * 60 * 1000;
   const firstDay = reportingDay(range.from.toISOString(), timeZone);
   const lastDay = reportingDay(new Date(+range.to - 1).toISOString(), timeZone);
-  const { data: raw, error } = await supabase
-    .from("workday_sessions")
-    .select("rep_id, started_at, road_distance_meters")
-    .gte("started_at", new Date(+range.from - DAY_MS).toISOString())
-    .lt("started_at", new Date(+range.to + DAY_MS).toISOString())
-    .order("started_at", { ascending: true });
-  if (error) throw new Error(error.message);
-  const data = (raw ?? []).filter((r) => {
+  // Paged: the padding days count toward PostgREST's 1,000-row cap, and a
+  // response cut short there would drop the end of the range without an
+  // error (CodeRabbit on #74, second pass).
+  const PAGE = 1000;
+  const raw: { rep_id: string; started_at: string; road_distance_meters: number | null }[] = [];
+  for (let from = 0; ; from += PAGE) {
+    const { data: page, error } = await supabase
+      .from("workday_sessions")
+      .select("rep_id, started_at, road_distance_meters")
+      .gte("started_at", new Date(+range.from - DAY_MS).toISOString())
+      .lt("started_at", new Date(+range.to + DAY_MS).toISOString())
+      .order("started_at", { ascending: true })
+      .order("id", { ascending: true })
+      .range(from, from + PAGE - 1);
+    if (error) throw new Error(error.message);
+    raw.push(...(page ?? []));
+    if ((page ?? []).length < PAGE) break;
+  }
+  const data = raw.filter((r) => {
     const day = reportingDay(r.started_at as string, timeZone);
     return day >= firstDay && day <= lastDay;
   });
@@ -438,4 +449,84 @@ export function formatDuration(seconds: number): string {
   const h = Math.floor(seconds / 3600);
   const m = Math.round((seconds % 3600) / 60);
   return h > 0 ? `${h}h ${m}m` : `${m}m`;
+}
+
+// ------------------------------------------------------------ the business side
+
+/**
+ * Sales, the orders pipeline, money owed, store health and flagged check-ins,
+ * from `dashboard_business`. Security invoker: each section is only what the
+ * signed-in person could already read row by row, so a section they cannot see
+ * comes back as zeros rather than as somebody else's figures.
+ *
+ * Revenue is the Sales page's definition — delivered, on the local delivery
+ * date, net of returns and line discounts, excluding VAT.
+ */
+export type BusinessSummary = {
+  revenue: {
+    current: number;
+    previous: number;
+    orders: number;
+    /** First day of the current calendar month, YYYY-MM-DD, org time. */
+    month_start: string;
+    today: string;
+    by_month: { month: string; net: number; orders: number }[];
+  };
+  pipeline: {
+    new: number;
+    confirmed: number;
+    picking: number;
+    packed: number;
+    dispatched: number;
+    pod_missing: number;
+    quotes_waiting: number;
+    recurring_due_7d: number;
+    low_stock: number;
+  };
+  money: {
+    invoiced: number;
+    outstanding: number;
+    overdue: number;
+    commission_pending: number;
+    commission_to_pay: number;
+  };
+  health: {
+    stores_active: number;
+    ordered_30d: number;
+    visited_no_order_30d: number;
+    not_visited_30d: number;
+    lapsed_60d: number;
+    longest_unvisited: { id: string; name: string; city: string | null; days: number | null }[];
+  };
+  field: { flagged_checkins: number };
+};
+
+export async function fetchBusinessSummary(
+  supabase: SupabaseClient,
+  range: DateRange
+): Promise<BusinessSummary> {
+  const { data, error } = await callRpc(supabase, "dashboard_business", {
+    p_from: range.from.toISOString(),
+    p_to: range.to.toISOString(),
+  });
+  if (error) throw new Error(error.message);
+  if (!data) throw new Error("The business figures came back empty.");
+  return data as BusinessSummary;
+}
+
+/**
+ * Money as the dashboard prints it: whole pula with thousands separators.
+ *
+ * Whole units on purpose — the dashboard is for scanning; the cents live on
+ * the Sales page and the invoices. The currency mark is Botswana's, which is
+ * the only currency this organisation trades in today.
+ */
+export function formatMoney(n: number): string {
+  return `P ${Math.round(n).toLocaleString("en-GB")}`;
+}
+
+/** "P 109k" style, for a projection that should not look more precise than it is. */
+export function formatMoneyShort(n: number): string {
+  if (Math.abs(n) >= 1000) return `P ${Math.round(n / 1000).toLocaleString("en-GB")}k`;
+  return formatMoney(n);
 }

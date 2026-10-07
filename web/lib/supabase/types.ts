@@ -6325,6 +6325,10 @@ export type Database = {
       }
       current_org_id: { Args: never; Returns: string }
       current_role: { Args: never; Returns: string }
+      dashboard_business: {
+        Args: { p_from: string; p_to: string }
+        Returns: Json
+      }
       dashboard_operations: {
         Args: { p_from: string; p_to: string }
         Returns: Json

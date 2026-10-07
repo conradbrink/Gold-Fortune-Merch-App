@@ -29,6 +29,14 @@ import type { LiveReps } from "@/lib/live-reps";
 import { toLocalDateInput, type DateRange } from "@/lib/date-range";
 import type { ReportTab } from "@/lib/report-tabs";
 import { UnitsTrendChart } from "@/components/dashboard/units-trend-chart";
+import {
+  FieldTeamCard,
+  Headline,
+  PipelineCard,
+  SalesCard,
+  StoreHealthCard,
+} from "@/components/dashboard/business-widgets";
+import type { TargetProgress } from "@/lib/targets";
 import { SettleDriving } from "@/components/workday/settle-driving";
 import {
   companyDayTimes,
@@ -37,6 +45,7 @@ import {
   formatPct,
   formatKm,
   formatTimeOfDay,
+  type BusinessSummary,
   type DashboardSummary,
   type OperationsSummary,
   type RepDayDetail,
@@ -66,7 +75,14 @@ import {
  */
 
 /** The RPCs behind the catalogue. One fetch each, however many cards use them. */
-export type WidgetSource = "summary" | "dayTimes" | "operations" | "liveReps";
+export type WidgetSource = "summary" | "dayTimes" | "operations" | "liveReps" | "business";
+
+/** Sales, pipeline, money and store health, with this month's rep targets. */
+export type BusinessData = {
+  summary: BusinessSummary;
+  /** Empty when the targets could not be read; the Sales card then shows reps without them. */
+  targets: TargetProgress[];
+};
 
 export type WidgetData = {
   summary: DashboardSummary | null;
@@ -78,6 +94,7 @@ export type WidgetData = {
   operations: OperationsSummary | null;
   /** Last-known rep positions. Not range-scoped — "where are they" is about now. */
   liveReps: LiveReps | null;
+  business: BusinessData | null;
   /** How many days the chosen range covers, for labels like "vs previous 30 days". */
   days: number;
   /** The chosen range, so a tile can hand it to the page it links into. */
@@ -177,6 +194,61 @@ function coveragePctOf(summary: DashboardSummary): number | null {
 }
 
 export const WIDGETS: WidgetDefinition[] = [
+  // ---- The redesigned dashboard (October 2026). Read top to bottom: the five
+  // numbers that matter, then where each comes from. Everything after these is
+  // the earlier field-only catalogue, kept for anyone who wants it back.
+  {
+    id: "headline",
+    title: () => "Headline numbers",
+    description: (t) =>
+      `Revenue, orders needing action, money owed, ${lower(t.site.one)} coverage and ${lower(t.site.many)} needing attention.`,
+    span: 4,
+    source: "business",
+    render: (d) =>
+      d.business && <Headline business={d.business.summary} summary={d.summary} days={d.days} />,
+  },
+  {
+    id: "sales",
+    title: () => "Sales",
+    description: (t) =>
+      `Delivered revenue by month with this month's pace, and each ${lower(t.staff.one)} against target.`,
+    span: 2,
+    source: "business",
+    module: "distribution",
+    render: (d) => d.business && <SalesCard business={d.business.summary} targets={d.business.targets} />,
+  },
+  {
+    id: "pipeline",
+    title: () => "Orders pipeline",
+    description: () =>
+      "Orders by stage, missing proofs of delivery, quotes, recurring orders, low stock and money owed.",
+    span: 2,
+    source: "business",
+    module: "distribution",
+    render: (d) => d.business && <PipelineCard business={d.business.summary} />,
+  },
+  {
+    id: "field_team",
+    title: () => "Field team",
+    description: (t) =>
+      `Where each ${lower(t.staff.one)} last was, who has gone quiet, out-of-stock, planogram and far-from-${lower(t.site.one)} check-ins.`,
+    span: 2,
+    source: "liveReps",
+    render: (d) =>
+      d.liveReps && (
+        <FieldTeamCard liveReps={d.liveReps} summary={d.summary} business={d.business?.summary ?? null} />
+      ),
+  },
+  {
+    id: "store_health",
+    title: (t) => `${t.site.one} health`,
+    description: (t) =>
+      `${t.site.many} ordering, visited without ordering, and not visited — with the ones to visit first.`,
+    span: 2,
+    source: "business",
+    module: "distribution",
+    render: (d) => d.business && <StoreHealthCard business={d.business.summary} />,
+  },
   {
     id: "visits_completed",
     title: (t) => `${t.job.many} completed`,
@@ -590,16 +662,25 @@ export const WIDGETS: WidgetDefinition[] = [
 export const WIDGET_IDS = WIDGETS.map((w) => w.id);
 
 /**
- * The layout somebody sees before they have customised anything: the dashboard
- * exactly as it was when it was a fixed page.
+ * The layout somebody sees before they have customised anything.
  *
- * Derived rather than restated. It was a second hand-written list of the same
- * fourteen ids, and a new widget added to `WIDGETS` but forgotten here would have
- * been missing from every uncustomised dashboard with nothing to show it was
- * meant to be there. `WIDGETS` is ordered to be read top to bottom for this
- * reason — registry order *is* the default layout.
+ * Written out, no longer derived from the registry: since the October 2026
+ * redesign the default is the five summary cards plus the team map, and the
+ * fourteen earlier field cards stay in the catalogue for Customise rather than
+ * all appearing at once, which was most of the old clutter. A new widget meant
+ * for everyone must therefore be added here as well as to `WIDGETS`.
+ *
+ * Nobody had a saved layout when this changed (checked: `dashboard_layouts`
+ * was empty), so every dashboard picked the new default up at once.
  */
-export const DEFAULT_LAYOUT: string[] = [...WIDGET_IDS];
+export const DEFAULT_LAYOUT: string[] = [
+  "headline",
+  "sales",
+  "pipeline",
+  "field_team",
+  "store_health",
+  "live_reps",
+];
 
 /** Every distinct source the catalogue depends on. */
 export const WIDGET_SOURCES: WidgetSource[] = [
