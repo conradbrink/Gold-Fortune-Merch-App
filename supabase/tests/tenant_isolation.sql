@@ -80,7 +80,12 @@ declare
                                      'modules','module_dependencies',
                                      'setting_definitions','module_assignments',
                                      -- the terminology catalogue (Stage 3)
-                                     'term_definitions'];
+                                     'term_definitions',
+                                     -- the industry templates (Stage 4)
+                                     'industry_templates','template_modules',
+                                     'template_terminology','template_settings',
+                                     'template_job_types','template_checklist_items',
+                                     'template_forms'];
   c_children constant text[] := array['form_fields','form_responses','promotion_products',
                                        'promotion_stores','file_groups','file_reps',
                                        'hr_review_ratings','job_role_permissions',

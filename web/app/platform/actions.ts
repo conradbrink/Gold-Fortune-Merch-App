@@ -2,7 +2,15 @@
 
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { platformAdminClient } from "@/lib/platform";
+import { moduleDependencies, platformAdminClient, templateDefaults } from "@/lib/platform";
+import {
+  addCompanyProblems,
+  choicesPayload,
+  companyPayload,
+  parseTemplateDefaults,
+  type AddCompanyInput,
+  type TemplateDefaults,
+} from "@/lib/add-company";
 
 /**
  * Switch one module on or off for one company. Platform operator only.
@@ -77,4 +85,92 @@ export async function setCompanyModule(formData: FormData): Promise<void> {
     redirect(`${back}?error=${encodeURIComponent(error.message)}`);
   }
   redirect(back);
+}
+
+// ------------------------------------------------------------ Add company
+
+/** The caller's user id if they are a platform operator; null otherwise. */
+async function operatorId(): Promise<string | null> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return null;
+  const { data: isOperator, error } = await supabase.rpc("is_platform_admin");
+  return !error && isOperator ? user.id : null;
+}
+
+/**
+ * The merged defaults for a set of industries, for the form to show and edit.
+ * The same `template_defaults()` that `create_company` builds from, so what
+ * the operator reviews is what the company gets.
+ */
+export async function previewTemplates(
+  codes: string[]
+): Promise<{ ok: true; defaults: TemplateDefaults } | { ok: false; error: string }> {
+  if (!(await operatorId())) return { ok: false, error: "Not allowed." };
+  if (codes.length === 0 || codes.some((c) => !/^[a-z][a-z_]*$/.test(c))) {
+    return { ok: false, error: "Choose at least one industry." };
+  }
+  try {
+    return { ok: true, defaults: parseTemplateDefaults(await templateDefaults(codes)) };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : String(e) };
+  }
+}
+
+/**
+ * Creates a company from templates, with its owner's login. Platform operator only.
+ *
+ * Two systems, so two steps: the login (Supabase Auth) first, then
+ * `create_company`, which builds the company, its settings, words, checklists
+ * and the owner's Administrator profile in one database transaction and writes
+ * the audit row. If that fails the login is deleted again, so a refused
+ * company leaves nothing behind — the requirement's "if any step fails,
+ * nothing is created", across both.
+ */
+export async function createCompanyAction(
+  input: AddCompanyInput
+): Promise<{ ok: true; orgId: string } | { ok: false; error: string }> {
+  const actor = await operatorId();
+  if (!actor) return { ok: false, error: "Not allowed." };
+
+  const admin = platformAdminClient();
+  const problems = addCompanyProblems(input, await moduleDependencies());
+  if (problems.length > 0) return { ok: false, error: problems.join(" ") };
+
+  const company = companyPayload(input);
+  const { data: created, error: userError } = await admin.auth.admin.createUser({
+    email: company.owner.email,
+    password: input.owner.password,
+    email_confirm: true,
+    user_metadata: { full_name: company.owner.full_name },
+  });
+  if (userError || !created.user) {
+    return { ok: false, error: `The owner's login could not be created: ${userError?.message ?? "unknown error"}` };
+  }
+
+  const { data: orgId, error } = await admin.rpc("create_company", {
+    p_company: company,
+    p_templates: input.templates,
+    p_choices: choicesPayload(input),
+    p_owner: created.user.id,
+    p_actor: actor,
+  });
+  if (error || !orgId) {
+    const reason = error?.message ?? "unknown error";
+    const { error: deleteError } = await admin.auth.admin.deleteUser(created.user.id);
+    if (deleteError) {
+      // Say so: the login is left in Auth with no company, and its email
+      // cannot be used again until it is removed (CodeRabbit on #89).
+      return {
+        ok: false,
+        error:
+          `The company was not created (${reason}), and the owner's login could not be removed ` +
+          `(${deleteError.message}). Remove login ${created.user.id} in Supabase Auth before trying this email again.`,
+      };
+    }
+    return { ok: false, error: `Nothing was created: ${reason}` };
+  }
+  return { ok: true, orgId };
 }
