@@ -14,6 +14,165 @@ export type Database = {
   }
   public: {
     Tables: {
+      commission_rules: {
+        Row: {
+          id: string
+          org_id: string
+          name: string
+          description: string | null
+          kind: string
+          rate: number | null
+          fixed_amount: number | null
+          tiers: Json | null
+          basis: string
+          applies_to: string
+          rep_id: string | null
+          store_id: string | null
+          min_order_value: number
+          priority: number
+          active: boolean
+          created_by: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          org_id: string
+          name: string
+          description?: string | null
+          kind?: string
+          rate?: number | null
+          fixed_amount?: number | null
+          tiers?: Json | null
+          basis?: string
+          applies_to?: string
+          rep_id?: string | null
+          store_id?: string | null
+          min_order_value?: number
+          priority?: number
+          active?: boolean
+          created_by?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          org_id?: string
+          name?: string
+          description?: string | null
+          kind?: string
+          rate?: number | null
+          fixed_amount?: number | null
+          tiers?: Json | null
+          basis?: string
+          applies_to?: string
+          rep_id?: string | null
+          store_id?: string | null
+          min_order_value?: number
+          priority?: number
+          active?: boolean
+          created_by?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      commissions: {
+        Row: {
+          id: string
+          org_id: string
+          order_id: string
+          rep_id: string
+          rule_id: string | null
+          rule_name: string
+          delivered_at: string
+          order_value: number
+          basis_amount: number
+          rate: number | null
+          amount: number
+          status: string
+          calculated_at: string
+          approved_by: string | null
+          approved_at: string | null
+          paid_by: string | null
+          paid_at: string | null
+        }
+        Insert: {
+          id?: string
+          org_id: string
+          order_id: string
+          rep_id: string
+          rule_id?: string | null
+          rule_name: string
+          delivered_at: string
+          order_value: number
+          basis_amount: number
+          rate?: number | null
+          amount: number
+          status?: string
+          calculated_at?: string
+          approved_by?: string | null
+          approved_at?: string | null
+          paid_by?: string | null
+          paid_at?: string | null
+        }
+        Update: {
+          id?: string
+          org_id?: string
+          order_id?: string
+          rep_id?: string
+          rule_id?: string | null
+          rule_name?: string
+          delivered_at?: string
+          order_value?: number
+          basis_amount?: number
+          rate?: number | null
+          amount?: number
+          status?: string
+          calculated_at?: string
+          approved_by?: string | null
+          approved_at?: string | null
+          paid_by?: string | null
+          paid_at?: string | null
+        }
+        Relationships: []
+      }
+      sales_targets: {
+        Row: {
+          id: string
+          org_id: string
+          rep_id: string
+          period_month: string
+          measure: string
+          target: number
+          created_by: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          org_id: string
+          rep_id: string
+          period_month: string
+          measure?: string
+          target: number
+          created_by?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          org_id?: string
+          rep_id?: string
+          period_month?: string
+          measure?: string
+          target?: number
+          created_by?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       quote_lines: {
         Row: {
           id: string
@@ -1346,6 +1505,7 @@ export type Database = {
           unit_price: number | null
           list_price: number | null
           discount_pct: number
+          unit_cost_excl_vat: number | null
         }
         Insert: {
           client_generated_id: string
@@ -1364,6 +1524,7 @@ export type Database = {
           unit_price?: number | null
           list_price?: number | null
           discount_pct?: number
+          unit_cost_excl_vat?: number | null
         }
         Update: {
           client_generated_id?: string
@@ -1382,6 +1543,7 @@ export type Database = {
           unit_price?: number | null
           list_price?: number | null
           discount_pct?: number
+          unit_cost_excl_vat?: number | null
         }
         Relationships: [
           {
@@ -5771,6 +5933,28 @@ export type Database = {
       }
     }
     Functions: {
+      sales_target_progress: {
+        Args: { p_month: string }
+        Returns: {
+          rep_id: string
+          rep_name: string
+          measure: string | null
+          target: number | null
+          orders: number
+          units: number
+          revenue_excl_vat: number
+          gross_profit: number
+          uncosted_units: number
+        }[]
+      }
+      commissions_recalculate: {
+        Args: { p_from: string; p_to: string }
+        Returns: number
+      }
+      commissions_set_status: {
+        Args: { p_ids: string[]; p_status: string }
+        Returns: number
+      }
       quote_convert: {
         Args: { p_quote_id: string }
         Returns: string
