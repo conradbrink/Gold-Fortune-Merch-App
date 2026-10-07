@@ -147,7 +147,7 @@ silently wrong numbers.
    <that>` explicitly, so the planner sees a literal and can use
    `visits_org_checkin_at_idx`. Verify with `explain analyze`.
 4. **Every new table, storage bucket and RPC belongs to a module** (from
-   `20261008…_enforce_modules`). In the same migration:
+   `20261007112638_enforce_modules`). In the same migration:
    - `insert into public.module_assignments (kind, name, module_code) values
      ('table', '<name>', '<module>')` (or `'function'` / `'bucket'`). Use
      `core` only for things every company has.

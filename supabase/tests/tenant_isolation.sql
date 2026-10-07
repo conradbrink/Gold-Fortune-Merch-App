@@ -57,6 +57,7 @@ declare
   -- Parent ids for T2, captured while we can still see them.
   a_templates uuid[]; a_subs uuid[]; a_promos uuid[]; a_files uuid[];
   a_reviews uuid[]; a_roles uuid[]; a_profiles uuid[];
+  a_invoices uuid[]; a_credits uuid[]; a_recurring uuid[];
 
   t record; f record;
   v_n int; v_total int; v_row jsonb; v_txt text; v_cols text; v_args text;
@@ -80,7 +81,10 @@ declare
   c_children constant text[] := array['form_fields','form_responses','promotion_products',
                                        'promotion_stores','file_groups','file_reps',
                                        'hr_review_ratings','job_role_permissions',
-                                       'profile_permissions'];
+                                       'profile_permissions',
+                                       -- invoices and recurring orders (#71)
+                                       'tax_invoice_lines','credit_note_lines',
+                                       'recurring_order_lines','recurring_order_runs'];
 begin
   -------------------------------------------------------------------- fixtures
   select id into a_org from public.organizations order by created_at limit 1;
@@ -125,6 +129,14 @@ begin
 
   insert into public.organizations (name) values ('Isolation Test Company B')
     returning id into b_org;
+  -- Every module on for B, so that a module gate is never what hides A's data
+  -- from B: this suite is about companies, module_enforcement.sql about modules.
+  if to_regclass('public.company_modules') is not null then
+    insert into public.company_modules (org_id, module_code)
+    select b_org, m.code from public.modules m
+     where m.plan_type <> 'core' and m.is_built order by m.sort_order
+    on conflict do nothing;
+  end if;
 
   delete from public.dashboard_layouts where user_id in (b_mgr, b_rep);
   delete from public.hr_notifications where recipient_id in (b_mgr, b_rep);
@@ -143,6 +155,9 @@ begin
   select array_agg(id) into a_files     from public.files where org_id = a_org;
   select array_agg(id) into a_reviews   from public.hr_reviews where org_id = a_org;
   select array_agg(id) into a_roles     from public.job_roles where org_id = a_org;
+  select array_agg(id) into a_invoices  from public.tax_invoices where org_id = a_org;
+  select array_agg(id) into a_credits   from public.credit_notes where org_id = a_org;
+  select array_agg(id) into a_recurring from public.recurring_orders where org_id = a_org;
   a_profiles := array(select unnest(a_profiles) except select unnest(array[b_mgr, b_rep]));
 
   -- T5's tokens: ids are unambiguous; names are what a report would print.
@@ -302,7 +317,11 @@ begin
         ('file_reps',            'file_id = any($2)',                   a_files),
         ('hr_review_ratings',    'review_id = any($2)',                 a_reviews),
         ('job_role_permissions', 'job_role_id = any($2)',               a_roles),
-        ('profile_permissions',  'profile_id = any($2)',                a_profiles)
+        ('profile_permissions',  'profile_id = any($2)',                a_profiles),
+        ('tax_invoice_lines',    'invoice_id = any($2)',                a_invoices),
+        ('credit_note_lines',    'credit_note_id = any($2)',            a_credits),
+        ('recurring_order_lines','recurring_order_id = any($2)',        a_recurring),
+        ('recurring_order_runs', 'recurring_order_id = any($2)',        a_recurring)
       ) as x(tbl, pred, ids)
     loop
       begin
