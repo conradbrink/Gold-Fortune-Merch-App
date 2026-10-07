@@ -16,7 +16,12 @@ import {
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { createClient } from "@/lib/supabase/client";
-import { getCompanyConfig, useCompanyConfig } from "@/lib/use-company-config";
+import {
+  getCompanyConfig,
+  useBranding,
+  useCompanyConfig,
+  useTerms,
+} from "@/lib/use-company-config";
 import { rangeDays, rangeForPreset, type DateRange } from "@/lib/date-range";
 import { fetchLiveReps, type LiveReps } from "@/lib/live-reps";
 import {
@@ -70,6 +75,8 @@ export default function InsightsDashboardPage() {
 
   const [layout, setLayout] = useState<string[]>(DEFAULT_LAYOUT);
   const company = useCompanyConfig();
+  const terms = useTerms();
+  const companyName = useBranding()?.name ?? "";
   const [orgId, setOrgId] = useState<string | null>(null);
   const [customising, setCustomising] = useState(false);
   /**
@@ -128,7 +135,7 @@ export default function InsightsDashboardPage() {
         // Not range-scoped, unlike everything else here: "where is the team"
         // is a question about now, and a date filter would answer a different
         // one while looking like it had answered this.
-        fetchLiveReps(supabase),
+        fetchLiveReps(supabase, terms),
       ]);
 
       if (isStale()) return;
@@ -339,7 +346,7 @@ export default function InsightsDashboardPage() {
 
     const poll = () => {
       if (document.visibilityState !== "visible") return;
-      fetchLiveReps(supabase)
+      fetchLiveReps(supabase, terms)
         .then(setLiveReps)
         .catch(() => {});
     };
@@ -362,6 +369,7 @@ export default function InsightsDashboardPage() {
     liveReps,
     days,
     range,
+    terms,
   };
 
   /**
@@ -400,7 +408,10 @@ export default function InsightsDashboardPage() {
             Insights Dashboard
           </h1>
           <p className="text-sm text-muted-foreground">
-            Live field performance across your Gold Fortune team.
+            {/* The company's own name when it has one; "your team" reads
+                fine without. */}
+            Live field performance across your{" "}
+            {companyName ? `${companyName} team` : "team"}.
           </p>
         </div>
         <Button
@@ -463,7 +474,7 @@ export default function InsightsDashboardPage() {
               {sourceReady[widget.source] ? (
                 widget.render(widgetData)
               ) : (
-                <UnavailableCard title={widget.title} />
+                <UnavailableCard title={widget.title(terms)} />
               )}
             </div>
           ))}

@@ -18,6 +18,16 @@ import {
   type CallCycleGaps,
 } from "@/lib/schedule";
 import { fetchOrgSettings, type OrgSettings } from "@/lib/org-settings";
+import { parseCompanyConfig } from "@/lib/company-config";
+import { moduleEnabled } from "@/lib/modules";
+import { DEFAULT_TERMS } from "@/lib/terms";
+import {
+  callCyclePrompt,
+  noCallCycleBriefing,
+  reportsLead,
+  reportsPrompt,
+  type PromptContext,
+} from "@/lib/insights-prompt";
 
 /**
  * Manager insights.
@@ -37,89 +47,8 @@ export const maxDuration = 60;
 
 const MODEL = process.env.OPENAI_MODEL ?? "gpt-5.5";
 
-const SYSTEM_PROMPT = `You are an analyst supporting a field-merchandising manager at an FMCG company.
-
-You are given pre-aggregated metrics from their field team's store visits and
-merchandising audits. Write a SHORT executive briefing.
-
-The manager reads this on a phone between store visits, not at a desk. Assume
-about fifteen seconds of attention. The charts below your briefing already show
-the detail — your job is to say what matters and what to do, not to narrate
-every metric.
-
-Length:
-- At most 3 anomalies and at most 3 actions. Fewer is better.
-- Anomaly detail: one sentence, 25 words maximum.
-- Action: one sentence, 20 words maximum.
-- If nothing is genuinely wrong, return no anomalies and say so in the headline.
-  Never pad the lists to reach three — a quiet period is a useful thing to report.
-
-Accuracy:
-- Ground every claim in the supplied numbers. Never invent a figure, a store, or
-  a rep that does not appear in the data.
-- If the data is too thin to support a conclusion (a handful of submissions, a
-  range of a day or two, or a metric with a null rate), set data_caveat and say
-  so plainly instead of describing a trend. Under-claiming is always better than
-  a confident statement the numbers do not support.
-- Rates arrive as decimals (0.1353 = 13.53%). Present them as percentages.
-- A null rate means "not measured in this period", not zero.
-- Durations are supplied pre-formatted ("56m", "1h 12m"). Quote them exactly as
-  given. Never convert a duration to seconds — nobody discusses a store visit
-  in seconds.
-- Name the store or rep a number belongs to. "Ashley Williams completed 5 of 9"
-  is useful; "some reps are underperforming" is not.
-- Anomalies are outliers worth a second look, not every below-average value.
-- Actions must be things this manager can actually do: schedule a visit, coach a
-  named rep, escalate a price or stock issue. No generic advice.`;
-
-/**
- * Capacity is per-organisation, so the prompt is built per request rather than
- * being a module constant — a customer whose reps make five calls a day must
- * not be told that eight is a full day.
- */
-const callCyclePrompt = (storesPerDay: number) => `You are an analyst reviewing the journey plan (call cycle) of a
-field-merchandising team at an FMCG company.
-
-The manager has assigned each store a weekday and a visit frequency. You are
-given the resulting weekly load per rep, plus the gaps in the plan. Write a
-SHORT review of the plan itself — not of past performance.
-
-The manager reads this on a phone while planning. Assume about fifteen seconds
-of attention. The Mon–Sun strip below your review already shows the per-day
-counts — your job is to say which day is wrong and what to change.
-
-Length:
-- At most 3 anomalies and at most 3 actions. Fewer is better.
-- Anomaly detail: one sentence, 25 words maximum.
-- Action: one sentence, 20 words maximum.
-- If the plan is sound, return no anomalies and say so in the headline. Never
-  pad the lists to reach three — a workable plan is a useful thing to report.
-
-What is worth flagging, roughly in order:
-- A day that spans more than one city. Name the rep, the day and the cities.
-  Driving between towns is the biggest single waste in a field day.
-- A day carrying more stops than fits. A full day for this team is
-  ${storesPerDay} stores. Do not quote a per-visit duration — you are not given
-  one, and inventing one would be a fabricated figure.
-- One rep well over capacity while another is well under.
-- Stores nobody covers at all — they will never be visited.
-- Stores assigned to a rep but with no day set — they will never be scheduled.
-- Stores with a day but no location on file, which cannot be grouped by area.
-
-Accuracy:
-- Ground every claim in the supplied numbers. Never invent a store, a rep or a
-  day that does not appear in the data.
-- "peak_stores" is the busiest single occurrence of that weekday, not a total.
-  A rep with monthly stores does not carry them every week. Never describe
-  peak_stores as a weekly total.
-- "span_km" is STRAIGHT-LINE distance in kilometres, not road distance. Say
-  "apart" or "as the crow flies". NEVER convert it to a drive time or a
-  duration of any kind, and never state a distance when span_km is null.
-- A null span_km means the stores have no coordinates on file — that is itself
-  worth reporting, and is not a distance of zero.
-- Actions must be things this manager can actually do: move a named store to a
-  different day, give an unassigned store to a named rep, set a day on the
-  stores that have none.`;
+// The prompts themselves are in `lib/insights-prompt.ts`, written in the
+// company's words.
 
 const SCHEMA = {
   type: "object",
@@ -286,6 +215,23 @@ export async function POST(request: Request) {
     const gate = await enforceRateLimit(supabase, LIMITS.insights);
     if (!gate.ok) return gate.response;
 
+    // The company's words and name, so a cleaning company is briefed about
+    // sites and cleaners. Read with the caller's session, like everything
+    // else here. A failed lookup is not worth losing the briefing over: the
+    // neutral words are still correct English, just not the company's own.
+    const { data: rawConfig, error: configError } = await supabase.rpc(
+      "my_company_config"
+    );
+    if (configError) {
+      console.error("insights: company configuration lookup failed", configError);
+    }
+    const config = configError ? null : parseCompanyConfig(rawConfig);
+    const ctx: PromptContext = {
+      terms: config?.terms ?? DEFAULT_TERMS,
+      companyName: config?.branding.name ?? "",
+      merchandising: config ? moduleEnabled(config.modules, "distribution") : false,
+    };
+
     const body = (await request.json()) as {
       reportType?: string;
       templateId?: string;
@@ -322,20 +268,12 @@ export async function POST(request: Request) {
       // rather than paying for a call whose only possible output is invention:
       // a model handed an empty plan will find something to say about it.
       if (days.length === 0) {
-        return Response.json({
-          headline:
-            "No call cycle has been set up yet — no store has a day assigned, so nothing will be scheduled.",
-          anomalies: [],
-          actions: gaps?.unplanned_assignments
-            ? [
-                `Set a day for the ${gaps.unplanned_assignments} assigned store${gaps.unplanned_assignments === 1 ? "" : "s"} that have none.`,
-              ]
-            : [],
-          data_caveat: "",
-        });
+        return Response.json(
+          noCallCycleBriefing(ctx.terms, gaps?.unplanned_assignments ?? null)
+        );
       }
 
-      instructions = callCyclePrompt(settings.storesPerDay);
+      instructions = callCyclePrompt(ctx, settings.storesPerDay);
       userContent =
         `Call cycle over the next ${weeks} weeks.\n\n` +
         JSON.stringify(buildCallCyclePayload(days, gaps, weeks, settings));
@@ -392,10 +330,9 @@ export async function POST(request: Request) {
         0
       );
 
-      instructions = SYSTEM_PROMPT;
+      instructions = reportsPrompt(ctx);
       userContent =
-        `Period ${body.from.slice(0, 10)} to ${body.to.slice(0, 10)}. ` +
-        `${totalSubmissions} audit submissions in range.\n\n` +
+        reportsLead(ctx, body.from, body.to, totalSubmissions) +
         JSON.stringify(payload);
     }
 

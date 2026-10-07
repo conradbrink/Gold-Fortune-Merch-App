@@ -11,7 +11,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:gf_merch_rep/core/company_config.dart';
 import 'package:gf_merch_rep/core/providers.dart';
+import 'package:gf_merch_rep/core/terms.dart';
 import 'package:gf_merch_rep/data/models/form_template.dart';
 import 'package:gf_merch_rep/data/models/route_visit.dart';
 import 'package:gf_merch_rep/data/models/workday_session.dart';
@@ -30,8 +32,17 @@ const _routeId = 'route-id';
 /// extended to guessed positions the test that claimed such stores were never
 /// offered kept passing — the heading had simply changed underneath it. A test
 /// that passes for the wrong reason is worse than no test.
-const _blankPrompt = 'This shop is not on the map';
-const _guessPrompt = 'This shop’s position is a guess';
+///
+/// In the company's own word for a site — "store" here, as Gold Fortune's
+/// configuration says. The neutral default is checked separately below.
+const _blankPrompt = 'This store is not on the map';
+const _guessPrompt = 'This store’s position is a guess';
+
+/// A distributor's words, as `my_company_config()` sends them.
+final _storeTerms = Terms.fromJson({
+  'site': {'one': 'Store', 'many': 'Stores'},
+  'job': {'one': 'Visit', 'many': 'Visits'},
+});
 
 /// Stands in for the real controller so the screen sees an open workday
 /// without a repository, a timer or a GPS.
@@ -74,10 +85,15 @@ RouteVisit _visit({
   );
 }
 
-Future<void> _pump(WidgetTester tester, RouteVisit visit) async {
+Future<void> _pump(
+  WidgetTester tester,
+  RouteVisit visit, {
+  Terms? terms,
+}) async {
   await tester.pumpWidget(
     ProviderScope(
       overrides: [
+        termsProvider.overrideWithValue(terms ?? _storeTerms),
         todayRoutesProvider.overrideWith((ref) async => [visit]),
         formTemplatesProvider.overrideWith((ref) async => <FormTemplate>[]),
         submittedTemplateIdsProvider
@@ -154,6 +170,21 @@ void main() {
     expect(find.text(_guessPrompt), findsNothing);
     // The check-in button is still the thing to do first.
     expect(find.widgetWithText(ElevatedButton, 'Check in'), findsOneWidget);
+  });
+
+  // A company that has not named its sites gets the catalogue's word, not
+  // somebody else's.
+  testWidgets('says "site" for a company with the default words',
+      (tester) async {
+    await _pump(
+      tester,
+      _visit(status: 'checked_in'),
+      terms: Terms.defaults,
+    );
+
+    expect(find.text('This site is not on the map'), findsOneWidget);
+    expect(find.text(_blankPrompt), findsNothing);
+    expect(find.text('Site job'), findsOneWidget, reason: 'the app bar');
   });
 
   testWidgets('is gone once the rep has left the store', (tester) async {

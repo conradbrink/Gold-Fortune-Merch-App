@@ -1,4 +1,4 @@
-import Image from "next/image";
+import { ProductBrand } from "@/components/product-brand";
 
 /**
  * The panel behind every whole-page failure: the error boundary, the global
@@ -24,20 +24,10 @@ export function ServiceMessage({
   return (
     <div className="flex min-h-screen items-center justify-center bg-secondary/40 px-4">
       <div className="w-full max-w-md space-y-6 text-center">
-        <div className="flex flex-col items-center gap-3">
-          <Image
-            src="/logo.png"
-            alt="Gold Fortune"
-            width={56}
-            height={56}
-            className="rounded-lg"
-            priority
-          />
-          <div>
-            <h1 className="text-xl font-bold text-foreground">Gold Fortune</h1>
-            <p className="text-sm text-muted-foreground">Merchandising</p>
-          </div>
-        </div>
+        {/* The product, not the company: an error page cannot count on knowing
+            who is signed in, and the global boundary renders with nothing
+            loaded at all. */}
+        <ProductBrand priority />
 
         <div className="space-y-4 rounded-lg border border-border bg-card p-6 shadow-sm">
           <h2 className="text-base font-semibold text-foreground">{title}</h2>
@@ -46,7 +36,7 @@ export function ServiceMessage({
           {/*
             The digest is Next's own id for the server-side error. The message
             itself is withheld in production on purpose — it can name tables and
-            columns — but without some handle, a rep reporting a fault has
+            columns — but without some handle, somebody reporting a fault has
             nothing to quote and the log cannot be found.
           */}
           {digest ? (

@@ -20,6 +20,7 @@ import {
 } from "@/components/ui/table";
 import { ErrorBanner, EmptyRow } from "@/components/warehouse/stat-tile";
 import { exportCsv } from "@/lib/export";
+import { useTerms } from "@/lib/use-company-config";
 import {
   fetchInvoices,
   money,
@@ -41,6 +42,7 @@ function ymd(d: Date) {
  */
 export default function InvoicesPage() {
   const supabase = createClient();
+  const terms = useTerms();
   const router = useRouter();
   const [range, setRange] = useState(() => {
     const now = new Date();
@@ -103,15 +105,16 @@ export default function InvoicesPage() {
   }, [rows]);
 
   function exportRows() {
-    exportCsv({
+    void exportCsv({
       title: "Tax invoices",
       context: [`Issued ${range.from} to ${range.to}`],
       filename: "tax-invoices",
+      letterhead: false,
       columns: [
         { header: "Invoice", key: "inv" },
         { header: "Date", key: "date" },
         { header: "Due", key: "due" },
-        { header: "Customer", key: "customer" },
+        { header: terms.client.one, key: "customer" },
         { header: "Order", key: "order" },
         { header: "Excl. VAT", key: "sub", numeric: true },
         { header: "VAT", key: "vat", numeric: true },

@@ -23,7 +23,13 @@
 
 export type ThemeMode = "light" | "dark" | "system";
 
-/** Namespaced: `localStorage` is shared with anything else on the origin. */
+/**
+ * Namespaced: `localStorage` is shared with anything else on the origin.
+ *
+ * "gf" is Gold Fortune's initials, from before the app served other companies.
+ * Kept on purpose: renaming the key would reset every user's saved theme, and
+ * nobody ever sees it.
+ */
 export const THEME_STORAGE_KEY = "gf-theme";
 
 export const THEME_MODES: readonly ThemeMode[] = ["light", "dark", "system"];

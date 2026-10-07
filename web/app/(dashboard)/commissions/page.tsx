@@ -21,6 +21,7 @@ import {
 } from "@/components/ui/table";
 import { ErrorBanner, EmptyRow } from "@/components/warehouse/stat-tile";
 import { exportCsv } from "@/lib/export";
+import { useTerms } from "@/lib/use-company-config";
 import {
   byRep,
   fetchCommissions,
@@ -54,6 +55,7 @@ function monthRange(offset: number) {
  */
 export default function CommissionsPage() {
   const supabase = createClient();
+  const terms = useTerms();
   const [{ from, to }, setRange] = useState(() => monthRange(0));
   const [rows, setRows] = useState<CommissionRow[]>([]);
   const [status, setStatusFilter] = useState("all");
@@ -131,14 +133,15 @@ export default function CommissionsPage() {
 
   function exportRows(only?: "approved") {
     const list = only ? visible.filter((r) => r.status === only) : visible;
-    exportCsv({
+    void exportCsv({
       title: only ? "Approved commissions" : "Commissions",
       context: [`Delivered ${from} to ${to}`],
       filename: only ? "commissions-approved" : "commissions",
+      letterhead: false,
       columns: [
-        { header: "Rep", key: "rep" },
+        { header: terms.staff.one, key: "rep" },
         { header: "Order", key: "order" },
-        { header: "Store", key: "store" },
+        { header: terms.site.one, key: "store" },
         { header: "Delivered", key: "delivered" },
         { header: "Order value excl. VAT", key: "value", numeric: true },
         { header: "Rule", key: "rule" },
@@ -159,12 +162,13 @@ export default function CommissionsPage() {
   }
 
   function exportPayroll() {
-    exportCsv({
+    void exportCsv({
       title: "Commission payroll",
       context: [`Delivered ${from} to ${to}`],
       filename: "commission-payroll",
+      letterhead: false,
       columns: [
-        { header: "Rep", key: "rep" },
+        { header: terms.staff.one, key: "rep" },
         { header: "Orders", key: "orders", numeric: true },
         { header: "Order value excl. VAT", key: "value", numeric: true },
         { header: "Pending", key: "pending", numeric: true },

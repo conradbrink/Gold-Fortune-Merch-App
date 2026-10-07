@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 
 import 'core/company_config.dart';
 import 'core/interrupted_location.dart';
+import 'core/product.dart';
 import 'core/providers.dart';
 import 'core/supabase_client.dart';
 import 'core/theme.dart';
@@ -239,16 +240,33 @@ Future<void> _refreshRole(AppDatabase db, String userId) async {
   }
 }
 
+/// The theme in the company's colours. A provider rather than a call in
+/// `build`, so it is rebuilt when the colours change and not on every frame
+/// that rebuilds the app.
+final appThemeProvider = Provider<ThemeData>((ref) {
+  final colours = ref.watch(
+    brandingProvider.select((b) => (primary: b.primary, accent: b.accent)),
+  );
+  return buildAppTheme(colours.primary, colours.accent);
+});
+
 class GfMerchApp extends ConsumerWidget {
   const GfMerchApp({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final router = ref.watch(routerProvider);
+    // Fetched as soon as the company is known, not when the login screen next
+    // wants it: by then the rep may have signed out in a dead spot.
+    ref.listen(companyLogoProvider, (_, _) {});
     return MaterialApp.router(
-      title: 'Gold Fortune Merchandising',
+      // The task switcher's label. The product, like the home-screen label:
+      // one app installed for whichever company the rep works for.
+      title: kProductName,
       debugShowCheckedModeBanner: false,
-      theme: buildAppTheme(),
+      // Watched, so the app repaints in the company's colours the moment its
+      // configuration loads or changes.
+      theme: ref.watch(appThemeProvider),
       routerConfig: router,
       // Wraps every route, so a forced update cannot be walked around by
       // navigating — including by staying on the login screen.

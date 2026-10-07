@@ -1,15 +1,16 @@
 import type { Metadata } from "next";
-import Image from "next/image";
 import {
   formatFileSize,
   formatReleaseDate,
   getCurrentAndroidRelease,
 } from "@/lib/releases";
+import { PRODUCT_NAME } from "@/lib/product";
+import { ProductBrand } from "@/components/product-brand";
 
 export const metadata: Metadata = {
-  title: "Download the app — Gold Fortune Merchandising",
-  description:
-    "Download the Gold Fortune Merchandising Android app for merchandisers.",
+  // The root layout's template adds the product name.
+  title: "Download the app",
+  description: `Download the ${PRODUCT_NAME} Android app for field staff.`,
   // A public page with nothing to gain from being indexed, and a direct APK
   // link is not something to hand to a search crawler.
   robots: { index: false, follow: false },
@@ -33,24 +34,7 @@ export default async function DownloadPage() {
   return (
     <div className="min-h-screen bg-secondary/40 px-4 py-10">
       <div className="mx-auto w-full max-w-lg space-y-6">
-        <div className="flex flex-col items-center gap-3 text-center">
-          <Image
-            src="/logo.png"
-            alt="Gold Fortune"
-            width={64}
-            height={64}
-            className="rounded-xl"
-            priority
-          />
-          <div>
-            <h1 className="text-xl font-bold text-foreground">
-              Gold Fortune Merchandising
-            </h1>
-            <p className="text-sm text-muted-foreground">
-              Android app for merchandisers
-            </p>
-          </div>
-        </div>
+        <ProductBrand size={64} subtitle="Android app for field staff" priority />
 
         {release ? (
           <>
@@ -105,8 +89,8 @@ export default async function DownloadPage() {
               </ol>
               <p className="text-xs text-muted-foreground">
                 Installing a newer version over an older one keeps you signed in
-                and keeps any visits saved on your phone. Do not uninstall the
-                old version first.
+                and keeps any work saved on your phone. Do not uninstall the old
+                version first.
               </p>
             </section>
 
@@ -149,8 +133,8 @@ export default async function DownloadPage() {
         </section>
 
         <p className="pb-4 text-center text-xs text-muted-foreground">
-          For authorised Gold Fortune merchandisers. You will need an account
-          from management to sign in.
+          For authorised field staff. You will need an account from your
+          company&apos;s managers to sign in.
         </p>
       </div>
     </div>

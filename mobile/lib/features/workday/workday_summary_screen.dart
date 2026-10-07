@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../core/company_config.dart';
 import '../../core/providers.dart';
+import '../../core/terms.dart';
 import '../../core/theme.dart';
 
 /// The share of the month's scheduled visits a rep must complete to earn the
@@ -53,9 +55,10 @@ class WorkdaySummaryScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final allDone = data.scheduleComplete;
     final monthlyAsync = ref.watch(monthlyCompletionProvider);
+    final t = ref.watch(termsProvider);
 
     return Scaffold(
-      backgroundColor: AppColors.navy,
+      backgroundColor: context.brand.primary,
       body: SafeArea(
         child: Column(
           children: [
@@ -69,7 +72,7 @@ class WorkdaySummaryScreen extends ConsumerWidget {
                       width: 92,
                       height: 92,
                       decoration: BoxDecoration(
-                        color: (allDone ? AppColors.gold : Colors.white)
+                        color: (allDone ? context.brand.accent : Colors.white)
                             .withValues(alpha: 0.15),
                         shape: BoxShape.circle,
                       ),
@@ -78,12 +81,12 @@ class WorkdaySummaryScreen extends ConsumerWidget {
                             ? Icons.emoji_events_outlined
                             : Icons.nightlight_outlined,
                         size: 46,
-                        color: allDone ? AppColors.gold : Colors.white,
+                        color: allDone ? context.brand.accent : Colors.white,
                       ),
                     ),
                     const SizedBox(height: 20),
                     Text(
-                      allDone ? 'Well done!' : 'Workday ended',
+                      allDone ? 'Well done!' : '${t.workday.one} ended',
                       style: const TextStyle(
                         color: Colors.white,
                         fontSize: 26,
@@ -93,8 +96,8 @@ class WorkdaySummaryScreen extends ConsumerWidget {
                     const SizedBox(height: 8),
                     Text(
                       allDone
-                          ? 'You completed every store on your route today. '
-                              'Keep this up!'
+                          ? 'You completed every ${t.site.oneLower} on '
+                              '${lower(t.dayPlan.one)}. Keep this up!'
                           : 'Your hours and mileage are saved. See you '
                               'tomorrow.',
                       textAlign: TextAlign.center,
@@ -123,7 +126,7 @@ class WorkdaySummaryScreen extends ConsumerWidget {
                         const Divider(height: 22),
                         _StatRow(
                           icon: Icons.storefront_outlined,
-                          label: 'Scheduled stores visited',
+                          label: 'Scheduled ${t.site.manyLower} visited',
                           value: data.scheduledToday > 0
                               ? '${data.completedToday} of ${data.scheduledToday}'
                               : 'None scheduled',
@@ -133,9 +136,9 @@ class WorkdaySummaryScreen extends ConsumerWidget {
                           const Divider(height: 22),
                           _StatRow(
                             icon: Icons.add_business_outlined,
-                            label: 'Extra unscheduled visits',
+                            label: 'Extra unscheduled ${t.job.manyLower}',
                             value: '+${data.unscheduledDone}',
-                            valueColor: AppColors.gold,
+                            valueColor: context.brand.accent,
                           ),
                         ],
                       ],
@@ -175,8 +178,8 @@ class WorkdaySummaryScreen extends ConsumerWidget {
                                       : Icons.flag_outlined,
                                   size: 20,
                                   color: onTrack
-                                      ? AppColors.gold
-                                      : AppColors.navy,
+                                      ? context.brand.accent
+                                      : context.brand.primary,
                                 ),
                                 const SizedBox(width: 8),
                                 const Expanded(
@@ -195,7 +198,7 @@ class WorkdaySummaryScreen extends ConsumerWidget {
                                     fontWeight: FontWeight.bold,
                                     fontSize: 16,
                                     color: onTrack
-                                        ? AppColors.gold
+                                        ? context.brand.accent
                                         : AppColors.textPrimary,
                                   ),
                                 ),
@@ -208,11 +211,11 @@ class WorkdaySummaryScreen extends ConsumerWidget {
                                 value: monthly.fraction,
                                 minHeight: 8,
                                 backgroundColor:
-                                    AppColors.navy.withValues(alpha: 0.08),
+                                    context.brand.primary.withValues(alpha: 0.08),
                                 valueColor: AlwaysStoppedAnimation<Color>(
                                   onTrack
-                                      ? AppColors.gold
-                                      : AppColors.navy,
+                                      ? context.brand.accent
+                                      : context.brand.primary,
                                 ),
                               ),
                             ),
@@ -221,9 +224,11 @@ class WorkdaySummaryScreen extends ConsumerWidget {
                               onTrack
                                   ? "You're on track for this month's reward "
                                       '— ${monthly.completed} of '
-                                      '${monthly.total} scheduled visits '
+                                      '${monthly.total} scheduled '
+                                      '${t.job.manyLower} '
                                       'completed. Keep it above 90%!'
-                                  : 'Complete 90% of your scheduled visits '
+                                  : 'Complete 90% of your scheduled '
+                                      '${t.job.manyLower} '
                                       'this month to earn the monthly reward '
                                       '(${monthly.completed} of '
                                       '${monthly.total} so far).',
@@ -249,8 +254,8 @@ class WorkdaySummaryScreen extends ConsumerWidget {
                 child: ElevatedButton(
                   onPressed: () => context.go('/'),
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: AppColors.gold,
-                    foregroundColor: AppColors.navy,
+                    backgroundColor: context.brand.accent,
+                    foregroundColor: context.brand.primary,
                   ),
                   child: const Text(
                     'Done',

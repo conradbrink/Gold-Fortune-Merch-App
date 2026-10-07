@@ -25,6 +25,8 @@ import {
 import { toLocalDateTime } from "@/lib/date-range";
 import { ExportMenu } from "@/components/export-menu";
 import type { ExportSheet } from "@/lib/export";
+import { useTerms } from "@/lib/use-company-config";
+import { lower } from "@/lib/terms";
 import { createClient } from "@/lib/supabase/client";
 import type { VisitStatus } from "@/lib/mock-data";
 
@@ -82,6 +84,7 @@ function formatDateTime(iso: string | null) {
 
 function VisitsContent() {
   const supabase = createClient();
+  const terms = useTerms();
   const searchParams = useSearchParams();
   const router = useRouter();
   const withForms = searchParams.get("filter") === "with-forms";
@@ -162,22 +165,21 @@ function VisitsContent() {
   /** The filtered list, as a spreadsheet. */
   function buildVisitSheet(): ExportSheet {
     const applied = [
-      withForms ? "Visits with at least one form" : null,
+      withForms ? `${terms.job.many} with at least one form` : null,
       statusFilter !== "all" ? `Status: ${statusFilter}` : null,
       search.trim() ? `Search: ${search.trim()}` : null,
     ].filter((line): line is string => line !== null);
 
     return {
-      title: withForms ? "Visits with forms" : "Visits",
-      orgName: "Gold Fortune Merchandising",
+      title: withForms ? `${terms.job.many} with forms` : terms.job.many,
       context: [
-        `${filtered.length} of ${visits.length} visits`,
+        `${filtered.length} of ${visits.length} ${lower(terms.job.many)}`,
         ...(applied.length > 0 ? applied : ["No filters applied"]),
       ],
-      filename: "gf-visits",
+      filename: terms.job.many,
       columns: [
-        { header: "Store", key: "store" },
-        { header: "Rep", key: "rep" },
+        { header: terms.site.one, key: "store" },
+        { header: terms.staff.one, key: "rep" },
         { header: "Checked in", key: "in" },
         { header: "Checked out", key: "out" },
         { header: "Status", key: "status" },

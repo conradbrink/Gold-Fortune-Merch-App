@@ -51,7 +51,11 @@
 }
 
 :root {
-  /* Gold Fortune brand: navy blue primary, gold/amber accent, red reserved for alerts/missed */
+  /* The product's default light-theme colours: navy primary, gold/amber accent,
+     red reserved for alerts and misses. Inside the dashboard each company's own
+     primary and accent are laid over these by the layout (`brandStyleSheet` in
+     lib/branding.ts); these stay on pages outside it, such as sign-in, and
+     whenever the company's configuration could not be read. */
   --background: oklch(0.985 0.002 260);
   --foreground: oklch(0.22 0.03 265);
   --card: oklch(1 0 0);

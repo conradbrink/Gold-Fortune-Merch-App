@@ -1,16 +1,20 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../features/workday/workday_auto_end.dart';
+import 'branding.dart';
+import 'env.dart';
 import 'location_tracking.dart';
 import 'providers.dart';
 import 'supabase_client.dart';
+import 'terms.dart';
 
-/// The rep's company configuration: which modules it has and the field
-/// settings the phone obeys — GPS interval, short-visit threshold, the auto-end
-/// rule, the default check-in radius.
+/// The rep's company configuration: which modules it has, the field settings
+/// the phone obeys — GPS interval, short-visit threshold, the auto-end rule, the
+/// default check-in radius — and the company's own words and look.
 ///
 /// Read from `my_company_config()` (the same call the web makes) and kept per
 /// company in the local key/value store, because the phone must know its rules
@@ -30,6 +34,8 @@ class CompanyConfig {
     required this.shortVisit,
     required this.autoEnd,
     required this.checkinRadiusM,
+    this.terms = Terms.defaults,
+    this.branding = Branding.product,
   });
 
   /// Modules switched on, `core` always included.
@@ -46,6 +52,12 @@ class CompanyConfig {
 
   /// The company's default check-in radius, for a site that has none.
   final int checkinRadiusM;
+
+  /// The company's words for site, job, staff and the rest.
+  final Terms terms;
+
+  /// The company's name, logo and colours.
+  final Branding branding;
 
   bool has(String module) => module == 'core' || modules.contains(module);
 
@@ -113,6 +125,8 @@ class CompanyConfig {
         minute: autoTime?.$2 ?? f.autoEnd.minute,
       ),
       checkinRadiusM: radius != null && radius > 0 ? radius : f.checkinRadiusM,
+      terms: Terms.fromJson(json['terms']),
+      branding: Branding.fromJson(json['branding']),
     );
   }
 }
@@ -136,10 +150,12 @@ final companyConfigProvider = FutureProvider<CompanyConfig>((ref) async {
     if (data is! Map) return null;
     final raw = jsonEncode(data);
     await db.setValue(key, raw);
+    await db.setValue(_lastCompanyKey, profile.orgId);
     return raw;
   }
 
   if (cached != null) {
+    await db.setValue(_lastCompanyKey, profile.orgId);
     unawaited(
       fetch().then((fresh) {
         if (fresh != null && fresh != cached && ref.mounted) ref.invalidateSelf();
@@ -163,6 +179,101 @@ final companyConfigProvider = FutureProvider<CompanyConfig>((ref) async {
 /// timer — and cannot wait for a future.
 final companyConfigValueProvider = Provider<CompanyConfig>((ref) {
   return ref.watch(companyConfigProvider).value ?? CompanyConfig.fallback;
+});
+
+/// Which company's configuration this phone last held, so the login screen
+/// after a sign-out — and the first frame of the next launch — can wear that
+/// company's name, logo and colours instead of the product's.
+const _lastCompanyKey = 'company_config:last_org';
+
+/// The company this phone last signed in to, with its cached configuration.
+typedef LastCompany = ({String orgId, CompanyConfig config});
+
+/// The last company's configuration, from the local cache only.
+///
+/// Recomputed on every sign-in and sign-out, so the login screen that follows
+/// a sign-out shows the company that was just signed out of. `main` reads it
+/// before the first frame, which is what keeps a signed-in rep from seeing the
+/// product's colours flash up while their profile loads over the network.
+final lastCompanyProvider = FutureProvider<LastCompany?>((ref) async {
+  final user = ref.watch(currentUserProvider);
+  final db = ref.watch(appDatabaseProvider);
+  var orgId = await db.getValue(_lastCompanyKey);
+  // A phone updated from a release that never wrote the key above still has
+  // the signed-in rep's profile cached, and the profile names the company.
+  if (orgId == null && user != null) {
+    final raw = await db.getValue('profile:${user.id}');
+    if (raw != null) {
+      orgId = (jsonDecode(raw) as Map<String, dynamic>)['org_id'] as String?;
+    }
+  }
+  if (orgId == null) return null;
+  final raw = await db.getValue('company_config:$orgId');
+  if (raw == null) return null;
+  return (
+    orgId: orgId,
+    config: CompanyConfig.fromJson(jsonDecode(raw) as Map<String, dynamic>),
+  );
+});
+
+/// What the screens wear right now: whose words, whose look.
+typedef CompanyLook = ({String? orgId, Terms terms, Branding branding});
+
+/// The signed-in company's words and look once its configuration is known;
+/// until then — and on the login screen — the last company this phone knew;
+/// and on a phone that has never signed in, the product's own.
+///
+/// [CompanyConfig.fallback] stands for "not known yet" here (signed out, or
+/// offline with nothing cached): its modules are a deliberate everything-on,
+/// but its words and colours are only the neutral defaults, and the last
+/// company's are the better guess.
+final companyLookProvider = Provider<CompanyLook>((ref) {
+  final loaded = ref.watch(companyConfigProvider).value;
+  if (loaded != null && !identical(loaded, CompanyConfig.fallback)) {
+    return (
+      orgId: ref.watch(profileProvider).value?.orgId,
+      terms: loaded.terms,
+      branding: loaded.branding,
+    );
+  }
+  final last = ref.watch(lastCompanyProvider).value;
+  if (last != null) {
+    return (
+      orgId: last.orgId,
+      terms: last.config.terms,
+      branding: last.config.branding,
+    );
+  }
+  return (orgId: null, terms: Terms.defaults, branding: Branding.product);
+});
+
+/// The company's words. `final t = ref.watch(termsProvider);` then
+/// `t.site.one`, `t.job.count(3)`.
+final termsProvider = Provider<Terms>((ref) {
+  return ref.watch(companyLookProvider).terms;
+});
+
+/// The company's name, logo path and colours.
+final brandingProvider = Provider<Branding>((ref) {
+  return ref.watch(companyLookProvider).branding;
+});
+
+final logoCacheProvider = Provider<LogoCache>((ref) {
+  return LogoCache(ref.watch(appDatabaseProvider));
+});
+
+/// The company logo as a file on the phone, or null for none. Downloaded the
+/// first time it is asked for while signed in — the app asks at once, so that
+/// it is already there for the next login screen, which may have no signal.
+final companyLogoProvider = FutureProvider<File?>((ref) async {
+  final key = ref.watch(companyLookProvider
+      .select((l) => (orgId: l.orgId, logoPath: l.branding.logoPath)));
+  if (key.orgId == null) return null;
+  return ref.watch(logoCacheProvider).ensure(
+        orgId: key.orgId!,
+        logoPath: key.logoPath,
+        supabaseUrl: Env.supabaseUrl,
+      );
 });
 
 /// The module a screen of this app belongs to, from its location — `core`

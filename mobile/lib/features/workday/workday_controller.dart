@@ -69,6 +69,11 @@ class WorkdayController extends AsyncNotifier<WorkdaySession?> {
     _minPingSpacing = config.minPingSpacing;
     final intervalChanged = trail.pingInterval != config.pingInterval;
     trail.pingInterval = config.pingInterval;
+    // Read, not watched: the configuration above already rebuilds this. The
+    // look rather than the config, so a cold start names the last company
+    // instead of the product while the configuration is still loading.
+    trail.companyName = ref.read(brandingProvider).name;
+    trail.workday = ref.read(termsProvider).workday.one;
 
     final repo = ref.read(workdayRepositoryProvider);
     final session = await repo.fetchActiveSession(user.id);

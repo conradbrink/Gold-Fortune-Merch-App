@@ -18,17 +18,20 @@ import { currencyName } from "@/lib/money";
  * the sheet gives it, prints at the resolution of the printer rather than the
  * screen, and every rule below about weight and hatching is one attribute.
  *
- * Colours come from the Gold Fortune palette as literal values rather than CSS
- * variables, because `oklch()` inside an SVG fill is not reliably honoured by
- * print renderers, and a chart that disappears when printed is worse than one
- * that ignores dark mode. The report sheet is white in both themes for the
- * same reason: it is a document, not a screen.
+ * The two brand colours are the sheet's own `--rr-ink` and `--rr-gold`, which
+ * the report sets from the company's branding as plain hex (see
+ * `report-document.tsx`), so each company's report is drawn in its colours.
+ * Not the theme's `--primary`: that is `oklch()` in places, which print
+ * renderers do not reliably honour inside an SVG fill, and it turns near-white
+ * in dark mode while the sheet stays white. They are applied through `style`
+ * rather than the `fill` attribute because `var()` in a presentation attribute
+ * is not honoured everywhere. The greys stay literal: they carry no brand.
  */
 
-/** Navy — the brand primary, and near-black in a monochrome print. */
-const INK = "#243055";
-/** Gold — distinguishable from navy in colour, and clearly lighter in grey. */
-const GOLD = "#d8a83a";
+/** The company's primary, or the default ink — near-black in a monochrome print. */
+const INK = "var(--rr-ink)";
+/** The company's accent — distinguishable from the ink in colour, and lighter in grey. */
+const GOLD = "var(--rr-gold)";
 const RULE = "#c9ced9";
 const LABEL = "#5b6376";
 
@@ -110,14 +113,14 @@ function plot(left: number) {
  * subtracting. Overlaid rather than side by side because at a day's width on
  * A4 two bars are three pixels each.
  */
-export function PlannedVsCompletedChart({ days }: { days: RepDay[] }) {
+export function PlannedVsCompletedChart({ days, jobs }: { days: RepDay[]; jobs: string }) {
   const rows = days.filter((d) => !d.inFuture);
   // Not just "no days": a period of forty-two days on which nothing was ever
   // planned drew a grid with an axis running 0, 1, 1 and no bars — which looks
   // like a chart that failed rather than a period with no round in it.
   const anything = rows.some((d) => d.planned > 0 || d.completed > 0);
   if (!anything) {
-    return <EmptyChart message="No planned visits during this period." />;
+    return <EmptyChart message={`No planned ${jobs} during this period.`} />;
   }
 
   const p = plot(26);
@@ -133,7 +136,7 @@ export function PlannedVsCompletedChart({ days }: { days: RepDay[] }) {
 
   return (
     <svg viewBox={`0 0 ${W} ${H}`} className="rr-chart" role="img"
-         aria-label="Planned visits against completed visits, by day">
+         aria-label={`Planned ${jobs} against completed ${jobs}, by day`}>
       {ticks.map((t) => {
         const y = p.y + p.h - (t / max) * p.h;
         return (
@@ -160,7 +163,7 @@ export function PlannedVsCompletedChart({ days }: { days: RepDay[] }) {
                 width={barWidth}
                 height={plannedH}
                 fill="none"
-                stroke={INK}
+                style={{ stroke: INK }}
                 strokeWidth={0.9}
               />
             )}
@@ -170,13 +173,13 @@ export function PlannedVsCompletedChart({ days }: { days: RepDay[] }) {
                 y={p.y + p.h - doneH}
                 width={barWidth}
                 height={doneH}
-                fill={INK}
+                style={{ fill: INK }}
               />
             )}
             {/* A planned day with nothing done gets a mark on the baseline, or
                 it is indistinguishable from a day off. */}
             {d.planned > 0 && d.completed === 0 && (
-              <rect x={x} y={p.y + p.h - 1.5} width={barWidth} height={1.5} fill={GOLD} />
+              <rect x={x} y={p.y + p.h - 1.5} width={barWidth} height={1.5} style={{ fill: GOLD }} />
             )}
             {labelled.has(i) ? (
               <>
@@ -196,7 +199,7 @@ export function PlannedVsCompletedChart({ days }: { days: RepDay[] }) {
         );
       })}
 
-      <line x1={p.x} y1={p.y + p.h} x2={p.x + p.w} y2={p.y + p.h} stroke={INK} strokeWidth={1} />
+      <line x1={p.x} y1={p.y + p.h} x2={p.x + p.w} y2={p.y + p.h} style={{ stroke: INK }} strokeWidth={1} />
     </svg>
   );
 }
@@ -245,14 +248,14 @@ export function DailySalesChart({ days, currency }: { days: RepDay[]; currency: 
       <polyline
         points={points.map((q) => `${q.x},${q.y}`).join(" ")}
         fill="none"
-        stroke={INK}
+        style={{ stroke: INK }}
         strokeWidth={1.4}
         strokeLinejoin="round"
       />
       {rows.map((d, i) =>
         d.salesNet > 0 ? (
-          <circle key={d.day} cx={points[i].x} cy={points[i].y} r={2.2} fill={GOLD}
-                  stroke={INK} strokeWidth={0.8} />
+          <circle key={d.day} cx={points[i].x} cy={points[i].y} r={2.2}
+                  style={{ fill: GOLD, stroke: INK }} strokeWidth={0.8} />
         ) : null
       )}
 
@@ -264,7 +267,7 @@ export function DailySalesChart({ days, currency }: { days: RepDay[]; currency: 
         ) : null
       )}
 
-      <line x1={p.x} y1={p.y + p.h} x2={p.x + p.w} y2={p.y + p.h} stroke={INK} strokeWidth={1} />
+      <line x1={p.x} y1={p.y + p.h} x2={p.x + p.w} y2={p.y + p.h} style={{ stroke: INK }} strokeWidth={1} />
     </svg>
   );
 }

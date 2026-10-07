@@ -1,7 +1,15 @@
 "use client";
 
 import { moduleEnabled, type ModuleCode, type ModuleSet } from "@/lib/modules";
-import { useCompanyConfig } from "@/lib/use-company-config";
+import { useCompanyConfig, useTerms } from "@/lib/use-company-config";
+import {
+  count,
+  lower,
+  possessive,
+  title,
+  withArticle,
+  type Terms,
+} from "@/lib/terms";
 import { useMemo, useState, type ReactNode } from "react";
 import Link from "next/link";
 import {
@@ -74,6 +82,8 @@ export type WidgetData = {
   days: number;
   /** The chosen range, so a tile can hand it to the page it links into. */
   range: DateRange;
+  /** The company's words, so a card says "stores" or "sites" as the company does. */
+  terms: Terms;
 };
 
 /**
@@ -97,9 +107,13 @@ function reportHref(tab: ReportTab, range: DateRange): string {
 export type WidgetDefinition = {
   /** Stored in `dashboard_layouts.widget_ids`. Never change one in place. */
   id: string;
-  title: string;
+  /**
+   * In the company's words, so a function of them rather than a string: the
+   * catalogue is shared by every company, the wording is not.
+   */
+  title: (t: Terms) => string;
   /** What this card tells you. Shown in the Customise panel. */
-  description: string;
+  description: (t: Terms) => string;
   /** Columns out of four. 1 = tile, 2 = half width, 4 = full width. */
   span: 1 | 2 | 4;
   source: WidgetSource;
@@ -165,16 +179,17 @@ function coveragePctOf(summary: DashboardSummary): number | null {
 export const WIDGETS: WidgetDefinition[] = [
   {
     id: "visits_completed",
-    title: "Visits completed",
-    description: "Completed visits in the period, against the period before it.",
+    title: (t) => `${t.job.many} completed`,
+    description: (t) =>
+      `Completed ${lower(t.job.many)} in the period, against the period before it.`,
     span: 1,
     source: "summary",
-    render: ({ summary, days }) => {
+    render: ({ summary, days, terms: t }) => {
       if (!summary) return null;
       const { current, previous } = summary;
       return (
         <StatTile
-          label="Visits Completed"
+          label={`${title(t.job.many)} Completed`}
           value={current.visits_completed}
           deltaPct={deltaPct(current.visits_completed, previous.visits_completed)}
           deltaLabel={`vs previous ${days} days`}
@@ -186,18 +201,19 @@ export const WIDGETS: WidgetDefinition[] = [
   },
   {
     id: "store_coverage",
-    title: "Store coverage",
-    description: "Share of active stores visited at least once in the period.",
+    title: (t) => `${t.site.one} coverage`,
+    description: (t) =>
+      `Share of active ${lower(t.site.many)} visited at least once in the period.`,
     span: 1,
     source: "summary",
-    render: ({ summary, range }) => {
+    render: ({ summary, range, terms: t }) => {
       if (!summary) return null;
       const pct = coveragePctOf(summary);
       return (
         <StatTile
-          label="Store Coverage"
+          label={`${title(t.site.one)} Coverage`}
           value={pct === null ? "—" : `${pct}%`}
-          sublabel={`${summary.current.stores_covered} of ${summary.stores_active} active stores visited`}
+          sublabel={`${summary.current.stores_covered} of ${summary.stores_active} active ${lower(t.site.many)} visited`}
           icon={<Store className="h-5 w-5 opacity-80" />}
           tone="outline"
           href={reportHref("coverage", range)}
@@ -208,8 +224,8 @@ export const WIDGETS: WidgetDefinition[] = [
   {
     id: "oos_rate",
     module: "distribution",
-    title: "Out of stock rate",
-    description:
+    title: () => "Out of stock rate",
+    description: () =>
       "Share of stock checks answered “no”. Reads the in_stock metric on your forms.",
     span: 1,
     source: "summary",
@@ -233,8 +249,8 @@ export const WIDGETS: WidgetDefinition[] = [
   {
     id: "planogram",
     module: "distribution",
-    title: "Planogram compliance",
-    description:
+    title: () => "Planogram compliance",
+    description: () =>
       "Share of planogram checks answered “yes”. Reads the planogram_ok metric.",
     span: 1,
     source: "summary",
@@ -260,18 +276,18 @@ export const WIDGETS: WidgetDefinition[] = [
   },
   {
     id: "live_reps",
-    title: "Where the team is",
-    description:
-      "Each rep's latest position on a map, with how long ago it arrived. Phones report at the interval set in company settings while the workday is open.",
+    title: () => "Where the team is",
+    description: (t) =>
+      `Each ${possessive(lower(t.staff.one))} latest position on a map, with how long ago it arrived. Phones report at the interval set in company settings while the ${lower(t.workday.one)} is open.`,
     span: 4,
     source: "liveReps",
     render: ({ liveReps }) => (liveReps ? <RepMap data={liveReps} /> : null),
   },
   {
     id: "working_day",
-    title: "Working day",
-    description:
-      "When each rep starts, closes and how long they work — from the day's evidence, not from what anyone typed.",
+    title: () => "Working day",
+    description: (t) =>
+      `When each ${lower(t.staff.one)} starts, closes and how long they work — from the day's evidence, not from what anyone typed.`,
     span: 4,
     source: "dayTimes",
     render: ({ dayTimes, dayDetail, dayDistance, range }) => (
@@ -285,11 +301,11 @@ export const WIDGETS: WidgetDefinition[] = [
   },
   {
     id: "visits_trend",
-    title: "Visits completed — trend",
-    description: "Completed visits per day across the period.",
+    title: (t) => `${t.job.many} completed — trend`,
+    description: (t) => `Completed ${lower(t.job.many)} per day across the period.`,
     span: 2,
     source: "summary",
-    render: ({ summary, days }) => {
+    render: ({ summary, days, terms: t }) => {
       if (!summary) return null;
       const trend = summary.series.map((p) => ({
         // "Jul 14" reads better than an ISO date on a crowded axis.
@@ -304,7 +320,7 @@ export const WIDGETS: WidgetDefinition[] = [
         <Card>
           <CardHeader>
             <CardTitle className="text-base">
-              Visits completed — last {days} days
+              {t.job.many} completed — last {days} days
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -312,7 +328,7 @@ export const WIDGETS: WidgetDefinition[] = [
             {active < 3 && trend.length > 0 && (
               <p className="mt-2 text-xs text-muted-foreground">
                 Only {active === 1 ? "one day" : `${active} days`} of activity in
-                this period — the trend will fill out as reps work.
+                this period — the trend will fill out as {lower(t.staff.many)} work.
               </p>
             )}
           </CardContent>
@@ -322,30 +338,30 @@ export const WIDGETS: WidgetDefinition[] = [
   },
   {
     id: "coverage_donut",
-    title: "Store coverage — chart",
-    description: "The same coverage figure as a proportion of the estate.",
+    title: (t) => `${t.site.one} coverage — chart`,
+    description: () => "The same coverage figure as a proportion of the estate.",
     span: 2,
     source: "summary",
-    render: ({ summary }) => {
+    render: ({ summary, terms: t }) => {
       if (!summary) return null;
       const pct = coveragePctOf(summary);
       return (
         <Card>
           <CardHeader>
-            <CardTitle className="text-base">Store coverage</CardTitle>
+            <CardTitle className="text-base">{t.site.one} coverage</CardTitle>
           </CardHeader>
           <CardContent>
             {pct === null ? (
               <p className="py-10 text-center text-sm text-muted-foreground">
-                No active stores yet.
+                No active {lower(t.site.many)} yet.
               </p>
             ) : (
               <>
                 <CoverageDonut covered={pct} notCovered={100 - pct} />
                 <p className="mt-2 text-center text-xs text-muted-foreground">
                   {summary.stores_active - summary.current.stores_covered} of{" "}
-                  {summary.stores_active} active stores not yet visited in this
-                  period.
+                  {summary.stores_active} active {lower(t.site.many)} not yet
+                  visited in this period.
                 </p>
               </>
             )}
@@ -357,11 +373,12 @@ export const WIDGETS: WidgetDefinition[] = [
   {
     id: "forms_submitted",
     module: "checklists_forms",
-    title: "Forms submitted",
-    description: "Submissions in the period, and what share of completed visits carried one.",
+    title: () => "Forms submitted",
+    description: (t) =>
+      `Submissions in the period, and what share of completed ${lower(t.job.many)} carried one.`,
     span: 1,
     source: "summary",
-    render: ({ summary }) => {
+    render: ({ summary, terms: t }) => {
       if (!summary) return null;
       const { current } = summary;
       const rate =
@@ -374,8 +391,8 @@ export const WIDGETS: WidgetDefinition[] = [
           value={current.submissions}
           sublabel={
             rate === null
-              ? "No completed visits yet"
-              : `${rate}% of completed visits`
+              ? `No completed ${lower(t.job.many)} yet`
+              : `${rate}% of completed ${lower(t.job.many)}`
           }
           icon={<ClipboardCheck className="h-5 w-5 opacity-80" />}
           tone="outline"
@@ -386,15 +403,15 @@ export const WIDGETS: WidgetDefinition[] = [
   },
   {
     id: "missed_visits",
-    title: "Missed visits",
-    description: "Scheduled calls that were not made.",
+    title: (t) => `Missed ${lower(t.job.many)}`,
+    description: () => "Scheduled calls that were not made.",
     span: 1,
     source: "summary",
-    render: ({ summary, days }) => {
+    render: ({ summary, days, terms: t }) => {
       if (!summary) return null;
       return (
         <StatTile
-          label="Missed Visits"
+          label={`Missed ${title(t.job.many)}`}
           value={summary.current.visits_missed}
           deltaPct={deltaPct(
             summary.current.visits_missed,
@@ -410,17 +427,18 @@ export const WIDGETS: WidgetDefinition[] = [
   },
   {
     id: "active_reps",
-    title: "Active reps",
-    description: "Reps who recorded anything in the period, and the average visit length.",
+    title: (t) => `Active ${lower(t.staff.many)}`,
+    description: (t) =>
+      `${t.staff.many} who recorded anything in the period, and the average ${lower(t.job.one)} length.`,
     span: 1,
     source: "summary",
-    render: ({ summary }) => {
+    render: ({ summary, terms: t }) => {
       if (!summary) return null;
       return (
         <StatTile
-          label="Active Reps"
+          label={`Active ${title(t.staff.many)}`}
           value={summary.current.active_reps}
-          sublabel={`Avg visit ${formatDuration(summary.current.avg_duration_seconds)}`}
+          sublabel={`Avg ${lower(t.job.one)} ${formatDuration(summary.current.avg_duration_seconds)}`}
           icon={<Users className="h-5 w-5 opacity-80" />}
           tone="outline"
         />
@@ -429,17 +447,17 @@ export const WIDGETS: WidgetDefinition[] = [
   },
   {
     id: "unscheduled_visits",
-    title: "Unscheduled visits",
-    description: "Calls a rep started outside the plan.",
+    title: (t) => `Unscheduled ${lower(t.job.many)}`,
+    description: (t) => `Calls ${withArticle(t, "staff")} started outside the plan.`,
     span: 1,
     source: "summary",
-    render: ({ summary }) => {
+    render: ({ summary, terms: t }) => {
       if (!summary) return null;
       return (
         <StatTile
-          label="Unscheduled Visits"
+          label={`Unscheduled ${title(t.job.many)}`}
           value={summary.current.visits_unscheduled}
-          sublabel="Rep-initiated, outside the plan"
+          sublabel={`${t.staff.one}-initiated, outside the plan`}
           icon={<MapPin className="h-5 w-5 opacity-80" />}
           tone="outline"
           href="/activities"
@@ -450,11 +468,11 @@ export const WIDGETS: WidgetDefinition[] = [
   {
     id: "prospecting",
     module: "distribution",
-    title: "Prospecting",
-    description: "Sales calls, pipeline stages and follow-ups owed.",
+    title: () => "Prospecting",
+    description: () => "Sales calls, pipeline stages and follow-ups owed.",
     span: 2,
     source: "operations",
-    render: ({ operations }) => {
+    render: ({ operations, terms: t }) => {
       if (!operations) return null;
       return (
         <Card>
@@ -481,7 +499,7 @@ export const WIDGETS: WidgetDefinition[] = [
               href="/leads"
               className="inline-block pt-1 text-xs text-primary hover:underline"
             >
-              Open the Leads board →
+              Open the {t.prospect.many} board →
             </Link>
           </CardContent>
         </Card>
@@ -490,22 +508,29 @@ export const WIDGETS: WidgetDefinition[] = [
   },
   {
     id: "territories",
-    title: "Territories",
-    description: "The territory structure, and stores that are not in one.",
+    title: (t) => t.territory.many,
+    description: (t) =>
+      `The ${lower(t.territory.one)} structure, and ${lower(t.site.many)} that are not in one.`,
     span: 1,
     source: "operations",
-    render: ({ operations }) => {
+    render: ({ operations, terms: t }) => {
       if (!operations) return null;
       return (
         <Card>
           <CardHeader>
-            <CardTitle className="text-base">Territories</CardTitle>
+            <CardTitle className="text-base">{t.territory.many}</CardTitle>
           </CardHeader>
           <CardContent className="space-y-1.5 text-sm">
-            <Line label="Main territories" value={operations.territories_main} />
-            <Line label="Sub-territories" value={operations.territories_sub} />
             <Line
-              label="Stores with no territory"
+              label={`Main ${lower(t.territory.many)}`}
+              value={operations.territories_main}
+            />
+            <Line
+              label={`Sub-${lower(t.territory.many)}`}
+              value={operations.territories_sub}
+            />
+            <Line
+              label={`${t.site.many} with no ${lower(t.territory.one)}`}
               value={operations.stores_unplaced}
               tone={operations.stores_unplaced > 0 ? "bad" : undefined}
             />
@@ -513,7 +538,7 @@ export const WIDGETS: WidgetDefinition[] = [
               href="/territories"
               className="inline-block pt-1 text-xs text-primary hover:underline"
             >
-              Manage territories →
+              Manage {lower(t.territory.many)} →
             </Link>
           </CardContent>
         </Card>
@@ -522,12 +547,12 @@ export const WIDGETS: WidgetDefinition[] = [
   },
   {
     id: "confirmed_positions",
-    title: "Confirmed positions",
-    description:
-      "How much of the estate stands on a position a rep measured, rather than a geocoder's guess.",
+    title: () => "Confirmed positions",
+    description: (t) =>
+      `How much of the estate stands on a position ${withArticle(t, "staff")} measured, rather than a geocoder's guess.`,
     span: 1,
     source: "operations",
-    render: ({ operations, summary }) => {
+    render: ({ operations, summary, terms: t }) => {
       if (!operations) return null;
       // Falls back to the confirmed + guessed total when the summary is absent,
       // so this card still reads correctly on its own.
@@ -545,11 +570,15 @@ export const WIDGETS: WidgetDefinition[] = [
             <p className="text-2xl font-bold tabular-nums text-foreground">
               {pct === null ? "—" : `${pct}%`}
             </p>
-            <Line label="Measured by a rep on site" value={operations.stores_confirmed} />
+            <Line
+              label={`Measured by ${withArticle(t, "staff")} on site`}
+              value={operations.stores_confirmed}
+            />
             <Line label="Still on a geocoder's guess" value={operations.stores_guessed} />
             <p className="pt-1 text-xs text-muted-foreground">
-              Every &ldquo;at store&rdquo; verdict rests on this. A guessed pin can
-              put a rep off site while they stand in the shop.
+              Every &ldquo;at {lower(t.site.one)}&rdquo; verdict rests on this. A
+              guessed pin can put {withArticle(t, "staff")} off site while they
+              stand in the shop.
             </p>
           </CardContent>
         </Card>
@@ -631,6 +660,9 @@ function WorkingDay({
 }) {
   // The day keys are in the company's timezone (see `reportingDay`).
   const timeZone = useCompanyConfig()?.timezone ?? "UTC";
+  const t = useTerms();
+  /** "rep", mid-sentence: the person a row is about, and the "rep-day" unit. */
+  const staff = lower(t.staff.one);
   /** Road metres by rep and local day, for the two tables below. */
   const kmFor = useMemo(() => {
     const m = new Map<string, number | null>();
@@ -763,7 +795,7 @@ function WorkingDay({
               className="rounded-md border border-border bg-background px-2 py-1 text-xs text-foreground"
             >
               <option value="">
-                Average of {company.days} rep-
+                Average of {company.days} {staff}-
                 {company.days === 1 ? "day" : "days"}
               </option>
               <optgroup label="Weeks (Mon – Sun)">
@@ -795,16 +827,15 @@ function WorkingDay({
               {formatDayLabel(day)}
             </p>
             <p className="mt-0.5 text-xs text-muted-foreground">
-              {chosenDay.length} rep{chosenDay.length === 1 ? "" : "s"} worked.
-              These are the actual first and last activity of that day, not an
-              average.
+              {count(t, "staff", chosenDay.length)} worked. These are the actual
+              first and last activity of that day, not an average.
             </p>
 
             <div className="mt-3 overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-border text-left text-xs text-muted-foreground">
-                    <th className="py-2 font-medium">Rep</th>
+                    <th className="py-2 font-medium">{t.staff.one}</th>
                     <th className="py-2 text-right font-medium">In</th>
                     <th className="py-2 text-right font-medium">Out</th>
                     <th className="py-2 text-right font-medium">Length</th>
@@ -818,7 +849,7 @@ function WorkingDay({
                       className="border-b border-border/60"
                     >
                       <td className="py-2 text-foreground">
-                        {d.rep_name ?? "Unnamed rep"}
+                        {d.rep_name ?? `Unnamed ${staff}`}
                       </td>
                       <td className="py-2 text-right tabular-nums text-foreground">
                         {formatTimeOfDay(d.start_seconds)}
@@ -850,8 +881,7 @@ function WorkingDay({
                 and is worth being able to tell apart at a glance. */}
             {chosenDay.length < rows.length && (
               <p className="mt-2 text-xs text-muted-foreground">
-                {rows.length - chosenDay.length} rep
-                {rows.length - chosenDay.length === 1 ? "" : "s"} recorded no
+                {count(t, "staff", rows.length - chosenDay.length)} recorded no
                 activity on this day.
               </p>
             )}
@@ -862,11 +892,13 @@ function WorkingDay({
               {formatWeekLabel(weekSummary.monday)}
             </p>
             <p className="mt-0.5 text-xs text-muted-foreground">
-              {weekSummary.reps.length} rep
-              {weekSummary.reps.length === 1 ? "" : "s"} worked,{" "}
-              {weekSummary.repDays} rep-{weekSummary.repDays === 1 ? "day" : "days"}{" "}
-              in all. Starts, closes and length are each rep&rsquo;s average over
-              the days they worked that week; driving is the week&rsquo;s total.
+              {count(t, "staff", weekSummary.reps.length)} worked,{" "}
+              {weekSummary.repDays} {staff}-{weekSummary.repDays === 1 ? "day" : "days"}{" "}
+              in all. Starts, closes and length are each{" "}
+              {/* Typographic apostrophe, as the sentence always had. */}
+              {possessive(staff).replace("'", "\u2019")} average
+              over the days they worked that week; driving is the week&rsquo;s
+              total.
             </p>
             {/* Said before the numbers, not after: a total over four days of a
                 seven-day heading reads as a quiet week unless told otherwise. */}
@@ -890,8 +922,7 @@ function WorkingDay({
             />
             {weekSummary.reps.length < rows.length && (
               <p className="mt-2 text-xs text-muted-foreground">
-                {rows.length - weekSummary.reps.length} rep
-                {rows.length - weekSummary.reps.length === 1 ? "" : "s"} recorded
+                {count(t, "staff", rows.length - weekSummary.reps.length)} recorded
                 no activity this week.
               </p>
             )}
@@ -923,9 +954,9 @@ function WorkingDay({
               </div>
             </div>
             <p className="mt-1 text-xs text-muted-foreground">
-              Across {company.days} rep-{company.days === 1 ? "day" : "days"},
-              weighted by days worked so a rep with one day does not count the
-              same as a rep with twenty.
+              Across {company.days} {staff}-{company.days === 1 ? "day" : "days"},
+              weighted by days worked so {withArticle(t, "staff")} with one day
+              does not count the same as {withArticle(t, "staff")} with twenty.
             </p>
             {/* Said once, plainly. The distance is a driving route computed
                 through the day's recorded positions — closer to the truth than a
@@ -969,12 +1000,14 @@ function RepAveragesTable({
   rows: (RepDayTimes | RepWeek)[];
   driving: Map<string, { metres: number; settled: number }>;
 }) {
+  const t = useTerms();
+  const staff = lower(t.staff.one);
   return (
     <div className="mt-4 overflow-x-auto">
       <table className="w-full text-sm">
         <thead>
           <tr className="border-b border-border text-left text-xs text-muted-foreground">
-            <th className="py-2 font-medium">Rep</th>
+            <th className="py-2 font-medium">{t.staff.one}</th>
             <th className="py-2 text-right font-medium">Days</th>
             <th className="py-2 text-right font-medium">Starts</th>
             <th className="py-2 text-right font-medium">Closes</th>
@@ -984,11 +1017,11 @@ function RepAveragesTable({
         </thead>
         <tbody>
           {rows.map((r) => {
-            const t = driving.get(r.rep_id);
+            const d = driving.get(r.rep_id);
             return (
               <tr key={r.rep_id} className="border-b border-border/60">
                 <td className="py-2 text-foreground">
-                  {r.rep_name ?? "Unnamed rep"}
+                  {r.rep_name ?? `Unnamed ${staff}`}
                 </td>
                 <td className="py-2 text-right tabular-nums text-muted-foreground">
                   {r.days_worked}
@@ -1003,11 +1036,11 @@ function RepAveragesTable({
                   {formatDuration(Number(r.avg_length_seconds ?? 0))}
                 </td>
                 <td className="py-2 text-right tabular-nums text-foreground">
-                  {!t || t.settled === 0 ? (
+                  {!d || d.settled === 0 ? (
                     <span className="text-muted-foreground">—</span>
                   ) : (
                     <>
-                      {formatKm(t.metres)}
+                      {formatKm(d.metres)}
                       {/* Counted against the rep's *working days*, the number
                           in the column two to the left — not against workday
                           sessions, which is a smaller and unexplained figure on
@@ -1017,12 +1050,12 @@ function RepAveragesTable({
                           workday session, and a rep who worked by every other
                           measure but never pressed Start has no route to
                           measure. */}
-                      {t.settled < r.days_worked && (
+                      {d.settled < r.days_worked && (
                         <span
                           className="ml-1 text-xs font-normal text-muted-foreground"
-                          title={`${t.settled} of ${r.days_worked} working days have a road distance. A day only has one if the rep started a workday on it.`}
+                          title={`${d.settled} of ${r.days_worked} working days have a road distance. A day only has one if the ${staff} started ${withArticle(t, "workday")} on it.`}
                         >
-                          ({t.settled}/{r.days_worked})
+                          ({d.settled}/{r.days_worked})
                         </span>
                       )}
                     </>

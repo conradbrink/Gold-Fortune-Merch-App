@@ -4,6 +4,8 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import { useTerms } from "@/lib/use-company-config";
+import { lower } from "@/lib/terms";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -43,6 +45,7 @@ function shift(date: string, days: number) {
  */
 export default function RepDayPage() {
   const supabase = createClient();
+  const t = useTerms();
   const { repId } = useParams<{ repId: string }>();
   const [date, setDate] = useState(todayDate);
   const [name, setName] = useState<string | null>(null);
@@ -60,19 +63,19 @@ export default function RepDayPage() {
       .then(({ data, error: e }) => {
         if (cancelled) return;
         if (e) setError(e.message);
-        else setName((data as { full_name: string } | null)?.full_name ?? "Unknown rep");
+        else setName((data as { full_name: string } | null)?.full_name ?? `Unknown ${lower(t.staff.one)}`);
       });
     return () => {
       cancelled = true;
     };
-  }, [supabase, repId]);
+  }, [supabase, repId, t]);
 
   useEffect(() => {
     let cancelled = false;
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setDay(null);
     setFocus(null);
-    fetchRepDay(supabase, repId, date)
+    fetchRepDay(supabase, repId, date, t)
       .then((d) => {
         if (!cancelled) {
           setDay(d);
@@ -83,7 +86,7 @@ export default function RepDayPage() {
     return () => {
       cancelled = true;
     };
-  }, [supabase, repId, date]);
+  }, [supabase, repId, date, t]);
 
   const path = useMemo(() => (day?.pings ?? []).map((p) => ({ lat: p.lat, lng: p.lng })), [day]);
   const pins = useMemo<MapPin[]>(() => {
@@ -172,7 +175,7 @@ export default function RepDayPage() {
                   <TableHead>In</TableHead>
                   <TableHead>Out</TableHead>
                   <TableHead className="text-right">Time there</TableHead>
-                  <TableHead className="text-right">From store</TableHead>
+                  <TableHead className="text-right">From {lower(t.site.one)}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>

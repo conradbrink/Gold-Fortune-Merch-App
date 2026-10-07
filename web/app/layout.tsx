@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { THEME_INIT_SCRIPT } from "@/lib/theme";
+import { PRODUCT_NAME, PRODUCT_TAGLINE } from "@/lib/product";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -13,9 +14,12 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
+// The product's name, not a company's: the browser title and the link preview
+// are seen before sign-in, by every company's staff alike. The template lets a
+// page name itself ("Download the app · Field Teams") without repeating it.
 export const metadata: Metadata = {
-  title: "Gold Fortune Merchandising",
-  description: "Field merchandising management for Gold Fortune",
+  title: { default: PRODUCT_NAME, template: `%s · ${PRODUCT_NAME}` },
+  description: PRODUCT_TAGLINE,
 };
 
 export default function RootLayout({

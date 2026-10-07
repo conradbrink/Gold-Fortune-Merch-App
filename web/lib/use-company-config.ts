@@ -2,9 +2,9 @@
 
 import { useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
-import { toModuleSet, type ModuleSet } from "@/lib/modules";
-import { DEFAULT_TERMS, parseTerms, type Terms } from "@/lib/terms";
-import { parseBranding, type Branding } from "@/lib/branding";
+import { DEFAULT_TERMS, type Terms } from "@/lib/terms";
+import type { Branding } from "@/lib/branding";
+import { parseCompanyConfig, type CompanyConfig } from "@/lib/company-config";
 
 /**
  * The signed-in user's company configuration: which modules it has, every
@@ -30,91 +30,21 @@ import { parseBranding, type Branding } from "@/lib/branding";
  * decide what is served and read.
  */
 
-export type CompanySettings = {
-  gps_ping_interval_minutes: number;
-  short_visit_minutes: number;
-  auto_end_enabled: boolean;
-  auto_end_time: string;
-  checkin_radius_m: number;
-  off_site_distance_m: number;
-  invalid_gps_distance_m: number;
-  currency_code: string;
-};
-
-export type CompanyConfig = {
-  orgId: string;
-  modules: ModuleSet;
-  settings: CompanySettings;
-  timezone: string;
-  vatRate: number;
-  terms: Terms;
-  branding: Branding;
-};
-
-/**
- * The setting definitions' own defaults (`setting_definitions.default_value`),
- * used only for a field the payload is missing or got wrong. The database
- * always sends every key; this is for a payload that is not what it should
- * be, which must not reach the screens as `undefined`.
- */
-const SETTING_FALLBACK: CompanySettings = {
-  gps_ping_interval_minutes: 5,
-  short_visit_minutes: 5,
-  auto_end_enabled: true,
-  auto_end_time: "19:30",
-  checkin_radius_m: 100,
-  off_site_distance_m: 500,
-  invalid_gps_distance_m: 5000,
-  currency_code: "BWP",
-};
-
-function obj(v: unknown): Record<string, unknown> {
-  return v !== null && typeof v === "object" && !Array.isArray(v)
-    ? (v as Record<string, unknown>)
-    : {};
-}
-
-function int(v: unknown, fallback: number): number {
-  return typeof v === "number" && Number.isInteger(v) ? v : fallback;
-}
-
-/** The RPC payload, checked field by field rather than asserted. */
-export function parseCompanyConfig(raw: unknown): CompanyConfig | null {
-  if (raw === null || typeof raw !== "object" || Array.isArray(raw)) return null;
-  const r = raw as Record<string, unknown>;
-  if (typeof r.org_id !== "string") return null;
-  const s = obj(r.settings);
-  const f = SETTING_FALLBACK;
-  return {
-    orgId: r.org_id,
-    modules: toModuleSet(obj(r.modules)),
-    settings: {
-      gps_ping_interval_minutes: int(s.gps_ping_interval_minutes, f.gps_ping_interval_minutes),
-      short_visit_minutes: int(s.short_visit_minutes, f.short_visit_minutes),
-      auto_end_enabled:
-        typeof s.auto_end_enabled === "boolean" ? s.auto_end_enabled : f.auto_end_enabled,
-      auto_end_time:
-        typeof s.auto_end_time === "string" && /^\d{2}:\d{2}$/.test(s.auto_end_time)
-          ? s.auto_end_time
-          : f.auto_end_time,
-      checkin_radius_m: int(s.checkin_radius_m, f.checkin_radius_m),
-      off_site_distance_m: int(s.off_site_distance_m, f.off_site_distance_m),
-      invalid_gps_distance_m: int(s.invalid_gps_distance_m, f.invalid_gps_distance_m),
-      currency_code:
-        typeof s.currency_code === "string" && /^[A-Z]{3}$/.test(s.currency_code)
-          ? s.currency_code
-          : f.currency_code,
-    },
-    timezone: typeof r.timezone === "string" && r.timezone !== "" ? r.timezone : "UTC",
-    vatRate: Number.isFinite(Number(r.vat_rate)) ? Number(r.vat_rate) : 0,
-    terms: parseTerms(r.terms),
-    branding: parseBranding(r.branding),
-  };
-}
+// The payload's shape and parser live in a module without "use client", so
+// server code can parse what it fetched too. Re-exported so nothing that
+// imports them from here has to change.
+export { parseCompanyConfig } from "@/lib/company-config";
+export type { CompanyConfig, CompanySettings } from "@/lib/company-config";
 
 let pending: Promise<CompanyConfig | null> | null = null;
 /** The answer once known, so a component mounting later starts with it. */
 let resolved: CompanyConfig | null | undefined;
+/**
+ * Every mounted `useCompanyConfig`, told when the cache is dropped so it
+ * fetches again: after the settings page saves new words or a new logo, the
+ * sidebar already on screen must show them, not wait for a navigation.
+ */
+const listeners = new Set<() => void>();
 
 function loadCompanyConfig(): Promise<CompanyConfig | null> {
   if (pending === null) {
@@ -158,6 +88,7 @@ export function seedCompanyConfig(raw: unknown): void {
 export function refreshCompanyConfig(): void {
   pending = null;
   resolved = undefined;
+  for (const listener of listeners) listener();
 }
 
 export function useCompanyConfig(): CompanyConfig | null {
@@ -165,19 +96,24 @@ export function useCompanyConfig(): CompanyConfig | null {
 
   useEffect(() => {
     let cancelled = false;
-    loadCompanyConfig().then(
-      (value) => {
-        if (!cancelled) setConfig(value);
-      },
-      (error) => {
-        console.error(
-          "useCompanyConfig: the lookup failed, so no module-dependent chrome will render.",
-          error
-        );
-      }
-    );
+    const load = () => {
+      loadCompanyConfig().then(
+        (value) => {
+          if (!cancelled) setConfig(value);
+        },
+        (error) => {
+          console.error(
+            "useCompanyConfig: the lookup failed, so no module-dependent chrome will render.",
+            error
+          );
+        }
+      );
+    };
+    load();
+    listeners.add(load);
     return () => {
       cancelled = true;
+      listeners.delete(load);
     };
   }, []);
 

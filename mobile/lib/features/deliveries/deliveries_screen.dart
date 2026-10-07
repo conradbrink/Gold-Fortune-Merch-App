@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 
+import '../../core/company_config.dart';
 import '../../core/providers.dart';
 import '../../core/theme.dart';
 import '../../data/models/delivery.dart';
@@ -23,6 +24,7 @@ class DeliveriesScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final deliveries = ref.watch(myDeliveriesProvider);
+    final site = ref.watch(termsProvider).site.oneLower;
 
     return Scaffold(
       appBar: AppBar(title: const Text('My deliveries')),
@@ -42,14 +44,14 @@ class DeliveriesScreen extends ConsumerWidget {
           ]),
           data: (rows) {
             if (rows.isEmpty) {
-              return ListView(children: const [
-                SizedBox(height: 80),
+              return ListView(children: [
+                const SizedBox(height: 80),
                 _Empty(
                   icon: Icons.local_shipping_outlined,
                   title: 'No deliveries assigned to you',
                   body:
                       'When the warehouse puts your name on a consignment it '
-                      'appears here, with the shop it is going to.',
+                      'appears here, with the $site it is going to.',
                 ),
               ]);
             }

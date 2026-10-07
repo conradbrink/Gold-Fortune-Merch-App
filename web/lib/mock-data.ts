@@ -111,19 +111,21 @@ export type TeamMember = {
 };
 
 export const teamMembers: TeamMember[] = [
-  { id: "u1", name: "Conrad Brink", email: "conrad@goldfortune.com", role: "Admin", status: "Active" },
-  { id: "u2", name: "Nancy Phillips", email: "nancy.phillips@goldfortune.com", role: "Manager", status: "Active" },
-  { id: "u3", name: "David Allen", email: "david.allen@goldfortune.com", role: "Rep", status: "Active" },
-  { id: "u4", name: "Devon Smith", email: "devon.smith@goldfortune.com", role: "Rep", status: "Invited" },
+  { id: "u1", name: "Conrad Brink", email: "conrad@example.com", role: "Admin", status: "Active" },
+  { id: "u2", name: "Nancy Phillips", email: "nancy.phillips@example.com", role: "Manager", status: "Active" },
+  { id: "u3", name: "David Allen", email: "david.allen@example.com", role: "Rep", status: "Active" },
+  { id: "u4", name: "Devon Smith", email: "devon.smith@example.com", role: "Rep", status: "Invited" },
 ];
 
+// Placeholder company, deliberately no real one: a mock that names a customer
+// is that customer's name on the next customer's screen the day it is wired up.
 export const companyDetails = {
-  name: "Gold Fortune Inc.",
-  legalName: "Gold Fortune Trading LLC",
-  industry: "FMCG / Consumer Goods Distribution",
-  website: "www.goldfortune.com",
-  address: "1400 Commerce Way, Suite 220, Atlanta, GA 30303",
-  supportEmail: "support@goldfortune.com",
+  name: "Example Company",
+  legalName: "Example Company Ltd",
+  industry: "Field services",
+  website: "www.example.com",
+  address: "1 Example Street",
+  supportEmail: "support@example.com",
 };
 
 export const unitsSoldTrend = [

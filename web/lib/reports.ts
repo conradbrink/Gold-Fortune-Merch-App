@@ -2,6 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { callRpc } from "@/lib/rpc";
 import { toLocalDateTime, type DateRange } from "@/lib/date-range";
 import type { ExportSheet } from "@/lib/export";
+import type { Terms } from "@/lib/terms";
 
 /**
  * Report fetchers.
@@ -367,8 +368,9 @@ export async function fetchFormResponseRows(
 export function buildFormResponsesSheet(
   fields: FieldReport[],
   rows: FormResponseRow[],
-  opts: { context: string[]; truncated?: boolean; orgName?: string }
+  opts: { context: string[]; truncated?: boolean; terms: Terms }
 ): ExportSheet {
+  const t = opts.terms;
   const headers = formFieldHeaders(fields);
   const questions = fields.map((f) => ({
     header: headers.get(f.field_id) ?? f.label,
@@ -380,9 +382,8 @@ export function buildFormResponsesSheet(
   }));
 
   return {
-    orgName: opts.orgName,
     title: "Form responses",
-    filename: "gf-form-responses",
+    filename: "form-responses",
     context: [
       ...opts.context,
       `${rows.length} submission${rows.length === 1 ? "" : "s"}`,
@@ -394,11 +395,11 @@ export function buildFormResponsesSheet(
     ].filter((line): line is string => line !== null),
     columns: [
       { header: "Submitted", key: "submitted" },
-      { header: "Store", key: "store" },
-      { header: "Chain", key: "group" },
+      { header: t.site.one, key: "store" },
+      { header: t.site_group.one, key: "group" },
       { header: "Town", key: "city" },
-      { header: "Rep", key: "rep" },
-      { header: "Visit status", key: "status" },
+      { header: t.staff.one, key: "rep" },
+      { header: `${t.job.one} status`, key: "status" },
       ...questions,
     ],
     rows: rows.map((r) => {

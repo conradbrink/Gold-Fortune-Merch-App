@@ -4,7 +4,8 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { Maximize2, Search, ShoppingCart, X } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
-import { useCompanyConfig } from "@/lib/use-company-config";
+import { useCompanyConfig, useTerms } from "@/lib/use-company-config";
+import { lower, possessive } from "@/lib/terms";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ErrorBanner } from "@/components/warehouse/stat-tile";
@@ -47,6 +48,7 @@ export default function TrackingPage() {
   const supabase = createClient();
   // "Live" means within a few of the company's GPS intervals (`freshnessOf`).
   const intervalMinutes = useCompanyConfig()?.settings.gps_ping_interval_minutes ?? null;
+  const t = useTerms();
   const [data, setData] = useState<LiveReps | null>(null);
   const [orders, setOrders] = useState<DayOrder[]>([]);
   const [showOrders, setShowOrders] = useState(true);
@@ -62,7 +64,7 @@ export default function TrackingPage() {
 
   const load = useCallback(async () => {
     try {
-      const [live, o] = await Promise.all([fetchLiveReps(supabase), fetchTodaysOrders(supabase)]);
+      const [live, o] = await Promise.all([fetchLiveReps(supabase, t), fetchTodaysOrders(supabase, t)]);
       setData(live);
       setOrders(o);
       setNow(Date.now());
@@ -71,7 +73,7 @@ export default function TrackingPage() {
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     }
-  }, [supabase]);
+  }, [supabase, t]);
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -83,14 +85,14 @@ export default function TrackingPage() {
   useEffect(() => {
     if (!selected) return;
     let cancelled = false;
-    fetchRepDay(supabase, selected, todayDate())
+    fetchRepDay(supabase, selected, todayDate(), t)
       .then((d) => !cancelled && setDay({ repId: selected, day: d }))
       .catch((e) => !cancelled && setError(e instanceof Error ? e.message : String(e)));
     return () => {
       cancelled = true;
     };
     // `tick` re-reads the card with the minute poll, like the map.
-  }, [supabase, selected, tick]);
+  }, [supabase, selected, tick, t]);
 
   const q = query.trim().toLowerCase();
   const positions = useMemo(
@@ -137,7 +139,7 @@ export default function TrackingPage() {
         <div>
           <h1 className="text-xl font-semibold tracking-tight text-foreground">Tracking</h1>
           <p className="text-sm text-muted-foreground">
-            Each rep&apos;s last reading, refreshed every minute.{" "}
+            Each {possessive(lower(t.staff.one))} last reading, refreshed every minute.{" "}
             {freshnessExplained(intervalMinutes)}
           </p>
         </div>
@@ -170,7 +172,7 @@ export default function TrackingPage() {
           <div className="border-b border-border p-2">
             <div className="relative">
               <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-              <Input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search reps" className="pl-8" aria-label="Search reps" />
+              <Input value={query} onChange={(e) => setQuery(e.target.value)} placeholder={`Search ${lower(t.staff.many)}`} className="pl-8" aria-label={`Search ${lower(t.staff.many)}`} />
             </div>
           </div>
           <div className="min-h-0 flex-1 overflow-y-auto">
