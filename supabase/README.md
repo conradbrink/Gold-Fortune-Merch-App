@@ -113,6 +113,25 @@ supabase migration list          # compare local vs remote
 Against a *fresh* project, `supabase db push` replays them in order. Against
 the existing project they are already applied — do not re-run them.
 
+## Rollbacks
+
+From 7 October 2026 every migration ships with `rollback/<version>_<name>.down.sql`,
+which restores exactly what the migration replaced. A rollback is rehearsed
+before the migration is applied: in **one transaction on production that always
+ends in an error**, so nothing persists. The rehearsal fingerprints every
+function, grant and policy the migration touches, runs the migration and then
+the rollback, and fails if any fingerprint differs.
+A Supabase branch cannot be used for this, because a branch is built by
+replaying this history, and the history is not replayable (above).
+
+## Not every migration is safe for more than one company
+
+`20260731181954_restructure_territories_into_regions` creates four Botswana
+regions and renames territories by name with no `org_id` filter. It was written
+for the one company that existed then. It has been applied and must never be
+re-run, copied into company creation, or used as a template for seeding.
+Seeding a new company is `provision_organization()`'s job.
+
 ## Rules for new migrations
 
 Three of these are not stylistic; getting them wrong causes silent data leaks or

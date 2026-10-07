@@ -62,6 +62,13 @@ export async function proxy(request: NextRequest) {
     matchesPrefix(request.nextUrl.pathname, "/forgot-password") ||
     matchesPrefix(request.nextUrl.pathname, "/reset-password");
 
+  // The platform operator's area. A session is still required (it is not in
+  // the anonymous list below), but it is exempt from the permission map: that
+  // map is about what a person may do inside their own company, and the
+  // operator check — `is_platform_admin()` — is made by the page itself on the
+  // server, which answers 404 to everyone else.
+  const isPlatformPage = matchesPrefix(request.nextUrl.pathname, "/platform");
+
   if (!user && !isLoginPage && !isDownloadPage && !isPasswordResetPage) {
     const url = request.nextUrl.clone();
     url.pathname = "/login";
@@ -91,7 +98,8 @@ export async function proxy(request: NextRequest) {
     !isRepNoticePage &&
     !isLoginPage &&
     !isDownloadPage &&
-    !isPasswordResetPage
+    !isPasswordResetPage &&
+    !isPlatformPage
   ) {
     // One round trip, as before — it used to fetch `profiles.role`. Asking the
     // database for the permission set rather than deriving it here keeps the
