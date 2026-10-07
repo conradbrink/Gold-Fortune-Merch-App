@@ -97,8 +97,12 @@ begin
      and not exists (select 1 from public.location_pings l where l.rep_id = p.id)
      and not exists (select 1 from public.routes r where r.rep_id = p.id)
    order by p.full_name limit 1;
+  -- Never one of the two logins about to become Company B: a_rep must stay
+  -- A's, or T5 would pass B's own id to every rep parameter and test B
+  -- against itself (CodeRabbit on #69).
   select id into a_rep from public.profiles
-   where org_id = a_org and role = 'rep' order by full_name limit 1;
+   where org_id = a_org and role = 'rep' and id not in (b_mgr, b_rep)
+   order by full_name limit 1;
   select id into a_store from public.stores where org_id = a_org order by name limit 1;
   select id into a_group from public.store_groups where org_id = a_org order by name limit 1;
   select id into a_file  from public.files where org_id = a_org order by created_at limit 1;
@@ -479,6 +483,20 @@ begin
     end;
     reset role;
   end loop;
+
+  -- T5 calls stable and immutable functions only: a volatile one may write,
+  -- and guessed arguments are no basis for a write. Name what was skipped so
+  -- the gap is visible rather than counted as coverage. The volatile RPCs
+  -- (order_confirm and the like) check the caller's company themselves; the
+  -- module suite and security_regression.sql exercise the ones that matter.
+  select string_agg(p.proname, ' ' order by p.proname) into v_txt
+    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+   where n.nspname = 'public' and p.prokind = 'f' and p.provolatile = 'v'
+     and p.prorettype <> 'trigger'::regtype
+     and has_function_privilege('authenticated', p.oid, 'EXECUTE');
+  if v_txt is not null then
+    v_unproven := v_unproven || '  T5 did not call these volatile functions: ' || v_txt || E'\n';
+  end if;
 
   ---------------------------------------------------------------- controls
   perform set_config('request.jwt.claims', json_build_object(

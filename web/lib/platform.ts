@@ -34,16 +34,34 @@ function adminClient() {
 export async function listCompanies(): Promise<PlatformCompany[]> {
   const admin = adminClient();
 
-  const [{ data: orgs, error: orgError }, { data: people, error: peopleError }] =
-    await Promise.all([
-      admin
-        .from("organizations")
-        .select("id, name, industry, timezone, created_at")
-        .order("created_at"),
-      admin.from("profiles").select("org_id, is_active"),
-    ]);
+  const { data: orgs, error: orgError } = await admin
+    .from("organizations")
+    .select("id, name, industry, timezone, created_at")
+    .order("created_at");
   if (orgError) throw orgError;
-  if (peopleError) throw peopleError;
+
+  // Counted in the database, one pair of `head` queries per company: a plain
+  // select of every profile would be cut off silently at PostgREST's row
+  // limit once the platform passes it, and ship every row to count it.
+  const counts = await Promise.all(
+    (orgs ?? []).map(async (org) => {
+      const [active, inactive] = await Promise.all([
+        admin
+          .from("profiles")
+          .select("id", { count: "exact", head: true })
+          .eq("org_id", org.id)
+          .eq("is_active", true),
+        admin
+          .from("profiles")
+          .select("id", { count: "exact", head: true })
+          .eq("org_id", org.id)
+          .eq("is_active", false),
+      ]);
+      if (active.error) throw active.error;
+      if (inactive.error) throw inactive.error;
+      return { active: active.count ?? 0, inactive: inactive.count ?? 0 };
+    })
+  );
 
   // "Last activity" is the most recent workday start: the one event every
   // company produces whatever its industry, and one indexed row per company.
@@ -62,15 +80,14 @@ export async function listCompanies(): Promise<PlatformCompany[]> {
   );
 
   return (orgs ?? []).map((org, i) => {
-    const mine = (people ?? []).filter((p) => p.org_id === org.id);
     return {
       id: org.id,
       name: org.name,
       industry: org.industry,
       timezone: org.timezone,
       createdAt: org.created_at,
-      activeUsers: mine.filter((p) => p.is_active).length,
-      inactiveUsers: mine.filter((p) => !p.is_active).length,
+      activeUsers: counts[i].active,
+      inactiveUsers: counts[i].inactive,
       lastWorkdayAt: last[i],
     };
   });
