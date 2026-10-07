@@ -1,0 +1,158 @@
+@import "tailwindcss";
+
+@theme {
+  --color-teal-950: #0a2a2b;
+  --color-teal-900: #0f3d3e;
+  --color-teal-800: #165254;
+  --color-teal-700: #1f6b6d;
+  --color-teal-100: #dcebea;
+  --color-teal-50: #eef5f4;
+  --color-amber-500: #f5a524;
+  --color-amber-400: #f8b84e;
+  --color-amber-100: #fdeccc;
+  --color-sand: #f7f7f2;
+  --color-ink: #10201f;
+  --color-muted: #52625f;
+  --color-line: #dfe4e0;
+  --color-flag: #c2410c;
+
+  --font-display: var(--font-outfit), ui-sans-serif, system-ui, sans-serif;
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  background: var(--color-sand);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Section anchors clear the sticky header. */
+section[id] {
+  scroll-margin-top: 5rem;
+}
+
+:focus-visible {
+  outline: 3px solid var(--color-amber-500);
+  outline-offset: 2px;
+}
+
+/* Phone animation (components/phone-animation.tsx). Each screen remounts on
+   every step, so these run once per showing; delays come from inline styles. */
+@keyframes tk-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes tk-pop {
+  0% { opacity: 0; transform: scale(0.6); }
+  70% { opacity: 1; transform: scale(1.06); }
+  100% { opacity: 1; transform: scale(1); }
+}
+@keyframes tk-tap {
+  0% { opacity: 0.55; transform: scale(0.2); }
+  100% { opacity: 0; transform: scale(2.4); }
+}
+@keyframes tk-draw {
+  to { stroke-dashoffset: 0; }
+}
+@keyframes tk-flash {
+  0% { opacity: 0; }
+  20% { opacity: 0.9; }
+  100% { opacity: 0; }
+}
+@keyframes tk-out {
+  to { opacity: 0; visibility: hidden; }
+}
+@keyframes tk-grow {
+  from { transform: scaleX(0); }
+  to { transform: scaleX(1); }
+}
+.tk-in { animation: tk-in 0.45s ease-out both; }
+.tk-pop { animation: tk-pop 0.45s ease-out both; }
+.tk-tap { animation: tk-tap 0.6s ease-out both; }
+.tk-draw { animation: tk-draw 1.6s ease-in-out both; }
+.tk-flash { animation: tk-flash 0.5s ease-out both; }
+.tk-out { animation: tk-out 0.2s linear both; }
+.tk-grow { animation: tk-grow 0.9s ease-out both; transform-origin: left; }
+
+@media (prefers-reduced-motion: reduce) {
+  .tk-in, .tk-pop, .tk-tap, .tk-draw, .tk-flash, .tk-out, .tk-grow { animation: none !important; }
+  .tk-draw { stroke-dashoffset: 0 !important; }
+}
+
+/* Product demo stage (components/demo/*). */
+@keyframes tk-float {
+  0%, 100% { translate: 0 0; }
+  50% { translate: 0 -8px; }
+}
+@keyframes tk-from-left {
+  from { opacity: 0; transform: translateX(-28px) scale(0.92); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes tk-from-right {
+  from { opacity: 0; transform: translateX(28px) scale(0.92); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes tk-burst {
+  0% { opacity: 0; transform: rotate(var(--a)) translateY(0) scale(0.4); }
+  25% { opacity: 1; }
+  100% { opacity: 0; transform: rotate(var(--a)) translateY(-70px) scale(1); }
+}
+@keyframes tk-stamp {
+  0% { opacity: 0; transform: scale(1.8) rotate(-12deg); }
+  60% { opacity: 1; transform: scale(0.95) rotate(-6deg); }
+  100% { opacity: 1; transform: scale(1) rotate(-6deg); }
+}
+@keyframes tk-shimmer {
+  from { background-position: -200% 0; }
+  to { background-position: 200% 0; }
+}
+.tk-float { animation: tk-float 6s ease-in-out infinite; }
+.tk-from-left { animation: tk-from-left 0.55s cubic-bezier(0.2, 0.9, 0.3, 1.2) both; }
+.tk-from-right { animation: tk-from-right 0.55s cubic-bezier(0.2, 0.9, 0.3, 1.2) both; }
+.tk-burst { animation: tk-burst 0.9s ease-out both; }
+.tk-stamp { animation: tk-stamp 0.5s cubic-bezier(0.2, 0.9, 0.3, 1.2) both; }
+.tk-shimmer {
+  background-image: linear-gradient(90deg, transparent 0%, rgb(255 255 255 / 0.5) 50%, transparent 100%);
+  background-size: 200% 100%;
+  animation: tk-shimmer 1.2s ease-out 1 both;
+}
+@media (prefers-reduced-motion: reduce) {
+  .tk-float, .tk-from-left, .tk-from-right, .tk-burst, .tk-stamp, .tk-shimmer { animation: none !important; }
+}
+@keyframes tk-fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes tk-ring {
+  0% { opacity: 0; transform: translate(-50%, -50%) scale(0.4); }
+  30% { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+  100% { opacity: 0; transform: translate(-50%, -50%) scale(1.6); }
+}
+.tk-fade { animation: tk-fade 0.35s ease-out both; }
+.tk-ring { animation: tk-ring 0.7s ease-out both; }
+@media (prefers-reduced-motion: reduce) {
+  .tk-fade, .tk-ring { animation: none !important; }
+}
+@keyframes tk-zoom {
+  0%, 22% { transform: scale(1); }
+  100% { transform: scale(var(--zoom, 1.45)); }
+}
+.tk-zoom { animation: tk-zoom 3.2s cubic-bezier(0.4, 0, 0.2, 1) both; }
+@media (prefers-reduced-motion: reduce) {
+  .tk-zoom { animation: none !important; }
+}
+/* Zoom drawn at full size and scaled down at the start, so the text stays
+   sharp: a browser scaling an image *up* blurs it until the animation ends. */
+@keyframes tk-zoom-sharp {
+  0%, 22% { transform: scale(var(--from)); }
+  100% { transform: scale(1); }
+}
+.tk-zoom-sharp { animation: tk-zoom-sharp 3.2s cubic-bezier(0.4, 0, 0.2, 1) both; }
+@media (prefers-reduced-motion: reduce) {
+  .tk-zoom-sharp { animation: none !important; transform: scale(var(--from)); }
+}

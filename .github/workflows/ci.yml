@@ -81,6 +81,33 @@ jobs:
           NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: sb_publishable_ci_placeholder
         run: npm run build
 
+  site:
+    name: Site — typecheck, lint, build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: site
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: site/package-lock.json
+
+      - run: npm ci
+
+      - name: Typecheck
+        run: npx tsc --noEmit
+
+      # Blocking, unlike web's: the site starts clean, so keep it that way.
+      - name: Lint
+        run: npm run lint
+
+      - name: Build
+        run: npm run build
+
   mobile:
     name: Mobile — analyze and test
     runs-on: ubuntu-latest
