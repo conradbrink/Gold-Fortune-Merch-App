@@ -178,6 +178,22 @@ begin
     v_fail := v_fail || 'C3 an unknown template was accepted' || E'\n';
   exception when invalid_parameter_value then null;
   end;
+  -- A chosen checklist or form the templates do not propose is refused, not skipped.
+  begin
+    perform public.create_company(jsonb_build_object('name', 'Template check broken'),
+                                  array['cleaning'], '{"checklists": ["office_clean", "no_such_checklist"]}'::jsonb);
+    v_fail := v_fail || 'C3 an unknown checklist code was accepted' || E'\n';
+  exception when invalid_parameter_value then null;
+  end;
+  begin
+    perform public.create_company(jsonb_build_object('name', 'Template check broken'),
+                                  array['plumbing'], '{"forms": ["no_such_form"]}'::jsonb);
+    v_fail := v_fail || 'C3 an unknown form code was accepted' || E'\n';
+  exception when invalid_parameter_value then null;
+  end;
+  if exists (select 1 from public.organizations where name = 'Template check broken') then
+    v_fail := v_fail || 'C3 a refused checklist or form code left an organisation behind' || E'\n';
+  end if;
 
   ------------------------------------------------- C4 who may call it
   if has_function_privilege('authenticated', 'public.create_company(jsonb, text[], jsonb, uuid, uuid)', 'execute')

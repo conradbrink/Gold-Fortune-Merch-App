@@ -158,8 +158,19 @@ export async function createCompanyAction(
     p_actor: actor,
   });
   if (error || !orgId) {
-    await admin.auth.admin.deleteUser(created.user.id);
-    return { ok: false, error: `Nothing was created: ${error?.message ?? "unknown error"}` };
+    const reason = error?.message ?? "unknown error";
+    const { error: deleteError } = await admin.auth.admin.deleteUser(created.user.id);
+    if (deleteError) {
+      // Say so: the login is left in Auth with no company, and its email
+      // cannot be used again until it is removed (CodeRabbit on #89).
+      return {
+        ok: false,
+        error:
+          `The company was not created (${reason}), and the owner's login could not be removed ` +
+          `(${deleteError.message}). Remove login ${created.user.id} in Supabase Auth before trying this email again.`,
+      };
+    }
+    return { ok: false, error: `Nothing was created: ${reason}` };
   }
   return { ok: true, orgId };
 }

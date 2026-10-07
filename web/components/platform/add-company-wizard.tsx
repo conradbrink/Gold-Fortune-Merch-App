@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, useSyncExternalStore } from "react";
+import { useMemo, useRef, useState, useSyncExternalStore } from "react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -114,6 +114,9 @@ export function AddCompanyWizard({
   const [copied, setCopied] = useState(false);
 
   const [creating, setCreating] = useState(false);
+  // Set before the first await: a second click lands before `creating`
+  // re-renders the button disabled, and would try to create the login twice.
+  const submitting = useRef(false);
   const [createError, setCreateError] = useState<string | null>(null);
   const [created, setCreated] = useState<{ orgId: string; email: string; password: string } | null>(null);
 
@@ -182,11 +185,15 @@ export function AddCompanyWizard({
   }
 
   async function create() {
+    if (submitting.current) return;
+    submitting.current = true;
     setCreating(true);
     setCreateError(null);
     const res = await createCompany(input);
     setCreating(false);
     if (!res.ok) {
+      // Refused, so nothing exists yet: the operator may fix it and try again.
+      submitting.current = false;
       setCreateError(res.error);
       return;
     }
