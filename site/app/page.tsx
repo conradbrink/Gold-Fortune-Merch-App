@@ -359,6 +359,29 @@ export default function Home() {
           <ProductDemo />
         </section>
 
+        {/* Pains */}
+        <section className="bg-teal-900 text-sand">
+          <div className="mx-auto grid max-w-6xl gap-6 px-4 py-20 sm:px-6">
+            <p className="text-xs font-semibold uppercase tracking-widest text-teal-100">Sound familiar?</p>
+            <h2 className="max-w-3xl font-display text-4xl font-bold tracking-tight sm:text-5xl">
+              Eight ways your field team costs you money <span className="text-amber-500">while you&apos;re not looking.</span>
+            </h2>
+            <div className="mt-4 grid gap-4 md:grid-cols-2">
+              {pains.map((p) => (
+                <div key={p.title} className="grid content-start gap-3 rounded-2xl bg-white/5 p-6 ring-1 ring-white/10">
+                  <h3 className="font-display text-2xl font-bold">{p.title}</h3>
+                  <p className="border-l-[3px] border-amber-500 pl-3 italic leading-relaxed text-teal-100">{p.scene}</p>
+                  <p className="font-semibold leading-relaxed text-amber-400">{p.cost}</p>
+                  <p className="text-sm leading-relaxed">
+                    <span className="font-semibold text-amber-500">{site.name}: </span>
+                    {p.fix}
+                  </p>
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
+
         {/* Does this sound like your day? */}
         <section className="border-t border-line bg-white">
           <div className="mx-auto grid max-w-4xl gap-6 px-4 py-20 sm:px-6">
@@ -389,29 +412,6 @@ export default function Home() {
               Late starts, long lunches and early finishes don&apos;t show up anywhere. Put in your own numbers.
             </p>
             <CostCalculator />
-          </div>
-        </section>
-
-        {/* Pains */}
-        <section className="bg-teal-900 text-sand">
-          <div className="mx-auto grid max-w-6xl gap-6 px-4 py-20 sm:px-6">
-            <p className="text-xs font-semibold uppercase tracking-widest text-teal-100">Sound familiar?</p>
-            <h2 className="max-w-3xl font-display text-4xl font-bold tracking-tight sm:text-5xl">
-              Eight ways your field team costs you money <span className="text-amber-500">while you&apos;re not looking.</span>
-            </h2>
-            <div className="mt-4 grid gap-4 md:grid-cols-2">
-              {pains.map((p) => (
-                <div key={p.title} className="grid content-start gap-3 rounded-2xl bg-white/5 p-6 ring-1 ring-white/10">
-                  <h3 className="font-display text-2xl font-bold">{p.title}</h3>
-                  <p className="border-l-[3px] border-amber-500 pl-3 italic leading-relaxed text-teal-100">{p.scene}</p>
-                  <p className="font-semibold leading-relaxed text-amber-400">{p.cost}</p>
-                  <p className="text-sm leading-relaxed">
-                    <span className="font-semibold text-amber-500">{site.name}: </span>
-                    {p.fix}
-                  </p>
-                </div>
-              ))}
-            </div>
           </div>
         </section>
 

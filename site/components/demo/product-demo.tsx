@@ -7,13 +7,11 @@ import {
   MapPin,
   Pause,
   Play,
-  Receipt,
-  Route,
   ShoppingCart,
-  Timer,
+  Clock,
+  CloudOff,
   Signal,
   SignalZero,
-  TriangleAlert,
 } from "lucide-react";
 import Image from "next/image";
 import { useEffect, useRef, useState, type ReactNode } from "react";
@@ -22,11 +20,11 @@ import { AndroidNav, at } from "@/components/demo/phone-screens";
 import { ShotScreen } from "@/components/demo/shot-screen";
 import { site } from "@/lib/site";
 
-// The hero demo. Storyboard: ~/Downloads/phone-animation-brief.md, extended
-// with invoicing and collections. The phone plays real screenshots of the
-// staff app (rendered from its Flutter widgets with example data, re-coloured
-// to Tickd); browser beats are the owner's dashboard, where quotes, tax
-// invoices and payments live.
+// The hero demo. Part one answers the page's eight pain points, in the page's
+// order, each with the outcome as its headline. Part two is the office: quotes,
+// invoices, money owed, targets, reports and insights. The phone plays real
+// screenshots of the staff app (rendered from its Flutter widgets with example
+// data, re-coloured to Tickd); browser scenes are real dashboard screenshots.
 
 const shot = (name: string) => `/demo/app/${name}.webp`;
 const dash = (name: string) => `/demo/dash/${name}.webp`;
@@ -88,16 +86,34 @@ function CameraThenForm() {
 
 const STEP_MS = 3200;
 
-type Chapter = "In the field" | "What you see" | "Getting paid";
+/** The progress bar's groups: the eight pain points, then the office. */
+const groups = [
+  "Every paid hour, accounted for",
+  "Proof they were there, for every client",
+  "No more mystery kilometres on the bakkie",
+  "Know about a missed job the same day",
+  "Your team can't fake it anymore",
+  "Your business, out of WhatsApp",
+  "Your team doesn't need new phones",
+  "No more payday arguments",
+  "Run the office from one screen",
+];
+const OFFICE = groups.length - 1;
+
 type Beat = {
-  chapter: Chapter;
+  /** Index into `groups`. */
+  group: number;
+  /** Shown on the video. Defaults to the group's headline. */
+  headline?: string;
+  /** Shown under the video. */
   caption: string;
   ms?: number;
   phone?: () => ReactNode;
   offline?: boolean;
+  /** A dashboard screen; the phone steps aside and `points` fill the space under it. */
   browser?: { url: string; src: string; focus: string; zoom?: number };
+  points?: string[];
   callouts?: { side: "left" | "right"; node: ReactNode; delay: number; top: string }[];
-  burst?: boolean;
 };
 
 function Pill({ icon, children, tone = "teal" }: { icon: ReactNode; children: ReactNode; tone?: "teal" | "green" | "flag" | "amber" }) {
@@ -115,32 +131,10 @@ function Pill({ icon, children, tone = "teal" }: { icon: ReactNode; children: Re
   );
 }
 
-function CountUp({ to, decimals = 0, prefix = "", suffix = "", ms = 1200 }: { to: number; decimals?: number; prefix?: string; suffix?: string; ms?: number }) {
-  const [v, setV] = useState(0);
-  useEffect(() => {
-    let raf = 0;
-    const t0 = performance.now();
-    const tick = (t: number) => {
-      const p = Math.min(1, (t - t0) / ms);
-      setV(to * (1 - Math.pow(1 - p, 3)));
-      if (p < 1) raf = requestAnimationFrame(tick);
-    };
-    raf = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(raf);
-  }, [to, ms]);
-  return (
-    <span className="tabular-nums">
-      {prefix}
-      {v.toLocaleString("en-US", { minimumFractionDigits: decimals, maximumFractionDigits: decimals })}
-      {suffix}
-    </span>
-  );
-}
-
 const beats: Beat[] = [
   {
-    chapter: "In the field",
-    caption: "Start the day with one tap.",
+    group: 0,
+    caption: "Every workday starts and ends on the clock, with one tap.",
     ms: 4400,
     phone: () => (
       <ShotScreen
@@ -155,10 +149,10 @@ const beats: Beat[] = [
         ]}
       />
     ),
-    callouts: [{ side: "right", top: "30%", delay: 3200, node: <Pill icon={<Route className="size-4 text-amber-500" />}>Route recording</Pill> }],
+    callouts: [{ side: "right", top: "34%", delay: 3200, node: <Pill icon={<Clock className="size-4 text-amber-500" />}>Started 06:58</Pill> }],
   },
   {
-    chapter: "In the field",
+    group: 1,
     caption: "Every check-in records how far they were from the site.",
     phone: () => (
       <ShotScreen
@@ -170,18 +164,30 @@ const beats: Beat[] = [
       />
     ),
     callouts: [
-      { side: "left", top: "40%", delay: 1700, node: <Pill tone="green" icon={<MapPin className="size-4" />}>Checked in · 18 m from site</Pill> },
+      { side: "left", top: "42%", delay: 1700, node: <Pill tone="green" icon={<MapPin className="size-4" />}>Checked in · 18 m from site</Pill> },
     ],
   },
   {
-    chapter: "In the field",
+    group: 2,
+    caption: "Every route and every kilometre, for every person and every bakkie.",
+    browser: { url: "app.tickd.co.za/tracking/thabo", src: dash("d2-day-history"), focus: "26% 20%", zoom: 1.6 },
+    points: ["The whole route, recorded all day", "38 km today, per person, per day", "Settle petrol and fuel-card claims"],
+  },
+  {
+    group: 3,
+    caption: "See where everyone is right now, and where they have been.",
+    browser: { url: "app.tickd.co.za/tracking", src: dash("d1b-live-map-card"), focus: "85% 55%" },
+    points: ["Everyone's position, live", "Arrivals and departures as they happen", "Replay anyone's day"],
+  },
+  {
+    group: 4,
     caption: "Photos come from the camera only. Gallery uploads are blocked.",
     ms: 3600,
     phone: CameraThenForm,
     callouts: [
       {
         side: "right",
-        top: "16%",
+        top: "18%",
         delay: 1900,
         node: (
           <span className="grid gap-0.5 rounded-xl bg-teal-950 px-3 py-2 text-xs text-sand shadow-xl shadow-black/30 ring-1 ring-amber-500/60">
@@ -196,8 +202,20 @@ const beats: Beat[] = [
     ],
   },
   {
-    chapter: "In the field",
-    caption: "Orders taken on the spot, at the store.",
+    group: 4,
+    caption: "A check-in made away from the site is flagged.",
+    browser: { url: "app.tickd.co.za/activities", src: dash("d2c-visit-flags"), focus: "60% 40%" },
+    points: ["Off site · 1.4 km, flagged in red", "The exact distance, for every check-in"],
+  },
+  {
+    group: 4,
+    caption: "So is a visit too short to be real.",
+    browser: { url: "app.tickd.co.za/visits/short", src: dash("d9-short-visits"), focus: "75% 45%", zoom: 1.35 },
+    points: ["Visits under 5 minutes, flagged", "By person and by site, ready to export"],
+  },
+  {
+    group: 5,
+    caption: "Jobs, photos and orders live in the app, not in a dozen chats.",
     phone: () => (
       <ShotScreen
         frames={[
@@ -212,58 +230,85 @@ const beats: Beat[] = [
     ],
   },
   {
-    chapter: "What you see",
-    caption: "See your whole team live, wherever they are.",
-    browser: { url: "app.tickd.co.za/tracking", src: dash("d1b-live-map-card"), focus: "85% 55%" },
+    group: 6,
+    caption: "Runs on cheap Androids. No signal, or load shedding took the tower down? They keep working, and it syncs later.",
+    ms: 3600,
+    offline: true,
+    phone: () => (
+      <ShotScreen
+        frames={[
+          { src: shot("07-offline"), at: 0 },
+          { src: shot("07b-syncing"), at: 1800 },
+          { src: shot("08-synced"), at: 2700 },
+        ]}
+      />
+    ),
     callouts: [
-      { side: "right", top: "57%", delay: 1300, node: <Pill icon={<Route className="size-4 text-amber-500" />}>Thabo · 19.8 km today</Pill> },
+      { side: "left", top: "30%", delay: 300, node: <Pill tone="flag" icon={<CloudOff className="size-4" />}>Offline · 3 changes saved</Pill> },
+      { side: "right", top: "50%", delay: 2800, node: <Pill tone="green" icon={<Check className="size-4" strokeWidth={3} />}>Synced</Pill> },
     ],
   },
   {
-    chapter: "What you see",
-    caption: "Kilometres and hours for every person, every day.",
-    browser: { url: "app.tickd.co.za/tracking/thabo", src: dash("d2-day-history"), focus: "58% 16%", zoom: 1.35 },
-    callouts: [
-      { side: "left", top: "57%", delay: 1300, node: <Pill icon={<Route className="size-4 text-amber-500" />}>38 km · 8 h 22 m today</Pill> },
-    ],
+    group: 7,
+    caption: "Hours worked for every person, every day, ready for payroll.",
+    browser: { url: "app.tickd.co.za/tracking/thabo", src: dash("d2-day-history"), focus: "90% 20%", zoom: 1.6 },
+    points: ["When every workday started and ended", "8 h 22 m worked, per person, per day", "Timesheets for payroll"],
   },
   {
-    chapter: "What you see",
-    caption: "Get flagged when someone checks in off site.",
-    browser: { url: "app.tickd.co.za/activities", src: dash("d2c-visit-flags"), focus: "60% 40%" },
-    callouts: [
-      { side: "left", top: "57%", delay: 1300, node: <Pill tone="flag" icon={<TriangleAlert className="size-4" />}>Off site · 1.4 km</Pill> },
-    ],
+    group: OFFICE,
+    headline: "Quotes in a minute",
+    caption: "Lines, discounts, VAT and totals worked out. When the client says yes, it becomes a job or an order.",
+    browser: { url: "app.tickd.co.za/quotes/QT-317", src: dash("o1-quote"), focus: "72% 22%", zoom: 1.3 },
+    points: ["Discounts, VAT and totals worked out", "Track it: sent, accepted or declined", "Convert to an order in one click"],
   },
   {
-    chapter: "What you see",
-    caption: "And when a visit is too short to be real.",
-    browser: { url: "app.tickd.co.za/visits/short", src: dash("d9-short-visits"), focus: "75% 45%", zoom: 1.35 },
-    callouts: [
-      { side: "right", top: "57%", delay: 1300, node: <Pill tone="flag" icon={<Timer className="size-4" />}>3 min at Clinic</Pill> },
-    ],
+    group: OFFICE,
+    headline: "Invoice it, and get paid",
+    caption: "Numbered tax invoices, payments recorded, credit notes when something's wrong.",
+    browser: { url: "app.tickd.co.za/invoices/INV-0142", src: dash("o2-invoice"), focus: "92% 26%" },
+    points: ["Tax invoices with VAT, numbered for you", "Record EFT, cash or card payments", "Credit notes, never edits"],
   },
   {
-    chapter: "Getting paid",
-    caption: "Every order becomes a tax invoice. See what's outstanding and overdue.",
+    group: OFFICE,
+    headline: "Know who still owes you",
+    caption: "Outstanding and overdue, at a glance.",
     browser: { url: "app.tickd.co.za/invoices", src: dash("d6-invoices-list"), focus: "70% 22%" },
-    callouts: [
-      { side: "left", top: "57%", delay: 1300, node: <Pill tone="flag" icon={<Receipt className="size-4" />}>Overdue, in red</Pill> },
-    ],
+    points: ["Outstanding and overdue totals", "Overdue invoices in red", "Export to Excel or CSV"],
   },
   {
-    chapter: "Getting paid",
-    caption: "Record payments. Always know who still owes you.",
-    browser: { url: "app.tickd.co.za/invoices/INV-0142", src: dash("d5-invoice"), focus: "92% 28%" },
-    callouts: [
-      { side: "left", top: "57%", delay: 1200, node: <Pill tone="green" icon={<Check className="size-4" strokeWidth={3} />}>Payment recorded · EFT</Pill> },
-    ],
-    burst: true,
+    group: OFFICE,
+    headline: "Set goals for everyone on your team",
+    caption: "A monthly target for each person, and progress against it as the work comes in.",
+    browser: { url: "app.tickd.co.za/targets", src: dash("o3-targets-set"), focus: "62% 24%", zoom: 1.35 },
+    points: ["A target per person, per month", "Revenue or units, your choice", "Progress updates as the work is delivered"],
   },
   {
-    chapter: "Getting paid",
-    caption: "Revenue, money owed and who's performing, on one screen.",
-    browser: { url: "app.tickd.co.za", src: dash("d4-dashboard"), focus: "45% 25%", zoom: 1.3 },
+    group: OFFICE,
+    headline: "Commissions, worked out for you",
+    caption: "Worked out from your own rules on what was delivered. Approve, then pay.",
+    browser: { url: "app.tickd.co.za/commissions", src: dash("o6-commissions"), focus: "55% 28%", zoom: 1.3 },
+    points: ["Calculated from your own rules", "Pending, approved and paid", "Export for payroll"],
+  },
+  {
+    group: OFFICE,
+    headline: "Performance reports, ready for reviews",
+    caption: "Start times, jobs, sites missed and sales for each person, ready to print.",
+    browser: { url: "app.tickd.co.za/reports/rep-performance", src: dash("o4-rep-performance"), focus: "58% 22%", zoom: 1.3 },
+    points: ["Start times, job length and days worked", "Sites missed, and the reason why", "A printable report per person"],
+  },
+  {
+    group: OFFICE,
+    headline: "See where the money comes from",
+    caption: "Sales this week, this month and all time, per person, with the work behind every number.",
+    browser: { url: "app.tickd.co.za/sales", src: dash("o5-sales-insights"), focus: "55% 30%", zoom: 1.3 },
+    points: ["Sales this week, this month, all time", "Per person, compared with last period", "The work behind every number"],
+  },
+  {
+    group: OFFICE,
+    headline: "The whole business on one screen",
+    caption: "Revenue, money owed, work in progress and your team, every morning.",
+    browser: { url: "app.tickd.co.za", src: dash("o7-dashboard"), focus: "45% 25%", zoom: 1.3 },
+    points: ["Revenue and money owed", "Work that needs your attention", "Your team against target"],
   },
 ];
 
@@ -293,21 +338,14 @@ function PhoneStatus({ offline }: { offline: boolean }) {
 }
 
 // Each beat's images, in order, so the next beat's can load while this one plays.
-const beatImages: string[][] = [
-  [shot("01-day-before"), shot("02b-day-plan"), shot("02-day-started")],
-  [shot("03-site-before-checkin"), shot("04-site-checked-in")],
-  ["/demo/washroom.jpg", shot("05b-photo-taken")],
-  [shot("09-order"), shot("10-order-sent")],
-  [dash("d1b-live-map-card")],
-  [dash("d2-day-history")],
-  [dash("d2c-visit-flags")],
-  [dash("d9-short-visits")],
-  [dash("d6-invoices-list")],
-  [dash("d5-invoice")],
-  [dash("d4-dashboard")],
-];
+const beatImages: string[][] = beats.map((b) =>
+  b.browser
+    ? [b.browser.src]
+    : b.phone === CameraThenForm
+      ? ["/demo/washroom.jpg", shot("05b-photo-taken")]
+      : [],
+);
 
-const chapters: Chapter[] = ["In the field", "What you see", "Getting paid"];
 const CTA = beats.length;
 
 export function ProductDemo() {
@@ -347,16 +385,18 @@ export function ProductDemo() {
     return () => clearTimeout(t);
   }, [step, paused, reduced, visible]);
 
+  const end = step === CTA;
   const beat = beats[reduced ? 0 : Math.min(step, beats.length - 1)];
-  const office = !!beat.browser || step === CTA;
-  // The phone keeps its last field screen while the office beats play.
+  const desk = !!beat.browser && !end;
+  // The phone keeps its last screen while a dashboard scene plays.
   const lastPhone = [...beats.slice(0, Math.min(step, beats.length - 1) + 1)].reverse().find((b) => b.phone)!;
   const Phone = (beat.phone ?? lastPhone.phone)!;
-  const chapterIndex = step === CTA ? chapters.length : chapters.indexOf(beat.chapter);
+  const groupIndex = end ? groups.length : beat.group;
+  const headline = beat.headline ?? groups[beat.group];
 
   return (
     <figure ref={ref} className="mx-auto grid w-full max-w-[30rem] gap-4">
-      <div className="relative h-[38rem] overflow-hidden rounded-[2rem] bg-teal-950 ring-1 ring-white/10">
+      <div className="relative h-[39rem] overflow-hidden rounded-[2rem] bg-teal-950 ring-1 ring-white/10">
         {/* backdrop */}
         <div
           aria-hidden="true"
@@ -365,36 +405,56 @@ export function ProductDemo() {
         />
         <div aria-hidden="true" className="absolute -right-16 -top-16 size-64 rounded-full bg-amber-500/25 blur-3xl" />
         <div aria-hidden="true" className="absolute -bottom-20 -left-10 size-72 rounded-full bg-teal-700/50 blur-3xl" />
-        <span className="absolute left-4 top-4 z-30 rounded-full bg-amber-500 px-2.5 py-0.5 text-[11px] font-bold text-teal-950">
-          Example
-        </span>
 
-        {/* browser (office beats) */}
+        {/* headline */}
+        {!end && (
+          <p
+            key={`h-${headline}`}
+            className="tk-in absolute inset-x-5 top-4 z-30 text-center font-display text-lg font-extrabold leading-tight text-sand"
+            aria-hidden="true"
+          >
+            {headline}
+          </p>
+        )}
+
+        {/* dashboard scenes: browser, with the points in the space under it */}
         <div
-          className={`absolute inset-x-4 top-14 z-10 transition-all duration-700 ease-out ${
-            office && step !== CTA ? "translate-y-0 opacity-100" : "pointer-events-none translate-y-8 opacity-0"
+          className={`absolute inset-x-4 top-16 z-10 transition-all duration-700 ease-out ${
+            desk ? "translate-y-0 opacity-100" : "pointer-events-none translate-y-8 opacity-0"
           }`}
           aria-hidden="true"
         >
           {beat.browser && <BrowserShot key={step} {...beat.browser} />}
+          {desk && beat.points && (
+            <ul key={`p-${step}`} className="mt-5 grid gap-2.5 px-1">
+              {beat.points.map((pt, i) => (
+                <li
+                  key={pt}
+                  className="tk-from-left flex items-center gap-3 rounded-2xl bg-white/10 px-4 py-3 text-[15px] font-semibold text-sand ring-1 ring-white/10"
+                  style={at(500 + i * 280)}
+                >
+                  <span className="grid size-6 shrink-0 place-items-center rounded-full bg-amber-500 text-teal-950">
+                    <Check className="size-3.5" strokeWidth={3.5} />
+                  </span>
+                  {pt}
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
 
-        {/* phone */}
+        {/* phone (steps aside for dashboard scenes and the end card) */}
         <div
-          className={`absolute left-1/2 top-1/2 z-20 w-[15.5rem] transition-all duration-700 ease-[cubic-bezier(.2,.9,.3,1)] ${
-            step === CTA
-              ? "-translate-x-1/2 -translate-y-[60%] scale-[0.62] opacity-0"
-              : office
-                ? "translate-x-[2%] translate-y-[2%] scale-[0.52]"
-                : "-translate-x-1/2 -translate-y-1/2"
+          className={`absolute left-1/2 top-[calc(50%+1.25rem)] z-20 w-[15.5rem] -translate-x-1/2 transition-all duration-700 ease-[cubic-bezier(.2,.9,.3,1)] ${
+            desk || end ? "pointer-events-none -translate-y-[20%] scale-90 opacity-0" : "-translate-y-1/2"
           }`}
         >
-          <div className={office ? "" : "tk-float"}>
+          <div className="tk-float">
             <div className="rounded-[2.2rem] bg-[#1b1d1f] p-2 shadow-2xl shadow-black/50 ring-1 ring-white/10">
               <div className="relative overflow-hidden rounded-[1.8rem] bg-[#f5f6f7]" aria-hidden="true">
-                <div className="relative aspect-[360/760] overflow-hidden" key={office ? "held" : step}>
+                <div className="relative aspect-[360/760] overflow-hidden" key={desk ? "held" : step}>
                   <Phone />
-                  <PhoneStatus offline={!office && !!beat.offline} key={`bar-${step}`} />
+                  <PhoneStatus offline={!desk && !!beat.offline} key={`bar-${step}`} />
                 </div>
                 <AndroidNav />
               </div>
@@ -402,9 +462,10 @@ export function ProductDemo() {
           </div>
         </div>
 
-        {/* callouts */}
+        {/* callouts (phone scenes) */}
         {!reduced &&
-          step !== CTA &&
+          !end &&
+          !desk &&
           beat.callouts?.map((c, i) => (
             <div
               key={`${step}-${i}`}
@@ -416,39 +477,8 @@ export function ProductDemo() {
             </div>
           ))}
 
-        {/* paid burst */}
-        {beat.burst && !reduced && step !== CTA && (
-          <div className="pointer-events-none absolute right-[22%] top-[22%] z-30" aria-hidden="true" key={`burst-${step}`}>
-            {Array.from({ length: 10 }).map((_, i) => (
-              <span
-                key={i}
-                className="tk-burst absolute grid size-5 place-items-center rounded-full bg-amber-500 text-teal-950"
-                style={{ ["--a" as string]: `${i * 36}deg`, ...at(550) }}
-              >
-                <Check className="size-3" strokeWidth={4} />
-              </span>
-            ))}
-          </div>
-        )}
-
-        {/* totals strip */}
-        {!reduced && office && step !== CTA && (
-          <div className="absolute bottom-4 left-4 right-[37%] z-10 grid grid-cols-3 gap-1.5" aria-hidden="true">
-            {[
-              { label: "check-ins", node: <CountUp to={4} /> },
-              { label: "driven", node: <CountUp to={38} suffix=" km" /> },
-              { label: "outstanding", node: <CountUp to={10833} /> },
-            ].map((s) => (
-              <span key={s.label} className="min-w-0 rounded-xl bg-white/10 px-2.5 py-2 text-teal-100 ring-1 ring-white/10 backdrop-blur">
-                <b className="block truncate font-display text-base text-sand">{s.node}</b>
-                <span className="block truncate text-[10px]">{s.label}</span>
-              </span>
-            ))}
-          </div>
-        )}
-
         {/* end card */}
-        {step === CTA && (
+        {end && (
           <div className="absolute inset-0 z-40 grid place-items-center p-8 text-center">
             <div className="grid justify-items-center gap-4">
               <span className="tk-pop">
@@ -471,42 +501,44 @@ export function ProductDemo() {
 
       {reduced ? (
         <figcaption>
-          <ol className="grid gap-1.5 text-sm text-muted">
+          <ol className="grid gap-2 text-sm">
             {beats.map((b) => (
-              <li key={b.caption} className="flex gap-2">
-                <Check className="mt-0.5 size-4 shrink-0 text-teal-700" strokeWidth={3} />
-                {b.caption}
+              <li key={b.caption} className="grid gap-0.5">
+                <span className="font-semibold text-teal-900">{b.headline ?? groups[b.group]}</span>
+                <span className="text-muted">{b.caption}</span>
               </li>
             ))}
           </ol>
         </figcaption>
       ) : (
-        <figcaption className="grid gap-3">
-          <p key={step} className="tk-in min-h-[3.25rem] text-center font-display text-lg font-bold leading-snug text-teal-900" aria-live="polite">
-            {step === CTA ? "Proof, not promises." : beat.caption}
+        <figcaption className="grid gap-2">
+          {/* For screen readers: the video's headline and what it shows. */}
+          <p className="sr-only" aria-live="polite">
+            {end ? "Every hour. Every visit. Every rand." : `${headline}. ${beat.caption}`}
           </p>
           <div className="flex items-center gap-3">
-            <div className="grid flex-1 grid-cols-3 gap-2">
-              {chapters.map((c, i) => {
-                const inChapter = beats.map((b, j) => [b, j] as const).filter(([b]) => b.chapter === c);
-                const first = inChapter[0][1];
-                const done = i < chapterIndex;
-                const fill = done ? 1 : i === chapterIndex ? (step - first + 1) / inChapter.length : 0;
+            <div className="grid flex-1 grid-cols-[repeat(8,minmax(0,1fr))_minmax(0,2.5fr)] gap-1.5">
+              {groups.map((g, i) => {
+                const own = beats.map((b, j) => [b, j] as const).filter(([b]) => b.group === i);
+                const first = own[0][1];
+                const fill = i < groupIndex ? 1 : i === groupIndex ? (step - first + 1) / own.length : 0;
                 return (
                   <button
-                    key={c}
+                    key={g}
                     type="button"
                     onClick={() => setStep(first)}
-                    className="grid gap-1 text-left"
-                    aria-label={`Jump to: ${c}`}
+                    className="py-1.5"
+                    aria-label={`Jump to: ${g}`}
+                    title={g}
                   >
-                    <span className="h-1 overflow-hidden rounded-full bg-teal-900/15">
+                    <span className="block h-1 overflow-hidden rounded-full bg-teal-900/15">
                       <span className="block h-full rounded-full bg-amber-500 transition-all duration-500" style={{ width: `${fill * 100}%` }} />
                     </span>
-                    <span className={`text-xs font-semibold ${i === chapterIndex ? "text-teal-900" : "text-muted"}`}>{c}</span>
                   </button>
                 );
               })}
+              <span className="col-span-8 text-xs font-semibold text-muted">Your team</span>
+              <span className="text-xs font-semibold text-muted">Your office</span>
             </div>
             <button
               type="button"
