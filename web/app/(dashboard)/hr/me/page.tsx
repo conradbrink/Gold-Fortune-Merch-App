@@ -205,7 +205,7 @@ export default function MyHrPage() {
   if (!me) {
     return (
       <div className="space-y-4">
-        <h1 className="text-2xl font-bold tracking-tight text-foreground">My HR</h1>
+        <h1 className="text-xl font-semibold tracking-tight text-foreground">My HR</h1>
         <p className="rounded-md border border-border bg-card px-4 py-8 text-center text-sm text-muted-foreground">
           {/* An account with no employee record is a real state, not an error:
               somebody signed in whom HR has not entered yet. Say so plainly and
@@ -227,7 +227,7 @@ export default function MyHrPage() {
     <div className="space-y-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight text-foreground">
+          <h1 className="text-xl font-semibold tracking-tight text-foreground">
             {me.full_name}
           </h1>
           <p className="text-sm text-muted-foreground">

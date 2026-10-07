@@ -131,7 +131,7 @@ export function SidebarContent({
       aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
       aria-expanded={!collapsed}
       title={collapsed ? "Expand" : "Collapse"}
-      className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-sidebar-foreground/60 transition-colors hover:bg-sidebar-accent/60 hover:text-sidebar-accent-foreground"
+      className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-sidebar-foreground/60 transition-colors hover:bg-muted hover:text-foreground"
     >
       {collapsed ? (
         <PanelLeftOpen className="h-4 w-4" />
@@ -148,7 +148,7 @@ export function SidebarContent({
           the tab already carries the branding. */}
       <div
         className={cn(
-          "flex h-16 items-center gap-2",
+          "flex h-14 items-center gap-2",
           collapsed ? "justify-center px-2" : "px-5"
         )}
       >
@@ -211,7 +211,7 @@ export function SidebarContent({
                   onClick={() => toggleGroup(group.label!)}
                   aria-expanded={!isClosed}
                   aria-controls={`nav-group-${index}`}
-                  className="flex w-full items-center gap-1.5 rounded-md px-3 py-1 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground transition-colors hover:bg-sidebar-accent/40 hover:text-sidebar-accent-foreground"
+                  className="flex w-full items-center gap-1.5 rounded-md px-3 py-1 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground transition-colors hover:text-foreground"
                 >
                   <ChevronDown
                     className={cn(
@@ -256,11 +256,14 @@ export function SidebarContent({
                         : undefined
                     }
                     className={cn(
-                      "flex items-center gap-3 rounded-md py-2 text-sm font-medium transition-colors",
+                      "relative flex items-center gap-3 rounded-md py-1.5 text-sm transition-colors",
                       collapsed ? "justify-center px-2" : "px-3",
+                      // A quiet tint and a gold rail rather than a solid gold
+                      // block: the highlight only has to answer "where am I",
+                      // and a filled pill out-shouted everything on the page.
                       active
-                        ? "bg-sidebar-accent text-sidebar-accent-foreground"
-                        : "text-sidebar-foreground/70 hover:bg-sidebar-accent/60 hover:text-sidebar-accent-foreground"
+                        ? "bg-muted font-semibold text-foreground before:absolute before:inset-y-1.5 before:left-0 before:w-0.5 before:rounded-full before:bg-gold"
+                        : "font-medium text-sidebar-foreground/70 hover:bg-muted/70 hover:text-foreground"
                     )}
                   >
                     <Icon className="h-4 w-4 shrink-0" />
@@ -286,8 +289,8 @@ export function SidebarContent({
             "flex items-center gap-3 rounded-md py-2.5 text-sm font-medium transition-colors",
             collapsed ? "justify-center px-2" : "px-3",
             pathname.startsWith("/settings")
-              ? "bg-sidebar-accent text-sidebar-accent-foreground"
-              : "text-sidebar-foreground/70 hover:bg-sidebar-accent/60 hover:text-sidebar-accent-foreground"
+              ? "bg-muted text-foreground"
+              : "text-sidebar-foreground/70 hover:bg-muted/70 hover:text-foreground"
           )}
         >
           <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-primary text-primary-foreground">

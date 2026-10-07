@@ -14,6 +14,261 @@ export type Database = {
   }
   public: {
     Tables: {
+      commission_rules: {
+        Row: {
+          id: string
+          org_id: string
+          name: string
+          description: string | null
+          kind: string
+          rate: number | null
+          fixed_amount: number | null
+          tiers: Json | null
+          basis: string
+          applies_to: string
+          rep_id: string | null
+          store_id: string | null
+          min_order_value: number
+          priority: number
+          active: boolean
+          created_by: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          org_id: string
+          name: string
+          description?: string | null
+          kind?: string
+          rate?: number | null
+          fixed_amount?: number | null
+          tiers?: Json | null
+          basis?: string
+          applies_to?: string
+          rep_id?: string | null
+          store_id?: string | null
+          min_order_value?: number
+          priority?: number
+          active?: boolean
+          created_by?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          org_id?: string
+          name?: string
+          description?: string | null
+          kind?: string
+          rate?: number | null
+          fixed_amount?: number | null
+          tiers?: Json | null
+          basis?: string
+          applies_to?: string
+          rep_id?: string | null
+          store_id?: string | null
+          min_order_value?: number
+          priority?: number
+          active?: boolean
+          created_by?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      commissions: {
+        Row: {
+          id: string
+          org_id: string
+          order_id: string
+          rep_id: string
+          rule_id: string | null
+          rule_name: string
+          delivered_at: string
+          order_value: number
+          basis_amount: number
+          rate: number | null
+          amount: number
+          status: string
+          calculated_at: string
+          approved_by: string | null
+          approved_at: string | null
+          paid_by: string | null
+          paid_at: string | null
+        }
+        Insert: {
+          id?: string
+          org_id: string
+          order_id: string
+          rep_id: string
+          rule_id?: string | null
+          rule_name: string
+          delivered_at: string
+          order_value: number
+          basis_amount: number
+          rate?: number | null
+          amount: number
+          status?: string
+          calculated_at?: string
+          approved_by?: string | null
+          approved_at?: string | null
+          paid_by?: string | null
+          paid_at?: string | null
+        }
+        Update: {
+          id?: string
+          org_id?: string
+          order_id?: string
+          rep_id?: string
+          rule_id?: string | null
+          rule_name?: string
+          delivered_at?: string
+          order_value?: number
+          basis_amount?: number
+          rate?: number | null
+          amount?: number
+          status?: string
+          calculated_at?: string
+          approved_by?: string | null
+          approved_at?: string | null
+          paid_by?: string | null
+          paid_at?: string | null
+        }
+        Relationships: []
+      }
+      sales_targets: {
+        Row: {
+          id: string
+          org_id: string
+          rep_id: string
+          period_month: string
+          measure: string
+          target: number
+          created_by: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          org_id: string
+          rep_id: string
+          period_month: string
+          measure?: string
+          target: number
+          created_by?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          org_id?: string
+          rep_id?: string
+          period_month?: string
+          measure?: string
+          target?: number
+          created_by?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      quote_lines: {
+        Row: {
+          id: string
+          org_id: string
+          quote_id: string
+          product_id: string
+          qty: number
+          list_price: number
+          discount_pct: number
+          unit_price: number | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          org_id: string
+          quote_id: string
+          product_id: string
+          qty: number
+          list_price: number
+          discount_pct?: number
+          unit_price?: number | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          org_id?: string
+          quote_id?: string
+          product_id?: string
+          qty?: number
+          list_price?: number
+          discount_pct?: number
+          unit_price?: number | null
+          created_at?: string
+        }
+        Relationships: []
+      }
+      quotes: {
+        Row: {
+          id: string
+          org_id: string
+          quote_number: string
+          store_id: string
+          contact_name: string | null
+          contact_phone: string | null
+          rep_id: string | null
+          status: string
+          valid_until: string | null
+          delivery_address: string | null
+          notes: string | null
+          vat_rate: number
+          converted_order_id: string | null
+          converted_at: string | null
+          created_by: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          org_id: string
+          quote_number: string
+          store_id: string
+          contact_name?: string | null
+          contact_phone?: string | null
+          rep_id?: string | null
+          status?: string
+          valid_until?: string | null
+          delivery_address?: string | null
+          notes?: string | null
+          vat_rate?: number
+          converted_order_id?: string | null
+          converted_at?: string | null
+          created_by?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          org_id?: string
+          quote_number?: string
+          store_id?: string
+          contact_name?: string | null
+          contact_phone?: string | null
+          rep_id?: string | null
+          status?: string
+          valid_until?: string | null
+          delivery_address?: string | null
+          notes?: string | null
+          vat_rate?: number
+          converted_order_id?: string | null
+          converted_at?: string | null
+          created_by?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       app_releases: {
         Row: {
           created_at: string
@@ -1425,6 +1680,9 @@ export type Database = {
           qty_reserved: number
           qty_returned: number
           unit_price: number | null
+          list_price: number | null
+          discount_pct: number
+          unit_cost_excl_vat: number | null
         }
         Insert: {
           client_generated_id: string
@@ -1441,6 +1699,9 @@ export type Database = {
           qty_reserved?: number
           qty_returned?: number
           unit_price?: number | null
+          list_price?: number | null
+          discount_pct?: number
+          unit_cost_excl_vat?: number | null
         }
         Update: {
           client_generated_id?: string
@@ -1457,6 +1718,9 @@ export type Database = {
           qty_reserved?: number
           qty_returned?: number
           unit_price?: number | null
+          list_price?: number | null
+          discount_pct?: number
+          unit_cost_excl_vat?: number | null
         }
         Relationships: [
           {
@@ -1481,6 +1745,348 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      credit_note_lines: {
+        Row: {
+          id: string
+          credit_note_id: string
+          invoice_line_id: string
+          qty: number
+          unit_price: number
+          line_total: number
+        }
+        Insert: {
+          id?: string
+          credit_note_id: string
+          invoice_line_id: string
+          qty: number
+          unit_price: number
+          line_total: number
+        }
+        Update: {
+          id?: string
+          credit_note_id?: string
+          invoice_line_id?: string
+          qty?: number
+          unit_price?: number
+          line_total?: number
+        }
+        Relationships: []
+      }
+      credit_notes: {
+        Row: {
+          id: string
+          org_id: string
+          credit_number: string
+          invoice_id: string
+          reason: string
+          issue_date: string
+          subtotal: number
+          vat: number
+          total: number
+          created_by: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          org_id: string
+          credit_number: string
+          invoice_id: string
+          reason: string
+          issue_date: string
+          subtotal: number
+          vat: number
+          total: number
+          created_by?: string | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          org_id?: string
+          credit_number?: string
+          invoice_id?: string
+          reason?: string
+          issue_date?: string
+          subtotal?: number
+          vat?: number
+          total?: number
+          created_by?: string | null
+          created_at?: string
+        }
+        Relationships: []
+      }
+      invoice_payments: {
+        Row: {
+          id: string
+          org_id: string
+          invoice_id: string
+          amount: number
+          paid_on: string
+          method: string
+          reference: string | null
+          created_by: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          org_id: string
+          invoice_id: string
+          amount: number
+          paid_on: string
+          method?: string
+          reference?: string | null
+          created_by?: string | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          org_id?: string
+          invoice_id?: string
+          amount?: number
+          paid_on?: string
+          method?: string
+          reference?: string | null
+          created_by?: string | null
+          created_at?: string
+        }
+        Relationships: []
+      }
+      recurring_order_lines: {
+        Row: {
+          id: string
+          recurring_order_id: string
+          product_id: string
+          qty: number
+          unit_price: number | null
+          discount_pct: number
+        }
+        Insert: {
+          id?: string
+          recurring_order_id: string
+          product_id: string
+          qty: number
+          unit_price?: number | null
+          discount_pct?: number
+        }
+        Update: {
+          id?: string
+          recurring_order_id?: string
+          product_id?: string
+          qty?: number
+          unit_price?: number | null
+          discount_pct?: number
+        }
+        Relationships: []
+      }
+      recurring_order_runs: {
+        Row: {
+          id: string
+          recurring_order_id: string
+          run_date: string
+          order_id: string | null
+          error: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          recurring_order_id: string
+          run_date: string
+          order_id?: string | null
+          error?: string | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          recurring_order_id?: string
+          run_date?: string
+          order_id?: string | null
+          error?: string | null
+          created_at?: string
+        }
+        Relationships: []
+      }
+      recurring_orders: {
+        Row: {
+          id: string
+          org_id: string
+          name: string
+          store_id: string
+          rep_id: string | null
+          contact_name: string | null
+          contact_phone: string | null
+          frequency: string
+          next_run: string
+          max_runs: number | null
+          runs: number
+          status: string
+          notes: string | null
+          created_by: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          org_id: string
+          name: string
+          store_id: string
+          rep_id?: string | null
+          contact_name?: string | null
+          contact_phone?: string | null
+          frequency: string
+          next_run: string
+          max_runs?: number | null
+          runs?: number
+          status?: string
+          notes?: string | null
+          created_by?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          org_id?: string
+          name?: string
+          store_id?: string
+          rep_id?: string | null
+          contact_name?: string | null
+          contact_phone?: string | null
+          frequency?: string
+          next_run?: string
+          max_runs?: number | null
+          runs?: number
+          status?: string
+          notes?: string | null
+          created_by?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      tax_invoice_lines: {
+        Row: {
+          id: string
+          invoice_id: string
+          position: number
+          product_id: string | null
+          description: string
+          sku: string | null
+          qty: number
+          unit_price: number
+          line_total: number
+        }
+        Insert: {
+          id?: string
+          invoice_id: string
+          position: number
+          product_id?: string | null
+          description: string
+          sku?: string | null
+          qty: number
+          unit_price: number
+          line_total: number
+        }
+        Update: {
+          id?: string
+          invoice_id?: string
+          position?: number
+          product_id?: string | null
+          description?: string
+          sku?: string | null
+          qty?: number
+          unit_price?: number
+          line_total?: number
+        }
+        Relationships: []
+      }
+      tax_invoices: {
+        Row: {
+          id: string
+          org_id: string
+          invoice_number: string
+          order_id: string
+          order_number: string
+          store_id: string | null
+          seller_name: string
+          seller_address: string | null
+          seller_tax_number: string | null
+          seller_vat_number: string | null
+          seller_phone: string | null
+          seller_email: string | null
+          customer_name: string
+          customer_address: string | null
+          footer: string | null
+          issue_date: string
+          due_date: string
+          vat_rate: number
+          subtotal: number
+          vat: number
+          total: number
+          status: string
+          void_reason: string | null
+          voided_by: string | null
+          voided_at: string | null
+          created_by: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          org_id: string
+          invoice_number: string
+          order_id: string
+          order_number: string
+          store_id?: string | null
+          seller_name: string
+          seller_address?: string | null
+          seller_tax_number?: string | null
+          seller_vat_number?: string | null
+          seller_phone?: string | null
+          seller_email?: string | null
+          customer_name: string
+          customer_address?: string | null
+          footer?: string | null
+          issue_date: string
+          due_date: string
+          vat_rate: number
+          subtotal: number
+          vat: number
+          total: number
+          status?: string
+          void_reason?: string | null
+          voided_by?: string | null
+          voided_at?: string | null
+          created_by?: string | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          org_id?: string
+          invoice_number?: string
+          order_id?: string
+          order_number?: string
+          store_id?: string | null
+          seller_name?: string
+          seller_address?: string | null
+          seller_tax_number?: string | null
+          seller_vat_number?: string | null
+          seller_phone?: string | null
+          seller_email?: string | null
+          customer_name?: string
+          customer_address?: string | null
+          footer?: string | null
+          issue_date?: string
+          due_date?: string
+          vat_rate?: number
+          subtotal?: number
+          vat?: number
+          total?: number
+          status?: string
+          void_reason?: string | null
+          voided_by?: string | null
+          voided_at?: string | null
+          created_by?: string | null
+          created_at?: string
+        }
+        Relationships: []
       }
       order_status_events: {
         Row: {
@@ -1550,6 +2156,7 @@ export type Database = {
           confirmed_by: string | null
           contact_name: string | null
           contact_phone: string | null
+          recurring_order_id: string | null
           created_at: string
           created_by: string | null
           delivered_at: string | null
@@ -1580,6 +2187,7 @@ export type Database = {
           store_id: string
           updated_at: string
           vat_rate: number
+          delivery_address: string | null
         }
         Insert: {
           cancel_reason?: string | null
@@ -1590,6 +2198,7 @@ export type Database = {
           confirmed_by?: string | null
           contact_name?: string | null
           contact_phone?: string | null
+          recurring_order_id?: string | null
           created_at?: string
           created_by?: string | null
           delivered_at?: string | null
@@ -1620,6 +2229,7 @@ export type Database = {
           store_id: string
           updated_at?: string
           vat_rate?: number
+          delivery_address?: string | null
         }
         Update: {
           cancel_reason?: string | null
@@ -1630,6 +2240,7 @@ export type Database = {
           confirmed_by?: string | null
           contact_name?: string | null
           contact_phone?: string | null
+          recurring_order_id?: string | null
           created_at?: string
           created_by?: string | null
           delivered_at?: string | null
@@ -1660,6 +2271,7 @@ export type Database = {
           store_id?: string
           updated_at?: string
           vat_rate?: number
+          delivery_address?: string | null
         }
         Relationships: [
           {
@@ -1758,6 +2370,11 @@ export type Database = {
       organizations: {
         Row: {
           address: string | null
+          tax_number: string | null
+          vat_number: string | null
+          phone: string | null
+          invoice_terms_days: number
+          invoice_footer: string | null
           created_at: string
           default_visit_frequency: string
           id: string
@@ -1773,6 +2390,11 @@ export type Database = {
         }
         Insert: {
           address?: string | null
+          tax_number?: string | null
+          vat_number?: string | null
+          phone?: string | null
+          invoice_terms_days?: number
+          invoice_footer?: string | null
           created_at?: string
           default_visit_frequency?: string
           id?: string
@@ -1788,6 +2410,11 @@ export type Database = {
         }
         Update: {
           address?: string | null
+          tax_number?: string | null
+          vat_number?: string | null
+          phone?: string | null
+          invoice_terms_days?: number
+          invoice_footer?: string | null
           created_at?: string
           default_visit_frequency?: string
           id?: string
@@ -5455,6 +6082,15 @@ export type Database = {
       }
     }
     Views: {
+      tax_invoice_balances: {
+        Row: {
+          invoice_id: string
+          credited: number
+          paid: number
+          outstanding: number
+        }
+        Relationships: []
+      }
       hr_leave_balance_summary: {
         Row: {
           deducts_from_balance: boolean | null
@@ -5474,6 +6110,32 @@ export type Database = {
       }
     }
     Functions: {
+      sales_target_progress: {
+        Args: { p_month: string }
+        Returns: {
+          rep_id: string
+          rep_name: string
+          measure: string | null
+          target: number | null
+          orders: number
+          units: number
+          revenue_excl_vat: number
+          gross_profit: number
+          uncosted_units: number
+        }[]
+      }
+      commissions_recalculate: {
+        Args: { p_from: string; p_to: string }
+        Returns: number
+      }
+      commissions_set_status: {
+        Args: { p_ids: string[]; p_status: string }
+        Returns: number
+      }
+      quote_convert: {
+        Args: { p_quote_id: string }
+        Returns: string
+      }
       activity_feed: {
         Args: {
           p_from: string
@@ -5738,6 +6400,38 @@ export type Database = {
       order_cancel: {
         Args: { p_order_id: string; p_reason: string }
         Returns: Json
+      }
+      tax_invoice_issue: {
+        Args: { p_order_id: string; p_issue_date?: string }
+        Returns: string
+      }
+      tax_invoice_void: {
+        Args: { p_id: string; p_reason: string }
+        Returns: undefined
+      }
+      credit_note_issue: {
+        Args: { p_invoice_id: string; p_reason: string; p_lines: Json }
+        Returns: string
+      }
+      invoice_payment_record: {
+        Args: { p_invoice_id: string; p_amount: number; p_paid_on: string; p_method: string; p_reference: string }
+        Returns: string
+      }
+      invoice_payment_delete: {
+        Args: { p_payment_id: string }
+        Returns: undefined
+      }
+      recurring_orders_run_due: {
+        Args: Record<PropertyKey, never>
+        Returns: { placed_recurring_order: string; placed_order: string }[]
+      }
+      recurring_order_save: {
+        Args: { p_id: string | null; p_row: Json; p_lines: Json }
+        Returns: string
+      }
+      recurring_order_run_now: {
+        Args: { p_id: string }
+        Returns: string
       }
       order_confirm: {
         Args: {

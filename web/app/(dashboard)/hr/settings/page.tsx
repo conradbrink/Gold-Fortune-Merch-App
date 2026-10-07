@@ -137,7 +137,7 @@ export default function HrSettingsPage() {
     // ever on a failure and say nothing about why.
     return error ? (
       <div className="space-y-4">
-        <h1 className="text-2xl font-bold tracking-tight text-foreground">
+        <h1 className="text-xl font-semibold tracking-tight text-foreground">
           HR settings
         </h1>
         <div className="rounded-md border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive">
@@ -166,7 +166,7 @@ export default function HrSettingsPage() {
   return (
     <div className="space-y-4">
       <div>
-        <h1 className="text-2xl font-bold tracking-tight text-foreground">
+        <h1 className="text-xl font-semibold tracking-tight text-foreground">
           HR settings
         </h1>
         <p className="text-sm text-muted-foreground">

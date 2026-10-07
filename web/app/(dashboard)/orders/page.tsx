@@ -182,7 +182,7 @@ export default function OrdersPage() {
     <div className="space-y-6">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Orders</h1>
+          <h1 className="text-xl font-semibold tracking-tight text-foreground">Orders</h1>
           <p className="text-sm text-muted-foreground">
             Everything captured by a rep or keyed here.
           </p>

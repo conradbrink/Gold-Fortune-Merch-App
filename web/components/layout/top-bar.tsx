@@ -2,10 +2,8 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import Link from "next/link";
 import {
   Search,
-  Settings,
   ChevronDown,
   LogOut,
   Menu,
@@ -48,7 +46,6 @@ export function TopBar({ onOpenNav }: { onOpenNav?: () => void }) {
     (can(permissions, "sales_coverage") ||
       can(permissions, "team") ||
       can(permissions, "resources"));
-  const canOpenSettings = permissions !== null && can(permissions, "company_settings");
   const [label, setLabel] = useState("Gold Fortune User");
   const [initials, setInitials] = useState("GF");
   /** Below `sm` the search box is hidden; this is what the button reveals. */
@@ -75,7 +72,7 @@ export function TopBar({ onOpenNav }: { onOpenNav?: () => void }) {
   }
 
   return (
-    <header className="flex h-16 shrink-0 items-center gap-3 border-b border-border bg-background px-4 sm:px-6">
+    <header className="flex h-14 shrink-0 items-center gap-3 border-b border-border bg-background px-4 sm:px-6">
       {/* Hidden while the mobile search is open — the box needs the whole row. */}
       <Button
         variant="ghost"
@@ -122,24 +119,6 @@ export function TopBar({ onOpenNav }: { onOpenNav?: () => void }) {
             looks is nobody's permission to grant, and warehouse staff work the
             same long shifts on the same screens. */}
         <ThemeToggle />
-        {canOpenSettings && (
-          <>
-            <Button
-              variant="ghost"
-              size="icon"
-              nativeButton={false}
-              className="hidden lg:inline-flex"
-              title="Company settings"
-              aria-label="Company settings"
-              render={
-                <Link href="/settings/company">
-                  <Settings className="h-5 w-5" />
-                </Link>
-              }
-            />
-            <div className="mx-1 hidden h-6 w-px bg-border lg:block" />
-          </>
-        )}
         <DropdownMenu>
           <DropdownMenuTrigger className="flex items-center gap-2 outline-none">
             <Avatar className="h-7 w-7 shrink-0">
@@ -147,12 +126,14 @@ export function TopBar({ onOpenNav }: { onOpenNav?: () => void }) {
                 {initials}
               </AvatarFallback>
             </Avatar>
-            <span className="hidden max-w-[12rem] truncate text-sm font-medium text-foreground lg:block">
-              {label}
-            </span>
             <ChevronDown className="h-4 w-4 shrink-0" />
           </DropdownMenuTrigger>
+          {/* The name lives in the menu, not the bar: a truncated email beside
+              the avatar was the widest thing in the header and said the least. */}
           <DropdownMenuContent align="end">
+            <div className="max-w-[16rem] truncate px-2 py-1.5 text-xs text-muted-foreground">
+              {label}
+            </div>
             <DropdownMenuItem onClick={handleSignOut} className="gap-2">
               <LogOut className="h-4 w-4" />
               Sign out

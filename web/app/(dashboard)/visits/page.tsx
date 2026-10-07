@@ -205,7 +205,7 @@ function VisitsContent() {
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight text-foreground">
+          <h1 className="text-xl font-semibold tracking-tight text-foreground">
             {withForms ? "Visits with Forms Submitted" : "Visits"}
           </h1>
           <p className="text-sm text-muted-foreground">
