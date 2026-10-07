@@ -9,6 +9,7 @@ import {
   WIDGET_IDS,
   WIDGET_SOURCES,
   findWidget,
+  type BusinessData,
   type WidgetData,
   type WidgetSource,
 } from "@/components/dashboard/widget-registry";
@@ -17,7 +18,9 @@ import { Card, CardContent } from "@/components/ui/card";
 import { createClient } from "@/lib/supabase/client";
 import { rangeDays, rangeForPreset, type DateRange } from "@/lib/date-range";
 import { fetchLiveReps, type LiveReps } from "@/lib/live-reps";
+import { fetchTargetProgress, monthStart } from "@/lib/targets";
 import {
+  fetchBusinessSummary,
   fetchDashboardSummary,
   fetchOperationsSummary,
   fetchRepDayDetail,
@@ -47,6 +50,8 @@ import { fetchOrgId } from "@/lib/representatives";
  * and what to render when a card's source did not arrive.
  */
 
+const TODAY_LABEL = new Intl.DateTimeFormat("en-GB", { weekday: "long", day: "numeric", month: "long" });
+
 /** Tailwind cannot see a computed class name, so the spans are spelled out. */
 const SPAN_CLASS: Record<1 | 2 | 4, string> = {
   1: "sm:col-span-1",
@@ -63,6 +68,7 @@ export default function InsightsDashboardPage() {
   const [dayDistance, setDayDistance] = useState<RepDayDistance[]>([]);
   const [liveReps, setLiveReps] = useState<LiveReps | null>(null);
   const [ops, setOps] = useState<OperationsSummary | null>(null);
+  const [business, setBusiness] = useState<BusinessData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -108,7 +114,7 @@ export default function InsightsDashboardPage() {
       // transient refusal — threw away headline KPIs that had loaded perfectly
       // well. Each source now fails on its own, and the cards that depend on it
       // say why.
-      const [summary, times, dayRows, distanceRows, operations, live] =
+      const [summary, times, dayRows, distanceRows, operations, live, biz] =
         await Promise.allSettled([
         fetchDashboardSummary(supabase, range),
         fetchRepDayTimes(supabase, range),
@@ -122,6 +128,15 @@ export default function InsightsDashboardPage() {
         // is a question about now, and a date filter would answer a different
         // one while looking like it had answered this.
         fetchLiveReps(supabase),
+        // Sales, pipeline, money and store health, plus this month's targets.
+        // The targets are always the calendar month, whatever the range — a
+        // target is set per month, and progress against it is only meaningful
+        // over that month. A failed targets read must not take the business
+        // cards with it, so it falls back to no targets.
+        Promise.all([
+          fetchBusinessSummary(supabase, range),
+          fetchTargetProgress(supabase, monthStart()).catch(() => []),
+        ]).then(([s, targets]): BusinessData => ({ summary: s, targets })),
       ]);
 
       if (isStale()) return;
@@ -158,6 +173,11 @@ export default function InsightsDashboardPage() {
         setLiveReps(null);
         failed.add("liveReps");
       }
+      if (biz.status === "fulfilled") setBusiness(biz.value);
+      else {
+        setBusiness(null);
+        failed.add("business");
+      }
       setFailedSources(failed);
 
       // Reported rather than swallowed — a section quietly missing is how a
@@ -166,7 +186,7 @@ export default function InsightsDashboardPage() {
       // A source that *answers* `null` counts here too. Its cards go unavailable
       // either way, and without an error there would be no banner and no Retry —
       // the card would say "Retry above" pointing at nothing.
-      const rejected = [summary, times, dayRows, operations, live].find(
+      const rejected = [summary, times, dayRows, operations, live, biz].find(
         (r) => r.status === "rejected"
       );
       const answeredNothing =
@@ -313,7 +333,7 @@ export default function InsightsDashboardPage() {
    * honestly, and an error banner for one missed refresh would be noise.
    */
   /** Whether the map card is actually on this manager's dashboard. */
-  const showsLiveReps = layout.includes("live_reps");
+  const showsLiveReps = layout.includes("live_reps") || layout.includes("field_team");
 
   useEffect(() => {
     // Two conditions, and both are needed.
@@ -353,6 +373,7 @@ export default function InsightsDashboardPage() {
     dayDistance,
     operations: ops,
     liveReps,
+    business,
     days,
     range,
   };
@@ -374,6 +395,7 @@ export default function InsightsDashboardPage() {
     dayTimes: !failedSources.has("dayTimes"),
     operations: ops !== null,
     liveReps: liveReps !== null,
+    business: business !== null,
   };
 
   const cards = layout.map((id) => findWidget(id)).filter((w) => w !== undefined);
@@ -383,10 +405,10 @@ export default function InsightsDashboardPage() {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-xl font-semibold tracking-tight text-foreground">
-            Insights Dashboard
+            Dashboard
           </h1>
           <p className="text-sm text-muted-foreground">
-            Live field performance across your Gold Fortune team.
+            {TODAY_LABEL.format(new Date())} · money excludes VAT
           </p>
         </div>
         <Button

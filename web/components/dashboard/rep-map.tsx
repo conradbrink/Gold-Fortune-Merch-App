@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { MapPinOff, RefreshCw } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { loadMaps, MAPS_KEY } from "@/lib/google-maps";
+import { loadMaps, MAPS_KEY, mapTypeSwitch, rememberMapType } from "@/lib/google-maps";
 import {
   describeAge,
   describeSource,
@@ -169,10 +169,13 @@ export function RepMap({ data }: { data: LiveReps }) {
           mapObj.current = new Map(mapRef.current, {
             center: { lat: positions[0].lat, lng: positions[0].lng },
             zoom: 11,
-            mapTypeControl: false,
+            // Map / Satellite, shared with the Tracking maps (and remembered
+            // with them) — see `mapTypeSwitch`.
+            ...mapTypeSwitch(),
             streetViewControl: false,
             fullscreenControl: false,
           });
+          rememberMapType(mapObj.current);
         }
 
         for (const m of markers.current) m.setMap(null);
