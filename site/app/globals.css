@@ -152,7 +152,7 @@ section[id] {
   0%, 22% { transform: scale(var(--from)); }
   100% { transform: scale(1); }
 }
-.tk-zoom-sharp { animation: tk-zoom-sharp 3.2s cubic-bezier(0.4, 0, 0.2, 1) both; }
+.tk-zoom-sharp { animation: tk-zoom-sharp 4.6s cubic-bezier(0.4, 0, 0.2, 1) both; }
 @media (prefers-reduced-motion: reduce) {
   .tk-zoom-sharp { animation: none !important; transform: scale(var(--from)); }
 }

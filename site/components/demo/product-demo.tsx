@@ -84,7 +84,8 @@ function CameraThenForm() {
   );
 }
 
-const STEP_MS = 3200;
+// Long enough to read the headline, take in the screen and read the points.
+const STEP_MS = 4800;
 
 /** The progress bar's groups: the eight pain points, then the office. */
 const groups = [
@@ -135,7 +136,7 @@ const beats: Beat[] = [
   {
     group: 0,
     caption: "Every workday starts and ends on the clock, with one tap.",
-    ms: 4400,
+    ms: 6200,
     phone: () => (
       <ShotScreen
         frames={[
@@ -182,7 +183,7 @@ const beats: Beat[] = [
   {
     group: 4,
     caption: "Photos come from the camera only. Gallery uploads are blocked.",
-    ms: 3600,
+    ms: 5200,
     phone: CameraThenForm,
     callouts: [
       {
@@ -232,7 +233,7 @@ const beats: Beat[] = [
   {
     group: 6,
     caption: "Runs on cheap Androids. No signal, or load shedding took the tower down? They keep working, and it syncs later.",
-    ms: 3600,
+    ms: 5200,
     offline: true,
     phone: () => (
       <ShotScreen
@@ -381,7 +382,7 @@ export function ProductDemo() {
 
   useEffect(() => {
     if (paused || reduced || !visible) return;
-    const t = setTimeout(() => setStep((s) => (s + 1) % (beats.length + 1)), step === CTA ? 4200 : beats[step].ms ?? STEP_MS);
+    const t = setTimeout(() => setStep((s) => (s + 1) % (beats.length + 1)), step === CTA ? 5500 : beats[step].ms ?? STEP_MS);
     return () => clearTimeout(t);
   }, [step, paused, reduced, visible]);
 
