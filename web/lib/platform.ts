@@ -16,6 +16,7 @@ import type { Database } from "@/lib/supabase/types";
 export type PlatformCompany = {
   id: string;
   name: string;
+  /** The primary industry template's name; the old free-text field for a company made before templates. */
   industry: string | null;
   timezone: string;
   createdAt: string;
@@ -36,11 +37,13 @@ export function platformAdminClient() {
 export async function listCompanies(): Promise<PlatformCompany[]> {
   const admin = platformAdminClient();
 
-  const { data: orgs, error: orgError } = await admin
-    .from("organizations")
-    .select("id, name, industry, timezone, created_at")
-    .order("created_at");
+  const [{ data: orgs, error: orgError }, { data: templates, error: templateError }] = await Promise.all([
+    admin.from("organizations").select("id, name, industry, industries, timezone, created_at").order("created_at"),
+    admin.from("industry_templates").select("code, name"),
+  ]);
   if (orgError) throw orgError;
+  if (templateError) throw templateError;
+  const templateName = new Map((templates ?? []).map((t) => [t.code, t.name]));
 
   // Counted in the database, one pair of `head` queries per company: a plain
   // select of every profile would be cut off silently at PostgREST's row
@@ -85,7 +88,7 @@ export async function listCompanies(): Promise<PlatformCompany[]> {
     return {
       id: org.id,
       name: org.name,
-      industry: org.industry,
+      industry: (org.industries[0] && templateName.get(org.industries[0])) ?? org.industry,
       timezone: org.timezone,
       createdAt: org.created_at,
       activeUsers: counts[i].active,
@@ -108,6 +111,8 @@ export type PlatformModule = {
 export type PlatformCompanyDetail = {
   id: string;
   name: string;
+  /** The templates it was created from, primary first, with the version of each. */
+  industries: { code: string; name: string; version: number | null }[];
   modules: PlatformModule[];
   recentChanges: { action: string; detail: unknown; createdAt: string }[];
 };
@@ -115,8 +120,8 @@ export type PlatformCompanyDetail = {
 /** One company, with every module in the catalogue and whether it has it. */
 export async function getCompany(orgId: string): Promise<PlatformCompanyDetail | null> {
   const admin = platformAdminClient();
-  const [org, catalogue, deps, mine, log] = await Promise.all([
-    admin.from("organizations").select("id, name").eq("id", orgId).maybeSingle(),
+  const [org, catalogue, deps, mine, log, templates] = await Promise.all([
+    admin.from("organizations").select("id, name, industries, template_versions").eq("id", orgId).maybeSingle(),
     admin.from("modules").select("*").order("sort_order"),
     admin.from("module_dependencies").select("module_code, requires_code"),
     admin.from("company_modules").select("module_code, enabled").eq("org_id", orgId),
@@ -126,14 +131,28 @@ export async function getCompany(orgId: string): Promise<PlatformCompanyDetail |
       .eq("target_org_id", orgId)
       .order("created_at", { ascending: false })
       .limit(10),
+    admin.from("industry_templates").select("code, name"),
   ]);
-  for (const r of [org, catalogue, deps, mine, log]) if (r.error) throw r.error;
+  for (const r of [org, catalogue, deps, mine, log, templates]) if (r.error) throw r.error;
   if (!org.data) return null;
+
+  const templateName = new Map((templates.data ?? []).map((t) => [t.code, t.name]));
+  const versions = org.data.template_versions;
+  const versionOf = (code: string): number | null => {
+    if (versions === null || typeof versions !== "object" || Array.isArray(versions)) return null;
+    const v = versions[code];
+    return typeof v === "number" ? v : null;
+  };
 
   const on = new Map((mine.data ?? []).map((m) => [m.module_code, m.enabled]));
   return {
     id: org.data.id,
     name: org.data.name,
+    industries: org.data.industries.map((code) => ({
+      code,
+      name: templateName.get(code) ?? code,
+      version: versionOf(code),
+    })),
     modules: (catalogue.data ?? []).map((m) => ({
       code: m.code,
       name: m.name,
@@ -219,4 +238,16 @@ export async function moduleCatalogue(): Promise<{ code: string; name: string; b
     .order("sort_order");
   if (error) throw error;
   return (data ?? []).map((m) => ({ code: m.code, name: m.name, built: m.is_built, planType: m.plan_type }));
+}
+
+export type TermLabel = { key: string; label: string; description: string };
+
+/** The terminology catalogue, for the words step: each term named by its neutral default. */
+export async function termDefinitions(): Promise<TermLabel[]> {
+  const { data, error } = await platformAdminClient()
+    .from("term_definitions")
+    .select("key, singular, description")
+    .order("sort_order");
+  if (error) throw error;
+  return (data ?? []).map((d) => ({ key: d.key, label: d.singular, description: d.description }));
 }

@@ -58,6 +58,13 @@ export default async function PlatformCompanyPage({
           ← Companies
         </Link>
         <h1 className="text-2xl font-bold text-foreground">{company.name}</h1>
+        {company.industries.length > 0 && (
+          <p className="text-sm text-foreground">
+            {company.industries
+              .map((i) => (i.version === null ? i.name : `${i.name} (v${i.version})`))
+              .join(" + ")}
+          </p>
+        )}
         <p className="text-sm text-muted-foreground">
           Modules switched here take effect on the company&apos;s next page load,
           and on phones at their next refresh. Every change is logged.

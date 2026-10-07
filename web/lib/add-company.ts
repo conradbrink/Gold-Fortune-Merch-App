@@ -114,7 +114,7 @@ export type AddCompanyInput = {
   /** Template codes, primary first. */
   templates: string[];
   modules: string[];
-  terms: Record<string, { one: string; many: string }>;
+  terms: Record<string, TemplateTerm>;
   settings: Record<string, Json>;
   checklists: string[];
   forms: string[];
@@ -179,8 +179,12 @@ export function companyPayload(input: AddCompanyInput) {
 
 /** The `p_choices` argument: what the operator kept, changed or left out. */
 export function choicesPayload(input: AddCompanyInput) {
-  const terms: Record<string, { one: string; many: string }> = {};
-  for (const [key, t] of Object.entries(input.terms)) terms[key] = { one: t.one.trim(), many: t.many.trim() };
+  // The article goes too: a chosen word replaces the template's whole entry,
+  // so leaving it out would drop an "an" the catalogue set.
+  const terms: Record<string, TemplateTerm> = {};
+  for (const [key, t] of Object.entries(input.terms)) {
+    terms[key] = { one: t.one.trim(), many: t.many.trim(), article: t.article };
+  }
   return {
     modules: input.modules,
     terms,
@@ -188,4 +192,70 @@ export function choicesPayload(input: AddCompanyInput) {
     checklists: input.checklists,
     forms: input.forms,
   };
+}
+
+// ------------------------------------------------------------ the form's helpers
+
+/**
+ * The module ticks after one change. Ticking a module ticks what it needs;
+ * unticking one unticks what needs it — so the ticks can never describe a
+ * company the module guard would refuse.
+ */
+export function toggleModule(
+  selected: string[],
+  code: string,
+  on: boolean,
+  deps: ModuleDependency[]
+): string[] {
+  const next = new Set(selected);
+  const seen = new Set<string>();
+  const queue = [code];
+  while (queue.length > 0) {
+    const c = queue.pop()!;
+    if (seen.has(c)) continue;
+    seen.add(c);
+    if (on) next.add(c);
+    else next.delete(c);
+    for (const d of deps) {
+      if (on && d.module === c) queue.push(d.requires);
+      if (!on && d.requires === c) queue.push(d.module);
+    }
+  }
+  return selected.filter((m) => next.has(m)).concat([...next].filter((m) => !selected.includes(m)));
+}
+
+/** The settings the defaults step edits: not the brand colours (their own card after creation), country or currency (the details step). */
+export function editableSetting(key: string): boolean {
+  return !key.startsWith("brand_") && key !== "country_code" && key !== "currency_code";
+}
+
+/** A stored setting as the text an input holds. */
+export function settingToText(v: Json | undefined): string {
+  if (v === undefined || v === null) return "";
+  return typeof v === "string" ? v : String(v);
+}
+
+/**
+ * Back to the JSON the database stores. A malformed number is sent as text so
+ * the database's validation answers with the setting's own message.
+ */
+export function settingFromText(valueType: string, text: string): Json {
+  if (valueType === "boolean") return text === "true";
+  if (valueType === "integer") {
+    const n = Number(text.trim());
+    return text.trim() !== "" && Number.isInteger(n) ? n : text;
+  }
+  return text;
+}
+
+/**
+ * Lower case (easy to type on a phone), without l, o, 0 or 1 (easy to misread
+ * off a screen): 32 symbols, so each byte maps to one without bias.
+ */
+const PASSWORD_ALPHABET = "abcdefghijkmnpqrstuvwxyz23456789";
+
+/** A starting password from random bytes (crypto.getRandomValues): 5 bits a byte, 16 bytes = 80 bits. */
+export function generatePassword(bytes: Uint8Array): string {
+  if (bytes.length < 12) throw new Error("A starting password needs at least 12 random bytes.");
+  return Array.from(bytes, (b) => PASSWORD_ALPHABET[b % 32]).join("");
 }
