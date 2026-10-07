@@ -94,6 +94,7 @@ const PATH_PERMISSIONS: { prefix: string; permission: PermissionCode }[] = [
   { prefix: "/schedule", permission: "field_ops" },
   { prefix: "/activities", permission: "field_ops" },
   { prefix: "/visits", permission: "field_ops" },
+  { prefix: "/tracking", permission: "insights" },
   { prefix: "/promotions", permission: "field_ops" },
   { prefix: "/representatives", permission: "team" },
   { prefix: "/products", permission: "resources" },
