@@ -1,4 +1,4 @@
--- Rollback for 20261007000003_platform_admin. Drops the operator list and the
+-- Rollback for 20261007101108_platform_admin. Drops the operator list and the
 -- audit log. ⚠️ Destroys their rows: export `platform_audit_log` first if it
 -- has any.
 

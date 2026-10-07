@@ -324,6 +324,10 @@ begin
         end;
       end if;
     end loop;
+    if to_regprocedure('public.is_platform_admin()') is not null
+       and public.is_platform_admin() then
+      v_fail := v_fail || format('T2 B''s %s is a platform operator%s', v_who, E'\n');
+    end if;
 
     reset role;
   end loop;

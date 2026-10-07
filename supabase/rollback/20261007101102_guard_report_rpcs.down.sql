@@ -1,4 +1,4 @@
--- Rollback for 20261007000002_guard_report_rpcs: the inverse replacement, and
+-- Rollback for 20261007101102_guard_report_rpcs: the inverse replacement, and
 -- the PUBLIC and anon grants restored. All seven carried both before (ACL
 -- `{=X/postgres,postgres=X/postgres,anon=X/postgres,authenticated=X/postgres,
 -- service_role=X/postgres}`, read on 7 October 2026).

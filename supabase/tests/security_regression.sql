@@ -1019,7 +1019,7 @@ begin
 
   ---------------------------------------- 32. report RPCs need `insights`
   --
-  -- `20261007…_guard_report_rpcs` put `require_permission('insights')` into
+  -- `20261007101102_guard_report_rpcs` put `require_permission('insights')` into
   -- the seven report functions that relied on RLS alone, whose RLS is scoped to
   -- the organisation — so any rep could call them through PostgREST and read
   -- every colleague's figures. The guard must raise 42501 for a rep (32), and

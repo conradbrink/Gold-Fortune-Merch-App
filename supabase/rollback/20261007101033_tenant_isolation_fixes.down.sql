@@ -1,4 +1,4 @@
--- Rollback for 20261007000001_tenant_isolation_fixes.
+-- Rollback for 20261007101033_tenant_isolation_fixes.
 --
 -- Restores every definition that migration replaced, exactly as production
 -- held it on 7 October 2026 (read back with pg_get_functiondef / pg_policies
