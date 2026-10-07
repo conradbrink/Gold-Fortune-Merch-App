@@ -20,7 +20,7 @@
 -- territory, filled in through %), and distribution's own vocabulary (order,
 -- delivery, stocktake), which only distribution companies see.
 --
--- Rollback: supabase/rollback/<this version>_neutral_messages.down.sql.
+-- Rollback: supabase/rollback/20261007155738_neutral_messages.down.sql.
 
 do $$
 declare

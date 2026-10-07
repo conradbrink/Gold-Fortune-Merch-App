@@ -28,7 +28,7 @@
 -- logo is uploaded separately (storage objects are not written by SQL) and its
 -- logo_path set once the file is there.
 --
--- Rollback: supabase/rollback/<this version>_terminology_and_branding.down.sql.
+-- Rollback: supabase/rollback/20261007155717_terminology_and_branding.down.sql.
 
 ----------------------------------------------------------------- the catalogue
 
