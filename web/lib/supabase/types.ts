@@ -1311,6 +1311,102 @@ export type Database = {
           },
         ]
       }
+      quote_lines: {
+        Row: {
+          id: string
+          org_id: string
+          quote_id: string
+          product_id: string
+          qty: number
+          list_price: number
+          discount_pct: number
+          unit_price: number | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          org_id: string
+          quote_id: string
+          product_id: string
+          qty: number
+          list_price: number
+          discount_pct?: number
+          unit_price?: number | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          org_id?: string
+          quote_id?: string
+          product_id?: string
+          qty?: number
+          list_price?: number
+          discount_pct?: number
+          unit_price?: number | null
+          created_at?: string
+        }
+        Relationships: []
+      }
+      quotes: {
+        Row: {
+          id: string
+          org_id: string
+          quote_number: string
+          store_id: string
+          contact_name: string | null
+          contact_phone: string | null
+          rep_id: string | null
+          status: string
+          valid_until: string | null
+          delivery_address: string | null
+          notes: string | null
+          vat_rate: number
+          converted_order_id: string | null
+          converted_at: string | null
+          created_by: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          org_id: string
+          quote_number: string
+          store_id: string
+          contact_name?: string | null
+          contact_phone?: string | null
+          rep_id?: string | null
+          status?: string
+          valid_until?: string | null
+          delivery_address?: string | null
+          notes?: string | null
+          vat_rate?: number
+          converted_order_id?: string | null
+          converted_at?: string | null
+          created_by?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          org_id?: string
+          quote_number?: string
+          store_id?: string
+          contact_name?: string | null
+          contact_phone?: string | null
+          rep_id?: string | null
+          status?: string
+          valid_until?: string | null
+          delivery_address?: string | null
+          notes?: string | null
+          vat_rate?: number
+          converted_order_id?: string | null
+          converted_at?: string | null
+          created_by?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       order_status_events: {
         Row: {
           actor_id: string | null
@@ -5570,6 +5666,10 @@ export type Database = {
       order_cancel: {
         Args: { p_order_id: string; p_reason: string }
         Returns: Json
+      }
+      quote_convert: {
+        Args: { p_quote_id: string }
+        Returns: string
       }
       order_confirm: {
         Args: {
