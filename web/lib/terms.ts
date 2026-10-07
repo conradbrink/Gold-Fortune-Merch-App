@@ -140,6 +140,15 @@ export function count(
   return `${n.toLocaleString()} ${opts.label ? w : lower(w)}`;
 }
 
+/**
+ * The word alone in the form a number calls for, lower-case for running text:
+ * noun(t, "site", 1) → "store", noun(t, "site", 3) → "stores". For "3 stores"
+ * with the number, use `count`.
+ */
+export function noun(t: Terms, key: TermKey, n: number): string {
+  return lower(n === 1 ? t[key].one : t[key].many);
+}
+
 /** "Store's", "Reps'": the possessive of a singular or plural label. */
 export function possessive(text: string): string {
   return /s$/i.test(text) ? `${text}'` : `${text}'s`;
