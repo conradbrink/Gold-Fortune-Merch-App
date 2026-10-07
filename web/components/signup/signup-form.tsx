@@ -34,6 +34,20 @@ type BrowserLists = {
   zones: string[];
 };
 const NO_LISTS: BrowserLists = { countries: [], currencies: [], country: "", zone: "", zones: [] };
+
+/**
+ * A code the browser names but ISO 3166-1 does not give to a country: the
+ * user-assigned ranges (AA, QM–QZ, XA–XZ, ZZ — the browser names XA "Pseudo-
+ * Accents" and ZZ "Unknown Region") and the exceptionally reserved codes (EU,
+ * UN, Ceuta, Canary Islands…). Kosovo's XK is user-assigned but in general use,
+ * so it stays. This is the standard's own rule, not a list of countries.
+ */
+function notACountry(code: string): boolean {
+  if (code === "XK") return false;
+  if (code === "AA" || code === "ZZ" || code[0] === "X") return true;
+  if (code[0] === "Q" && code[1] >= "M") return true;
+  return ["AC", "CP", "DG", "EA", "EU", "EZ", "IC", "TA", "UN"].includes(code);
+}
 let browserLists: BrowserLists | null = null;
 function readBrowserLists(): BrowserLists {
   if (browserLists) return browserLists;
@@ -44,10 +58,13 @@ function readBrowserLists(): BrowserLists {
   for (let i = 0; i < 26; i++) {
     for (let j = 0; j < 26; j++) {
       const code = String.fromCharCode(A + i, A + j);
+      if (notACountry(code)) continue;
       try {
         const name = regionNames.of(code);
-        // An unassigned code comes back as itself; private-use codes have no name.
-        if (name && name !== code && !/^\d/.test(name)) countries.push({ code, name });
+        // An unassigned code comes back as itself. A retired code (DD, SU,
+        // UK…) canonicalises to its successor, so keeping only codes that are
+        // their own canonical form lists each country once.
+        if (name && name !== code && new Intl.Locale(`und-${code}`).region === code) countries.push({ code, name });
       } catch {
         // Not a region code this browser knows.
       }
