@@ -76,7 +76,7 @@ export function BrandColoursCard({ orgId, canEdit }: { orgId: string; canEdit: b
     setSaved(false);
     setSaveError(null);
     if (!primary || !accent) {
-      setSaveError("Each colour must be a hex value such as #1E293B.");
+      setSaveError("Each colour must be a hex value such as #0F3D3E.");
       return;
     }
     setSaving(true);
@@ -213,7 +213,7 @@ function ColourField({
         />
       </div>
       {!valid && (
-        <p className="text-xs text-destructive">A hex colour, such as #1E293B.</p>
+        <p className="text-xs text-destructive">A hex colour, such as #0F3D3E.</p>
       )}
     </div>
   );

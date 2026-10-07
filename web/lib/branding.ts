@@ -19,9 +19,13 @@ export type Branding = {
   accent: string;
 };
 
-/** `setting_definitions` defaults for the two colour settings. */
-export const DEFAULT_PRIMARY = "#1E293B";
-export const DEFAULT_ACCENT = "#0EA5A4";
+/**
+ * The product's own colours, Tickd teal and amber: the `setting_definitions`
+ * defaults for a company that has not chosen its own, and the fallback for a
+ * malformed value.
+ */
+export const DEFAULT_PRIMARY = "#0F3D3E";
+export const DEFAULT_ACCENT = "#F5A524";
 
 const HEX = /^#[0-9A-Fa-f]{6}$/;
 const LOGO_PATH = /^[0-9a-f-]{36}\/logo-[A-Za-z0-9_-]{1,40}\.(png|jpg|jpeg|webp)$/;

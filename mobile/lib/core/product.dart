@@ -11,5 +11,5 @@ const kProductMarkAsset = 'assets/product_mark.png';
 
 /// The product palette, for a company that has not chosen its own colours and
 /// for the login screen before anyone has signed in. Mirrors the web's.
-const kProductPrimary = Color(0xFF1E293B);
-const kProductAccent = Color(0xFF0EA5A4);
+const kProductPrimary = Color(0xFF0F3D3E); // Tickd teal
+const kProductAccent = Color(0xFFF5A524); // Tickd amber
