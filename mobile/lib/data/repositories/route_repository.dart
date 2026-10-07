@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../../core/terms.dart';
 import '../local/app_database.dart';
 import '../models/route_visit.dart';
 import '../models/store_summary.dart';
@@ -297,6 +298,8 @@ class RouteRepository {
     required double lat,
     required double lng,
     required double accuracyM,
+    // For the offline message, which is the phone's own.
+    Terms terms = Terms.defaults,
   }) async {
     try {
       await _client.rpc('set_store_location_from_visit', params: {
@@ -309,9 +312,10 @@ class RouteRepository {
       // Every raise in that function is phrased for the rep.
       throw StoreLocationException(e.message);
     } on SocketException {
-      throw const StoreLocationException(
-        "You need a connection to set a store's location. Try again when you "
-        'have signal — the shop keeps its place on your list either way.',
+      throw StoreLocationException(
+        'You need a connection to set ${possessive(terms.site.withArticle)} '
+        'location. Try again when you have signal — the '
+        '${terms.site.oneLower} keeps its place on your list either way.',
       );
     }
   }

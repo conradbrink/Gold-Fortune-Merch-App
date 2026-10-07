@@ -1,11 +1,12 @@
 import 'package:flutter/material.dart';
 
-/// Gold Fortune brand: navy primary, gold accent, red reserved for
-/// destructive/missed states — matches the manager web dashboard.
+import 'product.dart';
+
+/// Colours that do not change with the company: surfaces, text, and the status
+/// colours (red reserved for destructive and missed states), which have to
+/// mean the same thing in every company's app. The company's own two colours
+/// live in the theme instead — see [BrandColors].
 class AppColors {
-  static const navy = Color(0xFF16224F);
-  static const navyDark = Color(0xFF0F1836);
-  static const gold = Color(0xFFE0B84B);
   static const background = Color(0xFFF7F8FA);
   static const surface = Color(0xFFFFFFFF);
   static const border = Color(0xFFE3E6EC);
@@ -17,13 +18,91 @@ class AppColors {
   static const info = Color(0xFF3B82F6);
 }
 
-ThemeData buildAppTheme() {
+/// The company's colours, carried on the theme so a widget can ask for them by
+/// name rather than hard-coding one company's navy and gold.
+///
+/// `colorScheme.primary` and `.secondary` hold the same two colours; this adds
+/// the darker shade the badges use, and keeps the names the screens were
+/// written against.
+@immutable
+class BrandColors extends ThemeExtension<BrandColors> {
+  const BrandColors({
+    required this.primary,
+    required this.primaryDark,
+    required this.accent,
+  });
+
+  factory BrandColors.from(Color primary, Color accent) => BrandColors(
+        primary: primary,
+        // Badge text on the accent. Derived rather than chosen so a company
+        // sets two colours, not three.
+        primaryDark: Color.lerp(primary, Colors.black, 0.3)!,
+        accent: accent,
+      );
+
+  /// Headers, app bar, primary buttons.
+  final Color primary;
+  final Color primaryDark;
+
+  /// Highlights: badges, rewards, the unscheduled marker.
+  final Color accent;
+
+  /// The product palette, for a widget built outside the app's theme (a test,
+  /// a dialog with its own `Theme`).
+  static final product = BrandColors.from(kProductPrimary, kProductAccent);
+
+  static BrandColors of(BuildContext context) =>
+      Theme.of(context).extension<BrandColors>() ?? product;
+
+  @override
+  BrandColors copyWith({Color? primary, Color? primaryDark, Color? accent}) =>
+      BrandColors(
+        primary: primary ?? this.primary,
+        primaryDark: primaryDark ?? this.primaryDark,
+        accent: accent ?? this.accent,
+      );
+
+  @override
+  BrandColors lerp(BrandColors? other, double t) {
+    if (other == null) return this;
+    return BrandColors(
+      primary: Color.lerp(primary, other.primary, t)!,
+      primaryDark: Color.lerp(primaryDark, other.primaryDark, t)!,
+      accent: Color.lerp(accent, other.accent, t)!,
+    );
+  }
+}
+
+/// `context.brand.primary` — shorthand for [BrandColors.of].
+extension BrandContext on BuildContext {
+  BrandColors get brand => BrandColors.of(this);
+}
+
+/// Text that reads on [background]: white on a dark colour, near-black on a
+/// light one. The same WCAG contrast rule as the web (`readableOn` in
+/// web/lib/branding.ts), so a company that picks a pale brand colour does not
+/// get white-on-yellow buttons.
+Color readableOn(Color background) {
+  final l = background.computeLuminance();
+  final onWhite = 1.05 / (l + 0.05);
+  final onDark = (l + 0.05) / (0.0089 + 0.05);
+  return onWhite >= onDark ? Colors.white : const Color(0xFF0F172A);
+}
+
+/// The app's theme in a company's two colours.
+///
+/// Built from the configuration's `branding`, and rebuilt when it changes. With
+/// Gold Fortune's navy and gold this is exactly the theme the app always had.
+ThemeData buildAppTheme(Color primary, Color accent) {
+  final onPrimary = readableOn(primary);
   final base = ThemeData(
     useMaterial3: true,
     colorScheme: ColorScheme.fromSeed(
-      seedColor: AppColors.navy,
-      primary: AppColors.navy,
-      secondary: AppColors.gold,
+      seedColor: primary,
+      primary: primary,
+      onPrimary: onPrimary,
+      secondary: accent,
+      onSecondary: readableOn(accent),
       surface: AppColors.surface,
       error: AppColors.danger,
     ),
@@ -31,16 +110,17 @@ ThemeData buildAppTheme() {
   );
 
   return base.copyWith(
-    appBarTheme: const AppBarTheme(
-      backgroundColor: AppColors.navy,
-      foregroundColor: Colors.white,
+    extensions: [BrandColors.from(primary, accent)],
+    appBarTheme: AppBarTheme(
+      backgroundColor: primary,
+      foregroundColor: onPrimary,
       elevation: 0,
       centerTitle: false,
     ),
     elevatedButtonTheme: ElevatedButtonThemeData(
       style: ElevatedButton.styleFrom(
-        backgroundColor: AppColors.navy,
-        foregroundColor: Colors.white,
+        backgroundColor: primary,
+        foregroundColor: onPrimary,
         padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 20),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
         textStyle: const TextStyle(fontWeight: FontWeight.w600, fontSize: 15),
@@ -48,7 +128,7 @@ ThemeData buildAppTheme() {
     ),
     outlinedButtonTheme: OutlinedButtonThemeData(
       style: OutlinedButton.styleFrom(
-        foregroundColor: AppColors.navy,
+        foregroundColor: primary,
         side: const BorderSide(color: AppColors.border),
         padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 20),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
@@ -68,7 +148,7 @@ ThemeData buildAppTheme() {
       ),
       focusedBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(10),
-        borderSide: const BorderSide(color: AppColors.navy, width: 1.5),
+        borderSide: BorderSide(color: primary, width: 1.5),
       ),
     ),
     cardTheme: CardThemeData(

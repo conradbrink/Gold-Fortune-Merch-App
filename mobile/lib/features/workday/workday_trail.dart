@@ -75,6 +75,13 @@ class WorkdayTrail {
   /// configuration. Read when the stream opens and when deciding whether a
   /// quiet trail has stalled; a change takes effect on the next restart.
   Duration pingInterval = kLocationPingInterval;
+
+  /// The company's name for the tracking notification, set alongside
+  /// [pingInterval] and read the same way: when the stream opens.
+  String? companyName;
+
+  /// The company's word for a workday, for the notification's title.
+  String workday = 'Workday';
   Position? lastPingPosition;
 
   Object? _owner;
@@ -334,8 +341,12 @@ final workdayTrailProvider = Provider<WorkdayTrail>((ref) {
   // a company that changes its GPS interval gets it on the next restart.
   late final WorkdayTrail trail;
   trail = WorkdayTrail(
-    openStream: (mode) =>
-        LocationTracking.stream(mode, interval: trail.pingInterval),
+    openStream: (mode) => LocationTracking.stream(
+      mode,
+      interval: trail.pingInterval,
+      companyName: trail.companyName,
+      workday: trail.workday,
+    ),
   );
   final lifecycle = AppLifecycleListener(
     onStateChange: trail.didChangeLifecycle,

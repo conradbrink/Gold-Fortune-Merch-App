@@ -1,3 +1,5 @@
+import { DEFAULT_TERMS, lower, type Terms } from "@/lib/terms";
+
 /**
  * The catalogue of things a form question can measure.
  *
@@ -69,100 +71,115 @@ export type MetricDefinition = {
   invertedNote?: string;
 };
 
-/** Ordered so the keys that actually drive cards come first. */
-export const METRIC_DEFINITIONS: MetricDefinition[] = [
-  {
-    key: "in_stock",
-    label: "Product in stock",
-    description:
-      "A yes/no availability check. Every “no” is one out-of-stock observation.",
-    fieldTypes: ["boolean"],
-    feeds: [
-      "Out of Stock Rate",
-      "Availability (Perfect Store)",
-      "Out-of-stock hotspots",
-      "Compliance trend",
-    ],
-  },
-  {
-    key: "facings",
-    label: "Number of facings",
-    description: "Counted shelf facings, averaged across audits.",
-    fieldTypes: ["number"],
-    feeds: ["Average facings", "Compliance trend"],
-  },
-  {
-    key: "planogram_ok",
-    label: "Planogram compliant",
-    description: "A yes/no compliance check. The rate of “yes” is the score.",
-    fieldTypes: ["boolean"],
-    feeds: [
-      "Planogram compliance",
-      "Planogram (Perfect Store)",
-      "Compliance trend",
-    ],
-  },
-  {
-    key: "price_correct",
-    label: "Shelf price correct",
-    description:
-      "Counts only the answer “Correct” as compliant, so the other options can name what was wrong.",
-    fieldTypes: ["multiple_choice"],
-    requiredOption: "Correct",
-    feeds: ["Price accuracy (Perfect Store)", "Compliance trend"],
-  },
-  {
-    key: "damaged_expired",
-    label: "Damaged or expired stock",
-    description: "A yes/no condition check.",
-    fieldTypes: ["boolean"],
-    invertedNote: "“Yes” counts against the store — it means damage was found.",
-    feeds: ["Stock condition (Perfect Store)"],
-  },
-  {
-    key: "oos_skus",
-    label: "Which SKUs were out of stock",
-    description:
-      "Free text. Answers are tallied verbatim, so the top five per store can be listed.",
-    fieldTypes: ["text"],
-    feeds: ["Out-of-stock hotspots — top SKUs"],
-  },
-  {
-    key: "shelf_position",
-    label: "Shelf position",
-    description: "Where on the shelf the product sits.",
-    fieldTypes: ["multiple_choice"],
-    feeds: [],
-  },
-  {
-    key: "promo_display",
-    label: "Promotional display present",
-    description: "A yes/no check for a promotional display.",
-    fieldTypes: ["boolean"],
-    feeds: [],
-  },
-  {
-    key: "pos_materials",
-    label: "Point-of-sale materials",
-    description: "How much of the point-of-sale material is in place.",
-    fieldTypes: ["multiple_choice"],
-    feeds: [],
-  },
-  {
-    key: "coupons",
-    label: "Coupons available",
-    description: "A yes/no check for coupons at the till.",
-    fieldTypes: ["boolean"],
-    feeds: [],
-  },
-];
+/**
+ * Ordered so the keys that actually drive cards come first.
+ *
+ * A function of the company's words because the card names and notes say
+ * "store" at Gold Fortune and whatever a site is called elsewhere. Keys,
+ * labels and field types are the same for everyone.
+ */
+export function metricDefinitions(t: Terms): MetricDefinition[] {
+  const perfect = `Perfect ${t.site.one}`;
+  const site = lower(t.site.one);
+  return [
+    {
+      key: "in_stock",
+      label: "Product in stock",
+      description:
+        "A yes/no availability check. Every “no” is one out-of-stock observation.",
+      fieldTypes: ["boolean"],
+      feeds: [
+        "Out of Stock Rate",
+        `Availability (${perfect})`,
+        "Out-of-stock hotspots",
+        "Compliance trend",
+      ],
+    },
+    {
+      key: "facings",
+      label: "Number of facings",
+      description: "Counted shelf facings, averaged across audits.",
+      fieldTypes: ["number"],
+      feeds: ["Average facings", "Compliance trend"],
+    },
+    {
+      key: "planogram_ok",
+      label: "Planogram compliant",
+      description: "A yes/no compliance check. The rate of “yes” is the score.",
+      fieldTypes: ["boolean"],
+      feeds: [
+        "Planogram compliance",
+        `Planogram (${perfect})`,
+        "Compliance trend",
+      ],
+    },
+    {
+      key: "price_correct",
+      label: "Shelf price correct",
+      description:
+        "Counts only the answer “Correct” as compliant, so the other options can name what was wrong.",
+      fieldTypes: ["multiple_choice"],
+      requiredOption: "Correct",
+      feeds: [`Price accuracy (${perfect})`, "Compliance trend"],
+    },
+    {
+      key: "damaged_expired",
+      label: "Damaged or expired stock",
+      description: "A yes/no condition check.",
+      fieldTypes: ["boolean"],
+      invertedNote: `“Yes” counts against the ${site} — it means damage was found.`,
+      feeds: [`Stock condition (${perfect})`],
+    },
+    {
+      key: "oos_skus",
+      label: "Which SKUs were out of stock",
+      description:
+        `Free text. Answers are tallied verbatim, so the top five per ${site} can be listed.`,
+      fieldTypes: ["text"],
+      feeds: ["Out-of-stock hotspots — top SKUs"],
+    },
+    {
+      key: "shelf_position",
+      label: "Shelf position",
+      description: "Where on the shelf the product sits.",
+      fieldTypes: ["multiple_choice"],
+      feeds: [],
+    },
+    {
+      key: "promo_display",
+      label: "Promotional display present",
+      description: "A yes/no check for a promotional display.",
+      fieldTypes: ["boolean"],
+      feeds: [],
+    },
+    {
+      key: "pos_materials",
+      label: "Point-of-sale materials",
+      description: "How much of the point-of-sale material is in place.",
+      fieldTypes: ["multiple_choice"],
+      feeds: [],
+    },
+    {
+      key: "coupons",
+      label: "Coupons available",
+      description: "A yes/no check for coupons at the till.",
+      fieldTypes: ["boolean"],
+      feeds: [],
+    },
+  ];
+}
 
+/**
+ * For the lookups whose answer does not depend on the words — a metric's
+ * label and the field types it reads.
+ */
 const BY_KEY = new Map<string, MetricDefinition>(
-  METRIC_DEFINITIONS.map((m) => [m.key, m])
+  metricDefinitions(DEFAULT_TERMS).map((m) => [m.key, m])
 );
 
-export function findMetric(key: string | null): MetricDefinition | null {
-  return key ? BY_KEY.get(key) ?? null : null;
+export function findMetric(key: string | null, t: Terms): MetricDefinition | null {
+  if (!key || !BY_KEY.has(key)) return null;
+  return metricDefinitions(t).find((m) => m.key === key) ?? null;
 }
 
 /**
@@ -173,12 +190,12 @@ export function findMetric(key: string | null): MetricDefinition | null {
  * than disappear from the row it is attached to.
  */
 export function metricLabel(key: string | null): string {
-  return findMetric(key)?.label ?? key ?? "";
+  return (key ? BY_KEY.get(key)?.label : undefined) ?? key ?? "";
 }
 
 /** The metrics a question of this type can actually feed. */
-export function metricsForFieldType(fieldType: string): MetricDefinition[] {
-  return METRIC_DEFINITIONS.filter((m) =>
+export function metricsForFieldType(fieldType: string, t: Terms): MetricDefinition[] {
+  return metricDefinitions(t).filter((m) =>
     m.fieldTypes.includes(fieldType as FormFieldType)
   );
 }
@@ -195,7 +212,7 @@ export function metricMismatch(
   fieldType: string,
   options: string[]
 ): string | null {
-  const metric = findMetric(key);
+  const metric = key ? BY_KEY.get(key) : undefined;
   if (!metric) return null;
 
   if (!metric.fieldTypes.includes(fieldType as FormFieldType)) {

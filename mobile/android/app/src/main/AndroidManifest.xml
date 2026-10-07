@@ -23,8 +23,12 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION"/>
     <uses-permission android:name="android.permission.WAKE_LOCK"/>
+    <!-- The product's name, not a company's: one app serves every company.
+         Only the label changed. The applicationId in build.gradle stays as it
+         was, because a new id installs as a second app beside the first and
+         abandons whatever its outbox had not yet synced. -->
     <application
-        android:label="Gold Fortune"
+        android:label="Field Teams"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
         <activity

@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/lib/supabase/types";
 import type { PingSource } from "@/lib/live-reps";
+import { DEFAULT_TERMS, lower, type Terms } from "@/lib/terms";
 
 /**
  * One rep's day: the trail, the shops, the orders, and the totals.
@@ -75,8 +76,20 @@ export function todayDate() {
 
 type StoreEmbed = { name: string; lat: number | null; lng: number | null } | null;
 
-export async function fetchRepDay(supabase: Client, repId: string, date: string): Promise<RepDay> {
+/** The name shown for a shop whose row the caller cannot see or no longer exists. */
+function unknownSite(t: Terms) {
+  return `Unknown ${lower(t.site.one)}`;
+}
+
+export async function fetchRepDay(
+  supabase: Client,
+  repId: string,
+  date: string,
+  /** The company's words; the neutral defaults until every caller passes them. */
+  t: Terms = DEFAULT_TERMS
+): Promise<RepDay> {
   const { from, to } = dayBounds(date);
+  const unknown = unknownSite(t);
   const [pings, visits, orders, trail] = await Promise.all([
     supabase
       .from("location_pings")
@@ -136,7 +149,7 @@ export async function fetchRepDay(supabase: Client, repId: string, date: string)
       stores: StoreEmbed;
     }[]).map((v) => ({
       id: v.id,
-      storeName: v.stores?.name ?? "Unknown store",
+      storeName: v.stores?.name ?? unknown,
       lat: v.stores?.lat ?? null,
       lng: v.stores?.lng ?? null,
       checkinAt: v.checkin_at,
@@ -154,7 +167,7 @@ export async function fetchRepDay(supabase: Client, repId: string, date: string)
       id: o.id,
       orderNumber: o.order_number,
       createdAt: o.created_at,
-      storeName: o.stores?.name ?? "Unknown store",
+      storeName: o.stores?.name ?? unknown,
       lat: o.stores?.lat ?? null,
       lng: o.stores?.lng ?? null,
       status: o.status,
@@ -187,8 +200,9 @@ function sessionSeconds(
 }
 
 /** Every order placed today with a store position, for the live map's order layer. */
-export async function fetchTodaysOrders(supabase: Client): Promise<DayOrder[]> {
+export async function fetchTodaysOrders(supabase: Client, t: Terms): Promise<DayOrder[]> {
   const { from, to } = dayBounds(todayDate());
+  const unknown = unknownSite(t);
   const { data, error } = await supabase
     .from("orders")
     .select("id, order_number, created_at, status, stores(name, lat, lng)")
@@ -208,7 +222,7 @@ export async function fetchTodaysOrders(supabase: Client): Promise<DayOrder[]> {
     id: o.id,
     orderNumber: o.order_number,
     createdAt: o.created_at,
-    storeName: o.stores?.name ?? "Unknown store",
+    storeName: o.stores?.name ?? unknown,
     lat: o.stores?.lat ?? null,
     lng: o.stores?.lng ?? null,
     status: o.status,

@@ -2,16 +2,14 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { Building2, ChevronDown, PanelLeftClose, PanelLeftOpen } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { activeHref, visibleNavGroups } from "@/components/layout/nav-items";
-import { createClient } from "@/lib/supabase/client";
-import { fetchOrgName } from "@/lib/org-settings";
 import { usePermissions } from "@/lib/use-permissions";
 import { useCompanyConfig } from "@/lib/use-company-config";
 import { can } from "@/lib/permissions";
+import { CompanyMark } from "@/components/layout/company-mark";
 
 /** Remembered across navigations and reloads — a width you have to re-set on
     every page is worse than no control at all. */
@@ -37,7 +35,10 @@ export function SidebarContent({
   // Empty until both are known — see `usePermissions` for why this does not
   // fall back to the manager menu, and `useCompanyConfig` for the modules.
   const groups =
-    permissions && company ? visibleNavGroups(permissions, company.modules) : [];
+    permissions && company
+      ? visibleNavGroups(permissions, company.modules, company.terms)
+      : [];
+  const branding = company?.branding ?? null;
   const current = activeHref(pathname);
 
   /**
@@ -72,27 +73,6 @@ export function SidebarContent({
    * refuses, and syncing one during render is what `react-hooks/refs` refuses.
    */
   const [hydrated, setHydrated] = useState(false);
-
-  /**
-   * The company's own name for the footer, or null until it arrives.
-   *
-   * Fetched only for whoever can open the company profile, because the footer
-   * it feeds links there and a clerk asking for a row they are shown nothing of
-   * is a query for nothing.
-   */
-  const [orgName, setOrgName] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (!permissions || !can(permissions, "company_settings")) return;
-    let cancelled = false;
-    (async () => {
-      const name = await fetchOrgName(createClient());
-      if (!cancelled) setOrgName(name);
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [permissions]);
 
   useEffect(() => {
     const raw = window.localStorage.getItem(GROUPS_KEY);
@@ -144,43 +124,28 @@ export function SidebarContent({
   return (
     <>
       {/* Collapsed there is no room for the mark and the control side by side
-          at 64px, so the control takes the header and the mark steps aside —
-          the tab already carries the branding. */}
+          at 64px, so the control takes the header and the mark steps aside.
+
+          The company's own logo and name, from its configuration (seeded by
+          the server layout, so there on the first paint). This used to be
+          Gold Fortune's logo and name for everyone. */}
       <div
         className={cn(
           "flex h-14 items-center gap-2",
-          collapsed ? "justify-center px-2" : "px-5"
+          collapsed ? "justify-center px-2" : "px-5",
+          // In the mobile drawer the close button sits over the right of this
+          // row; a long company name would otherwise run underneath it.
+          !onToggleCollapse && !collapsed && "pr-12"
         )}
       >
+        {!collapsed && <CompanyMark branding={branding} />}
         {!collapsed && (
-          <Image
-            src="/logo.png"
-            alt="Gold Fortune"
-            width={32}
-            height={32}
-            className="h-8 w-8 shrink-0 rounded-md object-cover"
-          />
-        )}
-        {!collapsed && (
-          <div className="flex min-w-0 flex-col leading-none">
-            <span className="truncate text-sm font-bold tracking-tight text-sidebar-foreground">
-              Gold Fortune
-            </span>
-            <span className="text-[11px] font-medium text-muted-foreground">
-              Merchandising
-            </span>
-          </div>
+          <span className="min-w-0 truncate text-sm font-bold leading-none tracking-tight text-sidebar-foreground">
+            {branding?.name}
+          </span>
         )}
         {toggle && <div className={cn(!collapsed && "ml-auto")}>{toggle}</div>}
-        {collapsed && !toggle && (
-          <Image
-            src="/logo.png"
-            alt="Gold Fortune"
-            width={32}
-            height={32}
-            className="h-8 w-8 shrink-0 rounded-md object-cover"
-          />
-        )}
+        {collapsed && !toggle && <CompanyMark branding={branding} />}
       </div>
       <nav className="flex-1 overflow-y-auto px-3 py-2">
         {groups.map((group, index) => {
@@ -301,9 +266,9 @@ export function SidebarContent({
               {/* The real company name, from Settings → Company. This was the
                   literal string "Gold Fortune Inc." — not what that screen says,
                   and somebody else's name entirely the day this is deployed for
-                  another business. Nothing is shown until it loads, rather than
-                  a placeholder that would be wrong for a moment on every page. */}
-              {orgName && <span className="truncate">{orgName}</span>}
+                  another business. It comes with the company's configuration,
+                  so it needs no request of its own. */}
+              {branding?.name && <span className="truncate">{branding.name}</span>}
               <span className="text-[11px] font-normal text-muted-foreground">
                 Company profile
               </span>

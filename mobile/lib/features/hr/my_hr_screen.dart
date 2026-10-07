@@ -101,7 +101,7 @@ class _LeaveTab extends ConsumerWidget {
     return Scaffold(
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () => _apply(context, ref),
-        backgroundColor: AppColors.navy,
+        backgroundColor: context.brand.primary,
         foregroundColor: Colors.white,
         icon: const Icon(Icons.event_available_outlined),
         label: const Text('Apply for leave'),
@@ -185,10 +185,10 @@ class _BalanceCard extends StatelessWidget {
                 children: [
                   Text(
                     formatDays(balance.remainingDays),
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 22,
                       fontWeight: FontWeight.w700,
-                      color: AppColors.navy,
+                      color: context.brand.primary,
                     ),
                   ),
                   const Text('days left',
@@ -304,7 +304,7 @@ class _RequestCard extends ConsumerWidget {
               const SizedBox(height: 6),
               Text(
                 'Note from your manager: ${request.decisionNote}',
-                style: const TextStyle(fontSize: 12, color: AppColors.navy),
+                style: TextStyle(fontSize: 12, color: context.brand.primary),
               ),
             ],
             Row(

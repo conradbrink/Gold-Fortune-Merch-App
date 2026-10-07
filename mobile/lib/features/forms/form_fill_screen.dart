@@ -492,9 +492,9 @@ class _ChoiceChip extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
         decoration: BoxDecoration(
-          color: selected ? AppColors.navy : Colors.white,
+          color: selected ? context.brand.primary : Colors.white,
           border: Border.all(
-            color: selected ? AppColors.navy : AppColors.border,
+            color: selected ? context.brand.primary : AppColors.border,
           ),
           borderRadius: BorderRadius.circular(10),
         ),

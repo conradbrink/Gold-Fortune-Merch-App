@@ -1,5 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database, Json } from "@/lib/supabase/types";
+import { logoUrl } from "@/lib/branding";
+import { fitBox, loadLogoImage } from "@/lib/pdf-logo";
 
 /**
  * Tax invoices, credit notes and payments.
@@ -192,21 +194,35 @@ type PdfDoc = {
 };
 
 async function drawPdf(d: PdfDoc) {
-  const [{ jsPDF }, autoTableModule] = await Promise.all([
+  const inv = d.invoice;
+  // The logo copied onto the invoice at issue, not the company's current one:
+  // a reissued letterhead must not change an invoice already sent. A logo that
+  // cannot be fetched is left off rather than failing the download.
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const [{ jsPDF }, autoTableModule, logo] = await Promise.all([
     import("jspdf"),
     import("jspdf-autotable"),
+    loadLogoImage(supabaseUrl ? logoUrl(supabaseUrl, inv.seller_logo_path) : null),
   ]);
   const autoTable = autoTableModule.default;
   const doc = new jsPDF({ unit: "pt", format: "a4" });
   const width = doc.internal.pageSize.getWidth();
-  const inv = d.invoice;
   const left = 40;
   const right = width - 40;
+
+  // The logo above the seller's name, which moves down to make room. Without
+  // one the seller block starts where it always has.
+  let sellerTop = 52;
+  if (logo) {
+    const box = fitBox(logo.width, logo.height, 160, 44);
+    doc.addImage(logo.dataUrl, "PNG", left, 30, box.width, box.height);
+    sellerTop = 30 + box.height + 18;
+  }
 
   // Seller, top left — as it stood on the day of issue.
   doc.setFont("helvetica", "bold");
   doc.setFontSize(13);
-  doc.text(inv.seller_name, left, 52);
+  doc.text(inv.seller_name, left, sellerTop);
   doc.setFont("helvetica", "normal");
   doc.setFontSize(9);
   doc.setTextColor(90);
@@ -217,7 +233,7 @@ async function drawPdf(d: PdfDoc) {
     inv.seller_phone,
     inv.seller_email,
   ].filter(Boolean) as string[];
-  seller.forEach((line, i) => doc.text(line, left, 68 + i * 12));
+  seller.forEach((line, i) => doc.text(line, left, sellerTop + 16 + i * 12));
 
   // Document heading and its numbers, top right.
   doc.setTextColor(20);
@@ -234,7 +250,7 @@ async function drawPdf(d: PdfDoc) {
   });
 
   // Customer.
-  let y = Math.max(68 + seller.length * 12, 70 + d.meta.length * 13) + 18;
+  let y = Math.max(sellerTop + 16 + seller.length * 12, 70 + d.meta.length * 13) + 18;
   doc.setFont("helvetica", "bold");
   doc.setFontSize(9);
   doc.setTextColor(90);

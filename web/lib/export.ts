@@ -11,7 +11,17 @@
  *
  * `xlsx` and `jspdf` are both imported dynamically. They are large, and nobody
  * pays for them until they press Export — which on most page loads is nobody.
+ *
+ * Whose file it is comes from the signed-in company's own configuration, not
+ * from the caller: every page used to pass the same literal company name, and
+ * a page that forgot would have exported one customer's name on another's
+ * report.
  */
+
+import { getCompanyConfig } from "@/lib/use-company-config";
+import { logoUrl } from "@/lib/branding";
+import { exportFileName } from "@/lib/export-filename";
+import { fitBox, loadLogoImage } from "@/lib/pdf-logo";
 
 export type ExportColumn = {
   /** Column heading, as a person would read it. */
@@ -23,27 +33,60 @@ export type ExportColumn = {
 };
 
 export type ExportSheet = {
-  /** What this is. "Store visits", "Discrepancies", "Stores". */
+  /** What this is, in the company's words: "Store visits", "Discrepancies". */
   title: string;
   /**
-   * The filters that produced it, one per line — a rep's name, the date range,
-   * "Gaborone only". This is the difference between a file and a claim.
+   * The filters that produced it, one per line — a person's name, the date
+   * range, "Gaborone only". This is the difference between a file and a claim.
    */
   context?: string[];
   columns: ExportColumn[];
   rows: Record<string, string | number | null | undefined>[];
-  /** Base file name, without extension or date. */
+  /**
+   * What the report is, for the file name: "visits", "perfect-store". The
+   * company's name goes in front and the date behind (`exportFileName`).
+   */
   filename: string;
-  /** Shown above the title. Falls back to nothing rather than a guess. */
-  orgName?: string;
+  /**
+   * False to leave the company's name off the top of the file. For the CSVs
+   * that never carried it (commissions, invoices): a payroll or accounting
+   * import that skips a fixed number of preamble lines would otherwise read
+   * the header row as data.
+   */
+  letterhead?: boolean;
 };
 
 export type ExportFormat = "csv" | "xlsx" | "pdf";
 
-/** `gf-store-visits-2026-08-27.xlsx` */
-function fileName(sheet: ExportSheet, extension: string): string {
-  const today = new Date().toISOString().slice(0, 10);
-  return `${sheet.filename}-${today}.${extension}`;
+/** The company an export belongs to, as its header and file name show it. */
+type Company = {
+  /** Shown above the title. Empty rather than a guess when it is not known. */
+  name: string;
+  /** Public URL of its logo, for the PDF; null when it has none. */
+  logoUrl: string | null;
+};
+
+/**
+ * The signed-in company, from the configuration every screen already loaded.
+ * A failed lookup exports without a name rather than not at all: the rows are
+ * what was asked for, and the header is a courtesy.
+ */
+async function currentCompany(): Promise<Company> {
+  try {
+    const branding = (await getCompanyConfig())?.branding;
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    return {
+      name: branding?.name ?? "",
+      logoUrl: branding && supabaseUrl ? logoUrl(supabaseUrl, branding.logoPath) : null,
+    };
+  } catch {
+    return { name: "", logoUrl: null };
+  }
+}
+
+/** `gold-fortune-visits-2026-08-27.xlsx` */
+function fileName(company: Company, sheet: ExportSheet, extension: string): string {
+  return exportFileName(company.name, sheet.filename, extension);
 }
 
 function download(blob: Blob, name: string): void {
@@ -97,10 +140,10 @@ function matrix(sheet: ExportSheet): (string | number)[][] {
  * Every cell is quoted and embedded quotes doubled — store names contain
  * commas, and a rep called O'Brien is not a quoting bug waiting to happen.
  */
-function toCsv(sheet: ExportSheet): string {
+function toCsv(sheet: ExportSheet, company: Company): string {
   const quote = (c: string | number) => `"${String(c).replace(/"/g, '""')}"`;
   const preamble: (string | number)[][] = [
-    ...(sheet.orgName ? [[sheet.orgName]] : []),
+    ...(company.name && sheet.letterhead !== false ? [[company.name]] : []),
     [sheet.title],
     ...(sheet.context ?? []).map((line) => [line]),
     [],
@@ -110,20 +153,21 @@ function toCsv(sheet: ExportSheet): string {
     .join("\n");
 }
 
-export function exportCsv(sheet: ExportSheet): void {
+export async function exportCsv(sheet: ExportSheet): Promise<void> {
+  const company = await currentCompany();
   // The BOM is what makes Excel open a UTF-8 CSV as UTF-8 rather than as
   // Windows-1252, which is the difference between "Rustenburg" and mojibake on
   // every store whose name carries an accent.
   download(
-    new Blob(["﻿" + toCsv(sheet)], { type: "text/csv;charset=utf-8" }),
-    fileName(sheet, "csv")
+    new Blob(["﻿" + toCsv(sheet, company)], { type: "text/csv;charset=utf-8" }),
+    fileName(company, sheet, "csv")
   );
 }
 
 export async function exportXlsx(sheet: ExportSheet): Promise<void> {
-  const XLSX = await import("xlsx");
+  const [XLSX, company] = await Promise.all([import("xlsx"), currentCompany()]);
   const preamble: (string | number)[][] = [
-    ...(sheet.orgName ? [[sheet.orgName]] : []),
+    ...(company.name && sheet.letterhead !== false ? [[company.name]] : []),
     [sheet.title],
     ...(sheet.context ?? []).map((line) => [line]),
     [],
@@ -156,14 +200,16 @@ export async function exportXlsx(sheet: ExportSheet): Promise<void> {
     new Blob([out], {
       type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     }),
-    fileName(sheet, "xlsx")
+    fileName(company, sheet, "xlsx")
   );
 }
 
 export async function exportPdf(sheet: ExportSheet): Promise<void> {
-  const [{ jsPDF }, autoTableModule] = await Promise.all([
+  const company = await currentCompany();
+  const [{ jsPDF }, autoTableModule, logo] = await Promise.all([
     import("jspdf"),
     import("jspdf-autotable"),
+    loadLogoImage(company.logoUrl),
   ]);
   const autoTable = autoTableModule.default;
 
@@ -177,11 +223,18 @@ export async function exportPdf(sheet: ExportSheet): Promise<void> {
   });
   const width = doc.internal.pageSize.getWidth();
 
+  // The logo sits in the top-right corner, clear of the text column, so a
+  // company with one and a company without get the same header otherwise.
+  if (logo) {
+    const box = fitBox(logo.width, logo.height, 120, 36);
+    doc.addImage(logo.dataUrl, "PNG", width - 40 - box.width, 26, box.width, box.height);
+  }
+
   let y = 44;
-  if (sheet.orgName) {
+  if (company.name && sheet.letterhead !== false) {
     doc.setFontSize(9);
     doc.setTextColor(120);
-    doc.text(sheet.orgName, 40, y);
+    doc.text(company.name, 40, y);
     y += 16;
   }
   doc.setFontSize(16);
@@ -248,7 +301,7 @@ export async function exportPdf(sheet: ExportSheet): Promise<void> {
     },
   });
 
-  download(doc.output("blob"), fileName(sheet, "pdf"));
+  download(doc.output("blob"), fileName(company, sheet, "pdf"));
 }
 
 export async function exportSheet(

@@ -23,9 +23,11 @@ import { DateRangePicker } from "@/components/dashboard/date-range-picker";
 import { StorePicker } from "@/components/stores/store-picker";
 import { ExportMenu } from "@/components/export-menu";
 import type { ExportSheet } from "@/lib/export";
+import { useTerms } from "@/lib/use-company-config";
+import { lower } from "@/lib/terms";
 import {
   LocationVerdict,
-  VERDICT_STYLES,
+  verdictStyles,
 } from "@/components/activities/location-verdict";
 import { SubmissionDetail } from "@/components/forms/submission-detail";
 import { createClient } from "@/lib/supabase/client";
@@ -72,6 +74,7 @@ function formatWhen(iso: string) {
 
 export default function ActivitiesPage() {
   const supabase = createClient();
+  const terms = useTerms();
 
   const [range, setRange] = useState<DateRange>(() => rangeForPreset("30d"));
   const [repId, setRepId] = useState("all");
@@ -220,27 +223,26 @@ export default function ActivitiesPage() {
   function buildActivitySheet(): ExportSheet {
     return {
       title: onlyFlagged ? "Location discrepancies" : "Activities",
-      orgName: "Gold Fortune Merchandising",
       context: [
         `${toLocalDateInput(range.from)} to ${toLocalDateInput(dayBefore(range.to))}`,
         repId !== "all"
-          ? `Rep: ${reps.find((r) => r.id === repId)?.label ?? repId}`
-          : "All reps",
+          ? `${terms.staff.one}: ${reps.find((r) => r.id === repId)?.label ?? repId}`
+          : `All ${lower(terms.staff.many)}`,
         storeId !== "all"
-          ? `Store: ${stores.find((st) => st.id === storeId)?.name ?? storeId}`
-          : "All stores",
+          ? `${terms.site.one}: ${stores.find((st) => st.id === storeId)?.name ?? storeId}`
+          : `All ${lower(terms.site.many)}`,
         templateId !== "all"
           ? `Form submitted: ${templates.find((t) => t.id === templateId)?.name ?? templateId}`
           : null,
         onlyFlagged ? "Discrepancies only — off site and invalid GPS" : "Every event",
         `${events.length} of ${total} events loaded`,
       ].filter((line): line is string => line !== null),
-      filename: onlyFlagged ? "gf-discrepancies" : "gf-activities",
+      filename: onlyFlagged ? "discrepancies" : "activities",
       columns: [
         { header: "When", key: "when" },
         { header: "Event", key: "kind" },
-        { header: "Rep", key: "rep" },
-        { header: "Store", key: "store" },
+        { header: terms.staff.one, key: "rep" },
+        { header: terms.site.one, key: "store" },
         { header: "Verdict", key: "verdict" },
         { header: "Distance (m)", key: "distance", numeric: true },
         { header: "GPS accuracy (m)", key: "accuracy", numeric: true },
@@ -258,7 +260,7 @@ export default function ActivitiesPage() {
         store: ev.store_name,
         // The label a person read on screen, not the enum. An exported
         // "off_site" is a column somebody has to be told how to read.
-        verdict: VERDICT_STYLES[ev.verdict].label,
+        verdict: verdictStyles(terms)[ev.verdict].label,
         distance: ev.distance_m,
         accuracy: ev.accuracy_m,
         fence: ev.geofence_radius_m,

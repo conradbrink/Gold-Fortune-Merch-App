@@ -7,6 +7,7 @@ import 'package:go_router/go_router.dart';
 import '../../core/company_config.dart';
 import '../../core/location_tracking.dart';
 import '../../core/providers.dart';
+import '../../core/terms.dart';
 import '../../core/theme.dart';
 import '../../data/models/route_visit.dart';
 import 'workday_controller.dart';
@@ -52,17 +53,20 @@ class _WorkdayBannerState extends ConsumerState<WorkdayBanner> {
   ///
   /// The interval is the company's (`gps_ping_interval_minutes`), not a
   /// literal, for exactly that reason.
+  ///
+  /// "Location", not "route": this is the GPS trail, and "route" is the word
+  /// some companies use for the day's list of work.
   String _trackingLine(LocationTrackingMode mode, Duration interval) {
     switch (mode) {
       case LocationTrackingMode.background:
-        return 'Recording your route every ${interval.inMinutes} min';
+        return 'Recording your location every ${interval.inMinutes} min';
       case LocationTrackingMode.foregroundOnly:
         return 'Only recording while this app is open';
       case LocationTrackingMode.unavailable:
         // Covers services switched off *and* permission denied. Naming only one
         // sends half of the reps to the wrong screen looking for the wrong
         // switch.
-        return 'Not recording your route';
+        return 'Not recording your location';
     }
   }
 
@@ -75,6 +79,8 @@ class _WorkdayBannerState extends ConsumerState<WorkdayBanner> {
   Future<void> _confirmEnd() async {
     final session = ref.read(workdayControllerProvider).value;
     if (session == null) return;
+    final t = ref.read(termsProvider);
+    final workday = t.workday.oneLower;
 
     // Today's list at this moment: how much of the schedule is done, what's
     // still open. Cached data, so this works offline too.
@@ -97,7 +103,7 @@ class _WorkdayBannerState extends ConsumerState<WorkdayBanner> {
       context: context,
       builder: (ctx) => unfinished.isEmpty
           ? AlertDialog(
-              title: const Text('End workday?'),
+              title: Text('End $workday?'),
               content: const Text(
                 'This stops location tracking and records your total hours '
                 'and distance for the day.',
@@ -109,21 +115,21 @@ class _WorkdayBannerState extends ConsumerState<WorkdayBanner> {
                 ),
                 ElevatedButton(
                   onPressed: () => Navigator.pop(ctx, true),
-                  child: const Text('End workday'),
+                  child: Text('End $workday'),
                 ),
               ],
             )
-          // Stores still open — make ending an explicit choice, not a slip.
+          // Sites still open — make ending an explicit choice, not a slip.
           : AlertDialog(
-              title: const Text('Finish your route first?'),
+              title: Text('Finish ${lower(t.dayPlan.one)} first?'),
               content: Text(
                 unfinished.length == 1
                     ? '${unfinished.first.storeName} isn\'t completed yet. '
-                        'Are you sure you want to end your workday without '
+                        'Are you sure you want to end your $workday without '
                         'finishing it?'
-                    : '${unfinished.length} stores on your list aren\'t '
-                        'completed yet. Are you sure you want to end your '
-                        'workday without finishing them?',
+                    : '${t.site.count(unfinished.length)} on your list '
+                        'aren\'t completed yet. Are you sure you want to end '
+                        'your $workday without finishing them?',
               ),
               actions: [
                 TextButton(
@@ -180,6 +186,7 @@ class _WorkdayBannerState extends ConsumerState<WorkdayBanner> {
   Widget build(BuildContext context) {
     final workdayAsync = ref.watch(workdayControllerProvider);
     final config = ref.watch(companyConfigValueProvider);
+    final workday = ref.watch(termsProvider).workday;
 
     ref.listen(workdayControllerProvider, (prev, next) {
       if (next.hasError) {
@@ -251,10 +258,10 @@ class _WorkdayBannerState extends ConsumerState<WorkdayBanner> {
                   children: [
                     Text(
                       active
-                          ? 'Workday in progress'
+                          ? '${workday.one} in progress'
                           : finishedForToday
-                              ? 'Workday complete'
-                              : 'Workday not started',
+                              ? '${workday.one} complete'
+                              : '${workday.one} not started',
                       style: const TextStyle(
                         fontWeight: FontWeight.w700,
                         fontSize: 14.5,
@@ -266,12 +273,13 @@ class _WorkdayBannerState extends ConsumerState<WorkdayBanner> {
                       active
                           ? _trackingLine(trackingMode, config.pingInterval)
                           : endedItself
-                          ? 'Your workday was ended automatically at '
-                                '${config.autoEnd.label}. Your next workday can '
-                                'be started tomorrow.'
+                          ? 'Your ${workday.oneLower} was ended automatically '
+                                'at ${config.autoEnd.label}. Your next '
+                                '${workday.oneLower} can be started tomorrow.'
                           : finishedForToday
                               ? 'You have finished for today. Your next '
-                                  'workday can be started tomorrow.'
+                                  '${workday.oneLower} can be started '
+                                  'tomorrow.'
                               : 'Start your day to begin tracking',
                       style: const TextStyle(
                         color: AppColors.textMuted,
@@ -323,7 +331,7 @@ class _WorkdayBannerState extends ConsumerState<WorkdayBanner> {
                 ? OutlinedButton.icon(
                     onPressed: (isLoading || initialising) ? null : _confirmEnd,
                     icon: const Icon(Icons.stop_circle_outlined, size: 18),
-                    label: const Text('End workday'),
+                    label: Text('End ${workday.oneLower}'),
                     style: OutlinedButton.styleFrom(
                       foregroundColor: AppColors.danger,
                       side: const BorderSide(color: AppColors.danger),
@@ -342,7 +350,9 @@ class _WorkdayBannerState extends ConsumerState<WorkdayBanner> {
                             ),
                           )
                         : const Icon(Icons.play_arrow_rounded, size: 20),
-                    label: Text(isLoading ? 'Starting…' : 'Start workday'),
+                    label: Text(
+                      isLoading ? 'Starting…' : 'Start ${workday.oneLower}',
+                    ),
                   ),
           ),
           ],
@@ -435,8 +445,8 @@ class _PermissionNotice extends StatelessWidget {
               children: [
                 Text(
                   off
-                      ? 'Your route is not being recorded'
-                      : 'Your route stops recording in the background',
+                      ? 'Your location is not being recorded'
+                      : 'Your location stops recording in the background',
                   style: const TextStyle(
                     fontWeight: FontWeight.w700,
                     fontSize: 13,
@@ -448,8 +458,8 @@ class _PermissionNotice extends StatelessWidget {
                   off
                       ? 'Location is switched off, or this app has not been '
                           'given permission. Open settings to turn it on.'
-                      : 'Set location to "Allow all the time" so your route '
-                          'keeps recording when the app is not open.',
+                      : 'Set location to "Allow all the time" so your '
+                          'location keeps recording when the app is not open.',
                   style: const TextStyle(
                       color: AppColors.textMuted, fontSize: 12.5),
                 ),

@@ -19,6 +19,9 @@ import {
 } from "@/lib/rep-report";
 import { DailySalesChart, PlannedVsCompletedChart } from "@/components/rep-report/charts";
 import { currencyName } from "@/lib/money";
+import { lower, type Terms } from "@/lib/terms";
+import { readableOn } from "@/lib/branding";
+import type { CSSProperties } from "react";
 
 /**
  * The report itself: two sheets of A4, and nothing that is not on them.
@@ -32,10 +35,21 @@ import { currencyName } from "@/lib/money";
  * The layout has to be right in millimetres on A4 and the same rules have to
  * be adjusted for `@media print`; spreading that across utility strings in the
  * markup would put half of a page-break rule in one file and half in another.
+ *
+ * Whose report it is — the name, logo, colours and words — arrives in `meta`
+ * with everything else, so the component stays pure and one company's report
+ * never carries another's letterhead.
  */
 
 export type ReportMeta = {
-  orgName: string;
+  /** The company's name, for the cover, the running head and the footer. */
+  companyName: string;
+  /** Public URL of the company's logo, or null to show the name alone. */
+  logoUrl: string | null;
+  /** The company's colours, as validated `#RRGGBB`. */
+  brand: { primary: string; accent: string };
+  /** The company's words: "Store" and "Rep" at Gold Fortune. */
+  terms: Terms;
   repName: string;
   territoryLabel: string;
   /** Inclusive first day. */
@@ -51,6 +65,29 @@ export type ReportMeta = {
 /** Above 18 rows the missed list runs in two columns instead of one. */
 const MISSED_TWO_COLUMN_FROM = 19;
 
+/** "Rep performance report", in the company's word for its people. */
+function reportTitle(t: Terms): string {
+  return `${t.staff.one} performance report`;
+}
+
+/**
+ * The company's colours as the sheet's own ink and accent.
+ *
+ * Set here rather than read from the theme's `--primary` and `--gold`, because
+ * those follow dark mode — `--primary` is near-white there — and the sheet is
+ * white in both themes. The values are plain hex, which print renderers honour
+ * where they may not honour `oklch()`.
+ *
+ * The primary becomes the ink only when it is dark enough to read as text on
+ * white; a company whose brand colour is a pale yellow keeps the default ink
+ * and still gets its colour in the accents.
+ */
+function brandStyle(brand: ReportMeta["brand"]): CSSProperties {
+  const vars: Record<string, string> = { "--rr-brand-accent": brand.accent };
+  if (readableOn(brand.primary) === "#FFFFFF") vars["--rr-brand-ink"] = brand.primary;
+  return vars as CSSProperties;
+}
+
 export function RepPerformanceReport({
   report,
   meta,
@@ -59,12 +96,17 @@ export function RepPerformanceReport({
   meta: ReportMeta;
 }) {
   const { summary, days, missed, stores } = report;
+  const t = meta.terms;
+  const site = lower(t.site.one);
+  const sites = lower(t.site.many);
+  const job = lower(t.job.one);
+  const jobs = lower(t.job.many);
   const served = visitsServed(summary, missed);
-  const score = computeScore(summary, stores, missed);
+  const score = computeScore(summary, stores, missed, t);
   const merch = merchandisingCompliance(summary);
   const top = topStores(stores);
   const currency = meta.currency;
-  const attention = storesNeedingAttention(stores, missed, currency);
+  const attention = storesNeedingAttention(stores, missed, currency, t);
 
   const completionRate = served.rate;
   const salesPerVisit =
@@ -80,7 +122,7 @@ export function RepPerformanceReport({
   const coveredStores = stores.filter((s) => s.planned > 0 && s.completed > 0).length;
 
   return (
-    <article className="rr">
+    <article className="rr" style={brandStyle(meta.brand)}>
       {/* ------------------------------------------------------------------ */}
       {/* PAGE 1 — PERFORMANCE SUMMARY                                        */}
       {/* ------------------------------------------------------------------ */}
@@ -106,14 +148,14 @@ export function RepPerformanceReport({
               note={`Actual ${money(summary.salesNet, currency)} · no target is held in the database`}
             />
             <Kpi
-              label="Visit completion"
+              label={`${t.job.one} completion`}
               value={percent(completionRate)}
               note={
                 summary.plannedVisits === 0
-                  ? "No planned visits during this period"
+                  ? `No planned ${jobs} during this period`
                   : served.caughtUp > 0
                     ? `${served.served} of ${summary.plannedVisits} served · ${served.caughtUp} by going back`
-                    : `${served.served} of ${summary.plannedVisits} planned visits`
+                    : `${served.served} of ${summary.plannedVisits} planned ${jobs}`
               }
             />
             {/* "Store visits", not "Stores visited": both figures count planned
@@ -123,12 +165,12 @@ export function RepPerformanceReport({
                 the rep went back for on an unscheduled visit counts now; the
                 card below names what is left over. */}
             <Kpi
-              label="Store visits"
+              label={`${t.site.one} ${jobs}`}
               value={`${served.served} / ${summary.plannedVisits}`}
               note={
                 plannedStores > 0
-                  ? `Served / planned · ${coveredStores} of ${plannedStores} stores reached`
-                  : "Served / planned store visits"
+                  ? `Served / planned · ${coveredStores} of ${plannedStores} ${sites} reached`
+                  : `Served / planned ${site} ${jobs}`
               }
             />
             {/* The alarming number, and now the honest one. It used to read
@@ -141,32 +183,32 @@ export function RepPerformanceReport({
               emphasis={served.neverServed > 0 ? "warn" : undefined}
               note={
                 missed.length === 0
-                  ? "Every planned visit was made"
+                  ? `Every planned ${job} was made`
                   : served.caughtUp > 0
                     ? `Of ${missed.length} round${missed.length === 1 ? "" : "s"} missed on the day; ${served.caughtUp} gone back to`
                     : `${missed.length} round${missed.length === 1 ? "" : "s"} missed on the day, none gone back to`
               }
             />
             <Kpi
-              label="Sales per visit"
+              label={`Sales per ${job}`}
               value={money(salesPerVisit, currency)}
               note={
                 summary.completedVisits > 0
-                  ? `Over ${summary.completedVisits} completed visits`
-                  : "No completed visits to divide by"
+                  ? `Over ${summary.completedVisits} completed ${jobs}`
+                  : `No completed ${jobs} to divide by`
               }
             />
             <Kpi
-              label="Zero-sales visits"
+              label={`Zero-sales ${jobs}`}
               value={String(summary.zeroSalesVisits)}
               note={
                 summary.completedVisits > 0
-                  ? `Of ${summary.completedVisits} completed visits; ${summary.visitsWithOrder} took an order`
-                  : "No completed visits"
+                  ? `Of ${summary.completedVisits} completed ${jobs}; ${summary.visitsWithOrder} took an order`
+                  : `No completed ${jobs}`
               }
             />
             <Kpi
-              label="Overall rep score"
+              label={`Overall ${lower(t.staff.one)} score`}
               value={score.score === null ? "Not scored" : `${score.score} / 100`}
               note={score.band}
               emphasis="score"
@@ -223,12 +265,14 @@ export function RepPerformanceReport({
 
         <section className="rr-block">
           <h2 className="rr-h2">
-            Planned visits vs completed visits
+            Planned {jobs} vs completed {jobs}
+            {/* "Accent", not "gold": the mark is drawn in the company's own
+                accent colour, which is gold only at Gold Fortune. */}
             <span className="rr-h2-note">
-              outline = planned · solid = completed · gold baseline = nothing completed
+              outline = planned · solid = completed · accent baseline = nothing completed
             </span>
           </h2>
-          <PlannedVsCompletedChart days={days} />
+          <PlannedVsCompletedChart days={days} jobs={jobs} />
         </section>
 
         <section className="rr-block">
@@ -254,7 +298,7 @@ export function RepPerformanceReport({
             <Cell label="Workday start" value={clockTime(summary.avgWorkdayStartSeconds)} />
             <Cell label="First check-in" value={clockTime(summary.avgFirstCheckinSeconds)} />
             <Cell label="Last check-out" value={clockTime(summary.avgLastCheckoutSeconds)} />
-            <Cell label="Visit duration" value={durationShort(summary.avgVisitSeconds)} />
+            <Cell label={`${t.job.one} duration`} value={durationShort(summary.avgVisitSeconds)} />
             <Cell
               label="GPS compliance"
               value={percent(summary.gpsVerifiedRate)}
@@ -280,35 +324,38 @@ export function RepPerformanceReport({
       {/* ------------------------------------------------------------------ */}
       <section className="rr-sheet">
         <div className="rr-runhead">
-          <span>{meta.orgName} · Rep Performance Report</span>
+          <span>
+            {meta.companyName ? `${meta.companyName} · ` : ""}
+            {reportTitle(t)}
+          </span>
           <span>
             {meta.repName} · {longDate(meta.from)} – {longDate(meta.to)}
           </span>
         </div>
 
-        <MissedStores missed={missed} currency={currency} />
+        <MissedStores missed={missed} currency={currency} terms={t} />
 
         <div className="rr-two">
           <section className="rr-block">
-            <h2 className="rr-h2">Store performance summary</h2>
+            <h2 className="rr-h2">{t.site.one} performance summary</h2>
             <table className="rr-table rr-table-kv">
               <tbody>
-                <Row label="Stores assigned" value={String(summary.storesAssigned)} />
-                <Row label="Planned visits" value={String(summary.plannedVisits)} />
+                <Row label={`${t.site.many} assigned`} value={String(summary.storesAssigned)} />
+                <Row label={`Planned ${jobs}`} value={String(summary.plannedVisits)} />
                 <Row label="Completed on the day" value={String(summary.completedPlanned)} />
                 <Row label="Gone back to (unscheduled)" value={String(served.caughtUp)} />
                 <Row label="Never served" value={String(served.neverServed)} />
                 <Row
-                  label="Unplanned visits completed"
+                  label={`Unplanned ${jobs} completed`}
                   value={String(summary.unplannedVisits)}
                 />
-                <Row label="Stores generating sales" value={String(summary.storesWithSales)} />
-                <Row label="Zero-sales visits" value={String(summary.zeroSalesVisits)} />
+                <Row label={`${t.site.many} generating sales`} value={String(summary.storesWithSales)} />
+                <Row label={`Zero-sales ${jobs}`} value={String(summary.zeroSalesVisits)} />
                 <Row
-                  label="New stores visited (prospects)"
+                  label={`New ${sites} visited (${lower(t.prospect.many)})`}
                   value={String(summary.prospectsVisited)}
                 />
-                <Row label="New stores converted" value={String(summary.prospectsConverted)} />
+                <Row label={`New ${sites} converted`} value={String(summary.prospectsConverted)} />
               </tbody>
             </table>
           </section>
@@ -353,7 +400,7 @@ export function RepPerformanceReport({
 
         <div className="rr-two">
           <section className="rr-block">
-            <h2 className="rr-h2">Top stores by sales</h2>
+            <h2 className="rr-h2">Top {sites} by sales</h2>
             {top.length === 0 ? (
               <p className="rr-empty">No sales recorded during this period.</p>
             ) : (
@@ -369,10 +416,10 @@ export function RepPerformanceReport({
           </section>
 
           <section className="rr-block">
-            <h2 className="rr-h2">Stores requiring attention</h2>
+            <h2 className="rr-h2">{t.site.many} requiring attention</h2>
             {attention.length === 0 ? (
               <p className="rr-empty">
-                No store met an attention rule during this period.
+                No {site} met an attention rule during this period.
               </p>
             ) : (
               <ul className="rr-attention">
@@ -395,7 +442,7 @@ export function RepPerformanceReport({
             </span>
             <span className="rr-verdict-band">{classifyScore(score.score)}</span>
           </div>
-          <p className="rr-prose">{managementSummary(summary, score, missed, currency)}</p>
+          <p className="rr-prose">{managementSummary(summary, score, missed, currency, t)}</p>
         </section>
 
         <section className="rr-block rr-comments">
@@ -424,12 +471,31 @@ export function RepPerformanceReport({
 // ---------------------------------------------------------------------------
 
 function Header({ meta }: { meta: ReportMeta }) {
+  const t = meta.terms;
   return (
     <header className="rr-head">
       <div className="rr-head-top">
-        <div>
-          <div className="rr-wordmark">{meta.orgName}</div>
-          <h1 className="rr-title">Rep Performance Report</h1>
+        <div className="rr-brand">
+          {/* A plain <img>, not next/image: the sheet is printed, and the
+              browser prints exactly the file it was given. Sized to the two
+              lines beside it so a logo never adds height to page one. A logo
+              that fails to load is hidden rather than printed as a broken
+              image. */}
+          {meta.logoUrl && (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              className="rr-logo"
+              src={meta.logoUrl}
+              alt=""
+              onError={(e) => {
+                e.currentTarget.style.display = "none";
+              }}
+            />
+          )}
+          <div>
+            {meta.companyName && <div className="rr-wordmark">{meta.companyName}</div>}
+            <h1 className="rr-title">{reportTitle(t)}</h1>
+          </div>
         </div>
         <div className="rr-head-generated">
           <span>Generated</span>
@@ -438,11 +504,11 @@ function Header({ meta }: { meta: ReportMeta }) {
       </div>
       <dl className="rr-meta">
         <div>
-          <dt>Representative</dt>
+          <dt>{t.staff.one}</dt>
           <dd>{meta.repName}</dd>
         </div>
         <div>
-          <dt>Territory</dt>
+          <dt>{t.territory.one}</dt>
           <dd>{meta.territoryLabel}</dd>
         </div>
         <div>
@@ -472,7 +538,8 @@ function Footer({ meta, section }: { meta: ReportMeta; section: string }) {
   return (
     <footer className="rr-foot">
       <span>
-        {meta.orgName} · {meta.repName} · {longDate(meta.from)} – {longDate(meta.to)}
+        {meta.companyName ? `${meta.companyName} · ` : ""}
+        {meta.repName} · {longDate(meta.from)} – {longDate(meta.to)}
       </span>
       <span>{section}</span>
     </footer>
@@ -538,12 +605,23 @@ function Row({ label, value, muted }: { label: string; value: string; muted?: bo
  * alternative is hiding planned work that was not done, which is the one thing
  * this section exists to prevent.
  */
-function MissedStores({ missed, currency }: { missed: MissedVisit[]; currency: string }) {
+function MissedStores({
+  missed,
+  currency,
+  terms: t,
+}: {
+  missed: MissedVisit[];
+  currency: string;
+  terms: Terms;
+}) {
+  const jobs = lower(t.job.many);
   if (missed.length === 0) {
     return (
       <section className="rr-block">
-        <h2 className="rr-h2">Stores missed</h2>
-        <p className="rr-good">No planned store visits were missed during this period.</p>
+        <h2 className="rr-h2">{t.site.many} missed</h2>
+        <p className="rr-good">
+          No planned {lower(t.site.one)} {jobs} were missed during this period.
+        </p>
       </section>
     );
   }
@@ -559,9 +637,9 @@ function MissedStores({ missed, currency }: { missed: MissedVisit[]; currency: s
   return (
     <section className="rr-block">
       <h2 className="rr-h2">
-        Stores missed
+        {t.site.many} missed
         <span className="rr-h2-note">
-          {missed.length} planned visit{missed.length === 1 ? "" : "s"} not completed on the
+          {missed.length} planned {missed.length === 1 ? lower(t.job.one) : jobs} not completed on the
           day · <strong>{neverReturned} never served</strong>
           {neverReturned < missed.length
             ? ", listed first · the rest were gone back to"
@@ -573,7 +651,7 @@ function MissedStores({ missed, currency }: { missed: MissedVisit[]; currency: s
           <table key={i} className="rr-table rr-table-dense">
             <thead>
               <tr>
-                <th>Store</th>
+                <th>{t.site.one}</th>
                 <th>Planned</th>
                 <th>Went back</th>
                 <th>Reason</th>

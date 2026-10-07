@@ -17,7 +17,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { createClient } from "@/lib/supabase/client";
-import { getCompanyConfig, useCompanyConfig } from "@/lib/use-company-config";
+import { getCompanyConfig, useCompanyConfig, useTerms } from "@/lib/use-company-config";
 import { rangeDays, rangeForPreset, type DateRange } from "@/lib/date-range";
 import { fetchLiveReps, type LiveReps } from "@/lib/live-reps";
 import { fetchTargetProgress, monthStart } from "@/lib/targets";
@@ -76,6 +76,7 @@ export default function InsightsDashboardPage() {
 
   const [layout, setLayout] = useState<string[]>(DEFAULT_LAYOUT);
   const company = useCompanyConfig();
+  const terms = useTerms();
   const [orgId, setOrgId] = useState<string | null>(null);
   const [customising, setCustomising] = useState(false);
   /**
@@ -134,7 +135,7 @@ export default function InsightsDashboardPage() {
         // Not range-scoped, unlike everything else here: "where is the team"
         // is a question about now, and a date filter would answer a different
         // one while looking like it had answered this.
-        fetchLiveReps(supabase),
+        fetchLiveReps(supabase, terms),
         // Sales, pipeline, money and store health, plus this month's targets.
         // The targets are always the calendar month, whatever the range — a
         // target is set per month, and progress against it is only meaningful
@@ -359,7 +360,7 @@ export default function InsightsDashboardPage() {
 
     const poll = () => {
       if (document.visibilityState !== "visible") return;
-      fetchLiveReps(supabase)
+      fetchLiveReps(supabase, terms)
         .then(setLiveReps)
         .catch(() => {});
     };
@@ -383,6 +384,7 @@ export default function InsightsDashboardPage() {
     business,
     days,
     range,
+    terms,
   };
 
   /**
@@ -485,7 +487,7 @@ export default function InsightsDashboardPage() {
               {sourceReady[widget.source] ? (
                 widget.render(widgetData)
               ) : (
-                <UnavailableCard title={widget.title} />
+                <UnavailableCard title={widget.title(terms)} />
               )}
             </div>
           ))}

@@ -2,6 +2,7 @@ import { formatMoney, formatMoneyShort } from "@/lib/money";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { callRpc } from "@/lib/rpc";
 import type { DateRange } from "@/lib/date-range";
+import { lower, type Terms, type TermKey } from "@/lib/terms";
 
 /**
  * The Rep Performance Report — everything except the pixels.
@@ -19,6 +20,11 @@ import type { DateRange } from "@/lib/date-range";
  *
  * Nothing here invents a figure. A rate that came back null stays null all the
  * way to the page, which prints "Not tracked" rather than a nought.
+ *
+ * Every sentence names things in the company's own words (`Terms`), passed in
+ * rather than looked up, so the text builders stay pure. With Gold Fortune's
+ * words the output is exactly what it was before the terminology system —
+ * `tests/rep-report-text.test.ts` pins it.
  */
 
 /** Postgres returns `numeric` as a string; every rate arrives as one. */
@@ -30,6 +36,11 @@ function num(v: unknown): number | null {
 
 function int(v: unknown): number {
   return Math.round(num(v) ?? 0);
+}
+
+/** A term for running text, singular or plural by `n`: "visit", "stores". */
+function noun(t: Terms, key: TermKey, n: number): string {
+  return lower(n === 1 ? t[key].one : t[key].many);
 }
 
 export type RepSummary = {
@@ -161,7 +172,8 @@ export async function fetchRepReport(
   supabase: SupabaseClient,
   repId: string,
   range: DateRange,
-  territoryId: string | null
+  territoryId: string | null,
+  t: Terms
 ): Promise<RepReport> {
   const a = args(repId, range, territoryId);
   const [summaryRows, dayRows, missedRows, storeRows] = await Promise.all([
@@ -172,7 +184,7 @@ export async function fetchRepReport(
   ]);
 
   const s = summaryRows[0];
-  if (!s) throw new Error("No performance data was returned for this rep.");
+  if (!s) throw new Error(`No performance data was returned for this ${lower(t.staff.one)}.`);
 
   return {
     summary: {
@@ -287,15 +299,18 @@ export type RepScoreResult = {
 
 /**
  * The published weights. They are the report's contract with the reader, so
- * they are shown whether or not the data can fill them.
+ * they are shown whether or not the data can fill them. The weights are fixed;
+ * only the labels follow the company's words.
  */
-const WEIGHTS: { key: ScoreKey; label: string; weight: number }[] = [
-  { key: "sales", label: "Sales performance", weight: 35 },
-  { key: "visits", label: "Visit completion", weight: 25 },
-  { key: "coverage", label: "Store coverage", weight: 15 },
-  { key: "merchandising", label: "Merchandising execution", weight: 15 },
-  { key: "compliance", label: "App / data compliance", weight: 10 },
-];
+function weights(t: Terms): { key: ScoreKey; label: string; weight: number }[] {
+  return [
+    { key: "sales", label: "Sales performance", weight: 35 },
+    { key: "visits", label: `${t.job.one} completion`, weight: 25 },
+    { key: "coverage", label: `${t.site.one} coverage`, weight: 15 },
+    { key: "merchandising", label: "Merchandising execution", weight: 15 },
+    { key: "compliance", label: "App / data compliance", weight: 10 },
+  ];
+}
 
 /**
  * Rounds the rep actually served, and the rate.
@@ -363,8 +378,11 @@ export function merchandisingCompliance(s: RepSummary): number | null {
 export function computeScore(
   summary: RepSummary,
   stores: RepStore[],
-  missed: MissedVisit[]
+  missed: MissedVisit[],
+  t: Terms
 ): RepScoreResult {
+  const published = weights(t);
+  const jobs = lower(t.job.many);
   const served = visitsServed(summary, missed);
   const plannedStores = stores.filter((s) => s.planned > 0);
   const coveredStores = plannedStores.filter((s) => s.completed > 0);
@@ -381,18 +399,18 @@ export function computeScore(
       // approximated: scoring sales against last period, or against the team,
       // would be a different measurement wearing this one's name.
       value: null,
-      basis: "No sales target is recorded for this rep",
+      basis: `No sales target is recorded for this ${lower(t.staff.one)}`,
     },
     visits: {
       value: pct(served.served, summary.plannedVisits),
       basis:
         served.caughtUp > 0
-          ? `${served.served} of ${summary.plannedVisits} planned visits served — ${summary.completedPlanned} on the day, ${served.caughtUp} gone back to`
-          : `${summary.completedPlanned} of ${summary.plannedVisits} planned visits completed`,
+          ? `${served.served} of ${summary.plannedVisits} planned ${jobs} served — ${summary.completedPlanned} on the day, ${served.caughtUp} gone back to`
+          : `${summary.completedPlanned} of ${summary.plannedVisits} planned ${jobs} completed`,
     },
     coverage: {
       value: pct(coveredStores.length, plannedStores.length),
-      basis: `${coveredStores.length} of ${plannedStores.length} planned stores reached at least once`,
+      basis: `${coveredStores.length} of ${plannedStores.length} planned ${lower(t.site.many)} reached at least once`,
     },
     merchandising: {
       value: merch,
@@ -406,14 +424,14 @@ export function computeScore(
       basis:
         compliance === null
           ? "No form submission or location fix to measure"
-          : "Mean of form completion per visit and GPS-verified check-ins",
+          : `Mean of form completion per ${lower(t.job.one)} and GPS-verified check-ins`,
     },
   };
 
-  const available = WEIGHTS.filter((w) => measured[w.key].value !== null);
+  const available = published.filter((w) => measured[w.key].value !== null);
   const availableWeight = available.reduce((a, w) => a + w.weight, 0);
 
-  const components: ScoreComponent[] = WEIGHTS.map((w) => ({
+  const components: ScoreComponent[] = published.map((w) => ({
     key: w.key,
     label: w.label,
     weight: w.weight,
@@ -437,7 +455,7 @@ export function computeScore(
     score: score === null ? null : Math.round(score),
     band: classifyScore(score === null ? null : Math.round(score)),
     components,
-    reweighted: available.length > 0 && available.length < WEIGHTS.length,
+    reweighted: available.length > 0 && available.length < published.length,
   };
 }
 
@@ -490,6 +508,7 @@ export function storesNeedingAttention(
   stores: RepStore[],
   missed: MissedVisit[],
   currency: string,
+  t: Terms,
   limit = 3
 ): AttentionStore[] {
   /** The best previous-sales figure the missed list knows for each store. */
@@ -550,7 +569,7 @@ export function storesNeedingAttention(
     add(
       store,
       1,
-      `${never} planned visit${never === 1 ? "" : "s"} never made — ${money(value, currency)} in recent sales`
+      `${never} planned ${noun(t, "job", never)} never made — ${money(value, currency)} in recent sales`
     );
   }
 
@@ -628,26 +647,29 @@ export function managementSummary(
   summary: RepSummary,
   score: RepScoreResult,
   missed: MissedVisit[],
-  currency: string
+  currency: string,
+  t: Terms
 ): string {
   const s = summary;
+  const rep = lower(t.staff.one);
+  const jobs = lower(t.job.many);
   const sentences: string[] = [];
 
   const first: string[] = [];
   first.push(
     s.salesNet > 0
-      ? `${s.repName ?? "The rep"} generated ${money(s.salesNet, currency)} from ${s.salesOrders} delivered order${s.salesOrders === 1 ? "" : "s"}`
-      : `${s.repName ?? "The rep"} recorded no delivered sales in this period`
+      ? `${s.repName ?? `The ${rep}`} generated ${money(s.salesNet, currency)} from ${s.salesOrders} delivered order${s.salesOrders === 1 ? "" : "s"}`
+      : `${s.repName ?? `The ${rep}`} recorded no delivered sales in this period`
   );
   if (s.plannedVisits > 0) {
     const served = visitsServed(s, missed);
     first.push(
       served.caughtUp > 0
-        ? `served ${served.served} of ${s.plannedVisits} planned visits (${Math.round((served.rate ?? 0) * 100)}%), ${served.caughtUp} of them by going back on an unscheduled visit`
-        : `completed ${s.completedPlanned} of ${s.plannedVisits} planned visits (${Math.round((served.rate ?? 0) * 100)}%)`
+        ? `served ${served.served} of ${s.plannedVisits} planned ${jobs} (${Math.round((served.rate ?? 0) * 100)}%), ${served.caughtUp} of them by going back on an unscheduled ${lower(t.job.one)}`
+        : `completed ${s.completedPlanned} of ${s.plannedVisits} planned ${jobs} (${Math.round((served.rate ?? 0) * 100)}%)`
     );
   } else {
-    first.push("had no visits planned in this period");
+    first.push(`had no ${jobs} planned in this period`);
   }
   sentences.push(`${first.join(" and ")}.`);
 
@@ -670,13 +692,14 @@ export function managementSummary(
         .map((m) => m.storeId)
     ).size;
     const caught = s.missedVisits - neverWentBack;
+    const missedVisits = `${s.missedVisits} planned ${noun(t, "job", s.missedVisits)} ${s.missedVisits === 1 ? "was" : "were"}`;
     const missedClause =
       caught > 0
-        ? `${s.missedVisits} planned visit${s.missedVisits === 1 ? " was" : "s were"} missed on the day, ${caught} of which the rep went back for`
-        : `${s.missedVisits} planned visit${s.missedVisits === 1 ? " was" : "s were"} missed`;
+        ? `${missedVisits} missed on the day, ${caught} of which the ${rep} went back for`
+        : `${missedVisits} missed`;
     const clause =
       highValue > 0
-        ? `${missedClause} — ${highValue} store${highValue === 1 ? "" : "s"} with more than ${moneyShort(HIGH_VALUE_MISS, currency)} in previous sales ${highValue === 1 ? "was" : "were"} never returned to`
+        ? `${missedClause} — ${highValue} ${noun(t, "site", highValue)} with more than ${moneyShort(HIGH_VALUE_MISS, currency)} in previous sales ${highValue === 1 ? "was" : "were"} never returned to`
         : missedClause;
     second.push(second.length > 0 ? `but ${clause}` : capitalise(clause));
   }
@@ -686,7 +709,8 @@ export function managementSummary(
   // The absent target is the most consequential thing about this score, so it
   // is said in the summary rather than left in the breakdown table.
   if (score.reweighted) {
-    const dropped = score.components.filter((c) => c.value === null).map((c) => c.label.toLowerCase());
+    // `lower`, not `toLowerCase`, so a company's acronym ("POS") survives.
+    const dropped = score.components.filter((c) => c.value === null).map((c) => lower(c.label));
     third.push(
       `The score of ${score.score} out of 100 excludes ${listOf(dropped)}, which this database cannot measure, and re-weights the rest`
     );

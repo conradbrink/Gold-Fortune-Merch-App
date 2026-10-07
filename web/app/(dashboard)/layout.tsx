@@ -1,38 +1,40 @@
-"use client";
+import { createClient } from "@/lib/supabase/server";
+import { DashboardShell } from "@/components/layout/dashboard-shell";
+import { brandStyleSheet, parseBranding } from "@/lib/branding";
 
-import { useState } from "react";
-import { SidebarNav } from "@/components/layout/sidebar-nav";
-import { MobileNav } from "@/components/layout/mobile-nav";
-import { TopBar } from "@/components/layout/top-bar";
-
-export default function DashboardLayout({
+/**
+ * Fetches the company's configuration once, on the server, so its colours are
+ * in the first paint (the style sheet below) and its words and name are in the
+ * client cache before the shell renders. A failed lookup is not fatal: the
+ * page renders with the product's own colours and the client fetches again.
+ */
+export default async function DashboardLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  const [navOpen, setNavOpen] = useState(false);
+  let config: unknown = null;
+  try {
+    const supabase = await createClient();
+    const { data, error } = await supabase.rpc("my_company_config");
+    if (!error) config = data;
+  } catch {
+    config = null;
+  }
+  const branding =
+    config !== null && typeof config === "object"
+      ? parseBranding((config as Record<string, unknown>).branding)
+      : null;
 
   return (
-    /*
-     * The three `data-app-*` attributes are print hooks, and nothing reads them
-     * on screen. `components/rep-report/report-print.css` uses them to drop the
-     * sidebar and the top bar from a printed page and to unwind `main`'s scroll
-     * container, which would otherwise clip a printed document to one screen's
-     * worth. Structural classes would have done the same job until somebody
-     * changed one; an attribute that exists only to be printed against says so.
-     */
-    <div className="flex h-full min-h-screen" data-app-shell>
-      <SidebarNav />
-      <MobileNav open={navOpen} onClose={() => setNavOpen(false)} />
-      <div className="flex min-w-0 flex-1 flex-col" data-app-body>
-        <TopBar onOpenNav={() => setNavOpen(true)} />
-        <main
-          data-app-main
-          className="min-w-0 flex-1 overflow-y-auto bg-background p-4 sm:px-8 sm:py-7"
-        >
-          {children}
-        </main>
-      </div>
-    </div>
+    <>
+      {branding && (
+        <style
+          // Built only from validated #RRGGBB values (lib/branding.ts).
+          dangerouslySetInnerHTML={{ __html: brandStyleSheet(branding) }}
+        />
+      )}
+      <DashboardShell initialConfig={config}>{children}</DashboardShell>
+    </>
   );
 }

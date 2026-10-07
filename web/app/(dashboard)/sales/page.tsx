@@ -8,6 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { toLocalDate } from "@/lib/date-range";
 import { ExportMenu } from "@/components/export-menu";
 import type { ExportSheet } from "@/lib/export";
+import { useTerms } from "@/lib/use-company-config";
 import {
   Table,
   TableBody,
@@ -49,6 +50,7 @@ function comparison(now: number, before: number, label: string): string {
 
 export default function SalesPage() {
   const supabase = createClient();
+  const terms = useTerms();
   const [sales, setSales] = useState<Sale[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -115,18 +117,17 @@ export default function SalesPage() {
       : sales;
     return {
       title: "Sales by delivery",
-      orgName: "Gold Fortune Merchandising",
       context: [
         scopePeriod ? scopePeriod.label : "All time",
         `${rows.length} deliveries`,
         "Counted on the day the goods were delivered, valued on what actually arrived.",
       ],
-      filename: "gf-sales",
+      filename: "sales",
       columns: [
         { header: "Order", key: "order" },
         { header: "Delivered", key: "delivered" },
-        { header: "Store", key: "store" },
-        { header: "Rep", key: "rep" },
+        { header: terms.site.one, key: "store" },
+        { header: terms.staff.one, key: "rep" },
         { header: "Units", key: "units", numeric: true },
         { header: "Sales excl. VAT", key: "net", numeric: true },
         { header: "VAT", key: "vat", numeric: true },

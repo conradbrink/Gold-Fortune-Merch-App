@@ -8,6 +8,7 @@ import { canReachPath, moduleForPath, toModuleSet } from "@/lib/modules";
 import { homeFor, toPermissionSet } from "@/lib/permissions";
 import { visibleNavGroups } from "@/components/layout/nav-items";
 import { formatMoney, formatMoneyShort } from "@/lib/money";
+import { parseTerms, type Terms } from "@/lib/terms";
 
 const everything = toModuleSet({
   recurring_jobs: true,
@@ -87,6 +88,39 @@ test("the sidebar offers no page of a module the company lacks", () => {
   assert.ok(bare.includes("/stores"));
   assert.ok(!bare.includes("/orders"));
   assert.ok(!bare.includes("/hr/me"));
+});
+
+test("the sidebar names things in the company's words", () => {
+  const admin = toPermissionSet(["admin"]);
+  const labels = (terms?: Terms) =>
+    new Map(
+      visibleNavGroups(admin, everything, terms).flatMap((g) =>
+        g.items.map((i) => [i.href, i.label] as const)
+      )
+    );
+
+  const neutral = labels();
+  assert.equal(neutral.get("/stores"), "Sites");
+  assert.equal(neutral.get("/representatives"), "Staff");
+  assert.equal(neutral.get("/activities"), "Jobs & Activities");
+
+  // Gold Fortune's menu reads as it always has, bar "Representatives".
+  const gf = labels(
+    parseTerms({
+      site: { one: "Store", many: "Stores" },
+      job: { one: "Visit", many: "Visits" },
+      staff: { one: "Rep", many: "Reps" },
+      territory: { one: "Territory", many: "Territories" },
+    })
+  );
+  assert.equal(gf.get("/stores"), "Stores");
+  assert.equal(gf.get("/territories"), "Territories");
+  assert.equal(gf.get("/representatives"), "Reps");
+  assert.equal(gf.get("/activities"), "Visits & Activities");
+  assert.equal(gf.get("/reports/rep-performance"), "Rep performance");
+  assert.equal(gf.get("/leads"), "Leads");
+  // Words that are not terms stay as written.
+  assert.equal(gf.get("/orders"), "Orders");
 });
 
 test("money is the company's currency, written as the business writes it", () => {

@@ -5,6 +5,7 @@ import 'package:intl/intl.dart';
 
 import '../../core/company_config.dart';
 import '../../core/providers.dart';
+import '../../core/terms.dart';
 import '../../core/theme.dart';
 import '../../data/models/route_visit.dart';
 import '../../shared/widgets/status_badge.dart';
@@ -28,6 +29,7 @@ class RouteTodayScreen extends ConsumerWidget {
     // back empty from the database anyway, and asking for it costs a request
     // on every open.
     final company = ref.watch(companyConfigValueProvider);
+    final t = ref.watch(termsProvider);
     if (company.has('checklists_forms')) ref.watch(formTemplatesProvider);
     // Same reasoning for the store list, which the unscheduled-visit picker
     // needs and which is otherwise only fetched once that screen is opened.
@@ -38,7 +40,9 @@ class RouteTodayScreen extends ConsumerWidget {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Today\'s Route'),
+        // The company's word for the day's list: "Today's Route", "Today's
+        // Jobs". Title case is how this bar has always read.
+        title: Text(title(t.dayPlan.one)),
         actions: [
           IconButton(
             icon: const Icon(Icons.folder_outlined),
@@ -63,10 +67,10 @@ class RouteTodayScreen extends ConsumerWidget {
       ),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () => context.go('/unscheduled'),
-        backgroundColor: AppColors.navy,
+        backgroundColor: context.brand.primary,
         foregroundColor: Colors.white,
         icon: const Icon(Icons.add_business_outlined),
-        label: const Text('Unscheduled visit'),
+        label: Text('Unscheduled ${t.job.oneLower}'),
       ),
       body: RefreshIndicator(
         onRefresh: () async {
@@ -80,7 +84,7 @@ class RouteTodayScreen extends ConsumerWidget {
             SliverToBoxAdapter(
               child: Container(
                 width: double.infinity,
-                color: AppColors.navy,
+                color: context.brand.primary,
                 padding: const EdgeInsets.fromLTRB(20, 4, 20, 20),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -109,7 +113,7 @@ class RouteTodayScreen extends ConsumerWidget {
                     const SizedBox(height: 2),
                     routesAsync.maybeWhen(
                       data: (routes) => Text(
-                        '${routes.length} ${routes.length == 1 ? 'store' : 'stores'} scheduled',
+                        '${t.site.count(routes.length)} scheduled',
                         style: const TextStyle(color: Colors.white60, fontSize: 13),
                       ),
                       orElse: () => const SizedBox.shrink(),
@@ -123,9 +127,9 @@ class RouteTodayScreen extends ConsumerWidget {
             routesAsync.when(
               data: (routes) {
                 if (routes.isEmpty) {
-                  return const SliverFillRemaining(
+                  return SliverFillRemaining(
                     hasScrollBody: false,
-                    child: _EmptyState(),
+                    child: _EmptyState(terms: t),
                   );
                 }
                 return SliverPadding(
@@ -148,7 +152,7 @@ class RouteTodayScreen extends ConsumerWidget {
                   child: Padding(
                     padding: const EdgeInsets.all(24),
                     child: Text(
-                      'Couldn\'t load your route.\n$error',
+                      'Couldn\'t load ${lower(t.dayPlan.one)}.\n$error',
                       textAlign: TextAlign.center,
                       style: const TextStyle(color: AppColors.textMuted),
                     ),
@@ -164,31 +168,34 @@ class RouteTodayScreen extends ConsumerWidget {
 }
 
 class _EmptyState extends StatelessWidget {
-  const _EmptyState();
+  const _EmptyState({required this.terms});
+
+  final Terms terms;
 
   @override
   Widget build(BuildContext context) {
-    return const Center(
+    return Center(
       child: Padding(
-        padding: EdgeInsets.all(32),
+        padding: const EdgeInsets.all(32),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.event_available_outlined, size: 48, color: AppColors.textMuted),
-            SizedBox(height: 12),
+            const Icon(Icons.event_available_outlined, size: 48, color: AppColors.textMuted),
+            const SizedBox(height: 12),
             Text(
-              'No stores scheduled for today',
-              style: TextStyle(
+              'No ${terms.site.manyLower} scheduled for today',
+              style: const TextStyle(
                 fontSize: 16,
                 fontWeight: FontWeight.w600,
                 color: AppColors.textPrimary,
               ),
             ),
-            SizedBox(height: 4),
+            const SizedBox(height: 4),
             Text(
-              'Pull down to refresh once your manager assigns visits.',
+              'Pull down to refresh once your manager assigns '
+              '${terms.job.manyLower}.',
               textAlign: TextAlign.center,
-              style: TextStyle(color: AppColors.textMuted, fontSize: 13),
+              style: const TextStyle(color: AppColors.textMuted, fontSize: 13),
             ),
           ],
         ),
@@ -223,10 +230,10 @@ class _RouteCard extends StatelessWidget {
                 width: 44,
                 height: 44,
                 decoration: BoxDecoration(
-                  color: AppColors.gold.withValues(alpha: 0.18),
+                  color: context.brand.accent.withValues(alpha: 0.18),
                   borderRadius: BorderRadius.circular(12),
                 ),
-                child: const Icon(Icons.storefront_outlined, color: AppColors.navy),
+                child: Icon(Icons.storefront_outlined, color: context.brand.primary),
               ),
               const SizedBox(width: 14),
               Expanded(
@@ -272,7 +279,7 @@ class _RouteCard extends StatelessWidget {
                           Text(
                             'Unscheduled',
                             style: TextStyle(
-                              color: AppColors.gold.withValues(alpha: 0.95),
+                              color: context.brand.accent.withValues(alpha: 0.95),
                               fontSize: 12.5,
                               fontWeight: FontWeight.w600,
                             ),
@@ -314,8 +321,8 @@ class _MyHrAction extends StatelessWidget {
     if (unread == 0) return button;
     return Badge.count(
       count: unread,
-      backgroundColor: AppColors.gold,
-      textColor: AppColors.navyDark,
+      backgroundColor: context.brand.accent,
+      textColor: context.brand.primaryDark,
       child: button,
     );
   }
@@ -339,8 +346,8 @@ class _DeliveriesAction extends StatelessWidget {
     if (outstanding == 0) return button;
     return Badge.count(
       count: outstanding,
-      backgroundColor: AppColors.gold,
-      textColor: AppColors.navyDark,
+      backgroundColor: context.brand.accent,
+      textColor: context.brand.primaryDark,
       child: button,
     );
   }

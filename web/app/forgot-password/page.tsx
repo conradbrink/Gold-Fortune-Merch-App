@@ -1,12 +1,12 @@
 "use client";
 
 import { useState } from "react";
-import Image from "next/image";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { createClient } from "@/lib/supabase/client";
+import { ProductBrand } from "@/components/product-brand";
 
 export default function ForgotPasswordPage() {
   const supabase = createClient();
@@ -44,19 +44,7 @@ export default function ForgotPasswordPage() {
   return (
     <div className="flex min-h-screen items-center justify-center bg-secondary/40 px-4">
       <div className="w-full max-w-sm space-y-6">
-        <div className="flex flex-col items-center gap-3 text-center">
-          <Image
-            src="/logo.png"
-            alt="Gold Fortune"
-            width={56}
-            height={56}
-            className="rounded-lg"
-          />
-          <div>
-            <h1 className="text-xl font-bold text-foreground">Gold Fortune</h1>
-            <p className="text-sm text-muted-foreground">Merchandising</p>
-          </div>
-        </div>
+        <ProductBrand />
 
         {sent ? (
           <div className="space-y-4 rounded-lg border border-border bg-card p-6 text-center shadow-sm">

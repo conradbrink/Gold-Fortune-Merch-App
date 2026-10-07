@@ -121,7 +121,7 @@ class VisitRepository {
   }) async {
     final clientId = routeVisit.visitClientGeneratedId;
     if (clientId == null) {
-      throw StateError('Cannot check out of a visit that was never started.');
+      throw StateError('Cannot check out before checking in.');
     }
 
     final position = await LocationService.getCurrentPosition();

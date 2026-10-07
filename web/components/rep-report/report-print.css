@@ -22,8 +22,8 @@
  *    manager sees is the page that comes out of the printer, including where it
  *    breaks. Sizing in `rem` and hoping is how a "2-page report" becomes three.
  *
- * 2. **One palette, and it survives a monochrome printer.** Navy ink, a gold
- *    rule, and greys. Nothing carries meaning by colour alone: a missed day is
+ * 2. **One palette, and it survives a monochrome printer.** The company's
+ *    dark ink, its accent for rules and marks, and greys. Nothing carries meaning by colour alone: a missed day is
  *    an empty outline as well as a gold mark, a null figure is the word "Not
  *    tracked" as well as a lighter grey.
  *
@@ -33,13 +33,17 @@
  */
 
 .rr {
-  /* Ink, not theme tokens: these values are printed. */
-  --rr-ink: #1b2340;
+  /* Ink, not theme tokens: these values are printed. The two brand values come
+     from the company's branding, set on this element by the report as plain
+     hex (`--rr-brand-ink`, `--rr-brand-accent`); the fallbacks are the ink and
+     accent for a report rendered without them. The theme's own `--primary` is
+     not used because it turns near-white in dark mode and the sheet does not. */
+  --rr-ink: var(--rr-brand-ink, #1b2340);
   --rr-ink-soft: #4a5368;
   --rr-ink-faint: #79819a;
   --rr-rule: #c9ced9;
   --rr-rule-soft: #e4e7ee;
-  --rr-gold: #c9962c;
+  --rr-gold: var(--rr-brand-accent, #c9962c);
   --rr-wash: #f4f5f8;
   --rr-warn: #9a2f2f;
 
@@ -87,6 +91,22 @@
   align-items: flex-end;
   justify-content: space-between;
   gap: 6mm;
+}
+
+/* The logo beside the name and title, no taller than those two lines, so a
+   company with a logo gets the same page one as a company without. */
+.rr-brand {
+  display: flex;
+  align-items: center;
+  gap: 3mm;
+  min-width: 0;
+}
+
+.rr-logo {
+  display: block;
+  height: 10mm;
+  max-width: 32mm;
+  object-fit: contain;
 }
 
 .rr-wordmark {

@@ -3,6 +3,7 @@
 import { useEffect } from "react";
 import * as Sentry from "@sentry/nextjs";
 import { ServiceMessage } from "@/components/service-message";
+import { PRODUCT_NAME } from "@/lib/product";
 import "./globals.css";
 
 /**
@@ -35,7 +36,7 @@ export default function GlobalError({
       <body className="h-full bg-background">
         <ServiceMessage
           title="The system is temporarily unavailable"
-          detail="Gold Fortune Merchandising could not start. This is usually brief — try again in a moment."
+          detail={`${PRODUCT_NAME} could not start. This is usually brief — try again in a moment.`}
           digest={error.digest}
         >
           <button
