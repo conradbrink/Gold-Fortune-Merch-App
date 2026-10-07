@@ -161,6 +161,15 @@ export const navGroups: NavGroup[] = [
         icon: ClipboardCheck,
         permission: "warehouse",
       },
+      // Beside Orders because a quote is an order that has not been agreed
+      // yet, and the same people write both. `/quotes` is not under `/orders`
+      // so the warehouse's order list stays a list of real orders.
+      {
+        href: "/quotes",
+        label: "Quotes",
+        icon: FileText,
+        permission: "warehouse",
+      },
       {
         href: "/inventory",
         label: "Inventory",
