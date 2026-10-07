@@ -808,7 +808,16 @@ export default function OrderDetailPage() {
                       ) : l.unit_price == null ? (
                         <span className="text-muted-foreground">—</span>
                       ) : (
-                        <span className="tabular-nums">{Number(l.unit_price).toFixed(2)}</span>
+                        <span className="tabular-nums">
+                          {Number(l.unit_price).toFixed(2)}
+                          {/* The stored price is already net, so the discount
+                              is shown as where it came from, not applied again. */}
+                          {Number(l.discount_pct) > 0 && l.list_price != null && (
+                            <span className="block text-xs text-muted-foreground">
+                              {Number(l.list_price).toFixed(2)} less {Number(l.discount_pct)}%
+                            </span>
+                          )}
+                        </span>
                       )}
                     </TableCell>
                     <TableCell className="text-right tabular-nums">{l.qty_reserved}</TableCell>
@@ -975,6 +984,7 @@ export default function OrderDetailPage() {
               {o.contact_name && <Row label="Contact" value={o.contact_name} />}
               {o.contact_phone && <Row label="Phone" value={o.contact_phone} />}
               {o.required_by && <Row label="Required by" value={o.required_by} />}
+              <Row label="Deliver to" value={o.delivery_address ?? "The store"} />
               {/* Set by confirming, so absent on a new order — there is no
                   answer yet, and naming the default here would look like a
                   decision that has been taken. */}
