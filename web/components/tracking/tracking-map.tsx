@@ -3,25 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { MapPinOff } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { loadMaps, MAPS_KEY } from "@/lib/google-maps";
-
-/** Remembered per device, like the sidebar's width — a choice you have to
-    re-make on every page is worse than no choice at all. */
-const MAP_TYPE_KEY = "gf.trackingMapType";
-
-const MAP_TYPES = ["roadmap", "satellite", "hybrid"] as const;
-type MapType = (typeof MAP_TYPES)[number];
-
-function savedMapType(): MapType {
-  try {
-    const saved = window.localStorage.getItem(MAP_TYPE_KEY);
-    return MAP_TYPES.includes(saved as MapType) ? (saved as MapType) : "roadmap";
-  } catch {
-    // Storage can be blocked (private windows, site data cleared); the map
-    // simply opens on the road map.
-    return "roadmap";
-  }
-}
+import { loadMaps, MAPS_KEY, mapTypeSwitch, rememberMapType } from "@/lib/google-maps";
 
 export type MapPin = {
   id: string;
@@ -84,33 +66,11 @@ export function TrackingMap({
           map.current = new Map(ref.current, {
             center: { lat: -24.65, lng: 25.91 },
             zoom: 7,
-            // Map / Satellite. In much of Botswana the road map is sparse and
-            // the imagery shows far more of where somebody actually was.
-            //
-            // All three types are offered so Google draws "Map | Satellite"
-            // with a Labels checkbox under Satellite (on by default, which is
-            // the hybrid view: imagery with street and place names). Offering
-            // only roadmap and hybrid labels the second button "Hybrid", which
-            // is Google's word, not anybody else's — seen on production.
-            mapTypeId: savedMapType(),
-            mapTypeControl: true,
-            mapTypeControlOptions: {
-              mapTypeIds: [...MAP_TYPES],
-              style: google.maps.MapTypeControlStyle.HORIZONTAL_BAR,
-              // Top left: the live page's rep card sits over the top right.
-              position: google.maps.ControlPosition.TOP_LEFT,
-            },
+            ...mapTypeSwitch(),
             streetViewControl: false,
             fullscreenControl: false,
           });
-          const created = map.current;
-          created.addListener("maptypeid_changed", () => {
-            try {
-              window.localStorage.setItem(MAP_TYPE_KEY, String(created.getMapTypeId()));
-            } catch {
-              // Not remembered; nothing else depends on it.
-            }
-          });
+          rememberMapType(map.current);
         }
         for (const m of markers.current) m.setMap(null);
         markers.current = [];
