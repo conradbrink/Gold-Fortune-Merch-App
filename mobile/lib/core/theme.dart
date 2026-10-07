@@ -78,17 +78,31 @@ extension BrandContext on BuildContext {
   BrandColors get brand => BrandColors.of(this);
 }
 
+/// Text that reads on [background]: white on a dark colour, near-black on a
+/// light one. The same WCAG contrast rule as the web (`readableOn` in
+/// web/lib/branding.ts), so a company that picks a pale brand colour does not
+/// get white-on-yellow buttons.
+Color readableOn(Color background) {
+  final l = background.computeLuminance();
+  final onWhite = 1.05 / (l + 0.05);
+  final onDark = (l + 0.05) / (0.0089 + 0.05);
+  return onWhite >= onDark ? Colors.white : const Color(0xFF0F172A);
+}
+
 /// The app's theme in a company's two colours.
 ///
 /// Built from the configuration's `branding`, and rebuilt when it changes. With
 /// Gold Fortune's navy and gold this is exactly the theme the app always had.
 ThemeData buildAppTheme(Color primary, Color accent) {
+  final onPrimary = readableOn(primary);
   final base = ThemeData(
     useMaterial3: true,
     colorScheme: ColorScheme.fromSeed(
       seedColor: primary,
       primary: primary,
+      onPrimary: onPrimary,
       secondary: accent,
+      onSecondary: readableOn(accent),
       surface: AppColors.surface,
       error: AppColors.danger,
     ),
@@ -99,14 +113,14 @@ ThemeData buildAppTheme(Color primary, Color accent) {
     extensions: [BrandColors.from(primary, accent)],
     appBarTheme: AppBarTheme(
       backgroundColor: primary,
-      foregroundColor: Colors.white,
+      foregroundColor: onPrimary,
       elevation: 0,
       centerTitle: false,
     ),
     elevatedButtonTheme: ElevatedButtonThemeData(
       style: ElevatedButton.styleFrom(
         backgroundColor: primary,
-        foregroundColor: Colors.white,
+        foregroundColor: onPrimary,
         padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 20),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
         textStyle: const TextStyle(fontWeight: FontWeight.w600, fontSize: 15),

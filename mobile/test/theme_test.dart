@@ -87,4 +87,12 @@ void main() {
     expect(seen.primary, navy);
     expect(seen.accent, gold);
   });
+
+  test('text on the brand colour stays readable', () {
+    expect(readableOn(navy), Colors.white);
+    expect(readableOn(gold), const Color(0xFF0F172A));
+    final pale = buildAppTheme(const Color(0xFFFFE066), gold);
+    expect(pale.colorScheme.onPrimary, const Color(0xFF0F172A));
+    expect(buildAppTheme(navy, gold).colorScheme.onPrimary, Colors.white);
+  });
 }
