@@ -34,7 +34,7 @@ Companion documents:
 | Version | **1.0.0** (versionCode **1**) |
 | Released | 30 July 2026 |
 | Size | 41.2 MB |
-| Package ID | `com.goldfortune.gf_merch_rep` — permanent |
+| Package ID | `com.goldfortune.gf_merch_rep` (1.0–1.1.11); `za.co.tickd.app` from the first Tickd release — permanent |
 | Architectures | `arm64-v8a`, `armeabi-v7a` (no `x86_64` — see `RELEASE-ANDROID.md`) |
 | Signing certificate | `CN=Conrad Brink, O=Gold Fortune Distribution, C=BW` |
 | Certificate SHA-256 | `0b68016543e7fed5ed0433bf8e1c2ed50fdac2be66a96e3b40b4a45305b1f394` |

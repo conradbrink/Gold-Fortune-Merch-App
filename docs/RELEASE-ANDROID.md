@@ -4,9 +4,13 @@ The rep app is Flutter, in `mobile/`. It is distributed as a signed APK from
 the website — not through the Play Store — so there is no review queue and no
 staged rollout. What you upload is what the field gets.
 
-**Package id: `com.goldfortune.gf_merch_rep`.** This is permanent. Changing it
-produces a *different app* that installs alongside the old one instead of
-updating it, and every rep would have to be migrated by hand.
+**Package id: `za.co.tickd.app`** (from 7 Oct 2026; it was
+`com.goldfortune.gf_merch_rep`). This is permanent from its first release, and
+on Google Play it can never change. Changing it produces a *different app* that
+installs alongside the old one instead of updating it — which is exactly what
+the move to `za.co.tickd.app` does once: every rep installs Tickd, signs in, and
+removes the old app only after it shows nothing waiting to sync, because work
+still queued in the old app does not move to the new one.
 
 ---
 

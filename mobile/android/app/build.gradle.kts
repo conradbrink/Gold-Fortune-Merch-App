@@ -26,6 +26,8 @@ val hasReleaseKeystore = keystorePropertiesFile.exists() &&
     keystoreProperties.getProperty("storeFile") != null
 
 android {
+    // The code's package, not the app's identity: it stays where MainActivity
+    // lives. Android lets it differ from applicationId below.
     namespace = "com.goldfortune.gf_merch_rep"
     compileSdk = flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
@@ -36,7 +38,11 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.goldfortune.gf_merch_rep"
+        // The app's identity on phones and on Google Play — permanent once
+        // published. Tickd's own (7 Oct 2026), replacing
+        // com.goldfortune.gf_merch_rep: this installs as a NEW app beside the
+        // old one, not as an update to it (docs/RELEASE-ANDROID.md).
+        applicationId = "za.co.tickd.app"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
         minSdk = flutter.minSdkVersion
