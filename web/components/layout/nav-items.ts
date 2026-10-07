@@ -30,6 +30,8 @@ import {
   ShieldCheck,
   Building2,
   Navigation,
+  Receipt,
+  Repeat,
   Flag,
   Coins,
 } from "lucide-react";
@@ -166,6 +168,10 @@ export const navGroups: NavGroup[] = [
         icon: ClipboardCheck,
         permission: "warehouse",
       },
+      // Beside Orders: an invoice is made from an order that has gone out,
+      // and a recurring order places orders. Same people, same permission.
+      { href: "/invoices", label: "Tax invoices", icon: Receipt, permission: "warehouse" },
+      { href: "/recurring-orders", label: "Recurring orders", icon: Repeat, permission: "warehouse" },
       // Beside Orders because a quote is an order that has not been agreed
       // yet, and the same people write both. `/quotes` is not under `/orders`
       // so the warehouse's order list stays a list of real orders.
