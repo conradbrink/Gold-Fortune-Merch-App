@@ -496,9 +496,11 @@ begin
         hint text;
         val text := 'null';
       begin
+        -- 360 days back: inside the 366-day range guard some reports carry
+        -- (hr_attendance_report), and still older than any company's data.
         if ty in ('timestamp with time zone', 'date') then
           val := case when nm ~ 'to|end|until' then format('%L::%s', now() + interval '1 day', ty)
-                      else format('%L::%s', now() - interval '2 years', ty) end;
+                      else format('%L::%s', now() - interval '360 days', ty) end;
         elsif ty in ('uuid', 'uuid[]') then
           select h into hint from jsonb_object_keys(a_ids) h
            where nm like '%' || h || '%' order by length(h) desc limit 1;
