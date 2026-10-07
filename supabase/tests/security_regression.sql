@@ -1029,7 +1029,11 @@ begin
 
   declare
     fn text;
-    v_tpl uuid := (select id from public.form_templates where org_id = v_org limit 1);
+    -- Created, not found: the file's first rule. With no template in the
+    -- estate a looked-up id would be null, the "real template" call below
+    -- would repeat the null one, and the case it exists for would go untested
+    -- while the suite reported a pass (CodeRabbit on #74).
+    v_tpl uuid;
     calls text[] := array[
       'rep_scorecard(now() - interval ''30 days'', now())',
       'schedule_adherence(now() - interval ''30 days'', now())',
@@ -1040,8 +1044,12 @@ begin
       'form_report(null, now() - interval ''30 days'', now(), null, null)',
       -- Both: with a null template the planner can prove the query empty, which
       -- is how the first, CTE-folded version of the guard was skipped.
-      format('form_report(%L, now() - interval ''30 days'', now(), null, null)', v_tpl)];
+      'form_report(%L, now() - interval ''30 days'', now(), null, null)'];
   begin
+    insert into public.form_templates (org_id, name)
+      values (v_org, 'Regression check-32 form')
+      returning id into v_tpl;
+    calls[array_upper(calls, 1)] := format(calls[array_upper(calls, 1)], v_tpl);
     update public.profiles set role = 'rep', is_active = true where id = v_rep;
     perform set_config('request.jwt.claims',
       json_build_object('sub', v_rep, 'role', 'authenticated')::text, true);

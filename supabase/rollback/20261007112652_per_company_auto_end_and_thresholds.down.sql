@@ -1,7 +1,7 @@
 -- Rollback for per_company_auto_end_and_thresholds. Restores the single
 -- 19:30 cut-off, the 5000 m / 500 m literals and the column default of 100,
--- exactly as production held them on 8 October 2026; unschedules the hourly
--- job and removes pg_cron (nothing else uses it).
+-- exactly as production held them on 7 October 2026; unschedules the hourly
+-- job, and removes pg_cron only if no other job is scheduled.
 
 drop trigger if exists stores_default_radius on public.stores;
 drop function if exists public.stores_default_radius();
@@ -26,8 +26,19 @@ begin
 end;
 $$;
 
-select cron.unschedule('auto-end-workdays');
-drop extension if exists pg_cron;
+-- Only this migration's job, and only if it is there. The extension goes
+-- only when nothing else is scheduled: another job may have been added since,
+-- and dropping pg_cron would delete it without a word (CodeRabbit on #74).
+do $$
+begin
+  if to_regclass('cron.job') is not null then
+    perform cron.unschedule(jobid) from cron.job where jobname = 'auto-end-workdays';
+    if not exists (select 1 from cron.job) then
+      drop extension pg_cron;
+    end if;
+  end if;
+end;
+$$;
 
 create or replace function public.auto_end_overdue_workdays(p_cutoff time without time zone default '19:30:00'::time without time zone)
 returns table(session_id uuid, rep_id uuid, started_at timestamp with time zone, ended_at timestamp with time zone, distance_meters double precision, legs integer)

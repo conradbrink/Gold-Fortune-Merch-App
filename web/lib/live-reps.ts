@@ -95,6 +95,19 @@ export function describeSource(source: PingSource, store: string | null): string
 
 export type Freshness = "fresh" | "recent" | "stale";
 
+/**
+ * The colour key in words, from the same thresholds `freshnessOf` uses, so
+ * the explanation under a map cannot drift from its colours (CodeRabbit on
+ * #74: both maps still said "20 minutes" after the thresholds became the
+ * company's interval).
+ */
+export function freshnessExplained(intervalMinutes: number | null): string {
+  if (intervalMinutes === null) return "Green is recent, amber older, grey oldest.";
+  return `Green within ${intervalMinutes * FRESH_INTERVALS} minutes, amber within ${
+    intervalMinutes * STALE_INTERVALS
+  }, grey older.`;
+}
+
 export function freshnessOf(minutes: number, intervalMinutes: number | null): Freshness {
   if (intervalMinutes === null) return "recent";
   if (minutes <= intervalMinutes * FRESH_INTERVALS) return "fresh";

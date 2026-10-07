@@ -176,15 +176,27 @@ export async function fetchRepDayDistance(
   /** The company's timezone — the one `rep_day_times_per_day` groups by. */
   timeZone: string
 ): Promise<RepDayDistance[]> {
-  const { data, error } = await supabase
+  // The range is built from the viewer's midnights, but the days it means are
+  // the company's: `rep_day_times_per_day` turns both ends into company-local
+  // dates. So the query reaches a day further on each side — no timezone is
+  // more than fourteen hours from another — and the rows are then kept by
+  // their company-local day. Filtering on the viewer's instants instead
+  // dropped the start of a company day, or took in its neighbour, for anyone
+  // viewing from another zone (CodeRabbit on #74).
+  const DAY_MS = 24 * 60 * 60 * 1000;
+  const firstDay = reportingDay(range.from.toISOString(), timeZone);
+  const lastDay = reportingDay(new Date(+range.to - 1).toISOString(), timeZone);
+  const { data: raw, error } = await supabase
     .from("workday_sessions")
     .select("rep_id, started_at, road_distance_meters")
-    .gte("started_at", range.from.toISOString())
-    // `.lt`, not `.lte`: `DateRange.to` is the exclusive start of the next day,
-    // so a session beginning exactly on it belongs to tomorrow.
-    .lt("started_at", range.to.toISOString())
+    .gte("started_at", new Date(+range.from - DAY_MS).toISOString())
+    .lt("started_at", new Date(+range.to + DAY_MS).toISOString())
     .order("started_at", { ascending: true });
   if (error) throw new Error(error.message);
+  const data = (raw ?? []).filter((r) => {
+    const day = reportingDay(r.started_at as string, timeZone);
+    return day >= firstDay && day <= lastDay;
+  });
 
   /**
    * One row per rep per day, not per session.

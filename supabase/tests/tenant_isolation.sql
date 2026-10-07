@@ -49,6 +49,7 @@ declare
   a_org uuid; b_org uuid;
   b_mgr uuid; b_rep uuid;
   a_rep uuid; a_store uuid; a_group uuid; a_file uuid; a_emp uuid;
+  v_probe_group uuid;
 
   -- Everything that identifies Company A, for T5's search.
   a_tokens text[];
@@ -328,6 +329,18 @@ begin
         ('recurring_order_runs', 'recurring_order_id = any($2)',        a_recurring)
       ) as x(tbl, pred, ids)
     loop
+      -- First pass only: does A have rows here at all? Counted as the owner,
+      -- or "B sees none" proves nothing and must say so (CodeRabbit on #74).
+      if v_who = 'manager' and t.tbl <> 'organizations' then
+        reset role;
+        execute format('select count(*) from public.%I where %s', t.tbl, t.pred)
+          into v_n using b_org, t.ids;
+        if v_n = 0 then
+          v_unproven := v_unproven || format('  %s: Company A has no rows, so reads prove nothing%s',
+                                             t.tbl, E'\n');
+        end if;
+        set local role authenticated;
+      end if;
       begin
         execute format('select count(*) from public.%I where %s', t.tbl, t.pred)
           into v_n using b_org, t.ids;
@@ -360,18 +373,33 @@ begin
   end loop;
 
   -- Writes through the two file link tables: B linking itself to A's file.
+  -- Each pair is new, so a primary key cannot be what refuses it, and only
+  -- RLS's 42501 counts as the refusal; anything else is reported (CodeRabbit
+  -- on #74: the file_groups pair used to be one the fixtures had already
+  -- inserted, so a duplicate key answered and the probe passed regardless).
+  insert into public.store_groups (org_id, name)
+    values (a_org, 'Isolation probe group')
+    returning id into v_probe_group;
   perform set_config('request.jwt.claims', json_build_object(
     'sub', b_mgr, 'role', 'authenticated')::text, true);
   set local role authenticated;
   begin
     insert into public.file_reps (file_id, rep_id) values (a_file, b_rep);
     v_fail := v_fail || 'T2 insert file_reps: B linked a rep to A''s file' || E'\n';
-  exception when others then null;
+  exception
+    when insufficient_privilege then null;
+    when others then
+      v_fail := v_fail || format('T2 insert file_reps refused by %s, not RLS: %s%s',
+                                 sqlstate, sqlerrm, E'\n');
   end;
   begin
-    insert into public.file_groups (file_id, store_group_id) values (a_file, a_group);
+    insert into public.file_groups (file_id, store_group_id) values (a_file, v_probe_group);
     v_fail := v_fail || 'T2 insert file_groups: B linked A''s file to a group' || E'\n';
-  exception when others then null;
+  exception
+    when insufficient_privilege then null;
+    when others then
+      v_fail := v_fail || format('T2 insert file_groups refused by %s, not RLS: %s%s',
+                                 sqlstate, sqlerrm, E'\n');
   end;
   reset role;
 
@@ -403,7 +431,12 @@ begin
       insert into storage.objects (bucket_id, name, owner)
       values (v_txt, a_org::text || '/' || a_emp::text || '/isolation-test.jpg', b_mgr);
       v_fail := v_fail || format('T3 storage: B wrote into A''s folder in %s%s', v_txt, E'\n');
-    exception when others then null;
+    exception
+      when insufficient_privilege then null;
+      when others then
+        -- A missing bucket fails its foreign key (23503) and tests nothing.
+        v_fail := v_fail || format('T3 storage write to %s refused by %s, not RLS: %s%s',
+                                   v_txt, sqlstate, sqlerrm, E'\n');
     end;
   end loop;
   reset role;

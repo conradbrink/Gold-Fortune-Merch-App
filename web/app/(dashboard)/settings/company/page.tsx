@@ -180,7 +180,9 @@ export default function CompanyProfilePage() {
         address: form.address || null,
         support_email: form.support_email || null,
         vat_rate: Number(form.vat_rate) || 0,
-        timezone: form.timezone,
+        // Left out when blank: the database refuses an empty zone, and a
+        // company with none set must still be able to save its other fields.
+        ...(form.timezone.trim() ? { timezone: form.timezone.trim() } : {}),
         tax_number: form.tax_number.trim() || null,
         vat_number: form.vat_number.trim() || null,
         phone: form.phone.trim() || null,

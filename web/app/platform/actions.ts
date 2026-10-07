@@ -39,6 +39,28 @@ export async function setCompanyModule(formData: FormData): Promise<void> {
   }
 
   const admin = platformAdminClient();
+
+  // The audit row first: if it cannot be written, nothing changes. Written
+  // after the change, a failed insert left a switch nobody could account for
+  // (CodeRabbit on #74).
+  const { data: audit, error: auditError } = await admin
+    .from("platform_audit_log")
+    .insert({
+      actor_id: user.id,
+      action: enabled ? "module.enable" : "module.disable",
+      target_org_id: orgId,
+      detail: { module: moduleCode, refused: null },
+    })
+    .select("id")
+    .single();
+  if (auditError) {
+    redirect(
+      `${back}?error=${encodeURIComponent(
+        `Not changed: the audit log could not be written (${auditError.message}).`
+      )}`
+    );
+  }
+
   const { error } = await admin
     .from("company_modules")
     .upsert(
@@ -46,13 +68,13 @@ export async function setCompanyModule(formData: FormData): Promise<void> {
       { onConflict: "org_id,module_code" }
     );
 
-  await admin.from("platform_audit_log").insert({
-    actor_id: user.id,
-    action: enabled ? "module.enable" : "module.disable",
-    target_org_id: orgId,
-    detail: { module: moduleCode, refused: error ? error.message : null },
-  });
-
-  if (error) redirect(`${back}?error=${encodeURIComponent(error.message)}`);
+  if (error) {
+    // The attempt is already logged; record why it was refused.
+    await admin
+      .from("platform_audit_log")
+      .update({ detail: { module: moduleCode, refused: error.message } })
+      .eq("id", audit.id);
+    redirect(`${back}?error=${encodeURIComponent(error.message)}`);
+  }
   redirect(back);
 }

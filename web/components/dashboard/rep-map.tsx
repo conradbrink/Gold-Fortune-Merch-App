@@ -13,6 +13,7 @@ import {
   minutesSince,
   type LiveReps,
   type RepPosition,
+  freshnessExplained,
 } from "@/lib/live-reps";
 
 /**
@@ -29,7 +30,7 @@ import {
  * ⚠️ Until the app build carrying time-based sampling reaches the handsets, most
  * fixes still come from check-in and check-out, and a rep between two shops can
  * go a long time without one. The colours are what make that legible rather than
- * misleading — green inside twenty minutes, amber inside ninety, grey beyond —
+ * misleading — green inside four GPS intervals, amber inside eighteen, grey beyond —
  * and they keep working unchanged as the pings get denser.
  */
 
@@ -372,8 +373,8 @@ export function RepMap({ data }: { data: LiveReps }) {
             build ships, and a card that hid it would be quietly wrong for weeks. */}
         {positions.length > 0 && (
           <p className="mt-2 text-xs text-muted-foreground">
-            Green is a fix within 20 minutes, amber within 90, grey older than
-            that. A rep with no signal queues positions on the phone and they
+            {freshnessExplained(intervalMinutes)} A rep with no signal queues
+            positions on the phone and they
             arrive together later, so an age is what a phone last managed to
             send — not proof of where somebody is now.
           </p>

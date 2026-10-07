@@ -119,7 +119,9 @@ export default function InsightsDashboardPage() {
         // feature, and a card showing an average whose detail failed to load
         // would offer a day picker that silently finds nothing.
         fetchRepDayDetail(supabase, range),
-        getCompanyConfig().then((c) =>
+        // A failed config lookup must not cost the distance column: fall
+        // back the same way as a company with no timezone.
+        getCompanyConfig().catch(() => null).then((c) =>
           fetchRepDayDistance(supabase, range, c?.timezone ?? "UTC")
         ),
         fetchOperationsSummary(supabase, range),

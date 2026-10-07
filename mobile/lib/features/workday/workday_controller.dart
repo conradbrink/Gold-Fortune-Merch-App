@@ -77,13 +77,19 @@ class WorkdayController extends AsyncNotifier<WorkdaySession?> {
       // Resubscribes after a cold start, so a rep whose phone was killed
       // mid-round starts recording again the moment the app is reopened — and
       // leaves a trail that is already running alone.
+      //
+      // A restart is only for a trail already running at the old interval.
+      // On a cold start the trail is not wanted yet, and `restart` returns
+      // without starting anything — so a company with a non-default interval
+      // would have had no trail at all after a cold launch (CodeRabbit on
+      // #74). `ensureRunning` opens it at the interval just set.
       unawaited(
-        intervalChanged
+        intervalChanged && trail.isWanted
             ? trail.restart(reason: 'interval-changed')
             : trail.ensureRunning(reason: 'build'),
       );
-      // And ends the day at the company's cut-off — at once, if a phone woken the next
-      // morning is still holding yesterday open.
+      // And ends the day at the company's cut-off — at once, if a phone woken
+      // the next morning is still holding yesterday open.
       _armAutoEnd(session);
     } else {
       unawaited(trail.stop(reason: 'no-open-day'));

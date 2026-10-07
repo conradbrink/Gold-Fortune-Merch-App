@@ -6,9 +6,9 @@ import { listCompanies } from "@/lib/platform";
 /**
  * Platform operator: every company on the service.
  *
- * Read-only for now. Switching modules, changing a plan and impersonating for
- * support come with the Add-company flow, and will write to
- * `platform_audit_log` when they do.
+ * Lists every company; each links to its page, where the operator switches
+ * modules (`setCompanyModule`, audit-logged). Changing a plan and
+ * impersonating for support come with the Add-company flow.
  *
  * The gate is here, on the server, not in `proxy.ts`. The proxy's permission
  * map is about what a person may do *inside their own company*, and an

@@ -41,23 +41,62 @@ export type CompanyConfig = {
   vatRate: number;
 };
 
-type RawConfig = {
-  org_id: string;
-  modules: Record<string, unknown>;
-  settings: CompanySettings;
-  timezone: string;
-  vat_rate: number | string;
+/**
+ * The setting definitions' own defaults (`setting_definitions.default_value`),
+ * used only for a field the payload is missing or got wrong. The database
+ * always sends every key; this is for a payload that is not what it should
+ * be, which must not reach the screens as `undefined`.
+ */
+const SETTING_FALLBACK: CompanySettings = {
+  gps_ping_interval_minutes: 5,
+  short_visit_minutes: 5,
+  auto_end_enabled: true,
+  auto_end_time: "19:30",
+  checkin_radius_m: 100,
+  off_site_distance_m: 500,
+  invalid_gps_distance_m: 5000,
+  currency_code: "BWP",
 };
 
+function obj(v: unknown): Record<string, unknown> {
+  return v !== null && typeof v === "object" && !Array.isArray(v)
+    ? (v as Record<string, unknown>)
+    : {};
+}
+
+function int(v: unknown, fallback: number): number {
+  return typeof v === "number" && Number.isInteger(v) ? v : fallback;
+}
+
+/** The RPC payload, checked field by field rather than asserted. */
 export function parseCompanyConfig(raw: unknown): CompanyConfig | null {
-  if (raw === null || typeof raw !== "object") return null;
-  const r = raw as RawConfig;
+  if (raw === null || typeof raw !== "object" || Array.isArray(raw)) return null;
+  const r = raw as Record<string, unknown>;
+  if (typeof r.org_id !== "string") return null;
+  const s = obj(r.settings);
+  const f = SETTING_FALLBACK;
   return {
     orgId: r.org_id,
-    modules: toModuleSet(r.modules),
-    settings: r.settings,
-    timezone: r.timezone,
-    vatRate: Number(r.vat_rate),
+    modules: toModuleSet(obj(r.modules)),
+    settings: {
+      gps_ping_interval_minutes: int(s.gps_ping_interval_minutes, f.gps_ping_interval_minutes),
+      short_visit_minutes: int(s.short_visit_minutes, f.short_visit_minutes),
+      auto_end_enabled:
+        typeof s.auto_end_enabled === "boolean" ? s.auto_end_enabled : f.auto_end_enabled,
+      auto_end_time:
+        typeof s.auto_end_time === "string" && /^\d{2}:\d{2}$/.test(s.auto_end_time)
+          ? s.auto_end_time
+          : f.auto_end_time,
+      checkin_radius_m: int(s.checkin_radius_m, f.checkin_radius_m),
+      off_site_distance_m: int(s.off_site_distance_m, f.off_site_distance_m),
+      invalid_gps_distance_m: int(s.invalid_gps_distance_m, f.invalid_gps_distance_m),
+      currency_code:
+        typeof s.currency_code === "string" && /^[A-Z]{3}$/.test(s.currency_code)
+          ? s.currency_code
+          : f.currency_code,
+    },
+    timezone: typeof r.timezone === "string" && r.timezone !== "" ? r.timezone : "UTC",
+    vatRate: Number.isFinite(Number(r.vat_rate)) ? Number(r.vat_rate) : 0,
   };
 }
 

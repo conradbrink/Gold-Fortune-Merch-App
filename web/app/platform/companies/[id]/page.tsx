@@ -43,6 +43,8 @@ export default async function PlatformCompanyPage({
   if (!isOperator) notFound();
 
   const { id } = await params;
+  // Not a company id at all: a 404, not a database cast error and a 500.
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) notFound();
   const company = await getCompany(id);
   if (!company) notFound();
 

@@ -13,6 +13,7 @@ import {
   describeAge,
   describeSource,
   fetchLiveReps,
+  freshnessExplained,
   freshnessOf,
   minutesSince,
   type LiveReps,
@@ -37,8 +38,8 @@ const ORDER_PIN = "#2563eb";
 /**
  * Live tracking: every rep's last reading on one map.
  *
- * "Live" means a reading inside twenty minutes — `FRESH_MINUTES`, the same
- * line the dashboard map draws — not that anybody is being followed in real
+ * "Live" means a reading inside four of the company's GPS intervals
+ * (`freshnessOf`, the same line the dashboard map draws) — not that anybody is being followed in real
  * time. Every rep carries the age of their reading, because a position without
  * one claims a certainty the phones cannot give. Re-read every minute.
  */
@@ -136,8 +137,8 @@ export default function TrackingPage() {
         <div>
           <h1 className="text-xl font-semibold tracking-tight text-foreground">Tracking</h1>
           <p className="text-sm text-muted-foreground">
-            Each rep&apos;s last reading, refreshed every minute. Green within 20 minutes, amber within
-            90, grey older.
+            Each rep&apos;s last reading, refreshed every minute.{" "}
+            {freshnessExplained(intervalMinutes)}
           </p>
         </div>
         <div className="flex items-center gap-2 rounded-lg bg-card px-2 py-1 text-sm ring-1 ring-foreground/10">

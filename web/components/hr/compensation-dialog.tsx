@@ -69,8 +69,16 @@ export function CompensationDialog({
   // an effect would paint the previous contents for one frame first, and would
   // trip react-hooks/set-state-in-effect for a real reason rather than a
   // spurious one.
+  //
+  // A new record waits for the company's currency: opened before the
+  // configuration arrives, it would start blank and never be corrected
+  // (CodeRabbit on #74). Once the currency is known the key changes and the
+  // form is set up with it.
   const [openedFor, setOpenedFor] = useState<string | null>(null);
-  const openKey = open ? existing?.employee_id ?? "new" : null;
+  const openKey =
+    open && (existing !== null || currency !== "")
+      ? existing?.employee_id ?? "new"
+      : null;
   if (openKey !== openedFor) {
     setOpenedFor(openKey);
     if (open) {
