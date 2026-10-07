@@ -82,6 +82,7 @@ const PATH_PERMISSIONS: { prefix: string; permission: PermissionCode }[] = [
   { prefix: "/orders", permission: "warehouse" },
   { prefix: "/invoices", permission: "warehouse" },
   { prefix: "/recurring-orders", permission: "warehouse" },
+  { prefix: "/quotes", permission: "warehouse" },
   { prefix: "/inventory", permission: "warehouse" },
   { prefix: "/sales", permission: "insights" },
   { prefix: "/reports", permission: "insights" },

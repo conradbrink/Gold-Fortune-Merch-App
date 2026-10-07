@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Trash2, Plus } from "lucide-react";
+import { Trash2, Plus, Search } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -19,19 +19,29 @@ import {
   fetchStoresForOrder,
   fetchRepsForOrder,
   fetchVatRate,
+  matchProducts,
+  netPrice,
   orderTotals,
   unitPriceFor,
   RECEIVED_VIA,
 } from "@/lib/orders";
 import { fetchStockOnHand, type StockLine } from "@/lib/warehouse";
 
-type Draft = { key: string; productId: string; qty: string; unitPrice: string };
+type Draft = {
+  key: string;
+  productId: string;
+  qty: string;
+  unitPrice: string;
+  /** Percentage off `unitPrice`; blank means none. */
+  discount: string;
+};
 
 const blankLine = (): Draft => ({
   key: crypto.randomUUID(),
   productId: "",
   qty: "1",
   unitPrice: "",
+  discount: "",
 });
 
 /**
@@ -54,6 +64,9 @@ export default function NewOrderPage() {
       id: string;
       name: string;
       brand: string | null;
+      sku_code: string | null;
+      unit_barcode: string | null;
+      shrink_barcode: string | null;
       units_per_shrink: number | null;
       shrink_price_excl_vat: number | null;
     }[]
@@ -68,6 +81,7 @@ export default function NewOrderPage() {
   const [contactPhone, setContactPhone] = useState("");
   const [requiredBy, setRequiredBy] = useState("");
   const [notes, setNotes] = useState("");
+  const [deliveryAddress, setDeliveryAddress] = useState("");
   const [repId, setRepId] = useState("");
   const [invoiceNumber, setInvoiceNumber] = useState("");
 
@@ -83,6 +97,7 @@ export default function NewOrderPage() {
   const [newStoreAddress, setNewStoreAddress] = useState("");
   const [creatingStore, setCreatingStore] = useState(false);
   const [lines, setLines] = useState<Draft[]>([blankLine()]);
+  const [productQuery, setProductQuery] = useState("");
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -136,12 +151,44 @@ export default function NewOrderPage() {
   const totals = orderTotals(
     lines.map((l) => ({
       qty: Number(l.qty) || 0,
-      unitPrice: Number(l.unitPrice) || 0,
+      unitPrice: netPrice(Number(l.unitPrice) || 0, Number(l.discount) || 0),
     })),
     vatRate
   );
 
   const usedProducts = new Set(lines.map((l) => l.productId).filter(Boolean));
+  const productMatches = matchProducts(products, productQuery);
+
+  /**
+   * Puts a searched-for product on the order.
+   *
+   * Picking one already on the order adds one to that line rather than making
+   * a second line for it — the per-line picker hides used products for the
+   * same reason. Otherwise it fills the first empty line, so the blank line
+   * the form starts with is used rather than left behind.
+   */
+  function addFromSearch(p: (typeof products)[number]) {
+    const price = unitPriceFor(p);
+    setLines((prev) => {
+      const existing = prev.find((l) => l.productId === p.id);
+      if (existing) {
+        return prev.map((l) =>
+          l.key === existing.key ? { ...l, qty: String((Number(l.qty) || 0) + 1) } : l
+        );
+      }
+      const line = {
+        productId: p.id,
+        qty: "1",
+        unitPrice: price != null ? price : "",
+        discount: "",
+      };
+      const empty = prev.find((l) => !l.productId);
+      return empty
+        ? prev.map((l) => (l.key === empty.key ? { ...l, ...line } : l))
+        : [...prev, { key: crypto.randomUUID(), ...line }];
+    });
+    setProductQuery("");
+  }
 
   // Name or town, case-blind, capped so the list stays a list. The full set is
   // already in memory — 211 stores is a couple of kilobytes — so this is a
@@ -215,6 +262,16 @@ export default function NewOrderPage() {
     // One line per product is a database constraint; catching it here gives a
     // sentence instead of a unique-violation.
     const ids = filled.map((l) => l.productId);
+    if (filled.some((l) => Number(l.discount) < 0 || Number(l.discount) > 100)) {
+      setError("A discount is a percentage between 0 and 100.");
+      return;
+    }
+    // A discount off nothing would be stored with no list price behind it and
+    // then silently not apply when the line is priced later.
+    if (filled.some((l) => Number(l.discount) > 0 && l.unitPrice === "")) {
+      setError("A discounted line needs a price.");
+      return;
+    }
     if (new Set(ids).size !== ids.length) {
       setError("The same product appears on more than one line. Combine them into one.");
       return;
@@ -230,12 +287,14 @@ export default function NewOrderPage() {
         contactPhone,
         requiredBy: requiredBy || null,
         notes,
+        deliveryAddress: deliveryAddress.trim() || null,
         repId: repId || null,
         invoiceNumber: invoiceNumber.trim() || null,
         lines: filled.map((l) => ({
           productId: l.productId,
           qty: Number(l.qty),
           unitPrice: l.unitPrice === "" ? null : Number(l.unitPrice),
+          discountPct: Number(l.discount) || 0,
         })),
       });
       router.push(`/orders/${id}`);
@@ -433,6 +492,15 @@ export default function NewOrderPage() {
             />
           </div>
           <div className="sm:col-span-2">
+            <Label htmlFor="delivery">Delivery address</Label>
+            <Input
+              id="delivery"
+              value={deliveryAddress}
+              onChange={(e) => setDeliveryAddress(e.target.value)}
+              placeholder="Leave blank to deliver to the store"
+            />
+          </div>
+          <div className="sm:col-span-2">
             <Label htmlFor="notes">Notes</Label>
             <Input
               id="notes"
@@ -456,13 +524,59 @@ export default function NewOrderPage() {
             </p>
           )}
 
+          <div className="relative">
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              value={productQuery}
+              onChange={(e) => setProductQuery(e.target.value)}
+              onKeyDown={(e) => {
+                // Enter takes the top match, which is what a barcode scanner
+                // sends after the code — scan, scan, scan builds the order.
+                if (e.key === "Enter" && productMatches[0]) {
+                  e.preventDefault();
+                  addFromSearch(productMatches[0]);
+                }
+              }}
+              placeholder="Search by product name, SKU or barcode"
+              aria-label="Search products"
+              className="pl-9"
+            />
+            {productQuery.trim() && (
+              <div className="absolute z-10 mt-1 max-h-64 w-full overflow-y-auto rounded-lg border border-border bg-card shadow-md">
+                {productMatches.map((p) => (
+                  <button
+                    key={p.id}
+                    type="button"
+                    className="flex w-full items-center justify-between gap-3 px-3 py-2 text-left text-sm hover:bg-muted"
+                    onClick={() => addFromSearch(p)}
+                  >
+                    <span className="min-w-0 truncate">
+                      {p.name}
+                      {p.brand && <span className="text-muted-foreground"> — {p.brand}</span>}
+                    </span>
+                    {p.sku_code && (
+                      <span className="shrink-0 font-mono text-xs text-muted-foreground">
+                        {p.sku_code}
+                      </span>
+                    )}
+                  </button>
+                ))}
+                {productMatches.length === 0 && (
+                  <p className="px-3 py-2 text-sm text-muted-foreground">
+                    No product matches &ldquo;{productQuery.trim()}&rdquo;.
+                  </p>
+                )}
+              </div>
+            )}
+          </div>
+
           {lines.map((l) => {
             const available = l.productId ? (availableFor.get(l.productId) ?? 0) : null;
             const wanted = Number(l.qty) || 0;
             const short = available !== null && wanted > available;
             const chosen = products.find((p) => p.id === l.productId);
             return (
-              <div key={l.key} className="grid gap-2 sm:grid-cols-[1fr_6rem_7rem_2.5rem]">
+              <div key={l.key} className="grid gap-2 sm:grid-cols-[1fr_5rem_7rem_5.5rem_2.5rem]">
                 <div>
                   <NativeSelect
                     value={l.productId}
@@ -534,6 +648,22 @@ export default function NewOrderPage() {
                   placeholder="Per unit"
                   aria-label="Price per unit"
                 />
+                <div className="relative">
+                  <Input
+                    type="number"
+                    min={0}
+                    max={100}
+                    step="0.5"
+                    value={l.discount}
+                    onChange={(e) => update(l.key, { discount: e.target.value })}
+                    placeholder="0"
+                    aria-label="Discount percentage"
+                    className="pr-7"
+                  />
+                  <span className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">
+                    % off
+                  </span>
+                </div>
                 <Button
                   variant="ghost"
                   size="icon"

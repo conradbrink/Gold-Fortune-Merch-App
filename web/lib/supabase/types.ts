@@ -14,6 +14,102 @@ export type Database = {
   }
   public: {
     Tables: {
+      quote_lines: {
+        Row: {
+          id: string
+          org_id: string
+          quote_id: string
+          product_id: string
+          qty: number
+          list_price: number
+          discount_pct: number
+          unit_price: number | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          org_id: string
+          quote_id: string
+          product_id: string
+          qty: number
+          list_price: number
+          discount_pct?: number
+          unit_price?: number | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          org_id?: string
+          quote_id?: string
+          product_id?: string
+          qty?: number
+          list_price?: number
+          discount_pct?: number
+          unit_price?: number | null
+          created_at?: string
+        }
+        Relationships: []
+      }
+      quotes: {
+        Row: {
+          id: string
+          org_id: string
+          quote_number: string
+          store_id: string
+          contact_name: string | null
+          contact_phone: string | null
+          rep_id: string | null
+          status: string
+          valid_until: string | null
+          delivery_address: string | null
+          notes: string | null
+          vat_rate: number
+          converted_order_id: string | null
+          converted_at: string | null
+          created_by: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          org_id: string
+          quote_number: string
+          store_id: string
+          contact_name?: string | null
+          contact_phone?: string | null
+          rep_id?: string | null
+          status?: string
+          valid_until?: string | null
+          delivery_address?: string | null
+          notes?: string | null
+          vat_rate?: number
+          converted_order_id?: string | null
+          converted_at?: string | null
+          created_by?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          org_id?: string
+          quote_number?: string
+          store_id?: string
+          contact_name?: string | null
+          contact_phone?: string | null
+          rep_id?: string | null
+          status?: string
+          valid_until?: string | null
+          delivery_address?: string | null
+          notes?: string | null
+          vat_rate?: number
+          converted_order_id?: string | null
+          converted_at?: string | null
+          created_by?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       app_releases: {
         Row: {
           created_at: string
@@ -1248,6 +1344,8 @@ export type Database = {
           qty_reserved: number
           qty_returned: number
           unit_price: number | null
+          list_price: number | null
+          discount_pct: number
         }
         Insert: {
           client_generated_id: string
@@ -1264,6 +1362,8 @@ export type Database = {
           qty_reserved?: number
           qty_returned?: number
           unit_price?: number | null
+          list_price?: number | null
+          discount_pct?: number
         }
         Update: {
           client_generated_id?: string
@@ -1280,6 +1380,8 @@ export type Database = {
           qty_reserved?: number
           qty_returned?: number
           unit_price?: number | null
+          list_price?: number | null
+          discount_pct?: number
         }
         Relationships: [
           {
@@ -1746,6 +1848,7 @@ export type Database = {
           store_id: string
           updated_at: string
           vat_rate: number
+          delivery_address: string | null
         }
         Insert: {
           cancel_reason?: string | null
@@ -1787,6 +1890,7 @@ export type Database = {
           store_id: string
           updated_at?: string
           vat_rate?: number
+          delivery_address?: string | null
         }
         Update: {
           cancel_reason?: string | null
@@ -1828,6 +1932,7 @@ export type Database = {
           store_id?: string
           updated_at?: string
           vat_rate?: number
+          delivery_address?: string | null
         }
         Relationships: [
           {
@@ -5666,6 +5771,10 @@ export type Database = {
       }
     }
     Functions: {
+      quote_convert: {
+        Args: { p_quote_id: string }
+        Returns: string
+      }
       activity_feed: {
         Args: {
           p_from: string
