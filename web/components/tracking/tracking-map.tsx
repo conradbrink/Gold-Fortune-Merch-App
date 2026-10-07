@@ -9,9 +9,13 @@ import { loadMaps, MAPS_KEY } from "@/lib/google-maps";
     re-make on every page is worse than no choice at all. */
 const MAP_TYPE_KEY = "gf.trackingMapType";
 
-function savedMapType(): "roadmap" | "hybrid" {
+const MAP_TYPES = ["roadmap", "satellite", "hybrid"] as const;
+type MapType = (typeof MAP_TYPES)[number];
+
+function savedMapType(): MapType {
   try {
-    return window.localStorage.getItem(MAP_TYPE_KEY) === "hybrid" ? "hybrid" : "roadmap";
+    const saved = window.localStorage.getItem(MAP_TYPE_KEY);
+    return MAP_TYPES.includes(saved as MapType) ? (saved as MapType) : "roadmap";
   } catch {
     // Storage can be blocked (private windows, site data cleared); the map
     // simply opens on the road map.
@@ -80,15 +84,18 @@ export function TrackingMap({
           map.current = new Map(ref.current, {
             center: { lat: -24.65, lng: 25.91 },
             zoom: 7,
-            // Map / Satellite. "hybrid" rather than plain satellite: imagery with
-            // the street and place names still on it, because a rep's route
-            // over unnamed rooftops answers less than the same route over a
-            // named street. In much of Botswana the road map is sparse and the
-            // imagery shows far more of where somebody actually was.
+            // Map / Satellite. In much of Botswana the road map is sparse and
+            // the imagery shows far more of where somebody actually was.
+            //
+            // All three types are offered so Google draws "Map | Satellite"
+            // with a Labels checkbox under Satellite (on by default, which is
+            // the hybrid view: imagery with street and place names). Offering
+            // only roadmap and hybrid labels the second button "Hybrid", which
+            // is Google's word, not anybody else's — seen on production.
             mapTypeId: savedMapType(),
             mapTypeControl: true,
             mapTypeControlOptions: {
-              mapTypeIds: ["roadmap", "hybrid"],
+              mapTypeIds: [...MAP_TYPES],
               style: google.maps.MapTypeControlStyle.HORIZONTAL_BAR,
               // Top left: the live page's rep card sits over the top right.
               position: google.maps.ControlPosition.TOP_LEFT,
