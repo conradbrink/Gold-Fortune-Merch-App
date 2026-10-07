@@ -142,8 +142,27 @@ export default function CommissionRulesPage() {
       return setError("The rate is a percentage between 0 and 100.");
     if (d.kind === "fixed" && !(d.fixedAmount !== "" && Number(d.fixedAmount) >= 0))
       return setError("Enter the amount paid per order.");
-    if (d.kind === "tiered" && d.tiers.some((t) => t.rate === "" || t.from === ""))
-      return setError("Every tier needs a starting value and a rate.");
+    if (d.kind === "tiered") {
+      if (d.tiers.some((t) => t.rate === "" || t.from === ""))
+        return setError("Every tier needs a starting value and a rate.");
+      const tiers = d.tiers
+        .map((t) => ({ from: Number(t.from), to: t.to === "" ? null : Number(t.to), rate: Number(t.rate) }))
+        .sort((a, b) => a.from - b.from);
+      if (
+        tiers.some(
+          (t) =>
+            !Number.isFinite(t.from) || t.from < 0 ||
+            !Number.isFinite(t.rate) || t.rate < 0 || t.rate > 100 ||
+            (t.to !== null && (!Number.isFinite(t.to) || t.to <= t.from))
+        )
+      )
+        return setError("Each tier needs a range that ends above where it starts, and a rate between 0 and 100.");
+      // Overlaps would be settled silently by whichever tier the calculator
+      // reaches first. Gaps are allowed: an order in one earns nothing, which
+      // is a legitimate rule, and the table shows the ranges as written.
+      if (tiers.some((t, i) => i > 0 && (tiers[i - 1].to === null || t.from < (tiers[i - 1].to as number))))
+        return setError("Tier ranges overlap. Each tier must start at or after the previous one ends.");
+    }
     if (d.appliesTo === "rep" && !d.repId) return setError("Choose the rep this rule is for.");
     if (d.appliesTo === "store" && !d.storeId) return setError("Choose the store this rule is for.");
 

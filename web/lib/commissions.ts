@@ -133,16 +133,26 @@ export async function fetchCommissions(
   supabase: Client,
   range: { from: Date; to: Date }
 ): Promise<CommissionRow[]> {
-  const { data, error } = await supabase
-    .from("commissions")
-    .select(
-      "*, profiles!commissions_rep_id_fkey(full_name), orders(order_number, stores(name))"
-    )
-    .gte("delivered_at", range.from.toISOString())
-    .lt("delivered_at", range.to.toISOString())
-    .order("delivered_at", { ascending: false })
-    .limit(2000);
-  fail(error);
+  // Paged to exhaustion: this feeds payroll, and a silent cap would pay
+  // people less than they earned. Ordered by id as well so a page boundary
+  // falling inside a run of equal delivery times cannot repeat or skip rows.
+  const PAGE = 1000;
+  const data: unknown[] = [];
+  for (let from = 0; ; from += PAGE) {
+    const { data: page, error } = await supabase
+      .from("commissions")
+      .select(
+        "*, profiles!commissions_rep_id_fkey(full_name), orders(order_number, stores(name))"
+      )
+      .gte("delivered_at", range.from.toISOString())
+      .lt("delivered_at", range.to.toISOString())
+      .order("delivered_at", { ascending: false })
+      .order("id", { ascending: false })
+      .range(from, from + PAGE - 1);
+    fail(error);
+    data.push(...(page ?? []));
+    if ((page ?? []).length < PAGE) break;
+  }
   type Raw = Commission & {
     profiles: { full_name: string } | null;
     orders: { order_number: string; stores: { name: string } | null } | null;
