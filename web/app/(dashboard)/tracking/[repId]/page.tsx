@@ -133,7 +133,11 @@ export default function RepDayPage() {
         <Tile label="Distance" value={day ? formatKm(day.distanceM) : "…"} sub="From the workday trail" />
         <Tile label="Location points" value={day ? String(day.pings.length) : "…"} />
         <Tile label="Check-ins" value={day ? String(day.visits.length) : "…"} />
-        <Tile label="Active time" value={day ? formatDuration(day.activeSeconds) : "…"} sub="Workday open" />
+        <Tile
+          label="Active time"
+          value={day ? formatDuration(day.activeSeconds) : "…"}
+          sub={day?.dayOpen ? "Day still open, counting" : "Start to end of workday"}
+        />
       </div>
 
       <Card>
