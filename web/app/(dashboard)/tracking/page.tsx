@@ -262,7 +262,7 @@ function RepCard({ rep, day, now, onClose }: { rep: RepPosition; day: RepDay | n
       </div>
       <div className="grid grid-cols-2 gap-px border-b border-border bg-border text-center">
         <Stat label="Distance today" value={day ? formatKm(day.distanceM) : "…"} />
-        <Stat label="Active" value={day ? formatDuration(day.activeSeconds) : "…"} />
+        <Stat label={day?.dayOpen ? "Active so far" : "Active"} value={day ? formatDuration(day.activeSeconds) : "…"} />
         <Stat label="Check-ins" value={day ? String(day.visits.length) : "…"} />
         <Stat label="Orders" value={day ? String(day.orders.length) : "…"} />
       </div>
