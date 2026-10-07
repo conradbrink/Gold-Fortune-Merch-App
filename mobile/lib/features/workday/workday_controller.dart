@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:geolocator/geolocator.dart';
 
+import '../../core/company_config.dart';
 import '../../core/location_service.dart';
 import '../../core/location_tracking.dart';
 import '../../core/monitoring.dart';
@@ -60,6 +61,15 @@ class WorkdayController extends AsyncNotifier<WorkdaySession?> {
       return null;
     }
 
+    // The company's rules. Watched, so a changed interval or auto-end time
+    // rebuilds this controller, which re-arms the timer below; the trail picks
+    // the new interval up on a restart, done here only when it changed.
+    final config = ref.watch(companyConfigValueProvider);
+    _autoEndRule = config.autoEnd;
+    _minPingSpacing = config.minPingSpacing;
+    final intervalChanged = trail.pingInterval != config.pingInterval;
+    trail.pingInterval = config.pingInterval;
+
     final repo = ref.read(workdayRepositoryProvider);
     final session = await repo.fetchActiveSession(user.id);
 
@@ -67,8 +77,12 @@ class WorkdayController extends AsyncNotifier<WorkdaySession?> {
       // Resubscribes after a cold start, so a rep whose phone was killed
       // mid-round starts recording again the moment the app is reopened — and
       // leaves a trail that is already running alone.
-      unawaited(trail.ensureRunning(reason: 'build'));
-      // And ends the day at 19:30 — at once, if a phone woken the next
+      unawaited(
+        intervalChanged
+            ? trail.restart(reason: 'interval-changed')
+            : trail.ensureRunning(reason: 'build'),
+      );
+      // And ends the day at the company's cut-off — at once, if a phone woken the next
       // morning is still holding yesterday open.
       _armAutoEnd(session);
     } else {
@@ -94,11 +108,15 @@ class WorkdayController extends AsyncNotifier<WorkdaySession?> {
 
   bool _autoEnded = false;
 
-  /// True when today's day was ended by the 19:30 rule rather than by the
+  /// True when today's day was ended by the auto-end rule rather than by the
   /// rep, so the banner can say so instead of leaving them to wonder.
   bool get wasAutoEnded => _autoEnded;
 
   Timer? _autoEndTimer;
+
+  /// The company's auto-end rule and ping spacing, as of the last build.
+  AutoEndRule _autoEndRule = AutoEndRule.fallback;
+  Duration _minPingSpacing = kMinPingSpacing;
 
   /// Schedules the day to end itself at the cut-off in [workday_auto_end.dart].
   ///
@@ -113,7 +131,14 @@ class WorkdayController extends AsyncNotifier<WorkdaySession?> {
   /// tight loop.
   void _armAutoEnd(WorkdaySession session, {Duration? retryAfter}) {
     _autoEndTimer?.cancel();
-    var wait = untilAutoEnd(now: DateTime.now(), startedAt: session.startedAt);
+    // A company that switched auto-end off (night shifts) has no cut-off to
+    // wait for; the day runs until the rep ends it.
+    if (!_autoEndRule.enabled) return;
+    var wait = untilAutoEnd(
+      now: DateTime.now(),
+      startedAt: session.startedAt,
+      rule: _autoEndRule,
+    );
     if (retryAfter != null && wait < retryAfter) wait = retryAfter;
     _autoEndTimer = Timer(wait, () => unawaited(_autoEnd()));
   }
@@ -124,7 +149,11 @@ class WorkdayController extends AsyncNotifier<WorkdaySession?> {
     if (session == null) return;
     // The clock can have moved under a long timer. Ask again rather than
     // trust that firing means due.
-    if (!isPastAutoEnd(now: DateTime.now(), startedAt: session.startedAt)) {
+    if (!isPastAutoEnd(
+      now: DateTime.now(),
+      startedAt: session.startedAt,
+      rule: _autoEndRule,
+    )) {
       _armAutoEnd(session);
       return;
     }
@@ -141,7 +170,13 @@ class WorkdayController extends AsyncNotifier<WorkdaySession?> {
     if (!ref.mounted) return;
     final trail = _trail;
     final now = DateTime.now();
-    if (!shouldRecordPing(now: now, lastPingAt: trail.lastPingAt)) return;
+    if (!shouldRecordPing(
+      now: now,
+      lastPingAt: trail.lastPingAt,
+      minSpacing: _minPingSpacing,
+    )) {
+      return;
+    }
     trail.lastPingAt = now;
     await _ping(position);
   }
@@ -210,7 +245,7 @@ class WorkdayController extends AsyncNotifier<WorkdaySession?> {
 
   /// Ends the open day.
   ///
-  /// [automatic] is the 19:30 rule: the day ends as of the cut-off, not now,
+  /// [automatic] is the auto-end rule: the day ends as of the cut-off, not now,
   /// with the last position the trail saw rather than a fresh fix — the phone
   /// may be in a pocket, and a fix it cannot get must not stop the day from
   /// ending. A rep pressing End gets the old behaviour: a fresh fix, and the
@@ -230,7 +265,7 @@ class WorkdayController extends AsyncNotifier<WorkdaySession?> {
         session: session,
         distanceMeters: session.distanceMeters,
         endedAt: automatic
-            ? autoEndCutoffFor(session.startedAt)
+            ? autoEndCutoffFor(session.startedAt, rule: _autoEndRule)
             : DateTime.now(),
         position: automatic
             ? trail.lastPingPosition

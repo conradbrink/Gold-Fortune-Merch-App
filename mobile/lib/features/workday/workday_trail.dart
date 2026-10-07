@@ -70,6 +70,11 @@ class WorkdayTrail {
   /// the reason the subscription is: the controller is rebuilt, this is not,
   /// and a reset rate limit on every rebuild is an extra row every time.
   DateTime? lastPingAt;
+
+  /// The company's GPS interval, set by the controller from its
+  /// configuration. Read when the stream opens and when deciding whether a
+  /// quiet trail has stalled; a change takes effect on the next restart.
+  Duration pingInterval = kLocationPingInterval;
   Position? lastPingPosition;
 
   Object? _owner;
@@ -155,6 +160,7 @@ class WorkdayTrail {
           now: _now(),
           startedAt: startedAt,
           lastPositionAt: _lastPositionAt,
+          stallAfter: pingInterval * 2,
         )) {
       unawaited(restart(reason: 'resume-stalled'));
     }
@@ -324,7 +330,13 @@ class WorkdayTrail {
 /// any rebuild of the controller that drives it.
 final workdayTrailProvider = Provider<WorkdayTrail>((ref) {
   ref.keepAlive();
-  final trail = WorkdayTrail();
+  // The opener reads the trail's interval at the moment it opens a stream, so
+  // a company that changes its GPS interval gets it on the next restart.
+  late final WorkdayTrail trail;
+  trail = WorkdayTrail(
+    openStream: (mode) =>
+        LocationTracking.stream(mode, interval: trail.pingInterval),
+  );
   final lifecycle = AppLifecycleListener(
     onStateChange: trail.didChangeLifecycle,
   );

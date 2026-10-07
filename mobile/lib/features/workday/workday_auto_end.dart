@@ -21,9 +21,53 @@
 /// after the server has already closed the day.
 library;
 
-/// 19:30 local. Change `auto_end_overdue_workdays`'s default with it.
+/// 19:30 local: the rule this app has always used, and the fallback when the
+/// company's own rule cannot be read (see `CompanyConfig.fallback`). The live
+/// rule is the company's `auto_end_enabled` / `auto_end_time`, which the
+/// server's `auto_end_overdue_workdays` also reads.
 const kWorkdayAutoEndHour = 19;
 const kWorkdayAutoEndMinute = 30;
+
+/// A company's auto-end rule: off, or a local time of day.
+class AutoEndRule {
+  const AutoEndRule({
+    required this.enabled,
+    required this.hour,
+    required this.minute,
+  });
+
+  final bool enabled;
+  final int hour;
+  final int minute;
+
+  static const fallback = AutoEndRule(
+    enabled: true,
+    hour: kWorkdayAutoEndHour,
+    minute: kWorkdayAutoEndMinute,
+  );
+
+  /// `"19:30"` as `(19, 30)`, or null if it is not a time.
+  static (int, int)? parseTime(Object? value) {
+    if (value is! String) return null;
+    final m = RegExp(r'^([01]\d|2[0-3]):([0-5]\d)$').firstMatch(value);
+    if (m == null) return null;
+    return (int.parse(m.group(1)!), int.parse(m.group(2)!));
+  }
+
+  /// `19:30`, for the banner.
+  String get label =>
+      '${hour.toString().padLeft(2, '0')}:${minute.toString().padLeft(2, '0')}';
+
+  @override
+  bool operator ==(Object other) =>
+      other is AutoEndRule &&
+      other.enabled == enabled &&
+      other.hour == hour &&
+      other.minute == minute;
+
+  @override
+  int get hashCode => Object.hash(enabled, hour, minute);
+}
 
 /// The moment a day that started at [startedAt] ends by itself, in the
 /// phone's local time.
@@ -31,23 +75,31 @@ const kWorkdayAutoEndMinute = 30;
 /// On the *start* date, always: a day that began yesterday is over at
 /// yesterday's cut-off, not tonight's, and a cold start the next morning must
 /// close it as of then.
-DateTime autoEndCutoffFor(DateTime startedAt) {
+DateTime autoEndCutoffFor(
+  DateTime startedAt, {
+  AutoEndRule rule = AutoEndRule.fallback,
+}) {
   final local = startedAt.toLocal();
-  return DateTime(
-    local.year,
-    local.month,
-    local.day,
-    kWorkdayAutoEndHour,
-    kWorkdayAutoEndMinute,
-  );
+  return DateTime(local.year, local.month, local.day, rule.hour, rule.minute);
 }
 
 /// Whether a day that started at [startedAt] should already have ended.
-bool isPastAutoEnd({required DateTime now, required DateTime startedAt}) =>
-    !now.isBefore(autoEndCutoffFor(startedAt));
+/// Never, when the company has switched auto-end off.
+bool isPastAutoEnd({
+  required DateTime now,
+  required DateTime startedAt,
+  AutoEndRule rule = AutoEndRule.fallback,
+}) =>
+    rule.enabled && !now.isBefore(autoEndCutoffFor(startedAt, rule: rule));
 
 /// How long until the day ends by itself; zero when it already should have.
-Duration untilAutoEnd({required DateTime now, required DateTime startedAt}) {
-  final wait = autoEndCutoffFor(startedAt).difference(now);
+/// Callers check [AutoEndRule.enabled] first: with auto-end off there is no
+/// such moment to wait for.
+Duration untilAutoEnd({
+  required DateTime now,
+  required DateTime startedAt,
+  AutoEndRule rule = AutoEndRule.fallback,
+}) {
+  final wait = autoEndCutoffFor(startedAt, rule: rule).difference(now);
   return wait.isNegative ? Duration.zero : wait;
 }

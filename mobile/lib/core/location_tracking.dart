@@ -108,9 +108,15 @@ double odometerLegMeters(double rawMeters) {
 /// Pulled out of the controller so it can be tested without a platform channel.
 /// The comparison is `>=` rather than `>`: a stream that delivers exactly on the
 /// boundary is the expected case, not an edge case to drop.
-bool shouldRecordPing({required DateTime now, DateTime? lastPingAt}) {
+bool shouldRecordPing({
+  required DateTime now,
+  DateTime? lastPingAt,
+  // The company's spacing (`CompanyConfig.minPingSpacing`), derived from its
+  // GPS interval; the constant is the fallback.
+  Duration minSpacing = kMinPingSpacing,
+}) {
   if (lastPingAt == null) return true;
-  return now.difference(lastPingAt) >= kMinPingSpacing;
+  return now.difference(lastPingAt) >= minSpacing;
 }
 
 /// What tracking we are actually able to do, given what the rep has granted.
@@ -162,11 +168,15 @@ class LocationTracking {
   /// check-out keep `LocationAccuracy.high` in [LocationService], because those
   /// are measured against a store geofence and a sloppy fix there is a wrong
   /// answer rather than a coarse one.
-  static LocationSettings settingsFor(LocationTrackingMode mode) {
+  static LocationSettings settingsFor(
+    LocationTrackingMode mode, {
+    // The company's `gps_ping_interval_minutes`; the constant is the fallback.
+    Duration interval = kLocationPingInterval,
+  }) {
     return AndroidSettings(
       accuracy: LocationAccuracy.medium,
       distanceFilter: kTrackingDistanceFilterM,
-      intervalDuration: kLocationPingInterval,
+      intervalDuration: interval,
       // Only attach the foreground service when it can actually help. Showing a
       // permanent notification to a rep whose grant stops at "while using the
       // app" would advertise tracking that is not happening.
@@ -189,10 +199,13 @@ class LocationTracking {
   }
 
   /// The position stream for an open workday, or null when nothing is permitted.
-  static Stream<Position>? stream(LocationTrackingMode mode) {
+  static Stream<Position>? stream(
+    LocationTrackingMode mode, {
+    Duration interval = kLocationPingInterval,
+  }) {
     if (mode == LocationTrackingMode.unavailable) return null;
     return Geolocator.getPositionStream(
-      locationSettings: settingsFor(mode),
+      locationSettings: settingsFor(mode, interval: interval),
     );
   }
 
@@ -251,6 +264,8 @@ bool trailLooksStalled({
   required DateTime now,
   required DateTime startedAt,
   DateTime? lastPositionAt,
+  // Two of the company's intervals (`CompanyConfig.trailStallAfter`).
+  Duration stallAfter = kTrailStallAfter,
 }) {
-  return now.difference(lastPositionAt ?? startedAt) > kTrailStallAfter;
+  return now.difference(lastPositionAt ?? startedAt) > stallAfter;
 }

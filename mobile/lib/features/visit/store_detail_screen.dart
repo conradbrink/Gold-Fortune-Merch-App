@@ -12,12 +12,10 @@ import '../../data/models/route_visit.dart';
 import '../../data/repositories/promotion_repository.dart';
 import '../../data/repositories/route_repository.dart';
 import '../../shared/widgets/status_badge.dart';
+import '../../core/company_config.dart';
 import '../forms/form_fill_screen.dart';
+import '../workday/workday_auto_end.dart';
 import '../workday/workday_controller.dart';
-
-/// Below this, a check-out is treated as suspiciously quick and the rep is
-/// asked to confirm. Real merchandising work at a store takes longer.
-const kMinimumVisitDuration = Duration(minutes: 5);
 
 class StoreDetailScreen extends ConsumerStatefulWidget {
   const StoreDetailScreen({super.key, required this.visitKey});
@@ -235,9 +233,12 @@ class _StoreDetailScreenState extends ConsumerState<StoreDetailScreen> {
     setState(() => _busy = true);
     try {
       final concerns = <String>[];
-      if (rv.checkinAt != null) {
+      // Below the company's `short_visit_minutes`, a check-out is treated as
+      // suspiciously quick and the rep is asked to confirm. Zero turns it off.
+      final config = ref.read(companyConfigValueProvider);
+      if (rv.checkinAt != null && config.shortVisit > Duration.zero) {
         final spent = DateTime.now().difference(rv.checkinAt!);
-        if (spent < kMinimumVisitDuration) {
+        if (spent < config.shortVisit) {
           final minutes = spent.inMinutes;
           final label = minutes < 1 ? 'less than a minute' : '$minutes min';
           concerns.add(
@@ -246,7 +247,7 @@ class _StoreDetailScreenState extends ConsumerState<StoreDetailScreen> {
           );
         }
       }
-      final unanswered = _unansweredLines(rv);
+      final unanswered = config.has('distribution') ? _unansweredLines(rv) : 0;
       if (unanswered > 0) {
         concerns.add(
           '$unanswered promoted line${unanswered == 1 ? '' : 's'} '
@@ -262,11 +263,21 @@ class _StoreDetailScreenState extends ConsumerState<StoreDetailScreen> {
 
       if (!mounted) return;
       final session = ref.read(workdayControllerProvider).value;
+      // A day the phone still holds open past the company's cut-off (it was
+      // asleep when the timer was due) is over: the check-out is recorded on
+      // the visit, but no GPS ping is attached to a workday that has ended.
+      final inWorkingHours = session != null &&
+          !isPastAutoEnd(
+            now: DateTime.now(),
+            startedAt: session.startedAt,
+            rule: config.autoEnd,
+          );
       await ref.read(visitRepositoryProvider).checkOut(
             orgId: profile.orgId,
             repId: profile.id,
             routeVisit: rv,
-            workdaySessionClientId: session?.clientGeneratedId,
+            workdaySessionClientId:
+                inWorkingHours ? session.clientGeneratedId : null,
           );
       // Same reason as check-in: show the outcome of the tap straight away
       // rather than waiting on a refetch that may not land.
@@ -473,8 +484,14 @@ class _StoreDetailScreenState extends ConsumerState<StoreDetailScreen> {
           // meant every rep in the country had to answer it at every store to
           // be able to leave — and the fastest way out of a gate like that is
           // to answer it falsely.
-          final templates =
-              ref.watch(formTemplatesProvider).value ?? const <FormTemplate>[];
+          // Which of the company's modules this screen offers. Forms that do
+          // not exist for the company must not hold the rep at the door either.
+          final company = ref.watch(companyConfigValueProvider);
+          final hasForms = company.has('checklists_forms');
+          final hasDistribution = company.has('distribution');
+          final templates = hasForms
+              ? ref.watch(formTemplatesProvider).value ?? const <FormTemplate>[]
+              : const <FormTemplate>[];
           final submitted = rv.visitClientGeneratedId != null
               ? ref
                       .watch(submittedTemplateIdsProvider(
@@ -641,7 +658,8 @@ class _StoreDetailScreenState extends ConsumerState<StoreDetailScreen> {
               // do not, so putting promotions first means the rep passes them
               // on the way to the thing that actually stops them leaving —
               // compliance pressure without another gate.
-              if (rv.visitClientGeneratedId != null &&
+              if (hasDistribution &&
+                  rv.visitClientGeneratedId != null &&
                   (rv.isCheckedIn || rv.isCheckedOut)) ...[
                 _PromotionsSection(
                   storeId: rv.storeId,
@@ -656,7 +674,9 @@ class _StoreDetailScreenState extends ConsumerState<StoreDetailScreen> {
               // It does not block check-out. Most visits produce no order, and
               // a gate that fires on every stop to ask about something that
               // usually is not there teaches people to dismiss gates.
-              if (rv.visitClientGeneratedId != null && rv.isCheckedIn) ...[
+              if (hasDistribution &&
+                  rv.visitClientGeneratedId != null &&
+                  rv.isCheckedIn) ...[
                 _OrderButton(
                   visitKey: widget.visitKey,
                   visitClientId: rv.visitClientGeneratedId!,
@@ -664,7 +684,9 @@ class _StoreDetailScreenState extends ConsumerState<StoreDetailScreen> {
                 const SizedBox(height: 16),
               ],
               // Forms become available once the rep is on site.
-              if (rv.visitClientGeneratedId != null && (rv.isCheckedIn || rv.isCheckedOut)) ...[
+              if (hasForms &&
+                  rv.visitClientGeneratedId != null &&
+                  (rv.isCheckedIn || rv.isCheckedOut)) ...[
                 _FormsSection(
                   visitClientGeneratedId: rv.visitClientGeneratedId!,
                   readOnly: rv.isCheckedOut,
