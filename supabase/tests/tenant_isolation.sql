@@ -465,7 +465,6 @@ begin
       end;
     end loop;
 
-    v_funcs_checked := v_funcs_checked + 1;
     set local role authenticated;
     begin
       execute format('select coalesce(jsonb_agg(to_jsonb(x))::text, '''') from public.%I(%s) x',
@@ -478,8 +477,16 @@ begin
           exit;
         end if;
       end loop;
+      -- Counted only once its result has been searched (CodeRabbit on #69).
+      v_funcs_checked := v_funcs_checked + 1;
     exception when others then
-      null;  -- refused, or the guessed arguments did not fit: neither is a leak
+      if sqlstate = '42501' then
+        v_funcs_checked := v_funcs_checked + 1;   -- refused B outright: the guard working
+      else
+        -- The guessed arguments did not fit: not a leak, but not tested either.
+        v_unproven := v_unproven || format('  T5 %s: not probed (%s: %s)%s',
+                                           f.proname, sqlstate, left(sqlerrm, 80), E'\n');
+      end if;
     end;
     reset role;
   end loop;
