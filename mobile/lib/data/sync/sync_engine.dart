@@ -779,7 +779,7 @@ class SyncEngine {
           .eq('client_generated_id', visitClientId)
           .maybeSingle();
       if (row == null) {
-        throw StateError('Visit not synced yet; will retry.');
+        throw StateError('This check-in has not synced yet; will retry.');
       }
       resolvedVisitId = row['id'] as String;
     }

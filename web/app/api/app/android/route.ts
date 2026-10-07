@@ -51,7 +51,9 @@ export async function GET() {
     );
   }
 
-  const filename = `gold-fortune-merchandising-${release.versionName}.apk`;
+  // The product's name, not a customer's: every company downloads the same
+  // app, and the label it installs under is "Field Teams" too.
+  const filename = `field-teams-${release.versionName}.apk`;
 
   return new Response(data, {
     headers: {

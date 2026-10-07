@@ -55,7 +55,9 @@ export function FieldSettingsCard({ orgId }: { orgId: string }) {
       const effective: Record<string, Json> = {};
       for (const d of defs.data) effective[d.key] = d.default_value;
       for (const row of mine.data) effective[row.key] = row.value;
-      setDefinitions(defs.data);
+      // The two brand colours have their own pickers on the Terminology &
+      // branding tab; as plain text boxes here they would be edited twice.
+      setDefinitions(defs.data.filter((d) => !d.key.startsWith("brand_")));
       setValues(effective);
       setDraft(Object.fromEntries(Object.entries(effective).map(([k, v]) => [k, toText(v)])));
     })();
