@@ -186,7 +186,7 @@ export default function LeadsPage() {
     <div className="space-y-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight text-foreground">
+          <h1 className="text-xl font-semibold tracking-tight text-foreground">
             Leads
           </h1>
           <p className="text-sm text-muted-foreground">
