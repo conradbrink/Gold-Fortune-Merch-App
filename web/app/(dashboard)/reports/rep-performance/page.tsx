@@ -333,7 +333,7 @@ export default function RepPerformancePage() {
     <div className="space-y-6">
       <div data-print-hide className="space-y-6">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Rep Performance Report</h1>
+          <h1 className="text-xl font-semibold tracking-tight text-foreground">Rep Performance Report</h1>
           <p className="mt-1 text-sm text-muted-foreground">
             A two-page management report for one merchandiser over one period, built from
             the visits, orders and audits already in the system.

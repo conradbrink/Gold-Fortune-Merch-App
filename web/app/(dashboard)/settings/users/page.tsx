@@ -107,7 +107,7 @@ export default function UsersPage() {
   if (!directory) {
     return error ? (
       <div className="space-y-4">
-        <h1 className="text-2xl font-bold tracking-tight">Users and permissions</h1>
+        <h1 className="text-xl font-semibold tracking-tight text-foreground">Users and permissions</h1>
         <div className="rounded-md border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive">
           <p className="font-medium">Could not load users</p>
           <p className="mt-1">{error}</p>
@@ -125,7 +125,7 @@ export default function UsersPage() {
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight text-foreground">
+          <h1 className="text-xl font-semibold tracking-tight text-foreground">
             Users and permissions
           </h1>
           <p className="text-sm text-muted-foreground">

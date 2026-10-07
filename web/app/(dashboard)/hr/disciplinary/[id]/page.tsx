@@ -247,7 +247,7 @@ export default function CasePage() {
           <ArrowLeft className="mr-1.5 h-4 w-4" /> Disciplinary
         </Button>
         <div className="flex flex-wrap items-center gap-3">
-          <h1 className="text-2xl font-bold tracking-tight text-foreground">
+          <h1 className="text-xl font-semibold tracking-tight text-foreground">
             {row.case_number}
           </h1>
           <Badge variant={row.closed_at ? "outline" : "secondary"} className="font-normal">

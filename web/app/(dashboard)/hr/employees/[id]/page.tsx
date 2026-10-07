@@ -298,7 +298,7 @@ export default function EmployeeProfilePage() {
           >
             <ArrowLeft className="mr-1.5 h-4 w-4" /> Employees
           </Button>
-          <h1 className="text-2xl font-bold tracking-tight text-foreground">{name}</h1>
+          <h1 className="text-xl font-semibold tracking-tight text-foreground">{name}</h1>
           <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-muted-foreground">
             <span>{employee.employee_number}</span>
             {employee.position && <span>· {employee.position}</span>}
