@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { listCompanies } from "@/lib/platform";
@@ -5,9 +6,9 @@ import { listCompanies } from "@/lib/platform";
 /**
  * Platform operator: every company on the service.
  *
- * Read-only for now. Switching modules, changing a plan and impersonating for
- * support come with the Add-company flow, and will write to
- * `platform_audit_log` when they do.
+ * Lists every company; each links to its page, where the operator switches
+ * modules (`setCompanyModule`, audit-logged). Changing a plan and
+ * impersonating for support come with the Add-company flow.
  *
  * The gate is here, on the server, not in `proxy.ts`. The proxy's permission
  * map is about what a person may do *inside their own company*, and an
@@ -49,7 +50,7 @@ export default async function PlatformPage() {
       <header className="space-y-1">
         <h1 className="text-2xl font-bold text-foreground">Companies</h1>
         <p className="text-sm text-muted-foreground">
-          Every company on the platform. Times are UTC.
+          Every company on the platform. Open one to switch its modules. Times are UTC.
         </p>
       </header>
 
@@ -69,7 +70,12 @@ export default async function PlatformPage() {
             {companies.map((c) => (
               <tr key={c.id} className="border-b border-border last:border-0">
                 <td className="px-4 py-2">
-                  <div className="font-medium text-foreground">{c.name}</div>
+                  <Link
+                    href={`/platform/companies/${c.id}`}
+                    className="font-medium text-foreground hover:underline"
+                  >
+                    {c.name}
+                  </Link>
                   <div className="font-mono text-xs text-muted-foreground">{c.id}</div>
                 </td>
                 <td className="px-4 py-2">{c.industry ?? "—"}</td>

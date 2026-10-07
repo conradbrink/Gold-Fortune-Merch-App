@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { Maximize2, Search, ShoppingCart, X } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
+import { useCompanyConfig } from "@/lib/use-company-config";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ErrorBanner } from "@/components/warehouse/stat-tile";
@@ -12,6 +13,7 @@ import {
   describeAge,
   describeSource,
   fetchLiveReps,
+  freshnessExplained,
   freshnessOf,
   minutesSince,
   type LiveReps,
@@ -29,20 +31,27 @@ import {
   type RepDay,
 } from "@/lib/tracking";
 
-const PIN = { fresh: "#10b981", recent: "#f59e0b", stale: "#9ca3af" } as const;
-const DOT = { fresh: "bg-emerald-500", recent: "bg-amber-500", stale: "bg-muted-foreground/50" } as const;
+const PIN = { fresh: "#10b981", recent: "#f59e0b", stale: "#9ca3af", unknown: "#cbd5e1" } as const;
+const DOT = {
+  fresh: "bg-emerald-500",
+  recent: "bg-amber-500",
+  stale: "bg-muted-foreground/50",
+  unknown: "bg-slate-300 dark:bg-slate-600",
+} as const;
 const ORDER_PIN = "#2563eb";
 
 /**
  * Live tracking: every rep's last reading on one map.
  *
- * "Live" means a reading inside twenty minutes — `FRESH_MINUTES`, the same
- * line the dashboard map draws — not that anybody is being followed in real
+ * "Live" means a reading inside four of the company's GPS intervals
+ * (`freshnessOf`, the same line the dashboard map draws) — not that anybody is being followed in real
  * time. Every rep carries the age of their reading, because a position without
  * one claims a certainty the phones cannot give. Re-read every minute.
  */
 export default function TrackingPage() {
   const supabase = createClient();
+  // "Live" means within a few of the company's GPS intervals (`freshnessOf`).
+  const intervalMinutes = useCompanyConfig()?.settings.gps_ping_interval_minutes ?? null;
   const [data, setData] = useState<LiveReps | null>(null);
   const [orders, setOrders] = useState<DayOrder[]>([]);
   const [showOrders, setShowOrders] = useState(true);
@@ -94,8 +103,8 @@ export default function TrackingPage() {
     [data, q]
   );
   const missing = (data?.missing ?? []).filter((m) => !q || m.repName.toLowerCase().includes(q));
-  const live = positions.filter((p) => freshnessOf(minutesSince(p.recordedAt, now)) === "fresh");
-  const earlier = positions.filter((p) => freshnessOf(minutesSince(p.recordedAt, now)) !== "fresh");
+  const live = positions.filter((p) => freshnessOf(minutesSince(p.recordedAt, now), intervalMinutes) === "fresh");
+  const earlier = positions.filter((p) => freshnessOf(minutesSince(p.recordedAt, now), intervalMinutes) !== "fresh");
   const chosen = positions.find((p) => p.repId === selected) ?? null;
 
   const pins = useMemo<MapPin[]>(() => {
@@ -103,7 +112,7 @@ export default function TrackingPage() {
       id: `rep-${p.repId}`,
       lat: p.lat,
       lng: p.lng,
-      color: PIN[freshnessOf(minutesSince(p.recordedAt, now))],
+      color: PIN[freshnessOf(minutesSince(p.recordedAt, now), intervalMinutes)],
       label: p.repName.split(" ")[0],
       title: `${p.repName} — ${describeAge(minutesSince(p.recordedAt, now))}`,
       onClick: () => setSelected(p.repId),
@@ -122,7 +131,7 @@ export default function TrackingPage() {
       }
     }
     return out;
-  }, [positions, orders, showOrders, now]);
+  }, [positions, orders, showOrders, now, intervalMinutes]);
 
   const focus = useMemo(() => (chosen ? { lat: chosen.lat, lng: chosen.lng } : null), [chosen]);
   const ordersOnMap = orders.filter((o) => o.lat != null).length;
@@ -133,8 +142,8 @@ export default function TrackingPage() {
         <div>
           <h1 className="text-xl font-semibold tracking-tight text-foreground">Tracking</h1>
           <p className="text-sm text-muted-foreground">
-            Each rep&apos;s last reading, refreshed every minute. Green within 20 minutes, amber within
-            90, grey older.
+            Each rep&apos;s last reading, refreshed every minute.{" "}
+            {freshnessExplained(intervalMinutes)}
           </p>
         </div>
         <div className="flex items-center gap-2 rounded-lg bg-card px-2 py-1 text-sm ring-1 ring-foreground/10">
@@ -223,6 +232,7 @@ function Group({ title, children }: { title: string; children: React.ReactNode }
 
 function RepRow({ p, now, selected, onSelect }: { p: RepPosition; now: number; selected: boolean; onSelect: () => void }) {
   const minutes = minutesSince(p.recordedAt, now);
+  const intervalMinutes = useCompanyConfig()?.settings.gps_ping_interval_minutes ?? null;
   return (
     <button
       type="button"
@@ -230,7 +240,7 @@ function RepRow({ p, now, selected, onSelect }: { p: RepPosition; now: number; s
       aria-pressed={selected}
       className={`flex w-full items-start gap-2.5 border-b border-border px-3 py-2 text-left last:border-b-0 ${selected ? "bg-muted" : "hover:bg-muted/60"}`}
     >
-      <span className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${DOT[freshnessOf(minutes)]}`} />
+      <span className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${DOT[freshnessOf(minutes, intervalMinutes)]}`} />
       <span className="min-w-0 flex-1">
         <span className="flex items-baseline justify-between gap-2">
           <span className="truncate text-sm font-medium">{p.repName}</span>

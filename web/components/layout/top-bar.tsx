@@ -24,11 +24,17 @@ import { NotificationsBell } from "@/components/hr/notifications-bell";
 import { WorkdayControl } from "@/components/workday/workday-control";
 import { can } from "@/lib/permissions";
 import { usePermissions } from "@/lib/use-permissions";
+import { useCompanyConfig } from "@/lib/use-company-config";
+import { moduleEnabled } from "@/lib/modules";
 
 export function TopBar({ onOpenNav }: { onOpenNav?: () => void }) {
   const router = useRouter();
   const supabase = createClient();
   const permissions = usePermissions();
+  const company = useCompanyConfig();
+  // HR notifications only exist with the HR module; without it the bell would
+  // poll a table the database answers with nothing.
+  const hasHr = company !== null && moduleEnabled(company.modules, "hr");
   // Global search spans four modules, not one. It used to follow the store
   // estate alone, which was wrong in both directions: a warehouse-and-resources
   // person got no box at all, and somebody with only the store estate got a box
@@ -108,7 +114,7 @@ export function TopBar({ onOpenNav }: { onOpenNav?: () => void }) {
             somebody comes to the app specifically to press. Renders nothing for
             anybody without the `workday` permission. */}
         <WorkdayControl />
-        <NotificationsBell />
+        {hasHr && <NotificationsBell />}
         {/* Outside the manager gate, unlike search and settings. How the screen
             looks is nobody's permission to grant, and warehouse staff work the
             same long shifts on the same screens. */}

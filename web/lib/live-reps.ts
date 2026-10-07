@@ -15,10 +15,16 @@ import type { SupabaseClient } from "@supabase/supabase-js";
  * ships, without this file changing: more `interval` rows, smaller ages.
  */
 
-/** How stale a reading is allowed to be before it stops being "now"-ish. */
-export const FRESH_MINUTES = 20;
-/** Past this, the reading says where someone *was*, not where they are. */
-export const STALE_MINUTES = 90;
+/**
+ * How stale a reading may be before it stops being "now"-ish, and past which
+ * it says where someone *was*: four and eighteen GPS intervals. Derived from
+ * the company's `gps_ping_interval_minutes` rather than fixed, because a
+ * company pinging every 20 minutes would otherwise see every rep as stale. At
+ * Gold Fortune's 5 minutes these are the 20 and 90 minutes the map has always
+ * used.
+ */
+export const FRESH_INTERVALS = 4;
+export const STALE_INTERVALS = 18;
 
 export type PingSource =
   | "checkin"
@@ -87,11 +93,50 @@ export function describeSource(source: PingSource, store: string | null): string
   }
 }
 
-export type Freshness = "fresh" | "recent" | "stale";
+/**
+ * "unknown" while the company's GPS interval has not loaded (or could not):
+ * without a threshold no age is fresh or old, and painting a day-old position
+ * amber for the length of an outage would be a guess dressed as a reading
+ * (CodeRabbit on #74).
+ */
+export type Freshness = "fresh" | "recent" | "stale" | "unknown";
 
-export function freshnessOf(minutes: number): Freshness {
-  if (minutes <= FRESH_MINUTES) return "fresh";
-  if (minutes <= STALE_MINUTES) return "recent";
+/** Said instead of a key while the company's GPS interval is unknown. */
+export const FRESHNESS_PENDING = "Ages appear once the company's GPS interval has loaded.";
+
+/**
+ * The map key's two labels, from the same thresholds the dots use: "Within
+ * 20 min" / "Within 90 min" at a 5-minute interval. Null while the interval is
+ * unknown: every dot is then amber, and a key naming green and grey groups
+ * would describe dots that cannot appear (CodeRabbit on #74).
+ */
+export function freshnessKey(
+  intervalMinutes: number | null
+): { fresh: string; recent: string } | null {
+  if (intervalMinutes === null) return null;
+  return {
+    fresh: `Within ${intervalMinutes * FRESH_INTERVALS} min`,
+    recent: `Within ${intervalMinutes * STALE_INTERVALS} min`,
+  };
+}
+
+/**
+ * The colour key in words, from the same thresholds `freshnessOf` uses, so
+ * the explanation under a map cannot drift from its colours (CodeRabbit on
+ * #74: both maps still said "20 minutes" after the thresholds became the
+ * company's interval).
+ */
+export function freshnessExplained(intervalMinutes: number | null): string {
+  if (intervalMinutes === null) return FRESHNESS_PENDING;
+  return `Green within ${intervalMinutes * FRESH_INTERVALS} minutes, amber within ${
+    intervalMinutes * STALE_INTERVALS
+  }, grey older.`;
+}
+
+export function freshnessOf(minutes: number, intervalMinutes: number | null): Freshness {
+  if (intervalMinutes === null) return "unknown";
+  if (minutes <= intervalMinutes * FRESH_INTERVALS) return "fresh";
+  if (minutes <= intervalMinutes * STALE_INTERVALS) return "recent";
   return "stale";
 }
 

@@ -83,7 +83,7 @@ const COMPETITOR_PRICE_AUDIT: FormPreset = {
     { label: "Puffs / size", field_type: "text", required: false },
     // A number, not text, so the export sums and sorts it and the chart on the
     // Form tab is a price distribution rather than a list of strings.
-    { label: "Shelf price (BWP)", field_type: "number", required: true },
+    { label: "Shelf price", field_type: "number", required: true },
     { label: "On promotion?", field_type: "boolean", required: false },
     {
       label: "Promotion detail",

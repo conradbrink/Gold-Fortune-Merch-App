@@ -18,6 +18,7 @@ import {
   type RepReport,
 } from "@/lib/rep-report";
 import { DailySalesChart, PlannedVsCompletedChart } from "@/components/rep-report/charts";
+import { currencyName } from "@/lib/money";
 
 /**
  * The report itself: two sheets of A4, and nothing that is not on them.
@@ -43,6 +44,8 @@ export type ReportMeta = {
   to: Date;
   managerName: string;
   generatedAt: Date;
+  /** ISO 4217, from company settings: every amount on the report is in it. */
+  currency: string;
 };
 
 /** Above 18 rows the missed list runs in two columns instead of one. */
@@ -60,7 +63,8 @@ export function RepPerformanceReport({
   const score = computeScore(summary, stores, missed);
   const merch = merchandisingCompliance(summary);
   const top = topStores(stores);
-  const attention = storesNeedingAttention(stores, missed);
+  const currency = meta.currency;
+  const attention = storesNeedingAttention(stores, missed, currency);
 
   const completionRate = served.rate;
   const salesPerVisit =
@@ -88,7 +92,7 @@ export function RepPerformanceReport({
           <div className="rr-kpis">
             <Kpi
               label="Sales generated"
-              value={money(summary.salesNet)}
+              value={money(summary.salesNet, currency)}
               note={
                 summary.salesOrders > 0
                   ? `${summary.salesOrders} delivered order${summary.salesOrders === 1 ? "" : "s"}`
@@ -99,7 +103,7 @@ export function RepPerformanceReport({
               label="Sales vs target"
               value="Target not set"
               muted
-              note={`Actual ${money(summary.salesNet)} · no target is held in the database`}
+              note={`Actual ${money(summary.salesNet, currency)} · no target is held in the database`}
             />
             <Kpi
               label="Visit completion"
@@ -145,7 +149,7 @@ export function RepPerformanceReport({
             />
             <Kpi
               label="Sales per visit"
-              value={money(salesPerVisit)}
+              value={money(salesPerVisit, currency)}
               note={
                 summary.completedVisits > 0
                   ? `Over ${summary.completedVisits} completed visits`
@@ -230,9 +234,9 @@ export function RepPerformanceReport({
         <section className="rr-block">
           <h2 className="rr-h2">
             Sales generated per day
-            <span className="rr-h2-note">delivered orders, excluding VAT, in Pula</span>
+            <span className="rr-h2-note">delivered orders, excluding VAT, in {currencyName(currency)}</span>
           </h2>
-          <DailySalesChart days={days} />
+          <DailySalesChart days={days} currency={currency} />
         </section>
 
         <section className="rr-block">
@@ -282,7 +286,7 @@ export function RepPerformanceReport({
           </span>
         </div>
 
-        <MissedStores missed={missed} />
+        <MissedStores missed={missed} currency={currency} />
 
         <div className="rr-two">
           <section className="rr-block">
@@ -357,7 +361,7 @@ export function RepPerformanceReport({
                 {top.map((s) => (
                   <li key={s.storeId}>
                     <span className="rr-ranked-name">{s.storeName}</span>
-                    <span className="rr-ranked-value">{money(s.salesNet)}</span>
+                    <span className="rr-ranked-value">{money(s.salesNet, currency)}</span>
                   </li>
                 ))}
               </ol>
@@ -391,7 +395,7 @@ export function RepPerformanceReport({
             </span>
             <span className="rr-verdict-band">{classifyScore(score.score)}</span>
           </div>
-          <p className="rr-prose">{managementSummary(summary, score, missed)}</p>
+          <p className="rr-prose">{managementSummary(summary, score, missed, currency)}</p>
         </section>
 
         <section className="rr-block rr-comments">
@@ -534,7 +538,7 @@ function Row({ label, value, muted }: { label: string; value: string; muted?: bo
  * alternative is hiding planned work that was not done, which is the one thing
  * this section exists to prevent.
  */
-function MissedStores({ missed }: { missed: MissedVisit[] }) {
+function MissedStores({ missed, currency }: { missed: MissedVisit[]; currency: string }) {
   if (missed.length === 0) {
     return (
       <section className="rr-block">
@@ -595,7 +599,7 @@ function MissedStores({ missed }: { missed: MissedVisit[] }) {
                     {m.reason ?? "Reason not recorded"}
                   </td>
                   <td className="rr-num">
-                    {m.previousSales === null ? "—" : moneyShort(m.previousSales)}
+                    {m.previousSales === null ? "—" : moneyShort(m.previousSales, currency)}
                   </td>
                 </tr>
               ))}

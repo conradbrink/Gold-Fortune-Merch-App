@@ -1,6 +1,7 @@
 import OpenAI from "openai";
 import { createClient } from "@/lib/supabase/server";
 import { enforceRateLimit, requireFeature, LIMITS } from "@/lib/rate-limit";
+import { requireModule } from "@/lib/require-module";
 import {
   fetchComplianceTrends,
   fetchCoverageGaps,
@@ -261,6 +262,11 @@ export async function POST(request: Request) {
         { status: 403 }
       );
     }
+
+    // Insights are part of the Reports module. Checked in the database, like
+    // every module gate, and before anything is spent.
+    const moduleGate = await requireModule(supabase, "reports");
+    if (!moduleGate.ok) return moduleGate.response;
 
     // Deliberately after authz: an anonymous caller should learn nothing about
     // how this server is configured, including whether a key is set.

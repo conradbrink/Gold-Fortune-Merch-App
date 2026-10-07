@@ -9,6 +9,7 @@ import {
   WIDGET_IDS,
   WIDGET_SOURCES,
   findWidget,
+  widgetAvailable,
   type BusinessData,
   type WidgetData,
   type WidgetSource,
@@ -16,6 +17,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { createClient } from "@/lib/supabase/client";
+import { getCompanyConfig, useCompanyConfig } from "@/lib/use-company-config";
 import { rangeDays, rangeForPreset, type DateRange } from "@/lib/date-range";
 import { fetchLiveReps, type LiveReps } from "@/lib/live-reps";
 import { fetchTargetProgress, monthStart } from "@/lib/targets";
@@ -73,6 +75,7 @@ export default function InsightsDashboardPage() {
   const [error, setError] = useState<string | null>(null);
 
   const [layout, setLayout] = useState<string[]>(DEFAULT_LAYOUT);
+  const company = useCompanyConfig();
   const [orgId, setOrgId] = useState<string | null>(null);
   const [customising, setCustomising] = useState(false);
   /**
@@ -122,7 +125,11 @@ export default function InsightsDashboardPage() {
         // feature, and a card showing an average whose detail failed to load
         // would offer a day picker that silently finds nothing.
         fetchRepDayDetail(supabase, range),
-        fetchRepDayDistance(supabase, range),
+        // A failed config lookup must not cost the distance column: fall
+        // back the same way as a company with no timezone.
+        getCompanyConfig().catch(() => null).then((c) =>
+          fetchRepDayDistance(supabase, range, c?.timezone ?? "UTC")
+        ),
         fetchOperationsSummary(supabase, range),
         // Not range-scoped, unlike everything else here: "where is the team"
         // is a question about now, and a date filter would answer a different
@@ -398,7 +405,14 @@ export default function InsightsDashboardPage() {
     business: business !== null,
   };
 
-  const cards = layout.map((id) => findWidget(id)).filter((w) => w !== undefined);
+  // Cards for modules the company does not have are left out, not shown empty.
+  // Nothing until the company is known, for the same reason the sidebar waits.
+  const cards = company
+    ? layout
+        .map((id) => findWidget(id))
+        .filter((w) => w !== undefined)
+        .filter((w) => widgetAvailable(w, company.modules))
+    : [];
 
   return (
     <div className="space-y-4">
@@ -479,6 +493,7 @@ export default function InsightsDashboardPage() {
       )}
 
       <CustomiseDashboard
+        modules={company?.modules ?? null}
         open={customising}
         onOpenChange={setCustomising}
         layout={layout}

@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState, type ReactNode } from "react";
 import { Card } from "@/components/ui/card";
+import { useCompanyConfig } from "@/lib/use-company-config";
 import {
   describeAge,
   describeSource,
@@ -398,6 +399,7 @@ const DOT: Record<ReturnType<typeof freshnessOf>, string> = {
   fresh: "bg-emerald-500",
   recent: "bg-amber-500",
   stale: "bg-muted-foreground/50",
+  unknown: "bg-slate-300 dark:bg-slate-600",
 };
 
 export function FieldTeamCard({
@@ -419,6 +421,8 @@ export function FieldTeamCard({
     const t = setInterval(() => setNow(Date.now()), 30_000);
     return () => clearInterval(t);
   }, []);
+  // The dots age against the company's own GPS interval, as on the maps.
+  const interval = useCompanyConfig()?.settings.gps_ping_interval_minutes ?? null;
   const oosDelta =
     summary && summary.current.oos_rate !== null && summary.previous.oos_rate !== null
       ? deltaPct(summary.current.oos_rate * 1000, summary.previous.oos_rate * 1000)
@@ -434,7 +438,7 @@ export function FieldTeamCard({
           const mins = minutesSince(p.recordedAt, now);
           return (
             <li key={p.repId} className="grid grid-cols-[10px_1fr_auto] items-center gap-2.5 border-b py-2.5 text-sm last:border-b-0">
-              <span className={`h-2 w-2 rounded-full ${DOT[freshnessOf(mins)]}`} aria-hidden />
+              <span className={`h-2 w-2 rounded-full ${DOT[freshnessOf(mins, interval)]}`} aria-hidden />
               <span className="min-w-0 truncate">
                 <span className="font-medium">{p.repName}</span>
                 <span className="text-muted-foreground">

@@ -255,10 +255,18 @@ class WorkdayRepository {
 
   /// Queues a location sample. The session is referenced by its client id;
   /// the sync engine resolves it to the real row once the workday lands.
+  ///
+  /// The session is **required**. A rep's position is recorded only while
+  /// they are clocked in (POPIA: the requirements say "track location only
+  /// while an employee is clocked in"). Until 1.1.12 a check-out after the day
+  /// had ended, or after the day ended itself, still queued a ping with no
+  /// session — a position taken outside working hours. Making the session
+  /// non-nullable means no caller can do that again without the compiler
+  /// saying so.
   Future<void> queuePing({
     required String orgId,
     required String repId,
-    String? sessionClientId,
+    required String sessionClientId,
     required Position position,
     required String source,
   }) async {

@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import 'core/company_config.dart';
 import 'core/interrupted_location.dart';
 import 'core/providers.dart';
 import 'core/supabase_client.dart';
@@ -209,6 +210,14 @@ final routerProvider = Provider<GoRouter>((ref) {
       // the caller, so the database would have accepted it.
       if (role != 'rep' && !onManagerNotice) return '/manager-notice';
       if (role == 'rep' && onManagerNotice) return '/';
+
+      // A screen of a module the company does not have. The menus already
+      // hide these; this catches a deep link or an old back stack. Read
+      // synchronously: while the configuration is still loading this is the
+      // fallback (everything on), which lets the rep through rather than
+      // bouncing them — the database refuses the module's data either way.
+      final company = ref.read(companyConfigValueProvider);
+      if (!company.has(moduleForLocation(state.uri.path))) return '/';
       return null;
     },
   );

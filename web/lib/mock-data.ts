@@ -126,23 +126,6 @@ export const companyDetails = {
   supportEmail: "support@goldfortune.com",
 };
 
-export const currentPlan = {
-  name: "Growth",
-  price: "$249",
-  billingCycle: "per month",
-  seatsUsed: 4,
-  seatsIncluded: 10,
-  storesUsed: 8,
-  storesIncluded: 50,
-  renewsOn: "2026-09-01",
-};
-
-export const availablePlans = [
-  { id: "starter", name: "Starter", price: "$99/mo", seats: 3, stores: 10 },
-  { id: "growth", name: "Growth", price: "$249/mo", seats: 10, stores: 50 },
-  { id: "enterprise", name: "Enterprise", price: "Custom", seats: Infinity, stores: Infinity },
-];
-
 export const unitsSoldTrend = [
   { week: "W1", units: 4200 },
   { week: "W2", units: 4800 },

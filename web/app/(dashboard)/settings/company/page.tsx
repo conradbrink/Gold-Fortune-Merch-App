@@ -7,7 +7,6 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import { Progress } from "@/components/ui/progress";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Card,
@@ -34,7 +33,8 @@ import {
 } from "@/lib/org-settings";
 import { FREQUENCIES, WEEKDAYS } from "@/lib/schedule";
 import type { Tables } from "@/lib/supabase/types";
-import { currentPlan, availablePlans } from "@/lib/mock-data";
+import { FieldSettingsCard } from "@/components/settings/field-settings-card";
+import { ModulesCard } from "@/components/settings/modules-card";
 
 type Organization = Tables<"organizations">;
 type Profile = Tables<"profiles">;
@@ -99,7 +99,7 @@ export default function CompanyProfilePage() {
         address: orgRow.address ?? "",
         support_email: orgRow.support_email ?? "",
         vat_rate: String(orgRow.vat_rate ?? 0),
-        timezone: orgRow.timezone ?? "Africa/Gaborone",
+        timezone: orgRow.timezone ?? "",
         tax_number: orgRow.tax_number ?? "",
         vat_number: orgRow.vat_number ?? "",
         phone: orgRow.phone ?? "",
@@ -180,7 +180,9 @@ export default function CompanyProfilePage() {
         address: form.address || null,
         support_email: form.support_email || null,
         vat_rate: Number(form.vat_rate) || 0,
-        timezone: form.timezone,
+        // Left out when blank: the database refuses an empty zone, and a
+        // company with none set must still be able to save its other fields.
+        ...(form.timezone.trim() ? { timezone: form.timezone.trim() } : {}),
         tax_number: form.tax_number.trim() || null,
         vat_number: form.vat_number.trim() || null,
         phone: form.phone.trim() || null,
@@ -211,8 +213,8 @@ export default function CompanyProfilePage() {
           Company Profile
         </h1>
         <p className="text-sm text-muted-foreground">
-          Manage your organization&apos;s details, team members, and
-          subscription plan.
+          Manage your organization&apos;s details, team members, field
+          settings and plan.
         </p>
       </div>
 
@@ -220,7 +222,8 @@ export default function CompanyProfilePage() {
         <TabsList>
           <TabsTrigger value="details">Company Details</TabsTrigger>
           <TabsTrigger value="team">Team Members</TabsTrigger>
-          <TabsTrigger value="plan">Plan &amp; Billing</TabsTrigger>
+          <TabsTrigger value="field">Field settings</TabsTrigger>
+          <TabsTrigger value="plan">Plan</TabsTrigger>
         </TabsList>
 
         <TabsContent value="details" className="mt-4">
@@ -577,104 +580,12 @@ export default function CompanyProfilePage() {
           </div>
         </TabsContent>
 
+        <TabsContent value="field" className="mt-4 space-y-4">
+          {org && <FieldSettingsCard orgId={org.id} />}
+        </TabsContent>
+
         <TabsContent value="plan" className="mt-4 space-y-4">
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base">Current plan</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-5">
-              <div className="flex items-center justify-between">
-                <div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-xl font-bold text-foreground">
-                      {currentPlan.name}
-                    </span>
-                    <Badge className="bg-gold text-gold-foreground">
-                      Current plan
-                    </Badge>
-                  </div>
-                  <p className="text-sm text-muted-foreground">
-                    {currentPlan.price} {currentPlan.billingCycle} · renews{" "}
-                    {currentPlan.renewsOn}
-                  </p>
-                </div>
-                <Button variant="outline">Manage billing</Button>
-              </div>
-
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                <div className="space-y-1.5">
-                  <div className="flex justify-between text-sm">
-                    <span className="text-muted-foreground">Seats used</span>
-                    <span className="font-medium text-foreground">
-                      {members.length} / {currentPlan.seatsIncluded}
-                    </span>
-                  </div>
-                  <Progress
-                    value={(members.length / currentPlan.seatsIncluded) * 100}
-                  />
-                </div>
-                <div className="space-y-1.5">
-                  <div className="flex justify-between text-sm">
-                    <span className="text-muted-foreground">Stores used</span>
-                    <span className="font-medium text-foreground">
-                      {currentPlan.storesUsed} / {currentPlan.storesIncluded}
-                    </span>
-                  </div>
-                  <Progress
-                    value={(currentPlan.storesUsed / currentPlan.storesIncluded) * 100}
-                  />
-                </div>
-              </div>
-              <p className="text-xs text-muted-foreground">
-                Billing isn&apos;t connected to a payment provider yet — this
-                tab is illustrative until Stripe (or similar) is integrated.
-              </p>
-            </CardContent>
-          </Card>
-
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-            {availablePlans.map((plan) => {
-              const active = plan.name === currentPlan.name;
-              return (
-                <Card
-                  key={plan.id}
-                  className={active ? "border-primary" : undefined}
-                >
-                  <CardHeader>
-                    <CardTitle className="flex items-center justify-between text-base">
-                      {plan.name}
-                      {active && (
-                        <Badge className="bg-primary text-primary-foreground">
-                          Active
-                        </Badge>
-                      )}
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent className="space-y-3">
-                    <p className="text-2xl font-bold text-foreground">
-                      {plan.price}
-                    </p>
-                    <p className="text-sm text-muted-foreground">
-                      {plan.seats === Infinity ? "Unlimited" : plan.seats} seats
-                      · {plan.stores === Infinity ? "Unlimited" : plan.stores}{" "}
-                      places
-                    </p>
-                    <Button
-                      variant={active ? "outline" : "default"}
-                      className={
-                        active
-                          ? "w-full"
-                          : "w-full bg-primary text-primary-foreground hover:bg-primary/90"
-                      }
-                      disabled={active}
-                    >
-                      {active ? "Current plan" : "Switch plan"}
-                    </Button>
-                  </CardContent>
-                </Card>
-              );
-            })}
-          </div>
+          <ModulesCard />
         </TabsContent>
       </Tabs>
     </div>

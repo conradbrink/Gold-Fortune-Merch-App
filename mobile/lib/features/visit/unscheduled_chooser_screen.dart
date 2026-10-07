@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../core/company_config.dart';
 import '../../core/providers.dart';
 import '../../core/theme.dart';
 
@@ -19,7 +20,9 @@ class UnscheduledChooserScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final open = ref.watch(myLeadsProvider);
+    // Sales visits and leads belong to the Distribution module.
+    final hasSales = ref.watch(companyConfigValueProvider).has('distribution');
+    final open = hasSales ? ref.watch(myLeadsProvider) : null;
 
     return Scaffold(
       appBar: AppBar(title: const Text('Unscheduled visit')),
@@ -34,6 +37,7 @@ class UnscheduledChooserScreen extends ConsumerWidget {
                 'and time, then the normal visit: forms, photos, check-out.',
             onTap: () => context.go('/unscheduled/store'),
           ),
+          if (hasSales) ...[
           const SizedBox(height: 12),
           _Choice(
             icon: Icons.handshake_outlined,
@@ -43,10 +47,12 @@ class UnscheduledChooserScreen extends ConsumerWidget {
                 'a listing. Records who you saw and what came of it.',
             onTap: () => context.go('/unscheduled/sales'),
           ),
+          ],
 
           // Anything still open is offered back. A call started and never
           // closed off is a lead with no outcome, which helps nobody.
-          open.maybeWhen(
+          if (open != null)
+            open.maybeWhen(
             data: (leads) {
               final unfinished = leads.where((l) => !l.isComplete).toList();
               if (unfinished.isEmpty) return const SizedBox.shrink();

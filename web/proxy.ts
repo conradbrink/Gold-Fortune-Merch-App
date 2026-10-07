@@ -6,6 +6,7 @@ import {
   matchesPrefix,
   toPermissionSet,
 } from "@/lib/permissions";
+import { canReachPath, moduleForPath, toModuleSet } from "@/lib/modules";
 
 export async function proxy(request: NextRequest) {
   let response = NextResponse.next({ request });
@@ -69,6 +70,10 @@ export async function proxy(request: NextRequest) {
   // server, which answers 404 to everyone else.
   const isPlatformPage = matchesPrefix(request.nextUrl.pathname, "/platform");
 
+  // The explanation for a module the company does not have. Exempt from the
+  // checks below for the reason /rep-notice is: it is where they send people.
+  const isNotEnabledPage = matchesPrefix(request.nextUrl.pathname, "/not-enabled");
+
   if (!user && !isLoginPage && !isDownloadPage && !isPasswordResetPage) {
     const url = request.nextUrl.clone();
     url.pathname = "/login";
@@ -99,20 +104,25 @@ export async function proxy(request: NextRequest) {
     !isLoginPage &&
     !isDownloadPage &&
     !isPasswordResetPage &&
-    !isPlatformPage
+    !isPlatformPage &&
+    !isNotEnabledPage
   ) {
-    // One round trip, as before — it used to fetch `profiles.role`. Asking the
-    // database for the permission set rather than deriving it here keeps the
-    // proxy and RLS reading the same answer from the same place.
-    const { data: granted, error: permissionError } = await supabase.rpc(
-      "my_permissions"
-    );
+    // Two questions, asked in parallel so the page waits for one round trip:
+    // what may this person do, and what has their company got. Both come from
+    // the database, so the proxy and RLS read the same answers.
+    const [
+      { data: granted, error: permissionError },
+      { data: config, error: configError },
+    ] = await Promise.all([
+      supabase.rpc("my_permissions"),
+      supabase.rpc("my_company_config"),
+    ]);
 
     // A query that failed is not the same fact as a person with no
     // permissions. Falling through to "nothing" on a timeout would strand an
     // administrator on /rep-notice looking like a broken account, and the one
     // thing they could not work out is that it was temporary.
-    if (permissionError) {
+    if (permissionError || configError) {
       return new NextResponse(
         "Could not check your access just now. Reload in a moment.",
         { status: 503 }
@@ -123,10 +133,23 @@ export async function proxy(request: NextRequest) {
     // provisioned. They get the notice page, which is a dead end rather than a
     // redirect loop.
     const permissions = toPermissionSet(granted as string[] | null);
+    const modules = toModuleSet(
+      (config as { modules?: Record<string, unknown> } | null)?.modules
+    );
+
+    // The company first: a page of a module it does not have is explained,
+    // not bounced. Sending someone "home" from /hr when HR is off would look
+    // like a broken link; the notice says why.
+    if (!canReachPath(modules, request.nextUrl.pathname)) {
+      const url = request.nextUrl.clone();
+      url.pathname = "/not-enabled";
+      url.search = `?module=${moduleForPath(request.nextUrl.pathname)}`;
+      return NextResponse.redirect(url);
+    }
 
     if (!canAccessPath(permissions, request.nextUrl.pathname)) {
       const url = request.nextUrl.clone();
-      url.pathname = homeFor(permissions);
+      url.pathname = homeFor(permissions, (href) => canReachPath(modules, href));
       // Guard against a home that is itself refused, which would redirect for
       // ever. Only reachable if `homeFor` and the path map ever disagree.
       if (url.pathname === request.nextUrl.pathname) return response;

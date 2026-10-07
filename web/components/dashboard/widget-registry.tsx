@@ -1,5 +1,7 @@
 "use client";
 
+import { moduleEnabled, type ModuleCode, type ModuleSet } from "@/lib/modules";
+import { useCompanyConfig } from "@/lib/use-company-config";
 import { useMemo, useState, type ReactNode } from "react";
 import Link from "next/link";
 import {
@@ -118,8 +120,19 @@ export type WidgetDefinition = {
   /** Columns out of four. 1 = tile, 2 = half width, 4 = full width. */
   span: 1 | 2 | 4;
   source: WidgetSource;
+  /**
+   * The module this card reports on, when it is not core. A company without
+   * it does not see the card or get it offered in Customise — the numbers
+   * would be zeros from a feature they do not have.
+   */
+  module?: ModuleCode;
   render: (data: WidgetData) => ReactNode;
 };
+
+/** Whether a card belongs on this company's dashboard. */
+export function widgetAvailable(widget: WidgetDefinition, modules: ModuleSet): boolean {
+  return widget.module === undefined || moduleEnabled(modules, widget.module);
+}
 
 function Line({
   label,
@@ -185,6 +198,7 @@ export const WIDGETS: WidgetDefinition[] = [
     description: "Delivered revenue by month with this month's pace, and each rep against target.",
     span: 2,
     source: "business",
+    module: "distribution",
     render: (d) => d.business && <SalesCard business={d.business.summary} targets={d.business.targets} />,
   },
   {
@@ -193,6 +207,7 @@ export const WIDGETS: WidgetDefinition[] = [
     description: "Orders by stage, missing proofs of delivery, quotes, recurring orders, low stock and money owed.",
     span: 2,
     source: "business",
+    module: "distribution",
     render: (d) => d.business && <PipelineCard business={d.business.summary} />,
   },
   {
@@ -212,6 +227,7 @@ export const WIDGETS: WidgetDefinition[] = [
     description: "Stores ordering, visited without ordering, and not visited — with the ones to visit first.",
     span: 2,
     source: "business",
+    module: "distribution",
     render: (d) => d.business && <StoreHealthCard business={d.business.summary} />,
   },
   {
@@ -258,6 +274,7 @@ export const WIDGETS: WidgetDefinition[] = [
   },
   {
     id: "oos_rate",
+    module: "distribution",
     title: "Out of stock rate",
     description:
       "Share of stock checks answered “no”. Reads the in_stock metric on your forms.",
@@ -282,6 +299,7 @@ export const WIDGETS: WidgetDefinition[] = [
   },
   {
     id: "planogram",
+    module: "distribution",
     title: "Planogram compliance",
     description:
       "Share of planogram checks answered “yes”. Reads the planogram_ok metric.",
@@ -311,7 +329,7 @@ export const WIDGETS: WidgetDefinition[] = [
     id: "live_reps",
     title: "Where the team is",
     description:
-      "Each rep's latest position on a map, with how long ago it arrived. Phones report every 5 minutes once the current app build reaches them; until then most fixes come from check-ins.",
+      "Each rep's latest position on a map, with how long ago it arrived. Phones report at the interval set in company settings while the workday is open.",
     span: 4,
     source: "liveReps",
     render: ({ liveReps }) => (liveReps ? <RepMap data={liveReps} /> : null),
@@ -405,6 +423,7 @@ export const WIDGETS: WidgetDefinition[] = [
   },
   {
     id: "forms_submitted",
+    module: "checklists_forms",
     title: "Forms submitted",
     description: "Submissions in the period, and what share of completed visits carried one.",
     span: 1,
@@ -497,6 +516,7 @@ export const WIDGETS: WidgetDefinition[] = [
   },
   {
     id: "prospecting",
+    module: "distribution",
     title: "Prospecting",
     description: "Sales calls, pipeline stages and follow-ups owed.",
     span: 2,
@@ -685,6 +705,8 @@ function WorkingDay({
   distance: RepDayDistance[];
   range: DateRange;
 }) {
+  // The day keys are in the company's timezone (see `reportingDay`).
+  const timeZone = useCompanyConfig()?.timezone ?? "UTC";
   /** Road metres by rep and local day, for the two tables below. */
   const kmFor = useMemo(() => {
     const m = new Map<string, number | null>();
@@ -770,20 +792,20 @@ function WorkingDay({
   const weekDaysInRange = useMemo(() => {
     if (week === "") return 7;
     // Both ends in the reporting timezone, because `local_day` is. The range
-    // is built from the viewer's own midnight, and for a viewer outside CAT
-    // the calendar date of that instant is not the Gaborone date the rows
-    // are keyed to — off by one at either end, and the note wrong with it.
+    // is built from the viewer's own midnight, and for a viewer in another
+    // zone the calendar date of that instant is not the company-timezone date
+    // the rows are keyed to — off by one at either end, and the note wrong.
     // The last covered day is the day of the instant just before the
     // exclusive end.
-    const from = reportingDay(range.from.toISOString());
-    const last = reportingDay(new Date(+range.to - 1).toISOString());
+    const from = reportingDay(range.from.toISOString(), timeZone);
+    const last = reportingDay(new Date(+range.to - 1).toISOString(), timeZone);
     let n = 0;
     for (let i = 0; i < 7; i++) {
       const d = shiftDay(week, i);
       if (d >= from && d <= last) n += 1;
     }
     return n;
-  }, [week, range.from, range.to]);
+  }, [week, range.from, range.to, timeZone]);
 
   const chosenDay = useMemo(
     () =>

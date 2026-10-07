@@ -78,13 +78,19 @@ class VisitRepository {
       }),
     );
 
-    await _workdayRepo.queuePing(
-      orgId: orgId,
-      repId: repId,
-      sessionClientId: workdaySessionClientId,
-      position: position,
-      source: 'checkin',
-    );
+    // Only inside an open workday: outside one, the rep is not clocked in
+    // and their position is not recorded. The visit row keeps its own
+    // coordinates either way — that is the visit's evidence, not a trail.
+    final session = workdaySessionClientId;
+    if (session != null) {
+      await _workdayRepo.queuePing(
+        orgId: orgId,
+        repId: repId,
+        sessionClientId: session,
+        position: position,
+        source: 'checkin',
+      );
+    }
 
     // Write the new state into the route cache. Without this the offline UI
     // re-reads the stale cached row, still shows "not started", and a rep who
@@ -139,13 +145,19 @@ class VisitRepository {
       }),
     );
 
-    await _workdayRepo.queuePing(
-      orgId: orgId,
-      repId: repId,
-      sessionClientId: workdaySessionClientId,
-      position: position,
-      source: 'checkout',
-    );
+    // Only inside an open workday: outside one, the rep is not clocked in
+    // and their position is not recorded. The visit row keeps its own
+    // coordinates either way — that is the visit's evidence, not a trail.
+    final session = workdaySessionClientId;
+    if (session != null) {
+      await _workdayRepo.queuePing(
+        orgId: orgId,
+        repId: repId,
+        sessionClientId: session,
+        position: position,
+        source: 'checkout',
+      );
+    }
 
     await _routeRepo.applyLocalVisitChange(
       routeVisit.copyWith(status: 'checked_out', checkoutAt: checkoutAt),

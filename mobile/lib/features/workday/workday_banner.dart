@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../core/company_config.dart';
 import '../../core/location_tracking.dart';
 import '../../core/providers.dart';
 import '../../core/theme.dart';
@@ -48,10 +49,13 @@ class _WorkdayBannerState extends ConsumerState<WorkdayBanner> {
   /// This read "every 20 min" long after the interval became five, which is the
   /// kind of stale copy nobody notices because it is never wrong *enough* — but
   /// a rep reading it has been told something untrue about their own phone.
-  String _trackingLine(LocationTrackingMode mode) {
+  ///
+  /// The interval is the company's (`gps_ping_interval_minutes`), not a
+  /// literal, for exactly that reason.
+  String _trackingLine(LocationTrackingMode mode, Duration interval) {
     switch (mode) {
       case LocationTrackingMode.background:
-        return 'Recording your route every 5 min';
+        return 'Recording your route every ${interval.inMinutes} min';
       case LocationTrackingMode.foregroundOnly:
         return 'Only recording while this app is open';
       case LocationTrackingMode.unavailable:
@@ -175,6 +179,7 @@ class _WorkdayBannerState extends ConsumerState<WorkdayBanner> {
   @override
   Widget build(BuildContext context) {
     final workdayAsync = ref.watch(workdayControllerProvider);
+    final config = ref.watch(companyConfigValueProvider);
 
     ref.listen(workdayControllerProvider, (prev, next) {
       if (next.hasError) {
@@ -259,11 +264,11 @@ class _WorkdayBannerState extends ConsumerState<WorkdayBanner> {
                     const SizedBox(height: 2),
                     Text(
                       active
-                          ? _trackingLine(trackingMode)
+                          ? _trackingLine(trackingMode, config.pingInterval)
                           : endedItself
                           ? 'Your workday was ended automatically at '
-                                '19:30. Your next workday can be started '
-                                'tomorrow.'
+                                '${config.autoEnd.label}. Your next workday can '
+                                'be started tomorrow.'
                           : finishedForToday
                               ? 'You have finished for today. Your next '
                                   'workday can be started tomorrow.'

@@ -146,6 +146,24 @@ silently wrong numbers.
 3. **Materialise `current_org_id()` into a CTE** and filter `where org_id =
    <that>` explicitly, so the planner sees a literal and can use
    `visits_org_checkin_at_idx`. Verify with `explain analyze`.
+4. **Every new table, storage bucket and RPC belongs to a module** (from
+   `20261007112638_enforce_modules`). In the same migration:
+   - `insert into public.module_assignments (kind, name, module_code) values
+     ('table', '<name>', '<module>')` (or `'function'` / `'bucket'`). Use
+     `core` only for things every company has.
+   - For a table outside `core`: `create policy module_gate on public.<t> as
+     restrictive for all using ((select public.module_enabled('<module>')))
+     with check ((select public.module_enabled('<module>')))`.
+   - For an RPC outside `core`: make its first statement
+     `perform public.require_module('<module>');` (plpgsql) or
+     `select public.require_module('<module>');` (sql). Not inside a CTE: the
+     planner can skip a CTE.
+   - Helpers that policies, triggers or other modules call stay `core` and
+     ungated.
+   `supabase/tests/module_enforcement.sql` fails on anything unassigned.
+5. **No business constant in SQL.** A time, a distance, an interval a company
+   might want different goes in `setting_definitions` and is read with
+   `company_setting(key)` (caller's company) or `org_setting(org, key)`.
 
 ## Demo / seed data
 

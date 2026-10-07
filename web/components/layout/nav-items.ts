@@ -41,6 +41,7 @@ import {
   type PermissionCode,
   type PermissionSet,
 } from "@/lib/permissions";
+import { canReachPath, type ModuleSet } from "@/lib/modules";
 
 export type NavItem = {
   href: string;
@@ -336,14 +337,22 @@ export function activeHref(pathname: string): string | null {
  * drift into offering a link that bounces: get the path map wrong and the item
  * quietly disappears from the menu rather than becoming a dead end.
  */
-export function visibleNavGroups(permissions: PermissionSet): NavGroup[] {
+export function visibleNavGroups(
+  permissions: PermissionSet,
+  // The company's modules. A destination whose module is off is not offered,
+  // whatever the person's permissions: the proxy would only explain that it is
+  // not part of the plan. Which module an item belongs to comes from its path
+  // (`moduleForPath`), the same map the proxy uses, so the two cannot drift.
+  modules: ModuleSet
+): NavGroup[] {
   return navGroups
     .map((group) => ({
       ...group,
       items: group.items.filter(
         (item) =>
           (item.permission === undefined || can(permissions, item.permission)) &&
-          canAccessPath(permissions, item.href)
+          canAccessPath(permissions, item.href) &&
+          canReachPath(modules, item.href)
       ),
     }))
     .filter((group) => group.items.length > 0);

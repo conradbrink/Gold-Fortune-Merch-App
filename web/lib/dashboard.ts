@@ -172,17 +172,42 @@ export type RepDayDistance = {
  */
 export async function fetchRepDayDistance(
   supabase: SupabaseClient,
-  range: DateRange
+  range: DateRange,
+  /** The company's timezone — the one `rep_day_times_per_day` groups by. */
+  timeZone: string
 ): Promise<RepDayDistance[]> {
-  const { data, error } = await supabase
-    .from("workday_sessions")
-    .select("rep_id, started_at, road_distance_meters")
-    .gte("started_at", range.from.toISOString())
-    // `.lt`, not `.lte`: `DateRange.to` is the exclusive start of the next day,
-    // so a session beginning exactly on it belongs to tomorrow.
-    .lt("started_at", range.to.toISOString())
-    .order("started_at", { ascending: true });
-  if (error) throw new Error(error.message);
+  // The range is built from the viewer's midnights, but the days it means are
+  // the company's: `rep_day_times_per_day` turns both ends into company-local
+  // dates. So the query reaches a day further on each side — no timezone is
+  // more than fourteen hours from another — and the rows are then kept by
+  // their company-local day. Filtering on the viewer's instants instead
+  // dropped the start of a company day, or took in its neighbour, for anyone
+  // viewing from another zone (CodeRabbit on #74).
+  const DAY_MS = 24 * 60 * 60 * 1000;
+  const firstDay = reportingDay(range.from.toISOString(), timeZone);
+  const lastDay = reportingDay(new Date(+range.to - 1).toISOString(), timeZone);
+  // Paged: the padding days count toward PostgREST's 1,000-row cap, and a
+  // response cut short there would drop the end of the range without an
+  // error (CodeRabbit on #74, second pass).
+  const PAGE = 1000;
+  const raw: { rep_id: string; started_at: string; road_distance_meters: number | null }[] = [];
+  for (let from = 0; ; from += PAGE) {
+    const { data: page, error } = await supabase
+      .from("workday_sessions")
+      .select("rep_id, started_at, road_distance_meters")
+      .gte("started_at", new Date(+range.from - DAY_MS).toISOString())
+      .lt("started_at", new Date(+range.to + DAY_MS).toISOString())
+      .order("started_at", { ascending: true })
+      .order("id", { ascending: true })
+      .range(from, from + PAGE - 1);
+    if (error) throw new Error(error.message);
+    raw.push(...(page ?? []));
+    if ((page ?? []).length < PAGE) break;
+  }
+  const data = raw.filter((r) => {
+    const day = reportingDay(r.started_at as string, timeZone);
+    return day >= firstDay && day <= lastDay;
+  });
 
   /**
    * One row per rep per day, not per session.
@@ -207,7 +232,7 @@ export async function fetchRepDayDistance(
     started_at: string;
     road_distance_meters: number | null;
   }[]) {
-    const local_day = reportingDay(r.started_at);
+    const local_day = reportingDay(r.started_at, timeZone);
     const key = `${r.rep_id}|${local_day}`;
     const acc =
       byDay.get(key) ?? { rep_id: r.rep_id, local_day, metres: 0, missing: false };
@@ -226,16 +251,15 @@ export async function fetchRepDayDistance(
 /**
  * The local date of a timestamp, in the timezone the reporting is keyed to.
  *
- * **Not the browser's timezone.** `rep_day_times_per_day` converts to
- * `Africa/Gaborone` in SQL before grouping, and this key is matched against
- * those rows — so deriving it from the manager's own clock would put the driving
- * on the wrong day, or on no day at all, for anyone opening the dashboard from
- * outside CAT. Everyone is in Botswana today, which is exactly why this would
- * have gone unnoticed.
+ * **Not the browser's timezone.** `rep_day_times_per_day` converts to the
+ * company's timezone (`organizations.timezone`, via `org_timezone`) in SQL
+ * before grouping, and this key is matched against those rows — so deriving it
+ * from the manager's own clock would put the driving on the wrong day, or on no
+ * day at all, for anyone opening the dashboard from another zone.
  */
-export function reportingDay(iso: string): string {
+export function reportingDay(iso: string, timeZone: string): string {
   return new Intl.DateTimeFormat("en-CA", {
-    timeZone: "Africa/Gaborone",
+    timeZone,
     year: "numeric",
     month: "2-digit",
     day: "2-digit",

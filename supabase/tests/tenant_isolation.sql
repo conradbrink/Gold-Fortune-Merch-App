@@ -49,6 +49,7 @@ declare
   a_org uuid; b_org uuid;
   b_mgr uuid; b_rep uuid;
   a_rep uuid; a_store uuid; a_group uuid; a_file uuid; a_emp uuid;
+  v_probe_group uuid;
 
   -- Everything that identifies Company A, for T5's search.
   a_tokens text[];
@@ -57,26 +58,36 @@ declare
   -- Parent ids for T2, captured while we can still see them.
   a_templates uuid[]; a_subs uuid[]; a_promos uuid[]; a_files uuid[];
   a_reviews uuid[]; a_roles uuid[]; a_profiles uuid[];
+  a_invoices uuid[]; a_credits uuid[]; a_recurring uuid[];
 
   t record; f record;
   v_n int; v_total int; v_row jsonb; v_txt text; v_cols text; v_args text;
-  v_who text; v_tok text;
+  v_who text; v_tok text; v_alt text; v_txt2 text;
 
   v_fail text := '';
   v_info text := '';
   v_unproven text := '';
   v_tables_checked int := 0; v_funcs_checked int := 0;
+  v_funcs_refused text := ''; v_funcs_broken text := '';
 
   -- T2's list. Any public table without `org_id` that is not here stops the run.
   -- Above companies by design. `platform_*` have no API access at all; T2
   -- checks that B's users cannot read them.
   c_global constant text[] := array['organizations','app_permissions','app_releases',
                                      'service_flags','rate_limits',
-                                     'platform_admins','platform_audit_log'];
+                                     'platform_admins','platform_audit_log',
+                                     -- the module and settings catalogue (Stage 2)
+                                     'modules','module_dependencies',
+                                     'setting_definitions','module_assignments',
+                                     -- the terminology catalogue (Stage 3)
+                                     'term_definitions'];
   c_children constant text[] := array['form_fields','form_responses','promotion_products',
                                        'promotion_stores','file_groups','file_reps',
                                        'hr_review_ratings','job_role_permissions',
-                                       'profile_permissions'];
+                                       'profile_permissions',
+                                       -- invoices and recurring orders (#71)
+                                       'tax_invoice_lines','credit_note_lines',
+                                       'recurring_order_lines','recurring_order_runs'];
 begin
   -------------------------------------------------------------------- fixtures
   select id into a_org from public.organizations order by created_at limit 1;
@@ -125,6 +136,14 @@ begin
 
   insert into public.organizations (name) values ('Isolation Test Company B')
     returning id into b_org;
+  -- Every module on for B, so that a module gate is never what hides A's data
+  -- from B: this suite is about companies, module_enforcement.sql about modules.
+  if to_regclass('public.company_modules') is not null then
+    insert into public.company_modules (org_id, module_code)
+    select b_org, m.code from public.modules m
+     where m.plan_type <> 'core' and m.is_built order by m.sort_order
+    on conflict do nothing;
+  end if;
 
   delete from public.dashboard_layouts where user_id in (b_mgr, b_rep);
   delete from public.hr_notifications where recipient_id in (b_mgr, b_rep);
@@ -143,6 +162,9 @@ begin
   select array_agg(id) into a_files     from public.files where org_id = a_org;
   select array_agg(id) into a_reviews   from public.hr_reviews where org_id = a_org;
   select array_agg(id) into a_roles     from public.job_roles where org_id = a_org;
+  select array_agg(id) into a_invoices  from public.tax_invoices where org_id = a_org;
+  select array_agg(id) into a_credits   from public.credit_notes where org_id = a_org;
+  select array_agg(id) into a_recurring from public.recurring_orders where org_id = a_org;
   a_profiles := array(select unnest(a_profiles) except select unnest(array[b_mgr, b_rep]));
 
   -- T5's tokens: ids are unambiguous; names are what a report would print.
@@ -316,9 +338,25 @@ begin
         ('file_reps',            'file_id = any($2)',                   a_files),
         ('hr_review_ratings',    'review_id = any($2)',                 a_reviews),
         ('job_role_permissions', 'job_role_id = any($2)',               a_roles),
-        ('profile_permissions',  'profile_id = any($2)',                a_profiles)
+        ('profile_permissions',  'profile_id = any($2)',                a_profiles),
+        ('tax_invoice_lines',    'invoice_id = any($2)',                a_invoices),
+        ('credit_note_lines',    'credit_note_id = any($2)',            a_credits),
+        ('recurring_order_lines','recurring_order_id = any($2)',        a_recurring),
+        ('recurring_order_runs', 'recurring_order_id = any($2)',        a_recurring)
       ) as x(tbl, pred, ids)
     loop
+      -- First pass only: does A have rows here at all? Counted as the owner,
+      -- or "B sees none" proves nothing and must say so (CodeRabbit on #74).
+      if v_who = 'manager' and t.tbl <> 'organizations' then
+        reset role;
+        execute format('select count(*) from public.%I where %s', t.tbl, t.pred)
+          into v_n using b_org, t.ids;
+        if v_n = 0 then
+          v_unproven := v_unproven || format('  %s: Company A has no rows, so reads prove nothing%s',
+                                             t.tbl, E'\n');
+        end if;
+        set local role authenticated;
+      end if;
       begin
         execute format('select count(*) from public.%I where %s', t.tbl, t.pred)
           into v_n using b_org, t.ids;
@@ -351,18 +389,33 @@ begin
   end loop;
 
   -- Writes through the two file link tables: B linking itself to A's file.
+  -- Each pair is new, so a primary key cannot be what refuses it, and only
+  -- RLS's 42501 counts as the refusal; anything else is reported (CodeRabbit
+  -- on #74: the file_groups pair used to be one the fixtures had already
+  -- inserted, so a duplicate key answered and the probe passed regardless).
+  insert into public.store_groups (org_id, name)
+    values (a_org, 'Isolation probe group')
+    returning id into v_probe_group;
   perform set_config('request.jwt.claims', json_build_object(
     'sub', b_mgr, 'role', 'authenticated')::text, true);
   set local role authenticated;
   begin
     insert into public.file_reps (file_id, rep_id) values (a_file, b_rep);
     v_fail := v_fail || 'T2 insert file_reps: B linked a rep to A''s file' || E'\n';
-  exception when others then null;
+  exception
+    when insufficient_privilege then null;
+    when others then
+      v_fail := v_fail || format('T2 insert file_reps refused by %s, not RLS: %s%s',
+                                 sqlstate, sqlerrm, E'\n');
   end;
   begin
-    insert into public.file_groups (file_id, store_group_id) values (a_file, a_group);
+    insert into public.file_groups (file_id, store_group_id) values (a_file, v_probe_group);
     v_fail := v_fail || 'T2 insert file_groups: B linked A''s file to a group' || E'\n';
-  exception when others then null;
+  exception
+    when insufficient_privilege then null;
+    when others then
+      v_fail := v_fail || format('T2 insert file_groups refused by %s, not RLS: %s%s',
+                                 sqlstate, sqlerrm, E'\n');
   end;
   reset role;
 
@@ -394,7 +447,12 @@ begin
       insert into storage.objects (bucket_id, name, owner)
       values (v_txt, a_org::text || '/' || a_emp::text || '/isolation-test.jpg', b_mgr);
       v_fail := v_fail || format('T3 storage: B wrote into A''s folder in %s%s', v_txt, E'\n');
-    exception when others then null;
+    exception
+      when insufficient_privilege then null;
+      when others then
+        -- A missing bucket fails its foreign key (23503) and tests nothing.
+        v_fail := v_fail || format('T3 storage write to %s refused by %s, not RLS: %s%s',
+                                   v_txt, sqlstate, sqlerrm, E'\n');
     end;
   end loop;
   reset role;
@@ -433,11 +491,23 @@ begin
   reset role;
 
   ------------------------------------------------ T5 every callable function
+  -- The canary: a function that leaks *only* under an id it is given — it
+  -- echoes the id and answers 1 for A's store, 0 for any other. Nothing of A's
+  -- appears in its result except the id the suite passed in, which is exactly
+  -- the case the echo rule below must not wave through (CodeRabbit on #74).
+  -- T5 must flag it, or the suite fails: a check that cannot see a keyed leak
+  -- is not one.
+  create function public.zz_t5_canary(p_store uuid)
+  returns table(store_id uuid, found int)
+  language sql stable security definer set search_path to 'public'
+  as $canary$ select p_store, (select count(*)::int from public.stores where id = p_store) $canary$;
+  grant execute on function public.zz_t5_canary(uuid) to authenticated;
+
   perform set_config('request.jwt.claims', json_build_object(
     'sub', b_mgr, 'role', 'authenticated')::text, true);
 
   for f in
-    select p.oid, p.proname, p.proargnames, p.proargtypes::oid[] as types, p.pronargs
+    select p.oid, p.proname, p.proargnames, string_to_array(p.proargtypes::text, ' ')::oid[] as types, p.pronargs
       from pg_proc p join pg_namespace n on n.oid = p.pronamespace
      where n.nspname = 'public'
        and p.prokind = 'f'
@@ -454,9 +524,11 @@ begin
         hint text;
         val text := 'null';
       begin
+        -- 360 days back: inside the 366-day range guard some reports carry
+        -- (hr_attendance_report), and still older than any company's data.
         if ty in ('timestamp with time zone', 'date') then
           val := case when nm ~ 'to|end|until' then format('%L::%s', now() + interval '1 day', ty)
-                      else format('%L::%s', now() - interval '2 years', ty) end;
+                      else format('%L::%s', now() - interval '360 days', ty) end;
         elsif ty in ('uuid', 'uuid[]') then
           select h into hint from jsonb_object_keys(a_ids) h
            where nm like '%' || h || '%' order by length(h) desc limit 1;
@@ -485,25 +557,57 @@ begin
                      f.proname, v_args)
         into v_txt;
       foreach v_tok in array a_tokens loop
-        if position(v_tok in v_txt) > 0 then
+        continue when position(v_tok in v_txt) = 0;
+        if position(v_tok in v_args) = 0 then
           v_fail := v_fail || format('T5 %s(%s): result contains Company A data (%s)%s',
                                      f.proname, v_args, left(v_tok, 40), E'\n');
           exit;
         end if;
+        -- An id we passed in coming back may be a plain echo:
+        -- rep_performance_summary(<A's rep>) returns that rep_id with all
+        -- zeros. Or it may key a leak — the row for that id, with A's figures.
+        -- Tell them apart by asking again with the id swapped for one that
+        -- exists nowhere: an echo answers the same, id aside; a leak does not.
+        v_alt := gen_random_uuid()::text;
+        begin
+          execute format('select coalesce(jsonb_agg(to_jsonb(x))::text, '''') from public.%I(%s) x',
+                         f.proname, replace(v_args, v_tok, v_alt))
+            into v_txt2;
+        exception when others then
+          v_txt2 := '(raised ' || sqlstate || ')';
+        end;
+        if replace(v_txt, v_tok, '<id>') is distinct from replace(v_txt2, v_alt, '<id>') then
+          v_fail := v_fail || format('T5 %s(%s): answers differently for Company A''s id (%s)%s',
+                                     f.proname, v_args, left(v_tok, 40), E'\n');
+          exit;
+        end if;
       end loop;
-      -- Counted only once its result has been searched (CodeRabbit on #69).
+      -- Counted only once its result has been searched, or below once it has
+      -- refused B; a call that broke is listed, not counted (CodeRabbit on #69).
       v_funcs_checked := v_funcs_checked + 1;
     exception when others then
+      -- Not a leak either way, but say which: a refusal (permission, module)
+      -- is the guard working; anything else means the guessed arguments did
+      -- not fit and this function was NOT tested. Until 8 Oct 2026 the
+      -- argument types were read off by one, so almost every call landed
+      -- here, silently, and was counted as coverage.
       if sqlstate = '42501' then
-        v_funcs_checked := v_funcs_checked + 1;   -- refused B outright: the guard working
+        v_funcs_checked := v_funcs_checked + 1;
+        v_funcs_refused := v_funcs_refused || f.proname || ' ';
       else
-        -- The guessed arguments did not fit: not a leak, but not tested either.
-        v_unproven := v_unproven || format('  T5 %s: not probed (%s: %s)%s',
-                                           f.proname, sqlstate, left(sqlerrm, 80), E'\n');
+        v_funcs_broken := v_funcs_broken || format('%s (%s) ', f.proname, sqlstate);
       end if;
     end;
     reset role;
   end loop;
+
+  -- The canary must have been caught, and is then taken out of the tally.
+  if position('T5 zz_t5_canary(' in v_fail) > 0 then
+    v_fail := regexp_replace(v_fail, 'T5 zz_t5_canary\([^\n]*\n', '');
+    v_funcs_checked := v_funcs_checked - 1;
+  else
+    v_fail := v_fail || 'T5 cannot detect a keyed leak: the canary passed' || E'\n';
+  end if;
 
   -- T5 calls stable and immutable functions only: a volatile one may write,
   -- and guessed arguments are no basis for a write. Name what was skipped so
@@ -562,6 +666,12 @@ begin
                   v_funcs_checked, E'\n');
   if v_unproven <> '' then
     v_txt := v_txt || E'\nNot proven (no data to leak):\n' || v_unproven;
+  end if;
+  if v_funcs_refused <> '' then
+    v_txt := v_txt || E'\nFunctions that refused B outright (guard working):\n  ' || v_funcs_refused || E'\n';
+  end if;
+  if v_funcs_broken <> '' then
+    v_txt := v_txt || E'\nFunctions NOT tested (call failed for another reason):\n  ' || v_funcs_broken || E'\n';
   end if;
   if v_info <> '' then
     v_txt := v_txt || E'\nInserts refused by something other than RLS (not a leak, but '

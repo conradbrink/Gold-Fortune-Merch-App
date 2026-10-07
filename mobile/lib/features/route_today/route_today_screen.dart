@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 
+import '../../core/company_config.dart';
 import '../../core/providers.dart';
 import '../../core/theme.dart';
 import '../../data/models/route_visit.dart';
@@ -22,13 +23,18 @@ class RouteTodayScreen extends ConsumerWidget {
     // Warm the form-template cache here rather than on the store screen: a rep
     // who opens the app in the depot and loses signal on the road would
     // otherwise reach the store with no forms to fill in.
-    ref.watch(formTemplatesProvider);
+    //
+    // Only for modules the company has: a disabled module's data would come
+    // back empty from the database anyway, and asking for it costs a request
+    // on every open.
+    final company = ref.watch(companyConfigValueProvider);
+    if (company.has('checklists_forms')) ref.watch(formTemplatesProvider);
     // Same reasoning for the store list, which the unscheduled-visit picker
     // needs and which is otherwise only fetched once that screen is opened.
     ref.watch(storesProvider);
     // And the orderable catalogue. A rep taking an order at a shop door has a
     // customer waiting; the products have to already be on the phone.
-    ref.watch(catalogueProductsProvider);
+    if (company.has('distribution')) ref.watch(catalogueProductsProvider);
 
     return Scaffold(
       appBar: AppBar(
@@ -42,10 +48,12 @@ class RouteTodayScreen extends ConsumerWidget {
           // Badged rather than silent. A warning nobody has said they have seen
           // is the one thing on this screen that somebody else is waiting on,
           // and an icon that looks the same either way is how it goes unread.
-          _MyHrAction(count: ref.watch(unacknowledgedWarningCountProvider)),
-          _DeliveriesAction(
-            count: ref.watch(outstandingDeliveryCountProvider),
-          ),
+          if (company.has('hr'))
+            _MyHrAction(count: ref.watch(unacknowledgedWarningCountProvider)),
+          if (company.has('warehouse'))
+            _DeliveriesAction(
+              count: ref.watch(outstandingDeliveryCountProvider),
+            ),
           IconButton(
             icon: const Icon(Icons.logout),
             tooltip: 'Sign out',
@@ -61,7 +69,12 @@ class RouteTodayScreen extends ConsumerWidget {
         label: const Text('Unscheduled visit'),
       ),
       body: RefreshIndicator(
-        onRefresh: () async => ref.invalidate(todayRoutesProvider),
+        onRefresh: () async {
+          ref.invalidate(todayRoutesProvider);
+          // The pull is also how a rep picks up a changed company setting
+          // without restarting the app.
+          ref.invalidate(companyConfigProvider);
+        },
         child: CustomScrollView(
           slivers: [
             SliverToBoxAdapter(

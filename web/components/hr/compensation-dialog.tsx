@@ -15,6 +15,7 @@ import {
 } from "@/components/ui/dialog";
 import { Field, FormSection } from "@/components/hr/field";
 import { createClient } from "@/lib/supabase/client";
+import { useCompanyConfig } from "@/lib/use-company-config";
 import {
   saveCompensation,
   type CompensationInput,
@@ -57,7 +58,9 @@ export function CompensationDialog({
   onSaved: () => void;
 }) {
   const supabase = createClient();
-  const [form, setForm] = useState<CompensationInput>(() => blank());
+  // A new pay record starts in the company's currency (company settings).
+  const currency = useCompanyConfig()?.settings.currency_code ?? "";
+  const [form, setForm] = useState<CompensationInput>(() => blank(currency));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -66,12 +69,24 @@ export function CompensationDialog({
   // an effect would paint the previous contents for one frame first, and would
   // trip react-hooks/set-state-in-effect for a real reason rather than a
   // spurious one.
+  //
+  // A new record waits for the company's currency: opened before the
+  // configuration arrives, it would start blank and never be corrected
+  // (CodeRabbit on #74). Once the currency is known the key changes and the
+  // form is set up with it.
   const [openedFor, setOpenedFor] = useState<string | null>(null);
-  const openKey = open ? existing?.employee_id ?? "new" : null;
+  const openKey =
+    open && (existing !== null || currency !== "")
+      ? existing?.employee_id ?? "new"
+      : null;
+  // Until then the fields are locked rather than editable: anything typed
+  // before the currency arrived would be wiped by the reset above (CodeRabbit
+  // on #74, second pass).
+  const waitingForCurrency = open && openKey === null;
   if (openKey !== openedFor) {
     setOpenedFor(openKey);
     if (open) {
-      setForm(existing ? fromRow(existing) : blank());
+      setForm(existing ? fromRow(existing) : blank(currency));
       setError(null);
     }
   }
@@ -110,7 +125,10 @@ export function CompensationDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-6">
+        <fieldset disabled={waitingForCurrency} className="space-y-6">
+          {waitingForCurrency && (
+            <p className="text-sm text-muted-foreground">Loading the company&apos;s currency…</p>
+          )}
           <FormSection title="Pay">
             <Field label="Currency">
               <Input
@@ -245,7 +263,7 @@ export function CompensationDialog({
               />
             </Field>
           </FormSection>
-        </div>
+        </fieldset>
 
         {error && (
           <p className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
@@ -257,7 +275,7 @@ export function CompensationDialog({
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={busy}>
             Cancel
           </Button>
-          <Button onClick={save} disabled={busy}>
+          <Button onClick={save} disabled={busy || waitingForCurrency}>
             {busy ? "Saving…" : "Save pay details"}
           </Button>
         </DialogFooter>
@@ -266,9 +284,9 @@ export function CompensationDialog({
   );
 }
 
-function blank(): CompensationInput {
+function blank(currency: string): CompensationInput {
   return {
-    currency: "BWP",
+    currency,
     basic_salary: null,
     pay_frequency: "monthly",
     commission_structure: null,
