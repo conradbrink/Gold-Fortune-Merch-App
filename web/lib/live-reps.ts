@@ -93,7 +93,13 @@ export function describeSource(source: PingSource, store: string | null): string
   }
 }
 
-export type Freshness = "fresh" | "recent" | "stale";
+/**
+ * "unknown" while the company's GPS interval has not loaded (or could not):
+ * without a threshold no age is fresh or old, and painting a day-old position
+ * amber for the length of an outage would be a guess dressed as a reading
+ * (CodeRabbit on #74).
+ */
+export type Freshness = "fresh" | "recent" | "stale" | "unknown";
 
 /** Said instead of a key while the company's GPS interval is unknown. */
 export const FRESHNESS_PENDING = "Ages appear once the company's GPS interval has loaded.";
@@ -128,7 +134,7 @@ export function freshnessExplained(intervalMinutes: number | null): string {
 }
 
 export function freshnessOf(minutes: number, intervalMinutes: number | null): Freshness {
-  if (intervalMinutes === null) return "recent";
+  if (intervalMinutes === null) return "unknown";
   if (minutes <= intervalMinutes * FRESH_INTERVALS) return "fresh";
   if (minutes <= intervalMinutes * STALE_INTERVALS) return "recent";
   return "stale";

@@ -54,6 +54,11 @@ const TONE: Record<
     text: "text-muted-foreground",
     pin: "#9ca3af",
   },
+  unknown: {
+    dot: "bg-slate-300 dark:bg-slate-600",
+    text: "text-muted-foreground",
+    pin: "#cbd5e1",
+  },
 };
 
 function RepRow({

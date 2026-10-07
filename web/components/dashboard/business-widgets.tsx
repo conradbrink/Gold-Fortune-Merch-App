@@ -399,6 +399,7 @@ const DOT: Record<ReturnType<typeof freshnessOf>, string> = {
   fresh: "bg-emerald-500",
   recent: "bg-amber-500",
   stale: "bg-muted-foreground/50",
+  unknown: "bg-slate-300 dark:bg-slate-600",
 };
 
 export function FieldTeamCard({

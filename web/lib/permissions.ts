@@ -155,14 +155,15 @@ export function homeFor(
   reachable: (href: string) => boolean = () => true
 ): string {
   // Several homes where one page needs a module the company may not have:
-  // `insights` lives on /sales with distribution and on /reports without it,
-  // `resources` on /products or /files. Sending such a person to /rep-notice
+  // `insights` lives on /sales with distribution, /reports with reports and
+  // /tracking always; `warehouse` on /warehouse or, without that add-on,
+  // /orders; `resources` on /products or /files. Sending such a person to /rep-notice
   // while a page they may open exists contradicts the proxy (CodeRabbit on #74).
   const order: [PermissionCode, string[]][] = [
     ["dashboard", ["/"]],
-    ["warehouse", ["/warehouse"]],
+    ["warehouse", ["/warehouse", "/orders"]],
     ["hr", ["/hr"]],
-    ["insights", ["/sales", "/reports"]],
+    ["insights", ["/sales", "/reports", "/tracking"]],
     ["field_ops", ["/schedule"]],
     ["sales_coverage", ["/stores"]],
     ["team", ["/representatives"]],
