@@ -1,8 +1,9 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { getCompany } from "@/lib/platform";
-import { setCompanyModule } from "@/app/platform/actions";
+import { companyTrialEnd, getCompany } from "@/lib/platform";
+import { extendTrial, setCompanyModule } from "@/app/platform/actions";
+import { trialState } from "@/lib/onboarding";
 
 /**
  * Platform operator: one company's modules, switchable.
@@ -45,8 +46,9 @@ export default async function PlatformCompanyPage({
   const { id } = await params;
   // Not a company id at all: a 404, not a database cast error and a 500.
   if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) notFound();
-  const company = await getCompany(id);
+  const [company, trialEndsAt] = await Promise.all([getCompany(id), companyTrialEnd(id)]);
   if (!company) notFound();
+  const trial = trialState(trialEndsAt);
 
   const raw = (await searchParams).error;
   const refusal = typeof raw === "string" ? raw : null;
@@ -70,6 +72,38 @@ export default async function PlatformCompanyPage({
           and on phones at their next refresh. Every change is logged.
         </p>
       </header>
+
+      <section className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border bg-card p-4">
+        <p className="text-sm text-foreground">
+          {trial.kind === "none"
+            ? "Not on a free trial."
+            : trial.kind === "ended"
+              ? `Free trial ended ${dateTime.format(new Date(trialEndsAt!))} UTC.`
+              : `Free trial ends ${dateTime.format(new Date(trialEndsAt!))} UTC (${trial.daysLeft} ${trial.daysLeft === 1 ? "day" : "days"} left).`}
+        </p>
+        <form action={extendTrial} className="flex items-center gap-2">
+          <input type="hidden" name="orgId" value={company.id} />
+          <label className="text-sm text-muted-foreground" htmlFor="extend-days">
+            {trial.kind === "none" ? "Start a trial of" : "Extend by"}
+          </label>
+          <input
+            id="extend-days"
+            name="days"
+            type="number"
+            min={1}
+            max={365}
+            required
+            className="h-8 w-20 rounded-md border border-border bg-transparent px-2 text-sm"
+          />
+          <span className="text-sm text-muted-foreground">days</span>
+          <button
+            type="submit"
+            className="inline-flex h-8 items-center rounded-md border border-border px-3 text-sm hover:bg-secondary"
+          >
+            Save
+          </button>
+        </form>
+      </section>
 
       {refusal && (
         <p className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">

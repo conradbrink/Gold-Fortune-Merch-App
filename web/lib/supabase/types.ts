@@ -419,6 +419,78 @@ export type Database = {
         }
         Relationships: []
       }
+      company_account: {
+        Row: {
+          created_at: string
+          onboarding_dismissed_at: string | null
+          onboarding_dismissed_by: string | null
+          org_id: string
+          trial_ends_at: string | null
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          onboarding_dismissed_at?: string | null
+          onboarding_dismissed_by?: string | null
+          org_id: string
+          trial_ends_at?: string | null
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          onboarding_dismissed_at?: string | null
+          onboarding_dismissed_by?: string | null
+          org_id?: string
+          trial_ends_at?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      onboarding_steps: {
+        Row: {
+          code: string
+          description: string
+          href: string
+          module_code: string | null
+          sort_order: number
+          title: string
+        }
+        Insert: {
+          code: string
+          description: string
+          href: string
+          module_code?: string | null
+          sort_order?: number
+          title: string
+        }
+        Update: {
+          code?: string
+          description?: string
+          href?: string
+          module_code?: string | null
+          sort_order?: number
+          title?: string
+        }
+        Relationships: []
+      }
+      platform_settings: {
+        Row: {
+          description: string
+          key: string
+          value: Json
+        }
+        Insert: {
+          description: string
+          key: string
+          value: Json
+        }
+        Update: {
+          description?: string
+          key?: string
+          value?: Json
+        }
+        Relationships: []
+      }
       industry_templates: {
         Row: {
           code: string
@@ -7105,6 +7177,16 @@ export type Database = {
       org_setting: { Args: { p_key: string; p_org: string }; Returns: Json }
       my_company_config: { Args: never; Returns: Json }
       template_defaults: { Args: { p_templates: string[] }; Returns: Json }
+      my_onboarding: { Args: never; Returns: Json }
+      dismiss_onboarding: { Args: never; Returns: undefined }
+      consume_anonymous_rate_limit: {
+        Args: { p_bucket: string; p_subject: string; p_limit: number; p_window_seconds: number }
+        Returns: Json
+      }
+      start_trial_company: {
+        Args: { p_company: Json; p_templates: string[]; p_owner: string }
+        Returns: string
+      }
       create_company: {
         Args: {
           p_company: Json

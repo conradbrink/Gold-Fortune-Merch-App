@@ -174,3 +174,51 @@ export async function createCompanyAction(
   }
   return { ok: true, orgId };
 }
+
+// ------------------------------------------------------------ Trials (Stage 5)
+
+/**
+ * Extends a company's free trial by a number of days, from its current end or
+ * from today if it has already ended. Platform operator only; the audit row
+ * first, as for module switches. A company with no account row (one the
+ * operator created) gets one, which puts it on a trial.
+ */
+export async function extendTrial(formData: FormData): Promise<void> {
+  const orgId = String(formData.get("orgId") ?? "");
+  const days = Number(formData.get("days") ?? "");
+  const back = `/platform/companies/${encodeURIComponent(orgId)}`;
+
+  const actor = await operatorId();
+  if (!actor) redirect("/");
+  if (!/^[0-9a-f-]{36}$/i.test(orgId) || !Number.isInteger(days) || days < 1 || days > 365) {
+    redirect(`${back}?error=${encodeURIComponent("Extend by a whole number of days, 1 to 365.")}`);
+  }
+
+  const admin = platformAdminClient();
+  const { data: current, error: readError } = await admin
+    .from("company_account")
+    .select("trial_ends_at")
+    .eq("org_id", orgId)
+    .maybeSingle();
+  if (readError) redirect(`${back}?error=${encodeURIComponent(readError.message)}`);
+
+  const now = Date.now();
+  const from = current?.trial_ends_at ? Math.max(new Date(current.trial_ends_at).getTime(), now) : now;
+  const endsAt = new Date(from + days * 24 * 60 * 60 * 1000).toISOString();
+
+  const { error: auditError } = await admin.from("platform_audit_log").insert({
+    actor_id: actor,
+    action: "trial.extend",
+    target_org_id: orgId,
+    detail: { days, from: current?.trial_ends_at ?? null, to: endsAt },
+  });
+  if (auditError) {
+    redirect(`${back}?error=${encodeURIComponent(`Not changed: the audit log could not be written (${auditError.message}).`)}`);
+  }
+
+  const { error } = await admin
+    .from("company_account")
+    .upsert({ org_id: orgId, trial_ends_at: endsAt, updated_at: new Date().toISOString() }, { onConflict: "org_id" });
+  if (error) redirect(`${back}?error=${encodeURIComponent(error.message)}`);
+  redirect(back);
+}
