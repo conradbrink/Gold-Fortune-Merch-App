@@ -101,3 +101,65 @@ export function loadMaps(): Promise<MapsLibs> {
 
   return window.__gmapsPromise;
 }
+
+// ------------------------------------------------------------- map / satellite
+
+/**
+ * Remembered per device, and shared by every map in the app: whoever switched
+ * the dashboard to Satellite expects Tracking to open on it too. The old
+ * Tracking-only key is still read, so a choice made there before the maps
+ * shared one is not lost.
+ */
+const MAP_TYPE_KEY = "gf.mapType";
+const LEGACY_MAP_TYPE_KEY = "gf.trackingMapType";
+
+const MAP_TYPES = ["roadmap", "satellite", "hybrid"] as const;
+type MapType = (typeof MAP_TYPES)[number];
+
+function savedMapType(): MapType {
+  try {
+    const saved =
+      window.localStorage.getItem(MAP_TYPE_KEY) ?? window.localStorage.getItem(LEGACY_MAP_TYPE_KEY);
+    return MAP_TYPES.includes(saved as MapType) ? (saved as MapType) : "roadmap";
+  } catch {
+    // Storage can be blocked (private windows, cleared site data); the map
+    // simply opens on the road map.
+    return "roadmap";
+  }
+}
+
+/**
+ * The Map / Satellite switch, for a map's constructor options.
+ *
+ * All three types are offered so Google draws "Map | Satellite" with a Labels
+ * checkbox under Satellite (on by default: imagery with street and place
+ * names). Offering only roadmap and hybrid labels the second button "Hybrid",
+ * which is what production showed after the first attempt. In much of Botswana
+ * the road map is sparse and the imagery shows far more of where a rep was.
+ *
+ * Call only after `loadMaps()` has resolved — it reads `google.maps` constants.
+ */
+export function mapTypeSwitch(
+  position: google.maps.ControlPosition = google.maps.ControlPosition.TOP_LEFT
+): Pick<google.maps.MapOptions, "mapTypeId" | "mapTypeControl" | "mapTypeControlOptions"> {
+  return {
+    mapTypeId: savedMapType(),
+    mapTypeControl: true,
+    mapTypeControlOptions: {
+      mapTypeIds: [...MAP_TYPES],
+      style: google.maps.MapTypeControlStyle.HORIZONTAL_BAR,
+      position,
+    },
+  };
+}
+
+/** Saves the map's type whenever the reader switches it. */
+export function rememberMapType(map: google.maps.Map) {
+  map.addListener("maptypeid_changed", () => {
+    try {
+      window.localStorage.setItem(MAP_TYPE_KEY, String(map.getMapTypeId()));
+    } catch {
+      // Not remembered; nothing else depends on it.
+    }
+  });
+}
