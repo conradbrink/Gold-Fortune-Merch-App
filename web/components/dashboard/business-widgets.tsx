@@ -477,7 +477,7 @@ export function FieldTeamCard({
           }
         />
         <MiniStat
-          label="Check-ins far from store"
+          label={`Check-ins over ${business?.field.off_site_m ?? 500} m from store`}
           value={business ? business.field.flagged_checkins : "—"}
           tone={business && business.field.flagged_checkins > 0 ? "bad" : undefined}
         />
