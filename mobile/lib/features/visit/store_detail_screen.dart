@@ -5,6 +5,7 @@ import 'package:intl/intl.dart';
 
 import '../../core/location_service.dart';
 import '../../core/providers.dart';
+import '../../core/terms.dart';
 import '../../core/theme.dart';
 import '../../data/models/form_template.dart';
 import '../../data/models/promotion.dart';
@@ -101,12 +102,15 @@ class _StoreDetailScreenState extends ConsumerState<StoreDetailScreen> {
 
     // The button is disabled without an open workday; this is the backstop so
     // a visit can never be recorded outside a tracked day.
+    final terms = ref.read(termsProvider);
     final session = ref.read(workdayControllerProvider).value;
     if (session == null) {
       ScaffoldMessenger.of(context)
         ..hideCurrentSnackBar()
-        ..showSnackBar(const SnackBar(
-          content: Text('Start your workday before checking in.'),
+        ..showSnackBar(SnackBar(
+          content: Text(
+            'Start your ${terms.workday.oneLower} before checking in.',
+          ),
           backgroundColor: AppColors.warning,
         ));
       return;
@@ -137,10 +141,10 @@ class _StoreDetailScreenState extends ConsumerState<StoreDetailScreen> {
       if (!mounted) return;
       final metres = result.distanceFromStoreM;
       final message = result.outsideGeofence
-          ? 'Checked in — but you appear ${metres!.round()}m from the store. '
-              'This was recorded for your manager.'
+          ? 'Checked in — but you appear ${metres!.round()}m from the '
+              '${terms.site.oneLower}. This was recorded for your manager.'
           : metres != null
-              ? 'Checked in (${metres.round()}m from store).'
+              ? 'Checked in (${metres.round()}m from ${terms.site.oneLower}).'
               : result.noFix
                   ? 'Checked in — your phone had no fresh GPS position, so '
                       'none was recorded.'
@@ -235,6 +239,7 @@ class _StoreDetailScreenState extends ConsumerState<StoreDetailScreen> {
     // check-out twice.
     setState(() => _busy = true);
     try {
+      final terms = ref.read(termsProvider);
       final concerns = <String>[];
       // Below the company's `short_visit_minutes`, a check-out is treated as
       // suspiciously quick and the rep is asked to confirm. Zero turns it off.
@@ -245,8 +250,9 @@ class _StoreDetailScreenState extends ConsumerState<StoreDetailScreen> {
           final minutes = spent.inMinutes;
           final label = minutes < 1 ? 'less than a minute' : '$minutes min';
           concerns.add(
-            "You've only been at this store for $label. Short visits are "
-            'flagged for your manager.',
+            // Opens with "You've" on purpose: the dialog's title reads it.
+            "You've only been at this ${terms.site.oneLower} for $label. "
+            'Short ${terms.job.manyLower} are flagged for your manager.',
           );
         }
       }
@@ -255,7 +261,7 @@ class _StoreDetailScreenState extends ConsumerState<StoreDetailScreen> {
         concerns.add(
           '$unanswered promoted line${unanswered == 1 ? '' : 's'} '
           "${unanswered == 1 ? 'has' : 'have'} not been answered. Your manager "
-          'will see this shop as unchecked for '
+          'will see this ${terms.site.oneLower} as unchecked for '
           '${unanswered == 1 ? 'it' : 'them'}.',
         );
       }
@@ -320,7 +326,9 @@ class _StoreDetailScreenState extends ConsumerState<StoreDetailScreen> {
     double accuracyM,
     double? movingBy,
   ) async {
-    // How far the shop is about to move, when it already had a position. A rep
+    final terms = ref.read(termsProvider);
+    final site = terms.site.oneLower;
+    // How far the site is about to move, when it already had a position. A rep
     // agreeing to shift a shop 40 m is doing something different from one
     // shifting it 3 km, and only the second is worth pausing over — saying the
     // number lets them notice they are standing somewhere unexpected.
@@ -340,9 +348,9 @@ class _StoreDetailScreenState extends ConsumerState<StoreDetailScreen> {
           'This will put ${rv.storeName} on the map where you are standing '
           'now, accurate to about ${accuracyM.round()}m.\n\n'
           '$movement'
-          'Every future visit to this shop is measured from that point, and it '
-          "can't be changed from the app afterwards. Only do this if you are "
-          'at the shop itself.',
+          'Every future ${terms.job.oneLower} to this $site is measured from '
+          "that point, and it can't be changed from the app afterwards. Only "
+          'do this if you are at the $site itself.',
         ),
         actions: [
           TextButton(
@@ -351,7 +359,7 @@ class _StoreDetailScreenState extends ConsumerState<StoreDetailScreen> {
           ),
           ElevatedButton(
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text("I'm at the shop"),
+            child: Text("I'm at the $site"),
           ),
         ],
       ),
@@ -409,6 +417,7 @@ class _StoreDetailScreenState extends ConsumerState<StoreDetailScreen> {
             lat: position.latitude,
             lng: position.longitude,
             accuracyM: position.accuracy,
+            terms: ref.read(termsProvider),
           );
 
       // Keep the cached copy in step so the prompt disappears immediately,
@@ -467,16 +476,17 @@ class _StoreDetailScreenState extends ConsumerState<StoreDetailScreen> {
     // the provider's initial load.
     final workdayKnown = !workdayAsync.isLoading;
     final hasWorkday = workdayAsync.value != null;
+    final terms = ref.watch(termsProvider);
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Store visit')),
+      appBar: AppBar(title: Text('${terms.site.one} ${terms.job.oneLower}')),
       body: routesAsync.when(
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (e, _) => Center(child: Text('$e')),
         data: (routes) {
           final rv = _find(routes);
           if (rv == null) {
-            return const Center(child: Text('Visit not found.'));
+            return Center(child: Text('${terms.job.one} not found.'));
           }
 
           // Outstanding **compulsory** forms gate the check-out. If templates
@@ -513,8 +523,8 @@ class _StoreDetailScreenState extends ConsumerState<StoreDetailScreen> {
           // Why the primary action is unavailable, or null when it's allowed.
           final String? blockedReason;
           if (!rv.isCheckedIn && workdayKnown && !hasWorkday) {
-            blockedReason =
-                'Start your workday before checking in to a store.';
+            blockedReason = 'Start your ${terms.workday.oneLower} before '
+                'checking in to ${terms.site.withArticle}.';
           } else if (rv.isCheckedIn && outstanding.isNotEmpty) {
             blockedReason = outstanding.length == 1
                 ? 'Submit "${outstanding.first.name}" before checking out.'
@@ -540,11 +550,11 @@ class _StoreDetailScreenState extends ConsumerState<StoreDetailScreen> {
                             width: 46,
                             height: 46,
                             decoration: BoxDecoration(
-                              color: AppColors.gold.withValues(alpha: 0.18),
+                              color: context.brand.accent.withValues(alpha: 0.18),
                               borderRadius: BorderRadius.circular(12),
                             ),
-                            child: const Icon(Icons.storefront_outlined,
-                                color: AppColors.navy),
+                            child: Icon(Icons.storefront_outlined,
+                                color: context.brand.primary),
                           ),
                           const SizedBox(width: 14),
                           Expanded(
@@ -578,10 +588,10 @@ class _StoreDetailScreenState extends ConsumerState<StoreDetailScreen> {
                       ],
                       if (rv.isUnscheduled) ...[
                         const SizedBox(height: 12),
-                        const _DetailRow(
+                        _DetailRow(
                           icon: Icons.event_busy_outlined,
                           label: 'Scheduled',
-                          value: 'Unscheduled visit',
+                          value: 'Unscheduled ${terms.job.oneLower}',
                         ),
                       ],
                       if (rv.scheduledStartAt != null) ...[
@@ -655,6 +665,7 @@ class _StoreDetailScreenState extends ConsumerState<StoreDetailScreen> {
                   rv.visitClientGeneratedId != null &&
                   !rv.hasVerifiedLocation) ...[
                 _SetLocationCard(
+                  terms: terms,
                   busy: _locating,
                   isCorrection: rv.hasGuessedLocation,
                   onPressed: _locating ? null : () => _setStoreLocation(rv),
@@ -701,7 +712,7 @@ class _StoreDetailScreenState extends ConsumerState<StoreDetailScreen> {
                 const SizedBox(height: 16),
               ],
               if (rv.isCheckedOut)
-                const _DoneNotice()
+                _DoneNotice(terms: terms)
               else
                 SizedBox(
                   width: double.infinity,
@@ -731,7 +742,7 @@ class _StoreDetailScreenState extends ConsumerState<StoreDetailScreen> {
                     ),
                     style: ElevatedButton.styleFrom(
                       backgroundColor:
-                          rv.isCheckedIn ? AppColors.danger : AppColors.navy,
+                          rv.isCheckedIn ? AppColors.danger : context.brand.primary,
                     ),
                   ),
                 ),
@@ -863,7 +874,7 @@ class _FormsSection extends ConsumerWidget {
                   child: ListTile(
                     leading: Icon(
                       done ? Icons.check_circle : Icons.assignment_outlined,
-                      color: done ? AppColors.success : AppColors.navy,
+                      color: done ? AppColors.success : context.brand.primary,
                     ),
                     title: Text(
                       t.name,
@@ -976,14 +987,16 @@ class _PromotionsSectionState extends ConsumerState<_PromotionsSection> {
   /// Five identical taps to state one fact punishes an honest rep, so the whole
   /// promotion can be answered at once when the shop carries none of it.
   Future<void> _markAllNotStocked(Promotion promo) async {
+    final site = ref.read(termsProvider).site.oneLower;
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('None of these are stocked?'),
         content: Text(
           'This marks all ${promo.products.length} lines on "${promo.name}" as '
-          'not carried by this shop.\n\nThat tells your manager the promotion '
-          'was aimed at the wrong outlet — it is not counted against you.',
+          'not carried by this $site.\n\nThat tells your manager the '
+          'promotion was aimed at the wrong $site — it is not counted against '
+          'you.',
         ),
         actions: [
           TextButton(
@@ -1030,6 +1043,7 @@ class _PromotionsSectionState extends ConsumerState<_PromotionsSection> {
         ),
         const SizedBox(height: 8),
         ...mine.map((promo) => _PromotionCard(
+              site: ref.watch(termsProvider).site.oneLower,
               promo: promo,
               answers: answers,
               busyKey: _busyKey,
@@ -1045,6 +1059,7 @@ class _PromotionsSectionState extends ConsumerState<_PromotionsSection> {
 
 class _PromotionCard extends StatelessWidget {
   const _PromotionCard({
+    required this.site,
     required this.promo,
     required this.answers,
     required this.busyKey,
@@ -1053,6 +1068,8 @@ class _PromotionCard extends StatelessWidget {
     required this.onNoneStocked,
   });
 
+  /// The company's word for a site, lower-case.
+  final String site;
   final Promotion promo;
   final Map<String, PromotionAnswer> answers;
   final String? busyKey;
@@ -1071,8 +1088,8 @@ class _PromotionCard extends StatelessWidget {
           children: [
             Row(
               children: [
-                const Icon(Icons.local_offer_outlined,
-                    size: 18, color: AppColors.navy),
+                Icon(Icons.local_offer_outlined,
+                    size: 18, color: context.brand.primary),
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(
@@ -1157,9 +1174,9 @@ class _PromotionCard extends StatelessWidget {
                 alignment: Alignment.centerLeft,
                 child: TextButton(
                   onPressed: onNoneStocked,
-                  child: const Text(
-                    "This shop doesn't stock any of these",
-                    style: TextStyle(fontSize: 12.5),
+                  child: Text(
+                    "This $site doesn't stock any of these",
+                    style: const TextStyle(fontSize: 12.5),
                   ),
                 ),
               ),
@@ -1199,10 +1216,10 @@ class _AnswerButton extends StatelessWidget {
       child: OutlinedButton(
         onPressed: onPressed,
         style: OutlinedButton.styleFrom(
-          backgroundColor: selected ? AppColors.navy : null,
+          backgroundColor: selected ? context.brand.primary : null,
           foregroundColor: selected ? Colors.white : AppColors.textPrimary,
           side: BorderSide(
-            color: selected ? AppColors.navy : AppColors.border,
+            color: selected ? context.brand.primary : AppColors.border,
           ),
           padding: EdgeInsets.zero,
         ),
@@ -1223,11 +1240,13 @@ class _AnswerButton extends StatelessWidget {
 /// right place, and the rep is the only person who can fix that.
 class _SetLocationCard extends StatelessWidget {
   const _SetLocationCard({
+    required this.terms,
     required this.busy,
     required this.isCorrection,
     required this.onPressed,
   });
 
+  final Terms terms;
   final bool busy;
 
   /// The store already has a position, it just isn't one anybody checked.
@@ -1238,10 +1257,11 @@ class _SetLocationCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final site = terms.site.oneLower;
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: AppColors.gold.withValues(alpha: 0.12),
+        color: context.brand.accent.withValues(alpha: 0.12),
         borderRadius: BorderRadius.circular(10),
       ),
       child: Column(
@@ -1249,14 +1269,14 @@ class _SetLocationCard extends StatelessWidget {
         children: [
           Row(
             children: [
-              const Icon(Icons.wrong_location_outlined,
-                  size: 18, color: AppColors.navy),
+              Icon(Icons.wrong_location_outlined,
+                  size: 18, color: context.brand.primary),
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
                   isCorrection
-                      ? 'This shop’s position is a guess'
-                      : 'This shop is not on the map',
+                      ? 'This $site’s position is a guess'
+                      : 'This $site is not on the map',
                   style: const TextStyle(
                     fontWeight: FontWeight.w600,
                     fontSize: 14,
@@ -1271,9 +1291,10 @@ class _SetLocationCard extends StatelessWidget {
             isCorrection
                 ? 'Nobody has ever checked where it really is — the pin came '
                     'from a name search, and those often land on the wrong '
-                    'branch. You are standing in the shop, so you can settle '
+                    'branch. You are standing in the $site, so you can settle '
                     'it. Do this once and it is right for everyone.'
-                : 'We have no location for it, so your visits here cannot be '
+                : 'We have no location for it, so your '
+                    '${terms.job.manyLower} here cannot be '
                     'shown against the right place. You are standing in it — '
                     'mark it once and it is fixed for everyone.',
             style: const TextStyle(fontSize: 12.5, color: AppColors.textPrimary),
@@ -1304,7 +1325,7 @@ class _SetLocationCard extends StatelessWidget {
                 style: const TextStyle(fontSize: 14.5),
               ),
               style: ElevatedButton.styleFrom(
-                backgroundColor: AppColors.navy,
+                backgroundColor: context.brand.primary,
               ),
             ),
           ),
@@ -1315,7 +1336,9 @@ class _SetLocationCard extends StatelessWidget {
 }
 
 class _DoneNotice extends StatelessWidget {
-  const _DoneNotice();
+  const _DoneNotice({required this.terms});
+
+  final Terms terms;
 
   @override
   Widget build(BuildContext context) {
@@ -1325,14 +1348,14 @@ class _DoneNotice extends StatelessWidget {
         color: AppColors.success.withValues(alpha: 0.1),
         borderRadius: BorderRadius.circular(10),
       ),
-      child: const Row(
+      child: Row(
         children: [
-          Icon(Icons.check_circle, color: AppColors.success),
-          SizedBox(width: 10),
+          const Icon(Icons.check_circle, color: AppColors.success),
+          const SizedBox(width: 10),
           Expanded(
             child: Text(
-              'This visit is complete.',
-              style: TextStyle(
+              'This ${terms.job.oneLower} is complete.',
+              style: const TextStyle(
                 fontWeight: FontWeight.w600,
                 color: AppColors.textPrimary,
               ),

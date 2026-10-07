@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../core/company_config.dart';
 import '../../core/providers.dart';
 
 /// What the rep records on the way in to a prospect.
@@ -74,9 +75,11 @@ class _SalesVisitStartScreenState extends ConsumerState<SalesVisitStartScreen> {
   @override
   Widget build(BuildContext context) {
     final ready = _company.text.trim().isNotEmpty && _purpose.text.trim().isNotEmpty;
+    final t = ref.watch(termsProvider);
+    final job = t.job.oneLower;
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Sales visit')),
+      appBar: AppBar(title: Text('Sales $job')),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
@@ -91,9 +94,11 @@ class _SalesVisitStartScreenState extends ConsumerState<SalesVisitStartScreen> {
           TextField(
             controller: _company,
             textCapitalization: TextCapitalization.words,
-            decoration: const InputDecoration(
-              labelText: 'Company or store',
-              hintText: 'e.g. Kgale Superette',
+            // Examples that belong to no particular company or country: the
+            // same app is used by companies that sell very different things.
+            decoration: InputDecoration(
+              labelText: 'Company or ${t.site.oneLower}',
+              hintText: 'e.g. Riverside Traders',
             ),
             onChanged: (_) => setState(() {}),
           ),
@@ -101,9 +106,9 @@ class _SalesVisitStartScreenState extends ConsumerState<SalesVisitStartScreen> {
           TextField(
             controller: _purpose,
             textCapitalization: TextCapitalization.sentences,
-            decoration: const InputDecoration(
-              labelText: 'Purpose of the visit',
-              hintText: 'e.g. Ask for a listing on the OKSO range',
+            decoration: InputDecoration(
+              labelText: 'Purpose of the $job',
+              hintText: 'e.g. Introduce our new range',
             ),
             onChanged: (_) => setState(() {}),
           ),
@@ -122,7 +127,7 @@ class _SalesVisitStartScreenState extends ConsumerState<SalesVisitStartScreen> {
             keyboardType: TextInputType.phone,
             decoration: const InputDecoration(
               labelText: 'Contact number (optional)',
-              hintText: '+267 71 000 000',
+              hintText: 'Mobile or landline',
             ),
           ),
           const SizedBox(height: 20),
@@ -135,13 +140,13 @@ class _SalesVisitStartScreenState extends ConsumerState<SalesVisitStartScreen> {
                     child: CircularProgressIndicator(strokeWidth: 2),
                   )
                 : const Icon(Icons.play_arrow),
-            label: Text(_saving ? 'Starting…' : 'Start visit'),
+            label: Text(_saving ? 'Starting…' : 'Start $job'),
           ),
           const SizedBox(height: 8),
           Text(
-            'Your position and the time are recorded when the visit starts, and '
-            'cannot be changed afterwards. It works with no signal — the visit '
-            'syncs when you are back in coverage.',
+            'Your position and the time are recorded when the $job starts, '
+            'and cannot be changed afterwards. It works with no signal — the '
+            '$job syncs when you are back in coverage.',
             style: Theme.of(context).textTheme.bodySmall,
           ),
         ],

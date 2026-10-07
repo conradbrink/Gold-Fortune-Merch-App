@@ -1,13 +1,13 @@
 "use client";
 
 import { useState } from "react";
-import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { createClient } from "@/lib/supabase/client";
+import { ProductBrand } from "@/components/product-brand";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -37,19 +37,7 @@ export default function LoginPage() {
   return (
     <div className="flex min-h-screen items-center justify-center bg-secondary/40 px-4">
       <div className="w-full max-w-sm space-y-6">
-        <div className="flex flex-col items-center gap-3 text-center">
-          <Image
-            src="/logo.png"
-            alt="Gold Fortune"
-            width={56}
-            height={56}
-            className="rounded-lg"
-          />
-          <div>
-            <h1 className="text-xl font-bold text-foreground">Gold Fortune</h1>
-            <p className="text-sm text-muted-foreground">Merchandising</p>
-          </div>
-        </div>
+        <ProductBrand />
 
         <form
           onSubmit={handleSubmit}
@@ -102,10 +90,12 @@ export default function LoginPage() {
           </Link>
         </form>
 
+        {/* No company is known before sign-in, so this cannot name its words
+            for staff or the screens it has: the warehouse is a module some
+            companies do not have. */}
         <p className="text-center text-xs text-muted-foreground">
-          Managers create rep accounts from Company Profile → Team Members and
-          warehouse accounts from Warehouse settings → Warehouse staff. Both are
-          handed a starting password — no invitation email, no public sign-up.
+          Accounts are created by your company&apos;s managers, who hand you a
+          starting password — there is no public sign-up.
         </p>
       </div>
     </div>

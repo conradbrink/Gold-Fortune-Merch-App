@@ -33,6 +33,7 @@ import {
   metricMismatch,
   metricsForFieldType,
 } from "@/lib/metrics";
+import { useTerms } from "@/lib/use-company-config";
 
 type FormTemplate = Tables<"form_templates">;
 type FormField = Tables<"form_fields">;
@@ -87,6 +88,7 @@ export default function FormDetailPage() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
   const supabase = createClient();
+  const terms = useTerms();
 
   const [template, setTemplate] = useState<FormTemplate | null>(null);
   const [fields, setFields] = useState<FormField[]>([]);
@@ -209,7 +211,7 @@ export default function FormDetailPage() {
    * it. Drop the link rather than keep one that silently measures nothing.
    */
   function handleNewFieldType(fieldType: string) {
-    const stillValid = metricsForFieldType(fieldType).some(
+    const stillValid = metricsForFieldType(fieldType, terms).some(
       (m) => m.key === newField.metric_key
     );
     setNewField({
@@ -786,8 +788,9 @@ function MetricPicker({
   currentFieldId?: string;
   onChange: (metricKey: string) => void;
 }) {
-  const available = metricsForFieldType(fieldType);
-  const selected = findMetric(value);
+  const terms = useTerms();
+  const available = metricsForFieldType(fieldType, terms);
+  const selected = findMetric(value, terms);
   const mismatch = metricMismatch(value, fieldType, options);
 
   // A metric belongs to exactly one question per form — `form_fields_template_

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../core/company_config.dart';
 import '../../core/providers.dart';
 import '../../core/theme.dart';
 import '../../data/local/order_draft.dart';
@@ -124,7 +125,7 @@ class _OrderCaptureScreenState extends ConsumerState<OrderCaptureScreen> {
       initialDate: initial,
       firstDate: first,
       lastDate: last,
-      helpText: 'When does the shop want it?',
+      helpText: 'When does the ${ref.read(termsProvider).site.oneLower} want it?',
     );
     if (picked == null) return;
     setState(() {
@@ -520,7 +521,7 @@ class _ProductRow extends StatelessWidget {
                   Text(
                     ordered,
                     style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: AppColors.navy,
+                          color: context.brand.primary,
                           fontWeight: FontWeight.w600,
                         ),
                   ),
@@ -545,7 +546,7 @@ class _ProductRow extends StatelessWidget {
                 textAlign: TextAlign.center,
                 style: Theme.of(context).textTheme.titleMedium?.copyWith(
                       fontWeight: qty > 0 ? FontWeight.bold : FontWeight.normal,
-                      color: qty > 0 ? AppColors.navy : AppColors.textMuted,
+                      color: qty > 0 ? context.brand.primary : AppColors.textMuted,
                     ),
               ),
             ),

@@ -7,6 +7,7 @@ import {
   ChevronDown,
   LogOut,
   Menu,
+  UserRound,
   X,
 } from "lucide-react";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -46,17 +47,21 @@ export function TopBar({ onOpenNav }: { onOpenNav?: () => void }) {
     (can(permissions, "sales_coverage") ||
       can(permissions, "team") ||
       can(permissions, "resources"));
-  const [label, setLabel] = useState("Gold Fortune User");
-  const [initials, setInitials] = useState("GF");
+  // Neutral until the user is known: these used to start as "Gold Fortune
+  // User" and "GF", which every other company's staff would have seen too.
+  const [label, setLabel] = useState("Signed in");
+  /** Empty when there is no name or email to take them from: a person icon. */
+  const [initials, setInitials] = useState("");
   /** Below `sm` the search box is hidden; this is what the button reveals. */
   const [searchRevealed, setSearchRevealed] = useState(false);
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data }) => {
       const meta = data.user?.user_metadata as { full_name?: string } | undefined;
-      const name = meta?.full_name || data.user?.email || "Gold Fortune User";
+      const name = meta?.full_name?.trim() || data.user?.email || "";
+      if (!name) return;
       setLabel(name);
-      const parts = name.trim().split(/\s+/);
+      const parts = name.split(/\s+/);
       setInitials(
         parts.length > 1
           ? `${parts[0][0]}${parts[1][0]}`.toUpperCase()
@@ -123,7 +128,7 @@ export function TopBar({ onOpenNav }: { onOpenNav?: () => void }) {
           <DropdownMenuTrigger className="flex items-center gap-2 outline-none">
             <Avatar className="h-7 w-7 shrink-0">
               <AvatarFallback className="bg-primary text-primary-foreground text-xs">
-                {initials}
+                {initials || <UserRound className="h-4 w-4" />}
               </AvatarFallback>
             </Avatar>
             <ChevronDown className="h-4 w-4 shrink-0" />

@@ -1,16 +1,19 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/company_config.dart';
 import '../../core/theme.dart';
 import 'auth_controller.dart';
 
 /// Shown if a manager account signs in on the mobile app — managers use the
-/// web dashboard; this app is for reps only.
+/// web dashboard; this app is for the field team only.
 class ManagerNoticeScreen extends ConsumerWidget {
   const ManagerNoticeScreen({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final t = ref.watch(termsProvider);
+    final company = ref.watch(brandingProvider).name;
     return Scaffold(
       body: SafeArea(
         child: Center(
@@ -23,11 +26,11 @@ class ManagerNoticeScreen extends ConsumerWidget {
                   width: 64,
                   height: 64,
                   decoration: BoxDecoration(
-                    color: AppColors.gold.withValues(alpha: 0.18),
+                    color: context.brand.accent.withValues(alpha: 0.18),
                     shape: BoxShape.circle,
                   ),
-                  child: const Icon(Icons.laptop_mac_outlined,
-                      color: AppColors.navy, size: 30),
+                  child: Icon(Icons.laptop_mac_outlined,
+                      color: context.brand.primary, size: 30),
                 ),
                 const SizedBox(height: 20),
                 const Text(
@@ -39,13 +42,14 @@ class ManagerNoticeScreen extends ConsumerWidget {
                   ),
                 ),
                 const SizedBox(height: 8),
-                const Text(
-                  'Managers and warehouse staff work from the Gold Fortune '
-                  'Merchandising web dashboard — stores, schedules and forms '
-                  'for one, orders and stock for the other. This mobile app is '
-                  'for field reps.',
+                Text(
+                  'Managers and warehouse staff work from the '
+                  '${company == null ? '' : '$company '}web dashboard — '
+                  '${t.site.manyLower}, schedules and forms for one, orders '
+                  'and stock for the other. This mobile app is for field '
+                  '${t.staff.manyLower}.',
                   textAlign: TextAlign.center,
-                  style: TextStyle(color: AppColors.textMuted, fontSize: 14),
+                  style: const TextStyle(color: AppColors.textMuted, fontSize: 14),
                 ),
                 const SizedBox(height: 24),
                 OutlinedButton(

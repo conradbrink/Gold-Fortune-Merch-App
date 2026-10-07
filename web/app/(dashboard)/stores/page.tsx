@@ -43,6 +43,8 @@ import { ImportStoresButton } from "@/components/stores/import-dialog";
 import { toLocalDate } from "@/lib/date-range";
 import { ExportMenu } from "@/components/export-menu";
 import type { ExportSheet } from "@/lib/export";
+import { useTerms } from "@/lib/use-company-config";
+import { lower } from "@/lib/terms";
 import {
   findSharedPoints,
   geocodeState,
@@ -204,6 +206,7 @@ function SortHeader({
 
 export default function StoresPage() {
   const supabase = createClient();
+  const terms = useTerms();
   const [view, setView] = useState<"list" | "map">("list");
   const [stores, setStores] = useState<StoreRow[]>([]);
   const [groups, setGroups] = useState<StoreGroup[]>([]);
@@ -1014,24 +1017,23 @@ export default function StoresPage() {
     ].filter((line): line is string => line !== null);
 
     return {
-      title: "Stores",
-      orgName: "Gold Fortune Merchandising",
+      title: terms.site.many,
       context: [
-        `${filtered.length} of ${stores.length} stores`,
+        `${filtered.length} of ${stores.length} ${lower(terms.site.many)}`,
         ...(applied.length > 0 ? applied : ["No filters applied"]),
         `Sorted by ${SORT_LABELS[sort.key]}, ${
           sort.dir === "asc" ? "ascending" : "descending"
         }`,
       ],
-      filename: "gf-stores",
+      filename: terms.site.many,
       columns: [
-        { header: "Store", key: "name" },
+        { header: terms.site.one, key: "name" },
         { header: "Group", key: "group" },
         { header: "Address", key: "address" },
         { header: "Town", key: "city" },
-        { header: "Region", key: "state" },
+        { header: terms.region.one, key: "state" },
         { header: "Code", key: "code" },
-        { header: "Call cycle", key: "frequency" },
+        { header: terms.schedule_cycle.one, key: "frequency" },
         { header: "Responsible", key: "reps" },
         { header: "Last visited", key: "lastVisit" },
         { header: "Active", key: "active" },

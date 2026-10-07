@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/company_config.dart';
+import '../../core/product.dart';
 import '../../core/theme.dart';
 import 'auth_controller.dart';
 
@@ -60,34 +62,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  // Center guards against the Column's CrossAxisAlignment.stretch,
-                  // which would otherwise force the logo to full width.
-                  Center(
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(16),
-                      child: Image.asset(
-                        'assets/logo.png',
-                        width: 72,
-                        height: 72,
-                        fit: BoxFit.cover,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  const Text(
-                    'Gold Fortune',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      fontSize: 24,
-                      fontWeight: FontWeight.bold,
-                      color: AppColors.textPrimary,
-                    ),
-                  ),
-                  const Text(
-                    'Merchandising · Field App',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(color: AppColors.textMuted, fontSize: 14),
-                  ),
+                  const _Masthead(),
                   const SizedBox(height: 32),
                   TextFormField(
                     controller: _emailController,
@@ -144,6 +119,61 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
           ),
         ),
       ),
+    );
+  }
+}
+
+/// Whose app this is. A phone that has never signed in shows the product —
+/// it cannot know the company yet — and one that has shows the last company's
+/// name and logo, both from the phone's own storage, so it looks the same with
+/// no signal.
+class _Masthead extends ConsumerWidget {
+  const _Masthead();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final look = ref.watch(companyLookProvider);
+    final known = look.orgId != null;
+    final logo = known ? ref.watch(companyLogoProvider).value : null;
+
+    Widget mark(ImageProvider image) => ClipRRect(
+          borderRadius: BorderRadius.circular(16),
+          child: Image(
+            image: image,
+            width: 72,
+            height: 72,
+            fit: BoxFit.cover,
+            // A logo the phone cannot draw (an SVG, a damaged file) is left
+            // out rather than shown as a broken image.
+            errorBuilder: (_, _, _) => const SizedBox.shrink(),
+          ),
+        );
+
+    final image = !known
+        ? mark(const AssetImage(kProductMarkAsset))
+        : logo != null
+            ? mark(FileImage(logo))
+            : null;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        // Center guards against the Column's CrossAxisAlignment.stretch,
+        // which would otherwise force the logo to full width.
+        if (image != null) ...[
+          Center(child: image),
+          const SizedBox(height: 16),
+        ],
+        Text(
+          known ? (look.branding.name ?? kProductName) : kProductName,
+          textAlign: TextAlign.center,
+          style: const TextStyle(
+            fontSize: 24,
+            fontWeight: FontWeight.bold,
+            color: AppColors.textPrimary,
+          ),
+        ),
+      ],
     );
   }
 }

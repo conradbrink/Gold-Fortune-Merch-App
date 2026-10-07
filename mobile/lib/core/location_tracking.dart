@@ -40,6 +40,8 @@ import 'dart:ui' show AppLifecycleState;
 
 import 'package:geolocator/geolocator.dart';
 
+import 'product.dart';
+
 /// How often the platform is asked for a position while a workday is open.
 ///
 /// Five minutes, and now genuinely five minutes: with [kTrackingDistanceFilterM]
@@ -119,6 +121,20 @@ bool shouldRecordPing({
   return now.difference(lastPingAt) >= minSpacing;
 }
 
+/// The text of the ongoing notification while the trail runs.
+///
+/// Names the company, because the company is who is recording — the rep should
+/// not have to know which app vendor their employer uses. "Location" rather
+/// than "route": the trail is a GPS record, and "route" is the word some
+/// companies use for the day's list of work. The product's name stands in
+/// until the company's is known.
+String trackingNotificationText(String? companyName) {
+  final who = companyName == null || companyName.trim().isEmpty
+      ? kProductName
+      : companyName.trim();
+  return '$who is recording your location until you end the day.';
+}
+
 /// What tracking we are actually able to do, given what the rep has granted.
 enum LocationTrackingMode {
   /// "Allow all the time" — the stream runs with a foreground service.
@@ -172,6 +188,10 @@ class LocationTracking {
     LocationTrackingMode mode, {
     // The company's `gps_ping_interval_minutes`; the constant is the fallback.
     Duration interval = kLocationPingInterval,
+    // `branding.name` and the company's word for a workday, for the
+    // notification.
+    String? companyName,
+    String workday = 'Workday',
   }) {
     return AndroidSettings(
       accuracy: LocationAccuracy.medium,
@@ -181,10 +201,9 @@ class LocationTracking {
       // permanent notification to a rep whose grant stops at "while using the
       // app" would advertise tracking that is not happening.
       foregroundNotificationConfig: mode == LocationTrackingMode.background
-          ? const ForegroundNotificationConfig(
-              notificationTitle: 'Workday in progress',
-              notificationText:
-                  'Gold Fortune is recording your route until you end the day.',
+          ? ForegroundNotificationConfig(
+              notificationTitle: '$workday in progress',
+              notificationText: trackingNotificationText(companyName),
               notificationChannelName: 'Workday tracking',
               // Persistent: a rep swiping the notification away would stop the
               // service and silently lose the rest of the day's trail.
@@ -202,10 +221,17 @@ class LocationTracking {
   static Stream<Position>? stream(
     LocationTrackingMode mode, {
     Duration interval = kLocationPingInterval,
+    String? companyName,
+    String workday = 'Workday',
   }) {
     if (mode == LocationTrackingMode.unavailable) return null;
     return Geolocator.getPositionStream(
-      locationSettings: settingsFor(mode, interval: interval),
+      locationSettings: settingsFor(
+        mode,
+        interval: interval,
+        companyName: companyName,
+        workday: workday,
+      ),
     );
   }
 

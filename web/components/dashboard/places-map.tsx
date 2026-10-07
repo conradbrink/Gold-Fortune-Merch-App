@@ -4,6 +4,8 @@ import { useState } from "react";
 import { MapPin, ExternalLink } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { googleMapsUrl, googleMapsEmbedUrl } from "@/lib/maps";
+import { lower } from "@/lib/terms";
+import { useTerms } from "@/lib/use-company-config";
 
 export type MapPlace = {
   id: string;
@@ -19,11 +21,12 @@ export type MapPlace = {
 export function PlacesMap({ places }: { places: MapPlace[] }) {
   const [selectedId, setSelectedId] = useState<string | undefined>(places[0]?.id);
   const selected = places.find((p) => p.id === selectedId) ?? places[0];
+  const t = useTerms();
 
   if (!selected) {
     return (
       <div className="rounded-lg border border-border bg-card py-16 text-center text-sm text-muted-foreground">
-        No stores to show on the map.
+        No {lower(t.site.many)} to show on the map.
       </div>
     );
   }

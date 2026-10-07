@@ -135,14 +135,13 @@ export default function WarehouseInsightsPage() {
       // The labels already read "By staff member", so prefixing another "by"
       // titled the file "Fulfilment performance by by staff member".
       title: `Fulfilment performance — ${grouping?.label ?? groupBy}`,
-      orgName: "Gold Fortune Merchandising",
       context: [
         PERIODS.find((p) => p.days === days)?.label ?? `Last ${days} days`,
         overall
           ? `${overall.orders_delivered} orders delivered overall`
           : "No overall figure",
       ],
-      filename: "gf-fulfilment",
+      filename: "fulfilment",
       columns: [
         { header: grouping?.label ?? "Group", key: "bucket" },
         { header: "Delivered", key: "delivered", numeric: true },

@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../core/company_config.dart';
 import '../../core/providers.dart';
+import '../../core/terms.dart';
 import '../../core/theme.dart';
 
 /// What kind of unscheduled call this is.
@@ -23,28 +24,31 @@ class UnscheduledChooserScreen extends ConsumerWidget {
     // Sales visits and leads belong to the Distribution module.
     final hasSales = ref.watch(companyConfigValueProvider).has('distribution');
     final open = hasSales ? ref.watch(myLeadsProvider) : null;
+    final t = ref.watch(termsProvider);
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Unscheduled visit')),
+      appBar: AppBar(title: Text('Unscheduled ${t.job.oneLower}')),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
           _Choice(
             icon: Icons.storefront_outlined,
-            title: 'Store check-in',
+            title: '${t.site.one} check-in',
             body:
-                'A shop already on your list. Checks in with the usual position '
-                'and time, then the normal visit: forms, photos, check-out.',
+                '${capital(t.site.withArticle)} already on your list. Checks in '
+                'with the usual position and time, then the normal '
+                '${t.job.oneLower}: forms, photos, check-out.',
             onTap: () => context.go('/unscheduled/store'),
           ),
           if (hasSales) ...[
           const SizedBox(height: 12),
           _Choice(
             icon: Icons.handshake_outlined,
-            title: 'Sales visit',
+            title: 'Sales ${t.job.oneLower}',
             body:
-                'A new or prospective customer — approaching a shop to ask for '
-                'a listing. Records who you saw and what came of it.',
+                'A new or prospective ${t.client.oneLower} — approaching '
+                '${t.site.withArticle} to ask for a listing. Records who you '
+                'saw and what came of it.',
             onTap: () => context.go('/unscheduled/sales'),
           ),
           ],
@@ -90,8 +94,8 @@ class UnscheduledChooserScreen extends ConsumerWidget {
               child: ListTile(
                 leading: const Icon(Icons.error_outline, color: AppColors.danger),
                 title: const Text('Could not read your open calls'),
-                subtitle: const Text(
-                  'You may already have one open for this shop.',
+                subtitle: Text(
+                  'You may already have one open for this ${t.site.oneLower}.',
                 ),
                 trailing: TextButton(
                   onPressed: () => ref.invalidate(myLeadsProvider),
@@ -132,7 +136,7 @@ class _Choice extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               CircleAvatar(
-                backgroundColor: AppColors.navy,
+                backgroundColor: context.brand.primary,
                 foregroundColor: Colors.white,
                 child: Icon(icon),
               ),

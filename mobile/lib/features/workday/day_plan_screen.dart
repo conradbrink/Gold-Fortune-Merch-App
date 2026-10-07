@@ -3,13 +3,14 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 
+import '../../core/company_config.dart';
 import '../../core/providers.dart';
 import '../../core/theme.dart';
 import '../../data/models/route_visit.dart';
 import 'workday_summary_screen.dart' show kMonthlyRewardTarget;
 
 /// Shown once right after the rep starts their workday: the day ahead at a
-/// glance — every stop with its time slot — plus where they stand on the
+/// glance — every site with its time slot — plus where they stand on the
 /// monthly target while there's still a whole day to influence it.
 ///
 /// Reads today's list and the cached monthly figure, so it renders offline.
@@ -28,12 +29,13 @@ class DayPlanScreen extends ConsumerWidget {
     final routes = ref.watch(todayRoutesProvider).value ?? const <RouteVisit>[];
     final profile = ref.watch(profileProvider).value;
     final monthlyAsync = ref.watch(monthlyCompletionProvider);
+    final t = ref.watch(termsProvider);
 
     final pending = routes.where((r) => !r.isCheckedOut && !r.isMissed).length;
     final firstName = profile?.fullName?.split(' ').first;
 
     return Scaffold(
-      backgroundColor: AppColors.navy,
+      backgroundColor: context.brand.primary,
       body: SafeArea(
         child: Column(
           children: [
@@ -46,13 +48,13 @@ class DayPlanScreen extends ConsumerWidget {
                       width: 92,
                       height: 92,
                       decoration: BoxDecoration(
-                        color: AppColors.gold.withValues(alpha: 0.15),
+                        color: context.brand.accent.withValues(alpha: 0.15),
                         shape: BoxShape.circle,
                       ),
-                      child: const Icon(
+                      child: Icon(
                         Icons.wb_sunny_outlined,
                         size: 46,
-                        color: AppColors.gold,
+                        color: context.brand.accent,
                       ),
                     ),
                     const SizedBox(height: 20),
@@ -71,11 +73,13 @@ class DayPlanScreen extends ConsumerWidget {
                     Text(
                       routes.isEmpty
                           ? 'Nothing is scheduled today. Use "Unscheduled '
-                              'visit" if you\'re covering a store.'
+                              '${t.job.oneLower}" if you\'re covering '
+                              '${t.site.withArticle}.'
                           : pending == 0
                               ? 'Everything on today\'s list is already done '
-                                  '— a workday with a clear road ahead.'
-                              : 'You have $pending store${pending == 1 ? '' : 's'} '
+                                  '— ${t.workday.withArticle} with a clear '
+                                  'road ahead.'
+                              : 'You have ${t.site.count(pending)} '
                                   'to visit today. Here\'s the plan:',
                       textAlign: TextAlign.center,
                       style: TextStyle(
@@ -112,8 +116,8 @@ class DayPlanScreen extends ConsumerWidget {
                                       : Icons.flag_outlined,
                                   size: 20,
                                   color: onTrack
-                                      ? AppColors.gold
-                                      : AppColors.navy,
+                                      ? context.brand.accent
+                                      : context.brand.primary,
                                 ),
                                 const SizedBox(width: 8),
                                 const Expanded(
@@ -132,7 +136,7 @@ class DayPlanScreen extends ConsumerWidget {
                                     fontWeight: FontWeight.bold,
                                     fontSize: 16,
                                     color: onTrack
-                                        ? AppColors.gold
+                                        ? context.brand.accent
                                         : AppColors.textPrimary,
                                   ),
                                 ),
@@ -145,9 +149,9 @@ class DayPlanScreen extends ConsumerWidget {
                                 value: monthly.fraction,
                                 minHeight: 8,
                                 backgroundColor:
-                                    AppColors.navy.withValues(alpha: 0.08),
+                                    context.brand.primary.withValues(alpha: 0.08),
                                 valueColor: AlwaysStoppedAnimation<Color>(
-                                  onTrack ? AppColors.gold : AppColors.navy,
+                                  onTrack ? context.brand.accent : context.brand.primary,
                                 ),
                               ),
                             ),
@@ -156,7 +160,8 @@ class DayPlanScreen extends ConsumerWidget {
                               onTrack
                                   ? 'Great pace — stay above 90% to earn '
                                       'this month\'s reward.'
-                                  : 'Finish today\'s stops to move toward '
+                                  : 'Finish today\'s ${t.site.manyLower} to '
+                                      'move toward '
                                       'the 90% monthly reward.',
                               style: const TextStyle(
                                 color: AppColors.textMuted,
@@ -180,8 +185,8 @@ class DayPlanScreen extends ConsumerWidget {
                 child: ElevatedButton(
                   onPressed: () => context.go('/'),
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: AppColors.gold,
-                    foregroundColor: AppColors.navy,
+                    backgroundColor: context.brand.accent,
+                    foregroundColor: context.brand.primary,
                   ),
                   child: Text(
                     routes.isEmpty ? 'Got it' : "Let's go",
@@ -242,17 +247,17 @@ class _StopRow extends StatelessWidget {
           decoration: BoxDecoration(
             color: visit.isCheckedOut
                 ? AppColors.success.withValues(alpha: 0.14)
-                : AppColors.navy.withValues(alpha: 0.08),
+                : context.brand.primary.withValues(alpha: 0.08),
             shape: BoxShape.circle,
           ),
           child: visit.isCheckedOut
               ? const Icon(Icons.check, size: 16, color: AppColors.success)
               : Text(
                   '$index',
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontWeight: FontWeight.w700,
                     fontSize: 13,
-                    color: AppColors.navy,
+                    color: context.brand.primary,
                   ),
                 ),
         ),

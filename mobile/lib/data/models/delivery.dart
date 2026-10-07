@@ -54,7 +54,7 @@ class Delivery {
       id: m['id'] as String,
       dispatchNumber: (m['dispatch_number'] as String?) ?? '',
       status: (m['status'] as String?) ?? 'in_transit',
-      storeName: (store?['name'] as String?) ?? 'Unknown store',
+      storeName: (store?['name'] as String?) ?? 'Unknown location',
       storeAddress: store?['address'] as String?,
       orderNumber: (order?['order_number'] as String?) ?? '',
       dispatchedAt: DateTime.parse(m['dispatched_at'] as String),

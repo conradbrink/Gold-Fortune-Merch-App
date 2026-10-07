@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { lower, type Terms } from "@/lib/terms";
 
 /**
  * Where each rep was last seen, and how long ago.
@@ -150,8 +151,11 @@ export function freshnessOf(minutes: number, intervalMinutes: number | null): Fr
  * useful thing this view can tell anyone.
  */
 export async function fetchLiveReps(
-  supabase: SupabaseClient
+  supabase: SupabaseClient,
+  /** The company's words, for the name of somebody whose profile has none. */
+  t: Terms
 ): Promise<LiveReps> {
+  const unnamed = `Unnamed ${lower(t.staff.one)}`;
   const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
 
   const { data: repRows, error: repError } = await supabase
@@ -237,7 +241,7 @@ export async function fetchLiveReps(
   }
 
   const latest = new Map<string, RepPosition>();
-  const nameOf = new Map(reps.map((r) => [r.id, r.full_name ?? "Unnamed rep"]));
+  const nameOf = new Map(reps.map((r) => [r.id, r.full_name ?? unnamed]));
 
   for (const p of pingResults.flatMap((r) => r.data ?? []) as {
     rep_id: string;
@@ -277,7 +281,7 @@ export async function fetchLiveReps(
     .filter((r) => !latest.has(r.id))
     .map((r) => ({
       repId: r.id,
-      repName: r.full_name ?? "Unnamed rep",
+      repName: r.full_name ?? unnamed,
       dayOpen: openDays.has(r.id),
     }));
 

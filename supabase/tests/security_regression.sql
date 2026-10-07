@@ -1087,6 +1087,101 @@ begin
     reset role;
   end;
 
+  ------------------------- 33. words, colours and logo are company settings
+  --
+  -- `terminology_and_branding` (Stage 3). A company's words reach every
+  -- screen, export and PDF, its colours every page and its logo every invoice,
+  -- so only `company_settings` holders change them (33), markup never gets in
+  -- (33b), nobody writes into another company's logo folder or uploads an
+  -- SVG (33c), and the legitimate edit still works (33d).
+  declare
+    v_admin uuid;
+    v_other uuid;
+  begin
+    select p.id into v_admin from public.profiles p
+     where p.org_id = v_org and p.is_active
+       and exists (select 1 from public.profile_permissions pp
+                    where pp.profile_id = p.id and pp.permission_code in ('company_settings', 'admin'))
+     limit 1;
+    if v_admin is null then
+      raise exception 'Fixtures broken: no active company_settings holder for check 33.';
+    end if;
+    insert into public.organizations (name) values ('Regression check-33 company') returning id into v_other;
+    insert into public.company_terminology (org_id, key, singular, plural)
+      values (v_org, 'site', 'Check33site', 'Check33sites')
+      on conflict (org_id, key) do update set singular = excluded.singular, plural = excluded.plural;
+
+    -- 33. A rep without company_settings changes nothing.
+    update public.profiles set role = 'rep', is_active = true where id = v_rep;
+    delete from public.profile_permissions
+     where profile_id = v_rep and permission_code in ('company_settings', 'admin');
+    perform set_config('request.jwt.claims',
+      json_build_object('sub', v_rep, 'role', 'authenticated')::text, true);
+    set local role authenticated;
+    update public.company_terminology set singular = 'Tampered' where org_id = v_org and key = 'site';
+    get diagnostics v_n = row_count;
+    if v_n > 0 then v_fail := v_fail || '33. a rep renamed a term' || E'\n'; end if;
+    delete from public.company_terminology where org_id = v_org and key = 'site';
+    get diagnostics v_n = row_count;
+    if v_n > 0 then v_fail := v_fail || '33. a rep reset a term' || E'\n'; end if;
+    update public.organizations set logo_path = v_org || '/logo-rep.png' where id = v_org;
+    get diagnostics v_n = row_count;
+    if v_n > 0 then v_fail := v_fail || '33. a rep set the logo' || E'\n'; end if;
+    begin
+      insert into public.company_settings (org_id, key, value) values (v_org, 'brand_primary_color', '"#000000"')
+        on conflict (org_id, key) do update set value = excluded.value;
+      v_fail := v_fail || '33. a rep changed the brand colour' || E'\n';
+    exception when insufficient_privilege then null;
+    end;
+    begin
+      insert into storage.objects (bucket_id, name, owner) values ('branding', v_org || '/logo-rep.png', v_rep);
+      v_fail := v_fail || '33. a rep uploaded a logo' || E'\n';
+    exception when insufficient_privilege then null;
+    end;
+    reset role;
+
+    -- 33b-d. As the company's own settings holder.
+    perform set_config('request.jwt.claims',
+      json_build_object('sub', v_admin, 'role', 'authenticated')::text, true);
+    set local role authenticated;
+    begin
+      update public.company_terminology set singular = '<script>' where org_id = v_org and key = 'site';
+      v_fail := v_fail || '33b. markup was accepted as a term' || E'\n';
+    exception when invalid_parameter_value then null;
+    end;
+    begin
+      insert into storage.objects (bucket_id, name, owner) values ('branding', v_other || '/logo-x.png', v_admin);
+      v_fail := v_fail || '33c. a logo went into another company''s folder' || E'\n';
+    exception when insufficient_privilege then null;
+    end;
+    begin
+      insert into storage.objects (bucket_id, name, owner) values ('branding', v_org || '/logo-x.svg', v_admin);
+      v_fail := v_fail || '33c. an SVG logo was accepted' || E'\n';
+    exception when insufficient_privilege then null;
+    end;
+    begin
+      update public.organizations set logo_path = v_other || '/logo-x.png' where id = v_org;
+      v_fail := v_fail || '33c. logo_path pointed into another company''s folder' || E'\n';
+    exception when check_violation then null;
+    end;
+    begin
+      update public.company_terminology set singular = 'Outlet' where org_id = v_org and key = 'site';
+      get diagnostics v_n = row_count;
+      if v_n <> 1 then v_fail := v_fail || '33d. the settings holder could NOT rename a term' || E'\n'; end if;
+      update public.company_settings set value = '"#123456"' where org_id = v_org and key = 'brand_primary_color';
+      update public.organizations set logo_path = v_org || '/logo-check33.png' where id = v_org;
+      get diagnostics v_n = row_count;
+      if v_n <> 1 then v_fail := v_fail || '33d. the settings holder could NOT set the logo' || E'\n'; end if;
+      if public.my_company_config()#>>'{terms,site,one}' is distinct from 'Outlet'
+         or public.my_company_config()#>>'{branding,logo_path}' is distinct from v_org || '/logo-check33.png' then
+        v_fail := v_fail || '33d. my_company_config does not show the saved words and logo' || E'\n';
+      end if;
+    exception when others then
+      v_fail := v_fail || '33d. the settings holder''s edit failed: ' || sqlerrm || E'\n';
+    end;
+    reset role;
+  end;
+
   ------------------------------------------------------------------- verdict
 
   if v_fail <> '' then

@@ -35,6 +35,13 @@ import { FREQUENCIES, WEEKDAYS } from "@/lib/schedule";
 import type { Tables } from "@/lib/supabase/types";
 import { FieldSettingsCard } from "@/components/settings/field-settings-card";
 import { ModulesCard } from "@/components/settings/modules-card";
+import { TerminologyCard } from "@/components/settings/terminology-card";
+import { LogoCard } from "@/components/settings/logo-card";
+import { BrandColoursCard } from "@/components/settings/brand-colours-card";
+import { usePermissions } from "@/lib/use-permissions";
+import { can } from "@/lib/permissions";
+import { useTerms } from "@/lib/use-company-config";
+import { count, lower, withArticle } from "@/lib/terms";
 
 type Organization = Tables<"organizations">;
 type Profile = Tables<"profiles">;
@@ -46,6 +53,12 @@ const roleTone: Record<string, string> = {
 
 export default function CompanyProfilePage() {
   const supabase = createClient();
+  const t = useTerms();
+  // The page is already behind `company_settings` (proxy.ts); this only
+  // decides whether the branding cards offer their controls, and stays
+  // read-only until the answer is known.
+  const permissions = usePermissions();
+  const canEditCompany = permissions !== null && can(permissions, "company_settings");
   const [org, setOrg] = useState<Organization | null>(null);
   const [members, setMembers] = useState<Profile[]>([]);
   const [loading, setLoading] = useState(true);
@@ -214,7 +227,7 @@ export default function CompanyProfilePage() {
         </h1>
         <p className="text-sm text-muted-foreground">
           Manage your organization&apos;s details, team members, field
-          settings and plan.
+          settings, terminology, branding and plan.
         </p>
       </div>
 
@@ -223,6 +236,7 @@ export default function CompanyProfilePage() {
           <TabsTrigger value="details">Company Details</TabsTrigger>
           <TabsTrigger value="team">Team Members</TabsTrigger>
           <TabsTrigger value="field">Field settings</TabsTrigger>
+          <TabsTrigger value="branding">Terminology &amp; branding</TabsTrigger>
           <TabsTrigger value="plan">Plan</TabsTrigger>
         </TabsList>
 
@@ -345,8 +359,8 @@ export default function CompanyProfilePage() {
                 <p className="text-xs text-muted-foreground">
                   Applied to every order captured from now on. Orders already
                   taken keep the rate they were captured at, so changing this
-                  never restates an invoice a customer is holding. 0 charges no
-                  VAT.
+                  never restates an invoice {withArticle(t, "client")} is
+                  holding. 0 charges no VAT.
                 </p>
               </div>
               <div className="space-y-1.5">
@@ -375,10 +389,11 @@ export default function CompanyProfilePage() {
                 </datalist>
                 <p className="text-xs text-muted-foreground">
                   Decides which calendar day something falls on — attendance,
-                  the working-day card and every dashboard read it. Not a
-                  display preference: a rep finishing at 23:30 lands on the
-                  wrong day if this is wrong, and the day after shows a start
-                  with no end. An IANA name; anything else is refused.
+                  the {lower(t.workday.one)} card and every dashboard read it.
+                  Not a display preference: {withArticle(t, "staff")} finishing
+                  at 23:30 lands on the wrong day if this is wrong, and the day
+                  after shows a start with no end. An IANA name; anything else
+                  is refused.
                 </p>
               </div>
               <div className="flex items-end gap-3 sm:col-span-2">
@@ -407,8 +422,9 @@ export default function CompanyProfilePage() {
             <CardHeader>
               <CardTitle className="text-base">Planning capacity</CardTitle>
               <CardDescription>
-                What one rep-day holds, and which days your team works. Used by
-                the schedule to tell you whether a call cycle is deliverable.
+                What one {lower(t.staff.one)} covers in a day, and which days your
+                team works. Used by the schedule to tell you whether{" "}
+                {withArticle(t, "schedule_cycle")} is deliverable.
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
@@ -420,7 +436,7 @@ export default function CompanyProfilePage() {
 
               <div className="grid gap-4 sm:grid-cols-2">
                 <div className="space-y-1.5">
-                  <Label htmlFor="stores-per-day">Stores per day</Label>
+                  <Label htmlFor="stores-per-day">{t.site.many} per day</Label>
                   <Input
                     id="stores-per-day"
                     type="number"
@@ -436,13 +452,14 @@ export default function CompanyProfilePage() {
                     }}
                   />
                   <p className="text-xs text-muted-foreground">
-                    How many stops one rep realistically makes in a day.
+                    How many {lower(t.site.many)} one {lower(t.staff.one)}{" "}
+                    realistically covers in a day.
                   </p>
                 </div>
 
                 <div className="space-y-1.5">
                   <Label htmlFor="default-frequency">
-                    Default visit frequency
+                    Default {lower(t.job.one)} frequency
                   </Label>
                   <NativeSelect
                     id="default-frequency"
@@ -463,7 +480,7 @@ export default function CompanyProfilePage() {
                     ))}
                   </NativeSelect>
                   <p className="text-xs text-muted-foreground">
-                    Applied to newly imported stores.
+                    Applied to newly imported {lower(t.site.many)}.
                   </p>
                 </div>
               </div>
@@ -491,11 +508,11 @@ export default function CompanyProfilePage() {
                 </div>
                 <p className="text-xs text-muted-foreground">
                   {capacity.workingDays.length} days ×{" "}
-                  {capacity.storesPerDay} stores ={" "}
+                  {count(t, "site", capacity.storesPerDay)} ={" "}
                   <span className="font-medium text-foreground">
-                    {capacity.workingDays.length * capacity.storesPerDay} visits
+                    {count(t, "job", capacity.workingDays.length * capacity.storesPerDay)}
                   </span>{" "}
-                  per rep per week.
+                  per {lower(t.staff.one)} per week.
                 </p>
               </div>
 
@@ -555,7 +572,7 @@ export default function CompanyProfilePage() {
                     </TableCell>
                     <TableCell>
                       <Badge className={roleTone[member.role] ?? ""}>
-                        {member.role === "manager" ? "Manager" : "Rep"}
+                        {member.role === "manager" ? "Manager" : t.staff.one}
                       </Badge>
                     </TableCell>
                     <TableCell className="text-sm">
@@ -582,6 +599,20 @@ export default function CompanyProfilePage() {
 
         <TabsContent value="field" className="mt-4 space-y-4">
           {org && <FieldSettingsCard orgId={org.id} />}
+        </TabsContent>
+
+        <TabsContent value="branding" className="mt-4 space-y-4">
+          {org && (
+            <>
+              <TerminologyCard orgId={org.id} canEdit={canEditCompany} />
+              <LogoCard
+                orgId={org.id}
+                initialLogoPath={org.logo_path}
+                canEdit={canEditCompany}
+              />
+              <BrandColoursCard orgId={org.id} canEdit={canEditCompany} />
+            </>
+          )}
         </TabsContent>
 
         <TabsContent value="plan" className="mt-4 space-y-4">

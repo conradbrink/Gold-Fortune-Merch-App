@@ -46,11 +46,11 @@ class _Harness {
         GoRoute(path: '/login', builder: (_, _) => const Text('LOGIN')),
         GoRoute(
           path: '/',
-          builder: (_, _) => const Text('STORES'),
+          builder: (_, _) => const Text('HOME'),
           routes: [
             GoRoute(
               path: 'visit/:key',
-              builder: (_, _) => const _StoreScreen(),
+              builder: (_, _) => const _SiteScreen(),
               routes: [
                 GoRoute(path: 'order', builder: (_, _) => const _OrderScreen()),
               ],
@@ -83,8 +83,8 @@ class _Harness {
   }
 }
 
-class _StoreScreen extends StatelessWidget {
-  const _StoreScreen();
+class _SiteScreen extends StatelessWidget {
+  const _SiteScreen();
 
   @override
   Widget build(BuildContext context) {
@@ -93,7 +93,7 @@ class _StoreScreen extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Text('STORE'),
+            const Text('SITE'),
             ElevatedButton(
               onPressed: () => context.go('/visit/abc/order'),
               child: const Text('Take an order'),
@@ -119,7 +119,7 @@ Future<void> _openOrderScreen(WidgetTester tester, _Harness h) async {
 
   h.router.go('/visit/abc');
   await tester.pumpAndSettle();
-  expect(find.text('STORE'), findsOneWidget);
+  expect(find.text('SITE'), findsOneWidget);
 
   await tester.tap(find.text('Take an order'));
   await tester.pumpAndSettle();
@@ -163,7 +163,7 @@ void main() {
 
     expect(find.text('ORDER'), findsOneWidget,
         reason: 'the order screen did not survive a session blip');
-    expect(find.text('STORES'), findsNothing);
+    expect(find.text('HOME'), findsNothing);
   });
 
   test('the first interruption is the one returned to', () {
@@ -207,7 +207,7 @@ void main() {
     h.auth.add(2);
     await tester.pumpAndSettle();
 
-    expect(find.text('STORES'), findsOneWidget);
+    expect(find.text('HOME'), findsOneWidget);
     expect(find.text('ORDER'), findsNothing);
   });
 }

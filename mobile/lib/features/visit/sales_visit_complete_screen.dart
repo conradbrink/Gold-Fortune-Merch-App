@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../core/company_config.dart';
 import '../../core/providers.dart';
 import '../../data/models/lead.dart';
 import '../../data/repositories/lead_repository.dart';
@@ -112,8 +113,9 @@ class _SalesVisitCompleteScreenState
           );
       ref.invalidate(myLeadsProvider);
       if (!mounted) return;
+      final job = ref.read(termsProvider).job.oneLower;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Sales visit recorded.')),
+        SnackBar(content: Text('Sales $job recorded.')),
       );
       context.go('/');
     } catch (e) {
@@ -126,6 +128,7 @@ class _SalesVisitCompleteScreenState
 
   @override
   Widget build(BuildContext context) {
+    final job = ref.watch(termsProvider).job.oneLower;
     if (_loading) {
       return const Scaffold(
         body: Center(child: CircularProgressIndicator()),
@@ -135,7 +138,7 @@ class _SalesVisitCompleteScreenState
     final lead = _lead;
     if (lead == null) {
       return Scaffold(
-        appBar: AppBar(title: const Text('Sales visit')),
+        appBar: AppBar(title: Text('Sales $job')),
         body: Center(
           child: Padding(
             padding: const EdgeInsets.all(24),
@@ -145,7 +148,7 @@ class _SalesVisitCompleteScreenState
                 // A failed read and a genuinely absent visit both land here, and
                 // they call for different things from the rep — retry, or move on.
                 Text(
-                  _error ?? 'That visit is no longer on this device.',
+                  _error ?? 'That $job is no longer on this device.',
                   textAlign: TextAlign.center,
                 ),
                 if (_error != null) ...[
@@ -267,12 +270,12 @@ class _SalesVisitCompleteScreenState
                     child: CircularProgressIndicator(strokeWidth: 2),
                   )
                 : const Icon(Icons.check),
-            label: Text(_saving ? 'Saving…' : 'Complete visit'),
+            label: Text(_saving ? 'Saving…' : 'Complete $job'),
           ),
           const SizedBox(height: 8),
           Text(
-            'Leaving without completing keeps the visit open — it will be waiting '
-            'for you under Unscheduled visit.',
+            'Leaving without completing keeps the $job open — it will be '
+            'waiting for you under Unscheduled $job.',
             style: Theme.of(context).textTheme.bodySmall,
           ),
         ],

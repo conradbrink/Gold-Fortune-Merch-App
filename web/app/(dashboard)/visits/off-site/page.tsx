@@ -24,6 +24,8 @@ import {
 } from "@/lib/date-range";
 import type { ExportSheet } from "@/lib/export";
 import { createClient } from "@/lib/supabase/client";
+import { useTerms } from "@/lib/use-company-config";
+import { lower } from "@/lib/terms";
 
 /** 4490 → "4.5 km", 730 → "730 m". */
 function formatDistance(m: number): string {
@@ -53,6 +55,7 @@ function mapsHref(c: OffsiteCheckin): string | null {
  * answers the question that was clicked rather than the default 30 days.
  */
 export default function OffsiteCheckinsPage() {
+  const t = useTerms();
   const [range, setRange] = useState<DateRange>(() => rangeForPreset("30d"));
   const [urlRead, setUrlRead] = useState(false);
   const [rows, setRows] = useState<OffsiteCheckin[]>([]);
@@ -102,7 +105,7 @@ export default function OffsiteCheckinsPage() {
 
   const offSiteM = rows[0]?.off_site_m ?? 500;
   const byRep = [...rows.reduce((m, r) => {
-    const cur = m.get(r.rep_id) ?? { name: r.rep_name ?? "Unknown rep", n: 0 };
+    const cur = m.get(r.rep_id) ?? { name: r.rep_name ?? `Unknown ${lower(t.staff.one)}`, n: 0 };
     cur.n += 1;
     return m.set(r.rep_id, cur);
   }, new Map<string, { name: string; n: number }>())].sort((a, b) => b[1].n - a[1].n);
@@ -119,17 +122,16 @@ export default function OffsiteCheckinsPage() {
     const repName = byRep.find(([id]) => id === activeRep)?.[1].name;
     return {
       title: "Off-site check-ins",
-      orgName: "Gold Fortune Merchandising",
       context: [
         rangeLabel,
-        `Over ${offSiteM} m from a confirmed store position, after GPS error`,
-        repName ? `Rep: ${repName}` : "All reps",
+        `Over ${offSiteM} m from a confirmed ${lower(t.site.one)} position, after GPS error`,
+        repName ? `${t.staff.one}: ${repName}` : `All ${lower(t.staff.many)}`,
       ],
-      filename: "gf-off-site-checkins",
+      filename: "off-site-checkins",
       columns: [
         { header: "Checked in", key: "at" },
-        { header: "Rep", key: "rep" },
-        { header: "Store", key: "store" },
+        { header: t.staff.one, key: "rep" },
+        { header: t.site.one, key: "store" },
         { header: "Distance (m)", key: "distance", numeric: true },
         { header: "GPS accuracy (m)", key: "accuracy", numeric: true },
       ],
@@ -152,8 +154,8 @@ export default function OffsiteCheckinsPage() {
           </Link>
           <h1 className="text-xl font-semibold tracking-tight text-foreground">Off-site check-ins</h1>
           <p className="max-w-2xl text-sm text-muted-foreground">
-            Check-ins more than {offSiteM} m from the store even after allowing for the phone&apos;s GPS
-            error. Only stores whose position has been confirmed are counted, and readings over the
+            Check-ins more than {offSiteM} m from the {lower(t.site.one)} even after allowing for the phone&apos;s GPS
+            error. Only {lower(t.site.many)} whose position has been confirmed are counted, and readings over the
             company&apos;s invalid-GPS distance are left out as bad fixes.
           </p>
         </div>
@@ -180,8 +182,8 @@ export default function OffsiteCheckinsPage() {
           <TableHeader>
             <TableRow className="hover:bg-transparent">
               <TableHead>Checked in</TableHead>
-              <TableHead>Rep</TableHead>
-              <TableHead>Store</TableHead>
+              <TableHead>{t.staff.one}</TableHead>
+              <TableHead>{t.site.one}</TableHead>
               <TableHead className="text-right">Distance</TableHead>
               <TableHead className="hidden text-right md:table-cell">GPS ±</TableHead>
               <TableHead className="w-0" />
@@ -217,7 +219,7 @@ export default function OffsiteCheckinsPage() {
                     </TableCell>
                     <TableCell className="text-sm">
                       <Link href={`/tracking/${r.rep_id}`} className="hover:underline">
-                        {r.rep_name ?? "Unknown rep"}
+                        {r.rep_name ?? `Unknown ${lower(t.staff.one)}`}
                       </Link>
                     </TableCell>
                     <TableCell className="min-w-[160px] text-sm font-medium">{r.store_name}</TableCell>
@@ -233,7 +235,7 @@ export default function OffsiteCheckinsPage() {
                           href={href}
                           target="_blank"
                           rel="noopener noreferrer"
-                          title="Where the phone was, and the route to the store"
+                          title={`Where the phone was, and the route to the ${lower(t.site.one)}`}
                           className="inline-flex items-center gap-1 whitespace-nowrap text-xs text-primary hover:underline"
                         >
                           <MapPin className="h-3.5 w-3.5" /> Map

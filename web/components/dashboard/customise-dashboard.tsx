@@ -16,6 +16,7 @@ import {
   widgetAvailable,
 } from "@/components/dashboard/widget-registry";
 import type { ModuleSet } from "@/lib/modules";
+import { useTerms } from "@/lib/use-company-config";
 
 /**
  * Choosing which cards the dashboard shows, and in what order.
@@ -47,6 +48,7 @@ export function CustomiseDashboard({
   error: string | null;
 }) {
   const [draft, setDraft] = useState<string[]>(layout);
+  const t = useTerms();
   /**
    * The row being dragged, held in a ref because `drop` must not depend on a
    * re-render having happened since `dragstart`.
@@ -163,7 +165,7 @@ export function CustomiseDashboard({
                     className="text-muted-foreground"
                     disabled={index === 0}
                     onClick={() => move(index, -1)}
-                    aria-label={`Move ${widget.title} up`}
+                    aria-label={`Move ${widget.title(t)} up`}
                   >
                     <ChevronUp className="h-3.5 w-3.5" />
                   </Button>
@@ -173,17 +175,17 @@ export function CustomiseDashboard({
                     className="text-muted-foreground"
                     disabled={index === draft.length - 1}
                     onClick={() => move(index, 1)}
-                    aria-label={`Move ${widget.title} down`}
+                    aria-label={`Move ${widget.title(t)} down`}
                   >
                     <ChevronDown className="h-3.5 w-3.5" />
                   </Button>
                 </div>
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-sm font-medium text-foreground">
-                    {widget.title}
+                    {widget.title(t)}
                   </p>
                   <p className="truncate text-xs text-muted-foreground">
-                    {widget.description}
+                    {widget.description(t)}
                   </p>
                 </div>
                 <Button
@@ -191,7 +193,7 @@ export function CustomiseDashboard({
                   size="icon"
                   className="h-8 w-8 shrink-0 text-muted-foreground hover:text-destructive"
                   onClick={() => setDraft(draft.filter((d) => d !== id))}
-                  aria-label={`Remove ${widget.title}`}
+                  aria-label={`Remove ${widget.title(t)}`}
                 >
                   <X className="h-4 w-4" />
                 </Button>
@@ -210,10 +212,10 @@ export function CustomiseDashboard({
               >
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-sm font-medium text-foreground">
-                    {widget.title}
+                    {widget.title(t)}
                   </p>
                   <p className="truncate text-xs text-muted-foreground">
-                    {widget.description}
+                    {widget.description(t)}
                   </p>
                 </div>
                 <Button
@@ -221,7 +223,7 @@ export function CustomiseDashboard({
                   size="sm"
                   className="shrink-0 gap-1"
                   onClick={() => setDraft([...draft, widget.id])}
-                  aria-label={`Add ${widget.title}`}
+                  aria-label={`Add ${widget.title(t)}`}
                 >
                   <Plus className="h-3.5 w-3.5" />
                   Add

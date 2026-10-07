@@ -42,6 +42,7 @@ import {
   type PermissionSet,
 } from "@/lib/permissions";
 import { canReachPath, type ModuleSet } from "@/lib/modules";
+import { DEFAULT_TERMS, type Terms } from "@/lib/terms";
 
 export type NavItem = {
   href: string;
@@ -56,6 +57,21 @@ export type NavItem = {
    * dead end. Omitted means everyone, which is true of exactly one item.
    */
   permission?: PermissionCode;
+};
+
+/**
+ * An item as written below: a label that names one of the company's things
+ * (stores, visits, reps) is a function of its words, so a cleaning company's
+ * menu says "Sites" where Gold Fortune's says "Stores". `visibleNavGroups`
+ * resolves it; everything after that sees a plain string.
+ */
+type NavItemDef = Omit<NavItem, "label"> & {
+  label: string | ((t: Terms) => string);
+};
+
+type NavGroupDef = {
+  label: string | null;
+  items: NavItemDef[];
 };
 
 /**
@@ -77,9 +93,7 @@ export type NavGroup = {
   items: NavItem[];
 };
 
-
-
-export const navGroups: NavGroup[] = [
+export const navGroups: NavGroupDef[] = [
   {
     label: null,
     items: [{ href: "/", label: "Dashboard", icon: LayoutDashboard, permission: "dashboard" }],
@@ -105,7 +119,7 @@ export const navGroups: NavGroup[] = [
       // through the `/reports` prefix, so it needs no entry of its own there.
       {
         href: "/reports/rep-performance",
-        label: "Rep performance",
+        label: (t) => `${t.staff.one} performance`,
         icon: UserCheck,
         permission: "insights",
       },
@@ -127,9 +141,9 @@ export const navGroups: NavGroup[] = [
   {
     label: "Sales & Coverage",
     items: [
-      { href: "/leads", label: "Leads", icon: Target, permission: "sales_coverage" },
-      { href: "/stores", label: "Stores", icon: Store, permission: "sales_coverage" },
-      { href: "/territories", label: "Territories", icon: MapIcon, permission: "sales_coverage" },
+      { href: "/leads", label: (t) => t.prospect.many, icon: Target, permission: "sales_coverage" },
+      { href: "/stores", label: (t) => t.site.many, icon: Store, permission: "sales_coverage" },
+      { href: "/territories", label: (t) => t.territory.many, icon: MapIcon, permission: "sales_coverage" },
     ],
   },
   {
@@ -144,7 +158,7 @@ export const navGroups: NavGroup[] = [
         // One destination, two names in the old menu. The feed is where a
         // manager starts, and the per-visit drill-down hangs off it.
         href: "/activities",
-        label: "Visits & Activities",
+        label: (t) => `${t.job.many} & Activities`,
         icon: ClipboardList,
         permission: "field_ops",
       },
@@ -228,7 +242,9 @@ export const navGroups: NavGroup[] = [
     // than tidy something.
     label: "Sales Team",
     items: [
-      { href: "/representatives", label: "Representatives", icon: Users, permission: "team" },
+      // The company's word for its people. Gold Fortune's is "Reps", which
+      // replaced the longer "Representatives" here on purpose (Stage 3).
+      { href: "/representatives", label: (t) => t.staff.many, icon: Users, permission: "team" },
     ],
   },
   {
@@ -304,7 +320,7 @@ export const navGroups: NavGroup[] = [
 ];
 
 /** Flat list, for anything that only needs the destinations. */
-export const navItems: NavItem[] = navGroups.flatMap((g) => g.items);
+export const navItems: NavItemDef[] = navGroups.flatMap((g) => g.items);
 
 /**
  * The one destination that counts as "where you are", or null.
@@ -343,17 +359,25 @@ export function visibleNavGroups(
   // whatever the person's permissions: the proxy would only explain that it is
   // not part of the plan. Which module an item belongs to comes from its path
   // (`moduleForPath`), the same map the proxy uses, so the two cannot drift.
-  modules: ModuleSet
+  modules: ModuleSet,
+  // The company's words for the labels. Defaulted so a caller that only asks
+  // which destinations are offered need not care what they are called.
+  terms: Terms = DEFAULT_TERMS
 ): NavGroup[] {
   return navGroups
     .map((group) => ({
-      ...group,
-      items: group.items.filter(
-        (item) =>
-          (item.permission === undefined || can(permissions, item.permission)) &&
-          canAccessPath(permissions, item.href) &&
-          canReachPath(modules, item.href)
-      ),
+      label: group.label,
+      items: group.items
+        .filter(
+          (item) =>
+            (item.permission === undefined || can(permissions, item.permission)) &&
+            canAccessPath(permissions, item.href) &&
+            canReachPath(modules, item.href)
+        )
+        .map((item) => ({
+          ...item,
+          label: typeof item.label === "function" ? item.label(terms) : item.label,
+        })),
     }))
     .filter((group) => group.items.length > 0);
 }

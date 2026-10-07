@@ -16,7 +16,10 @@ import { PerfectStoreTable } from "@/components/reports/perfect-store-table";
 import { OosHotspotsTable } from "@/components/reports/oos-hotspots-table";
 import { AdherenceTable } from "@/components/reports/adherence-table";
 import { StorePicker } from "@/components/stores/store-picker";
-import { REPORT_TABS, type ReportTab } from "@/lib/report-tabs";
+import { REPORT_TAB_VALUES, reportTabs, type ReportTab } from "@/lib/report-tabs";
+import { useTerms } from "@/lib/use-company-config";
+import { lower } from "@/lib/terms";
+import { fileSlug } from "@/lib/export-filename";
 import { ExportMenu } from "@/components/export-menu";
 import type { ExportSheet } from "@/lib/export";
 import { createClient } from "@/lib/supabase/client";
@@ -100,12 +103,12 @@ const CHAIN_UNFILTERED_REASON: Partial<Record<ReportTab, string>> = {
     "the gallery is grouped by store already. Use the store picker above to narrow it.",
 };
 
-/** Re-exported so the file that renders the tabs and the file that links to
- * them cannot disagree about what a tab is called. */
-const TABS = REPORT_TABS;
-
 export default function ReportsPage() {
   const supabase = createClient();
+  const terms = useTerms();
+  /** From `lib/report-tabs` so the file that renders the tabs and the file
+   * that links to them cannot disagree about what a tab is called. */
+  const TABS = reportTabs(terms);
 
   /**
    * The range and the tab both come from the URL when it names them, because
@@ -159,7 +162,7 @@ export default function ReportsPage() {
     setUrlRead(true);
     const q = new URLSearchParams(window.location.search);
     const asked = q.get("tab") ?? "";
-    if (TABS.some((t) => t.value === asked)) setTab(asked as ReportTab);
+    if ((REPORT_TAB_VALUES as readonly string[]).includes(asked)) setTab(asked as ReportTab);
 
     const from = q.get("from");
     const to = q.get("to");
@@ -354,7 +357,9 @@ export default function ReportsPage() {
     // context lines only for those — a "Chain: Choppies Group" heading over the
     // rep scorecard would be exactly the lie the note below warns about.
     const chainLine =
-      chainName && CHAIN_AWARE_TABS.includes(tab) ? `Chain: ${chainName}` : null;
+      chainName && CHAIN_AWARE_TABS.includes(tab)
+        ? `${terms.site_group.one}: ${chainName}`
+        : null;
     // 🔴 The rep, store and form pickers filter **only** the Form report —
     // every other query on this page takes the date range and nothing else. A
     // Coverage export headed "Rep: Jerry Habana" would therefore have been a
@@ -363,9 +368,11 @@ export default function ReportsPage() {
     const formFilters =
       tab === "form"
         ? [
-            repId ? `Rep: ${reps.find((r) => r.id === repId)?.full_name ?? repId}` : null,
+            repId
+              ? `${terms.staff.one}: ${reps.find((r) => r.id === repId)?.full_name ?? repId}`
+              : null,
             storeId
-              ? `Store: ${stores.find((st) => st.id === storeId)?.name ?? storeId}`
+              ? `${terms.site.one}: ${stores.find((st) => st.id === storeId)?.name ?? storeId}`
               : null,
             templateId
               ? `Form: ${templates.find((t) => t.id === templateId)?.name ?? templateId}`
@@ -408,21 +415,24 @@ export default function ReportsPage() {
     return buildFormResponsesSheet(form, rows, {
       context: exportContext(),
       truncated,
-      orgName: "Gold Fortune Merchandising",
+      terms,
     });
   }
 
   function sheetForTab(): ExportSheet | null {
-    const base = { context: exportContext(), orgName: "Gold Fortune Merchandising" };
+    const base = { context: exportContext() };
+    const site = terms.site.one;
+    const group = terms.site_group.one;
+    const staff = terms.staff.one;
 
     switch (tab) {
       case "score":
         return {
           ...base,
-          title: "Perfect Store score",
-          filename: "gf-perfect-store",
+          title: `Perfect ${site} score`,
+          filename: `perfect-${fileSlug(site)}`,
           columns: [
-            { header: "Store", key: "store" },
+            { header: site, key: "store" },
             { header: "Group", key: "group" },
             { header: "Audits", key: "audits", numeric: true },
             { header: "Availability %", key: "availability", numeric: true },
@@ -446,10 +456,10 @@ export default function ReportsPage() {
         return {
           ...base,
           title: "Out-of-stock hotspots",
-          filename: "gf-out-of-stock",
+          filename: "out-of-stock",
           columns: [
-            { header: "Store", key: "store" },
-            { header: "Chain", key: "group" },
+            { header: site, key: "store" },
+            { header: group, key: "group" },
             { header: "Checks", key: "checks", numeric: true },
             { header: "Out of stock", key: "oos", numeric: true },
             { header: "Rate", key: "rate" },
@@ -471,16 +481,16 @@ export default function ReportsPage() {
       case "coverage":
         return {
           ...base,
-          title: "Store coverage",
-          filename: "gf-coverage",
+          title: `${site} coverage`,
+          filename: "coverage",
           columns: [
-            { header: "Store", key: "store" },
+            { header: site, key: "store" },
             { header: "Group", key: "group" },
             { header: "Town", key: "city" },
-            { header: "Responsible rep", key: "reps" },
-            { header: "Visits in period", key: "visits", numeric: true },
+            { header: `Responsible ${lower(staff)}`, key: "reps" },
+            { header: `${terms.job.many} in period`, key: "visits", numeric: true },
             { header: "Last visited", key: "last" },
-            { header: "Days since last visit", key: "days" },
+            { header: `Days since last ${lower(terms.job.one)}`, key: "days" },
           ],
           rows: gapsShown.map((g) => ({
             store: g.store_name,
@@ -498,9 +508,9 @@ export default function ReportsPage() {
         return {
           ...base,
           title: "Schedule adherence",
-          filename: "gf-adherence",
+          filename: "adherence",
           columns: [
-            { header: "Rep", key: "rep" },
+            { header: staff, key: "rep" },
             { header: "Planned", key: "planned", numeric: true },
             { header: "Completed", key: "completed", numeric: true },
             { header: "Missed", key: "missed", numeric: true },
@@ -521,14 +531,14 @@ export default function ReportsPage() {
       case "reps":
         return {
           ...base,
-          title: "Rep scorecard",
-          filename: "gf-rep-scorecard",
+          title: `${staff} scorecard`,
+          filename: `${fileSlug(staff)}-scorecard`,
           columns: [
-            { header: "Rep", key: "rep" },
+            { header: staff, key: "rep" },
             { header: "Completed", key: "completed", numeric: true },
             { header: "Total", key: "total", numeric: true },
             { header: "Completion", key: "completion" },
-            { header: "Stores covered", key: "stores", numeric: true },
+            { header: `${terms.site.many} covered`, key: "stores", numeric: true },
             { header: "Forms", key: "forms" },
             { header: "Location verified", key: "verified" },
           ],
@@ -546,7 +556,7 @@ export default function ReportsPage() {
         return {
           ...base,
           title: "Compliance trend",
-          filename: "gf-compliance-trend",
+          filename: "compliance-trend",
           columns: [
             { header: "Bucket", key: "bucket" },
             { header: "Submissions", key: "submissions", numeric: true },
@@ -568,7 +578,7 @@ export default function ReportsPage() {
         return {
           ...base,
           title: "Form results",
-          filename: "gf-form-results",
+          filename: "form-results",
           columns: [
             { header: "Question", key: "label" },
             { header: "Type", key: "type" },

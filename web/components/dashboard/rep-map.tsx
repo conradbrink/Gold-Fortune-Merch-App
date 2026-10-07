@@ -5,7 +5,8 @@ import { MapPinOff, RefreshCw } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { loadMaps, MAPS_KEY, mapTypeSwitch, rememberMapType } from "@/lib/google-maps";
-import { useCompanyConfig } from "@/lib/use-company-config";
+import { useCompanyConfig, useTerms } from "@/lib/use-company-config";
+import { lower, withArticle } from "@/lib/terms";
 import {
   describeAge,
   describeSource,
@@ -145,6 +146,7 @@ export function RepMap({ data }: { data: LiveReps }) {
   // renders cards once the configuration is known, so null is a first-render
   // edge, shown neutral (`recent`) rather than guessed.
   const intervalMinutes = useCompanyConfig()?.settings.gps_ping_interval_minutes ?? null;
+  const t = useTerms();
   const freshness = freshnessKey(intervalMinutes);
 
   const positions = data.positions;
@@ -292,14 +294,14 @@ export function RepMap({ data }: { data: LiveReps }) {
       <CardContent>
         {positions.length === 0 && data.missing.length === 0 ? (
           <p className="py-10 text-center text-sm text-muted-foreground">
-            No active reps.
+            No active {lower(t.staff.many)}.
           </p>
         ) : positions.length === 0 ? (
           <p className="py-10 text-center text-sm text-muted-foreground">
             No phone has sent a position in the last 24 hours.
             {anyOpenDay
-              ? " Somebody has a workday open, so this is a reporting gap rather than a quiet day."
-              : " Nobody has an open workday."}
+              ? ` Somebody has ${withArticle(t, "workday")} open, so this is a reporting gap rather than a quiet day.`
+              : ` Nobody has an open ${lower(t.workday.one)}.`}
           </p>
         ) : (
           <div className="grid grid-cols-1 gap-3 lg:grid-cols-[280px_1fr]">
@@ -340,7 +342,7 @@ export function RepMap({ data }: { data: LiveReps }) {
                     </span>
                     <span className="block text-xs text-muted-foreground">
                       {m.dayOpen
-                        ? "Workday open, no position sent"
+                        ? `${t.workday.one} open, no position sent`
                         : "No position in 24 hours"}
                     </span>
                   </span>

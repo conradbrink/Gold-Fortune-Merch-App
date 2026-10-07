@@ -9,10 +9,11 @@ import { Label } from "@/components/ui/label";
 import { NativeSelect } from "@/components/ui/native-select";
 import { ExportMenu } from "@/components/export-menu";
 import { RepPerformanceReport, type ReportMeta } from "@/components/rep-report/report-document";
-import { useCompanyConfig } from "@/lib/use-company-config";
+import { useCompanyConfig, useTerms } from "@/lib/use-company-config";
 import "@/components/rep-report/report-print.css";
 import { createClient } from "@/lib/supabase/client";
-import { fetchOrgName } from "@/lib/org-settings";
+import { logoUrl } from "@/lib/branding";
+import { lower, withArticle } from "@/lib/terms";
 import {
   fromLocalDateInput,
   toLocalDate,
@@ -23,7 +24,8 @@ import type { ExportSheet } from "@/lib/export";
 import { fetchRepReport, longDate, type RepReport } from "@/lib/rep-report";
 
 /**
- * Rep Performance Report — the controls, and the report they produce.
+ * The staff performance report ("Rep performance report" at Gold Fortune) —
+ * the controls, and the report they produce.
  *
  * Nothing is fetched until Generate is pressed. That is not laziness about
  * loading states: the report is a *document*, and a document that quietly
@@ -132,7 +134,6 @@ export default function RepPerformancePage() {
 
   const [reps, setReps] = useState<Rep[]>([]);
   const [territories, setTerritories] = useState<Territory[]>([]);
-  const [orgName, setOrgName] = useState<string>("Gold Fortune");
   const [managerName, setManagerName] = useState<string>("—");
 
   const [repId, setRepId] = useState<string>("");
@@ -145,6 +146,7 @@ export default function RepPerformancePage() {
   const [report, setReport] = useState<RepReport | null>(null);
   const [meta, setMeta] = useState<ReportMeta | null>(null);
   const company = useCompanyConfig();
+  const terms = useTerms();
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   /** Which Generate press this is; a slow earlier one must not win. */
@@ -153,7 +155,7 @@ export default function RepPerformancePage() {
   useEffect(() => {
     (async () => {
       try {
-        const [repRows, terrRows, name, auth] = await Promise.all([
+        const [repRows, terrRows, auth] = await Promise.all([
           supabase
             .from("profiles")
             .select("id, full_name")
@@ -164,7 +166,6 @@ export default function RepPerformancePage() {
             .select("id, name, level, parent_id")
             .eq("active", true)
             .order("name", { ascending: true }),
-          fetchOrgName(supabase),
           supabase.auth.getUser(),
         ]);
         if (repRows.error) throw new Error(repRows.error.message);
@@ -175,7 +176,6 @@ export default function RepPerformancePage() {
         if (terrRows.error) throw new Error(terrRows.error.message);
         setReps((repRows.data ?? []) as Rep[]);
         setTerritories((terrRows.data ?? []) as Territory[]);
-        if (name) setOrgName(name);
         const user = auth.data.user;
         const metaName = (user?.user_metadata as { full_name?: string } | undefined)?.full_name;
         setManagerName(metaName || user?.email || "—");
@@ -206,22 +206,35 @@ export default function RepPerformancePage() {
     setGenerating(true);
     setError(null);
     try {
-      const data = await fetchRepReport(supabase, repId, range, territoryId || null);
+      const data = await fetchRepReport(
+        supabase,
+        repId,
+        range,
+        territoryId || null,
+        company.terms
+      );
       if (runId !== runSeq.current) return;
       setReport(data);
+      // The company's name, logo, colours and words come from its own
+      // configuration, so the report is on its letterhead and in its words.
+      const branding = company.branding;
+      const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
       setMeta({
-        orgName,
+        companyName: branding.name,
+        logoUrl: supabaseUrl ? logoUrl(supabaseUrl, branding.logoPath) : null,
+        brand: { primary: branding.primary, accent: branding.accent },
+        terms: company.terms,
         repName:
           data.summary.repName ??
           reps.find((r) => r.id === repId)?.full_name ??
-          "Unnamed rep",
+          `Unnamed ${lower(company.terms.staff.one)}`,
         // The rep's own territories when the whole round is in scope, and the
         // chosen one when it is not — so the header always says what the
         // figures below it actually cover.
         territoryLabel:
           territoryOptions.find((t) => t.id === territoryId)?.label.replace(/^(— )+/, "") ??
           data.summary.territories ??
-          "All territories",
+          `All ${lower(company.terms.territory.many)}`,
         from: range.from,
         to: lastDay(range),
         managerName,
@@ -237,30 +250,31 @@ export default function RepPerformancePage() {
       if (runId === runSeq.current) setGenerating(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [repId, range, territoryId, orgName, managerName, reps, territoryOptions, company]);
+  }, [repId, range, territoryId, managerName, reps, territoryOptions, company]);
 
   const exportVariants = useMemo(() => {
     if (!report || !meta) return [];
+    const t = meta.terms;
+    const staff = t.staff.one;
     const context = [
       `${meta.repName} · ${meta.territoryLabel}`,
       `${longDate(meta.from)} – ${longDate(meta.to)}`,
     ];
     return [
       {
-        label: "Missed visits",
+        label: `Missed ${lower(t.job.many)}`,
         build: (): ExportSheet => ({
-          orgName: meta.orgName,
-          title: "Missed visits",
-          filename: "gf-rep-missed-visits",
+          title: `Missed ${lower(t.job.many)}`,
+          filename: `${staff}-missed-${t.job.many}`,
           context,
           columns: [
-            { header: "Store", key: "store" },
-            { header: "Chain", key: "group" },
+            { header: t.site.one, key: "store" },
+            { header: t.site_group.one, key: "group" },
             { header: "Town", key: "city" },
             { header: "Planned date", key: "planned" },
             { header: "Went back on", key: "wentBack" },
             { header: "Reason", key: "reason" },
-            { header: "Last visit before", key: "last" },
+            { header: `Last ${lower(t.job.one)} before`, key: "last" },
             { header: "Previous sales", key: "previous", numeric: true },
           ],
           rows: report.missed.map((m) => ({
@@ -281,15 +295,14 @@ export default function RepPerformancePage() {
       {
         label: "Day by day",
         build: (): ExportSheet => ({
-          orgName: meta.orgName,
-          title: "Daily visits and sales",
-          filename: "gf-rep-daily",
+          title: `Daily ${lower(t.job.many)} and sales`,
+          filename: `${staff}-daily`,
           context,
           columns: [
             { header: "Date", key: "day" },
             { header: "Planned", key: "planned", numeric: true },
             { header: "Completed", key: "completed", numeric: true },
-            { header: "Visits", key: "visits", numeric: true },
+            { header: t.job.many, key: "visits", numeric: true },
             { header: "Orders", key: "orders", numeric: true },
             { header: "Sales (excl. VAT)", key: "sales", numeric: true },
           ],
@@ -304,15 +317,14 @@ export default function RepPerformancePage() {
         }),
       },
       {
-        label: "Store performance",
+        label: `${t.site.one} performance`,
         build: (): ExportSheet => ({
-          orgName: meta.orgName,
-          title: "Store performance",
-          filename: "gf-rep-stores",
+          title: `${t.site.one} performance`,
+          filename: `${staff}-${t.site.many}`,
           context,
           columns: [
-            { header: "Store", key: "store" },
-            { header: "Chain", key: "group" },
+            { header: t.site.one, key: "store" },
+            { header: t.site_group.one, key: "group" },
             { header: "Planned", key: "planned", numeric: true },
             { header: "Completed", key: "completed", numeric: true },
             { header: "Missed", key: "missed", numeric: true },
@@ -320,7 +332,7 @@ export default function RepPerformancePage() {
             { header: "Prior period", key: "prior", numeric: true },
             { header: "Stock checks", key: "checks", numeric: true },
             { header: "Out of stock", key: "oos", numeric: true },
-            { header: "Last visit", key: "last" },
+            { header: `Last ${lower(t.job.one)}`, key: "last" },
           ],
           rows: report.stores.map((s) => ({
             store: s.storeName,
@@ -343,10 +355,12 @@ export default function RepPerformancePage() {
     <div className="space-y-6">
       <div data-print-hide className="space-y-6">
         <div>
-          <h1 className="text-xl font-semibold tracking-tight text-foreground">Rep Performance Report</h1>
+          <h1 className="text-xl font-semibold tracking-tight text-foreground">
+            {terms.staff.one} performance report
+          </h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            A two-page management report for one merchandiser over one period, built from
-            the visits, orders and audits already in the system.
+            A two-page management report for one {lower(terms.staff.one)} over one period,
+            built from the {lower(terms.job.many)}, orders and audits already in the system.
           </p>
         </div>
 
@@ -357,16 +371,16 @@ export default function RepPerformancePage() {
           <CardContent className="space-y-4">
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
               <div className="space-y-1.5">
-                <Label htmlFor="rr-rep">Rep / merchandiser</Label>
+                <Label htmlFor="rr-rep">{terms.staff.one}</Label>
                 <NativeSelect
                   id="rr-rep"
                   value={repId}
                   onChange={(e) => setRepId(e.target.value)}
                 >
-                  <option value="">Choose a rep…</option>
+                  <option value="">Choose {withArticle(terms, "staff")}…</option>
                   {reps.map((r) => (
                     <option key={r.id} value={r.id}>
-                      {r.full_name ?? "Unnamed rep"}
+                      {r.full_name ?? `Unnamed ${lower(terms.staff.one)}`}
                     </option>
                   ))}
                 </NativeSelect>
@@ -395,7 +409,7 @@ export default function RepPerformancePage() {
                   min={fromInput}
                   // A period cannot end after today: routes are scheduled months
                   // ahead, and counting an unreached Tuesday as a missed visit
-                  // would mark every rep down for work that is not yet due.
+                  // would mark everyone down for work that is not yet due.
                   max={todayInput}
                   onChange={(e) => {
                     if (!e.target.value) return;
@@ -407,13 +421,13 @@ export default function RepPerformancePage() {
               </div>
 
               <div className="space-y-1.5">
-                <Label htmlFor="rr-territory">Territory</Label>
+                <Label htmlFor="rr-territory">{terms.territory.one}</Label>
                 <NativeSelect
                   id="rr-territory"
                   value={territoryId}
                   onChange={(e) => setTerritoryId(e.target.value)}
                 >
-                  <option value="">All territories</option>
+                  <option value="">All {lower(terms.territory.many)}</option>
                   {territoryOptions.map((t) => (
                     <option key={t.id} value={t.id}>
                       {t.label}
@@ -449,7 +463,7 @@ export default function RepPerformancePage() {
 
               {!repId && (
                 <span className="text-sm text-muted-foreground">
-                  Choose a rep to generate the report.
+                  Choose {withArticle(terms, "staff")} to generate the report.
                 </span>
               )}
               {rangeInvalid && (
@@ -467,7 +481,8 @@ export default function RepPerformancePage() {
                 {report.missed.length >= 19 && (
                   <>
                     {" "}
-                    This period has <strong>{report.missed.length} missed visits</strong>,
+                    This period has{" "}
+                    <strong>{`${report.missed.length} missed ${lower(terms.job.many)}`}</strong>,
                     listed in two columns and in full — the report may run past two sheets
                     rather than hide any of them.
                   </>
@@ -504,7 +519,8 @@ export default function RepPerformancePage() {
             data-print-hide
             className="rounded-lg border border-dashed border-border p-10 text-center text-sm text-muted-foreground"
           >
-            Choose a rep and a period, then press <strong>Generate Report</strong>.
+            Choose {withArticle(terms, "staff")} and a period, then press{" "}
+            <strong>Generate Report</strong>.
           </div>
         )
       )}

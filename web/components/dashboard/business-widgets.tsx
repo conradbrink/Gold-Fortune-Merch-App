@@ -3,7 +3,8 @@
 import Link from "next/link";
 import { useEffect, useState, type ReactNode } from "react";
 import { Card } from "@/components/ui/card";
-import { useCompanyConfig } from "@/lib/use-company-config";
+import { useCompanyConfig, useTerms } from "@/lib/use-company-config";
+import { lower } from "@/lib/terms";
 import {
   describeAge,
   describeSource,
@@ -154,6 +155,7 @@ export function Headline({
   summary: DashboardSummary | null;
   days: number;
 }) {
+  const t = useTerms();
   const r = business.revenue;
   const p = business.pipeline;
   const h = business.health;
@@ -205,22 +207,22 @@ export function Headline({
       />
       <Tile
         href="/reports"
-        label={`Store coverage, last ${days} days`}
+        label={`${t.site.one} coverage, last ${days} days`}
         value={formatPct(coverage)}
         sub={
           summary ? (
             <>
-              {summary.current.stores_covered} of {summary.stores_active} stores · {summary.current.visits_completed} visits{" "}
+              {summary.current.stores_covered} of {summary.stores_active} {lower(t.site.many)} · {summary.current.visits_completed} {lower(t.job.many)}{" "}
               <Delta pct={visitsDelta} />
             </>
           ) : (
-            "Visit figures did not load"
+            `${t.job.one} figures did not load`
           )
         }
       />
       <Tile
         href="/stores"
-        label="Stores needing attention"
+        label={`${t.site.many} needing attention`}
         value={h.not_visited_30d}
         tone={h.not_visited_30d > 0 ? "bad" : undefined}
         sub={`Not visited in 30 days${h.lapsed_60d > 0 ? ` · ${h.lapsed_60d} stopped ordering` : ""}`}
@@ -238,6 +240,7 @@ export function SalesCard({
   business: BusinessSummary;
   targets: TargetProgress[];
 }) {
+  const t = useTerms();
   const r = business.revenue;
   // From the first month with any sales: months before the app took orders are
   // not "zero revenue", they are "not recorded here", and six empty bars would
@@ -295,14 +298,14 @@ export function SalesCard({
       <div className="flex flex-col gap-2.5 border-t pt-4">
         <div className="flex items-baseline justify-between gap-3">
           <span className="text-xs text-muted-foreground">
-            {withTarget.length > 0 ? "Reps this month against target" : "Reps this month"}
+            {withTarget.length > 0 ? `${t.staff.many} this month against target` : `${t.staff.many} this month`}
           </span>
           <Link href="/targets" className="text-xs text-primary hover:underline">
             {withTarget.length > 0 ? "Targets" : `Set ${monthLabel(r.month_start)} targets`}
           </Link>
         </div>
         {reps.length === 0 ? (
-          <p className="text-sm text-muted-foreground">No active reps.</p>
+          <p className="text-sm text-muted-foreground">No active {lower(t.staff.many)}.</p>
         ) : (
           <div className="grid grid-cols-[minmax(6rem,9rem)_1fr_auto] items-center gap-x-3 gap-y-2.5 text-sm">
             {reps.map((t) => {
@@ -368,6 +371,7 @@ function Row({ label, value, href }: { label: string; value: number; href: strin
 }
 
 export function PipelineCard({ business }: { business: BusinessSummary }) {
+  const t = useTerms();
   const p = business.pipeline;
   const m = business.money;
   return (
@@ -380,7 +384,7 @@ export function PipelineCard({ business }: { business: BusinessSummary }) {
       </div>
       <ul className="flex flex-col border-t">
         <Row label="Delivered, proof of delivery missing" value={p.pod_missing} href="/orders" />
-        <Row label="Quotes waiting on the customer" value={p.quotes_waiting} href="/quotes" />
+        <Row label={`Quotes waiting on the ${lower(t.client.one)}`} value={p.quotes_waiting} href="/quotes" />
         <Row label="Recurring orders placing this week" value={p.recurring_due_7d} href="/recurring-orders" />
         <Row label="Products below reorder point" value={p.low_stock} href="/inventory" />
       </ul>
@@ -414,6 +418,7 @@ export function FieldTeamCard({
   /** The dashboard's range, handed to the off-site list so it shows the same check-ins. */
   range: DateRange;
 }) {
+  const t = useTerms();
   // Ages tick on their own, as on the rep map: the dashboard stays open, and
   // "12 min ago" that never becomes 13 is a reading pretending to be live.
   const [now, setNow] = useState(() => Date.now());
@@ -464,7 +469,7 @@ export function FieldTeamCard({
           </li>
         ))}
         {liveReps.positions.length + liveReps.missing.length === 0 && (
-          <li className="py-2.5 text-sm text-muted-foreground">No active reps.</li>
+          <li className="py-2.5 text-sm text-muted-foreground">No active {lower(t.staff.many)}.</li>
         )}
       </ul>
       <div className="mt-auto grid grid-cols-3 gap-3 border-t pt-4">
@@ -485,7 +490,7 @@ export function FieldTeamCard({
           }
         />
         <MiniStat
-          label={`Check-ins over ${business?.field.off_site_m ?? 500} m from store`}
+          label={`Check-ins over ${business?.field.off_site_m ?? 500} m from ${lower(t.site.one)}`}
           value={
             business ? (
               <Link
@@ -494,7 +499,7 @@ export function FieldTeamCard({
                   to: toLocalDateInput(range.to),
                 }).toString()}`}
                 className="hover:underline"
-                title="See which reps, stores and how far"
+                title={`See which ${lower(t.staff.many)}, ${lower(t.site.many)} and how far`}
               >
                 {business.field.flagged_checkins}
               </Link>
@@ -512,6 +517,7 @@ export function FieldTeamCard({
 // ---------------------------------------------------------- store health
 
 export function StoreHealthCard({ business }: { business: BusinessSummary }) {
+  const t = useTerms();
   const h = business.health;
   const total = Math.max(1, h.stores_active);
   // The three groups are disjoint by construction: ordered in 30 days; visited
@@ -519,7 +525,7 @@ export function StoreHealthCard({ business }: { business: BusinessSummary }) {
   // ordered — a store that orders but is never seen still needs a visit).
   const orderedSeen = Math.max(0, h.stores_active - h.visited_no_order_30d - h.not_visited_30d);
   return (
-    <SectionCard title="Store health" href="/stores" linkLabel="All stores">
+    <SectionCard title={`${t.site.one} health`} href="/stores" linkLabel={`All ${lower(t.site.many)}`}>
       <div className="flex h-3.5 gap-0.5 overflow-hidden rounded-full" aria-hidden>
         <div className="bg-emerald-600" style={{ flex: orderedSeen / total }} />
         <div className="bg-muted-foreground/25" style={{ flex: h.visited_no_order_30d / total }} />
@@ -533,7 +539,7 @@ export function StoreHealthCard({ business }: { business: BusinessSummary }) {
       <div className="flex flex-col border-t">
         <span className="pb-1.5 pt-3 text-xs text-muted-foreground">Visit these first</span>
         {h.longest_unvisited.length === 0 ? (
-          <p className="py-2 text-sm text-muted-foreground">Every active store was visited in the last 30 days.</p>
+          <p className="py-2 text-sm text-muted-foreground">Every active {lower(t.site.one)} was visited in the last 30 days.</p>
         ) : (
           h.longest_unvisited.map((s) => (
             <div key={s.id} className="flex items-center justify-between gap-3 border-b py-2 text-sm last:border-b-0">
@@ -548,7 +554,7 @@ export function StoreHealthCard({ business }: { business: BusinessSummary }) {
       </div>
       {h.lapsed_60d > 0 && (
         <span className="text-xs text-muted-foreground">
-          {h.lapsed_60d} {h.lapsed_60d === 1 ? "store that used to order has" : "stores that used to order have"} placed nothing in 60 days.
+          {h.lapsed_60d} {h.lapsed_60d === 1 ? `${lower(t.site.one)} that used to order has` : `${lower(t.site.many)} that used to order have`} placed nothing in 60 days.
         </span>
       )}
     </SectionCard>

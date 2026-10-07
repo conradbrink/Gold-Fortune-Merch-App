@@ -186,7 +186,7 @@ class RouteVisit {
     return RouteVisit(
       routeId: map['id'] as String?,
       storeId: map['store_id'] as String,
-      storeName: store?['name'] as String? ?? 'Unknown store',
+      storeName: store?['name'] as String? ?? 'Unknown location',
       storeAddress: store?['address'] as String?,
       storeCity: store?['city'] as String?,
       storeState: store?['state'] as String?,

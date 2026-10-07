@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:uuid/uuid.dart';
 
+import '../../core/company_config.dart';
 import '../../core/providers.dart';
 import '../../core/theme.dart';
 import '../../data/models/route_visit.dart';
@@ -54,9 +55,10 @@ class _StorePickerScreenState extends ConsumerState<StorePickerScreen> {
   @override
   Widget build(BuildContext context) {
     final storesAsync = ref.watch(storesProvider);
+    final t = ref.watch(termsProvider);
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Unscheduled visit')),
+      appBar: AppBar(title: Text('Unscheduled ${t.job.oneLower}')),
       body: Column(
         children: [
           Padding(
@@ -64,9 +66,9 @@ class _StorePickerScreenState extends ConsumerState<StorePickerScreen> {
             child: TextField(
               autofocus: true,
               onChanged: (v) => setState(() => _query = v),
-              decoration: const InputDecoration(
-                hintText: 'Search stores',
-                prefixIcon: Icon(Icons.search),
+              decoration: InputDecoration(
+                hintText: 'Search ${t.site.manyLower}',
+                prefixIcon: const Icon(Icons.search),
               ),
             ),
           ),
@@ -85,13 +87,15 @@ class _StorePickerScreenState extends ConsumerState<StorePickerScreen> {
                         .toList();
 
                 if (stores.isEmpty) {
-                  return const _EmptyNotice(
-                    'No stores available yet. Connect once so your store list '
-                    'is saved to this device.',
+                  return _EmptyNotice(
+                    'No ${t.site.manyLower} available yet. Connect once so '
+                    'your ${t.site.oneLower} list is saved to this device.',
                   );
                 }
                 if (filtered.isEmpty) {
-                  return const _EmptyNotice('No stores match that search.');
+                  return _EmptyNotice(
+                    'No ${t.site.manyLower} match that search.',
+                  );
                 }
 
                 return ListView.separated(
@@ -107,11 +111,11 @@ class _StorePickerScreenState extends ConsumerState<StorePickerScreen> {
                           width: 42,
                           height: 42,
                           decoration: BoxDecoration(
-                            color: AppColors.gold.withValues(alpha: 0.18),
+                            color: context.brand.accent.withValues(alpha: 0.18),
                             borderRadius: BorderRadius.circular(11),
                           ),
-                          child: const Icon(Icons.storefront_outlined,
-                              color: AppColors.navy),
+                          child: Icon(Icons.storefront_outlined,
+                              color: context.brand.primary),
                         ),
                         title: Text(
                           store.name,

@@ -63,7 +63,9 @@ class LocationService {
     }
     if (permission == LocationPermission.denied) {
       throw const LocationDeniedException(
-        'Location permission is required to check in at a store.',
+        // No place word: the same fix serves check-in, the workday, a photo
+        // and a sales call.
+        'Location permission is required to check in.',
       );
     }
     if (permission == LocationPermission.deniedForever) {

@@ -1,3 +1,5 @@
+"use client";
+
 import {
   MapPin,
   MapPinOff,
@@ -8,61 +10,59 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { formatDistance, type Verdict } from "@/lib/activities";
+import type { Terms } from "@/lib/terms";
+import { useTerms } from "@/lib/use-company-config";
+import { verdictWords, type VerdictWords } from "@/lib/verdict-words";
 
-type VerdictStyle = {
-  label: string;
+type VerdictStyle = VerdictWords & {
   className: string;
   icon: typeof MapPin;
-  /** Shown on hover — says what the colour actually means. */
-  hint: string;
 };
 
-/**
- * Deliberately separate from `components/dashboard/status-pill.tsx`, which is
- * closed over the four visit statuses and has no dark-mode variants.
- */
-export const VERDICT_STYLES: Record<Verdict, VerdictStyle> = {
+/** The look of each verdict; the words come from `verdictWords`. */
+const VERDICT_LOOK: Record<Verdict, Pick<VerdictStyle, "className" | "icon">> = {
   at_store: {
-    label: "At store",
     icon: Check,
     className:
       "bg-emerald-50 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300",
-    hint: "Inside the store's geofence — location confirmed.",
   },
   nearby: {
-    label: "Nearby",
     icon: MapPin,
     className:
       "bg-amber-50 text-amber-800 dark:bg-amber-950 dark:text-amber-300",
-    hint: "Just outside the geofence. Normal for a large site or ordinary GPS drift.",
   },
   off_site: {
-    label: "Off site",
     icon: MapPinOff,
     className: "bg-red-50 text-red-700 dark:bg-red-950 dark:text-red-300",
-    hint: "Further from the store than your company's off-site distance — a genuine discrepancy worth checking.",
   },
   invalid_gps: {
-    label: "Invalid GPS",
     icon: AlertTriangle,
     className: "bg-secondary text-muted-foreground",
-    hint: "Further out than your company's implausible-GPS distance, so it cannot be true. Treated as a faulty fix, not as behaviour.",
   },
   unknown: {
-    label: "No fix",
     icon: HelpCircle,
     className: "bg-secondary text-muted-foreground",
-    hint: "No GPS position was recorded for this event, so location cannot be confirmed.",
   },
-  // Not a failure to verify — there is simply nothing to verify against. A
-  // prospect is not on the estate, so it has no geofence and no distance.
   prospect: {
-    label: "Prospect",
     icon: Handshake,
     className: "bg-sky-50 text-sky-700 dark:bg-sky-950 dark:text-sky-300",
-    hint: "A sales call on a shop that is not a customer yet. Position recorded, but there is no store geofence to measure it against.",
   },
 };
+
+/**
+ * Each verdict's badge in the company's words.
+ *
+ * Deliberately separate from `components/dashboard/status-pill.tsx`, which is
+ * closed over the four visit statuses and has no dark-mode variants.
+ */
+export function verdictStyles(t: Terms): Record<Verdict, VerdictStyle> {
+  const words = verdictWords(t);
+  const out = {} as Record<Verdict, VerdictStyle>;
+  for (const v of Object.keys(VERDICT_LOOK) as Verdict[]) {
+    out[v] = { ...words[v], ...VERDICT_LOOK[v] };
+  }
+  return out;
+}
 
 export function LocationVerdict({
   verdict,
@@ -73,7 +73,8 @@ export function LocationVerdict({
   distanceM: number | null;
   className?: string;
 }) {
-  const style = VERDICT_STYLES[verdict] ?? VERDICT_STYLES.unknown;
+  const styles = verdictStyles(useTerms());
+  const style = styles[verdict] ?? styles.unknown;
   const Icon = style.icon;
 
   return (

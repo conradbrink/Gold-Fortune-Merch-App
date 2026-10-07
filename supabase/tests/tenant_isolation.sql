@@ -442,7 +442,7 @@ begin
   perform set_config('request.jwt.claims', json_build_object(
     'sub', b_mgr, 'role', 'authenticated')::text, true);
   set local role authenticated;
-  foreach v_txt in array array['visit-photos','files','fulfilment-docs','hr-documents'] loop
+  foreach v_txt in array array['visit-photos','files','fulfilment-docs','hr-documents','branding'] loop
     begin
       insert into storage.objects (bucket_id, name, owner)
       values (v_txt, a_org::text || '/' || a_emp::text || '/isolation-test.jpg', b_mgr);
