@@ -515,23 +515,6 @@ export async function fetchBusinessSummary(
   return data as BusinessSummary;
 }
 
-/**
- * Money as the dashboard prints it: whole pula with thousands separators.
- *
- * Whole units on purpose — the dashboard is for scanning; the cents live on
- * the Sales page and the invoices. The currency mark is Botswana's, which is
- * the only currency this organisation trades in today.
- */
-export function formatMoney(n: number): string {
-  return `P ${Math.round(n).toLocaleString("en-GB")}`;
-}
-
-/** "P 109k" style, for a projection that should not look more precise than it is. */
-export function formatMoneyShort(n: number): string {
-  if (Math.abs(n) >= 1000) return `P ${Math.round(n / 1000).toLocaleString("en-GB")}k`;
-  return formatMoney(n);
-}
-
 /** One check-in the dashboard counts as off site. */
 export type OffsiteCheckin = {
   visit_id: string;

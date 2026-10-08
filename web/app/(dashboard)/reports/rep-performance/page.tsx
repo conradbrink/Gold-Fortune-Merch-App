@@ -22,6 +22,7 @@ import {
 } from "@/lib/date-range";
 import type { ExportSheet } from "@/lib/export";
 import { fetchRepReport, longDate, type RepReport } from "@/lib/rep-report";
+import { moduleEnabled } from "@/lib/modules";
 
 /**
  * The staff performance report ("Rep performance report" at Gold Fortune) —
@@ -240,6 +241,7 @@ export default function RepPerformancePage() {
         managerName,
         generatedAt: new Date(),
         currency,
+        sells: moduleEnabled(company.modules, "distribution"),
       });
     } catch (e) {
       if (runId !== runSeq.current) return;

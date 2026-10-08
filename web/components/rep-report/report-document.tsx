@@ -60,6 +60,11 @@ export type ReportMeta = {
   generatedAt: Date;
   /** ISO 4217, from company settings: every amount on the report is in it. */
   currency: string;
+  /**
+   * Whether the company sells (the Distribution module). Without it the report
+   * has no sales or merchandising sections and they are not in the score.
+   */
+  sells: boolean;
 };
 
 /** Above 18 rows the missed list runs in two columns instead of one. */
@@ -102,7 +107,8 @@ export function RepPerformanceReport({
   const job = lower(t.job.one);
   const jobs = lower(t.job.many);
   const served = visitsServed(summary, missed);
-  const score = computeScore(summary, stores, missed, t);
+  const sells = meta.sells;
+  const score = computeScore(summary, stores, missed, t, sells);
   const merch = merchandisingCompliance(summary);
   const top = topStores(stores);
   const currency = meta.currency;
@@ -132,6 +138,7 @@ export function RepPerformanceReport({
         <section className="rr-block">
           <h2 className="rr-h2">Performance scorecard</h2>
           <div className="rr-kpis">
+            {sells && (
             <Kpi
               label="Sales generated"
               value={money(summary.salesNet, currency)}
@@ -141,12 +148,15 @@ export function RepPerformanceReport({
                   : "No sales recorded during this period"
               }
             />
+            )}
+            {sells && (
             <Kpi
               label="Sales vs target"
               value="Target not set"
               muted
               note={`Actual ${money(summary.salesNet, currency)} · no target is held in the database`}
             />
+            )}
             <Kpi
               label={`${t.job.one} completion`}
               value={percent(completionRate)}
@@ -189,6 +199,7 @@ export function RepPerformanceReport({
                     : `${missed.length} round${missed.length === 1 ? "" : "s"} missed on the day, none gone back to`
               }
             />
+            {sells && (
             <Kpi
               label={`Sales per ${job}`}
               value={money(salesPerVisit, currency)}
@@ -198,6 +209,8 @@ export function RepPerformanceReport({
                   : `No completed ${jobs} to divide by`
               }
             />
+            )}
+            {sells && (
             <Kpi
               label={`Zero-sales ${jobs}`}
               value={String(summary.zeroSalesVisits)}
@@ -207,6 +220,7 @@ export function RepPerformanceReport({
                   : `No completed ${jobs}`
               }
             />
+            )}
             <Kpi
               label={`Overall ${lower(t.staff.one)} score`}
               value={score.score === null ? "Not scored" : `${score.score} / 100`}
@@ -275,6 +289,7 @@ export function RepPerformanceReport({
           <PlannedVsCompletedChart days={days} jobs={jobs} />
         </section>
 
+        {sells && (
         <section className="rr-block">
           <h2 className="rr-h2">
             Sales generated per day
@@ -282,6 +297,7 @@ export function RepPerformanceReport({
           </h2>
           <DailySalesChart days={days} currency={currency} />
         </section>
+        )}
 
         <section className="rr-block">
           {/* "Average" is said once, in the heading, rather than four times in
@@ -333,7 +349,7 @@ export function RepPerformanceReport({
           </span>
         </div>
 
-        <MissedStores missed={missed} currency={currency} terms={t} />
+        <MissedStores missed={missed} currency={currency} terms={t} sells={sells} />
 
         <div className="rr-two">
           <section className="rr-block">
@@ -349,8 +365,8 @@ export function RepPerformanceReport({
                   label={`Unplanned ${jobs} completed`}
                   value={String(summary.unplannedVisits)}
                 />
-                <Row label={`${t.site.many} generating sales`} value={String(summary.storesWithSales)} />
-                <Row label={`Zero-sales ${jobs}`} value={String(summary.zeroSalesVisits)} />
+                {sells && <Row label={`${t.site.many} generating sales`} value={String(summary.storesWithSales)} />}
+                {sells && <Row label={`Zero-sales ${jobs}`} value={String(summary.zeroSalesVisits)} />}
                 <Row
                   label={`New ${sites} visited (${lower(t.prospect.many)})`}
                   value={String(summary.prospectsVisited)}
@@ -360,6 +376,7 @@ export function RepPerformanceReport({
             </table>
           </section>
 
+          {sells && (
           <section className="rr-block">
             <h2 className="rr-h2">Merchandising execution</h2>
             <div className="rr-headline">
@@ -396,9 +413,11 @@ export function RepPerformanceReport({
                 : ` Stock condition: ${percentOf100(summary.conditionPct)} of checks found no damaged or expired stock.`}
             </p>
           </section>
+          )}
         </div>
 
         <div className="rr-two">
+          {sells && (
           <section className="rr-block">
             <h2 className="rr-h2">Top {sites} by sales</h2>
             {top.length === 0 ? (
@@ -414,6 +433,7 @@ export function RepPerformanceReport({
               </ol>
             )}
           </section>
+          )}
 
           <section className="rr-block">
             <h2 className="rr-h2">{t.site.many} requiring attention</h2>
@@ -442,7 +462,7 @@ export function RepPerformanceReport({
             </span>
             <span className="rr-verdict-band">{classifyScore(score.score)}</span>
           </div>
-          <p className="rr-prose">{managementSummary(summary, score, missed, currency, t)}</p>
+          <p className="rr-prose">{managementSummary(summary, score, missed, currency, t, sells)}</p>
         </section>
 
         <section className="rr-block rr-comments">
@@ -609,10 +629,13 @@ function MissedStores({
   missed,
   currency,
   terms: t,
+  sells,
 }: {
   missed: MissedVisit[];
   currency: string;
   terms: Terms;
+  /** Without Distribution there are no previous sales to show. */
+  sells: boolean;
 }) {
   const jobs = lower(t.job.many);
   if (missed.length === 0) {
@@ -655,7 +678,7 @@ function MissedStores({
                 <th>Planned</th>
                 <th>Went back</th>
                 <th>Reason</th>
-                <th className="rr-num">Prev. sales</th>
+                {sells && <th className="rr-num">Prev. sales</th>}
               </tr>
             </thead>
             <tbody>
@@ -676,9 +699,11 @@ function MissedStores({
                   <td className={m.reason ? undefined : "rr-row-muted"}>
                     {m.reason ?? "Reason not recorded"}
                   </td>
-                  <td className="rr-num">
-                    {m.previousSales === null ? "—" : moneyShort(m.previousSales, currency)}
-                  </td>
+                  {sells && (
+                    <td className="rr-num">
+                      {m.previousSales === null ? "—" : moneyShort(m.previousSales, currency)}
+                    </td>
+                  )}
                 </tr>
               ))}
             </tbody>

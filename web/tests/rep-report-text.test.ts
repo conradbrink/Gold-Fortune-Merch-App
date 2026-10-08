@@ -231,3 +231,14 @@ test("a dropped component keeps a company's acronym in the summary", () => {
   assert.match(text, /had no POS checks planned/);
   assert.match(text, /excludes sales performance, POS check completion, merchandising execution/);
 });
+
+test("a company that does not sell is scored without sales or merchandising, and the summary never mentions them", () => {
+  const score = computeScore(summary, stores, missed, goldFortune, false);
+  const keys = score.components.map((c) => c.key);
+  assert.ok(!keys.includes("sales") && !keys.includes("merchandising"), keys.join(","));
+  assert.deepEqual(keys, ["visits", "coverage", "compliance"]);
+  const text = managementSummary(summary, score, missed, "ZAR", goldFortune, false);
+  assert.ok(!/sales|merchandising/i.test(text), text);
+  // Without the sales clause the sentence still has its subject.
+  assert.ok(text.startsWith(summary.repName ?? "The"), text);
+});

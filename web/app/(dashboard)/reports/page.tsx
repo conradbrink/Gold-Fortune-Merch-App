@@ -16,8 +16,8 @@ import { PerfectStoreTable } from "@/components/reports/perfect-store-table";
 import { OosHotspotsTable } from "@/components/reports/oos-hotspots-table";
 import { AdherenceTable } from "@/components/reports/adherence-table";
 import { StorePicker } from "@/components/stores/store-picker";
-import { REPORT_TAB_VALUES, reportTabs, type ReportTab } from "@/lib/report-tabs";
-import { useTerms } from "@/lib/use-company-config";
+import { REPORT_TAB_VALUES, availableReportTabs, reportTabs, type ReportTab } from "@/lib/report-tabs";
+import { useCompanyConfig, useTerms } from "@/lib/use-company-config";
 import { lower, withArticle, type Terms } from "@/lib/terms";
 import { fileSlug } from "@/lib/export-filename";
 import { ExportMenu } from "@/components/export-menu";
@@ -114,9 +114,13 @@ function chainUnfilteredReason(t: Terms, tab: ReportTab): string {
 export default function ReportsPage() {
   const supabase = createClient();
   const terms = useTerms();
+  const config = useCompanyConfig();
+  /** Only the tabs whose module the company has (`REPORT_TAB_MODULE`): a
+   * cleaning company has no Perfect Store, and asking for it would be refused. */
+  const available = useMemo(() => availableReportTabs(config?.modules ?? null), [config]);
   /** From `lib/report-tabs` so the file that renders the tabs and the file
    * that links to them cannot disagree about what a tab is called. */
-  const TABS = reportTabs(terms);
+  const TABS = reportTabs(terms, available);
 
   /**
    * The range and the tab both come from the URL when it names them, because
@@ -132,7 +136,9 @@ export default function ReportsPage() {
    * version of Next, which is the same trade the global search declined.
    */
   const [range, setRange] = useState<DateRange>(() => rangeForPreset("30d"));
-  const [tab, setTab] = useState<ReportTab>("score");
+  const [chosenTab, setTab] = useState<ReportTab>("score");
+  /** The open tab: the chosen one when the company has it, else its first. */
+  const tab: ReportTab = available.includes(chosenTab) ? chosenTab : (available[0] ?? chosenTab);
   /**
    * Whether the URL has been read yet.
    *
@@ -244,19 +250,25 @@ export default function ReportsPage() {
     try {
       // Weekly buckets past ~6 weeks, or the x-axis becomes unreadable.
       const bucket = rangeDays(range) > 45 ? "week" : "day";
+      // Only the reports this company has; the others are refused by the
+      // database (`require_module`) and would fail the whole page.
+      const has = (t: ReportTab) => available.includes(t);
+      const none = <T,>() => Promise.resolve([] as T[]);
       const [g, s, t, f, ps, oh, ad] = await Promise.all([
-        fetchCoverageGaps(supabase, range),
-        fetchRepScorecard(supabase, range),
-        fetchComplianceTrends(supabase, range, bucket, storeGroupId || null),
-        templateId
+        has("coverage") ? fetchCoverageGaps(supabase, range) : none<CoverageGap>(),
+        has("reps") ? fetchRepScorecard(supabase, range) : none<RepScore>(),
+        has("trends")
+          ? fetchComplianceTrends(supabase, range, bucket, storeGroupId || null)
+          : none<TrendPointRow>(),
+        templateId && (has("form") || has("photos"))
           ? fetchFormReport(supabase, templateId, range, {
               repIds: repId ? [repId] : undefined,
               storeIds: storeId ? [storeId] : undefined,
             })
-          : Promise.resolve([] as FieldReport[]),
-        fetchPerfectStoreScore(supabase, range),
-        fetchOosHotspots(supabase, range),
-        fetchScheduleAdherence(supabase, range),
+          : none<FieldReport>(),
+        has("score") ? fetchPerfectStoreScore(supabase, range) : none<PerfectStore>(),
+        has("oos") ? fetchOosHotspots(supabase, range) : none<OosHotspot>(),
+        has("adherence") ? fetchScheduleAdherence(supabase, range) : none<Adherence>(),
       ]);
       if (isStale()) return;
       setGaps(g);
@@ -276,17 +288,19 @@ export default function ReportsPage() {
       if (!isStale()) setLoading(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [range, templateId, repId, storeId, storeGroupId]);
+  }, [range, templateId, repId, storeId, storeGroupId, available]);
 
   useEffect(() => {
-    if (!urlRead) return;
+    // Not before the company's modules are known: they decide which reports
+    // may be asked for at all.
+    if (!urlRead || !config) return;
     // Behind an async boundary so the loader's own `setLoading(true)`
     // is not a synchronous setState in the effect body. Same call, same
     // tick — `load` still starts before this returns.
     void (async () => {
       await load();
     })();
-  }, [load, urlRead]);
+  }, [load, urlRead, config]);
 
   /**
    * The chain filter, applied to the reports that are one row per store.
