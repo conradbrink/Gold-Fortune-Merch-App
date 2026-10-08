@@ -93,6 +93,9 @@ export default function NewQuotePage() {
         setItems(si);
         setReps(r);
         setProducts(p);
+        // From the set-up wizard's last step: the first place, already picked.
+        const site = new URLSearchParams(window.location.search).get("site");
+        if (site && s.some((x) => x.id === site)) setBillTo((b) => ({ ...b, mode: "store", storeId: site }));
       } catch (e) {
         if (!cancelled) setError(e instanceof Error ? e.message : String(e));
       } finally {

@@ -72,7 +72,7 @@ async function prepareLogo(file: File): Promise<Blob> {
  * file it was issued with, so an old logo is never overwritten or deleted.
  * "Remove logo" only clears `organizations.logo_path` for the same reason.
  */
-export function LogoCard({
+export function LogoUpload({
   orgId,
   initialLogoPath,
   canEdit,
@@ -155,17 +155,7 @@ export function LogoCard({
   }
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="text-base">Logo</CardTitle>
-        <CardDescription>
-          Shown in the sidebar and printed on invoices. PNG, JPEG or WebP; an image
-          bigger than {LOGO_MAX_SIDE} px is shrunk before upload, and the file must
-          come to 1 MB or less. A square logo on a transparent background works best.
-          Invoices already issued keep the logo they were issued with.
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-4">
+    <div className="space-y-4">
         <div className="flex flex-wrap items-center gap-4">
           <div className="flex h-20 w-20 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-border bg-muted/40">
             {url ? (
@@ -212,6 +202,25 @@ export function LogoCard({
             Changing the logo needs the company settings permission.
           </p>
         )}
+    </div>
+  );
+}
+
+/** The logo on the settings page: the upload above, explained. */
+export function LogoCard(props: { orgId: string; initialLogoPath: string | null; canEdit: boolean }) {
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base">Logo</CardTitle>
+        <CardDescription>
+          Shown in the sidebar and printed on invoices. PNG, JPEG or WebP; an image
+          bigger than {LOGO_MAX_SIDE} px is shrunk before upload, and the file must
+          come to 1 MB or less. A square logo on a transparent background works best.
+          Invoices already issued keep the logo they were issued with.
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        <LogoUpload {...props} />
       </CardContent>
     </Card>
   );
