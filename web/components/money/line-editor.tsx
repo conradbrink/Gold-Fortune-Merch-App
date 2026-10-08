@@ -42,8 +42,10 @@ export function lineProblem(lines: EditableLine[]): string | null {
   if (lines.length === 0) return "Add at least one line.";
   if (lines.some((l) => l.description.trim() === "")) return "Every line needs a description.";
   // The database's own limits, said before saving rather than refused after.
-  if (lines.some((l) => l.description.trim().length > 500)) return "A line's description is 500 characters at most.";
-  if (lines.some((l) => (l.unit ?? "").trim().length > 20)) return "A unit is 20 characters at most, like hour or each.";
+  // Counted in characters, as the database counts them, not UTF-16 units.
+  const chars = (v: string) => [...v.trim()].length;
+  if (lines.some((l) => chars(l.description) > 500)) return "A line's description is 500 characters at most.";
+  if (lines.some((l) => chars(l.unit ?? "") > 20)) return "A unit is 20 characters at most, like hour or each.";
   if (lines.some((l) => !validQty(l.qty))) return "A quantity is more than zero, to two decimals.";
   if (lines.some((l) => !validPrice(l.price))) return "Every line needs a price, to the cent.";
   return null;

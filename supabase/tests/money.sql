@@ -40,7 +40,8 @@
 --       paused contract's invoiced work stays hidden.
 --   N20 contract_lines_replace: all lines or none; never no lines.
 --   N21 contract_save: a new or edited contract's terms and lines in one step;
---       a refused line leaves the terms and lines as they were.
+--       a refused line leaves the terms and lines as they were; an edit that
+--       leaves out `active` keeps a paused contract paused.
 --
 -- HOW TO RUN: paste into execute_sql (or psql -f). One DO block that always
 -- ends in `raise exception`, so nothing survives — including the two quiet
@@ -791,6 +792,14 @@ begin
   if (select name from public.service_contracts where id = v_k5) <> 'One-step contract, renamed'
      or (select count(*) from public.service_contract_lines where contract_id = v_k5) <> 2 then
     v_fail := v_fail || 'N21 a refused line left new terms or lost the old lines' || E'\n';
+  end if;
+  update public.service_contracts set active = false where id = v_k5;
+  perform public.contract_save(v_k5,
+    jsonb_build_object('store_id', v_s5, 'name', 'One-step contract, renamed', 'period', 'monthly', 'billing', 'advance',
+                       'invoice_day', 1, 'starts_on', v_today),
+    '[{"description": "Monthly service", "qty": 1, "unit_price": 750}]'::jsonb);
+  if (select active from public.service_contracts where id = v_k5) then
+    v_fail := v_fail || 'N21 an edit without "active" resumed a paused contract' || E'\n';
   end if;
   reset role;
 
