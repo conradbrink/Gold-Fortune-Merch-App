@@ -6957,6 +6957,40 @@ export type Database = {
           status: string
         }[]
       }
+      service_log: {
+        Args: { p_from: string; p_to: string; p_store_id?: string | null }
+        Returns: {
+          visit_id: string
+          store_id: string
+          store_name: string
+          store_address: string | null
+          day: string
+          staff_name: string | null
+          checkin_at: string
+          checkout_at: string | null
+          minutes: number | null
+          on_site: boolean | null
+          forms: number
+          photos: number
+          planned: boolean
+          gap_minutes: number | null
+        }[]
+      }
+      staff_hours: {
+        Args: { p_from: string; p_to: string }
+        Returns: {
+          staff_id: string
+          staff_name: string | null
+          day: string
+          first_in: string | null
+          last_out: string | null
+          open_now: boolean
+          workday_seconds: number
+          onsite_seconds: number
+          jobs: number
+          km: number | null
+        }[]
+      }
       debtors_ageing_json: {
         Args: { p_as_of?: string }
         Returns: Json
