@@ -163,8 +163,12 @@ export function SignupForm({
     for (const p of issues) byField[p.field] ??= p.message;
     setFieldErrors(byField);
     // After the render, so a step that just reappeared has its field.
+    // The trades fall back to their fieldset when there is no first box
+    // (an empty template list), so focus never goes nowhere.
     const target = FIELD_ID[issues[0].field];
-    requestAnimationFrame(() => document.getElementById(target)?.focus());
+    requestAnimationFrame(() =>
+      (document.getElementById(target) ?? (target === FIELD_ID.templates ? document.getElementById("templates") : null))?.focus()
+    );
     return true;
   }
 
@@ -325,7 +329,12 @@ export function SignupForm({
       )}
 
       {step === 2 && (
-        <fieldset className="space-y-4" aria-describedby={fieldErrors.templates ? "templates-error" : undefined}>
+        <fieldset
+          id="templates"
+          tabIndex={-1}
+          className="space-y-4 rounded-lg outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+          aria-describedby={fieldErrors.templates ? "templates-error" : undefined}
+        >
           <legend className="text-pretty text-muted-foreground">
             Pick the work your team does. Pick more than one if you do several; the first one sets your words.
           </legend>
