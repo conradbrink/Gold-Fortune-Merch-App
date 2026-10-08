@@ -302,14 +302,24 @@ export type RepScoreResult = {
  * they are shown whether or not the data can fill them. The weights are fixed;
  * only the labels follow the company's words.
  */
-function weights(t: Terms): { key: ScoreKey; label: string; weight: number }[] {
-  return [
+function weights(t: Terms, sells: boolean): { key: ScoreKey; label: string; weight: number }[] {
+  const all: { key: ScoreKey; label: string; weight: number }[] = [
     { key: "sales", label: "Sales performance", weight: 35 },
     { key: "visits", label: `${t.job.one} completion`, weight: 25 },
     { key: "coverage", label: `${t.site.one} coverage`, weight: 15 },
     { key: "merchandising", label: "Merchandising execution", weight: 15 },
     { key: "compliance", label: "App / data compliance", weight: 10 },
   ];
+  // A company that does not sell (no Distribution module) has no sales and no
+  // retail audits to be scored on: those components are not part of its
+  // report at all, rather than listed as "excluded". The rest are scaled back
+  // to 100 (50 / 30 / 20), because the Weight column is printed and a table
+  // whose weights add up to 50% reads as a mistake. Per-industry weights come
+  // with the industry reports (Stage 7 Part 4).
+  if (sells) return all;
+  const kept = all.filter((w) => w.key !== "sales" && w.key !== "merchandising");
+  const total = kept.reduce((a, w) => a + w.weight, 0);
+  return kept.map((w) => ({ ...w, weight: (w.weight * 100) / total }));
 }
 
 /**
@@ -379,9 +389,10 @@ export function computeScore(
   summary: RepSummary,
   stores: RepStore[],
   missed: MissedVisit[],
-  t: Terms
+  t: Terms,
+  sells = true
 ): RepScoreResult {
-  const published = weights(t);
+  const published = weights(t, sells);
   const jobs = lower(t.job.many);
   const served = visitsServed(summary, missed);
   const plannedStores = stores.filter((s) => s.planned > 0);
@@ -648,33 +659,40 @@ export function managementSummary(
   score: RepScoreResult,
   missed: MissedVisit[],
   currency: string,
-  t: Terms
+  t: Terms,
+  sells = true
 ): string {
   const s = summary;
   const rep = lower(t.staff.one);
   const jobs = lower(t.job.many);
   const sentences: string[] = [];
+  const who = s.repName ?? `The ${rep}`;
 
   const first: string[] = [];
-  first.push(
-    s.salesNet > 0
-      ? `${s.repName ?? `The ${rep}`} generated ${money(s.salesNet, currency)} from ${s.salesOrders} delivered order${s.salesOrders === 1 ? "" : "s"}`
-      : `${s.repName ?? `The ${rep}`} recorded no delivered sales in this period`
-  );
+  if (sells) {
+    first.push(
+      s.salesNet > 0
+        ? `${who} generated ${money(s.salesNet, currency)} from ${s.salesOrders} delivered order${s.salesOrders === 1 ? "" : "s"}`
+        : `${who} recorded no delivered sales in this period`
+    );
+  }
+  // Without the sales clause the sentence starts here, so it needs its subject.
+  const subject = first.length === 0 ? `${who} ` : "";
   if (s.plannedVisits > 0) {
     const served = visitsServed(s, missed);
     first.push(
-      served.caughtUp > 0
+      subject +
+      (served.caughtUp > 0
         ? `served ${served.served} of ${s.plannedVisits} planned ${jobs} (${Math.round((served.rate ?? 0) * 100)}%), ${served.caughtUp} of them by going back on an unscheduled ${lower(t.job.one)}`
-        : `completed ${s.completedPlanned} of ${s.plannedVisits} planned ${jobs} (${Math.round((served.rate ?? 0) * 100)}%)`
+        : `completed ${s.completedPlanned} of ${s.plannedVisits} planned ${jobs} (${Math.round((served.rate ?? 0) * 100)}%)`)
     );
   } else {
-    first.push(`had no ${jobs} planned in this period`);
+    first.push(`${subject}had no ${jobs} planned in this period`);
   }
   sentences.push(`${first.join(" and ")}.`);
 
   const second: string[] = [];
-  const merch = merchandisingCompliance(s);
+  const merch = sells ? merchandisingCompliance(s) : null;
   if (merch !== null) {
     second.push(
       `Merchandising compliance was ${merch.toFixed(0)}% across ${s.audits} audit${s.audits === 1 ? "" : "s"}`
@@ -688,7 +706,7 @@ export function managementSummary(
     // overstatement this whole column exists to remove.
     const highValue = new Set(
       missed
-        .filter((m) => m.visitedAt === null && (m.previousSales ?? 0) >= HIGH_VALUE_MISS)
+        .filter((m) => sells && m.visitedAt === null && (m.previousSales ?? 0) >= HIGH_VALUE_MISS)
         .map((m) => m.storeId)
     ).size;
     const caught = s.missedVisits - neverWentBack;
