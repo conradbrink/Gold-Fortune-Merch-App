@@ -70,6 +70,16 @@ test("the routes refuse a phone login whose number is not a mobile number", () =
   assert.equal(ok("27825550@staff.tickd.co.za"), false); // too short
 });
 
+test("the routes keep only a mobile number in international form as a person's phone", () => {
+  // What /api/reps/[id] checks for a phone sent with a login change.
+  const ok = (phone: string) => normalisePhone(phone, null) === phone;
+  assert.equal(ok("+27825550142"), true);
+  assert.equal(ok("+26771234567"), true);
+  assert.equal(ok("+27115550142"), false); // a landline
+  assert.equal(ok("+27 82 555 0142"), false); // not in its international form
+  assert.equal(ok("0825550142"), false); // no country
+});
+
 test("sign-in: an email as typed; a number read in the browser's countries", () => {
   assert.deepEqual(loginCandidates(" Thabo@Example.com ", ["ZA"]), ["thabo@example.com"]);
   assert.deepEqual(loginCandidates("082 555 0142", ["ZA"]), ["27825550142@staff.tickd.co.za"]);

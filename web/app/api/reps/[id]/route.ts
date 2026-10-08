@@ -120,9 +120,10 @@ async function changeEmail(admin: SupabaseClient, id: string, raw: string, phone
   }
   // A phone login moves with its number (lib/phone-login.ts), so the number
   // kept for WhatsApp changes in the same write as the login. It is the
-  // login's own number: WhatsApp must not reach someone else.
-  if (phone !== undefined && (typeof phone !== "string" || !/^\+\d{6,15}$/.test(phone))) {
-    return Response.json({ error: "The phone number is not in international form." }, { status: 400 });
+  // login's own number: WhatsApp must not reach someone else. Like the phone
+  // field, it is a mobile number in international form, never a landline.
+  if (phone !== undefined && (typeof phone !== "string" || normalisePhone(phone, null) !== phone)) {
+    return Response.json({ error: "The phone number is not a mobile number in international form." }, { status: 400 });
   }
   const loginNumber = loginPhone(email);
   // A phone login must be a mobile number that sign-in can read back.
