@@ -13,21 +13,22 @@ export default function PrivacyPage() {
     <LegalPage title="Privacy policy">
       <p>
         This policy explains what personal information {site.name} collects, why, where it is kept and what you can do
-        about it. It follows the Protection of Personal Information Act (POPIA).
+        about it. It follows Botswana&apos;s Data Protection Act and, for businesses and people in South Africa, the
+        Protection of Personal Information Act (POPIA).
       </p>
 
       <h2>Who is responsible</h2>
       <ul>
         <li>
-          {site.legalName} is responsible for the information about the businesses that sign up and the people who
-          manage their accounts.
+          {site.legalName}, registered in {legal.registeredIn} (UIN {legal.registrationNumber}), {legal.address}, is
+          responsible for the information about the businesses that sign up and the people who manage their accounts.
         </li>
         <li>
           The information a business puts in about its own team (names, work locations, photos and so on) belongs to
           that business, which is responsible for it. We process it for them, on their instructions.
         </li>
         <li>
-          Our information officer
+          Our data protection and information officer
           {legal.informationOfficer ? ` is ${legal.informationOfficer} and` : ""} can be reached at{" "}
           <a href={`mailto:${site.email}`}>{site.email}</a>.
         </li>
@@ -72,8 +73,8 @@ export default function PrivacyPage() {
         <li>OpenAI: only when a manager asks the dashboard&apos;s AI insights a question, the figures needed to answer it are sent.</li>
       </ul>
       <p>
-        Some of these services keep information outside South Africa. We use them because they protect information to
-        a standard at least as strict as POPIA, under their terms with us.
+        These services keep information outside Botswana and South Africa. We use them because they protect
+        information to a standard at least as strict as the laws above, under their terms with us.
       </p>
 
       <h2>How long we keep it</h2>
@@ -101,8 +102,9 @@ export default function PrivacyPage() {
           recorded about its team. We will help it answer you.
         </li>
         <li>
-          If you are not happy with our answer, you may complain to the Information Regulator:{" "}
-          <a href="https://inforegulator.org.za" rel="noopener noreferrer">inforegulator.org.za</a>.
+          If you are not happy with our answer, you may complain to the data protection authority: in Botswana, the
+          Information and Data Protection Commission; in South Africa, the Information Regulator (
+          <a href="https://inforegulator.org.za" rel="noopener noreferrer">inforegulator.org.za</a>).
         </li>
       </ul>
       <p>

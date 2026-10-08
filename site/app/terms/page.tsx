@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { LegalPage } from "@/components/legal-page";
-import { pricing, rand, site } from "@/lib/site";
+import { legal, pricing, rand, site } from "@/lib/site";
 
 // DRAFT for the owner's lawyer to check before launch (owner, 8 Oct 2026). It
 // describes how the product actually works; change the product, change this.
@@ -11,8 +11,9 @@ export default function TermsPage() {
   return (
     <LegalPage title="Terms of use">
       <p>
-        These terms are the agreement between you (the business that signs up) and {site.legalName} (&ldquo;we&rdquo;),
-        the business behind {site.name}. By signing up or using {site.name}, you agree to them.
+        These terms are the agreement between you (the business that signs up) and {site.legalName}, a company
+        registered in {legal.registeredIn} (UIN {legal.registrationNumber}) (&ldquo;we&rdquo;), the business behind{" "}
+        {site.name}. By signing up or using {site.name}, you agree to them.
       </p>
 
       <h2>What {site.name} is</h2>
@@ -68,7 +69,8 @@ export default function TermsPage() {
         <li>The information you and your team put into {site.name} is yours. We use it only to run {site.name} for you.</li>
         <li>
           You are responsible for telling your team that {site.name} records their location while a workday is open,
-          and for having a lawful reason to do so under the Protection of Personal Information Act (POPIA).
+          and for having a lawful reason to do so under the data protection law that applies to you (Botswana&apos;s Data
+          Protection Act, or South Africa&apos;s Protection of Personal Information Act).
         </li>
         <li>
           If your account stays read-only for 30 days, we may delete your company&apos;s data. We will let you know before
@@ -91,13 +93,13 @@ export default function TermsPage() {
           As far as the law allows, we are not liable for indirect losses (such as lost profit), and our total liability
           to you is limited to what you paid us in the 12 months before the claim.
         </li>
-        <li>Nothing in these terms takes away rights you have under the Consumer Protection Act or the Electronic Communications and Transactions Act, where they apply to you.</li>
+        <li>Nothing in these terms takes away rights the law of your country gives you that can&apos;t be excluded, such as South Africa&apos;s Consumer Protection Act or Electronic Communications and Transactions Act, where they apply to you.</li>
       </ul>
 
       <h2>Changes and the law</h2>
       <ul>
         <li>We may update these terms. If a change matters, we will tell you at least 30 days before it applies.</li>
-        <li>These terms are governed by the law of South Africa.</li>
+        <li>These terms are governed by the law of {legal.registeredIn}.</li>
         <li>Questions: <a href={`mailto:${site.email}`}>{site.email}</a>.</li>
       </ul>
     </LegalPage>

@@ -11,8 +11,8 @@ export const site = {
   url: "https://tickd.co.za",
   appUrl: "https://app.tickd.co.za",
   // Legal entity shown in the footer and named in the terms and privacy
-  // pages. Confirm before launch.
-  legalName: "Mobill Media",
+  // pages (owner, 8 Oct 2026; CIPA extract BW00005187820).
+  legalName: "Mobill Media (Pty) Ltd",
   email: "hello@tickd.co.za",
   // International format without "+" or spaces, e.g. "27821234567".
   // Empty until the WhatsApp Business line exists; the buttons fall back to email.
@@ -57,14 +57,16 @@ export type Billing = "monthly" | "yearly";
 // The details the legal pages need, in one place. Each must be the owner's
 // real details before the site goes live; an empty one is left off the page.
 export const legal = {
-  // CIPC registration number, if the business is registered.
-  registrationNumber: "",
-  // Physical address for notices (POPIA s18 and ECTA s43 ask for one).
-  address: "",
+  // Registered in Botswana (CIPA). Unique identification number.
+  registeredIn: "Botswana",
+  registrationNumber: "BW00005187820",
+  // Physical address for notices (owner, 8 Oct 2026).
+  address: "Plot 51572, Phakalane, Gaborone, Botswana",
   // A telephone number for the business (ECTA s43).
   phone: "",
-  // POPIA information officer: the owner, unless someone else is registered.
-  informationOfficer: "",
+  // Who answers privacy requests (Botswana: data protection officer; POPIA:
+  // information officer). The sole director, unless someone else is named.
+  informationOfficer: "Conrad Brink",
   // Where the app's data is hosted (Supabase, AWS eu-west-3).
   dataLocation: "Paris, France",
   lastUpdated: "8 October 2026",

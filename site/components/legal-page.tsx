@@ -3,12 +3,13 @@ import { Logo } from "@/components/logo";
 import { legal, site } from "@/lib/site";
 
 // The frame of the Terms, Privacy and Refunds pages: the logo home, a title,
-// the date, and the business's details at the foot (the Electronic
-// Communications and Transactions Act asks a website that sells to show them).
+// the date, and the business's details at the foot (South Africa's
+// Electronic Communications and Transactions Act asks a website that sells to
+// show them).
 export function LegalPage({ title, children }: { title: string; children: React.ReactNode }) {
   const details = [
     site.legalName,
-    legal.registrationNumber && `Registration number ${legal.registrationNumber}`,
+    legal.registrationNumber && `Registered in ${legal.registeredIn}, UIN ${legal.registrationNumber}`,
     legal.address,
     legal.phone && `Phone ${legal.phone}`,
     site.email,
