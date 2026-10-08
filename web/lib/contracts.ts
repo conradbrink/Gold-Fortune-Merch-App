@@ -126,25 +126,21 @@ const terms = (i: ContractInput) => ({
 });
 
 /**
- * Writes the contract's lines: the old ones out, these in. Lines only shape
- * future invoices; issued ones keep what they were issued with.
+ * Writes the contract's lines: the old ones out, these in, in one transaction
+ * (`contract_lines_replace`), so a failed save keeps the old lines. Lines only
+ * shape future invoices; issued ones keep what they were issued with.
  */
-async function writeLines(supabase: Client, orgId: string, contractId: string, lines: ContractLineInput[]) {
-  const del = await supabase.from("service_contract_lines").delete().eq("contract_id", contractId);
-  fail(del.error);
-  if (lines.length === 0) return;
-  const { error } = await supabase.from("service_contract_lines").insert(
-    lines.map((l, i) => ({
-      contract_id: contractId,
-      org_id: orgId,
-      position: i + 1,
+async function writeLines(supabase: Client, contractId: string, lines: ContractLineInput[]) {
+  const { error } = await supabase.rpc("contract_lines_replace", {
+    p_contract: contractId,
+    p_lines: lines.map((l) => ({
       service_item_id: l.serviceItemId,
       description: l.description.trim(),
       unit: l.unit?.trim() || null,
       qty: l.qty,
       unit_price: l.unitPrice,
-    }))
-  );
+    })),
+  });
   fail(error);
 }
 
@@ -163,7 +159,7 @@ export async function createContract(
   fail(error);
   const id = (data as { id: string }).id;
   try {
-    await writeLines(supabase, orgId, id, lines);
+    await writeLines(supabase, id, lines);
   } catch (e) {
     // A contract without lines would fail every run: take it back out.
     await supabase.from("service_contracts").delete().eq("id", id);
@@ -174,7 +170,6 @@ export async function createContract(
 
 export async function updateContract(
   supabase: Client,
-  orgId: string,
   id: string,
   input: ContractInput,
   lines: ContractLineInput[]
@@ -182,7 +177,7 @@ export async function updateContract(
   if (lines.length === 0) throw new Error("A contract needs at least one line to invoice.");
   const { error } = await supabase.from("service_contracts").update(terms(input)).eq("id", id);
   fail(error);
-  await writeLines(supabase, orgId, id, lines);
+  await writeLines(supabase, id, lines);
 }
 
 export async function deleteContract(supabase: Client, id: string) {

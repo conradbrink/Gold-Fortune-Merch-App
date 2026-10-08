@@ -143,7 +143,6 @@ export default function ContractPage() {
       if (problem) throw new Error(problem);
       await updateContract(
         supabase,
-        orgId,
         c.id,
         {
           ...next,

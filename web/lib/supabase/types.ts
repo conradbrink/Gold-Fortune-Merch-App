@@ -6902,6 +6902,7 @@ export type Database = {
           last_paid_on: string | null
         }[]
       }
+      contract_lines_replace: { Args: { p_contract: string; p_lines: Json }; Returns: undefined }
       contract_invoices_run_now: {
         Args: { p_contract?: string | null }
         Returns: number
