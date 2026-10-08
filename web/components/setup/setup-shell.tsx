@@ -13,7 +13,7 @@ export function SetupShell({
 }>) {
   seedCompanyConfig(initialConfig);
   return (
-    <div className="min-h-screen bg-secondary/40">
+    <div className="min-h-dvh bg-secondary/40">
       <main className="mx-auto w-full max-w-4xl px-4 py-6 sm:py-10">{children}</main>
     </div>
   );
