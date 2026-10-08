@@ -49,7 +49,7 @@ export function DoneStep({ org, setup, icon: Icon, onBack, onFinish }: StepProps
   }
 
   return (
-    <section className="rounded-2xl border border-border bg-card shadow-lg">
+    <section className="rounded-2xl bg-card ring-1 ring-foreground/10">
       <div className="flex flex-col items-center gap-3 px-6 pb-2 pt-8 text-center">
         <span className="flex size-14 items-center justify-center rounded-full bg-primary text-primary-foreground">
           <Icon className="size-7" aria-hidden />
