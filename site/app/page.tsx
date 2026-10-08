@@ -3,7 +3,7 @@ import { CostCalculator } from "@/components/cost-calculator";
 import { ProductDemo } from "@/components/demo/product-demo";
 import { Logo } from "@/components/logo";
 import { TradeTabs } from "@/components/trade-tabs";
-import { TrialForm } from "@/components/trial-form";
+import { StartTrial } from "@/components/start-trial";
 import { PricingSection } from "@/components/pricing-section";
 import { confirmed, site } from "@/lib/site";
 
@@ -165,7 +165,7 @@ export default function Home() {
             ))}
           </nav>
           <div className="flex items-center gap-3">
-            <a href={site.appUrl} className="hidden text-sm font-semibold text-teal-900 hover:underline sm:inline">
+            <a href={`${site.appUrl}/login`} className="hidden text-sm font-semibold text-teal-900 hover:underline sm:inline">
               Sign in
             </a>
             <a href="#start" className="rounded-full bg-teal-900 px-4 py-2 text-sm font-semibold text-sand hover:bg-teal-800">
@@ -364,7 +364,7 @@ export default function Home() {
             <p className="max-w-2xl text-lg leading-relaxed text-teal-100">
               See your team&apos;s whole day, show your clients the proof, and find out what it saves you. It costs nothing to try.
             </p>
-            <TrialForm />
+            <StartTrial />
           </div>
         </section>
       </main>
@@ -372,12 +372,22 @@ export default function Home() {
       <footer className="bg-teal-950 text-teal-100">
         <div className="mx-auto flex max-w-6xl flex-col gap-4 px-4 py-10 sm:px-6 md:flex-row md:items-center md:justify-between">
           <Logo inverted />
-          <p className="text-sm">
-            {site.tagline} ·{" "}
-            <a href={`mailto:${site.email}`} className="py-1 hover:text-sand">
-              {site.email}
-            </a>
-          </p>
+          <div className="grid gap-2 text-sm md:justify-items-end">
+            <p>
+              {site.tagline} ·{" "}
+              <a href={`mailto:${site.email}`} className="py-1 hover:text-sand">
+                {site.email}
+              </a>
+            </p>
+            <nav aria-label="Legal" className="flex flex-wrap gap-x-5 gap-y-1">
+              <a href="/terms" className="py-1 hover:text-sand">Terms</a>
+              <a href="/privacy" className="py-1 hover:text-sand">Privacy</a>
+              <a href="/refunds" className="py-1 hover:text-sand">Cancellations and refunds</a>
+            </nav>
+            <p className="text-xs text-teal-100/70">
+              © {new Date().getFullYear()} {site.legalName}
+            </p>
+          </div>
         </div>
       </footer>
     </>

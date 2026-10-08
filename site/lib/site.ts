@@ -10,7 +10,8 @@ export const site = {
   trialDays: 14,
   url: "https://tickd.co.za",
   appUrl: "https://app.tickd.co.za",
-  // Legal entity shown in the footer. Confirm before launch.
+  // Legal entity shown in the footer and named in the terms and privacy
+  // pages. Confirm before launch.
   legalName: "Mobill Media",
   email: "hello@tickd.co.za",
   // International format without "+" or spaces, e.g. "27821234567".
@@ -38,9 +39,8 @@ export const confirmed = {
   legalFaq: false,
 } as const;
 
-export const trialMessage = `Hi, I'd like to start the free ${site.trialDays}-day ${site.name} trial.`;
-
-// Prices in rand, including VAT. ~/Downloads/pricing-implementation.md:
+// Prices in rand. Not VAT registered yet (owner, 8 Oct 2026), so no VAT is
+// added; ~/Downloads/pricing-implementation.md:
 // yearly is 2 months free; setup is free on yearly and charged once on
 // monthly; "Done for you" is the anchor plan.
 export const pricing = {
@@ -53,6 +53,20 @@ export const pricing = {
 } as const;
 
 export type Billing = "monthly" | "yearly";
+
+// The details the legal pages need, in one place. Each must be the owner's
+// real details before the site goes live; an empty one is left off the page.
+export const legal = {
+  // CIPC registration number, if the business is registered.
+  registrationNumber: "",
+  // Physical address for notices (POPIA asks for one).
+  address: "",
+  // POPIA information officer: the owner, unless someone else is registered.
+  informationOfficer: "",
+  // Where the app's data is hosted (Supabase, AWS eu-west-3).
+  dataLocation: "Paris, France",
+  lastUpdated: "8 October 2026",
+} as const;
 
 /** What a team of `users` pays per period on the given billing. */
 export function planPrice(users: number, billing: Billing): number {

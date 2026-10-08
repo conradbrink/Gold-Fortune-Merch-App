@@ -180,7 +180,7 @@ export function PricingSection() {
       )}
 
       <p className="text-center text-sm text-muted">
-        All prices include VAT. Prices go up once a year, by no more than inflation.
+        Prices are in rand. We&apos;re not VAT registered, so no VAT is added. Prices go up once a year, by no more than inflation.
       </p>
     </div>
   );
