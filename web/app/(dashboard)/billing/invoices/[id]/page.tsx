@@ -3,6 +3,7 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { formatDate, formatRandExact, parseLines } from "@/lib/billing";
 import { PrintButton } from "@/components/billing/print-button";
+import { PRODUCT_MARK, PRODUCT_NAME } from "@/lib/product";
 
 /**
  * One invoice or credit note, ready to print or save as PDF (Stage 6).
@@ -53,9 +54,15 @@ export default async function InvoicePage({ params }: { params: Promise<{ id: st
 
       <article className="space-y-6 rounded-lg border border-border bg-card p-8 text-sm text-card-foreground print:border-0 print:p-0">
         <header className="flex flex-wrap items-start justify-between gap-4">
-          <div>
-            <h1 className="text-2xl font-semibold tracking-tight">{title}</h1>
-            <p className="text-muted-foreground">{inv.number}</p>
+          <div className="flex items-start gap-3">
+            {/* The service's own mark: this invoice is from the seller of the
+                product, not from the company's branding. */}
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={PRODUCT_MARK} alt={PRODUCT_NAME} width={44} height={44} className="size-11 rounded-lg" />
+            <div>
+              <h1 className="text-2xl font-semibold tracking-tight">{title}</h1>
+              <p className="text-muted-foreground">{inv.number}</p>
+            </div>
           </div>
           <div className="text-right">
             <p className="font-medium">{text(seller.name) || "—"}</p>
