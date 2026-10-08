@@ -37,7 +37,13 @@ declare
 begin
   select p.id, p.org_id into v_admin, v_org
     from public.profiles p join public.job_roles jr on jr.id = p.job_role_id
-   where jr.code = 'administrator' and p.is_active limit 1;
+   where jr.code = 'administrator' and p.is_active
+     -- A company with field data to exercise (the oldest such: Gold Fortune).
+     -- Trial companies have an administrator and nothing else yet.
+     and exists (select 1 from public.profiles pr where pr.org_id = p.org_id and pr.role = 'rep' and pr.is_active)
+     and exists (select 1 from public.stores st where st.org_id = p.org_id and st.active)
+   order by (select o.created_at from public.organizations o where o.id = p.org_id), p.id
+   limit 1;
   select id into v_rep from public.profiles
    where org_id = v_org and role = 'rep' and is_active order by full_name limit 1;
   select id into v_store from public.stores where org_id = v_org and active limit 1;

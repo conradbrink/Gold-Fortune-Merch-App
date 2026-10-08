@@ -270,6 +270,14 @@ begin
   if (select (plan->>'seats')::int from public.company_account where org_id = v_org) <> 5 then
     v_fail := v_fail || 'B5 paid seats did not go up' || E'\n';
   end if;
+  -- Nothing left to apply at renewal must be SQL NULL, not JSON null: a JSON
+  -- null made the renewal price 1 seat with no add-ons (sandbox run, 8 Oct).
+  if (select plan_next from public.company_account where org_id = v_org) is not null then
+    v_fail := v_fail || 'B5 a paid change left plan_next set (JSON null?)' || E'\n';
+  end if;
+  if (select (coalesce(plan_next, plan)->>'seats')::int from public.company_account where org_id = v_org) is distinct from 5 then
+    v_fail := v_fail || 'B5 the next renewal would not charge the 5 paid seats' || E'\n';
+  end if;
   set local role authenticated;
   if public.billing_request_change(4, '{}') is not null then
     v_fail := v_fail || 'B5 fewer seats were charged' || E'\n';
