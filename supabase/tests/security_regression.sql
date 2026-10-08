@@ -1,7 +1,7 @@
 -- Security regression suite.
 --
 -- Every check here corresponds to a hole that was open on 29 or 30 July 2026, or
--- to an invariant a new table has to hold. **32 checks** — 1-18 are the 29 July
+-- to an invariant a new table has to hold. **34 checks** — 1-18 are the 29 July
 -- audit; 19-20 the `territory_reps` tenancy gap, 21-22 the per-user
 -- `dashboard_layouts`, 23-24 `territories_enforce_shape` ignoring dependents on
 -- UPDATE, and 25-26 the territory shape and tenancy invariants, all found in
@@ -11,7 +11,9 @@
 -- `rep_id` grant: a rep must not be able to hand their own order to a
 -- colleague, and the thing stopping them is row visibility rather than any
 -- policy clause, so it is pinned before a policy rewrite loses it. 32 is the
--- report RPC guard of 7 October 2026.
+-- report RPC guard of 7 October 2026. 33 is the Stage 3 company words, colours
+-- and logo. 34 is the 8 October 2026 manager-to-admin escalation on
+-- `profiles` insert.
 --
 -- 25 and 26 are invariants about the *data*, not attacks: the races that could
 -- produce those states need two interleaved sessions to stage, which one
@@ -82,7 +84,14 @@ declare
   v_adj uuid; v_adj_mgr uuid; v_decided text;
 
 begin
-  select id, org_id into v_mgr, v_org from public.profiles where role = 'manager' limit 1;
+  -- The manager of the oldest company with two reps and a store (Gold
+  -- Fortune): trial sign-ups have managers but no field data.
+  select p.id, p.org_id into v_mgr, v_org from public.profiles p
+   where p.role = 'manager'
+     and (select count(*) from public.profiles pr where pr.org_id = p.org_id and pr.role = 'rep') >= 2
+     and exists (select 1 from public.stores st where st.org_id = p.org_id)
+   order by (select o.created_at from public.organizations o where o.id = p.org_id), p.id
+   limit 1;
   select id into v_rep  from public.profiles where role = 'rep' and org_id = v_org order by full_name limit 1;
   select id into v_rep2 from public.profiles where role = 'rep' and org_id = v_org and id <> v_rep limit 1;
   select id into v_store from public.stores where org_id = v_org limit 1;
@@ -1180,6 +1189,131 @@ begin
       v_fail := v_fail || '33d. the settings holder''s edit failed: ' || sqlerrm || E'\n';
     end;
     reset role;
+  end;
+
+  --------------------------------- 34. a manager cannot self-escalate on insert
+  --
+  -- `profiles_insert` once admitted any row in the caller's own org whose
+  -- caller was base role `manager`; the AFTER INSERT trigger
+  -- `assign_default_permissions` then copied the named job role's permissions,
+  -- `admin` included. A base-`manager` with no `admin` (an Operations Manager)
+  -- who obtained an auth user with no profile could therefore insert a profile
+  -- on the `administrator` job role and receive `admin`. Confirmed on
+  -- production 8 October 2026, rolled back, before the fix landed.
+  --
+  -- The fix is two INDEPENDENT guards, and — per the header rule that a refusal
+  -- check must name which guard refused — they are tested apart, so loosening
+  -- either one fails this check even while the other still happens to hold:
+  --   34  the insert POLICY refuses a signed-in non-admin manager outright
+  --       (fails if the insert is admitted at all, not only if admin leaks);
+  --   34b the TRIGGER withholds `admin` from a signed-in non-admin's insert
+  --       even when RLS is bypassed (so it stands alone from the policy);
+  --   34c the trusted backend path (no signed-in user) still grants `admin`,
+  --       or create_company would make every owner locked out.
+  --
+  -- This is the one check in the file that writes to `auth.users`: the attack's
+  -- precondition is an auth user with *no* profile, which no role change can
+  -- stage. The rows are throwaway and roll back with everything else. Checks
+  -- 34b/34c insert with RLS bypassed (cleared or non-admin claims would fail
+  -- `profiles_insert`), so — like every `reset role` block in this file — the
+  -- suite must be run by the `profiles` owner or a BYPASSRLS/superuser role;
+  -- that assumption is asserted up front rather than left to abort obscurely.
+  declare
+    v_admin_role   uuid;
+    v_orphan_pol   uuid := gen_random_uuid();  -- 34  policy probe (insert refused)
+    v_orphan_trg   uuid := gen_random_uuid();  -- 34b trigger probe (RLS bypassed)
+    v_orphan_bk    uuid := gen_random_uuid();  -- 34c backend control
+    v_mgr_na       uuid;
+    v_policy_refused boolean := false;
+    v_admin_after  boolean;
+    v_role_grants_admin boolean;
+  begin
+    -- The run-role assumption, made loud: 34b/34c bypass RLS to reach the
+    -- trigger, which only the table owner / a BYPASSRLS / a superuser role can.
+    if not exists (select 1 from pg_roles
+                    where rolname = current_user and (rolbypassrls or rolsuper))
+       and current_user is distinct from
+           (select tableowner from pg_tables where schemaname = 'public' and tablename = 'profiles')
+    then
+      raise exception 'Fixtures broken: run this suite as the profiles owner or a BYPASSRLS/superuser role (check 34 inserts with RLS bypassed).';
+    end if;
+
+    select id into v_admin_role from public.job_roles
+     where org_id = v_org and is_system and code = 'administrator';
+    if v_admin_role is null then
+      raise exception 'Fixtures broken: no administrator job role for check 34.';
+    end if;
+    -- The probes below are only meaningful if this role actually grants admin:
+    -- otherwise "the orphan has no admin" would pass for the wrong reason.
+    select exists (select 1 from public.job_role_permissions
+                    where job_role_id = v_admin_role and permission_code = 'admin')
+      into v_role_grants_admin;
+    if not v_role_grants_admin then
+      raise exception 'Fixtures broken: the administrator job role does not grant admin for check 34.';
+    end if;
+
+    -- A base-`manager` with no `admin`: v_rep2 re-roled for this check (its
+    -- cross-user probes, 5-9, are long done). Created, not queried — the estate
+    -- need not already contain a non-admin manager for this to run.
+    update public.profiles set role = 'manager', is_active = true where id = v_rep2;
+    delete from public.profile_permissions where profile_id = v_rep2 and permission_code = 'admin';
+    v_mgr_na := v_rep2;
+
+    -- Three orphans: auth users with no profile, inactive so the user-limit
+    -- trigger stays out of a check about permissions.
+    insert into auth.users (id) values (v_orphan_pol), (v_orphan_trg), (v_orphan_bk);
+
+    -- 34. POLICY guard. As the non-admin manager through the authenticated
+    -- role, the escalating insert must be REFUSED by profiles_insert. Record a
+    -- success as a policy failure: if the policy is ever loosened, this fires
+    -- even though the trigger (34b) would still withhold admin.
+    perform set_config('request.jwt.claims',
+      json_build_object('sub', v_mgr_na, 'role', 'authenticated')::text, true);
+    set local role authenticated;
+    if public.current_role() is distinct from 'manager' or public.has_permission('admin') then
+      reset role;
+      raise exception 'Fixtures broken: the check-34 actor is % / admin=%, not a non-admin manager.',
+        public.current_role(), public.has_permission('admin');
+    end if;
+    begin
+      insert into public.profiles (id, org_id, role, job_role_id, full_name, email, is_active)
+      values (v_orphan_pol, v_org, 'manager', v_admin_role, 'Escalation probe', 'esc34@regression.test', false);
+    exception when insufficient_privilege then
+      v_policy_refused := true;  -- profiles_insert refused: closed at the door
+    end;
+    reset role;
+    if not v_policy_refused then
+      v_fail := v_fail || '34. profiles_insert admitted a non-admin manager''s insert (policy guard)' || E'\n';
+    end if;
+
+    -- 34b. TRIGGER guard, independent of the policy. Insert with RLS bypassed
+    -- (owner role) but with a non-admin manager as the signed-in user, so the
+    -- row lands and only the trigger decides on admin. It must withhold it.
+    perform set_config('request.jwt.claims',
+      json_build_object('sub', v_mgr_na, 'role', 'authenticated')::text, true);
+    insert into public.profiles (id, org_id, role, job_role_id, full_name, email, is_active)
+    values (v_orphan_trg, v_org, 'manager', v_admin_role, 'Trigger probe', 'trg34@regression.test', false);
+    select exists (select 1 from public.profile_permissions
+                    where profile_id = v_orphan_trg and permission_code = 'admin')
+      into v_admin_after;
+    if v_admin_after then
+      v_fail := v_fail || '34b. the trigger granted admin to a signed-in non-admin''s insert (trigger guard)' || E'\n';
+    end if;
+
+    -- 34c. Control: the trusted backend path (no signed-in user, exactly as
+    -- create_company inserts the owner) must still grant `admin`. Claims cleared
+    -- so auth.uid() is null; same RLS-bypassed role as 34b, so the only thing
+    -- that changed is the absence of a signed-in user — and that flips the grant
+    -- back on, which both proves the trigger ran and guards owner creation.
+    perform set_config('request.jwt.claims', '', true);
+    insert into public.profiles (id, org_id, role, job_role_id, full_name, email, is_active)
+    values (v_orphan_bk, v_org, 'manager', v_admin_role, 'Owner control', 'owner34@regression.test', false);
+    select exists (select 1 from public.profile_permissions
+                    where profile_id = v_orphan_bk and permission_code = 'admin')
+      into v_admin_after;
+    if not v_admin_after then
+      v_fail := v_fail || '34c. the backend owner-creation path no longer grants admin' || E'\n';
+    end if;
   end;
 
   ------------------------------------------------------------------- verdict

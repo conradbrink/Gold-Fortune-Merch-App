@@ -23,8 +23,11 @@ const coreOnly = toModuleSet({});
 test("each gated page belongs to its module, and anything else is core", () => {
   assert.equal(moduleForPath("/orders"), "distribution");
   assert.equal(moduleForPath("/orders/123/pick"), "distribution");
-  assert.equal(moduleForPath("/quotes"), "distribution");
-  assert.equal(moduleForPath("/invoices/9"), "distribution");
+  // Money is every trade's (Stage 7), not Distribution's.
+  assert.equal(moduleForPath("/quotes"), "invoicing");
+  assert.equal(moduleForPath("/invoices/9"), "invoicing");
+  assert.equal(moduleForPath("/owed"), "invoicing");
+  assert.equal(moduleForPath("/price-list"), "invoicing");
   assert.equal(moduleForPath("/warehouse/insights"), "warehouse");
   assert.equal(moduleForPath("/inventory/stocktakes"), "warehouse");
   assert.equal(moduleForPath("/hr/me"), "hr");

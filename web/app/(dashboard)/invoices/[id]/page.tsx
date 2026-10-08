@@ -25,6 +25,8 @@ import {
   downloadCreditNotePdf,
   downloadInvoicePdf,
   fetchInvoice,
+  INVOICE_KIND_LABELS,
+  invoiceHeading,
   issueCreditNote,
   money,
   PAYMENT_METHODS,
@@ -34,6 +36,9 @@ import {
   voidInvoice,
   type InvoiceDetail,
 } from "@/lib/invoices";
+import { formatQty, validQty } from "@/lib/money-docs";
+import { useTerms } from "@/lib/use-company-config";
+import { lower } from "@/lib/terms";
 
 function today() {
   const d = new Date();
@@ -41,12 +46,14 @@ function today() {
 }
 
 /**
- * One tax invoice. Nothing on it can be edited — the panels below add to it
- * (a payment, a credit note) or void it, and the database decides whether
- * each is allowed.
+ * One invoice. Nothing on it can be edited — the panels below add to it (a
+ * payment, a credit note) or void it, and the database decides whether each is
+ * allowed. It says what it was made from: an order, a quote, completed jobs,
+ * or nothing (typed in).
  */
 export default function InvoiceDetailPage() {
   const supabase = createClient();
+  const t = useTerms();
   const { id } = useParams<{ id: string }>();
   const [detail, setDetail] = useState<InvoiceDetail | null>(null);
   const [panel, setPanel] = useState<"pay" | "credit" | "void" | null>(null);
@@ -104,26 +111,44 @@ export default function InvoiceDetailPage() {
   const live = inv.status === "issued";
   const creditedQty = new Map<string, number>();
   for (const c of detail.credits)
-    for (const l of c.lines) creditedQty.set(l.invoice_line_id, (creditedQty.get(l.invoice_line_id) ?? 0) + l.qty);
+    for (const l of c.lines) creditedQty.set(l.invoice_line_id, (creditedQty.get(l.invoice_line_id) ?? 0) + Number(l.qty));
+  const rate = Number(inv.vat_rate);
+  const kind = INVOICE_KIND_LABELS[inv.kind] ?? "";
 
   return (
     <div className="mx-auto max-w-5xl space-y-6">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <Link href="/invoices" className="text-sm text-muted-foreground hover:text-foreground">
-            ← Tax invoices
+            ← Invoices
           </Link>
           <div className="mt-1 flex items-center gap-2">
             <h1 className="text-xl font-semibold tracking-tight text-foreground">{inv.invoice_number}</h1>
             <Badge variant={st === "void" ? "destructive" : st === "paid" ? "outline" : "secondary"}>
               {PAYMENT_STATUS_LABELS[st]}
             </Badge>
+            {kind && <Badge variant="outline">{kind}</Badge>}
           </div>
           <p className="text-sm text-muted-foreground">
-            {inv.customer_name} · issued {inv.issue_date} · due {inv.due_date} · order{" "}
-            <Link href={`/orders/${inv.order_id}`} className="text-primary hover:underline">
-              {inv.order_number}
-            </Link>
+            {invoiceHeading(inv) === "TAX INVOICE" ? "Tax invoice" : "Invoice"} for {inv.customer_name} · issued{" "}
+            {inv.issue_date} · due {inv.due_date}
+            {inv.order_id && (
+              <>
+                {" "}· order{" "}
+                <Link href={`/orders/${inv.order_id}`} className="text-primary hover:underline">
+                  {inv.order_number}
+                </Link>
+              </>
+            )}
+            {inv.quote_id && (
+              <>
+                {" "}· quote{" "}
+                <Link href={`/quotes/${inv.quote_id}`} className="text-primary hover:underline">
+                  {inv.reference ?? "—"}
+                </Link>
+              </>
+            )}
+            {!inv.order_id && !inv.quote_id && inv.reference && ` · reference ${inv.reference}`}
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -196,7 +221,7 @@ export default function InvoiceDetailPage() {
           <CardContent className="space-y-3">
             <div>
               <Label htmlFor="creason">Reason</Label>
-              <Input id="creason" value={creditReason} onChange={(e) => setCreditReason(e.target.value)} placeholder="Damaged in delivery, price corrected, returned…" />
+              <Input id="creason" value={creditReason} onChange={(e) => setCreditReason(e.target.value)} placeholder="Price corrected, work not done, returned…" />
             </div>
             <Table>
               <TableHeader>
@@ -210,13 +235,16 @@ export default function InvoiceDetailPage() {
               <TableBody>
                 {detail.lines.map((l) => {
                   const done = creditedQty.get(l.id) ?? 0;
+                  const qty = Number(l.qty);
+                  // A deduction (a deposit taken off a final invoice) cannot be credited.
+                  const creditable = Number(l.unit_price) >= 0 && done < qty;
                   return (
                     <TableRow key={l.id}>
                       <TableCell>{l.description}</TableCell>
-                      <TableCell className="text-right tabular-nums">{l.qty}</TableCell>
-                      <TableCell className="text-right tabular-nums">{done}</TableCell>
+                      <TableCell className="text-right tabular-nums">{formatQty(qty)}</TableCell>
+                      <TableCell className="text-right tabular-nums">{formatQty(done)}</TableCell>
                       <TableCell className="text-right">
-                        <Input type="number" min={0} max={l.qty - done} disabled={done >= l.qty}
+                        <Input type="number" min={0} step="0.01" max={qty - done} disabled={!creditable}
                           value={creditQty[l.id] ?? ""} placeholder="0" className="ml-auto w-24 text-right"
                           onChange={(e) => setCreditQty((p) => ({ ...p, [l.id]: e.target.value }))}
                           aria-label={`Credit quantity for ${l.description}`} />
@@ -229,6 +257,9 @@ export default function InvoiceDetailPage() {
             <div className="flex justify-end gap-2">
               <Button variant="outline" onClick={() => setPanel(null)}>Cancel</Button>
               <Button disabled={busy} onClick={() => run(async () => {
+                if (Object.values(creditQty).some((q) => q.trim() !== "" && Number(q) !== 0 && !validQty(q))) {
+                  throw new Error("A quantity is more than zero, to two decimals.");
+                }
                 await issueCreditNote(supabase, inv.id, creditReason,
                   Object.entries(creditQty)
                     .map(([invoiceLineId, q]) => ({ invoiceLineId, qty: Number(q) || 0 }))
@@ -248,8 +279,9 @@ export default function InvoiceDetailPage() {
           <CardHeader><CardTitle className="text-base">Void {inv.invoice_number}</CardTitle></CardHeader>
           <CardContent className="space-y-3">
             <p className="text-sm text-muted-foreground">
-              A void invoice stays in the register, marked void, and the order can be invoiced again.
-              Use this only for an invoice that should never have been issued.
+              A void invoice stays in the register, marked void, and what it was made from (the order,
+              the quote or the {lower(t.job.many)}) can be invoiced again. Use this only for an invoice
+              that should never have been issued.
             </p>
             <Input value={voidReason} onChange={(e) => setVoidReason(e.target.value)} placeholder="Why it is being voided" aria-label="Reason" />
             <div className="flex justify-end gap-2">
@@ -282,7 +314,10 @@ export default function InvoiceDetailPage() {
                       {l.description}
                       {l.sku && <span className="ml-1 font-mono text-xs text-muted-foreground">{l.sku}</span>}
                     </TableCell>
-                    <TableCell className="text-right tabular-nums">{l.qty}</TableCell>
+                    <TableCell className="text-right tabular-nums">
+                      {formatQty(Number(l.qty))}
+                      {l.unit && <span className="text-muted-foreground"> {l.unit}</span>}
+                    </TableCell>
                     <TableCell className="text-right tabular-nums">{money(Number(l.unit_price))}</TableCell>
                     <TableCell className="text-right tabular-nums">{money(Number(l.line_total))}</TableCell>
                   </TableRow>
@@ -290,8 +325,10 @@ export default function InvoiceDetailPage() {
               </TableBody>
             </Table>
             <div className="ml-auto w-60 space-y-0.5 text-sm">
-              <Line k="Subtotal" v={money(Number(inv.subtotal))} />
-              <Line k={`VAT ${Number(inv.vat_rate)}%`} v={money(Number(inv.vat))} />
+              {rate > 0 && <Line k="Subtotal (excl. VAT)" v={money(Number(inv.subtotal))} />}
+              {rate > 0 && (
+                <Line k={inv.prices_include_vat ? `VAT ${rate}% (included)` : `VAT ${rate}%`} v={money(Number(inv.vat))} />
+              )}
               <Line k="Total" v={money(Number(inv.total))} strong />
             </div>
           </CardContent>
@@ -307,6 +344,31 @@ export default function InvoiceDetailPage() {
           </CardContent>
         </Card>
       </div>
+
+      {detail.visits.length > 0 && (
+        <Card>
+          <CardHeader><CardTitle className="text-base">{`${t.job.many} on this invoice`}</CardTitle></CardHeader>
+          <CardContent>
+            <Table>
+              <TableBody>
+                {detail.visits.map((v) => (
+                  <TableRow key={v.id}>
+                    <TableCell className="text-muted-foreground">
+                      {v.checkin_at ? new Date(v.checkin_at).toLocaleString() : "—"}
+                    </TableCell>
+                    <TableCell>{v.staff_name ?? "—"}</TableCell>
+                    <TableCell className="text-right tabular-nums text-muted-foreground">
+                      {v.checkin_at && v.checkout_at
+                        ? `${Math.round((Date.parse(v.checkout_at) - Date.parse(v.checkin_at)) / 60000)} min on site`
+                        : ""}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
+      )}
 
       {detail.credits.length > 0 && (
         <Card>

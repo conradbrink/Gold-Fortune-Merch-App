@@ -1,15 +1,17 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database, Json } from "@/lib/supabase/types";
-import { logoUrl } from "@/lib/branding";
-import { fitBox, loadLogoImage } from "@/lib/pdf-logo";
+import { drawMoneyPdf, money } from "@/lib/money-pdf";
+import { formatQty } from "@/lib/money-docs";
 
 /**
- * Tax invoices, credit notes and payments.
+ * Invoices, credit notes and payments.
  *
- * Every write is one RPC: the database copies the order onto the invoice,
- * numbers it, refuses an order already invoiced in QuickBooks, and keeps the
- * credit and payment arithmetic. This module reads, calls, and draws PDFs from
- * what was frozen onto the invoice — never from the live order or store.
+ * Every write is one RPC: the database numbers the invoice, copies what it is
+ * for onto it (an order, an accepted quote, completed jobs, or lines typed in),
+ * refuses an order already invoiced in QuickBooks or a job already invoiced,
+ * and keeps the credit and payment arithmetic. This module reads, calls, and
+ * draws PDFs from what was frozen onto the invoice — never from the live
+ * order, quote or place.
  */
 
 type Client = SupabaseClient<Database>;
@@ -33,8 +35,40 @@ function fail(error: { message: string } | null) {
   if (error) throw new Error(error.message);
 }
 
-export const money = (n: number) =>
-  Number(n).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+export { money };
+
+/** Where an invoice came from (`tax_invoices.source`). */
+export const INVOICE_SOURCE_LABELS: Record<string, string> = {
+  order: "Order",
+  quote: "Quote",
+  jobs: "Completed work",
+  direct: "Direct",
+};
+
+/** A quote's invoices: in full, a deposit, or the final balance (`tax_invoices.kind`). */
+export const INVOICE_KIND_LABELS: Record<string, string> = {
+  standard: "",
+  deposit: "Deposit",
+  final: "Final",
+};
+
+/** A line as the invoice RPCs take it. */
+export type NewInvoiceLine = {
+  description: string;
+  qty: number;
+  unitPrice: number;
+  unit?: string | null;
+  serviceItemId?: string | null;
+};
+
+const linesJson = (lines: NewInvoiceLine[]) =>
+  lines.map((l) => ({
+    description: l.description,
+    qty: l.qty,
+    unit_price: l.unitPrice,
+    unit: l.unit || null,
+    service_item_id: l.serviceItemId || null,
+  })) as unknown as Json;
 
 /** Unpaid / part-paid / paid / credited, from the balance rather than stored. */
 export function paymentStatus(inv: Pick<Invoice, "status" | "total">, bal: Balance | undefined) {
@@ -93,10 +127,12 @@ export type InvoiceDetail = {
   credits: (CreditNote & { lines: CreditNoteLine[] })[];
   payments: Payment[];
   balance: Balance | undefined;
+  /** The completed jobs it covers (an invoice from completed work). */
+  visits: { id: string; checkin_at: string | null; checkout_at: string | null; staff_name: string | null }[];
 };
 
 export async function fetchInvoice(supabase: Client, id: string): Promise<InvoiceDetail> {
-  const [inv, lines, credits, payments, balances] = await Promise.all([
+  const [inv, lines, credits, payments, balances, links] = await Promise.all([
     supabase.from("tax_invoices").select("*").eq("id", id).single(),
     supabase.from("tax_invoice_lines").select("*").eq("invoice_id", id).order("position"),
     supabase
@@ -106,7 +142,12 @@ export async function fetchInvoice(supabase: Client, id: string): Promise<Invoic
       .order("created_at"),
     supabase.from("invoice_payments").select("*").eq("invoice_id", id).order("paid_on"),
     fetchBalances(supabase, [id]),
+    supabase
+      .from("tax_invoice_visits")
+      .select("visit_id, visits(checkin_at, checkout_at, profiles(full_name))")
+      .eq("invoice_id", id),
   ]);
+  fail(links.error);
   fail(inv.error);
   fail(lines.error);
   fail(credits.error);
@@ -119,6 +160,17 @@ export async function fetchInvoice(supabase: Client, id: string): Promise<Invoic
     ),
     payments: (payments.data ?? []) as Payment[],
     balance: balances.get(id),
+    visits: ((links.data ?? []) as unknown as {
+      visit_id: string;
+      visits: { checkin_at: string | null; checkout_at: string | null; profiles: { full_name: string } | null } | null;
+    }[])
+      .map((l) => ({
+        id: l.visit_id,
+        checkin_at: l.visits?.checkin_at ?? null,
+        checkout_at: l.visits?.checkout_at ?? null,
+        staff_name: l.visits?.profiles?.full_name ?? null,
+      }))
+      .sort((a, b) => (a.checkin_at ?? "").localeCompare(b.checkin_at ?? "")),
   };
 }
 
@@ -136,6 +188,48 @@ export async function fetchInvoiceForOrder(supabase: Client, orderId: string) {
 
 export async function issueInvoice(supabase: Client, orderId: string): Promise<string> {
   const { data, error } = await supabase.rpc("tax_invoice_issue", { p_order_id: orderId });
+  fail(error);
+  return data as string;
+}
+
+/**
+ * An invoice typed in: for a place on the books (`storeId`) or anyone else
+ * (`name`, with an address and email if known).
+ */
+export async function issueDirectInvoice(
+  supabase: Client,
+  input: {
+    billTo: { storeId: string } | { name: string; address?: string; email?: string };
+    lines: NewInvoiceLine[];
+    issueDate?: string | null;
+    reference?: string | null;
+  }
+): Promise<string> {
+  const billTo =
+    "storeId" in input.billTo
+      ? { store_id: input.billTo.storeId }
+      : { name: input.billTo.name, address: input.billTo.address || null, email: input.billTo.email || null };
+  const { data, error } = await supabase.rpc("invoice_direct", {
+    p_bill_to: billTo as unknown as Json,
+    p_lines: linesJson(input.lines),
+    p_issue_date: input.issueDate || undefined,
+    p_reference: input.reference || undefined,
+  });
+  fail(error);
+  return data as string;
+}
+
+/** An invoice for completed jobs at one place; none of them can be invoiced twice. */
+export async function issueInvoiceForVisits(
+  supabase: Client,
+  input: { visitIds: string[]; lines: NewInvoiceLine[]; issueDate?: string | null; reference?: string | null }
+): Promise<string> {
+  const { data, error } = await supabase.rpc("invoice_from_visits", {
+    p_visit_ids: input.visitIds,
+    p_lines: linesJson(input.lines),
+    p_issue_date: input.issueDate || undefined,
+    p_reference: input.reference || undefined,
+  });
   fail(error);
   return data as string;
 }
@@ -181,160 +275,76 @@ export async function deletePayment(supabase: Client, paymentId: string) {
 
 // ------------------------------------------------------------------ PDFs
 
-type PdfDoc = {
-  heading: "TAX INVOICE" | "CREDIT NOTE";
-  number: string;
-  meta: [string, string][];
-  invoice: Invoice;
-  rows: { description: string; sku: string | null; qty: number; unitPrice: number; total: number }[];
-  subtotal: number;
-  vat: number;
-  total: number;
-  note?: string;
-};
-
-async function drawPdf(d: PdfDoc) {
-  const inv = d.invoice;
-  // The logo copied onto the invoice at issue, not the company's current one:
-  // a reissued letterhead must not change an invoice already sent. A logo that
-  // cannot be fetched is left off rather than failing the download.
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const [{ jsPDF }, autoTableModule, logo] = await Promise.all([
-    import("jspdf"),
-    import("jspdf-autotable"),
-    loadLogoImage(supabaseUrl ? logoUrl(supabaseUrl, inv.seller_logo_path) : null),
-  ]);
-  const autoTable = autoTableModule.default;
-  const doc = new jsPDF({ unit: "pt", format: "a4" });
-  const width = doc.internal.pageSize.getWidth();
-  const left = 40;
-  const right = width - 40;
-
-  // The logo above the seller's name, which moves down to make room. Without
-  // one the seller block starts where it always has.
-  let sellerTop = 52;
-  if (logo) {
-    const box = fitBox(logo.width, logo.height, 160, 44);
-    doc.addImage(logo.dataUrl, "PNG", left, 30, box.width, box.height);
-    sellerTop = 30 + box.height + 18;
-  }
-
-  // Seller, top left — as it stood on the day of issue.
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(13);
-  doc.text(inv.seller_name, left, sellerTop);
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(9);
-  doc.setTextColor(90);
-  const seller = [
-    ...(inv.seller_address ? doc.splitTextToSize(inv.seller_address, 240) : []),
-    inv.seller_tax_number && `TIN: ${inv.seller_tax_number}`,
-    inv.seller_vat_number && `VAT no: ${inv.seller_vat_number}`,
-    inv.seller_phone,
-    inv.seller_email,
-  ].filter(Boolean) as string[];
-  seller.forEach((line, i) => doc.text(line, left, sellerTop + 16 + i * 12));
-
-  // Document heading and its numbers, top right.
-  doc.setTextColor(20);
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(16);
-  doc.text(d.heading, right, 52, { align: "right" });
-  doc.setFontSize(9);
-  d.meta.forEach(([k, v], i) => {
-    doc.setFont("helvetica", "normal");
-    doc.setTextColor(90);
-    doc.text(k, right - 110, 70 + i * 13);
-    doc.setTextColor(20);
-    doc.text(v, right, 70 + i * 13, { align: "right" });
-  });
-
-  // Customer.
-  let y = Math.max(sellerTop + 16 + seller.length * 12, 70 + d.meta.length * 13) + 18;
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(9);
-  doc.setTextColor(90);
-  doc.text("BILL TO", left, y);
-  doc.setTextColor(20);
-  doc.setFontSize(10);
-  doc.text(inv.customer_name, left, y + 14);
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(9);
-  const addr = inv.customer_address ? doc.splitTextToSize(inv.customer_address, 260) : [];
-  addr.forEach((line: string, i: number) => doc.text(line, left, y + 27 + i * 12));
-  y += 27 + addr.length * 12 + 12;
-
-  autoTable(doc, {
-    startY: y,
-    head: [["Description", "Code", "Qty", "Unit price", "Amount"]],
-    body: d.rows.map((r) => [r.description, r.sku ?? "", String(r.qty), money(r.unitPrice), money(r.total)]),
-    styles: { fontSize: 8.5, cellPadding: 5 },
-    headStyles: { fillColor: [30, 41, 59], textColor: 255 },
-    columnStyles: {
-      2: { halign: "right" },
-      3: { halign: "right" },
-      4: { halign: "right" },
-    },
-    margin: { left, right: 40 },
-  });
-
-  const finalY = (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 16;
-  const totals: [string, string][] = [
-    ["Subtotal (excl. VAT)", money(d.subtotal)],
-    [`VAT ${Number(inv.vat_rate)}%`, money(d.vat)],
-    [d.heading === "CREDIT NOTE" ? "Total credited" : "Total", money(d.total)],
-  ];
-  totals.forEach(([k, v], i) => {
-    const last = i === totals.length - 1;
-    doc.setFont("helvetica", last ? "bold" : "normal");
-    doc.setFontSize(last ? 11 : 9);
-    doc.text(k, right - 130, finalY + i * 15);
-    doc.text(v, right, finalY + i * 15, { align: "right" });
-  });
-
-  let fy = finalY + totals.length * 15 + 20;
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(9);
-  doc.setTextColor(60);
-  if (d.note) {
-    for (const line of doc.splitTextToSize(d.note, right - left)) {
-      doc.text(line, left, fy);
-      fy += 12;
-    }
-    fy += 6;
-  }
-  if (inv.footer) {
-    for (const line of doc.splitTextToSize(inv.footer, right - left)) {
-      doc.text(line, left, fy);
-      fy += 12;
-    }
-  }
-  doc.save(`${d.number}.pdf`);
+function sellerOf(inv: Invoice) {
+  return {
+    name: inv.seller_name,
+    address: inv.seller_address,
+    registrationNumber: inv.seller_registration_number,
+    taxNumber: inv.seller_tax_number,
+    vatNumber: inv.seller_vat_number,
+    phone: inv.seller_phone,
+    email: inv.seller_email,
+    // The logo copied onto the invoice at issue, not the company's current one:
+    // a reissued letterhead must not change an invoice already sent.
+    logoPath: inv.seller_logo_path,
+  };
 }
+
+/** "Tax invoice" when VAT is charged; a company that is not VAT registered issues an invoice. */
+export function invoiceHeading(inv: Pick<Invoice, "vat_rate">) {
+  return Number(inv.vat_rate) > 0 ? "TAX INVOICE" : "INVOICE";
+}
+
+function totalsOf(inv: Invoice, subtotal: number, vat: number, total: number, credit = false): [string, string][] {
+  const rate = Number(inv.vat_rate);
+  if (rate === 0) return [[credit ? "Total credited" : "Total", money(total)]];
+  return [
+    ["Subtotal (excl. VAT)", money(subtotal)],
+    [inv.prices_include_vat ? `VAT ${rate}% (included)` : `VAT ${rate}%`, money(vat)],
+    [credit ? "Total credited" : "Total", money(total)],
+  ];
+}
+
+const qtyCell = (qty: number, unit: string | null | undefined) => (unit ? `${formatQty(qty)} ${unit}` : formatQty(qty));
 
 export async function downloadInvoicePdf(detail: InvoiceDetail) {
   const inv = detail.invoice;
-  await drawPdf({
-    heading: "TAX INVOICE",
-    number: inv.invoice_number,
-    invoice: inv,
-    meta: [
-      ["Invoice no", inv.invoice_number],
-      ["Date", inv.issue_date],
-      ["Due", inv.due_date],
-      ["Order", inv.order_number],
-    ],
-    rows: detail.lines.map((l) => ({
-      description: l.description,
-      sku: l.sku,
-      qty: l.qty,
-      unitPrice: Number(l.unit_price),
-      total: Number(l.line_total),
-    })),
-    subtotal: Number(inv.subtotal),
-    vat: Number(inv.vat),
-    total: Number(inv.total),
-    note: inv.status === "void" ? `VOID — ${inv.void_reason}` : undefined,
+  const meta: [string, string][] = [
+    ["Invoice no", inv.invoice_number],
+    ["Date", inv.issue_date],
+    ["Due", inv.due_date],
+  ];
+  if (inv.order_number) meta.push(["Order", inv.order_number]);
+  else if (inv.source === "quote" && inv.reference) meta.push(["Quote", inv.reference]);
+  else if (inv.reference) meta.push(["Reference", inv.reference]);
+  const notes: string[] = [];
+  if (inv.status === "void") notes.push(`VOID — ${inv.void_reason}`);
+  if (detail.visits.length > 0) {
+    notes.push(
+      `For the work done on ${detail.visits
+        .map((v) => (v.checkin_at ? v.checkin_at.slice(0, 10) : "—"))
+        .join(", ")}.`
+    );
+  }
+  await drawMoneyPdf({
+    heading: invoiceHeading(inv),
+    fileName: inv.invoice_number,
+    seller: sellerOf(inv),
+    meta,
+    billTo: { name: inv.customer_name, address: inv.customer_address, email: inv.customer_email },
+    head: ["Description", "Code", "Qty", "Unit price", "Amount"],
+    numeric: [2, 3, 4],
+    rows: detail.lines.map((l) => [
+      l.description,
+      l.sku ?? "",
+      qtyCell(Number(l.qty), l.unit),
+      money(Number(l.unit_price)),
+      money(Number(l.line_total)),
+    ]),
+    totals: totalsOf(inv, Number(inv.subtotal), Number(inv.vat), Number(inv.total)),
+    notes,
+    payTo: inv.bank_details,
+    footer: inv.footer,
   });
 }
 
@@ -343,25 +353,31 @@ export async function downloadCreditNotePdf(
   credit: CreditNote & { lines: CreditNoteLine[] }
 ) {
   const byId = new Map(detail.lines.map((l) => [l.id, l]));
-  await drawPdf({
+  const inv = detail.invoice;
+  await drawMoneyPdf({
     heading: "CREDIT NOTE",
-    number: credit.credit_number,
-    invoice: detail.invoice,
+    fileName: credit.credit_number,
+    seller: sellerOf(inv),
     meta: [
       ["Credit note no", credit.credit_number],
       ["Date", credit.issue_date],
-      ["Against invoice", detail.invoice.invoice_number],
+      ["Against invoice", inv.invoice_number],
     ],
-    rows: credit.lines.map((l) => ({
-      description: byId.get(l.invoice_line_id)?.description ?? "",
-      sku: byId.get(l.invoice_line_id)?.sku ?? null,
-      qty: l.qty,
-      unitPrice: Number(l.unit_price),
-      total: Number(l.line_total),
-    })),
-    subtotal: Number(credit.subtotal),
-    vat: Number(credit.vat),
-    total: Number(credit.total),
-    note: `Reason: ${credit.reason}`,
+    billTo: { name: inv.customer_name, address: inv.customer_address, email: inv.customer_email },
+    head: ["Description", "Code", "Qty", "Unit price", "Amount"],
+    numeric: [2, 3, 4],
+    rows: credit.lines.map((l) => {
+      const line = byId.get(l.invoice_line_id);
+      return [
+        line?.description ?? "",
+        line?.sku ?? "",
+        qtyCell(Number(l.qty), line?.unit),
+        money(Number(l.unit_price)),
+        money(Number(l.line_total)),
+      ];
+    }),
+    totals: totalsOf(inv, Number(credit.subtotal), Number(credit.vat), Number(credit.total), true),
+    notes: [`Reason: ${credit.reason}`],
+    footer: inv.footer,
   });
 }

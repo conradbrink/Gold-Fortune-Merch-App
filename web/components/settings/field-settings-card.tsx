@@ -56,8 +56,9 @@ export function FieldSettingsCard({ orgId }: { orgId: string }) {
       for (const d of defs.data) effective[d.key] = d.default_value;
       for (const row of mine.data) effective[row.key] = row.value;
       // The two brand colours have their own pickers on the Terminology &
-      // branding tab; as plain text boxes here they would be edited twice.
-      setDefinitions(defs.data.filter((d) => !d.key.startsWith("brand_")));
+      // branding tab, and how the company gets paid has its own card on the
+      // Quotes & invoices tab; as plain text boxes here they would be edited twice.
+      setDefinitions(defs.data.filter((d) => !d.key.startsWith("brand_") && !d.key.startsWith("money_")));
       setValues(effective);
       setDraft(Object.fromEntries(Object.entries(effective).map(([k, v]) => [k, toText(v)])));
     })();

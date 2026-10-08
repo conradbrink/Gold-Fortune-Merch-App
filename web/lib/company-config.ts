@@ -1,6 +1,7 @@
 import { toModuleSet, type ModuleSet } from "@/lib/modules";
 import { parseTerms, type Terms } from "@/lib/terms";
 import { parseBranding, type Branding } from "@/lib/branding";
+import { isMoneyWorkflow, type MoneyWorkflow } from "@/lib/money-workflow";
 
 /**
  * The shape of `my_company_config()` and the parser for it, with nothing
@@ -23,6 +24,12 @@ export type CompanySettings = {
   currency_code: string;
   /** ISO 3166-1 alpha-2, or "" for no country (lib/geocode-country.ts). */
   country_code: string;
+  /** How the company gets paid, and its switches (lib/money-workflow.ts). */
+  money_workflow: MoneyWorkflow;
+  money_quotes: boolean;
+  money_deposits: boolean;
+  money_invoice_from_jobs: boolean;
+  money_invoice_direct: boolean;
 };
 
 export type CompanyConfig = {
@@ -51,12 +58,21 @@ const SETTING_FALLBACK: CompanySettings = {
   invalid_gps_distance_m: 5000,
   currency_code: "BWP",
   country_code: "",
+  money_workflow: "flexible",
+  money_quotes: true,
+  money_deposits: false,
+  money_invoice_from_jobs: true,
+  money_invoice_direct: true,
 };
 
 function obj(v: unknown): Record<string, unknown> {
   return v !== null && typeof v === "object" && !Array.isArray(v)
     ? (v as Record<string, unknown>)
     : {};
+}
+
+function bool(v: unknown, fallback: boolean): boolean {
+  return typeof v === "boolean" ? v : fallback;
 }
 
 function int(v: unknown, fallback: number): number {
@@ -93,6 +109,11 @@ export function parseCompanyConfig(raw: unknown): CompanyConfig | null {
         typeof s.country_code === "string" && /^([A-Z]{2})?$/.test(s.country_code)
           ? s.country_code
           : f.country_code,
+      money_workflow: isMoneyWorkflow(s.money_workflow) ? s.money_workflow : f.money_workflow,
+      money_quotes: bool(s.money_quotes, f.money_quotes),
+      money_deposits: bool(s.money_deposits, f.money_deposits),
+      money_invoice_from_jobs: bool(s.money_invoice_from_jobs, f.money_invoice_from_jobs),
+      money_invoice_direct: bool(s.money_invoice_direct, f.money_invoice_direct),
     },
     timezone: typeof r.timezone === "string" && r.timezone !== "" ? r.timezone : "UTC",
     vatRate: Number.isFinite(Number(r.vat_rate)) ? Number(r.vat_rate) : 0,
