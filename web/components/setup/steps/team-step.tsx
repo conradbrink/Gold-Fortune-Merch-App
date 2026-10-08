@@ -25,8 +25,8 @@ const FIELD_ROLE = "sales_rep";
 
 /**
  * Logins for the team, one person at a time: a name and a mobile number,
- * the field role already picked, a password made for them, and a WhatsApp
- * message that says what to install and what to type. No email needed.
+ * the field role already picked, a password made for them, and the code that
+ * installs the app, scanned from the owner's screen. No email needed.
  */
 export function TeamStep({ setup, text, icon, onBack, onNext, reload }: StepProps) {
   const t = useTerms();
@@ -131,7 +131,7 @@ export function TeamStep({ setup, text, icon, onBack, onNext, reload }: StepProp
         {made ? (
           <div className="space-y-3 rounded-xl border border-primary/30 bg-primary/5 p-4">
             <p className="text-sm font-medium text-foreground">
-              {made.fullName} can sign in now. Send them this; the password is shown only once.
+              {made.fullName} can sign in now. Show them this, or copy it to send. The password is shown only once.
             </p>
             <WelcomeCard fullName={made.fullName} login={made.login} phone={made.phone} password={made.password} />
             <Button variant="outline" onClick={() => setMade(null)}>

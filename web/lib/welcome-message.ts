@@ -3,8 +3,9 @@ import { isPhoneLogin } from "@/lib/phone-login";
 import { PRODUCT_NAME } from "@/lib/product";
 
 /**
- * The message an owner sends a new staff member on WhatsApp: where to get the
- * app, what to type to sign in, and the first thing to do.
+ * The message an owner can send a new staff member who was not there for the
+ * hand-over (copied, or on WhatsApp): where to get the app, what to type to
+ * sign in, and the first thing to do.
  *
  * Today's phone app (1.1.13) has only an Email box, so a phone login is
  * spelled out in full there; the next app will take the number alone. The

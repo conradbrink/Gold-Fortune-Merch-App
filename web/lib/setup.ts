@@ -149,7 +149,7 @@ export function stepText(step: SetupStep, t: Terms, opts: { products: boolean; t
       return {
         label: "Team",
         title: "Your team",
-        subtitle: `Give each ${lower(t.staff.one)} a login. We write the WhatsApp message for you.`,
+        subtitle: `Give each ${lower(t.staff.one)} a login. They install the app from a code on your screen.`,
         time: "about 1 min each",
       };
     case "done":

@@ -11,7 +11,7 @@ import { useCompanyConfig, useTerms } from "@/lib/use-company-config";
 
 /**
  * How someone in the field signs in, and the two fixes an owner needs: a new
- * password (shown once, with the WhatsApp message to send again) and a new
+ * password (shown once, with the app's code and the message again) and a new
  * number for a phone login, or a phone login for someone who used email.
  * Field and warehouse staff only, as `/api/reps/[id]` allows.
  */

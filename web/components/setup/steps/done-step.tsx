@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { ArrowRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { GetTheApp } from "@/components/team/get-the-app";
 import { createClient } from "@/lib/supabase/client";
 import { useCompanyConfig, useTerms } from "@/lib/use-company-config";
 import { lower } from "@/lib/terms";
@@ -12,8 +13,9 @@ import type { StepProps } from "./types";
 
 /**
  * The finish: what is now in place, the one button that makes the company's
- * first quote or contract (its first place already picked), and what happens
- * next. Either way out marks the wizard finished.
+ * first quote or contract (its first place already picked), the code that puts
+ * the app on the team's phones, and what happens next. Either way out marks
+ * the wizard finished.
  */
 export function DoneStep({ org, setup, icon: Icon, onBack, onFinish }: StepProps) {
   const t = useTerms();
@@ -82,9 +84,16 @@ export function DoneStep({ org, setup, icon: Icon, onBack, onFinish }: StepProps
         )}
       </div>
       <div className="border-t border-border px-6 py-5">
+        <GetTheApp
+          title={`The app for your ${lower(t.staff.many)}`}
+          note="They scan this code with their phone's camera, or open the link. For Android phones."
+          size={136}
+        />
+      </div>
+      <div className="border-t border-border px-6 py-5">
         <h3 className="text-sm font-semibold text-foreground">What happens next</h3>
         <ol className="mt-2 list-decimal space-y-1 pl-5 text-sm text-muted-foreground">
-          <li>Your {lower(t.staff.many)} install the app from your WhatsApp message and sign in.</li>
+          <li>Your {lower(t.staff.many)} install the app from the code above and sign in with the login you made.</li>
           <li>
             Their first {lower(t.job.one)} shows on your map, with photos and the time on site. Your dashboard tells you
             who has signed in.
