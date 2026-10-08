@@ -9,8 +9,13 @@
  */
 export const PRODUCT_NAME = "Tickd";
 
-/** One line under the name, where a page has room for it. */
-export const PRODUCT_TAGLINE = "Field work, planned and proven.";
+/**
+ * One line under the name, where a page has room for it. The outcome and the
+ * proof in one line (owner, 8 Oct 2026, from the offer-angles skill; it
+ * replaced "Field work, planned and proven."). Staff see it too, on the
+ * download page, so it speaks to both sides: the job done, and proof of it.
+ */
+export const PRODUCT_TAGLINE = "Every job done, and the proof to show it.";
 
 /**
  * The double-tick mark shown with the product name (`public/product-mark.png`,
