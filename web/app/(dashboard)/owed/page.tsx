@@ -71,6 +71,11 @@ export default function OwedPage() {
 
   useEffect(() => {
     let cancelled = false;
+    // The balances belong to their date: nothing from the previous date stays
+    // on screen while this one loads, or after it fails.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setRows([]);
+    setLoading(true);
     (async () => {
       try {
         const r = await fetchAgeing(supabase, asOf);
@@ -176,7 +181,11 @@ export default function OwedPage() {
           </TableHeader>
           <TableBody>
             {loading && <EmptyRow colSpan={8}>Loading…</EmptyRow>}
-            {!loading && rows.length === 0 && <EmptyRow colSpan={8}>Nobody owes you anything as at this date.</EmptyRow>}
+            {!loading && rows.length === 0 && (
+              <EmptyRow colSpan={8}>
+                {error ? "Could not load the balances for this date." : "Nobody owes you anything as at this date."}
+              </EmptyRow>
+            )}
             {rows.map((r) => (
               <TableRow key={`${r.store_id ?? ""}|${r.client_name}`}>
                 <TableCell>

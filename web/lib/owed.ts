@@ -42,9 +42,19 @@ async function allRows<T>(
 }
 
 export async function fetchAgeing(supabase: Client, asOf: string): Promise<AgeingRow[]> {
-  const data = await allRows<AgeingRow>((from, to) =>
+  const pages = await allRows<AgeingRow>((from, to) =>
     supabase.rpc("debtors_ageing", { p_as_of: asOf }).range(from, to)
   );
+  // A payment between two page requests can shift a client across the page
+  // boundary; one row per client is kept. (One snapshot for the whole report
+  // comes with the next money migration.)
+  const seen = new Set<string>();
+  const data = pages.filter((r) => {
+    const key = `${r.store_id ?? ""}|${r.store_id ? "" : r.client_name.trim().toLowerCase()}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
   return data.map((r) => ({
     ...r,
     not_due: num(r.not_due),
