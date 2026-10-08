@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Clock } from "lucide-react";
@@ -97,15 +97,25 @@ export default function OnboardingPage() {
     })();
   }, [reload, router]);
 
+  // One save at a time, in click order, so a slow earlier save cannot land
+  // last and send the next visit back to an older step.
+  const saves = useRef<Promise<unknown>>(Promise.resolve());
+
   function go(to: SetupStep) {
     setStep(to);
     window.scrollTo({ top: 0, behavior: "smooth" });
     // Where it was left; a failure here costs only the resume point.
-    void createClient().rpc("save_setup_step", { p_step: to });
+    saves.current = saves.current
+      .then(() => createClient().rpc("save_setup_step", { p_step: to }))
+      .catch(() => undefined);
   }
 
   async function finish(href: string): Promise<string | null> {
-    const { error: e } = await createClient().rpc("save_setup_step", { p_step: "done", p_finished: true });
+    const saved = saves.current.then(() =>
+      createClient().rpc("save_setup_step", { p_step: "done", p_finished: true })
+    );
+    saves.current = saved.catch(() => undefined);
+    const { error: e } = await saved;
     // Not marked finished, the wizard would open again next time: stay and say so.
     if (e) return `Set-up was not saved as finished (${e.message}). Try again.`;
     router.push(href);

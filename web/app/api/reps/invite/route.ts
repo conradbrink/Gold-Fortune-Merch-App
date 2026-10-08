@@ -241,6 +241,10 @@ export async function POST(request: Request) {
     }
     // A phone login typed as the email keeps its own number, as in /api/reps/[id].
     const loginNumber = loginPhone(email);
+    // A phone login must be a mobile number that sign-in can read back.
+    if (loginNumber && normalisePhone(loginNumber, null) !== loginNumber) {
+      return Response.json({ error: "That login is not a mobile number." }, { status: 400 });
+    }
     if (loginNumber && phone && phone !== loginNumber) {
       return Response.json({ error: "The phone number does not match the login." }, { status: 400 });
     }

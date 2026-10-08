@@ -4,7 +4,7 @@ import {
 } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/server";
 import { enforceRateLimit, LIMITS } from "@/lib/rate-limit";
-import { loginPhone } from "@/lib/phone-login";
+import { loginPhone, normalisePhone } from "@/lib/phone-login";
 
 /**
  * Permanently delete a rep.
@@ -125,6 +125,10 @@ async function changeEmail(admin: SupabaseClient, id: string, raw: string, phone
     return Response.json({ error: "The phone number is not in international form." }, { status: 400 });
   }
   const loginNumber = loginPhone(email);
+  // A phone login must be a mobile number that sign-in can read back.
+  if (loginNumber && normalisePhone(loginNumber, null) !== loginNumber) {
+    return Response.json({ error: "That login is not a mobile number." }, { status: 400 });
+  }
   if (loginNumber && phone !== undefined && phone !== loginNumber) {
     return Response.json({ error: "The phone number does not match the login." }, { status: 400 });
   }

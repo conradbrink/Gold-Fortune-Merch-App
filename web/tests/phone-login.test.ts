@@ -58,6 +58,18 @@ test("a phone login's own number, which the routes keep as the person's phone", 
   assert.equal(loginPhone(null), null);
 });
 
+test("the routes refuse a phone login whose number is not a mobile number", () => {
+  // What both /api/reps routes check: the number reads back as itself.
+  const ok = (login: string) => {
+    const n = loginPhone(login);
+    return !!n && normalisePhone(n, null) === n;
+  };
+  assert.equal(ok("27825550142@staff.tickd.co.za"), true);
+  assert.equal(ok("26771234567@staff.tickd.co.za"), true);
+  assert.equal(ok("27115550142@staff.tickd.co.za"), false); // a landline
+  assert.equal(ok("27825550@staff.tickd.co.za"), false); // too short
+});
+
 test("sign-in: an email as typed; a number read in the browser's countries", () => {
   assert.deepEqual(loginCandidates(" Thabo@Example.com ", ["ZA"]), ["thabo@example.com"]);
   assert.deepEqual(loginCandidates("082 555 0142", ["ZA"]), ["27825550142@staff.tickd.co.za"]);
