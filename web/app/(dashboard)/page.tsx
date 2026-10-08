@@ -8,7 +8,9 @@ import {
   DEFAULT_LAYOUT,
   WIDGET_IDS,
   WIDGET_SOURCES,
+  companyDefaultLayout,
   findWidget,
+  numberCodesFor,
   widgetAvailable,
   type BusinessData,
   type WidgetData,
@@ -18,7 +20,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { createClient } from "@/lib/supabase/client";
 import { getCompanyConfig, useCompanyConfig, useTerms } from "@/lib/use-company-config";
-import { rangeDays, rangeForPreset, type DateRange } from "@/lib/date-range";
+import { rangeDays, rangeForPreset, toLocalDateInput, type DateRange } from "@/lib/date-range";
 import { fetchLiveReps, type LiveReps } from "@/lib/live-reps";
 import { fetchTargetProgress, monthStart } from "@/lib/targets";
 import {
@@ -43,6 +45,16 @@ import {
 } from "@/lib/dashboard-layout";
 import { fetchOrgId } from "@/lib/representatives";
 import { AccountCards } from "@/components/dashboard/account-cards";
+import {
+  fetchContractsDue,
+  fetchNumbers,
+  fetchToday,
+  type ContractsDue,
+  type Numbers,
+  type Today,
+} from "@/lib/dashboard-numbers";
+import { codesFromSetting, findKpi } from "@/lib/kpis";
+import { usePermissions } from "@/lib/use-permissions";
 
 /**
  * The dashboard is composed, not fixed.
@@ -78,6 +90,17 @@ export default function InsightsDashboardPage() {
   const [layout, setLayout] = useState<string[]>(DEFAULT_LAYOUT);
   const company = useCompanyConfig();
   const terms = useTerms();
+  const permissions = usePermissions();
+  /** The trade's cards, for someone who has not arranged their own (the company setting). */
+  const companyDefault = companyDefaultLayout(company?.settings.dashboard_layout);
+  const cardCodes = codesFromSetting(company?.settings.dashboard_cards ?? "", (c) => !!findKpi(c));
+  const [numbers, setNumbers] = useState<Numbers | null>(null);
+  const [today, setToday] = useState<Today | null>(null);
+  const [contractsDue, setContractsDue] = useState<ContractsDue | null>(null);
+  /** The trade cards' sources that failed, apart from the page's own load. */
+  const [tradeFailed, setTradeFailed] = useState<Set<WidgetSource>>(new Set());
+  /** Bumped by Retry, so the trade cards try again with the rest. */
+  const [tradeTick, setTradeTick] = useState(0);
   const [orgId, setOrgId] = useState<string | null>(null);
   const [customising, setCustomising] = useState(false);
   /**
@@ -237,17 +260,21 @@ export default function InsightsDashboardPage() {
         // `Promise.all` an org-lookup failure rejected the pair and forced the
         // default layout even though the layout had been read perfectly well —
         // the exact silent-revert-then-overwrite the catch below warns about.
-        const [saved, org] = await Promise.allSettled([
+        const [saved, org, cfg] = await Promise.allSettled([
           fetchLayout(supabase),
           fetchOrgId(supabase),
+          getCompanyConfig(),
         ]);
         if (cancelled) return;
+        const fallback = companyDefaultLayout(
+          cfg.status === "fulfilled" ? cfg.value?.settings.dashboard_layout : null
+        );
 
         // Only blocks saving, which `handleSaveLayout` reports if it comes to it.
         if (org.status === "fulfilled") setOrgId(org.value);
 
         if (saved.status === "fulfilled") {
-          setLayout(reconcileLayout(saved.value, WIDGET_IDS, DEFAULT_LAYOUT));
+          setLayout(reconcileLayout(saved.value, WIDGET_IDS, fallback));
           // Only now is editing safe. `NO_SAVED_LAYOUT` counts as a successful
           // read — it means this person has never customised, which is a fact,
           // not a failure.
@@ -257,7 +284,7 @@ export default function InsightsDashboardPage() {
           // banner explains what you are looking at, it does not stop you saving
           // the default over a layout that exists and simply could not be read.
           // Explaining is not preventing.
-          setLayout(DEFAULT_LAYOUT);
+          setLayout(fallback);
           setLayoutError(
             `Your saved layout could not be read, so this is the default. Customising is disabled until it can be read, so it is not overwritten: ${
               saved.reason instanceof Error
@@ -317,7 +344,7 @@ export default function InsightsDashboardPage() {
     setLayoutError(null);
     try {
       await resetLayout(supabase);
-      setLayout(DEFAULT_LAYOUT);
+      setLayout(companyDefault);
       setCustomising(false);
     } catch (e) {
       setLayoutError(e instanceof Error ? e.message : String(e));
@@ -374,6 +401,48 @@ export default function InsightsDashboardPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [layoutLoaded, showsLiveReps]);
 
+  /**
+   * The trade cards' data: the numbers, today's work and contracts due. Only
+   * what the cards on this layout need, so Gold Fortune's dashboard, which
+   * shows none of them, asks for nothing more than before.
+   */
+  const codes = numberCodesFor(layout, cardCodes);
+  const codesKey = codes.join(",");
+  const wantsToday = layout.includes("today");
+  const wantsContracts = layout.includes("money") && !!company?.settings.money_contracts;
+  useEffect(() => {
+    if (!layoutLoaded || !company) return;
+    let cancelled = false;
+    void (async () => {
+      const failed = new Set<WidgetSource>();
+      const [n, td, cd] = await Promise.allSettled([
+        codes.length > 0 ? fetchNumbers(supabase, range, codes) : Promise.resolve(null),
+        wantsToday ? fetchToday(supabase, company.timezone) : Promise.resolve(null),
+        wantsContracts
+          ? fetchContractsDue(supabase, toLocalDateInput(new Date()))
+          : Promise.resolve(null),
+      ]);
+      if (cancelled) return;
+      if (n.status === "fulfilled") setNumbers(n.value);
+      else {
+        setNumbers(null);
+        failed.add("numbers");
+      }
+      if (td.status === "fulfilled") setToday(td.value);
+      else {
+        setToday(null);
+        failed.add("today");
+      }
+      // Contracts due are one line of the Money card, not the card.
+      setContractsDue(cd.status === "fulfilled" ? cd.value : null);
+      setTradeFailed(failed);
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [layoutLoaded, company, range.from, range.to, codesKey, wantsToday, wantsContracts, tradeTick]);
+
   const days = rangeDays(range);
   const widgetData: WidgetData = {
     summary: data,
@@ -386,6 +455,10 @@ export default function InsightsDashboardPage() {
     days,
     range,
     terms,
+    numbers,
+    cardCodes,
+    today,
+    contractsDue,
   };
 
   /**
@@ -406,6 +479,8 @@ export default function InsightsDashboardPage() {
     operations: ops !== null,
     liveReps: liveReps !== null,
     business: business !== null,
+    numbers: numbers !== null && !tradeFailed.has("numbers"),
+    today: today !== null && !tradeFailed.has("today"),
   };
 
   // Cards for modules the company does not have are left out, not shown empty.
@@ -414,7 +489,7 @@ export default function InsightsDashboardPage() {
     ? layout
         .map((id) => findWidget(id))
         .filter((w) => w !== undefined)
-        .filter((w) => widgetAvailable(w, company.modules))
+        .filter((w) => widgetAvailable(w, company.modules, permissions))
     : [];
 
   return (
@@ -426,7 +501,9 @@ export default function InsightsDashboardPage() {
             Dashboard
           </h1>
           <p className="text-sm text-muted-foreground">
-            {TODAY_LABEL.format(new Date())} · money excludes VAT
+            {TODAY_LABEL.format(new Date())}
+            {/* The sales cards count delivered orders before VAT; invoices include it. */}
+            {layout.some((id) => id === "headline" || id === "sales" || id === "pipeline") ? " · money excludes VAT" : ""}
           </p>
         </div>
         <Button
@@ -452,7 +529,7 @@ export default function InsightsDashboardPage() {
         </p>
       )}
 
-      {error && (
+      {(error || tradeFailed.size > 0) && (
         <Card>
           <CardContent className="py-8 text-center text-sm">
             {/* Cards whose own source arrived are still shown, so this must not
@@ -464,8 +541,16 @@ export default function InsightsDashboardPage() {
                 ? "Could not load the dashboard"
                 : "Part of the dashboard could not be loaded"}
             </p>
-            <p className="mt-1 text-muted-foreground">{error}</p>
-            <Button size="sm" variant="outline" className="mt-3" onClick={load}>
+            <p className="mt-1 text-muted-foreground">{error ?? "Some of your numbers could not be loaded."}</p>
+            <Button
+              size="sm"
+              variant="outline"
+              className="mt-3"
+              onClick={() => {
+                void load();
+                setTradeTick((n) => n + 1);
+              }}
+            >
               Retry
             </Button>
           </CardContent>
@@ -488,6 +573,12 @@ export default function InsightsDashboardPage() {
             <div key={widget.id} className={SPAN_CLASS[widget.span]}>
               {sourceReady[widget.source] ? (
                 widget.render(widgetData)
+              ) : (widget.source === "numbers" || widget.source === "today") && !tradeFailed.has(widget.source) ? (
+                // Still on its way: the card's shape, not an error.
+                <div
+                  className={`animate-pulse rounded-xl bg-secondary motion-reduce:animate-none ${widget.span === 4 ? "h-[112px]" : "h-[260px]"}`}
+                  aria-label={`${widget.title(terms)}: loading`}
+                />
               ) : (
                 <UnavailableCard title={widget.title(terms)} />
               )}
@@ -498,6 +589,7 @@ export default function InsightsDashboardPage() {
 
       <CustomiseDashboard
         modules={company?.modules ?? null}
+        permissions={permissions}
         open={customising}
         onOpenChange={setCustomising}
         layout={layout}

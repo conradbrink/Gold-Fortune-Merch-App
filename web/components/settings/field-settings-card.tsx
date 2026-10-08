@@ -58,7 +58,11 @@ export function FieldSettingsCard({ orgId }: { orgId: string }) {
       // The two brand colours have their own pickers on the Terminology &
       // branding tab, and how the company gets paid has its own card on the
       // Quotes & invoices tab; as plain text boxes here they would be edited twice.
-      setDefinitions(defs.data.filter((d) => !d.key.startsWith("brand_") && !d.key.startsWith("money_")));
+      setDefinitions(
+        defs.data.filter(
+          (d) => !d.key.startsWith("brand_") && !d.key.startsWith("money_") && !d.key.startsWith("dashboard_")
+        )
+      );
       setValues(effective);
       setDraft(Object.fromEntries(Object.entries(effective).map(([k, v]) => [k, toText(v)])));
     })();

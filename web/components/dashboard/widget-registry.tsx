@@ -1,6 +1,10 @@
 "use client";
 
 import { moduleEnabled, type ModuleCode, type ModuleSet } from "@/lib/modules";
+import { can, type PermissionCode, type PermissionSet } from "@/lib/permissions";
+import { codesFromSetting } from "@/lib/kpis";
+import type { ContractsDue, Numbers, Today } from "@/lib/dashboard-numbers";
+import { MoneyCard, QuotesCard, TodayCard, YourNumbers } from "@/components/dashboard/number-cards";
 import { useCompanyConfig, useTerms } from "@/lib/use-company-config";
 import {
   count,
@@ -75,7 +79,7 @@ import {
  */
 
 /** The RPCs behind the catalogue. One fetch each, however many cards use them. */
-export type WidgetSource = "summary" | "dayTimes" | "operations" | "liveReps" | "business";
+export type WidgetSource = "summary" | "dayTimes" | "operations" | "liveReps" | "business" | "numbers" | "today";
 
 /** Sales, pipeline, money and store health, with this month's rep targets. */
 export type BusinessData = {
@@ -101,6 +105,14 @@ export type WidgetData = {
   range: DateRange;
   /** The company's words, so a card says "stores" or "sites" as the company does. */
   terms: Terms;
+  /** The trade dashboards' numbers (`dashboard_kpis`), fetched only when a card shows them. */
+  numbers: Numbers | null;
+  /** The numbers "Your numbers" shows, in order (the company setting `dashboard_cards`). */
+  cardCodes: string[];
+  /** Today's planned work, fetched only when the Today card is on the layout. */
+  today: Today | null;
+  /** Contract invoices due in the next week, for the Money card. */
+  contractsDue: ContractsDue | null;
 };
 
 /**
@@ -140,12 +152,23 @@ export type WidgetDefinition = {
    * would be zeros from a feature they do not have.
    */
   module?: ModuleCode;
+  /**
+   * The permission it needs, when not everyone with the dashboard may see what
+   * it shows (money). The database leaves those figures out regardless.
+   */
+  permission?: PermissionCode;
   render: (data: WidgetData) => ReactNode;
 };
 
-/** Whether a card belongs on this company's dashboard. */
-export function widgetAvailable(widget: WidgetDefinition, modules: ModuleSet): boolean {
-  return widget.module === undefined || moduleEnabled(modules, widget.module);
+/** Whether a card belongs on this person's dashboard. Without the permissions yet, permission-bound cards wait. */
+export function widgetAvailable(
+  widget: WidgetDefinition,
+  modules: ModuleSet,
+  permissions: PermissionSet | null = null
+): boolean {
+  if (widget.module !== undefined && !moduleEnabled(modules, widget.module)) return false;
+  if (widget.permission !== undefined) return permissions !== null && can(permissions, widget.permission);
+  return true;
 }
 
 function Line({
@@ -194,6 +217,43 @@ function coveragePctOf(summary: DashboardSummary): number | null {
 }
 
 export const WIDGETS: WidgetDefinition[] = [
+  // ---- Each trade's dashboard (Stage 7 Part 3): its numbers, today, money.
+  {
+    id: "kpis",
+    title: () => "Your numbers",
+    description: (t) => `The numbers your trade runs on: ${lower(t.job.many)} done, proof, money. Choose them in Settings.`,
+    span: 4,
+    source: "numbers",
+    render: (d) => <YourNumbers codes={d.cardCodes} numbers={d.numbers!} range={d.range} days={d.days} />,
+  },
+  {
+    id: "today",
+    title: () => "Today",
+    description: (t) => `Today's ${lower(t.job.many)}: who is on site, who has not started, how many are done.`,
+    span: 2,
+    source: "today",
+    render: (d) => <TodayCard today={d.today!} />,
+  },
+  {
+    id: "money",
+    title: () => "Money",
+    description: (t) => `Finished ${lower(t.job.many)} not invoiced, what you are owed, what came in, contracts due.`,
+    span: 2,
+    source: "numbers",
+    module: "invoicing",
+    permission: "invoicing",
+    render: (d) => <MoneyCard numbers={d.numbers!} contractsDue={d.contractsDue} days={d.days} />,
+  },
+  {
+    id: "quotes",
+    title: () => "Quotes",
+    description: () => "Quotes waiting for an answer, how many you win, and won quotes not yet invoiced.",
+    span: 2,
+    source: "numbers",
+    module: "invoicing",
+    permission: "invoicing",
+    render: (d) => <QuotesCard numbers={d.numbers!} days={d.days} />,
+  },
   // ---- The redesigned dashboard (October 2026). Read top to bottom: the five
   // numbers that matter, then where each comes from. Everything after these is
   // the earlier field-only catalogue, kept for anyone who wants it back.
@@ -681,6 +741,31 @@ export const DEFAULT_LAYOUT: string[] = [
   "store_health",
   "live_reps",
 ];
+
+/**
+ * The cards a new user starts with: the company's setting (its trade's, at
+ * sign-up), or the default above when the setting names nothing we know.
+ */
+export function companyDefaultLayout(settingValue: string | null | undefined): string[] {
+  const ids = codesFromSetting(settingValue ?? "", (id) => BY_ID.has(id));
+  return ids.length > 0 ? ids : DEFAULT_LAYOUT;
+}
+
+/** The codes `dashboard_kpis` must compute for the cards on this layout. */
+export function numberCodesFor(layout: string[], cardCodes: string[]): string[] {
+  const out = new Set<string>();
+  if (layout.includes("kpis")) {
+    for (const c of cardCodes) out.add(c);
+    for (const c of ["jobs_done", "photos_taken", "forms_done", "first_week"]) out.add(c);
+  }
+  if (layout.includes("money")) {
+    for (const c of ["unbilled_jobs", "owed", "invoiced", "received"]) out.add(c);
+  }
+  if (layout.includes("quotes")) {
+    for (const c of ["quotes_waiting_value", "quote_win_rate", "quote_win_value", "accepted_not_invoiced"]) out.add(c);
+  }
+  return [...out];
+}
 
 /** Every distinct source the catalogue depends on. */
 export const WIDGET_SOURCES: WidgetSource[] = [
