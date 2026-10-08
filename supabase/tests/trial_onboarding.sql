@@ -11,6 +11,8 @@
 --   T5  Grants: the service-role functions and platform_settings are out of
 --       reach of signed-in and anonymous callers.
 --   T6  The anonymous rate limit counts per subject.
+--   T7  The dashboard's functions run for the trial company, which has no
+--       warehouse or distribution module (low stock counts 0).
 --
 -- HOW TO RUN: paste into execute_sql (or psql -f). One DO block that always
 -- ends in `raise exception`, so nothing survives — including the two quiet Gold
@@ -126,6 +128,24 @@ begin
   if public.my_onboarding()->>'dismissed_at' is null then
     v_fail := v_fail || 'T2 the owner could not put the list away' || E'\n';
   end if;
+
+  ------------------------------------------------------- T7 the dashboard
+  -- Still the trial's owner, a cleaning company with neither add-on.
+  begin
+    v_j := public.dashboard_business(now() - interval '30 days', now());
+    if jsonb_path_query_first(v_j, '$.**.low_stock') is distinct from '0'::jsonb then
+      v_fail := v_fail || format('T7 low stock is %s for a company without the warehouse',
+                                 jsonb_path_query_first(v_j, '$.**.low_stock')) || E'\n';
+    end if;
+  exception when others then
+    v_fail := v_fail || format('T7 dashboard_business fails for the trial company: %s %s', sqlstate, sqlerrm) || E'\n';
+  end;
+  begin
+    perform public.dashboard_summary(now() - interval '30 days', now());
+    perform public.dashboard_operations(now() - interval '30 days', now());
+  exception when others then
+    v_fail := v_fail || format('T7 a dashboard function fails for the trial company: %s %s', sqlstate, sqlerrm) || E'\n';
+  end;
 
   ------------------------------------------------------- T3 write protection
   begin
