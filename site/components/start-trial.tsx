@@ -9,7 +9,9 @@ import { contactHref, site } from "@/lib/site";
 // codes are the app's `industry_templates`; "Something else" is `generic`.
 const trades: [string, string][] = [
   ["Cleaning", "cleaning"],
-  ["CCTV and installation", "installation"],
+  // Electricians use the Installation trade ("CCTV, solar, electrical and
+  // satellite installers"); there is no separate electrical template.
+  ["CCTV, electrical and solar", "installation"],
   ["Security and patrols", "security"],
   ["Maintenance", "maintenance"],
   ["Plumbing", "plumbing"],
@@ -25,7 +27,7 @@ const trades: [string, string][] = [
 // This only sends the visitor there with their trade chosen.
 export function StartTrial() {
   const [trade, setTrade] = useState<string | null>(null);
-  const href = `${site.appUrl}/signup${trade ? `?industry=${encodeURIComponent(trade)}` : ""}`;
+  const href = `${site.signupUrl}${trade ? `?industry=${encodeURIComponent(trade)}` : ""}`;
 
   return (
     <div className="grid gap-5">
@@ -53,7 +55,7 @@ export function StartTrial() {
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-5">
         <a
           href={href}
-          className="w-full rounded-full bg-amber-500 px-6 py-4 text-center text-lg font-semibold text-teal-950 transition hover:bg-amber-400 sm:w-auto sm:py-3.5 sm:text-base"
+          className="w-full rounded-full bg-amber-500 px-6 py-4 text-center text-lg font-semibold text-teal-950 transition-[background-color,transform] duration-150 ease-out hover:bg-amber-400 active:scale-[0.97] sm:w-auto sm:py-3.5 sm:text-base"
         >
           Start free for {site.trialDays} days
         </a>
