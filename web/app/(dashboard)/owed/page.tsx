@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { Download } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
@@ -63,7 +63,10 @@ export default function OwedPage() {
     const d = new Date();
     return ymd(new Date(d.getFullYear(), d.getMonth() - 2, 1));
   });
-  const [statement, setStatement] = useState<StatementRow[] | null>(null);
+  // A statement is for the dates it was asked for: changing either date
+  // clears it, and an answer that arrives after a newer request is dropped.
+  const [statement, setStatement] = useState<{ rows: StatementRow[]; from: string; to: string } | null>(null);
+  const statementSeq = useRef(0);
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
@@ -90,17 +93,28 @@ export default function OwedPage() {
   const statementClient = client ? { storeId: client.store_id, name: client.client_name } : null;
 
   async function openStatement(row: AgeingRow) {
+    const n = ++statementSeq.current;
+    const range = { from, to: asOf };
     setClient(row);
     setStatement(null);
     setBusy(true);
     setError(null);
     try {
-      setStatement(await fetchStatement(supabase, { storeId: row.store_id, name: row.client_name }, from, asOf));
+      const rows = await fetchStatement(supabase, { storeId: row.store_id, name: row.client_name }, range.from, range.to);
+      if (n === statementSeq.current) setStatement({ rows, ...range });
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      if (n === statementSeq.current) setError(e instanceof Error ? e.message : String(e));
     } finally {
-      setBusy(false);
+      if (n === statementSeq.current) setBusy(false);
     }
+  }
+
+  function changeDates(next: { from?: string; asOf?: string }) {
+    statementSeq.current += 1;
+    setStatement(null);
+    setBusy(false);
+    if (next.from !== undefined) setFrom(next.from);
+    if (next.asOf !== undefined) setAsOf(next.asOf);
   }
 
   async function statementPdf() {
@@ -113,7 +127,7 @@ export default function OwedPage() {
         .limit(1)
         .single();
       if (e) throw new Error(e.message);
-      await downloadStatementPdf(data as StatementSeller, statementClient, from, asOf, statement);
+      await downloadStatementPdf(data as StatementSeller, statementClient, statement.from, statement.to, statement.rows);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -133,7 +147,7 @@ export default function OwedPage() {
         <div className="flex items-end gap-2">
           <div>
             <Label htmlFor="as-of">As at</Label>
-            <Input id="as-of" type="date" value={asOf} onChange={(e) => setAsOf(e.target.value)} className="w-40" />
+            <Input id="as-of" type="date" value={asOf} onChange={(e) => changeDates({ asOf: e.target.value })} className="w-40" />
           </div>
         </div>
       </div>
@@ -213,7 +227,7 @@ export default function OwedPage() {
             <div className="flex flex-wrap items-end gap-3">
               <div>
                 <Label htmlFor="st-from">From</Label>
-                <Input id="st-from" type="date" value={from} onChange={(e) => setFrom(e.target.value)} className="w-40" />
+                <Input id="st-from" type="date" value={from} onChange={(e) => changeDates({ from: e.target.value })} className="w-40" />
               </div>
               <p className="pb-2 text-sm text-muted-foreground">to {asOf}</p>
               <Button variant="outline" disabled={busy} onClick={() => openStatement(client)}>
@@ -223,7 +237,10 @@ export default function OwedPage() {
                 <Download className="mr-1.5 h-4 w-4" /> PDF
               </Button>
               {statement && statementClient && (
-                <ExportMenu build={() => statementSheet(statementClient, from, asOf, statement)} disabled={busy} />
+                <ExportMenu
+                  build={() => statementSheet(statementClient, statement.from, statement.to, statement.rows)}
+                  disabled={busy}
+                />
               )}
             </div>
             {statement && (
@@ -240,7 +257,7 @@ export default function OwedPage() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {statement.map((r, i) => (
+                  {statement.rows.map((r, i) => (
                     <TableRow key={`${r.document_id ?? "open"}-${i}`}>
                       <TableCell className="whitespace-nowrap text-muted-foreground">{r.entry_date}</TableCell>
                       <TableCell>{STATEMENT_KIND_LABELS[r.entry_kind] ?? r.entry_kind}</TableCell>

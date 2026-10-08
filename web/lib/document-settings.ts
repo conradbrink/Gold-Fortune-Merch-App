@@ -40,9 +40,12 @@ export function validPrefix(p: string): boolean {
   return /^[A-Z]{2,6}$/.test(p);
 }
 
-/** YYYY-MM-DD, `days` from today (the quote's default valid-until). */
+/**
+ * YYYY-MM-DD, `days` from today (the quote's default valid-until), in local
+ * time: `toISOString` is UTC, which is yesterday in Gaborone before 02:00.
+ */
 export function daysFromToday(days: number, today = new Date()): string {
   const d = new Date(today);
   d.setDate(d.getDate() + days);
-  return d.toISOString().slice(0, 10);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }

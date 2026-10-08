@@ -37,7 +37,7 @@ test("a final invoice's deductions and no VAT at all", () => {
 });
 
 test("quantities and prices the database takes", () => {
-  assert.ok(validQty("1.5") && validQty("0.25") && validQty("3"));
+  assert.ok(validQty("1.5") && validQty("0.25") && validQty("3") && validQty("1.13") && validQty("2.07"));
   assert.ok(!validQty("0") && !validQty("-1") && !validQty("1.255") && !validQty("") && !validQty("x"));
   assert.ok(validPrice("0") && validPrice("12.30") && validPrice("450"));
   assert.ok(!validPrice("-1") && !validPrice("1.005") && !validPrice(""));

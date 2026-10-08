@@ -25,7 +25,7 @@ import {
 import { createQuote, type NewQuoteLine } from "@/lib/quotes";
 import { fetchServiceItems, type ServiceItem } from "@/lib/service-items";
 import { daysFromToday, fetchDocumentSettings, type DocumentSettings } from "@/lib/document-settings";
-import { documentTotals } from "@/lib/money-docs";
+import { documentTotals, validPrice } from "@/lib/money-docs";
 import { formatMoney } from "@/lib/money";
 import { moduleEnabled } from "@/lib/modules";
 import { useCompanyConfig, useTerms } from "@/lib/use-company-config";
@@ -147,8 +147,8 @@ export default function NewQuotePage() {
     if (productLines.some((l) => !Number.isInteger(Number(l.qty)) || Number(l.qty) <= 0)) {
       return setError("Product quantities are whole units above zero.");
     }
-    if (productLines.some((l) => l.price === "" || Number(l.price) < 0)) {
-      return setError("Every product needs a price.");
+    if (productLines.some((l) => !validPrice(l.price))) {
+      return setError("Every product needs a price, to the cent.");
     }
     if (productLines.some((l) => Number(l.discount) < 0 || Number(l.discount) > 100)) {
       return setError("A discount is a percentage between 0 and 100.");

@@ -3,9 +3,27 @@
 -- Puts back exactly what was there: the money tables, functions and policies
 -- under Distribution and the `warehouse` permission, quotes that need a product
 -- and a site, invoices that need an order, and no price list, workflow or
--- document settings. Drops whatever was written with the new features (price
--- lists, invoices from quotes, jobs or typed in): run it only before anyone
--- has used them, or keep a copy first.
+-- document settings. Drops the price lists and the jobs-to-invoice links.
+--
+-- It refuses to start once the new features hold documents the old schema
+-- cannot: invoices not made from an order, quotes without a site or with a
+-- line that is not a whole product, fractional quantities. Copy and remove
+-- those first; nothing here rounds or deletes a document.
+--
+-- Run it as ONE transaction (`psql --single-transaction -f …`, or inside
+-- begin … commit), so a failure part-way leaves nothing half undone.
+
+do $guard$
+begin
+  if exists (select 1 from public.tax_invoices where source <> 'order')
+     or exists (select 1 from public.quotes where store_id is null)
+     or exists (select 1 from public.quote_lines where product_id is null or qty <> trunc(qty))
+     or exists (select 1 from public.tax_invoice_lines where qty <> trunc(qty))
+     or exists (select 1 from public.credit_note_lines where qty <> trunc(qty)) then
+    raise exception 'The new invoicing features hold documents the old schema cannot: copy and remove them before rolling back.';
+  end if;
+end;
+$guard$;
 
 ------------------------------------------------------- module assignments
 

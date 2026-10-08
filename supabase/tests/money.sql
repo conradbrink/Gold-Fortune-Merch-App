@@ -399,7 +399,11 @@ begin
   begin
     perform public.invoice_from_quote(v_quote2, 'full');
     v_fail := v_fail || 'N9 Gold Fortune invoiced the other company''s quote' || E'\n';
-  exception when others then null;
+  exception when others then
+    -- Refused by the company filter ("Quote not found"), not some other guard.
+    if sqlstate <> 'P0002' then
+      v_fail := v_fail || format('N9 cross-company quote refused for the wrong reason: %s %s', sqlstate, sqlerrm) || E'\n';
+    end if;
   end;
   reset role;
 

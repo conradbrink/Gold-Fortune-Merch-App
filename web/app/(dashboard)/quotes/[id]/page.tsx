@@ -25,7 +25,6 @@ import {
   downloadQuotePdf,
   fetchQuote,
   fetchQuoteSeller,
-  invoicedSoFar,
   invoiceQuote,
   isExpired,
   QUOTE_STATUS_LABELS,
@@ -110,8 +109,6 @@ export default function QuoteDetailPage() {
   const live = detail.invoices.filter((i) => i.status === "issued");
   const liveDeposits = live.filter((i) => i.kind === "deposit");
   const fullyInvoiced = live.some((i) => i.kind !== "deposit");
-  // What the live invoices charge, VAT included, against the quote's total.
-  const charged = invoicedSoFar(detail);
   const canInvoice = q.status === "accepted" && !hasProducts && !fullyInvoiced;
 
   const setStatus = (s: "draft" | "sent" | "accepted" | "declined") =>
@@ -265,7 +262,7 @@ export default function QuoteDetailPage() {
             {liveDeposits.length > 0 && (
               <p className="text-muted-foreground">
                 Deposits invoiced: {m(liveDeposits.reduce((n, i) => n + i.total, 0))} of {m(totals.total)}.
-                {charged > 0 && !fullyInvoiced && " The final invoice takes them off the quote's total."}
+                {!fullyInvoiced && " The final invoice takes them off the quote's total."}
               </p>
             )}
             {canInvoice && (

@@ -136,6 +136,11 @@ export default function NewInvoicePage() {
   useEffect(() => {
     if (source !== "jobs" || !storeId) return;
     let cancelled = false;
+    // Nothing from the previous place or period stays ticked while this one
+    // loads, or if it fails: an invoice must only ever cover what is on screen.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setUnbilled([]);
+    setPicked(new Set());
     (async () => {
       try {
         const { data, error: e } = await supabase.rpc("unbilled_visits", {

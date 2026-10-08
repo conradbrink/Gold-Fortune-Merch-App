@@ -60,7 +60,8 @@ export function formatQty(n: number): string {
 /** Whether a typed quantity is one the database takes: above zero, to two decimals. */
 export function validQty(raw: string): boolean {
   const n = Number(raw);
-  return raw.trim() !== "" && Number.isFinite(n) && n > 0 && Math.round(n * 100) === n * 100;
+  // With a tolerance, as for prices: 1.13 * 100 is 112.99999999999999 in floating point.
+  return raw.trim() !== "" && Number.isFinite(n) && n > 0 && Math.abs(Math.round(n * 100) - n * 100) < 1e-6;
 }
 
 /** Whether a typed price is one the database takes: zero or more, to the cent. */

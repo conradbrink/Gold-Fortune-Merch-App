@@ -55,8 +55,10 @@ export async function drawMoneyPdf(d: PdfSpec) {
   const autoTable = autoTableModule.default;
   const doc = new jsPDF({ unit: "pt", format: "a4" });
   const width = doc.internal.pageSize.getWidth();
+  const height = doc.internal.pageSize.getHeight();
   const left = 40;
   const right = width - 40;
+  const bottom = height - 40;
 
   // The logo above the seller's name, which moves down to make room. Without
   // one the seller block starts where it always has.
@@ -125,7 +127,12 @@ export async function drawMoneyPdf(d: PdfSpec) {
     margin: { left, right: 40 },
   });
 
-  const finalY = (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 16;
+  let finalY = (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 16;
+  // The totals stay together: on a new page if they would run off this one.
+  if (finalY + d.totals.length * 15 > bottom) {
+    doc.addPage();
+    finalY = 50;
+  }
   d.totals.forEach(([k, v], i) => {
     const last = i === d.totals.length - 1;
     doc.setFont("helvetica", last ? "bold" : "normal");
@@ -138,8 +145,16 @@ export async function drawMoneyPdf(d: PdfSpec) {
   doc.setFont("helvetica", "normal");
   doc.setFontSize(9);
   doc.setTextColor(60);
+  // Long notes or bank details continue on a new page rather than off the end.
+  const room = (h: number) => {
+    if (fy + h > bottom) {
+      doc.addPage();
+      fy = 50;
+    }
+  };
   const paragraph = (text: string) => {
     for (const line of doc.splitTextToSize(text, right - left)) {
+      room(12);
       doc.text(line, left, fy);
       fy += 12;
     }
@@ -147,6 +162,7 @@ export async function drawMoneyPdf(d: PdfSpec) {
   };
   for (const note of d.notes ?? []) paragraph(note);
   if (d.payTo) {
+    room(24);
     doc.setFont("helvetica", "bold");
     doc.text("How to pay", left, fy);
     fy += 12;

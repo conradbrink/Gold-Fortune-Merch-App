@@ -112,7 +112,7 @@ export function MoneySettingsCard({ orgId, canEdit }: { orgId: string; canEdit: 
           quote_validity_days: days,
         })
         .eq("id", orgId);
-      if (org.error) throw new Error(org.error.message);
+      if (org.error) throw new Error(`Nothing was saved: ${org.error.message}`);
       const settings = await supabase.from("company_settings").upsert(
         [
           { org_id: orgId, key: "money_workflow", value: workflow },
@@ -123,7 +123,11 @@ export function MoneySettingsCard({ orgId, canEdit }: { orgId: string; canEdit: 
         ],
         { onConflict: "org_id,key" }
       );
-      if (settings.error) throw new Error(settings.error.message);
+      if (settings.error) {
+        throw new Error(
+          `The details on your quotes and invoices were saved, but how you get paid was not: ${settings.error.message}`
+        );
+      }
       refreshCompanyConfig();
       setSaved(true);
     } catch (e) {

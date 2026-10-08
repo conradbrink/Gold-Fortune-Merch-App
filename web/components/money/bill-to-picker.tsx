@@ -43,6 +43,10 @@ export function BillToPicker({
       : stores;
     return list.slice(0, 8);
   }, [stores, query]);
+  // The chosen place's name when nothing is being typed: the choice survives
+  // switching between "someone new" and back, and a value set from outside.
+  const chosen = stores.find((s) => s.id === value.storeId);
+  const shown = query !== "" || !chosen ? query : chosen.name + (chosen.city ? ` — ${chosen.city}` : "");
 
   return (
     <div className="space-y-3">
@@ -74,7 +78,7 @@ export function BillToPicker({
           <Label htmlFor="bill-store">{t.site.one}</Label>
           <Input
             id="bill-store"
-            value={query}
+            value={shown}
             placeholder="Search by name or town"
             autoComplete="off"
             disabled={disabled}

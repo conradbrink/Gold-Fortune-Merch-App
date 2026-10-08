@@ -132,7 +132,7 @@ export type InvoiceDetail = {
 };
 
 export async function fetchInvoice(supabase: Client, id: string): Promise<InvoiceDetail> {
-  const [inv, lines, credits, payments, balances] = await Promise.all([
+  const [inv, lines, credits, payments, balances, links] = await Promise.all([
     supabase.from("tax_invoices").select("*").eq("id", id).single(),
     supabase.from("tax_invoice_lines").select("*").eq("invoice_id", id).order("position"),
     supabase
@@ -142,11 +142,11 @@ export async function fetchInvoice(supabase: Client, id: string): Promise<Invoic
       .order("created_at"),
     supabase.from("invoice_payments").select("*").eq("invoice_id", id).order("paid_on"),
     fetchBalances(supabase, [id]),
+    supabase
+      .from("tax_invoice_visits")
+      .select("visit_id, visits(checkin_at, checkout_at, profiles(full_name))")
+      .eq("invoice_id", id),
   ]);
-  const links = await supabase
-    .from("tax_invoice_visits")
-    .select("visit_id, visits(checkin_at, checkout_at, profiles(full_name))")
-    .eq("invoice_id", id);
   fail(links.error);
   fail(inv.error);
   fail(lines.error);
