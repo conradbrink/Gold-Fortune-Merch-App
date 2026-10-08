@@ -14,13 +14,15 @@ import {
 } from "@/lib/live-reps";
 import {
   deltaPct,
-  formatMoney,
-  formatMoneyShort,
   formatPct,
   type BusinessSummary,
   type DashboardSummary,
 } from "@/lib/dashboard";
 import { achievedFor, MEASURES, type Measure, type TargetProgress } from "@/lib/targets";
+import { formatMoneyShort as moneyShortIn } from "@/lib/money";
+import { moduleEnabled } from "@/lib/modules";
+import { can } from "@/lib/permissions";
+import { usePermissions } from "@/lib/use-permissions";
 import { toLocalDateInput, type DateRange } from "@/lib/date-range";
 
 /**
@@ -34,6 +36,41 @@ import { toLocalDateInput, type DateRange } from "@/lib/date-range";
  */
 
 const MONTH = new Intl.DateTimeFormat("en-GB", { month: "short" });
+
+/**
+ * Money in the company's own currency (`currency_code`), whole units as the
+ * dashboard has always shown them. Until the config has loaded the symbol is
+ * left off rather than guessed.
+ */
+function useMoney() {
+  const currency = useCompanyConfig()?.settings.currency_code ?? "";
+  const money = (n: number | null | undefined) => moneyShortIn(n, currency);
+  const moneyShort = (n: number) =>
+    Math.abs(n) >= 1000 ? `${moneyShortIn(n / 1000, currency)}k` : money(n);
+  return { money, moneyShort };
+}
+
+/**
+ * Whether the company sells (orders, invoices, retail audits): the Distribution
+ * module. A cleaning or security company has none of those, and a tile of
+ * zeros or a "stopped ordering" note is not something it should be shown.
+ * Assumed on until the config loads, so Gold Fortune's dashboard never flickers.
+ */
+function useSells(): boolean {
+  const config = useCompanyConfig();
+  return config ? moduleEnabled(config.modules, "distribution") : true;
+}
+
+/**
+ * Whether money owed belongs on this person's headline without Distribution:
+ * every trade can invoice now (Stage 7 Part 1), but only someone who may read
+ * invoices should see the total, or they would see a confident zero.
+ */
+function useSeesOwed(): boolean {
+  const config = useCompanyConfig();
+  const permissions = usePermissions();
+  return !!config && moduleEnabled(config.modules, "invoicing") && permissions !== null && can(permissions, "invoicing");
+}
 
 function monthLabel(isoDay: string) {
   return MONTH.format(new Date(`${isoDay}T00:00:00`));
@@ -156,6 +193,10 @@ export function Headline({
   days: number;
 }) {
   const t = useTerms();
+  const { money } = useMoney();
+  const sells = useSells();
+  const seesOwed = useSeesOwed();
+  const owed = sells || seesOwed;
   const r = business.revenue;
   const p = business.pipeline;
   const h = business.health;
@@ -174,12 +215,16 @@ export function Headline({
     // a row (2 + 2 + 1 at laptop widths looked broken, seen on production).
     // xl rather than lg: the sidebar takes ~14rem, so at lg the five would be
     // too narrow for their sublines.
-    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-5">
+    // Without Distribution there are two or three tiles: one row from sm up.
+    <div
+      className={`grid grid-cols-1 gap-3 ${sells ? "sm:grid-cols-2 xl:grid-cols-5" : owed ? "sm:grid-cols-3" : "sm:grid-cols-2"}`}
+    >
+      {sells && (
       <Tile
         primary
         href="/sales"
         label={`Revenue, last ${days} days`}
-        value={formatMoney(r.current)}
+        value={money(r.current)}
         sub={
           <>
             {r.orders} orders delivered
@@ -192,19 +237,24 @@ export function Headline({
           </>
         }
       />
+      )}
+      {sells && (
       <Tile
         href="/orders"
         label="Orders needing action"
         value={action}
         sub={`${p.new + p.confirmed} to confirm · ${p.picking + p.packed} to pick or dispatch · ${p.dispatched} out`}
       />
+      )}
+      {owed && (
       <Tile
-        href="/invoices"
+        href={sells ? "/invoices" : "/owed"}
         label="Owed to us"
-        value={formatMoney(business.money.outstanding)}
-        sub={business.money.overdue > 0 ? `${formatMoney(business.money.overdue)} overdue` : "Nothing overdue"}
+        value={money(business.money.outstanding)}
+        sub={business.money.overdue > 0 ? `${money(business.money.overdue)} overdue` : "Nothing overdue"}
         tone={business.money.overdue > 0 ? "bad" : undefined}
       />
+      )}
       <Tile
         href="/reports"
         label={`${t.site.one} coverage, last ${days} days`}
@@ -225,7 +275,7 @@ export function Headline({
         label={`${t.site.many} needing attention`}
         value={h.not_visited_30d}
         tone={h.not_visited_30d > 0 ? "bad" : undefined}
-        sub={`Not visited in 30 days${h.lapsed_60d > 0 ? ` · ${h.lapsed_60d} stopped ordering` : ""}`}
+        sub={`Not visited in 30 days${sells && h.lapsed_60d > 0 ? ` · ${h.lapsed_60d} stopped ordering` : ""}`}
       />
     </div>
   );
@@ -241,6 +291,7 @@ export function SalesCard({
   targets: TargetProgress[];
 }) {
   const t = useTerms();
+  const { money: fmtMoney, moneyShort: fmtMoneyShort } = useMoney();
   const r = business.revenue;
   // From the first month with any sales: months before the app took orders are
   // not "zero revenue", they are "not recorded here", and six empty bars would
@@ -282,7 +333,7 @@ export function SalesCard({
                   />
                 </div>
                 <span className={isCurrent ? "text-right font-semibold tabular-nums" : "text-right tabular-nums"}>
-                  {formatMoney(m.net)}
+                  {fmtMoney(m.net)}
                 </span>
               </div>
             );
@@ -290,7 +341,7 @@ export function SalesCard({
         </div>
         {pace !== null && (
           <span className="text-xs text-muted-foreground">
-            {monthLabel(r.month_start)} is {elapsed} of {daysIn} days in and on pace for about {formatMoneyShort(pace)} (dashed).
+            {monthLabel(r.month_start)} is {elapsed} of {daysIn} days in and on pace for about {fmtMoneyShort(pace)} (dashed).
           </span>
         )}
       </div>
@@ -321,7 +372,7 @@ export function SalesCard({
                     <div className="h-full rounded-full bg-gold" style={{ width: `${Math.min(pct, 1) * 100}%` }} />
                   </div>
                   <span className="text-right tabular-nums">
-                    {money ? formatMoney(achieved) : achieved.toLocaleString("en-GB")}
+                    {money ? fmtMoney(achieved) : achieved.toLocaleString("en-GB")}
                     {hasTarget && <span className="ml-1.5 text-xs text-muted-foreground">{Math.round(pct * 100)}%</span>}
                   </span>
                 </div>
@@ -372,6 +423,7 @@ function Row({ label, value, href }: { label: string; value: number; href: strin
 
 export function PipelineCard({ business }: { business: BusinessSummary }) {
   const t = useTerms();
+  const { money: fmtMoney } = useMoney();
   const p = business.pipeline;
   const m = business.money;
   return (
@@ -389,9 +441,9 @@ export function PipelineCard({ business }: { business: BusinessSummary }) {
         <Row label="Products below reorder point" value={p.low_stock} href="/inventory" />
       </ul>
       <div className="grid grid-cols-3 gap-3 border-t pt-4">
-        <MiniStat label="Invoiced" value={formatMoney(m.invoiced)} />
-        <MiniStat label="Overdue" value={formatMoney(m.overdue)} tone={m.overdue > 0 ? "bad" : undefined} />
-        <MiniStat label="Commission to approve" value={formatMoney(m.commission_pending)} />
+        <MiniStat label="Invoiced" value={fmtMoney(m.invoiced)} />
+        <MiniStat label="Overdue" value={fmtMoney(m.overdue)} tone={m.overdue > 0 ? "bad" : undefined} />
+        <MiniStat label="Commission to approve" value={fmtMoney(m.commission_pending)} />
       </div>
     </SectionCard>
   );
@@ -428,6 +480,7 @@ export function FieldTeamCard({
   }, []);
   // The dots age against the company's own GPS interval, as on the maps.
   const interval = useCompanyConfig()?.settings.gps_ping_interval_minutes ?? null;
+  const sells = useSells();
   const oosDelta =
     summary && summary.current.oos_rate !== null && summary.previous.oos_rate !== null
       ? deltaPct(summary.current.oos_rate * 1000, summary.previous.oos_rate * 1000)
@@ -472,7 +525,8 @@ export function FieldTeamCard({
           <li className="py-2.5 text-sm text-muted-foreground">No active {lower(t.staff.many)}.</li>
         )}
       </ul>
-      <div className="mt-auto grid grid-cols-3 gap-3 border-t pt-4">
+      <div className={`mt-auto grid gap-3 border-t pt-4 ${sells ? "grid-cols-3" : "grid-cols-1"}`}>
+        {sells && (
         <MiniStat
           label="Out of stock"
           value={
@@ -481,6 +535,8 @@ export function FieldTeamCard({
             </>
           }
         />
+        )}
+        {sells && (
         <MiniStat
           label="Planogram"
           value={
@@ -489,6 +545,7 @@ export function FieldTeamCard({
             </>
           }
         />
+        )}
         <MiniStat
           label={`Check-ins over ${business?.field.off_site_m ?? 500} m from ${lower(t.site.one)}`}
           value={
