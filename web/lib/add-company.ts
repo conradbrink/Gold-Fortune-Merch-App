@@ -228,7 +228,13 @@ export function toggleModule(
 export function editableSetting(key: string): boolean {
   // How the company gets paid comes from its trade and is changed by the
   // company itself on its settings page (Quotes & invoices).
-  return !key.startsWith("brand_") && !key.startsWith("money_") && key !== "country_code" && key !== "currency_code";
+  return (
+    !key.startsWith("brand_") &&
+    !key.startsWith("money_") &&
+    !key.startsWith("dashboard_") &&
+    key !== "country_code" &&
+    key !== "currency_code"
+  );
 }
 
 /** A stored setting as the text an input holds. */
