@@ -6903,6 +6903,7 @@ export type Database = {
         }[]
       }
       contract_lines_replace: { Args: { p_contract: string; p_lines: Json }; Returns: undefined }
+      contract_save: { Args: { p_contract: string | null; p_terms: Json; p_lines: Json }; Returns: string }
       contract_invoices_run_now: {
         Args: { p_contract?: string | null }
         Returns: number

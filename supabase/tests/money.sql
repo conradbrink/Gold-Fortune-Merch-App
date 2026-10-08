@@ -39,6 +39,8 @@
 --   N19 unbilled work: work before a contract's first billed period shows; a
 --       paused contract's invoiced work stays hidden.
 --   N20 contract_lines_replace: all lines or none; never no lines.
+--   N21 contract_save: a new or edited contract's terms and lines in one step;
+--       a refused line leaves the terms and lines as they were.
 --
 -- HOW TO RUN: paste into execute_sql (or psql -f). One DO block that always
 -- ends in `raise exception`, so nothing survives — including the two quiet
@@ -60,7 +62,7 @@ declare
   v_n int; v_t text; v_num numeric;
   v_today date; v_expected date; v_last date; v_s3 uuid; v_s4 uuid; v_k1 uuid; v_k2 uuid; v_k3 uuid;
   v_r1 uuid; v_r2 uuid; v_gf_invoices int;
-  v_s5 uuid; v_k4 uuid; v_v5 uuid;
+  v_s5 uuid; v_k4 uuid; v_v5 uuid; v_k5 uuid;
 begin
   ------------------------------------------------------------- fixtures
   select p.id into v_gf_admin from public.profiles p
@@ -759,8 +761,41 @@ begin
   end;
   reset role;
 
+  ------------------------------------------------------------- N21 one-step save
+  perform set_config('request.jwt.claims', json_build_object('sub', v_owner, 'role', 'authenticated')::text, true);
+  set local role authenticated;
+  v_k5 := public.contract_save(null,
+    jsonb_build_object('store_id', v_s5, 'name', 'One-step contract', 'period', 'monthly', 'billing', 'advance',
+                       'invoice_day', 1, 'starts_on', v_today, 'active', true),
+    '[{"description": "Monthly service", "qty": 1, "unit_price": 700}]'::jsonb);
+  if v_k5 is null or (select count(*) from public.service_contract_lines where contract_id = v_k5) <> 1
+     or (select name from public.service_contracts where id = v_k5) <> 'One-step contract' then
+    v_fail := v_fail || 'N21 a new contract was not saved with its line' || E'\n';
+  end if;
+  perform public.contract_save(v_k5,
+    jsonb_build_object('store_id', v_s5, 'name', 'One-step contract, renamed', 'period', 'monthly', 'billing', 'advance',
+                       'invoice_day', 1, 'starts_on', v_today, 'active', true),
+    '[{"description": "Monthly service", "qty": 1, "unit_price": 750}, {"description": "Windows", "qty": 1, "unit_price": 50}]'::jsonb);
+  if (select name from public.service_contracts where id = v_k5) <> 'One-step contract, renamed'
+     or (select sum(qty * unit_price) from public.service_contract_lines where contract_id = v_k5) <> 800 then
+    v_fail := v_fail || 'N21 an edited contract''s terms and lines were not saved together' || E'\n';
+  end if;
+  begin
+    perform public.contract_save(v_k5,
+      jsonb_build_object('store_id', v_s5, 'name', 'Should not stick', 'period', 'monthly', 'billing', 'advance',
+                         'invoice_day', 1, 'starts_on', v_today, 'active', true),
+      jsonb_build_array(jsonb_build_object('description', repeat('x', 501), 'qty', 1, 'unit_price', 1)));
+    v_fail := v_fail || 'N21 a 501-character line was accepted' || E'\n';
+  exception when check_violation then null;
+  end;
+  if (select name from public.service_contracts where id = v_k5) <> 'One-step contract, renamed'
+     or (select count(*) from public.service_contract_lines where contract_id = v_k5) <> 2 then
+    v_fail := v_fail || 'N21 a refused line left new terms or lost the old lines' || E'\n';
+  end if;
+  reset role;
+
   if v_fail = '' then
-    raise exception 'MONEY SUITE: ALL PASS (N1-N20)% — rolled back', v_note;
+    raise exception 'MONEY SUITE: ALL PASS (N1-N21)% — rolled back', v_note;
   end if;
   raise exception E'MONEY SUITE FAILURES:\n%', v_fail;
 end;

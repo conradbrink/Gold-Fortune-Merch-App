@@ -84,7 +84,6 @@ export default function NewContractPage() {
     try {
       const id = await createContract(
         supabase,
-        orgId,
         {
           ...draft,
           invoiceDay: Number(draft.invoiceDay),
