@@ -31,7 +31,7 @@ import {
   paymentStatus,
   type InvoiceListRow,
 } from "@/lib/invoices";
-import { invoiceSources } from "@/lib/money-workflow";
+import { invoiceSources, switchesOf } from "@/lib/money-workflow";
 import { moduleEnabled } from "@/lib/modules";
 
 function ymd(d: Date) {
@@ -59,14 +59,7 @@ export default function InvoicesPage() {
   const terms = useTerms();
   const config = useCompanyConfig();
   const router = useRouter();
-  const sw = config
-    ? {
-        quotes: config.settings.money_quotes,
-        deposits: config.settings.money_deposits,
-        jobs: config.settings.money_invoice_from_jobs,
-        direct: config.settings.money_invoice_direct,
-      }
-    : null;
+  const sw = config ? switchesOf(config.settings) : null;
   const canStart =
     sw !== null && invoiceSources(sw, config!.modules).some((s) => s === "jobs" || s === "direct");
   const sells = config ? moduleEnabled(config.modules, "distribution") : false;
@@ -183,6 +176,11 @@ export default function InvoicesPage() {
           <Button variant="outline" onClick={exportRows}>
             <Download className="mr-1.5 h-4 w-4" /> CSV
           </Button>
+          {sw?.jobs && (
+            <Button variant="outline" nativeButton={false} render={<Link href="/invoices/unbilled" />}>
+              Unbilled work
+            </Button>
+          )}
           {canStart && (
             <Button nativeButton={false} render={<Link href="/invoices/new" />}>
               <Plus className="mr-1.5 h-4 w-4" /> New invoice

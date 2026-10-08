@@ -12,6 +12,7 @@ import { refreshCompanyConfig, useCompanyConfig, useTerms } from "@/lib/use-comp
 import { validPrefix } from "@/lib/document-settings";
 import {
   MONEY_WORKFLOWS,
+  switchesOf,
   workflowPreset,
   type MoneySwitches,
   type MoneyWorkflow,
@@ -42,7 +43,13 @@ export function MoneySettingsCard({ orgId, canEdit }: { orgId: string; canEdit: 
     quote_validity_days: "30",
   });
   const [workflow, setWorkflow] = useState<MoneyWorkflow>("flexible");
-  const [sw, setSw] = useState<MoneySwitches>({ quotes: true, deposits: false, jobs: true, direct: true });
+  const [sw, setSw] = useState<MoneySwitches>({
+    quotes: true,
+    deposits: false,
+    jobs: true,
+    direct: true,
+    contracts: false,
+  });
   const [loaded, setLoaded] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -81,12 +88,7 @@ export function MoneySettingsCard({ orgId, canEdit }: { orgId: string; canEdit: 
     if (!config) return;
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setWorkflow(config.settings.money_workflow);
-    setSw({
-      quotes: config.settings.money_quotes,
-      deposits: config.settings.money_deposits,
-      jobs: config.settings.money_invoice_from_jobs,
-      direct: config.settings.money_invoice_direct,
-    });
+    setSw(switchesOf(config.settings));
   }, [config]);
 
   async function save() {
@@ -120,6 +122,7 @@ export function MoneySettingsCard({ orgId, canEdit }: { orgId: string; canEdit: 
           { org_id: orgId, key: "money_deposits", value: sw.deposits },
           { org_id: orgId, key: "money_invoice_from_jobs", value: sw.jobs },
           { org_id: orgId, key: "money_invoice_direct", value: sw.direct },
+          { org_id: orgId, key: "money_contracts", value: sw.contracts },
         ],
         { onConflict: "org_id,key" }
       );
@@ -147,6 +150,11 @@ export function MoneySettingsCard({ orgId, canEdit }: { orgId: string; canEdit: 
       hint: `Pick a ${lower(t.site.one)} and a period, and invoice the finished ${lower(t.job.many)}.`,
     },
     { key: "direct", label: "Direct invoices", hint: "Type an invoice in without a quote or a job." },
+    {
+      key: "contracts",
+      label: "Contracts",
+      hint: `A fixed fee per ${lower(t.site.one)}, invoiced automatically each month or quarter.`,
+    },
   ];
 
   return (

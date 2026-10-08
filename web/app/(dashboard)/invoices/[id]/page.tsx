@@ -24,8 +24,11 @@ import {
   deletePayment,
   downloadCreditNotePdf,
   downloadInvoicePdf,
+  downloadProofOfServicePdf,
   fetchInvoice,
+  fetchProofOfService,
   INVOICE_KIND_LABELS,
+  invoicePeriod,
   invoiceHeading,
   issueCreditNote,
   money,
@@ -35,6 +38,7 @@ import {
   recordPayment,
   voidInvoice,
   type InvoiceDetail,
+  type ProofRow,
 } from "@/lib/invoices";
 import { formatQty, validQty } from "@/lib/money-docs";
 import { useTerms } from "@/lib/use-company-config";
@@ -56,6 +60,7 @@ export default function InvoiceDetailPage() {
   const t = useTerms();
   const { id } = useParams<{ id: string }>();
   const [detail, setDetail] = useState<InvoiceDetail | null>(null);
+  const [proof, setProof] = useState<ProofRow[] | null>(null);
   const [panel, setPanel] = useState<"pay" | "credit" | "void" | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -70,7 +75,10 @@ export default function InvoiceDetailPage() {
 
   const load = useCallback(async () => {
     try {
-      setDetail(await fetchInvoice(supabase, id));
+      const d = await fetchInvoice(supabase, id);
+      setDetail(d);
+      // The jobs behind it, for an invoice made from work or a contract.
+      setProof(d.invoice.source === "jobs" || d.invoice.source === "contract" ? await fetchProofOfService(supabase, id) : null);
       setError(null);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -149,6 +157,15 @@ export default function InvoiceDetailPage() {
               </>
             )}
             {!inv.order_id && !inv.quote_id && inv.reference && ` · reference ${inv.reference}`}
+            {invoicePeriod(inv) && ` · for ${invoicePeriod(inv)}`}
+            {detail.contract && (
+              <>
+                {" "}· contract{" "}
+                <Link href={`/contracts/${detail.contract.id}`} className="text-primary hover:underline">
+                  {detail.contract.name}
+                </Link>
+              </>
+            )}
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -345,27 +362,58 @@ export default function InvoiceDetailPage() {
         </Card>
       </div>
 
-      {detail.visits.length > 0 && (
+      {proof && (
         <Card>
-          <CardHeader><CardTitle className="text-base">{`${t.job.many} on this invoice`}</CardTitle></CardHeader>
+          <CardHeader className="flex flex-row items-center justify-between gap-3">
+            <CardTitle className="text-base">Proof of service</CardTitle>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={proof.length === 0}
+              onClick={() =>
+                downloadProofOfServicePdf(detail, proof, {
+                  job: lower(t.job.one),
+                  jobs: t.job.many,
+                  staff: t.staff.one,
+                })
+              }
+            >
+              <Download className="mr-1 h-3.5 w-3.5" /> PDF
+            </Button>
+          </CardHeader>
           <CardContent>
-            <Table>
-              <TableBody>
-                {detail.visits.map((v) => (
-                  <TableRow key={v.id}>
-                    <TableCell className="text-muted-foreground">
-                      {v.checkin_at ? new Date(v.checkin_at).toLocaleString() : "—"}
-                    </TableCell>
-                    <TableCell>{v.staff_name ?? "—"}</TableCell>
-                    <TableCell className="text-right tabular-nums text-muted-foreground">
-                      {v.checkin_at && v.checkout_at
-                        ? `${Math.round((Date.parse(v.checkout_at) - Date.parse(v.checkin_at)) / 60000)} min on site`
-                        : ""}
-                    </TableCell>
+            {proof.length === 0 ? (
+              <p className="text-sm text-muted-foreground">{`No ${lower(t.job.many)} recorded for this invoice.`}</p>
+            ) : (
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Date</TableHead>
+                    <TableHead>{t.staff.one}</TableHead>
+                    <TableHead className="text-right">On site</TableHead>
+                    <TableHead>GPS</TableHead>
+                    <TableHead className="text-right">Forms</TableHead>
+                    <TableHead className="text-right">Photos</TableHead>
+                    <TableHead />
                   </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+                </TableHeader>
+                <TableBody>
+                  {proof.map((r, n) => (
+                    <TableRow key={r.visit_id ?? `planned-${n}`}>
+                      <TableCell className="whitespace-nowrap text-muted-foreground">{r.day}</TableCell>
+                      <TableCell>{r.staff_name ?? "—"}</TableCell>
+                      <TableCell className="text-right tabular-nums">{r.minutes === null ? "" : `${r.minutes} min`}</TableCell>
+                      <TableCell>{r.gps_ok === null ? "" : r.gps_ok ? "On site" : "Away"}</TableCell>
+                      <TableCell className="text-right tabular-nums">{r.forms ?? ""}</TableCell>
+                      <TableCell className="text-right tabular-nums">{r.photos ?? ""}</TableCell>
+                      <TableCell className={r.status === "missed" ? "text-destructive" : "text-muted-foreground"}>
+                        {r.status === "done" ? "" : r.status === "caught_up" ? "Caught up later" : "Missed"}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            )}
           </CardContent>
         </Card>
       )}

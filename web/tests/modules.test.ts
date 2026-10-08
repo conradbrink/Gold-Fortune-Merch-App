@@ -28,6 +28,7 @@ test("each gated page belongs to its module, and anything else is core", () => {
   assert.equal(moduleForPath("/invoices/9"), "invoicing");
   assert.equal(moduleForPath("/owed"), "invoicing");
   assert.equal(moduleForPath("/price-list"), "invoicing");
+  assert.equal(moduleForPath("/contracts/1"), "invoicing");
   assert.equal(moduleForPath("/warehouse/insights"), "warehouse");
   assert.equal(moduleForPath("/inventory/stocktakes"), "warehouse");
   assert.equal(moduleForPath("/hr/me"), "hr");

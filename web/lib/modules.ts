@@ -76,6 +76,7 @@ const MODULE_PATHS: { prefix: string; module: ModuleCode }[] = [
 
   // Quotes, invoices, who owes you and the price list: every trade (Stage 7).
   { prefix: "/quotes", module: "invoicing" },
+  { prefix: "/contracts", module: "invoicing" },
   { prefix: "/invoices", module: "invoicing" },
   { prefix: "/owed", module: "invoicing" },
   { prefix: "/price-list", module: "invoicing" },

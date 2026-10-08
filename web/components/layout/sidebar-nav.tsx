@@ -36,7 +36,7 @@ export function SidebarContent({
   // fall back to the manager menu, and `useCompanyConfig` for the modules.
   const groups =
     permissions && company
-      ? visibleNavGroups(permissions, company.modules, company.terms)
+      ? visibleNavGroups(permissions, company.modules, company.terms, company.settings)
       : [];
   const branding = company?.branding ?? null;
   const current = activeHref(pathname);

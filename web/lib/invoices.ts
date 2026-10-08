@@ -2,6 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database, Json } from "@/lib/supabase/types";
 import { drawMoneyPdf, money } from "@/lib/money-pdf";
 import { formatQty } from "@/lib/money-docs";
+import { periodLabel } from "@/lib/contract-periods";
 
 /**
  * Invoices, credit notes and payments.
@@ -43,6 +44,7 @@ export const INVOICE_SOURCE_LABELS: Record<string, string> = {
   quote: "Quote",
   jobs: "Completed work",
   direct: "Direct",
+  contract: "Contract",
 };
 
 /** A quote's invoices: in full, a deposit, or the final balance (`tax_invoices.kind`). */
@@ -129,10 +131,12 @@ export type InvoiceDetail = {
   balance: Balance | undefined;
   /** The completed jobs it covers (an invoice from completed work). */
   visits: { id: string; checkin_at: string | null; checkout_at: string | null; staff_name: string | null }[];
+  /** The contract it was issued for (a contract invoice). */
+  contract: { id: string; name: string } | null;
 };
 
 export async function fetchInvoice(supabase: Client, id: string): Promise<InvoiceDetail> {
-  const [inv, lines, credits, payments, balances, links] = await Promise.all([
+  const [inv, lines, credits, payments, balances, links, contract] = await Promise.all([
     supabase.from("tax_invoices").select("*").eq("id", id).single(),
     supabase.from("tax_invoice_lines").select("*").eq("invoice_id", id).order("position"),
     supabase
@@ -146,8 +150,15 @@ export async function fetchInvoice(supabase: Client, id: string): Promise<Invoic
       .from("tax_invoice_visits")
       .select("visit_id, visits(checkin_at, checkout_at, profiles(full_name))")
       .eq("invoice_id", id),
+    supabase
+      .from("service_contract_invoices")
+      .select("contract_id, service_contracts(name)")
+      .eq("invoice_id", id)
+      .maybeSingle(),
   ]);
   fail(links.error);
+  fail(contract.error);
+  const contractRow = contract.data as unknown as { contract_id: string; service_contracts: { name: string } | null } | null;
   fail(inv.error);
   fail(lines.error);
   fail(credits.error);
@@ -171,6 +182,9 @@ export async function fetchInvoice(supabase: Client, id: string): Promise<Invoic
         staff_name: l.visits?.profiles?.full_name ?? null,
       }))
       .sort((a, b) => (a.checkin_at ?? "").localeCompare(b.checkin_at ?? "")),
+    contract: contractRow
+      ? { id: contractRow.contract_id, name: contractRow.service_contracts?.name ?? "Contract" }
+      : null,
   };
 }
 
@@ -232,6 +246,24 @@ export async function issueInvoiceForVisits(
   });
   fail(error);
   return data as string;
+}
+
+export type ProofRow = Database["public"]["Functions"]["invoice_proof_of_service"]["Returns"][number];
+
+/**
+ * The jobs behind a job or contract invoice: each finished one (when, who, how
+ * long, GPS inside the site's radius, forms, photos) and, for a contract, the
+ * planned ones in its period that were missed or caught up later.
+ */
+export async function fetchProofOfService(supabase: Client, invoiceId: string): Promise<ProofRow[]> {
+  const { data, error } = await supabase.rpc("invoice_proof_of_service", { p_invoice_id: invoiceId });
+  fail(error);
+  return (data ?? []) as ProofRow[];
+}
+
+/** "1 Oct – 31 Oct 2026"-style period of an invoice, when it has one. */
+export function invoicePeriod(inv: Pick<Invoice, "period_start" | "period_end">): string | null {
+  return inv.period_start && inv.period_end ? periodLabel(inv.period_start, inv.period_end) : null;
 }
 
 export async function voidInvoice(supabase: Client, id: string, reason: string) {
@@ -314,6 +346,8 @@ export async function downloadInvoicePdf(detail: InvoiceDetail) {
     ["Date", inv.issue_date],
     ["Due", inv.due_date],
   ];
+  const period = invoicePeriod(inv);
+  if (period) meta.push(["Period", period]);
   if (inv.order_number) meta.push(["Order", inv.order_number]);
   else if (inv.source === "quote" && inv.reference) meta.push(["Quote", inv.reference]);
   else if (inv.reference) meta.push(["Reference", inv.reference]);
@@ -379,5 +413,53 @@ export async function downloadCreditNotePdf(
     totals: totalsOf(inv, Number(credit.subtotal), Number(credit.vat), Number(credit.total), true),
     notes: [`Reason: ${credit.reason}`],
     footer: inv.footer,
+  });
+}
+
+const PROOF_STATUS: Record<string, string> = { done: "Done", caught_up: "Caught up later", missed: "Missed" };
+
+/**
+ * The proof of service as its own PDF, to send with the invoice: the client
+ * sees what was done for what they are asked to pay.
+ */
+export async function downloadProofOfServicePdf(
+  detail: InvoiceDetail,
+  rows: ProofRow[],
+  words: { job: string; jobs: string; staff: string }
+) {
+  const inv = detail.invoice;
+  const time = (iso: string | null) =>
+    iso ? new Date(iso).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" }) : "";
+  const done = rows.filter((r) => r.status === "done");
+  const minutes = done.reduce((n, r) => n + (r.minutes ?? 0), 0);
+  const meta: [string, string][] = [["Invoice no", inv.invoice_number]];
+  const period = invoicePeriod(inv);
+  if (period) meta.push(["Period", period]);
+  await drawMoneyPdf({
+    heading: "PROOF OF SERVICE",
+    fileName: `${inv.invoice_number} proof of service`,
+    seller: sellerOf(inv),
+    meta,
+    billTo: { label: "FOR", name: inv.customer_name, address: inv.customer_address },
+    head: ["Date", words.staff, "In", "Out", "Minutes", "GPS", "Forms", "Photos", ""],
+    numeric: [4, 6, 7],
+    rows: rows.map((r) => [
+      r.day,
+      r.staff_name ?? "",
+      time(r.checkin_at),
+      time(r.checkout_at),
+      r.minutes === null ? "" : String(r.minutes),
+      r.gps_ok === null ? "" : r.gps_ok ? "On site" : "Away",
+      r.forms === null ? "" : String(r.forms),
+      r.photos === null ? "" : String(r.photos),
+      PROOF_STATUS[r.status] ?? r.status,
+    ]),
+    totals: [
+      [`${words.jobs} done`, String(done.length)],
+      ["Hours on site", (Math.round(minutes / 6) / 10).toLocaleString("en-GB")],
+    ],
+    notes: [
+      `"On site" means the check-in was within the place's radius. "Caught up later" is a planned ${words.job} done on a later day.`,
+    ],
   });
 }

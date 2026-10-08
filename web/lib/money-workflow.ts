@@ -34,6 +34,8 @@ export type MoneySwitches = {
   jobs: boolean;
   /** An invoice can be typed in directly. */
   direct: boolean;
+  /** Fixed-fee contracts per site, invoiced automatically each period. */
+  contracts: boolean;
 };
 
 export function isMoneyWorkflow(v: unknown): v is MoneyWorkflow {
@@ -53,43 +55,43 @@ export function workflowPreset(
       return {
         label: `Quote, do the ${job}, invoice`,
         description: `A quote first; once it is accepted and the ${job} is done, invoice it.`,
-        switches: { quotes: true, deposits: false, jobs: true, direct: true },
+        switches: { quotes: true, deposits: false, jobs: true, direct: true, contracts: false },
       };
     case "quote_deposit_final":
       return {
         label: "Quote, deposit, final invoice",
         description: `A quote first; on acceptance a deposit invoice, and the balance when the ${job} is finished.`,
-        switches: { quotes: true, deposits: true, jobs: true, direct: true },
+        switches: { quotes: true, deposits: true, jobs: true, direct: true, contracts: false },
       };
     case "contract_extras":
       return {
-        label: "Regular work, plus quoted extras",
-        description: `Invoice each ${client}'s completed ${jobs} for the month, and quote once-off extras.`,
-        switches: { quotes: true, deposits: false, jobs: true, direct: true },
+        label: "Contracts, plus quoted extras",
+        description: `A fixed fee per ${client}, invoiced automatically each month or quarter; once-off extras quoted.`,
+        switches: { quotes: true, deposits: false, jobs: true, direct: true, contracts: true },
       };
     case "contract_jobs":
       return {
-        label: "Regular work and once-off jobs",
-        description: `Invoice regular ${jobs} monthly, and once-off ${jobs} as they are done.`,
-        switches: { quotes: true, deposits: false, jobs: true, direct: true },
+        label: "Contracts and once-off jobs",
+        description: `Contracts invoiced automatically, and once-off ${jobs} invoiced as they are done.`,
+        switches: { quotes: true, deposits: false, jobs: true, direct: true, contracts: true },
       };
     case "jobs_monthly":
       return {
         label: `The month's ${jobs}, one invoice`,
         description: `At month end, one invoice per ${client} for the ${jobs} done.`,
-        switches: { quotes: true, deposits: false, jobs: true, direct: true },
+        switches: { quotes: true, deposits: false, jobs: true, direct: true, contracts: false },
       };
     case "order_invoice":
       return {
         label: "Order, deliver, invoice",
         description: "Orders are taken, delivered, and invoiced from the order.",
-        switches: { quotes: true, deposits: false, jobs: false, direct: false },
+        switches: { quotes: true, deposits: false, jobs: false, direct: false, contracts: false },
       };
     case "flexible":
       return {
         label: "Flexible",
         description: "Every way of quoting and invoicing is available.",
-        switches: { quotes: true, deposits: true, jobs: true, direct: true },
+        switches: { quotes: true, deposits: true, jobs: true, direct: true, contracts: true },
       };
   }
 }
@@ -112,5 +114,22 @@ export function invoiceSources(sw: MoneySwitches, modules: ModuleSet): InvoiceSo
 
 /** Whether the price list matters to this company: it quotes or invoices services. */
 export function usesPriceList(sw: MoneySwitches, modules: ModuleSet): boolean {
-  return sw.jobs || sw.direct || (sw.quotes && !moduleEnabled(modules, "distribution"));
+  return sw.jobs || sw.direct || sw.contracts || (sw.quotes && !moduleEnabled(modules, "distribution"));
+}
+
+/** The switches as the company's settings hold them. */
+export function switchesOf(settings: {
+  money_quotes: boolean;
+  money_deposits: boolean;
+  money_invoice_from_jobs: boolean;
+  money_invoice_direct: boolean;
+  money_contracts: boolean;
+}): MoneySwitches {
+  return {
+    quotes: settings.money_quotes,
+    deposits: settings.money_deposits,
+    jobs: settings.money_invoice_from_jobs,
+    direct: settings.money_invoice_direct,
+    contracts: settings.money_contracts,
+  };
 }

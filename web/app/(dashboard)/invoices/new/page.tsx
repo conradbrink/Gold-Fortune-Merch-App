@@ -17,7 +17,7 @@ import { fetchServiceItems, type ServiceItem } from "@/lib/service-items";
 import { fetchDocumentSettings, type DocumentSettings } from "@/lib/document-settings";
 import { issueDirectInvoice, issueInvoiceForVisits, type NewInvoiceLine } from "@/lib/invoices";
 import { fetchQuotes, type QuoteListRow } from "@/lib/quotes";
-import { invoiceSources, type InvoiceSource } from "@/lib/money-workflow";
+import { invoiceSources, switchesOf, type InvoiceSource } from "@/lib/money-workflow";
 import { formatMoney } from "@/lib/money";
 import { formatQty } from "@/lib/money-docs";
 import { useCompanyConfig, useTerms } from "@/lib/use-company-config";
@@ -68,17 +68,7 @@ export default function NewInvoicePage() {
 
   const sources = useMemo<InvoiceSource[]>(
     () =>
-      config
-        ? invoiceSources(
-            {
-              quotes: config.settings.money_quotes,
-              deposits: config.settings.money_deposits,
-              jobs: config.settings.money_invoice_from_jobs,
-              direct: config.settings.money_invoice_direct,
-            },
-            config.modules
-          )
-        : [],
+      config ? invoiceSources(switchesOf(config.settings), config.modules) : [],
     [config]
   );
   const [chosen, setChosen] = useState<InvoiceSource | null>(null);
@@ -103,6 +93,19 @@ export default function NewInvoicePage() {
   const [lines, setLines] = useState<EditableLine[]>([]);
   const [reference, setReference] = useState("");
   const [issueDate, setIssueDate] = useState(() => ymd(new Date()));
+
+  // Opened from "Unbilled work": that place and period, completed work.
+  // Read after mount, from the address, as the reports page does.
+  useEffect(() => {
+    const q = new URLSearchParams(window.location.search);
+    const store = q.get("store");
+    const from = q.get("from");
+    const to = q.get("to");
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (q.get("source") === "jobs") setChosen("jobs");
+    if (store) setStoreId(store);
+    if (from && to && /^\d{4}-\d{2}-\d{2}$/.test(from) && /^\d{4}-\d{2}-\d{2}$/.test(to)) setRange({ from, to });
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
