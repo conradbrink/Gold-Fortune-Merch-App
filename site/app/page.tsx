@@ -533,8 +533,8 @@ export default function Home() {
             <h2 className="font-display text-3xl font-extrabold leading-[1.1] tracking-tight text-balance sm:text-5xl">
               Every job {site.name} off. <span className="text-amber-500">Except you.</span>
             </h2>
-            <p className="max-w-2xl text-lg leading-relaxed text-pretty text-teal-100">
-              See your team&apos;s whole day, show your clients the proof, and find out what it saves you. It costs nothing to try.
+            <p className="max-w-2xl leading-relaxed text-pretty text-teal-100 sm:text-lg">
+              See your team&apos;s whole day and show your clients the proof. It costs nothing to try.
             </p>
             <StartTrial />
           </div>
