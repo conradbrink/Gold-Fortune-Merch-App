@@ -192,6 +192,8 @@ export async function createUser(input: {
   fullName: string;
   password: string;
   jobRoleId: string;
+  /** The owner's own login for trying the phone app (Part 2c): field role, not a place. */
+  ownerTest?: boolean;
 }): Promise<{ id: string; login: string; phone: string | null }> {
   const res = await fetch("/api/reps/invite", {
     method: "POST",
@@ -202,6 +204,7 @@ export async function createUser(input: {
       full_name: input.fullName,
       password: input.password,
       job_role_id: input.jobRoleId,
+      owner_test: input.ownerTest === true,
     }),
   });
   const payload = await res.json().catch(() => null);

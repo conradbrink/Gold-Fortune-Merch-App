@@ -671,6 +671,7 @@ export type Database = {
           onboarding_dismissed_at: string | null
           onboarding_dismissed_by: string | null
           org_id: string
+          owner_test_profile_id: string | null
           trial_ends_at: string | null
           updated_at: string
           wizard_finished_at: string | null
@@ -681,6 +682,7 @@ export type Database = {
           onboarding_dismissed_at?: string | null
           onboarding_dismissed_by?: string | null
           org_id: string
+          owner_test_profile_id?: string | null
           trial_ends_at?: string | null
           updated_at?: string
           wizard_finished_at?: string | null
@@ -691,6 +693,7 @@ export type Database = {
           onboarding_dismissed_at?: string | null
           onboarding_dismissed_by?: string | null
           org_id?: string
+          owner_test_profile_id?: string | null
           trial_ends_at?: string | null
           updated_at?: string
           wizard_finished_at?: string | null
@@ -7590,6 +7593,17 @@ export type Database = {
       my_onboarding: { Args: never; Returns: Json }
       dismiss_onboarding: { Args: never; Returns: undefined }
       my_setup: { Args: never; Returns: Json }
+      add_owner_test_profile: {
+        Args: {
+          p_email: string
+          p_full_name: string
+          p_id: string
+          p_job_role_id: string
+          p_org: string
+          p_phone: string
+        }
+        Returns: undefined
+      }
       dashboard_kpis: {
         Args: { p_from: string; p_to: string; p_codes?: string[] | null }
         Returns: Json

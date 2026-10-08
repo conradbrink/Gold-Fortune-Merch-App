@@ -80,11 +80,11 @@ export async function POST(request: Request) {
     // body — otherwise a manager could invite a rep into someone else's org.
     const { data: profile } = await supabase
       .from("profiles")
-      .select("org_id, role")
+      .select("org_id, role, full_name")
       .eq("id", user.id)
       .single();
 
-    const caller = profile as { org_id: string; role: string } | null;
+    const caller = profile as { org_id: string; role: string; full_name: string | null } | null;
     if (!caller) {
       return Response.json({ error: "Your account is incomplete." }, { status: 403 });
     }
@@ -120,14 +120,19 @@ export async function POST(request: Request) {
       password?: string;
       role?: string;
       job_role_id?: string;
+      owner_test?: boolean;
     };
     // The cast above is a claim about this body, not a check on it. A caller
     // sending {"role": 123} makes `.trim()` throw a TypeError, which the outer
     // catch reports as a 500 with the raw message — the caller's own bad input
     // presented as a server fault.
     const str = (v: unknown) => (typeof v === "string" ? v : "");
-    const email = str(body.email).trim().toLowerCase();
-    const fullName = str(body.full_name).trim();
+    // The owner's own login for trying the phone app (Stage 7 Part 2c): their
+    // name, their mobile number, the field role, and not one of the company's
+    // places. The database makes it (add_owner_test_profile), one per company.
+    const ownerTest = body.owner_test === true;
+    const email = ownerTest ? "" : str(body.email).trim().toLowerCase();
+    const fullName = ownerTest ? (caller.full_name ?? "").trim() || str(body.full_name).trim() : str(body.full_name).trim();
     const password = str(body.password);
     // Two ways in. `job_role_id` is the one that matters now: the caller names
     // a template and the base role comes off it, so the browser never chooses a
@@ -226,7 +231,13 @@ export async function POST(request: Request) {
       }
     }
     if (!email && !phone) {
-      return Response.json({ error: "Enter a phone number or an email address." }, { status: 400 });
+      return Response.json(
+        { error: ownerTest ? "Type your mobile number." : "Enter a phone number or an email address." },
+        { status: 400 }
+      );
+    }
+    if (ownerTest && (!jobRoleId || role !== "rep")) {
+      return Response.json({ error: "A test login needs the role that uses the phone app." }, { status: 400 });
     }
     if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
       return Response.json({ error: "Enter a valid email address." }, { status: 400 });
@@ -273,16 +284,33 @@ export async function POST(request: Request) {
     // `job_role_id` is written with the profile so the trigger that copies the
     // template's permissions sees it on INSERT. Setting it afterwards would
     // leave a window where the account exists with no grants at all.
-    const { error: profileError } = await admin.from("profiles").insert({
-      id: invited.user.id,
-      org_id: caller.org_id,
-      role,
-      job_role_id: jobRoleId || null,
-      full_name: fullName,
-      email: login,
-      phone,
-    });
+    const { error: profileError } = ownerTest
+      ? await admin.rpc("add_owner_test_profile", {
+          p_org: caller.org_id,
+          p_id: invited.user.id,
+          p_full_name: fullName,
+          p_email: login,
+          p_phone: phone ?? "",
+          p_job_role_id: jobRoleId,
+        })
+      : await admin.from("profiles").insert({
+          id: invited.user.id,
+          org_id: caller.org_id,
+          role,
+          job_role_id: jobRoleId || null,
+          full_name: fullName,
+          email: login,
+          phone,
+        });
 
+    if (profileError && ownerTest) {
+      await admin.auth.admin.deleteUser(invited.user.id);
+      const exists = profileError.hint === "owner_test_exists";
+      return Response.json(
+        { error: exists ? "You already have a login to try the app. Find it in Settings → Users." : profileError.message },
+        { status: exists ? 409 : 400 }
+      );
+    }
     if (profileError) {
       // Without a profile the account can sign in but current_org_id() returns
       // null, so RLS denies everything — a dead account nobody can fix from the

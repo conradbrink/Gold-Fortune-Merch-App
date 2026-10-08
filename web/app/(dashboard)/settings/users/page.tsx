@@ -68,11 +68,18 @@ export default function UsersPage() {
   const [creating, setCreating] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // The owner's own login for trying the phone app (Part 2c), marked so it is
+  // not mistaken for a staff member.
+  const [ownerTestId, setOwnerTestId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setError(null);
     try {
-      const data = await fetchAccessDirectory(supabase);
+      const [data, account] = await Promise.all([
+        fetchAccessDirectory(supabase),
+        supabase.from("company_account").select("owner_test_profile_id").maybeSingle(),
+      ]);
+      setOwnerTestId(account.data?.owner_test_profile_id ?? null);
       setDirectory(data);
       setSelectedId((current) =>
         current && data.users.some((u) => u.id === current)
@@ -173,6 +180,11 @@ export default function UsersPage() {
                   >
                     <span className="block text-sm font-medium text-foreground">
                       {u.full_name ?? "Unnamed"}
+                      {u.id === ownerTestId && (
+                        <Badge variant="outline" className="ml-2 font-normal">
+                          Your test login
+                        </Badge>
+                      )}
                       {!u.is_active && (
                         <Badge variant="outline" className="ml-2 font-normal">
                           Inactive

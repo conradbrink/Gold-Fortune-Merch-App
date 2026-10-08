@@ -82,6 +82,9 @@ const PATH_PERMISSIONS: { prefix: string; permission: PermissionCode }[] = [
   { prefix: "/plans", permission: "company_settings" },
   // The set-up wizard after sign-up (Stage 7 Part 2): the same people.
   { prefix: "/onboarding", permission: "company_settings" },
+  // Trying the phone app yourself (Part 2c) makes a login, which is the
+  // administrator's, as in Settings → Users.
+  { prefix: "/try-it", permission: "admin" },
 
   { prefix: "/warehouse", permission: "warehouse" },
   { prefix: "/orders", permission: "warehouse" },

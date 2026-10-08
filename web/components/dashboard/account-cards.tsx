@@ -199,7 +199,10 @@ function AccountCardsFor() {
                 <ul className="space-y-1 text-sm">
                   {team.map((p) => (
                     <li key={p.id} className="flex flex-wrap items-center gap-x-3 gap-y-0.5">
-                      <span className="font-medium text-foreground">{p.name}</span>
+                      <span className="font-medium text-foreground">
+                        {p.name}
+                        {p.id === setup?.ownerTestId && <span className="ml-1.5 font-normal text-muted-foreground">(your test login)</span>}
+                      </span>
                       <span className={p.signedIn ? "text-primary" : "text-muted-foreground"}>
                         {p.signedIn ? "Signed in" : "Not signed in yet"}
                       </span>

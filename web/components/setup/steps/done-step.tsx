@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { ArrowRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { createClient } from "@/lib/supabase/client";
@@ -72,6 +73,12 @@ export function DoneStep({ org, setup, icon: Icon, onBack, onFinish }: StepProps
       <div className="border-t border-border px-6 py-5">
         <h3 className="text-sm font-semibold text-foreground">What happens next</h3>
         <ol className="mt-2 list-decimal space-y-1 pl-5 text-sm text-muted-foreground">
+          <li>
+            <Link href="/try-it" className="font-medium text-foreground underline">
+              Try it yourself
+            </Link>
+            : start a {lower(t.workday.one)} on your phone and see it on your map. About 10 minutes.
+          </li>
           <li>Your {lower(t.staff.many)} install the app from your WhatsApp message and sign in.</li>
           <li>
             Their first {lower(t.job.one)} shows on your map, with photos and the time on site. Your dashboard tells you

@@ -41,6 +41,8 @@ export type Setup = {
   countryCode: string | null;
   /** The country's usual VAT rate, offered when the company charges VAT. */
   vatRateDefault: number | null;
+  /** The owner's own login for trying the phone app (Part 2c); not one of the places. */
+  ownerTestId: string | null;
 };
 
 function obj(v: unknown): Record<string, unknown> {
@@ -80,6 +82,7 @@ export function parseSetup(raw: unknown): Setup {
     places: r.places && typeof p.limit === "number" ? { used: n(p.used), limit: n(p.limit) } : null,
     countryCode: typeof r.country_code === "string" && /^[A-Z]{2}$/.test(r.country_code) ? r.country_code : null,
     vatRateDefault: Number.isFinite(vat) && vat >= 0 && vat < 100 ? vat : null,
+    ownerTestId: typeof r.owner_test_id === "string" && r.owner_test_id ? r.owner_test_id : null,
   };
 }
 

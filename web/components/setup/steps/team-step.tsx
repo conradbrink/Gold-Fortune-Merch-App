@@ -8,6 +8,7 @@ import { NativeSelect } from "@/components/ui/native-select";
 import { Field } from "@/components/hr/field";
 import { StepCard } from "@/components/setup/step-card";
 import { WelcomeCard } from "@/components/team/welcome-card";
+import { TryItPanel } from "@/components/team/try-it-panel";
 import { createClient } from "@/lib/supabase/client";
 import { createUser } from "@/lib/access";
 import { generatePassword } from "@/lib/representatives";
@@ -110,6 +111,11 @@ export function TeamStep({ setup, text, icon, onBack, onNext, reload }: StepProp
       error={error}
     >
       <div className="space-y-5">
+        <div className="space-y-3 rounded-xl border border-primary/30 bg-primary/5 p-4">
+          <h3 className="text-sm font-semibold text-foreground">Try the app yourself first</h3>
+          <TryItPanel onChange={() => void Promise.all([loadPeople(), reload()])} />
+        </div>
+
         {setup.places && (
           <p className="text-sm text-muted-foreground">
             {setup.places.used} of {setup.places.limit} places used
@@ -121,7 +127,10 @@ export function TeamStep({ setup, text, icon, onBack, onNext, reload }: StepProp
           <ul className="divide-y divide-border rounded-xl border border-border">
             {others.map((p) => (
               <li key={p.id} className="flex items-center justify-between gap-3 px-4 py-2 text-sm">
-                <span className="font-medium text-foreground">{p.full_name ?? "Unnamed"}</span>
+                <span className="font-medium text-foreground">
+                  {p.full_name ?? "Unnamed"}
+                  {p.id === setup.ownerTestId && <span className="ml-1.5 font-normal text-muted-foreground">(your test login)</span>}
+                </span>
                 <span className="truncate text-muted-foreground">{displayLogin(p.email)}</span>
               </li>
             ))}
