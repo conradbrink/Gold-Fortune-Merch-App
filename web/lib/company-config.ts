@@ -30,6 +30,7 @@ export type CompanySettings = {
   money_deposits: boolean;
   money_invoice_from_jobs: boolean;
   money_invoice_direct: boolean;
+  money_contracts: boolean;
 };
 
 export type CompanyConfig = {
@@ -63,6 +64,7 @@ const SETTING_FALLBACK: CompanySettings = {
   money_deposits: false,
   money_invoice_from_jobs: true,
   money_invoice_direct: true,
+  money_contracts: false,
 };
 
 function obj(v: unknown): Record<string, unknown> {
@@ -114,6 +116,7 @@ export function parseCompanyConfig(raw: unknown): CompanyConfig | null {
       money_deposits: bool(s.money_deposits, f.money_deposits),
       money_invoice_from_jobs: bool(s.money_invoice_from_jobs, f.money_invoice_from_jobs),
       money_invoice_direct: bool(s.money_invoice_direct, f.money_invoice_direct),
+      money_contracts: bool(s.money_contracts, f.money_contracts),
     },
     timezone: typeof r.timezone === "string" && r.timezone !== "" ? r.timezone : "UTC",
     vatRate: Number.isFinite(Number(r.vat_rate)) ? Number(r.vat_rate) : 0,

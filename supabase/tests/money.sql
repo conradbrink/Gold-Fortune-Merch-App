@@ -24,6 +24,24 @@
 --       workflow refuses direct and job invoices.
 --   N11 a new cleaning company gets its price list, its workflow and the
 --       permission on its managers' roles.
+--   N12 contracts (Part 1b): billing starts with the first period whose invoice
+--       day has not passed; invoiced on its day, once, catching up missed days;
+--       the terms are fixed once invoiced; a void invoice keeps its period
+--       until it is invoiced again; paused contracts and quarterly arrears.
+--   N13 proof of service: finished jobs with GPS, forms and photos; planned
+--       jobs missed, or caught up later; contract work is not "unbilled".
+--   N14 the ageing and a statement as one document match the rows.
+--   N15 a blank unit is no unit.
+--   N16 the daily run is scheduled, runs, and leaves Gold Fortune alone.
+--   N17 a resumed contract does not bill the months it was paused, and a pause
+--       before the invoice day skips nothing (review fix, 20261008233000).
+--   N18 a warehouse login reads contract lines but cannot change them.
+--   N19 unbilled work: work before a contract's first billed period shows; a
+--       paused contract's invoiced work stays hidden.
+--   N20 contract_lines_replace: all lines or none; never no lines.
+--   N21 contract_save: a new or edited contract's terms and lines in one step;
+--       a refused line leaves the terms and lines as they were; an edit that
+--       leaves out `active` keeps a paused contract paused.
 --
 -- HOW TO RUN: paste into execute_sql (or psql -f). One DO block that always
 -- ends in `raise exception`, so nothing survives — including the two quiet
@@ -43,6 +61,9 @@ declare
   v_order uuid;
   r record;
   v_n int; v_t text; v_num numeric;
+  v_today date; v_expected date; v_last date; v_s3 uuid; v_s4 uuid; v_k1 uuid; v_k2 uuid; v_k3 uuid;
+  v_r1 uuid; v_r2 uuid; v_gf_invoices int;
+  v_s5 uuid; v_k4 uuid; v_v5 uuid; v_k5 uuid;
 begin
   ------------------------------------------------------------- fixtures
   select p.id into v_gf_admin from public.profiles p
@@ -479,8 +500,311 @@ begin
     v_fail := v_fail || format('N11 %s of 3 roles got the invoicing permission', v_n) || E'\n';
   end if;
 
+  ------------------------------------------------------------- N12 contracts
+  reset role;
+  update public.company_settings set value = 'true' where org_id = v_org and key = 'money_contracts';
+  update public.organizations set prices_include_vat = false where id = v_org;
+  v_today := (now() at time zone public.org_timezone(v_org))::date;
+  -- The first month whose invoice day (the 1st, in advance) has not passed.
+  v_expected := case when extract(day from v_today) = 1 then v_today
+                     else (date_trunc('month', v_today) + interval '1 month')::date end;
+  perform set_config('request.jwt.claims', json_build_object('sub', v_owner, 'role', 'authenticated')::text, true);
+  set local role authenticated;
+  insert into public.stores (org_id, name, address, city) values (v_org, 'Contract site', '5 Long St', 'Cape Town')
+    returning id into v_s3;
+  insert into public.service_contracts (org_id, store_id, name, period, billing, invoice_day, starts_on)
+    values (v_org, v_s3, 'Office cleaning, weekdays', 'monthly', 'advance', 1, date '2026-01-01') returning id into v_k1;
+  insert into public.service_contract_lines (contract_id, org_id, position, description, unit, qty, unit_price)
+    values (v_k1, v_org, 1, 'Monthly cleaning', 'month', 1, 1000);
+  if (select bill_from from public.service_contracts where id = v_k1) <> v_expected
+     or (select next_invoice_on from public.service_contracts where id = v_k1) <> v_expected then
+    v_fail := v_fail || format('N12 billing starts %s, next invoice %s; expected %s',
+      (select bill_from from public.service_contracts where id = v_k1),
+      (select next_invoice_on from public.service_contracts where id = v_k1), v_expected) || E'\n';
+  end if;
+  reset role;
+  if public.contract_invoices_due(v_org, v_expected - 1) <> 0 then
+    v_fail := v_fail || 'N12 a contract was invoiced before its day' || E'\n';
+  end if;
+  if public.contract_invoices_due(v_org, v_expected) <> 1 then
+    v_fail := v_fail || 'N12 a contract was not invoiced on its day' || E'\n';
+  end if;
+  select i.* into r from public.tax_invoices i
+    join public.service_contract_invoices ci on ci.invoice_id = i.id
+   where ci.contract_id = v_k1 and ci.period_start = v_expected;
+  if r.source <> 'contract' or r.total <> 1150 or r.period_start <> v_expected
+     or r.period_end <> (v_expected + interval '1 month' - interval '1 day')::date
+     or r.customer_name <> 'Contract site' or r.reference <> 'Office cleaning, weekdays' or r.issue_date <> v_expected then
+    v_fail := v_fail || format('N12 the contract invoice is %s %s %s–%s %s', r.source, r.total, r.period_start, r.period_end, r.reference) || E'\n';
+  end if;
+  if public.contract_invoices_due(v_org, v_expected) <> 0 then
+    v_fail := v_fail || 'N12 a period was invoiced twice' || E'\n';
+  end if;
+  if public.contract_invoices_due(v_org, (v_expected + interval '2 months' + interval '14 days')::date) <> 2 then
+    v_fail := v_fail || 'N12 missed days were not caught up' || E'\n';
+  end if;
+  if (select next_invoice_on from public.service_contracts where id = v_k1) <> (v_expected + interval '3 months')::date then
+    v_fail := v_fail || 'N12 the next invoice date did not move on' || E'\n';
+  end if;
+  perform set_config('request.jwt.claims', json_build_object('sub', v_owner, 'role', 'authenticated')::text, true);
+  set local role authenticated;
+  begin
+    update public.service_contracts set period = 'quarterly' where id = v_k1;
+    v_fail := v_fail || 'N12 an invoiced contract changed how it is billed' || E'\n';
+  exception when others then
+    if sqlstate <> '22023' then v_fail := v_fail || format('N12 term change refused for the wrong reason: %s %s', sqlstate, sqlerrm) || E'\n'; end if;
+  end;
+  perform public.tax_invoice_void(r.id, 'Wrong price');
+  reset role;
+  if public.contract_invoices_due(v_org, (v_expected + interval '2 months' + interval '14 days')::date) <> 0 then
+    v_fail := v_fail || 'N12 a voided period was reissued by itself' || E'\n';
+  end if;
+  set local role authenticated;
+  v_inv := public.contract_reinvoice_period(v_k1, v_expected);
+  select string_agg(ci.period_start || '/' || ci.active || '/' || i.status, ', ' order by ci.period_start, ci.active) into v_t
+    from public.service_contract_invoices ci join public.tax_invoices i on i.id = ci.invoice_id
+   where ci.contract_id = v_k1;
+  if v_inv is null
+     or (select count(*) from public.service_contract_invoices ci join public.tax_invoices i on i.id = ci.invoice_id
+          where ci.contract_id = v_k1 and ci.period_start = v_expected and ci.active and i.status = 'issued') <> 1 then
+    v_fail := v_fail || format('N12 a voided period could not be invoiced again (returned %s; periods %s)', v_inv, v_t) || E'\n';
+  end if;
+  begin
+    perform public.contract_reinvoice_period(v_k1, (v_expected + interval '1 month')::date);
+    v_fail := v_fail || 'N12 a period with a live invoice was invoiced again' || E'\n';
+  exception when others then
+    if sqlstate <> '22023' then v_fail := v_fail || format('N12 re-invoice refused for the wrong reason: %s %s', sqlstate, sqlerrm) || E'\n'; end if;
+  end;
+  update public.service_contracts set active = false where id = v_k1;
+  -- Quarterly, in arrears, on the 5th.
+  insert into public.service_contracts (org_id, store_id, name, period, billing, invoice_day, starts_on)
+    values (v_org, v_s3, 'Gardens, quarterly', 'quarterly', 'arrears', 5, v_expected) returning id into v_k2;
+  insert into public.service_contract_lines (contract_id, org_id, description, qty, unit_price)
+    values (v_k2, v_org, 'Garden service', 1, 3000);
+  reset role;
+  if public.contract_invoices_due(v_org, (v_expected + interval '3 months' + interval '4 days')::date) <> 1
+     or (select count(*) from public.service_contract_invoices where contract_id = v_k1 and active) <> 3 then
+    v_fail := v_fail || 'N12 a paused contract was invoiced, or the quarter in arrears was not' || E'\n';
+  end if;
+  if not exists (select 1 from public.service_contract_invoices
+                  where contract_id = v_k2 and period_start = v_expected
+                    and period_end = (v_expected + interval '3 months' - interval '1 day')::date) then
+    v_fail := v_fail || 'N12 the quarter invoiced in arrears has the wrong period' || E'\n';
+  end if;
+
+  ------------------------------------------------------------- N13 proof of service
+  v_last := (date_trunc('month', v_today) - interval '1 month')::date;
+  set local role authenticated;
+  insert into public.stores (org_id, name) values (v_org, 'Proof site') returning id into v_s4;
+  insert into public.service_contracts (org_id, store_id, name, starts_on)
+    values (v_org, v_s4, 'Proof contract', (v_last - interval '1 month')::date) returning id into v_k3;
+  insert into public.service_contract_lines (contract_id, org_id, description, qty, unit_price)
+    values (v_k3, v_org, 'Monthly service', 1, 500);
+  reset role;
+  -- Billing from last month, as if it had been entered then.
+  update public.service_contracts set bill_from = v_last where id = v_k3;
+  insert into public.routes (org_id, rep_id, store_id, scheduled_date, source)
+    values (v_org, v_staff, v_s4, v_last + 1, 'manual') returning id into v_r1;
+  insert into public.routes (org_id, rep_id, store_id, scheduled_date, source)
+    values (v_org, v_staff, v_s4, v_last + 19, 'manual') returning id into v_r2;
+  insert into public.visits (org_id, rep_id, store_id, status, checkin_at, checkout_at, checkin_distance_from_store_m, client_generated_id)
+    values (v_org, v_staff, v_s4, 'checked_out', ((v_last + 3)::timestamp + interval '9 hours') at time zone public.org_timezone(v_org),
+            ((v_last + 3)::timestamp + interval '10 hours') at time zone public.org_timezone(v_org), 10, gen_random_uuid())
+    returning id into v_v1;
+  insert into public.visits (org_id, rep_id, store_id, status, checkin_at, checkout_at, checkin_distance_from_store_m, client_generated_id)
+    values (v_org, v_owner, v_s4, 'checked_out', ((v_last + 9)::timestamp + interval '9 hours') at time zone public.org_timezone(v_org),
+            ((v_last + 9)::timestamp + interval '9 hours 30 minutes') at time zone public.org_timezone(v_org), 900, gen_random_uuid())
+    returning id into v_v2;
+  if public.contract_invoices_due(v_org, v_today) < 1 then
+    v_fail := v_fail || 'N13 last month''s contract period was not invoiced' || E'\n';
+  end if;
+  select ci.invoice_id into v_inv from public.service_contract_invoices ci where ci.contract_id = v_k3 and ci.period_start = v_last;
+  set local role authenticated;
+  if (select sum(minutes) from public.invoice_proof_of_service(v_inv) where status = 'done') <> 90 then
+    v_fail := v_fail || 'N13 proof of service: the time on site is wrong' || E'\n';
+  end if;
+  select string_agg(status || ':' || coalesce(gps_ok::text, '-'), ',' order by day, status) into v_t
+    from public.invoice_proof_of_service(v_inv);
+  if v_t <> 'caught_up:-,done:true,done:false,missed:-' then
+    v_fail := v_fail || format('N13 proof of service rows: %s', v_t) || E'\n';
+  end if;
+  if exists (select 1 from public.unbilled_visits(v_s4, null, null)) then
+    v_fail := v_fail || 'N13 work a contract covers is listed as unbilled' || E'\n';
+  end if;
+  reset role;
+
+  ------------------------------------------------------------- N14 one document
+  set local role authenticated;
+  if jsonb_array_length(public.debtors_ageing_json(date '2026-04-15'))
+       <> (select count(*) from public.debtors_ageing(date '2026-04-15'))
+     or jsonb_array_length(public.client_statement_json(null, 'walk-in client', date '2026-01-01', date '2026-03-31'))
+       <> (select count(*) from public.client_statement(null, 'walk-in client', date '2026-01-01', date '2026-03-31')) then
+    v_fail := v_fail || 'N14 the documents do not match the rows' || E'\n';
+  end if;
+
+  ------------------------------------------------------------- N15 blank unit
+  v_direct := public.invoice_direct(jsonb_build_object('name', 'Blank unit'),
+                jsonb_build_array(jsonb_build_object('description', 'Call-out', 'qty', 1, 'unit_price', 100, 'unit', '  ')));
+  if (select unit from public.tax_invoice_lines where invoice_id = v_direct) is not null then
+    v_fail := v_fail || 'N15 a blank unit was kept' || E'\n';
+  end if;
+  reset role;
+
+  ------------------------------------------------------------- N16 the daily run
+  if not exists (select 1 from cron.job where jobname = 'contract-invoices' and command like '%contract_invoices_run()%') then
+    v_fail := v_fail || 'N16 the daily contract run is not scheduled' || E'\n';
+  end if;
+  select count(*) into v_gf_invoices from public.tax_invoices where org_id = c_gf;
+  perform public.contract_invoices_run();
+  if (select count(*) from public.tax_invoices where org_id = c_gf) <> v_gf_invoices then
+    v_fail := v_fail || 'N16 the daily run invoiced Gold Fortune' || E'\n';
+  end if;
+
+  ------------------------------------------------------------- N17 resume
+  -- Entered four months ago, paused, resumed now: the paused months are not
+  -- billed; billing carries on from the first period not yet due.
+  perform set_config('request.jwt.claims', json_build_object('sub', v_owner, 'role', 'authenticated')::text, true);
+  set local role authenticated;
+  insert into public.stores (org_id, name) values (v_org, 'Resume site') returning id into v_s5;
+  insert into public.service_contracts (org_id, store_id, name, period, billing, invoice_day, starts_on)
+    values (v_org, v_s5, 'Resumed cleaning', 'monthly', 'advance', 1, (date_trunc('month', v_today) - interval '4 months')::date)
+    returning id into v_k4;
+  insert into public.service_contract_lines (contract_id, org_id, description, qty, unit_price)
+    values (v_k4, v_org, 'Monthly cleaning', 1, 800);
+  reset role;
+  update public.service_contracts set bill_from = (date_trunc('month', v_today) - interval '4 months')::date where id = v_k4;
+  update public.service_contracts set active = false where id = v_k4;
+  update public.service_contracts set active = true where id = v_k4;
+  if (select bill_from from public.service_contracts where id = v_k4) <> v_expected then
+    v_fail := v_fail || format('N17 a resumed contract bills from %s, expected %s',
+      (select bill_from from public.service_contracts where id = v_k4), v_expected) || E'\n';
+  end if;
+  if public.contract_invoices_due(v_org, v_today, v_k4) <> (case when v_expected = v_today then 1 else 0 end) then
+    v_fail := v_fail || 'N17 a resumed contract billed the months it was paused' || E'\n';
+  end if;
+  update public.service_contracts set active = false where id = v_k4;
+  update public.service_contracts set active = true where id = v_k4;
+  if (select bill_from from public.service_contracts where id = v_k4) <> v_expected then
+    v_fail := v_fail || 'N17 a pause before the invoice day skipped a period' || E'\n';
+  end if;
+
+  ------------------------------------------------------------- N18 who may change lines
+  insert into public.profile_permissions (profile_id, permission_code) values (v_staff, 'warehouse');
+  perform set_config('request.jwt.claims', json_build_object('sub', v_staff, 'role', 'authenticated')::text, true);
+  set local role authenticated;
+  select count(*) into v_n from public.service_contract_lines where contract_id = v_k4;
+  if v_n <> 1 then
+    v_fail := v_fail || format('N18 a warehouse login sees %s contract lines, not 1', v_n) || E'\n';
+  end if;
+  delete from public.service_contract_lines where contract_id = v_k4;
+  update public.service_contract_lines set unit_price = 1 where contract_id = v_k4;
+  begin
+    insert into public.service_contract_lines (contract_id, org_id, description, qty, unit_price)
+      values (v_k4, v_org, 'Sneaked in', 1, 1);
+    v_fail := v_fail || 'N18 a warehouse login added a contract line' || E'\n';
+  exception when others then
+    if sqlstate <> '42501' then v_fail := v_fail || format('N18 line insert refused for the wrong reason: %s %s', sqlstate, sqlerrm) || E'\n'; end if;
+  end;
+  begin
+    perform public.contract_lines_replace(v_k4, '[{"description": "Sneaked in", "qty": 1, "unit_price": 1}]'::jsonb);
+    v_fail := v_fail || 'N18 a warehouse login replaced contract lines' || E'\n';
+  exception when others then
+    if sqlstate <> '42501' then v_fail := v_fail || format('N18 replace refused for the wrong reason: %s %s', sqlstate, sqlerrm) || E'\n'; end if;
+  end;
+  reset role;
+  if (select count(*) from public.service_contract_lines where contract_id = v_k4 and unit_price = 800) <> 1
+     or (select count(*) from public.service_contract_lines where contract_id = v_k4) <> 1 then
+    v_fail := v_fail || 'N18 a warehouse login changed or deleted contract lines' || E'\n';
+  end if;
+  delete from public.profile_permissions where profile_id = v_staff and permission_code = 'warehouse';
+
+  ------------------------------------------------------------- N19 unbilled work
+  -- Work two months ago at the resumed contract's site: before its first billed
+  -- period, so nobody bills it unless it is shown.
+  insert into public.visits (org_id, rep_id, store_id, status, checkin_at, checkout_at, checkin_distance_from_store_m, client_generated_id)
+    values (v_org, v_staff, v_s5, 'checked_out',
+            (((date_trunc('month', v_today) - interval '2 months')::date + 2)::timestamp + interval '9 hours') at time zone public.org_timezone(v_org),
+            (((date_trunc('month', v_today) - interval '2 months')::date + 2)::timestamp + interval '10 hours') at time zone public.org_timezone(v_org),
+            10, gen_random_uuid())
+    returning id into v_v5;
+  -- N13's contract invoiced last month; paused now, that work stays billed.
+  update public.service_contracts set active = false where id = v_k3;
+  perform set_config('request.jwt.claims', json_build_object('sub', v_owner, 'role', 'authenticated')::text, true);
+  set local role authenticated;
+  if not exists (select 1 from public.unbilled_visits(v_s5, null, null) u where u.visit_id = v_v5) then
+    v_fail := v_fail || 'N19 work before a contract''s first billed period is hidden from unbilled work' || E'\n';
+  end if;
+  if exists (select 1 from public.unbilled_visits(v_s4, null, null)) then
+    v_fail := v_fail || 'N19 a paused contract''s invoiced work came back as unbilled' || E'\n';
+  end if;
+
+  ------------------------------------------------------------- N20 lines in one go
+  perform public.contract_lines_replace(v_k4,
+    '[{"description": "Cleaning", "unit": "month", "qty": 1, "unit_price": 900},
+      {"description": "Windows", "qty": 2, "unit_price": 150}]'::jsonb);
+  select count(*), sum(qty * unit_price) into v_n, v_num from public.service_contract_lines where contract_id = v_k4;
+  if v_n <> 2 or v_num <> 1200 then
+    v_fail := v_fail || format('N20 the lines were not replaced (%s lines, %s)', v_n, v_num) || E'\n';
+  end if;
+  begin
+    perform public.contract_lines_replace(v_k4,
+      '[{"description": "Good", "qty": 1, "unit_price": 5}, {"description": "Bad", "qty": 0, "unit_price": 5}]'::jsonb);
+    v_fail := v_fail || 'N20 a line with no quantity was accepted' || E'\n';
+  exception when check_violation then null;
+  end;
+  if (select count(*) from public.service_contract_lines where contract_id = v_k4) <> 2 then
+    v_fail := v_fail || 'N20 a failed save left the contract without its old lines' || E'\n';
+  end if;
+  begin
+    perform public.contract_lines_replace(v_k4, '[]'::jsonb);
+    v_fail := v_fail || 'N20 a contract was left with no lines' || E'\n';
+  exception when invalid_parameter_value then null;
+  end;
+  reset role;
+
+  ------------------------------------------------------------- N21 one-step save
+  perform set_config('request.jwt.claims', json_build_object('sub', v_owner, 'role', 'authenticated')::text, true);
+  set local role authenticated;
+  v_k5 := public.contract_save(null,
+    jsonb_build_object('store_id', v_s5, 'name', 'One-step contract', 'period', 'monthly', 'billing', 'advance',
+                       'invoice_day', 1, 'starts_on', v_today, 'active', true),
+    '[{"description": "Monthly service", "qty": 1, "unit_price": 700}]'::jsonb);
+  if v_k5 is null or (select count(*) from public.service_contract_lines where contract_id = v_k5) <> 1
+     or (select name from public.service_contracts where id = v_k5) <> 'One-step contract' then
+    v_fail := v_fail || 'N21 a new contract was not saved with its line' || E'\n';
+  end if;
+  perform public.contract_save(v_k5,
+    jsonb_build_object('store_id', v_s5, 'name', 'One-step contract, renamed', 'period', 'monthly', 'billing', 'advance',
+                       'invoice_day', 1, 'starts_on', v_today, 'active', true),
+    '[{"description": "Monthly service", "qty": 1, "unit_price": 750}, {"description": "Windows", "qty": 1, "unit_price": 50}]'::jsonb);
+  if (select name from public.service_contracts where id = v_k5) <> 'One-step contract, renamed'
+     or (select sum(qty * unit_price) from public.service_contract_lines where contract_id = v_k5) <> 800 then
+    v_fail := v_fail || 'N21 an edited contract''s terms and lines were not saved together' || E'\n';
+  end if;
+  begin
+    perform public.contract_save(v_k5,
+      jsonb_build_object('store_id', v_s5, 'name', 'Should not stick', 'period', 'monthly', 'billing', 'advance',
+                         'invoice_day', 1, 'starts_on', v_today, 'active', true),
+      jsonb_build_array(jsonb_build_object('description', repeat('x', 501), 'qty', 1, 'unit_price', 1)));
+    v_fail := v_fail || 'N21 a 501-character line was accepted' || E'\n';
+  exception when check_violation then null;
+  end;
+  if (select name from public.service_contracts where id = v_k5) <> 'One-step contract, renamed'
+     or (select count(*) from public.service_contract_lines where contract_id = v_k5) <> 2 then
+    v_fail := v_fail || 'N21 a refused line left new terms or lost the old lines' || E'\n';
+  end if;
+  update public.service_contracts set active = false where id = v_k5;
+  perform public.contract_save(v_k5,
+    jsonb_build_object('store_id', v_s5, 'name', 'One-step contract, renamed', 'period', 'monthly', 'billing', 'advance',
+                       'invoice_day', 1, 'starts_on', v_today),
+    '[{"description": "Monthly service", "qty": 1, "unit_price": 750}]'::jsonb);
+  if (select active from public.service_contracts where id = v_k5) then
+    v_fail := v_fail || 'N21 an edit without "active" resumed a paused contract' || E'\n';
+  end if;
+  reset role;
+
   if v_fail = '' then
-    raise exception 'MONEY SUITE: ALL PASS (N1-N11)% — rolled back', v_note;
+    raise exception 'MONEY SUITE: ALL PASS (N1-N21)% — rolled back', v_note;
   end if;
   raise exception E'MONEY SUITE FAILURES:\n%', v_fail;
 end;

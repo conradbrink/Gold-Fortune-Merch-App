@@ -22,40 +22,14 @@ function fail(error: { message: string } | null) {
 const num = (v: unknown) => Number(v ?? 0);
 
 /**
- * Every row of a set-returning RPC, a page at a time: the API returns at most
- * 1,000 rows a response, and a receivables report that silently stops at
- * 1,000 clients or lines is wrong rather than short. Both functions order
- * their rows, so pages follow one another.
+ * Each report is one document read in one statement (`debtors_ageing_json`,
+ * `client_statement_json`): one snapshot, so a payment recorded meanwhile
+ * cannot move a row, and no 1,000-row page limit applies.
  */
-const PAGE = 1000;
-async function allRows<T>(
-  page: (from: number, to: number) => PromiseLike<{ data: unknown; error: { message: string } | null }>
-): Promise<T[]> {
-  const out: T[] = [];
-  for (let from = 0; ; from += PAGE) {
-    const { data, error } = await page(from, from + PAGE - 1);
-    fail(error);
-    const rows = (data ?? []) as T[];
-    out.push(...rows);
-    if (rows.length < PAGE) return out;
-  }
-}
-
 export async function fetchAgeing(supabase: Client, asOf: string): Promise<AgeingRow[]> {
-  const pages = await allRows<AgeingRow>((from, to) =>
-    supabase.rpc("debtors_ageing", { p_as_of: asOf }).range(from, to)
-  );
-  // A payment between two page requests can shift a client across the page
-  // boundary; one row per client is kept. (One snapshot for the whole report
-  // comes with the next money migration.)
-  const seen = new Set<string>();
-  const data = pages.filter((r) => {
-    const key = `${r.store_id ?? ""}|${r.store_id ? "" : r.client_name.trim().toLowerCase()}`;
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
-  return data.map((r) => ({
+  const { data, error } = await supabase.rpc("debtors_ageing_json", { p_as_of: asOf });
+  fail(error);
+  return ((data ?? []) as unknown as AgeingRow[]).map((r) => ({
     ...r,
     not_due: num(r.not_due),
     days_1_30: num(r.days_1_30),
@@ -85,17 +59,14 @@ export async function fetchStatement(
   from: string,
   to: string
 ): Promise<StatementRow[]> {
-  const data = await allRows<StatementRow>((first, last) =>
-    supabase
-      .rpc("client_statement", {
-        p_store_id: client.storeId,
-        p_customer_name: client.storeId ? null : client.name,
-        p_from: from,
-        p_to: to,
-      })
-      .range(first, last)
-  );
-  return data.map((r) => ({
+  const { data, error } = await supabase.rpc("client_statement_json", {
+    p_store_id: client.storeId,
+    p_customer_name: client.storeId ? null : client.name,
+    p_from: from,
+    p_to: to,
+  });
+  fail(error);
+  return ((data ?? []) as unknown as StatementRow[]).map((r) => ({
     ...r,
     debit: r.debit === null ? null : num(r.debit),
     credit: r.credit === null ? null : num(r.credit),

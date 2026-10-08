@@ -173,6 +173,135 @@ export type Database = {
         }
         Relationships: []
       }
+      service_contracts: {
+        Row: {
+          id: string
+          org_id: string
+          store_id: string
+          name: string
+          period: string
+          billing: string
+          invoice_day: number
+          starts_on: string
+          ends_on: string | null
+          bill_from: string
+          active: boolean
+          reference: string | null
+          notes: string | null
+          next_invoice_on: string | null
+          last_run_at: string | null
+          last_run_error: string | null
+          created_by: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          org_id: string
+          store_id: string
+          name: string
+          period?: string
+          billing?: string
+          invoice_day?: number
+          starts_on: string
+          ends_on?: string | null
+          bill_from?: string
+          active?: boolean
+          reference?: string | null
+          notes?: string | null
+          next_invoice_on?: string | null
+          last_run_at?: string | null
+          last_run_error?: string | null
+          created_by?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          org_id?: string
+          store_id?: string
+          name?: string
+          period?: string
+          billing?: string
+          invoice_day?: number
+          starts_on?: string
+          ends_on?: string | null
+          bill_from?: string
+          active?: boolean
+          reference?: string | null
+          notes?: string | null
+          next_invoice_on?: string | null
+          last_run_at?: string | null
+          last_run_error?: string | null
+          created_by?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      service_contract_lines: {
+        Row: {
+          id: string
+          contract_id: string
+          org_id: string
+          position: number | null
+          service_item_id: string | null
+          description: string
+          unit: string | null
+          qty: number
+          unit_price: number
+        }
+        Insert: {
+          id?: string
+          contract_id: string
+          org_id: string
+          position?: number | null
+          service_item_id?: string | null
+          description: string
+          unit?: string | null
+          qty: number
+          unit_price: number
+        }
+        Update: {
+          id?: string
+          contract_id?: string
+          org_id?: string
+          position?: number | null
+          service_item_id?: string | null
+          description?: string
+          unit?: string | null
+          qty?: number
+          unit_price?: number
+        }
+        Relationships: []
+      }
+      service_contract_invoices: {
+        Row: {
+          contract_id: string
+          period_start: string
+          period_end: string
+          invoice_id: string
+          org_id: string
+          active: boolean
+        }
+        Insert: {
+          contract_id: string
+          period_start: string
+          period_end: string
+          invoice_id: string
+          org_id: string
+          active?: boolean
+        }
+        Update: {
+          contract_id?: string
+          period_start?: string
+          period_end?: string
+          invoice_id?: string
+          org_id?: string
+          active?: boolean
+        }
+        Relationships: []
+      }
       service_items: {
         Row: {
           id: string
@@ -2312,6 +2441,8 @@ export type Database = {
           customer_email: string | null
           seller_registration_number: string | null
           bank_details: string | null
+          period_start: string | null
+          period_end: string | null
         }
         Insert: {
           id?: string
@@ -2350,6 +2481,8 @@ export type Database = {
           customer_email?: string | null
           seller_registration_number?: string | null
           bank_details?: string | null
+          period_start?: string | null
+          period_end?: string | null
         }
         Update: {
           id?: string
@@ -2388,6 +2521,8 @@ export type Database = {
           customer_email?: string | null
           seller_registration_number?: string | null
           bank_details?: string | null
+          period_start?: string | null
+          period_end?: string | null
         }
         Relationships: []
       }
@@ -6766,6 +6901,39 @@ export type Database = {
           oldest_due: string
           last_paid_on: string | null
         }[]
+      }
+      contract_lines_replace: { Args: { p_contract: string; p_lines: Json }; Returns: undefined }
+      contract_save: { Args: { p_contract: string | null; p_terms: Json; p_lines: Json }; Returns: string }
+      contract_invoices_run_now: {
+        Args: { p_contract?: string | null }
+        Returns: number
+      }
+      contract_reinvoice_period: {
+        Args: { p_contract: string; p_period_start: string }
+        Returns: string
+      }
+      invoice_proof_of_service: {
+        Args: { p_invoice_id: string }
+        Returns: {
+          visit_id: string | null
+          day: string
+          staff_name: string | null
+          checkin_at: string | null
+          checkout_at: string | null
+          minutes: number | null
+          gps_ok: boolean | null
+          forms: number | null
+          photos: number | null
+          status: string
+        }[]
+      }
+      debtors_ageing_json: {
+        Args: { p_as_of?: string }
+        Returns: Json
+      }
+      client_statement_json: {
+        Args: { p_store_id: string | null; p_customer_name: string | null; p_from: string; p_to: string }
+        Returns: Json
       }
       unbilled_visits: {
         Args: { p_store_id: string | null; p_from: string | null; p_to: string | null }

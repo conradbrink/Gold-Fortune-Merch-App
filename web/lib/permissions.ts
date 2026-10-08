@@ -105,6 +105,7 @@ const PATH_PERMISSIONS: { prefix: string; permission: PermissionCode }[] = [
   // Money (Stage 7): whoever bills. Given wherever `warehouse` was, so nobody
   // who could open these pages before has lost them.
   { prefix: "/quotes", permission: "invoicing" },
+  { prefix: "/contracts", permission: "invoicing" },
   { prefix: "/invoices", permission: "invoicing" },
   { prefix: "/owed", permission: "invoicing" },
   { prefix: "/price-list", permission: "invoicing" },

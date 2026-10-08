@@ -36,6 +36,7 @@ import {
   Coins,
   HandCoins,
   Tags,
+  FileSignature,
 } from "lucide-react";
 import {
   can,
@@ -45,6 +46,8 @@ import {
 } from "@/lib/permissions";
 import { canReachPath, type ModuleSet } from "@/lib/modules";
 import { DEFAULT_TERMS, type Terms } from "@/lib/terms";
+import type { CompanySettings } from "@/lib/company-config";
+import { switchesOf, usesPriceList } from "@/lib/money-workflow";
 
 export type NavItem = {
   href: string;
@@ -69,6 +72,12 @@ export type NavItem = {
  */
 type NavItemDef = Omit<NavItem, "label"> & {
   label: string | ((t: Terms) => string);
+  /**
+   * Shown only when the company's settings say it uses this (the money
+   * switches). Without settings (a caller that only asks which pages exist)
+   * the item is shown.
+   */
+  when?: (settings: CompanySettings, modules: ModuleSet) => boolean;
 };
 
 type NavGroupDef = {
@@ -175,8 +184,21 @@ export const navGroups: NavGroupDef[] = [
     items: [
       { href: "/quotes", label: "Quotes", icon: FileText, permission: "invoicing" },
       { href: "/invoices", label: "Invoices", icon: Receipt, permission: "invoicing" },
+      {
+        href: "/contracts",
+        label: "Contracts",
+        icon: FileSignature,
+        permission: "invoicing",
+        when: (s) => s.money_contracts,
+      },
       { href: "/owed", label: "Who owes you", icon: HandCoins, permission: "invoicing" },
-      { href: "/price-list", label: "Price list", icon: Tags, permission: "invoicing" },
+      {
+        href: "/price-list",
+        label: "Price list",
+        icon: Tags,
+        permission: "invoicing",
+        when: (s, m) => usesPriceList(switchesOf(s), m),
+      },
     ],
   },
   {
@@ -366,7 +388,9 @@ export function visibleNavGroups(
   modules: ModuleSet,
   // The company's words for the labels. Defaulted so a caller that only asks
   // which destinations are offered need not care what they are called.
-  terms: Terms = DEFAULT_TERMS
+  terms: Terms = DEFAULT_TERMS,
+  // The company's settings, for items it may not use (contracts, the price list).
+  settings?: CompanySettings
 ): NavGroup[] {
   return navGroups
     .map((group) => ({
@@ -376,10 +400,13 @@ export function visibleNavGroups(
           (item) =>
             (item.permission === undefined || can(permissions, item.permission)) &&
             canAccessPath(permissions, item.href) &&
-            canReachPath(modules, item.href)
+            canReachPath(modules, item.href) &&
+            (item.when === undefined || settings === undefined || item.when(settings, modules))
         )
         .map((item) => ({
-          ...item,
+          href: item.href,
+          icon: item.icon,
+          permission: item.permission,
           label: typeof item.label === "function" ? item.label(terms) : item.label,
         })),
     }))
