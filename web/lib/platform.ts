@@ -286,13 +286,128 @@ export async function salesContact(): Promise<SalesContact> {
   return { email: text(email), whatsapp: text(whatsapp), pricingUrl: text(pricingUrl) };
 }
 
-/** A company's trial end, or null when it is not on a trial. */
-export async function companyTrialEnd(orgId: string): Promise<string | null> {
-  const { data, error } = await platformAdminClient()
-    .from("company_account")
-    .select("trial_ends_at")
-    .eq("org_id", orgId)
-    .maybeSingle();
+// ------------------------------------------------------------ Billing (Stage 6)
+
+export type CompanyBilling = {
+  status: string;
+  period: string | null;
+  plan: Json | null;
+  planNext: Json | null;
+  customPriceCents: number | null;
+  periodEnd: string | null;
+  trialEndsAt: string | null;
+  graceEndsAt: string | null;
+  readOnlySince: string | null;
+  cancelAtPeriodEnd: boolean;
+  billingEmail: string | null;
+  hasCard: boolean;
+  charges: {
+    id: string;
+    reason: string;
+    status: string;
+    totalCents: number;
+    attempts: number;
+    lastError: string | null;
+    createdAt: string;
+  }[];
+  invoices: { id: string; number: string; kind: string; issuedAt: string; totalCents: number; paidMethod: string | null }[];
+};
+
+/** One company's billing for the operator's page; null when it has no account row (billed outside the app). */
+export async function companyBilling(orgId: string): Promise<CompanyBilling | null> {
+  const admin = platformAdminClient();
+  const [{ data: a, error }, { data: charges }, { data: invoices }] = await Promise.all([
+    admin
+      .from("company_account")
+      .select("status, period, plan, plan_next, custom_price_cents, period_end, trial_ends_at, grace_ends_at, read_only_since, cancel_at_period_end, billing_email, provider_token")
+      .eq("org_id", orgId)
+      .maybeSingle(),
+    admin
+      .from("billing_charges")
+      .select("id, reason, status, total_cents, attempts, last_error, created_at")
+      .eq("org_id", orgId)
+      .order("created_at", { ascending: false })
+      .limit(20),
+    admin
+      .from("billing_invoices")
+      .select("id, number, kind, issued_at, total_cents, paid_method")
+      .eq("org_id", orgId)
+      .order("issued_at", { ascending: false })
+      .limit(20),
+  ]);
   if (error) throw error;
-  return data?.trial_ends_at ?? null;
+  if (!a) return null;
+  return {
+    status: a.status,
+    period: a.period,
+    plan: a.plan,
+    planNext: a.plan_next,
+    customPriceCents: a.custom_price_cents,
+    periodEnd: a.period_end,
+    trialEndsAt: a.trial_ends_at,
+    graceEndsAt: a.grace_ends_at,
+    readOnlySince: a.read_only_since,
+    cancelAtPeriodEnd: a.cancel_at_period_end,
+    billingEmail: a.billing_email,
+    hasCard: Boolean(a.provider_token),
+    charges: (charges ?? []).map((c) => ({
+      id: c.id,
+      reason: c.reason,
+      status: c.status,
+      totalCents: c.total_cents,
+      attempts: c.attempts,
+      lastError: c.last_error,
+      createdAt: c.created_at,
+    })),
+    invoices: (invoices ?? []).map((i) => ({
+      id: i.id,
+      number: i.number,
+      kind: i.kind,
+      issuedAt: i.issued_at,
+      totalCents: i.total_cents,
+      paidMethod: i.paid_method,
+    })),
+  };
+}
+
+export type BillingOverview = {
+  /** Status per company id; a company with no account row is billed outside the app. */
+  status: Map<string, string>;
+  /** What each paying company's plan comes to per month (yearly divided by 12), in cents. */
+  monthlyCents: Map<string, number>;
+  /** Read-only (or ended) for longer than `read_only_days`: the operator decides whether to delete. */
+  dueForDeletion: { orgId: string; since: string }[];
+};
+
+export async function billingOverview(): Promise<BillingOverview> {
+  const admin = platformAdminClient();
+  const [{ data: rows, error }, days] = await Promise.all([
+    admin.from("company_account").select("org_id, status, period, plan, read_only_since"),
+    platformSetting("read_only_days"),
+  ]);
+  if (error) throw error;
+  const status = new Map<string, string>();
+  const monthlyCents = new Map<string, number>();
+  const dueForDeletion: { orgId: string; since: string }[] = [];
+  const cutoff = Date.now() - (typeof days === "number" ? days : 30) * 24 * 60 * 60 * 1000;
+
+  await Promise.all(
+    (rows ?? []).map(async (r) => {
+      status.set(r.org_id, r.status);
+      if ((r.status === "read_only" || r.status === "cancelled") && r.read_only_since && new Date(r.read_only_since).getTime() < cutoff) {
+        dueForDeletion.push({ orgId: r.org_id, since: r.read_only_since });
+      }
+      if ((r.status === "active" || r.status === "past_due") && r.period && r.plan) {
+        const { data } = await admin.rpc("billing_lines", {
+          p_org: r.org_id,
+          p_period: r.period,
+          p_plan: r.plan,
+          p_with_setup: false,
+        });
+        const total = (data as { total_cents?: number } | null)?.total_cents;
+        if (typeof total === "number") monthlyCents.set(r.org_id, r.period === "yearly" ? Math.round(total / 12) : total);
+      }
+    })
+  );
+  return { status, monthlyCents, dueForDeletion };
 }

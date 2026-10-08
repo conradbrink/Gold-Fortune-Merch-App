@@ -44,11 +44,13 @@ function AccountCardsFor() {
   const load = useCallback(async () => {
     const supabase = createClient();
     const [account, list] = await Promise.all([
-      supabase.from("company_account").select("trial_ends_at").maybeSingle(),
+      // Only while the trial runs: an ended one is the read-only line's job
+      // (components/billing/account-notice.tsx), and a paid plan has no countdown.
+      supabase.from("company_account").select("trial_ends_at, status").maybeSingle(),
       supabase.rpc("my_onboarding"),
     ]);
     // Quietly absent on failure: these cards are a help, not the dashboard.
-    if (!account.error) setTrialEndsAt(account.data?.trial_ends_at ?? null);
+    if (!account.error) setTrialEndsAt(account.data?.status === "trial" ? (account.data?.trial_ends_at ?? null) : null);
     if (!list.error) setOnboarding(parseOnboarding(list.data));
   }, []);
 
@@ -93,11 +95,11 @@ function AccountCardsFor() {
           <span className="flex items-center gap-2 font-medium">
             <Clock className="size-4" aria-hidden />
             {trial.kind === "ended"
-              ? "Your free trial has ended. Talk to us to keep going."
+              ? "Your free trial has ended. Choose a plan to keep going."
               : `${trial.daysLeft} ${trial.daysLeft === 1 ? "day" : "days"} left in your free trial`}
           </span>
-          <Button variant="outline" size="sm" nativeButton={false} render={<Link href="/plans" />}>
-            {trial.kind === "ended" ? "Talk to us" : "View plans"}
+          <Button variant="outline" size="sm" nativeButton={false} render={<Link href="/billing" />}>
+            {trial.kind === "ended" ? "Choose a plan" : "View plans"}
           </Button>
         </div>
       )}

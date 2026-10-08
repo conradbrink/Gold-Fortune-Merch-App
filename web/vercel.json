@@ -11,6 +11,10 @@
     {
       "path": "/api/orders/recurring",
       "schedule": "0 4 * * *"
+    },
+    {
+      "path": "/api/billing/run",
+      "schedule": "0 6 * * *"
     }
   ]
 }
