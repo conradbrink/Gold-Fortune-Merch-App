@@ -7,8 +7,8 @@ import { listCompanies } from "@/lib/platform";
  * Platform operator: every company on the service.
  *
  * Lists every company; each links to its page, where the operator switches
- * modules (`setCompanyModule`, audit-logged). Changing a plan and
- * impersonating for support come with the Add-company flow.
+ * modules (`setCompanyModule`, audit-logged); "Add company" creates one from
+ * industry templates (`companies/new`). Plans and impersonation come later.
  *
  * The gate is here, on the server, not in `proxy.ts`. The proxy's permission
  * map is about what a person may do *inside their own company*, and an
@@ -47,11 +47,19 @@ export default async function PlatformPage() {
 
   return (
     <main className="mx-auto max-w-5xl space-y-6 p-4 sm:p-8">
-      <header className="space-y-1">
-        <h1 className="text-2xl font-bold text-foreground">Companies</h1>
-        <p className="text-sm text-muted-foreground">
-          Every company on the platform. Open one to switch its modules. Times are UTC.
-        </p>
+      <header className="flex flex-wrap items-end justify-between gap-4">
+        <div className="space-y-1">
+          <h1 className="text-2xl font-bold text-foreground">Companies</h1>
+          <p className="text-sm text-muted-foreground">
+            Every company on the platform. Open one to switch its modules. Times are UTC.
+          </p>
+        </div>
+        <Link
+          href="/platform/companies/new"
+          className="inline-flex h-8 items-center rounded-md bg-primary px-3 text-sm text-primary-foreground hover:bg-primary/90"
+        >
+          Add company
+        </Link>
       </header>
 
       <div className="overflow-x-auto rounded-lg border border-border bg-card">
