@@ -203,9 +203,9 @@ function Points({ items }: { items: { icon: typeof Smartphone; title: string; bo
   return (
     <ul className="grid gap-5 sm:grid-cols-2 sm:gap-x-8 sm:gap-y-6 lg:grid-cols-1">
       {items.map(({ icon: Icon, title, body }) => (
-        <li key={title} className="tk-reveal flex gap-3.5">
-          <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-teal-900 text-amber-500">
-            <Icon className="size-5" strokeWidth={2.25} aria-hidden="true" />
+        <li key={title} className="tk-reveal tk-timeline flex gap-3.5">
+          <span className="tk-pop tk-icon-hover grid size-10 shrink-0 place-items-center rounded-xl bg-teal-900 text-amber-500">
+            <Icon className="tk-draw size-5" strokeWidth={2.25} aria-hidden="true" />
           </span>
           <span className="grid gap-0.5">
             <span className="font-display text-lg font-bold leading-snug text-teal-900">{title}</span>
@@ -303,8 +303,8 @@ export default function Home() {
         <section aria-label="Why it's easy to start" className="border-y border-line bg-white">
           <ul className="mx-auto grid max-w-6xl gap-5 px-4 py-8 sm:px-6 md:grid-cols-3 md:gap-0 md:divide-x md:divide-line md:py-10">
             {easy.map(({ icon: Icon, title, body }) => (
-              <li key={title} className="tk-reveal flex gap-3.5 md:px-8 md:first:pl-0 md:last:pr-0">
-                <Icon className="mt-0.5 size-6 shrink-0 text-teal-700" strokeWidth={2} />
+              <li key={title} className="tk-reveal tk-timeline flex gap-3.5 md:px-8 md:first:pl-0 md:last:pr-0">
+                <Icon className="tk-draw mt-0.5 size-6 shrink-0 text-teal-700" strokeWidth={2} aria-hidden="true" />
                 <span className="grid gap-0.5">
                   <span className="font-display text-lg font-bold text-teal-900">{title}</span>
                   <span className="leading-relaxed text-muted">{body}</span>
@@ -326,11 +326,11 @@ export default function Home() {
               </div>
               <ol className="divide-y divide-line border-t border-line">
                 {day.map(([t, now, fix]) => (
-                  <li key={t} className="tk-reveal grid grid-cols-[3.75rem_1fr] gap-x-3 gap-y-2 py-4 md:grid-cols-[4.5rem_1fr_1fr] md:gap-x-6 md:py-5">
+                  <li key={t} className="tk-reveal tk-timeline grid grid-cols-[3.75rem_1fr] gap-x-3 gap-y-2 py-4 md:grid-cols-[4.5rem_1fr_1fr] md:gap-x-6 md:py-5">
                     <span className="row-span-2 pt-0.5 text-sm font-semibold tabular-nums text-flag md:row-span-1">{t}</span>
                     <p className="leading-relaxed text-ink sm:text-lg">{now}</p>
                     <p className="tk-reveal-late flex gap-2 font-semibold leading-relaxed text-teal-900 sm:text-lg">
-                      <Check className="mt-1 size-4 shrink-0 text-teal-700 sm:size-5" strokeWidth={3} aria-hidden="true" />
+                      <Check className="tk-draw mt-1 size-4 shrink-0 text-teal-700 sm:size-5" strokeWidth={3} aria-hidden="true" />
                       <span>
                         <span className="sr-only">With {site.name}: </span>
                         {fix}
@@ -395,9 +395,9 @@ export default function Home() {
               </div>
               <ul className="grid gap-x-8 gap-y-3 sm:grid-cols-2">
                 {replaces.map((r) => (
-                  <li key={r} className="tk-reveal-late flex items-start gap-3 border-t border-white/15 pt-3 font-medium leading-snug">
-                    <span className="mt-0.5 grid size-5 shrink-0 place-items-center rounded-full bg-amber-500 text-teal-950">
-                      <Check className="size-3" strokeWidth={3.5} aria-hidden="true" />
+                  <li key={r} className="tk-reveal-late tk-timeline flex items-start gap-3 border-t border-white/15 pt-3 font-medium leading-snug">
+                    <span className="tk-pop mt-0.5 grid size-5 shrink-0 place-items-center rounded-full bg-amber-500 text-teal-950">
+                      <Check className="tk-draw size-3" strokeWidth={3.5} aria-hidden="true" />
                     </span>
                     <span>
                       <span className="sr-only">Replaces </span>
@@ -451,9 +451,9 @@ export default function Home() {
               </div>
               <ul className="grid gap-5">
                 {money.map(({ icon: Icon, title, body }) => (
-                  <li key={title} className="tk-reveal flex gap-3.5">
-                    <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-amber-500 text-teal-950">
-                      <Icon className="size-5" strokeWidth={2.25} aria-hidden="true" />
+                  <li key={title} className="tk-reveal tk-timeline flex gap-3.5">
+                    <span className="tk-pop tk-icon-hover grid size-10 shrink-0 place-items-center rounded-xl bg-amber-500 text-teal-950">
+                      <Icon className="tk-draw size-5" strokeWidth={2.25} aria-hidden="true" />
                     </span>
                     <span className="grid gap-0.5">
                       <span className="font-display text-lg font-bold leading-snug text-teal-900">{title}</span>

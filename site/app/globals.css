@@ -187,6 +187,19 @@ section[id] {
   from { transform: scaleX(0); }
   to { transform: scaleX(1); }
 }
+@keyframes tk-draw-stroke {
+  from { stroke-dasharray: 120; stroke-dashoffset: 120; }
+  to { stroke-dasharray: 120; stroke-dashoffset: 0; }
+}
+@keyframes tk-pop-in {
+  from { opacity: 0; transform: scale(0.7) rotate(-14deg); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes tk-spring {
+  0% { transform: scale(0.8) rotate(-10deg); }
+  60% { transform: scale(1.08) rotate(3deg); }
+  100% { transform: none; }
+}
 @media (prefers-reduced-motion: no-preference) {
   /* Hero: eyebrow, headline, line, button, 70 ms apart; the demo after. */
   .tk-hero > * { animation: tk-rise 0.6s var(--ease-out) both; }
@@ -196,6 +209,14 @@ section[id] {
   .tk-hero-demo { animation: tk-rise 0.8s var(--ease-out) 250ms both; }
   /* The amber line under "done" draws itself once the headline is in. */
   .tk-underline { transform-origin: left; animation: tk-underline 0.7s var(--ease-out) 550ms both; }
+  /* A trade picked with a click: its icon springs in with the answer. */
+  .tk-swap .tk-icon-spring { animation: tk-spring 0.45s var(--ease-out) both; }
+  /* Icon tiles tilt a little under a mouse (never on touch). */
+  @media (hover: hover) and (pointer: fine) {
+    /* On the icon, not the tile: the tile's pop-in holds its transform. */
+    .tk-icon-hover > svg { transition: transform 0.2s var(--ease-out); }
+    *:hover > .tk-icon-hover > svg { transform: rotate(-10deg) scale(1.1); }
+  }
   /* A trade picked with a click: its answer fades in (keys swap instantly). */
   .tk-swap { animation: tk-rise 0.22s var(--ease-out) both; }
   /* Open FAQ answers fade up rather than snap in. */
@@ -212,6 +233,23 @@ section[id] {
       animation: tk-slide linear both;
       animation-timeline: view();
       animation-range: entry 25% entry 70%;
+    }
+    /* Icons draw themselves as they scroll in, like a tick being written:
+       every stroke of a lucide icon is dashed and the dash slides home.
+       The paths are short (a 24 unit box), so 120 covers each of them. */
+    /* Timed against the row they sit in (`tk-timeline`), not the icon:
+       an icon is 20 to 40 px tall, so its own entry is over in a flick. */
+    .tk-timeline { view-timeline-name: --tk-item; }
+    .tk-draw :is(path, line, polyline, circle, rect, ellipse) {
+      animation: tk-draw-stroke linear both;
+      animation-timeline: --tk-item;
+      animation-range: entry 60% cover 40%;
+    }
+    /* Icon tiles pop in from slightly small and tilted. */
+    .tk-pop {
+      animation: tk-pop-in linear both;
+      animation-timeline: --tk-item;
+      animation-range: entry 30% cover 30%;
     }
     /* The amber rule above each team point grows from the left. */
     .tk-rule {

@@ -89,7 +89,7 @@ export function TradeTabs() {
         className="grid content-between gap-6 rounded-2xl bg-mint p-5 sm:p-8"
       >
         <div key={active} className={`grid gap-4 ${animate ? "tk-swap" : ""}`}>
-          <span className="grid size-12 place-items-center rounded-xl bg-amber-500 text-teal-950">
+          <span className="tk-icon-spring grid size-12 place-items-center rounded-xl bg-amber-500 text-teal-950">
             <Icon className="size-6" strokeWidth={2.25} aria-hidden="true" />
           </span>
           <p className="max-w-2xl font-display text-xl font-bold leading-snug text-balance text-teal-900 sm:text-3xl sm:leading-tight">
