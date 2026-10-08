@@ -4,8 +4,9 @@ import { Check, ShieldCheck } from "lucide-react";
 import { useId, useState, type ReactNode } from "react";
 import { confirmed, contactHref, planPrice, pricing, rand, site, type Billing } from "@/lib/site";
 
-// Copy: ~/Downloads/site-copy-final-v7.md, section 7, word for word. One
-// Monthly | Yearly choice drives the plan card and the team-size calculator.
+// Copy: ~/Downloads/site-copy-final-v7.md, section 7, plus the day-one and
+// no-card lines from the 8 Oct offer audit. One Monthly | Yearly choice
+// drives the plan card and the team-size calculator.
 // Done for you and the promise wait on `confirmed` in lib/site.ts.
 
 function Toggle({ billing, onChange }: { billing: Billing; onChange: (b: Billing) => void }) {
@@ -25,7 +26,7 @@ function Toggle({ billing, onChange }: { billing: Billing; onChange: (b: Billing
     </button>
   );
   return (
-    <div role="radiogroup" aria-label="Billing" className="flex w-full rounded-full bg-sand p-1 ring-1 ring-line sm:inline-flex sm:w-auto sm:justify-self-start">
+    <div role="radiogroup" aria-label="Billing" className="flex w-full rounded-full bg-mint p-1 ring-1 ring-line sm:inline-flex sm:w-auto sm:justify-self-start">
       {opt("monthly", "Monthly")}
       {opt("yearly", "Yearly (2 months free)")}
     </div>
@@ -47,7 +48,7 @@ function Calculator({ billing }: { billing: Billing }) {
   const total = planPrice(users, billing);
   const extra = Math.max(0, users - pricing.includedUsers);
   return (
-    <div className="grid gap-4 rounded-3xl bg-teal-900 p-5 text-sand sm:p-7">
+    <div className="grid gap-4 rounded-2xl bg-teal-900 p-5 text-sand sm:p-7">
       <label htmlFor={id} className="flex items-baseline justify-between gap-4">
         <span className="font-semibold">How many users on your team?</span>
         <span className="font-display text-3xl font-extrabold tabular-nums text-amber-500">{users}</span>
@@ -95,7 +96,7 @@ export function PricingSection() {
         }`}
       >
         {confirmed.doneForYou && (
-        <div className="order-2 grid content-start gap-4 rounded-3xl bg-white p-5 ring-1 ring-line sm:p-6 lg:order-1">
+        <div className="order-2 grid content-start gap-4 rounded-2xl bg-white p-5 ring-1 ring-line sm:p-6 lg:order-1">
           <p className="text-xs font-semibold uppercase tracking-widest text-muted">Done for you</p>
           <p className="font-display text-3xl font-extrabold text-teal-900">
             {rand(pricing.doneForYou)} <span className="text-base font-medium text-muted">a month</span>
@@ -108,14 +109,14 @@ export function PricingSection() {
           </ul>
           <a
             href={contactHref("Hi, I'd like to talk about the Done for you plan.")}
-            className="mt-auto flex min-h-12 items-center justify-center rounded-full px-5 py-3 font-semibold text-teal-900 ring-1 ring-teal-900/25 hover:bg-sand"
+            className="mt-auto flex min-h-12 items-center justify-center rounded-full px-5 py-3 font-semibold text-teal-900 ring-1 ring-teal-900/25 hover:bg-mint"
           >
             Talk to us
           </a>
         </div>
         )}
 
-        <div className="relative order-1 grid content-start gap-4 rounded-3xl bg-white p-5 shadow-xl shadow-teal-950/10 ring-2 ring-amber-500 sm:p-6 lg:order-2">
+        <div className="relative order-1 grid content-start gap-4 rounded-2xl bg-white p-5 ring-2 ring-amber-500 sm:p-6 lg:order-2">
           <span className="justify-self-start rounded-full bg-amber-500 px-3 py-1 text-xs font-bold text-teal-950">Most popular</span>
           <div className="grid gap-1">
             <p className="text-xl leading-snug">
@@ -140,18 +141,24 @@ export function PricingSection() {
               <strong>Setup worth {rand(pricing.setupValue)}:</strong>{" "}
               {yearly ? "Free" : `${rand(pricing.setupValue)} once-off`}
             </Item>
+            <Item>
+              <strong>Your trade&apos;s checklists and settings:</strong> Ready on day one
+            </Item>
             <Item>WhatsApp welcome message for your team: Free</Item>
           </ul>
-          <a
-            href="#start"
-            className="mt-auto flex min-h-12 items-center justify-center rounded-full bg-amber-500 px-5 py-3 text-lg font-semibold text-teal-950 hover:bg-amber-400 sm:text-base"
-          >
-            Get {site.name} free for {site.trialDays} days
-          </a>
+          <div className="mt-auto grid gap-2">
+            <a
+              href={site.signupUrl}
+              className="flex min-h-12 items-center justify-center rounded-full bg-amber-500 px-5 py-3 text-lg font-semibold text-teal-950 transition-[background-color,transform] duration-150 ease-out hover:bg-amber-400 active:scale-[0.97] sm:text-base"
+            >
+              Get {site.name} free for {site.trialDays} days
+            </a>
+            <p className="text-center text-sm text-muted">No card needed for the trial.</p>
+          </div>
         </div>
 
-        <div className="order-3 grid content-start gap-4 rounded-3xl bg-sand p-5 ring-1 ring-line sm:p-6">
-          <p className="text-xs font-semibold uppercase tracking-widest text-muted">Add-ons</p>
+        <div className="order-3 grid content-start gap-4 rounded-2xl bg-mint p-5 ring-1 ring-line sm:p-6">
+          <h3 className="font-display text-xl font-bold text-teal-900">Add-ons</h3>
           <ul className="grid gap-3">
             <li className="grid gap-0.5">
               <span className="font-display text-lg font-bold text-teal-900">HR</span>

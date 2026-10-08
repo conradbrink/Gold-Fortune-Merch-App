@@ -234,7 +234,7 @@ const beats: Beat[] = [
   },
   {
     group: 6,
-    caption: "Runs on cheap Androids. No signal, or load shedding took the tower down? They keep working, and it syncs later.",
+    caption: "Runs on the Androids they already have. No signal, or load shedding took the tower down? They keep working, and it syncs later.",
     ms: 5200,
     offline: true,
     phone: () => (
@@ -443,7 +443,7 @@ export function ProductDemo() {
 
         {/* dashboard scenes: browser, with the points in the space under it */}
         <div
-          className={`absolute inset-x-4 top-16 z-10 transition-all duration-700 ease-out ${
+          className={`absolute inset-x-4 top-16 z-10 transition-[opacity,translate] duration-700 ease-out ${
             desk ? "translate-y-0 opacity-100" : "pointer-events-none translate-y-8 opacity-0"
           }`}
           aria-hidden="true"
@@ -469,7 +469,7 @@ export function ProductDemo() {
 
         {/* phone (steps aside for dashboard scenes and the end card) */}
         <div
-          className={`absolute left-1/2 top-[calc(50%+1.25rem)] z-20 w-[15.5rem] -translate-x-1/2 transition-all duration-700 ease-[cubic-bezier(.2,.9,.3,1)] ${
+          className={`absolute left-1/2 top-[calc(50%+1.25rem)] z-20 w-[15.5rem] -translate-x-1/2 transition-[opacity,translate,scale] duration-700 ease-[cubic-bezier(.2,.9,.3,1)] ${
             desk || end ? "pointer-events-none -translate-y-[20%] scale-90 opacity-0" : "-translate-y-1/2"
           }`}
         >
@@ -512,7 +512,7 @@ export function ProductDemo() {
                 Every hour. Every visit. <span className="text-amber-500">Every rand.</span>
               </p>
               <a
-                href="#start"
+                href={site.signupUrl}
                 className="tk-in rounded-full bg-amber-500 px-5 py-3 font-semibold text-teal-950 hover:bg-amber-400"
                 style={at(450)}
               >
@@ -556,7 +556,7 @@ export function ProductDemo() {
                     title={g}
                   >
                     <span className="block h-1 overflow-hidden rounded-full bg-teal-900/15">
-                      <span className="block h-full rounded-full bg-amber-500 transition-all duration-500" style={{ width: `${fill * 100}%` }} />
+                      <span className="block h-full w-full origin-left rounded-full bg-amber-500 transition-transform duration-500" style={{ transform: `scaleX(${fill})` }} />
                     </span>
                   </button>
                 );

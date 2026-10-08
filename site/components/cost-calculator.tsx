@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { planPrice, rand, site } from "@/lib/site";
 
 const WORKING_DAYS = 22;
 // R30.23 is South Africa's national minimum wage from 1 March 2026; the
@@ -17,14 +18,19 @@ export function CostCalculator() {
   const [currency, setCurrency] = useState<Currency>("R");
   const [rate, setRate] = useState(String(defaultRate.R));
 
-  const hours = num(staff) * num(lost) * WORKING_DAYS;
+  const people = Math.floor(num(staff));
+  const hours = people * num(lost) * WORKING_DAYS;
   const monthly = hours * num(rate);
+  // The anchor: Tickd's monthly price for the same team, from the same
+  // numbers as the pricing section. Prices are in rand, so only beside rand.
+  const tickd = people > 0 ? planPrice(people, "monthly") : 0;
 
-  const field = "w-full rounded-lg bg-sand px-3 py-2.5 ring-1 ring-line focus:outline-none focus:ring-2 focus:ring-teal-700";
+  const field =
+    "w-full min-h-11 rounded-lg bg-white px-3 py-2.5 ring-1 ring-line focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-700";
 
   return (
-    <div className="grid gap-8 rounded-2xl bg-white p-6 ring-1 ring-line md:grid-cols-2 md:p-8">
-      <div className="grid gap-4">
+    <div className="grid gap-8 rounded-2xl bg-mint p-5 ring-1 ring-line sm:p-8 md:grid-cols-2">
+      <div className="grid content-start gap-4">
         <label className="grid gap-1.5 text-sm font-medium">
           People in the field
           <input className={field} type="number" min={1} max={500} inputMode="numeric" value={staff} onChange={(e) => setStaff(e.target.value)} />
@@ -56,7 +62,7 @@ export function CostCalculator() {
           {WORKING_DAYS} work days a month. R30.23 is the SA minimum wage.
         </p>
       </div>
-      <div aria-live="polite" className="grid content-center gap-2 border-t border-line pt-6 md:border-l md:border-t-0 md:pl-8 md:pt-0">
+      <div aria-live="polite" className="grid content-center gap-5 border-t border-line pt-6 md:border-l md:border-t-0 md:pl-8 md:pt-0">
         <p className="text-xl leading-snug sm:text-2xl">
           That&apos;s{" "}
           <strong className="block font-display text-5xl font-extrabold tabular-nums text-flag sm:text-6xl">
@@ -69,6 +75,14 @@ export function CostCalculator() {
           </strong>{" "}
           a month.
         </p>
+        {currency === "R" && tickd > 0 && (
+          <p className="flex flex-wrap items-baseline gap-x-2 border-t border-line pt-5 text-lg leading-snug">
+            <span>
+              {site.name} for {people} {people === 1 ? "user" : "users"}:
+            </span>
+            <strong className="font-display text-2xl font-extrabold tabular-nums text-teal-900">{rand(tickd)} a month</strong>
+          </p>
+        )}
       </div>
     </div>
   );
