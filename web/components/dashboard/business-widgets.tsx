@@ -14,12 +14,14 @@ import {
 } from "@/lib/live-reps";
 import {
   deltaPct,
+  fetchShortVisits,
   formatMoney,
   formatMoneyShort,
   formatPct,
   type BusinessSummary,
   type DashboardSummary,
 } from "@/lib/dashboard";
+import { createClient } from "@/lib/supabase/client";
 import { achievedFor, MEASURES, type Measure, type TargetProgress } from "@/lib/targets";
 import { toLocalDateInput, type DateRange } from "@/lib/date-range";
 
@@ -436,6 +438,26 @@ export function FieldTeamCard({
     summary && summary.current.planogram_rate !== null && summary.previous.planogram_rate !== null
       ? deltaPct(summary.current.planogram_rate * 1000, summary.previous.planogram_rate * 1000)
       : null;
+  // Counted from the same list the short-visits page shows, for the same range.
+  const shortMinutes = useCompanyConfig()?.settings.short_visit_minutes ?? 5;
+  const [shortVisits, setShortVisits] = useState<number | null>(null);
+  useEffect(() => {
+    let stale = false;
+    fetchShortVisits(createClient(), range)
+      .then((rows) => {
+        if (!stale) setShortVisits(rows.length);
+      })
+      .catch(() => {
+        if (!stale) setShortVisits(null);
+      });
+    return () => {
+      stale = true;
+    };
+  }, [range]);
+  const rangeQuery = new URLSearchParams({
+    from: toLocalDateInput(range.from),
+    to: toLocalDateInput(range.to),
+  }).toString();
   return (
     <SectionCard title="Field team" href="/tracking" linkLabel="Tracking">
       <ul className="flex flex-col">
@@ -472,7 +494,7 @@ export function FieldTeamCard({
           <li className="py-2.5 text-sm text-muted-foreground">No active {lower(t.staff.many)}.</li>
         )}
       </ul>
-      <div className="mt-auto grid grid-cols-3 gap-3 border-t pt-4">
+      <div className="mt-auto grid grid-cols-2 gap-3 border-t pt-4 sm:grid-cols-4">
         <MiniStat
           label="Out of stock"
           value={
@@ -494,10 +516,7 @@ export function FieldTeamCard({
           value={
             business ? (
               <Link
-                href={`/visits/off-site?${new URLSearchParams({
-                  from: toLocalDateInput(range.from),
-                  to: toLocalDateInput(range.to),
-                }).toString()}`}
+                href={`/visits/off-site?${rangeQuery}`}
                 className="hover:underline"
                 title={`See which ${lower(t.staff.many)}, ${lower(t.site.many)} and how far`}
               >
@@ -508,6 +527,23 @@ export function FieldTeamCard({
             )
           }
           tone={business && business.field.flagged_checkins > 0 ? "bad" : undefined}
+        />
+        <MiniStat
+          label={`${t.job.many} under ${shortMinutes} min`}
+          value={
+            shortVisits === null ? (
+              "—"
+            ) : (
+              <Link
+                href={`/visits/short?${rangeQuery}`}
+                className="hover:underline"
+                title={`See which ${lower(t.staff.many)} left ${lower(t.site.many)} early`}
+              >
+                {shortVisits}
+              </Link>
+            )
+          }
+          tone={shortVisits ? "bad" : undefined}
         />
       </div>
     </SectionCard>

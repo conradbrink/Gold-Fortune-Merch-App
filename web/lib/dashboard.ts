@@ -565,3 +565,36 @@ export async function fetchOffsiteCheckins(
   if (error) throw new Error(error.message);
   return (data ?? []) as OffsiteCheckin[];
 }
+
+/** One checked-out visit shorter than the company's short-visit setting. */
+export type ShortVisit = {
+  visit_id: string;
+  checkin_at: string;
+  checkout_at: string;
+  minutes: number;
+  rep_id: string;
+  rep_name: string | null;
+  store_id: string;
+  store_name: string;
+  short_visit_minutes: number;
+};
+
+/**
+ * Visits checked out sooner than the company's `short_visit_minutes` (the
+ * number the phone warns the rep about), newest first. The rule lives only in
+ * `short_visits`, so the dashboard count, this list and the activity badges
+ * cannot disagree for the same range.
+ */
+export async function fetchShortVisits(supabase: SupabaseClient, range: DateRange): Promise<ShortVisit[]> {
+  const { data, error } = await callRpc(supabase, "short_visits", {
+    p_from: range.from.toISOString(),
+    p_to: range.to.toISOString(),
+  });
+  if (error) throw new Error(error.message);
+  return (data ?? []) as ShortVisit[];
+}
+
+/** 2.4 → "2 min", 0.4 → "under a minute". */
+export function formatVisitMinutes(m: number): string {
+  return m < 1 ? "under a minute" : `${Math.floor(m)} min`;
+}
