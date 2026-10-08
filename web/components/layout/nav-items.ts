@@ -34,6 +34,7 @@ import {
   Repeat,
   Flag,
   Coins,
+  CreditCard,
 } from "lucide-react";
 import {
   can,
@@ -303,6 +304,12 @@ export const navGroups: NavGroupDef[] = [
         href: "/settings/company",
         label: "Company profile",
         icon: Building2,
+        permission: "company_settings",
+      },
+      {
+        href: "/billing",
+        label: "Billing",
+        icon: CreditCard,
         permission: "company_settings",
       },
     ],

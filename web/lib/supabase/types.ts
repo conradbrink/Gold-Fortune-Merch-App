@@ -419,28 +419,307 @@ export type Database = {
         }
         Relationships: []
       }
+      billing_charges: {
+        Row: {
+          attempts: number
+          billing_email: string | null
+          created_at: string
+          id: string
+          invoice_id: string | null
+          last_error: string | null
+          lines: Json
+          next_retry_at: string | null
+          org_id: string | null
+          period: string
+          period_end: string | null
+          period_start: string | null
+          plan_after: Json
+          plan_next: Json | null
+          reason: string
+          status: string
+          total_cents: number
+          updated_at: string
+        }
+        Insert: {
+          attempts?: number
+          billing_email?: string | null
+          created_at?: string
+          id?: string
+          invoice_id?: string | null
+          last_error?: string | null
+          lines: Json
+          next_retry_at?: string | null
+          org_id?: string | null
+          period: string
+          period_end?: string | null
+          period_start?: string | null
+          plan_after: Json
+          plan_next?: Json | null
+          reason: string
+          status?: string
+          total_cents: number
+          updated_at?: string
+        }
+        Update: {
+          attempts?: number
+          billing_email?: string | null
+          created_at?: string
+          id?: string
+          invoice_id?: string | null
+          last_error?: string | null
+          lines?: Json
+          next_retry_at?: string | null
+          org_id?: string | null
+          period?: string
+          period_end?: string | null
+          period_start?: string | null
+          plan_after?: Json
+          plan_next?: Json | null
+          reason?: string
+          status?: string
+          total_cents?: number
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      billing_counters: {
+        Row: {
+          key: string
+          next: number
+        }
+        Insert: {
+          key: string
+          next: number
+        }
+        Update: {
+          key?: string
+          next?: number
+        }
+        Relationships: []
+      }
+      billing_invoices: {
+        Row: {
+          buyer: Json
+          charge_id: string | null
+          credit_for: string | null
+          id: string
+          issued_at: string
+          kind: string
+          lines: Json
+          number: string
+          org_id: string | null
+          paid_at: string | null
+          paid_method: string | null
+          payment_reference: string | null
+          period_end: string | null
+          period_start: string | null
+          reason: string | null
+          seller: Json
+          total_cents: number
+          vat_cents: number
+          vat_registered: boolean
+        }
+        Insert: {
+          buyer: Json
+          charge_id?: string | null
+          credit_for?: string | null
+          id?: string
+          issued_at?: string
+          kind?: string
+          lines: Json
+          number: string
+          org_id?: string | null
+          paid_at?: string | null
+          paid_method?: string | null
+          payment_reference?: string | null
+          period_end?: string | null
+          period_start?: string | null
+          reason?: string | null
+          seller: Json
+          total_cents: number
+          vat_cents?: number
+          vat_registered: boolean
+        }
+        Update: {
+          buyer?: Json
+          charge_id?: string | null
+          credit_for?: string | null
+          id?: string
+          issued_at?: string
+          kind?: string
+          lines?: Json
+          number?: string
+          org_id?: string | null
+          paid_at?: string | null
+          paid_method?: string | null
+          payment_reference?: string | null
+          period_end?: string | null
+          period_start?: string | null
+          reason?: string | null
+          seller?: Json
+          total_cents?: number
+          vat_cents?: number
+          vat_registered?: boolean
+        }
+        Relationships: []
+      }
+      billing_payments: {
+        Row: {
+          amount_cents: number | null
+          charge_id: string | null
+          created_at: string
+          detail: string | null
+          id: number
+          org_id: string | null
+          outcome: string
+          payload: Json | null
+          provider: string
+          provider_payment_id: string | null
+          source: string
+        }
+        Insert: {
+          amount_cents?: number | null
+          charge_id?: string | null
+          created_at?: string
+          detail?: string | null
+          id?: number
+          org_id?: string | null
+          outcome: string
+          payload?: Json | null
+          provider: string
+          provider_payment_id?: string | null
+          source: string
+        }
+        Update: {
+          amount_cents?: number | null
+          charge_id?: string | null
+          created_at?: string
+          detail?: string | null
+          id?: number
+          org_id?: string | null
+          outcome?: string
+          payload?: Json | null
+          provider?: string
+          provider_payment_id?: string | null
+          source?: string
+        }
+        Relationships: []
+      }
+      price_list: {
+        Row: {
+          active_from: string
+          active_to: string | null
+          amount_cents: number
+          code: string
+          id: number
+          included_roles: string[] | null
+          included_users: number
+          kind: string
+          label: string
+          module_code: string | null
+          period: string
+          tier_max: number | null
+          tier_min: number | null
+          unit: string
+        }
+        Insert: {
+          active_from?: string
+          active_to?: string | null
+          amount_cents: number
+          code: string
+          id?: number
+          included_roles?: string[] | null
+          included_users?: number
+          kind: string
+          label: string
+          module_code?: string | null
+          period: string
+          tier_max?: number | null
+          tier_min?: number | null
+          unit: string
+        }
+        Update: {
+          active_from?: string
+          active_to?: string | null
+          amount_cents?: number
+          code?: string
+          id?: number
+          included_roles?: string[] | null
+          included_users?: number
+          kind?: string
+          label?: string
+          module_code?: string | null
+          period?: string
+          tier_max?: number | null
+          tier_min?: number | null
+          unit?: string
+        }
+        Relationships: []
+      }
       company_account: {
         Row: {
+          billing_email: string | null
+          cancel_at_period_end: boolean
           created_at: string
+          custom_price_cents: number | null
+          grace_ends_at: string | null
           onboarding_dismissed_at: string | null
           onboarding_dismissed_by: string | null
           org_id: string
+          period: string | null
+          period_end: string | null
+          period_start: string | null
+          plan: Json | null
+          plan_next: Json | null
+          provider: string | null
+          provider_token: string | null
+          read_only_since: string | null
+          setup_charged: boolean
+          status: string
           trial_ends_at: string | null
           updated_at: string
         }
         Insert: {
+          billing_email?: string | null
+          cancel_at_period_end?: boolean
           created_at?: string
+          custom_price_cents?: number | null
+          grace_ends_at?: string | null
           onboarding_dismissed_at?: string | null
           onboarding_dismissed_by?: string | null
           org_id: string
+          period?: string | null
+          period_end?: string | null
+          period_start?: string | null
+          plan?: Json | null
+          plan_next?: Json | null
+          provider?: string | null
+          provider_token?: string | null
+          read_only_since?: string | null
+          setup_charged?: boolean
+          status?: string
           trial_ends_at?: string | null
           updated_at?: string
         }
         Update: {
+          billing_email?: string | null
+          cancel_at_period_end?: boolean
           created_at?: string
+          custom_price_cents?: number | null
+          grace_ends_at?: string | null
           onboarding_dismissed_at?: string | null
           onboarding_dismissed_by?: string | null
           org_id?: string
+          period?: string | null
+          period_end?: string | null
+          period_start?: string | null
+          plan?: Json | null
+          plan_next?: Json | null
+          provider?: string | null
+          provider_token?: string | null
+          read_only_since?: string | null
+          setup_charged?: boolean
+          status?: string
           trial_ends_at?: string | null
           updated_at?: string
         }
@@ -7181,6 +7460,53 @@ export type Database = {
       dismiss_onboarding: { Args: never; Returns: undefined }
       consume_anonymous_rate_limit: {
         Args: { p_bucket: string; p_subject: string; p_limit: number; p_window_seconds: number }
+        Returns: Json
+      }
+      my_account: { Args: never; Returns: Json }
+      billing_quote: { Args: { p_period: string; p_seats: number; p_addons: Json }; Returns: Json }
+      billing_preview_change: { Args: { p_seats: number; p_addons: Json }; Returns: Json }
+      billing_start_checkout: {
+        Args: { p_period: string; p_seats: number; p_addons: Json; p_email: string }
+        Returns: Json
+      }
+      billing_request_change: { Args: { p_seats: number; p_addons: Json }; Returns: Json }
+      billing_set_cancel: { Args: { p_cancel: boolean }; Returns: undefined }
+      billing_retry_now: { Args: never; Returns: Json }
+      billing_plan: { Args: { p_seats: number; p_addons: Json }; Returns: Json }
+      billing_record_payment: {
+        Args: {
+          p_charge: string
+          p_provider_payment_id: string | null
+          p_amount_cents: number
+          p_token: string | null
+          p_source: string
+          p_payload: Json
+        }
+        Returns: string
+      }
+      billing_record_failure: {
+        Args: { p_charge: string; p_outcome: string; p_detail: string | null; p_source: string; p_payload: Json }
+        Returns: undefined
+      }
+      billing_prepare_due: { Args: { p_now?: string }; Returns: Json }
+      billing_operator_mark_paid: { Args: { p_charge: string; p_reference: string; p_actor: string }; Returns: string }
+      billing_operator_set_custom_price: {
+        Args: { p_org: string; p_cents: number | null; p_actor: string }
+        Returns: undefined
+      }
+      billing_operator_set_exempt: {
+        Args: { p_org: string; p_exempt: boolean; p_days: number | null; p_actor: string }
+        Returns: undefined
+      }
+      billing_operator_extend_trial: { Args: { p_org: string; p_days: number; p_actor: string }; Returns: string }
+      billing_operator_credit_note: {
+        Args: { p_invoice: string; p_cents: number; p_reason: string; p_actor: string }
+        Returns: string
+      }
+      billing_operator_cancel_charge: { Args: { p_charge: string; p_actor: string }; Returns: undefined }
+      company_writable: { Args: never; Returns: boolean }
+      billing_lines: {
+        Args: { p_org: string; p_period: string; p_plan: Json; p_with_setup: boolean }
         Returns: Json
       }
       start_trial_company: {

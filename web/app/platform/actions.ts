@@ -175,50 +175,126 @@ export async function createCompanyAction(
   return { ok: true, orgId };
 }
 
-// ------------------------------------------------------------ Trials (Stage 5)
+// ------------------------------------------------------------ Trials and billing
+
+/** Back to the company page, with the database's refusal if there was one. */
+function backTo(orgId: string, error?: string | null): never {
+  const back = `/platform/companies/${encodeURIComponent(orgId)}`;
+  redirect(error ? `${back}?error=${encodeURIComponent(error)}` : back);
+}
+
+const UUID = /^[0-9a-f-]{36}$/i;
+
+/** "1 499,50" or "1499.50" → 149950; null when it is not an amount of rands. */
+function randsToCents(raw: FormDataEntryValue | null): number | null {
+  const text = String(raw ?? "").replace(/[\sR,]/g, (c) => (c === "," ? "." : ""));
+  if (!/^\d+(\.\d{1,2})?$/.test(text)) return null;
+  const [whole, frac = ""] = text.split(".");
+  return Number(whole) * 100 + Number(frac.padEnd(2, "0"));
+}
 
 /**
  * Extends a company's free trial by a number of days, from its current end or
- * from today if it has already ended. Platform operator only; the audit row
- * first, as for module switches. A company with no account row (one the
- * operator created) gets one, which puts it on a trial.
+ * from today if it has already ended; a company that went read-only when its
+ * trial ended is a trial again. Platform operator only. Since Stage 6 the
+ * database does it (`billing_operator_extend_trial`), with its audit row in the
+ * same transaction, and refuses for a company that has paid or is exempt.
  */
 export async function extendTrial(formData: FormData): Promise<void> {
   const orgId = String(formData.get("orgId") ?? "");
   const days = Number(formData.get("days") ?? "");
-  const back = `/platform/companies/${encodeURIComponent(orgId)}`;
-
   const actor = await operatorId();
   if (!actor) redirect("/");
-  if (!/^[0-9a-f-]{36}$/i.test(orgId) || !Number.isInteger(days) || days < 1 || days > 365) {
-    redirect(`${back}?error=${encodeURIComponent("Extend by a whole number of days, 1 to 365.")}`);
+  if (!UUID.test(orgId) || !Number.isInteger(days) || days < 1 || days > 365) {
+    backTo(orgId, "Extend by a whole number of days, 1 to 365.");
   }
-
-  const admin = platformAdminClient();
-  const { data: current, error: readError } = await admin
-    .from("company_account")
-    .select("trial_ends_at")
-    .eq("org_id", orgId)
-    .maybeSingle();
-  if (readError) redirect(`${back}?error=${encodeURIComponent(readError.message)}`);
-
-  const now = Date.now();
-  const from = current?.trial_ends_at ? Math.max(new Date(current.trial_ends_at).getTime(), now) : now;
-  const endsAt = new Date(from + days * 24 * 60 * 60 * 1000).toISOString();
-
-  const { error: auditError } = await admin.from("platform_audit_log").insert({
-    actor_id: actor,
-    action: "trial.extend",
-    target_org_id: orgId,
-    detail: { days, from: current?.trial_ends_at ?? null, to: endsAt },
+  const { error } = await platformAdminClient().rpc("billing_operator_extend_trial", {
+    p_org: orgId,
+    p_days: days,
+    p_actor: actor,
   });
-  if (auditError) {
-    redirect(`${back}?error=${encodeURIComponent(`Not changed: the audit log could not be written (${auditError.message}).`)}`);
-  }
+  backTo(orgId, error?.message);
+}
 
-  const { error } = await admin
-    .from("company_account")
-    .upsert({ org_id: orgId, trial_ends_at: endsAt, updated_at: new Date().toISOString() }, { onConflict: "org_id" });
-  if (error) redirect(`${back}?error=${encodeURIComponent(error.message)}`);
-  redirect(back);
+/** A quoted price per period instead of the price list; empty puts it back on the list. */
+export async function setCustomPrice(formData: FormData): Promise<void> {
+  const orgId = String(formData.get("orgId") ?? "");
+  const raw = String(formData.get("rands") ?? "").trim();
+  const actor = await operatorId();
+  if (!actor) redirect("/");
+  if (!UUID.test(orgId)) backTo(orgId, "That request was not understood.");
+  const cents = raw === "" ? null : randsToCents(raw);
+  if (raw !== "" && (cents === null || cents <= 0)) backTo(orgId, "Enter the price in rands, e.g. 14990.");
+  const { error } = await platformAdminClient().rpc("billing_operator_set_custom_price", {
+    p_org: orgId,
+    p_cents: cents,
+    p_actor: actor,
+  });
+  backTo(orgId, error?.message);
+}
+
+/** Exempt: never charged, never limited. Off: back on a trial of N days. */
+export async function setExempt(formData: FormData): Promise<void> {
+  const orgId = String(formData.get("orgId") ?? "");
+  const exempt = formData.get("exempt") === "true";
+  const days = Number(formData.get("days") ?? "") || null;
+  const actor = await operatorId();
+  if (!actor) redirect("/");
+  if (!UUID.test(orgId)) backTo(orgId, "That request was not understood.");
+  const { error } = await platformAdminClient().rpc("billing_operator_set_exempt", {
+    p_org: orgId,
+    p_exempt: exempt,
+    p_days: days,
+    p_actor: actor,
+  });
+  backTo(orgId, error?.message);
+}
+
+/** An EFT (or other payment outside the card) received for an unpaid charge. */
+export async function markChargePaid(formData: FormData): Promise<void> {
+  const orgId = String(formData.get("orgId") ?? "");
+  const chargeId = String(formData.get("chargeId") ?? "");
+  const reference = String(formData.get("reference") ?? "").trim();
+  const actor = await operatorId();
+  if (!actor) redirect("/");
+  if (!UUID.test(orgId) || !UUID.test(chargeId)) backTo(orgId, "That request was not understood.");
+  const { error } = await platformAdminClient().rpc("billing_operator_mark_paid", {
+    p_charge: chargeId,
+    p_reference: reference,
+    p_actor: actor,
+  });
+  backTo(orgId, error?.message);
+}
+
+/** Stops collecting a charge (agreed with the company). */
+export async function cancelCharge(formData: FormData): Promise<void> {
+  const orgId = String(formData.get("orgId") ?? "");
+  const chargeId = String(formData.get("chargeId") ?? "");
+  const actor = await operatorId();
+  if (!actor) redirect("/");
+  if (!UUID.test(orgId) || !UUID.test(chargeId)) backTo(orgId, "That request was not understood.");
+  const { error } = await platformAdminClient().rpc("billing_operator_cancel_charge", {
+    p_charge: chargeId,
+    p_actor: actor,
+  });
+  backTo(orgId, error?.message);
+}
+
+/** A credit note against a paid invoice. The refund itself is made in Payfast's dashboard. */
+export async function issueCreditNote(formData: FormData): Promise<void> {
+  const orgId = String(formData.get("orgId") ?? "");
+  const invoiceId = String(formData.get("invoiceId") ?? "");
+  const cents = randsToCents(formData.get("rands"));
+  const reason = String(formData.get("reason") ?? "").trim();
+  const actor = await operatorId();
+  if (!actor) redirect("/");
+  if (!UUID.test(orgId) || !UUID.test(invoiceId)) backTo(orgId, "That request was not understood.");
+  if (cents === null || cents <= 0) backTo(orgId, "Enter the credit in rands, e.g. 1499.");
+  const { error } = await platformAdminClient().rpc("billing_operator_credit_note", {
+    p_invoice: invoiceId,
+    p_cents: cents,
+    p_reason: reason,
+    p_actor: actor,
+  });
+  backTo(orgId, error?.message);
 }

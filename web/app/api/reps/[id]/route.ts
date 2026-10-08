@@ -4,6 +4,7 @@ import {
 } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/server";
 import { enforceRateLimit, LIMITS } from "@/lib/rate-limit";
+import { billingErrorMessage } from "@/lib/billing";
 
 /**
  * Permanently delete a rep.
@@ -280,6 +281,10 @@ export async function PATCH(
       .update({ is_active: body.is_active })
       .eq("id", id);
     if (profileError) {
+      // Reactivating past the plan's user places (Stage 6): a clear refusal.
+      if (profileError.hint === "user_limit") {
+        return Response.json({ error: billingErrorMessage(profileError) }, { status: 409 });
+      }
       return Response.json({ error: profileError.message }, { status: 500 });
     }
 
