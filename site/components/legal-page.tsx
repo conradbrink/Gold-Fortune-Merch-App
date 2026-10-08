@@ -10,6 +10,7 @@ export function LegalPage({ title, children }: { title: string; children: React.
     site.legalName,
     legal.registrationNumber && `Registration number ${legal.registrationNumber}`,
     legal.address,
+    legal.phone && `Phone ${legal.phone}`,
     site.email,
   ].filter(Boolean);
 

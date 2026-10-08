@@ -89,6 +89,9 @@ jobs:
         working-directory: site
     steps:
       - uses: actions/checkout@v4
+        with:
+          # No git command after checkout needs it; install and build can't read it.
+          persist-credentials: false
 
       - uses: actions/setup-node@v4
         with:

@@ -59,8 +59,10 @@ export type Billing = "monthly" | "yearly";
 export const legal = {
   // CIPC registration number, if the business is registered.
   registrationNumber: "",
-  // Physical address for notices (POPIA asks for one).
+  // Physical address for notices (POPIA s18 and ECTA s43 ask for one).
   address: "",
+  // A telephone number for the business (ECTA s43).
+  phone: "",
   // POPIA information officer: the owner, unless someone else is registered.
   informationOfficer: "",
   // Where the app's data is hosted (Supabase, AWS eu-west-3).

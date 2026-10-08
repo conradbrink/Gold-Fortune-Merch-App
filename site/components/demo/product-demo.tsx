@@ -399,11 +399,15 @@ export function ProductDemo() {
     return () => clearTimeout(t);
   }, [step, paused, reduced, visible]);
 
-  const end = step === CTA;
-  const beat = beats[reduced ? 0 : Math.min(step, beats.length - 1)];
+  // What is on screen: the first beat when motion is reduced, whatever `step`
+  // says (a chapter click, or reduced motion switched on mid-play, can leave
+  // `step` anywhere). Everything below reads this, never `step`.
+  const shown = reduced ? 0 : step;
+  const end = shown === CTA;
+  const beat = beats[Math.min(shown, beats.length - 1)];
   const desk = !!beat.browser && !end;
   // The phone keeps its last screen while a dashboard scene plays.
-  const lastPhone = [...beats.slice(0, Math.min(step, beats.length - 1) + 1)].reverse().find((b) => b.phone)!;
+  const lastPhone = [...beats.slice(0, Math.min(shown, beats.length - 1) + 1)].reverse().find((b) => b.phone)!;
   const Phone = (beat.phone ?? lastPhone.phone)!;
   const groupIndex = end ? groups.length : beat.group;
   const headline = beat.headline ?? groups[beat.group];
@@ -444,9 +448,9 @@ export function ProductDemo() {
           }`}
           aria-hidden="true"
         >
-          {beat.browser && <BrowserShot key={step} {...beat.browser} />}
+          {beat.browser && <BrowserShot key={shown} {...beat.browser} />}
           {desk && beat.points && (
-            <ul key={`p-${step}`} className="mt-5 grid gap-2.5 px-1">
+            <ul key={`p-${shown}`} className="mt-5 grid gap-2.5 px-1">
               {beat.points.map((pt, i) => (
                 <li
                   key={pt}
@@ -472,9 +476,9 @@ export function ProductDemo() {
           <div className="tk-float">
             <div className="rounded-[2.2rem] bg-[#1b1d1f] p-2 shadow-2xl shadow-black/50 ring-1 ring-white/10">
               <div className="relative overflow-hidden rounded-[1.8rem] bg-[#f5f6f7]" aria-hidden="true">
-                <div className="relative aspect-[360/760] overflow-hidden" key={desk ? "held" : step}>
+                <div className="relative aspect-[360/760] overflow-hidden" key={desk ? "held" : shown}>
                   <Phone />
-                  <PhoneStatus offline={!desk && !!beat.offline} key={`bar-${step}`} />
+                  <PhoneStatus offline={!desk && !!beat.offline} key={`bar-${shown}`} />
                 </div>
                 <AndroidNav />
               </div>
@@ -488,7 +492,7 @@ export function ProductDemo() {
           !desk &&
           beat.callouts?.map((c, i) => (
             <div
-              key={`${step}-${i}`}
+              key={`${shown}-${i}`}
               className={`absolute z-30 ${c.side === "left" ? "left-3 tk-from-left" : "right-3 tk-from-right"}`}
               style={{ top: c.top, ...at(c.delay) }}
               aria-hidden="true"
@@ -541,7 +545,7 @@ export function ProductDemo() {
               {groups.map((g, i) => {
                 const own = beats.map((b, j) => [b, j] as const).filter(([b]) => b.group === i);
                 const first = own[0][1];
-                const fill = i < groupIndex ? 1 : i === groupIndex ? (step - first + 1) / own.length : 0;
+                const fill = i < groupIndex ? 1 : i === groupIndex ? (shown - first + 1) / own.length : 0;
                 return (
                   <button
                     key={g}

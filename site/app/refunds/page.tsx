@@ -30,8 +30,8 @@ export default function RefundsPage() {
         <li>Fewer users take effect from your next renewal, so there is nothing to refund when you remove users.</li>
         <li>If we charged you in error, or charged you twice, we refund the full amount.</li>
         <li>
-          If the Electronic Communications and Transactions Act gives you a cooling-off right as a consumer, you may cancel
-          within 7 days of your first payment and get it back in full.
+          If the Electronic Communications and Transactions Act gives you a cooling-off right as a consumer, you may use
+          it as that Act allows, and we refund any payment it covers in full.
         </li>
         <li>Refunds go back to the card you paid with, through Payfast, and you get a credit note in the app.</li>
       </ul>

@@ -2,7 +2,7 @@
 
 Research date: **7 October 2026**. All research was read-only. I did not sign up for anything, submit any form, or contact any provider.
 
-> **Update, 7 Oct 2026:** Tickd's prices *include* VAT (owner's decision after this research), so the base charge is R1,499, not the R1,723.85 used in the worked examples below. The fee percentages are unaffected.
+> **Update, 8 Oct 2026:** the owner chose **Payfast** (tokenization + ad-hoc charges, as in §3.2), not Paystack; billing is built on it (app PR #91). The owner is not VAT registered yet, so the charge for the base plan is R1,499 with no VAT added; the worked examples below use R1,499.
 
 Fee figures are **excluding VAT** unless stated. Each figure says where I read it. "Official" means the provider's own site or docs, read on 7 Oct 2026. "Third-party" means a blog or aggregator and is less reliable.
 
@@ -16,19 +16,19 @@ Fee figures are **excluding VAT** unless stated. Each figure says where I read i
 | **Card backup** | **Payfast by Network.** Its tokenization ("ad hoc") flow works the same way: one saved card, then `POST /subscriptions/:token/adhoc` with any amount in cents. It can save a card at R0.00 with 3-D Secure (3DS). Fees are higher and the API is older in style, but it is the most established SA option. Keep it as a documented fallback rather than building it on day one. |
 | **Optional debit orders (SA customers only)** | **Netcash.** It offers DebiCheck, Registered Mandate debit orders and credit-card debit orders, with batch and API upload. Pricing is quote-only. Add it only if SA customers ask for debit orders. Debit orders cannot collect from Botswana bank accounts. |
 | **Botswana** | Botswana-issued Visa and Mastercard cards count as **international cards** for SA gateways. Paystack, Payfast, Peach, Ozow and Stitch Express all say they accept international Visa/Mastercard, charged in **ZAR**. The customer's bank does the FX and may add a foreign-transaction fee. **None of the SA gateways settle in BWP.** For BWP pricing and BWP settlement, the realistic route is **DPO Pay by Network** (it has a Botswana presence), which most likely needs a Botswana-registered entity and bank account. |
-| **Not recommended** | Stripe: not available directly to SA businesses, it routes them to Paystack. Yoco: no recurring billing. Ozow: pay-by-bank first, no native card-on-file billing. Stitch: the recurring product is enterprise sales-led, and the SMB product (Stitch Express) is plugin-only. Peach: viable, but recurring is billed at the higher 3.50% + R1.50 rate. PayGate: needs your own merchant account and is now part of Payfast. Paddle and Lemon Squeezy: viable on paper but cost 5% + 50c, and *they* invoice the customer, which conflicts with "we issue our own VAT invoice". |
+| **Not recommended** | Stripe: not available directly to SA businesses, it routes them to Paystack. Yoco: no recurring billing. Ozow: pay-by-bank first, no native card-on-file billing. Stitch: the recurring product is enterprise sales-led, and the SMB product (Stitch Express) is plugin-only. Peach: viable, but recurring is billed at the higher 3.50% + R1.50 rate. PayGate: needs your own merchant account and is now part of Payfast. Paddle and Lemon Squeezy: viable on paper but cost 5% + US$0.50, and *they* invoice the customer, which conflicts with "we issue our own VAT invoice". |
 
 ---
 
 ## 2. Comparison table
 
-What one charge costs. Example: base plan R1,499 + 15% VAT = **R1,723.85** charged to the card. Calculated from the official rates below (ex VAT).
+What one charge costs. Example: the base plan, **R1,499** charged to the card (no VAT added; see the update above). Calculated from the official rates below (ex VAT).
 
-| Provider | Variable-amount saved-card charges? | Provider-managed plans? | Debit order | Local card fee | Intl card fee | Fee on R1,723.85 (ex VAT) | Monthly / setup | Payout | Botswana cards | BWP settlement | API / DX |
+| Provider | Variable-amount saved-card charges? | Provider-managed plans? | Debit order | Local card fee | Intl card fee | Fee on R1,499 (ex VAT) | Monthly / setup | Payout | Botswana cards | BWP settlement | API / DX |
 |---|---|---|---|---|---|---|---|---|---|---|---|
-| **Paystack ZA** | **Yes.** `charge_authorization` takes any amount | Yes (Plans/Subscriptions, fixed amount per plan, no retries) | No (direct debit is Nigeria only) | 2.9% + R1 | 3.1% + R1 (pricing page) | R50.99 (local) / R54.44 (intl) | None | Free payouts, T+2 working days | Yes, once international payments are enabled | No (ZAR only) | REST/JSON, HMAC-SHA512 webhooks, test mode, official `@paystack/paystack-sdk` (v1.2.1, Aug 2026) |
-| **Payfast by Network** | **Yes.** Tokenization + `POST /subscriptions/:token/adhoc` | Yes (subscriptions: fixed amount, Payfast retries) | No | 3.2% + R2 | Same rate, intl Visa/MC accepted | R57.16 | None | 48–72 h hold, then about 2 working days. R8.70 per payout, or 0.8% (min R14) for immediate payout | Yes, per FAQ "from anywhere in the world" | No (ZAR only) | Form-post checkout + REST-ish API with MD5 signature headers, ITN callbacks, sandbox. No official Node SDK |
-| **Peach Payments** (Growth plan) | **Yes.** `standingInstruction` MIT, `/v1/registrations/{id}/payments` | Dashboard "Recurring" product | No | 2.95% + R1.50 (3DS) | 3.50% + R1.50 | **R61.83** (recurring/non-3DS rate is 3.50% + R1.50) | None on Growth plan | Next business day | Yes, "any credit or debit card issued anywhere" | No (ZAR) | OPPWA REST (form-encoded), sandbox, webhooks. No official Node SDK found |
+| **Paystack ZA** | **Yes.** `charge_authorization` takes any amount | Yes (Plans/Subscriptions, fixed amount per plan, no retries) | No (direct debit is Nigeria only) | 2.9% + R1 | 3.1% + R1 (pricing page) | R44.47 (local) / R47.47 (intl) | None | Free payouts, T+2 working days | Yes, once international payments are enabled | No (ZAR only) | REST/JSON, HMAC-SHA512 webhooks, test mode, official `@paystack/paystack-sdk` (v1.2.1, Aug 2026) |
+| **Payfast by Network** | **Yes.** Tokenization + `POST /subscriptions/:token/adhoc` | Yes (subscriptions: fixed amount, Payfast retries) | No | 3.2% + R2 | Same rate, intl Visa/MC accepted | R49.97 | None | 48–72 h hold, then about 2 working days. R8.70 per payout, or 0.8% (min R14) for immediate payout | Yes, per FAQ "from anywhere in the world" | No (ZAR only) | Form-post checkout + REST-ish API with MD5 signature headers, ITN callbacks, sandbox. No official Node SDK |
+| **Peach Payments** (Growth plan) | **Yes.** `standingInstruction` MIT, `/v1/registrations/{id}/payments` | Dashboard "Recurring" product | No | 2.95% + R1.50 (3DS) | 3.50% + R1.50 | **R53.97** (recurring/non-3DS rate is 3.50% + R1.50) | None on Growth plan | Next business day | Yes, "any credit or debit card issued anywhere" | No (ZAR) | OPPWA REST (form-encoded), sandbox, webhooks. No official Node SDK found |
 | **Stitch** (enterprise) | Yes (card tokenisation + Collections via GraphQL) | n/a | **Yes, DebiCheck**, plus Capitec Pay VRP | Quote | Quote | n/a | Quote | Quote | n/a | No | GraphQL, enterprise sales-led |
 | **Stitch Express** (SMB, ex-WigWag) | Not exposed for custom apps (Shopify subscriptions only) | Shopify only | No | 2.95% | 3.4% | n/a | None | 1–2 business days, R2.30 incl VAT per withdrawal | Yes, charged in ZAR | No | Plugins and payment links only |
 | **Yoco** online | **No.** "doesn't currently support subscriptions or recurring billing" | No | No | 2.55–2.95% | not stated | n/a | None | Up to 2 business days | Yes (intl cards) | No | Checkout API |
@@ -37,8 +37,8 @@ What one charge costs. Example: base plan R1,499 + 15% VAT = **R1,723.85** charg
 | **DPO Pay by Network** | Yes (Super Wallet `chargeTokenRecurrent`, needs a new `createToken` per charge, so the amount can vary). Activated on request | "Recurring" on request | No | Quote (third-party: about 3% in BW) | Quote (third-party: 3.5–5%) | n/a | No setup fee (official). Monthly fee: third-party says P200–P300 | Quote. Rolling reserve, typically 180 days | Yes | **Yes, likely with a BW entity** (unverified) | XML API (v6/v7), sandbox, callbacks |
 | **PayGate** (now part of Payfast) | Yes (PayHost + PayVault token payments) | PayHost | No | Needs your own merchant account (bank rates) | — | n/a | Bank and gateway fees, quote | Bank | Yes | No | SOAP-ish PayHost |
 | **Stripe** | — | — | — | **Not available to SA businesses.** stripe.com/global lists South Africa as "Extended network" and links to Paystack | | | | | | | |
-| **Paddle** (merchant of record) | Paddle-managed subscriptions (proration supported) | Yes | No | 5% + 50c all-in | same | about R86 + 50c | None | ZAR payout supported (not a balance currency) | Yes (charge in ZAR or USD) | **No BWP** | Excellent REST, webhooks, sandbox, Node SDK. **Paddle is the seller and issues the invoice** |
-| **Lemon Squeezy** | LS-managed subscriptions | Yes | No | 5% + 50c (+ intl extras) | | | None | Bank or PayPal, twice monthly | Yes | No | Being migrated to Stripe Managed Payments (third-party: about 6.4% + 30c) |
+| **Paddle** (merchant of record) | Paddle-managed subscriptions (proration supported) | Yes | No | 5% + US$0.50 all-in | same | R74.95 + US$0.50 | None | ZAR payout supported (not a balance currency) | Yes (charge in ZAR or USD) | **No BWP** | Excellent REST, webhooks, sandbox, Node SDK. **Paddle is the seller and issues the invoice** |
+| **Lemon Squeezy** | LS-managed subscriptions | Yes | No | 5% + US$0.50 (+ intl extras) | | | None | Bank or PayPal, twice monthly | Yes | No | Being migrated to Stripe Managed Payments (third-party: about 6.4% + 30c) |
 
 ---
 
@@ -164,14 +164,14 @@ What one charge costs. Example: base plan R1,499 + 15% VAT = **R1,723.85** charg
 
 ### 3.11 Paddle (merchant of record)
 
-- Fee **5% + 50c** per transaction, all-in ([paddle.com/pricing](https://www.paddle.com/pricing), 7 Oct 2026).
+- Fee **5% + US$0.50** per transaction, all-in (the fixed fee is in US dollars) ([paddle.com/pricing](https://www.paddle.com/pricing), 7 Oct 2026).
 - **ZAR is a supported payment currency** (min charge 12.75) and a **payout currency**, though not a balance currency (balances are held in USD/EUR/GBP/AUD/CAD). **BWP is not supported** ([supported currencies](https://developer.paddle.com/concepts/sell/supported-currencies)).
 - SA sellers are supported (Paddle's exclusion list is sanctioned countries; per search summary of [Paddle help](https://www.paddle.com/help/start/intro-to-paddle/which-countries-are-supported-by-paddle)).
 - **The catch:** Paddle is the legal seller. It charges and remits 15% SA VAT and issues the invoice to the customer. That conflicts with "we issue our own VAT invoice", and B2B customers get a Paddle invoice. It costs roughly 2 percentage points more than Paystack. Its proration and seat-based subscriptions are excellent, though.
 
 ### 3.12 Lemon Squeezy
 
-- Fee 5% + 50c, with "small additional fees" for some international payments. Payouts by bank or PayPal twice a month, 200+ countries ([pricing](https://www.lemonsqueezy.com/pricing), 7 Oct 2026).
+- Fee 5% + US$0.50, with "small additional fees" for some international payments. Payouts by bank or PayPal twice a month, 200+ countries ([pricing](https://www.lemonsqueezy.com/pricing), 7 Oct 2026).
 - Stripe acquired it in 2024 and is migrating merchants to **Stripe Managed Payments**, reportedly about 6.4% + 30c (third-party: [Paritydeals](https://www.paritydeals.com/lemon-squeezy-vs-stripe-fees/), designrevision.com). **Not recommended:** the platform is in transition and has the same invoicing conflict as Paddle.
 
 ---
@@ -181,7 +181,7 @@ What one charge costs. Example: base plan R1,499 + 15% VAT = **R1,723.85** charg
 ### Primary: Paystack, using saved-card charges (we run the billing)
 
 1. **It fits our pricing model.** `charge_authorization` takes any amount on any date. We calculate base + extra users + add-ons + pro-rata in Postgres, issue our own VAT invoice, then charge the exact invoice total. Provider plans (Paystack's, or Payfast "subscriptions") would fight per-seat, mid-month changes.
-2. **It is the cheapest and simplest to run.** Fees are 2.9% + R1 local and 3.1% + R1 international. There are no monthly fees, **payouts are free**, and payout is T+2. On a R1,723.85 charge that is R50.99 ex VAT, against R57.16 + R8.70 per payout on Payfast and R61.83 on Peach.
+2. **It is the cheapest and simplest to run.** Fees are 2.9% + R1 local and 3.1% + R1 international. There are no monthly fees, **payouts are free**, and payout is T+2. On a R1,499 charge that is R44.47 ex VAT, against R49.97 + R8.70 per payout on Payfast and R53.97 on Peach.
 3. **It has the best developer experience.** It is a clean JSON REST API with HMAC-signed webhooks, separate test keys, a maintained official TypeScript SDK and Stripe-quality docs. It fits Next.js on Vercel plus Supabase edge functions.
 
 **How it maps to the spec:**

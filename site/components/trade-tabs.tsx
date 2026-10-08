@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 
 const trades = [
   { name: "Cleaning", line: "Which rooms were cleaned, when your team was there, and how long they spent on site." },
@@ -13,7 +13,24 @@ const trades = [
 
 export function TradeTabs() {
   const [active, setActive] = useState(0);
+  const tabs = useRef<(HTMLButtonElement | null)[]>([]);
   const t = trades[active];
+
+  // ARIA tabs: arrows move between tabs (and select), Home/End jump to the
+  // ends; only the selected tab is in the Tab order.
+  function onKeyDown(e: React.KeyboardEvent, i: number) {
+    const last = trades.length - 1;
+    const next =
+      e.key === "ArrowRight" ? (i === last ? 0 : i + 1)
+      : e.key === "ArrowLeft" ? (i === 0 ? last : i - 1)
+      : e.key === "Home" ? 0
+      : e.key === "End" ? last
+      : null;
+    if (next === null) return;
+    e.preventDefault();
+    setActive(next);
+    tabs.current[next]?.focus();
+  }
 
   return (
     <div className="grid gap-5">
@@ -24,9 +41,14 @@ export function TradeTabs() {
             type="button"
             role="tab"
             id={`trade-tab-${i}`}
+            ref={(el) => {
+              tabs.current[i] = el;
+            }}
             aria-selected={i === active}
             aria-controls="trade-panel"
+            tabIndex={i === active ? 0 : -1}
             onClick={() => setActive(i)}
+            onKeyDown={(e) => onKeyDown(e, i)}
             className={`rounded-full px-4 py-2 text-sm font-medium ring-1 transition ${
               i === active ? "bg-teal-900 text-sand ring-teal-900" : "bg-white text-ink ring-line hover:ring-teal-700"
             }`}
