@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import { ArrowRight, CheckCircle2, Circle, Clock, X } from "lucide-react";
+import { ArrowRight, CheckCircle2, Circle, Clock, Sparkles, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { createClient } from "@/lib/supabase/client";
@@ -16,6 +16,10 @@ import {
   trialState,
   type Onboarding,
 } from "@/lib/onboarding";
+import { parseSetup, SETUP_STEPS, stepIndex, type Setup } from "@/lib/setup";
+import { lower } from "@/lib/terms";
+
+type TeamLine = { id: string; name: string; signedIn: boolean; startedWorkday: boolean };
 
 /**
  * The top of the dashboard for whoever runs the company: the free-trial
@@ -38,18 +42,41 @@ function AccountCardsFor() {
   const terms = useTerms();
   const [trialEndsAt, setTrialEndsAt] = useState<string | null>(null);
   const [onboarding, setOnboarding] = useState<Onboarding | null>(null);
+  const [setup, setSetup] = useState<Setup | null>(null);
+  const [team, setTeam] = useState<TeamLine[]>([]);
   const [hiding, setHiding] = useState(false);
   const [hideError, setHideError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     const supabase = createClient();
-    const [account, list] = await Promise.all([
+    const [account, list, wizard] = await Promise.all([
       supabase.from("company_account").select("trial_ends_at").maybeSingle(),
       supabase.rpc("my_onboarding"),
+      supabase.rpc("my_setup"),
     ]);
     // Quietly absent on failure: these cards are a help, not the dashboard.
     if (!account.error) setTrialEndsAt(account.data?.trial_ends_at ?? null);
-    if (!list.error) setOnboarding(parseOnboarding(list.data));
+    const steps = list.error ? null : parseOnboarding(list.data);
+    setOnboarding(steps);
+    if (!wizard.error) setSetup(parseSetup(wizard.data));
+    // Who has signed in matters only while the getting-started list shows.
+    if (!steps || !showOnboarding(steps)) return;
+    const [status, user] = await Promise.all([supabase.rpc("my_team_status"), supabase.auth.getUser()]);
+    if (!status.error && status.data && status.data.length > 0) {
+      const ids = status.data.map((r) => r.profile_id);
+      const { data: names } = await supabase.from("profiles").select("id, full_name").in("id", ids);
+      const nameOf = new Map(((names ?? []) as { id: string; full_name: string | null }[]).map((n) => [n.id, n.full_name]));
+      setTeam(
+        status.data
+          .filter((r) => r.profile_id !== user.data.user?.id)
+          .map((r) => ({
+            id: r.profile_id,
+            name: nameOf.get(r.profile_id) ?? "Unnamed",
+            signedIn: r.signed_in,
+            startedWorkday: r.started_workday,
+          }))
+      );
+    }
   }, []);
 
   useEffect(() => {
@@ -102,6 +129,29 @@ function AccountCardsFor() {
         </div>
       )}
 
+      {setup?.show && (
+        <Card className="border-primary/30">
+          <CardContent className="flex flex-wrap items-center justify-between gap-4 py-5">
+            <div className="flex items-start gap-3">
+              <span className="flex size-10 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary">
+                <Sparkles className="size-5" aria-hidden />
+              </span>
+              <div>
+                <h2 className="text-base font-semibold text-foreground">Finish setting up your company</h2>
+                <p className="text-sm text-muted-foreground">
+                  {setup.step
+                    ? `You stopped at step ${stepIndex(setup.step) + 1} of ${SETUP_STEPS.length}. About ${Math.max(1, 8 - stepIndex(setup.step))} minutes to go.`
+                    : "About 8 minutes to your first quote, with your logo, VAT and bank details."}
+                </p>
+              </div>
+            </div>
+            <Button nativeButton={false} render={<Link href="/onboarding" />}>
+              Continue setting up <ArrowRight className="ml-1.5 size-4" aria-hidden />
+            </Button>
+          </CardContent>
+        </Card>
+      )}
+
       {onboarding && showOnboarding(onboarding) && (
         <Card>
           <CardContent className="space-y-4 py-5">
@@ -143,6 +193,33 @@ function AccountCardsFor() {
                 </li>
               ))}
             </ul>
+            {team.some((p) => !p.startedWorkday) && (
+              <div className="space-y-2 border-t border-border pt-4">
+                <h3 className="text-sm font-semibold text-foreground">Your {lower(terms.staff.many)} on the app</h3>
+                <ul className="space-y-1 text-sm">
+                  {team.map((p) => (
+                    <li key={p.id} className="flex flex-wrap items-center gap-x-3 gap-y-0.5">
+                      <span className="font-medium text-foreground">{p.name}</span>
+                      <span className={p.signedIn ? "text-primary" : "text-muted-foreground"}>
+                        {p.signedIn ? "Signed in" : "Not signed in yet"}
+                      </span>
+                      <span className={p.startedWorkday ? "text-primary" : "text-muted-foreground"}>
+                        {p.startedWorkday
+                          ? `Started a ${lower(terms.workday.one)}`
+                          : `No ${lower(terms.workday.one)} yet`}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+                <p className="text-xs text-muted-foreground">
+                  Someone lost their message? Set a new password in{" "}
+                  <Link href="/settings/users" className="underline">
+                    Settings → Users
+                  </Link>{" "}
+                  and send it again.
+                </p>
+              </div>
+            )}
             {hideError && <p className="text-sm text-destructive">{hideError}</p>}
           </CardContent>
         </Card>

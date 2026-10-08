@@ -112,10 +112,15 @@ async function authorise(id: string) {
  * would change what the manager sees while the rep still signs in with the old
  * address, which is worse than not offering this at all.
  */
-async function changeEmail(admin: SupabaseClient, id: string, raw: string) {
+async function changeEmail(admin: SupabaseClient, id: string, raw: string, phone?: unknown) {
   const email = raw.trim().toLowerCase();
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
     return Response.json({ error: "Enter a valid email address." }, { status: 400 });
+  }
+  // A phone login moves with its number (lib/phone-login.ts), so the number
+  // kept for WhatsApp changes in the same write as the login.
+  if (phone !== undefined && (typeof phone !== "string" || !/^\+\d{6,15}$/.test(phone))) {
+    return Response.json({ error: "The phone number is not in international form." }, { status: 400 });
   }
 
   const { data: before } = await admin.auth.admin.getUserById(id);
@@ -136,7 +141,7 @@ async function changeEmail(admin: SupabaseClient, id: string, raw: string) {
 
   const { error: profileError } = await admin
     .from("profiles")
-    .update({ email })
+    .update(typeof phone === "string" ? { email, phone } : { email })
     .eq("id", id);
   if (profileError) {
     // Put the credential back rather than leave the login and the dashboard
@@ -245,6 +250,7 @@ export async function PATCH(
     }
 
     const body = parsed as {
+      phone?: unknown;
       is_active?: boolean;
       email?: string;
       password?: string;
@@ -263,7 +269,7 @@ export async function PATCH(
     }
 
     if (typeof body.email === "string") {
-      return changeEmail(guard.admin, id, body.email);
+      return changeEmail(guard.admin, id, body.email, body.phone);
     }
     if (typeof body.password === "string") {
       return setPassword(guard.admin, id, body.password);

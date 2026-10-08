@@ -225,7 +225,7 @@ export function SignupForm({
       setError(res.error);
       return;
     }
-    router.push(res.signedIn ? "/" : "/login");
+    router.push(res.signedIn ? "/onboarding" : "/login");
     router.refresh();
   }
 

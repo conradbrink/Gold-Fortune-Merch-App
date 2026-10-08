@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { createClient } from "@/lib/supabase/client";
 import { ProductBrand } from "@/components/product-brand";
+import { isPhoneLogin } from "@/lib/phone-login";
 
 export default function ForgotPasswordPage() {
   const supabase = createClient();
@@ -17,8 +18,13 @@ export default function ForgotPasswordPage() {
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    setLoading(true);
     setError(null);
+    // A phone login has no mailbox: nothing is ever sent to it.
+    if (!email.includes("@") || isPhoneLogin(email.trim())) {
+      setError("You sign in with your phone number, so there is no email to send a link to. Ask your manager to set a new password for you.");
+      return;
+    }
+    setLoading(true);
 
     const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), {
       // Built from the browser's own origin rather than a configured constant,
@@ -79,11 +85,13 @@ export default function ForgotPasswordPage() {
             </div>
 
             <div className="space-y-1.5">
-              <Label htmlFor="email">Email</Label>
+              <Label htmlFor="email">Email or phone number</Label>
               <Input
                 id="email"
-                type="email"
-                autoComplete="email"
+                type="text"
+                autoComplete="username"
+                autoCapitalize="none"
+                spellCheck={false}
                 required
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}

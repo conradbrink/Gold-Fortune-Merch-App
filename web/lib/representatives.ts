@@ -337,14 +337,16 @@ async function callRepApi(
 export async function changeRepEmail(
   repId: string,
   email: string,
-  t: Terms
+  t: Terms,
+  /** With a phone login: the number in international form, kept with it. */
+  phone?: string
 ): Promise<void> {
   await callRepApi(
     `/api/reps/${repId}`,
     {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email }),
+      body: JSON.stringify(phone ? { email, phone } : { email }),
     },
     t
   );

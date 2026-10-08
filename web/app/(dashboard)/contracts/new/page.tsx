@@ -64,6 +64,9 @@ export default function NewContractPage() {
         setStores(s);
         setItems(si);
         setLines((prev) => (prev.length > 0 ? prev : [blankLine()]));
+        // From the set-up wizard's last step: the first place, already picked.
+        const site = s.find((x) => x.id === new URLSearchParams(window.location.search).get("site"));
+        if (site) setDraft((d) => ({ ...d, storeId: site.id, name: d.name || site.name }));
       } catch (e) {
         if (!cancelled) setError(e instanceof Error ? e.message : String(e));
       } finally {

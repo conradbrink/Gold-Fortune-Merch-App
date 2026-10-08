@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useMemo, useState } from "react";
-import { Check, Copy, Eye, EyeOff, Info, RefreshCw, Smartphone, UserPlus } from "lucide-react";
+import { Eye, EyeOff, Info, RefreshCw, Smartphone, UserPlus } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -22,6 +22,9 @@ import { JobRoleEditor } from "@/components/access/job-role-editor";
 import { createClient } from "@/lib/supabase/client";
 import { useHrLoad } from "@/lib/hr/use-load";
 import { generatePassword } from "@/lib/representatives";
+import { displayLogin } from "@/lib/phone-login";
+import { WelcomeCard } from "@/components/team/welcome-card";
+import { SignInPanel } from "@/components/team/sign-in-panel";
 import { useTerms } from "@/lib/use-company-config";
 import { lower } from "@/lib/terms";
 import {
@@ -196,8 +199,12 @@ export default function UsersPage() {
               <CardContent className="space-y-3 p-5">
                 <div>
                   <h2 className="text-sm font-semibold">{selected.full_name}</h2>
-                  <p className="text-xs text-muted-foreground">{selected.email}</p>
+                  <p className="text-xs text-muted-foreground">{displayLogin(selected.email)}</p>
                 </div>
+                {(selected.role === "rep" || selected.role === "warehouse") && (
+                  // Keyed by person: a password shown for one is never shown on the next.
+                  <SignInPanel key={selected.id} person={selected} onChanged={load} />
+                )}
                 <Field
                   label="Job role"
                   hint="Choosing one replaces this person's permissions with the template's. Change individual boxes afterwards."
@@ -364,37 +371,40 @@ function CreateUserDialog({
   onCreated: () => void;
 }) {
   const [fullName, setFullName] = useState("");
+  const [phone, setPhone] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [jobRoleId, setJobRoleId] = useState("");
   const [reveal, setReveal] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [created, setCreated] = useState<{ email: string; password: string } | null>(
-    null
-  );
-  const [copied, setCopied] = useState(false);
+  const [created, setCreated] = useState<{
+    fullName: string;
+    login: string;
+    phone: string | null;
+    password: string;
+  } | null>(null);
 
   const [wasOpen, setWasOpen] = useState(false);
   if (open !== wasOpen) {
     setWasOpen(open);
     if (open) {
       setFullName("");
+      setPhone("");
       setEmail("");
       setPassword("");
       setJobRoleId(jobRoles[0]?.id ?? "");
       setReveal(false);
       setError(null);
       setCreated(null);
-      setCopied(false);
     }
   }
 
   const chosen = jobRoles.find((r) => r.id === jobRoleId) ?? null;
 
   async function submit() {
-    if (!fullName.trim() || !email.trim()) {
-      setError("A name and an email address are required.");
+    if (!fullName.trim() || (!phone.trim() && !email.trim())) {
+      setError("A name, and a mobile number or an email address, are required.");
       return;
     }
     if (!jobRoleId) {
@@ -408,13 +418,14 @@ function CreateUserDialog({
     setBusy(true);
     setError(null);
     try {
-      await createUser({
+      const made = await createUser({
         email: email.trim(),
+        phone: phone.trim(),
         fullName: fullName.trim(),
         password,
         jobRoleId,
       });
-      setCreated({ email: email.trim(), password });
+      setCreated({ fullName: fullName.trim(), login: made.login, phone: made.phone, password });
       onCreated();
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -430,59 +441,33 @@ function CreateUserDialog({
           <DialogTitle>{created ? "Account created" : "Add a person"}</DialogTitle>
           <DialogDescription>
             {created
-              ? "Hand these over now. The password is shown once and cannot be looked up afterwards."
+              ? "Send them this now. The password is shown once and cannot be looked up afterwards."
               : "They can sign in immediately. Their permissions come from the job role and you can change any of them afterwards."}
           </DialogDescription>
         </DialogHeader>
 
         {created ? (
-          <div className="space-y-3">
-            <div className="flex flex-wrap items-center gap-2 rounded-md bg-muted/50 p-3 font-mono text-sm">
-              <span>{created.email}</span>
-              <span>·</span>
-              <span>{reveal ? created.password : "••••••••••••"}</span>
-              <Button
-                size="sm"
-                variant="ghost"
-                aria-label={reveal ? "Hide the password" : "Show the password"}
-                onClick={() => setReveal((v) => !v)}
-              >
-                {reveal ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-              </Button>
-              <Button
-                size="sm"
-                variant="ghost"
-                aria-label="Copy the password"
-                onClick={async () => {
-                  try {
-                    await navigator.clipboard.writeText(created.password);
-                    setCopied(true);
-                  } catch {
-                    // The clipboard is refused outside a secure context and can
-                    // be denied by permission. Unhandled, this left the icon
-                    // unchanged and the password uncopied — and the password is
-                    // shown once, so somebody would have clicked Done believing
-                    // they had it.
-                    setReveal(true);
-                    setError(
-                      "The password could not be copied. It is shown above — copy it by hand before closing this."
-                    );
-                  }
-                }}
-              >
-                {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
-              </Button>
-            </div>
-            <p className="text-xs text-muted-foreground">
-              Ask them to change it the first time they sign in.
-            </p>
-          </div>
+          <WelcomeCard
+            fullName={created.fullName}
+            login={created.login}
+            phone={created.phone}
+            password={created.password}
+          />
         ) : (
           <div className="grid gap-3 sm:grid-cols-2">
             <Field label="Full name">
               <Input value={fullName} onChange={(e) => setFullName(e.target.value)} />
             </Field>
-            <Field label="Email">
+            <Field label="Mobile number" hint="Without an email address, they sign in with this number.">
+              <Input
+                type="tel"
+                inputMode="tel"
+                autoComplete="off"
+                value={phone}
+                onChange={(e) => setPhone(e.target.value)}
+              />
+            </Field>
+            <Field label="Email (optional)" className="sm:col-span-2">
               <Input
                 type="email"
                 value={email}
