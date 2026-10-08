@@ -21,6 +21,8 @@ import {
 import { achievedFor, MEASURES, type Measure, type TargetProgress } from "@/lib/targets";
 import { formatMoneyShort as moneyShortIn } from "@/lib/money";
 import { moduleEnabled } from "@/lib/modules";
+import { can } from "@/lib/permissions";
+import { usePermissions } from "@/lib/use-permissions";
 import { toLocalDateInput, type DateRange } from "@/lib/date-range";
 
 /**
@@ -57,6 +59,17 @@ function useMoney() {
 function useSells(): boolean {
   const config = useCompanyConfig();
   return config ? moduleEnabled(config.modules, "distribution") : true;
+}
+
+/**
+ * Whether money owed belongs on this person's headline without Distribution:
+ * every trade can invoice now (Stage 7 Part 1), but only someone who may read
+ * invoices should see the total, or they would see a confident zero.
+ */
+function useSeesOwed(): boolean {
+  const config = useCompanyConfig();
+  const permissions = usePermissions();
+  return !!config && moduleEnabled(config.modules, "invoicing") && permissions !== null && can(permissions, "invoicing");
 }
 
 function monthLabel(isoDay: string) {
@@ -182,6 +195,8 @@ export function Headline({
   const t = useTerms();
   const { money } = useMoney();
   const sells = useSells();
+  const seesOwed = useSeesOwed();
+  const owed = sells || seesOwed;
   const r = business.revenue;
   const p = business.pipeline;
   const h = business.health;
@@ -200,7 +215,10 @@ export function Headline({
     // a row (2 + 2 + 1 at laptop widths looked broken, seen on production).
     // xl rather than lg: the sidebar takes ~14rem, so at lg the five would be
     // too narrow for their sublines.
-    <div className={`grid grid-cols-1 gap-3 sm:grid-cols-2 ${sells ? "xl:grid-cols-5" : "xl:grid-cols-2"}`}>
+    // Without Distribution there are two or three tiles: one row from sm up.
+    <div
+      className={`grid grid-cols-1 gap-3 ${sells ? "sm:grid-cols-2 xl:grid-cols-5" : owed ? "sm:grid-cols-3" : "sm:grid-cols-2"}`}
+    >
       {sells && (
       <Tile
         primary
@@ -228,9 +246,9 @@ export function Headline({
         sub={`${p.new + p.confirmed} to confirm · ${p.picking + p.packed} to pick or dispatch · ${p.dispatched} out`}
       />
       )}
-      {sells && (
+      {owed && (
       <Tile
-        href="/invoices"
+        href={sells ? "/invoices" : "/owed"}
         label="Owed to us"
         value={money(business.money.outstanding)}
         sub={business.money.overdue > 0 ? `${money(business.money.overdue)} overdue` : "Nothing overdue"}
