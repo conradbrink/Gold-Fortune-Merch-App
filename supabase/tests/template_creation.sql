@@ -87,6 +87,15 @@ begin
       v_fail := v_fail || format('C1 %s: %s form fields, expected %s%s', t.codes, v_n, v_m, E'\n');
     end if;
 
+    -- The trades' price list, without prices (Stage 7), when the module is on.
+    select count(*) into v_n from public.service_items where org_id = v_org and unit_price is null;
+    v_m := case when exists (select 1 from public.company_modules where org_id = v_org
+                              and module_code = 'invoicing' and enabled)
+                then jsonb_array_length(v_def->'service_items') else 0 end;
+    if v_n <> v_m or exists (select 1 from public.service_items where org_id = v_org and unit_price is not null) then
+      v_fail := v_fail || format('C1 %s: %s price-list items, expected %s%s', t.codes, v_n, v_m, E'\n');
+    end if;
+
     -- The field role is named in the company's staff word; roles were provisioned.
     if not exists (select 1 from public.job_roles where org_id = v_org and code = 'sales_rep'
                     and name = v_def->'terms'->'staff'->>'one') then

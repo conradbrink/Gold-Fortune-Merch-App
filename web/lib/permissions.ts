@@ -32,7 +32,8 @@ export type PermissionCode =
   | "hr"
   | "hr_settings"
   | "company_settings"
-  | "workday";
+  | "workday"
+  | "invoicing";
 
 /** What the caller holds. A plain set, so the proxy and the browser agree. */
 export type PermissionSet = ReadonlySet<string>;
@@ -82,9 +83,7 @@ const PATH_PERMISSIONS: { prefix: string; permission: PermissionCode }[] = [
 
   { prefix: "/warehouse", permission: "warehouse" },
   { prefix: "/orders", permission: "warehouse" },
-  { prefix: "/invoices", permission: "warehouse" },
   { prefix: "/recurring-orders", permission: "warehouse" },
-  { prefix: "/quotes", permission: "warehouse" },
   { prefix: "/inventory", permission: "warehouse" },
   { prefix: "/sales", permission: "insights" },
   { prefix: "/reports", permission: "insights" },
@@ -103,6 +102,12 @@ const PATH_PERMISSIONS: { prefix: string; permission: PermissionCode }[] = [
   { prefix: "/forms", permission: "resources" },
   { prefix: "/files", permission: "resources" },
   { prefix: "/hr", permission: "hr" },
+  // Money (Stage 7): whoever bills. Given wherever `warehouse` was, so nobody
+  // who could open these pages before has lost them.
+  { prefix: "/quotes", permission: "invoicing" },
+  { prefix: "/invoices", permission: "invoicing" },
+  { prefix: "/owed", permission: "invoicing" },
+  { prefix: "/price-list", permission: "invoicing" },
 ];
 
 /**
