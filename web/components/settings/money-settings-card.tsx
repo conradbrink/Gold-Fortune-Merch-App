@@ -13,11 +13,12 @@ import { validPrefix } from "@/lib/document-settings";
 import {
   MONEY_WORKFLOWS,
   switchesOf,
+  switchToggles,
   workflowPreset,
   type MoneySwitches,
   type MoneyWorkflow,
 } from "@/lib/money-workflow";
-import { lower } from "@/lib/terms";
+import { saveMoneyWorkflow } from "@/lib/money-settings";
 
 /**
  * Quotes and invoices: the details printed on them, and how the company gets
@@ -115,20 +116,11 @@ export function MoneySettingsCard({ orgId, canEdit }: { orgId: string; canEdit: 
         })
         .eq("id", orgId);
       if (org.error) throw new Error(`Nothing was saved: ${org.error.message}`);
-      const settings = await supabase.from("company_settings").upsert(
-        [
-          { org_id: orgId, key: "money_workflow", value: workflow },
-          { org_id: orgId, key: "money_quotes", value: sw.quotes },
-          { org_id: orgId, key: "money_deposits", value: sw.deposits },
-          { org_id: orgId, key: "money_invoice_from_jobs", value: sw.jobs },
-          { org_id: orgId, key: "money_invoice_direct", value: sw.direct },
-          { org_id: orgId, key: "money_contracts", value: sw.contracts },
-        ],
-        { onConflict: "org_id,key" }
-      );
-      if (settings.error) {
+      try {
+        await saveMoneyWorkflow(supabase, orgId, workflow, sw);
+      } catch (e) {
         throw new Error(
-          `The details on your quotes and invoices were saved, but how you get paid was not: ${settings.error.message}`
+          `The details on your quotes and invoices were saved, but how you get paid was not: ${e instanceof Error ? e.message : String(e)}`
         );
       }
       refreshCompanyConfig();
@@ -141,21 +133,7 @@ export function MoneySettingsCard({ orgId, canEdit }: { orgId: string; canEdit: 
   }
 
   const preset = workflowPreset(workflow, t);
-  const toggles: { key: keyof MoneySwitches; label: string; hint: string }[] = [
-    { key: "quotes", label: "Quotes", hint: "Send quotes before the work." },
-    { key: "deposits", label: "Deposits", hint: "Invoice part of an accepted quote up front, and the balance at the end." },
-    {
-      key: "jobs",
-      label: `Invoice completed ${lower(t.job.many)}`,
-      hint: `Pick a ${lower(t.site.one)} and a period, and invoice the finished ${lower(t.job.many)}.`,
-    },
-    { key: "direct", label: "Direct invoices", hint: "Type an invoice in without a quote or a job." },
-    {
-      key: "contracts",
-      label: "Contracts",
-      hint: `A fixed fee per ${lower(t.site.one)}, invoiced automatically each month or quarter.`,
-    },
-  ];
+  const toggles = switchToggles(t);
 
   return (
     <div className="space-y-4">

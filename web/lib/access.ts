@@ -20,6 +20,7 @@ export type OrgUser = {
   id: string;
   full_name: string | null;
   email: string | null;
+  phone: string | null;
   role: string;
   is_active: boolean;
   job_role_id: string | null;
@@ -87,7 +88,7 @@ export async function fetchAccessDirectory(
     allRows<Omit<OrgUser, "permissions">>((from, to) =>
       supabase
         .from("profiles")
-        .select("id, full_name, email, role, is_active, job_role_id")
+        .select("id, full_name, email, phone, role, is_active, job_role_id")
         .order("full_name")
         // A second, unique key: `full_name` is nullable and repeats, and rows
         // that tie can come back in a different order per page, which loses
@@ -184,16 +185,20 @@ export async function setPermission(
  * profile.
  */
 export async function createUser(input: {
-  email: string;
+  /** The login, when the person has an email address. */
+  email?: string;
+  /** Their mobile number: the login when there is no email (lib/phone-login.ts). */
+  phone?: string;
   fullName: string;
   password: string;
   jobRoleId: string;
-}): Promise<void> {
+}): Promise<{ id: string; login: string; phone: string | null }> {
   const res = await fetch("/api/reps/invite", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      email: input.email,
+      email: input.email ?? "",
+      phone: input.phone ?? "",
       full_name: input.fullName,
       password: input.password,
       job_role_id: input.jobRoleId,
@@ -207,6 +212,12 @@ export async function createUser(input: {
         : `The account was not created (${res.status}).`;
     throw new Error(message);
   }
+  const created = (payload ?? {}) as { id?: unknown; email?: unknown; phone?: unknown };
+  return {
+    id: String(created.id ?? ""),
+    login: String(created.email ?? input.email ?? ""),
+    phone: typeof created.phone === "string" ? created.phone : null,
+  };
 }
 
 /** Permissions grouped by the area they light up, for the tick-box grid. */

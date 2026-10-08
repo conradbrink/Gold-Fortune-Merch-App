@@ -80,6 +80,8 @@ const PATH_PERMISSIONS: { prefix: string; permission: PermissionCode }[] = [
   { prefix: "/settings/company", permission: "company_settings" },
   // The trial's plans and contact page (Stage 5): whoever runs the company.
   { prefix: "/plans", permission: "company_settings" },
+  // The set-up wizard after sign-up (Stage 7 Part 2): the same people.
+  { prefix: "/onboarding", permission: "company_settings" },
 
   { prefix: "/warehouse", permission: "warehouse" },
   { prefix: "/orders", permission: "warehouse" },

@@ -133,3 +133,22 @@ export function switchesOf(settings: {
     contracts: settings.money_contracts,
   };
 }
+
+/** The five switches as the settings page and the set-up wizard offer them. */
+export function switchToggles(t: Terms): { key: keyof MoneySwitches; label: string; hint: string }[] {
+  return [
+    { key: "quotes", label: "Quotes", hint: "Send quotes before the work." },
+    { key: "deposits", label: "Deposits", hint: "Invoice part of an accepted quote up front, and the balance at the end." },
+    {
+      key: "jobs",
+      label: `Invoice completed ${lower(t.job.many)}`,
+      hint: `Pick a ${lower(t.site.one)} and a period, and invoice the finished ${lower(t.job.many)}.`,
+    },
+    { key: "direct", label: "Direct invoices", hint: "Type an invoice in without a quote or a job." },
+    {
+      key: "contracts",
+      label: "Contracts",
+      hint: `A fixed fee per ${lower(t.site.one)}, invoiced automatically each month or quarter.`,
+    },
+  ];
+}

@@ -4,6 +4,7 @@ import {
 } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/server";
 import { enforceRateLimit, LIMITS } from "@/lib/rate-limit";
+import { loginPhone, normalisePhone } from "@/lib/phone-login";
 
 /**
  * Permanently delete a rep.
@@ -112,11 +113,27 @@ async function authorise(id: string) {
  * would change what the manager sees while the rep still signs in with the old
  * address, which is worse than not offering this at all.
  */
-async function changeEmail(admin: SupabaseClient, id: string, raw: string) {
+async function changeEmail(admin: SupabaseClient, id: string, raw: string, phone?: unknown) {
   const email = raw.trim().toLowerCase();
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
     return Response.json({ error: "Enter a valid email address." }, { status: 400 });
   }
+  // A phone login moves with its number (lib/phone-login.ts), so the number
+  // kept for WhatsApp changes in the same write as the login. It is the
+  // login's own number: WhatsApp must not reach someone else. Like the phone
+  // field, it is a mobile number in international form, never a landline.
+  if (phone !== undefined && (typeof phone !== "string" || normalisePhone(phone, null) !== phone)) {
+    return Response.json({ error: "The phone number is not a mobile number in international form." }, { status: 400 });
+  }
+  const loginNumber = loginPhone(email);
+  // A phone login must be a mobile number that sign-in can read back.
+  if (loginNumber && normalisePhone(loginNumber, null) !== loginNumber) {
+    return Response.json({ error: "That login is not a mobile number." }, { status: 400 });
+  }
+  if (loginNumber && phone !== undefined && phone !== loginNumber) {
+    return Response.json({ error: "The phone number does not match the login." }, { status: 400 });
+  }
+  const newPhone = typeof phone === "string" ? phone : loginNumber;
 
   const { data: before } = await admin.auth.admin.getUserById(id);
   const previous = before?.user?.email ?? null;
@@ -129,14 +146,20 @@ async function changeEmail(admin: SupabaseClient, id: string, raw: string) {
   if (authError) {
     const taken = /already|registered|exists/i.test(authError.message);
     return Response.json(
-      { error: taken ? "That email already has an account." : authError.message },
+      {
+        error: taken
+          ? loginNumber
+            ? "That number already has a login."
+            : "That email already has an account."
+          : authError.message,
+      },
       { status: taken ? 409 : 502 }
     );
   }
 
   const { error: profileError } = await admin
     .from("profiles")
-    .update({ email })
+    .update(newPhone ? { email, phone: newPhone } : { email })
     .eq("id", id);
   if (profileError) {
     // Put the credential back rather than leave the login and the dashboard
@@ -245,6 +268,7 @@ export async function PATCH(
     }
 
     const body = parsed as {
+      phone?: unknown;
       is_active?: boolean;
       email?: string;
       password?: string;
@@ -263,7 +287,7 @@ export async function PATCH(
     }
 
     if (typeof body.email === "string") {
-      return changeEmail(guard.admin, id, body.email);
+      return changeEmail(guard.admin, id, body.email, body.phone);
     }
     if (typeof body.password === "string") {
       return setPassword(guard.admin, id, body.password);

@@ -667,6 +667,8 @@ export type Database = {
           org_id: string
           trial_ends_at: string | null
           updated_at: string
+          wizard_finished_at: string | null
+          wizard_step: string | null
         }
         Insert: {
           created_at?: string
@@ -675,6 +677,8 @@ export type Database = {
           org_id: string
           trial_ends_at?: string | null
           updated_at?: string
+          wizard_finished_at?: string | null
+          wizard_step?: string | null
         }
         Update: {
           created_at?: string
@@ -683,6 +687,8 @@ export type Database = {
           org_id?: string
           trial_ends_at?: string | null
           updated_at?: string
+          wizard_finished_at?: string | null
+          wizard_step?: string | null
         }
         Relationships: []
       }
@@ -7559,6 +7565,12 @@ export type Database = {
       template_defaults: { Args: { p_templates: string[] }; Returns: Json }
       my_onboarding: { Args: never; Returns: Json }
       dismiss_onboarding: { Args: never; Returns: undefined }
+      my_setup: { Args: never; Returns: Json }
+      save_setup_step: { Args: { p_step: string; p_finished?: boolean }; Returns: undefined }
+      my_team_status: {
+        Args: never
+        Returns: { profile_id: string; signed_in: boolean; started_workday: boolean }[]
+      }
       consume_anonymous_rate_limit: {
         Args: { p_bucket: string; p_subject: string; p_limit: number; p_window_seconds: number }
         Returns: Json

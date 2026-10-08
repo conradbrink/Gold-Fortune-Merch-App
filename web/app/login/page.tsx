@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { createClient } from "@/lib/supabase/client";
 import { ProductBrand } from "@/components/product-brand";
+import { browserCountries, loginCandidates } from "@/lib/phone-login";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -22,10 +23,29 @@ export default function LoginPage() {
     setLoading(true);
     setError(null);
 
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    // Staff without email sign in with their phone number. The browser does
+    // not know the company yet, so a number without its country code is read
+    // in each country the browser's languages name, until one signs in.
+    const languages = typeof navigator === "undefined" ? [] : navigator.languages ?? [navigator.language];
+    const logins = loginCandidates(email, browserCountries(languages));
+    if (logins.length === 0) {
+      setError("Type your email address, or your phone number with its country code (it starts with +).");
+      setLoading(false);
+      return;
+    }
+    let failure: string | null = null;
+    for (const login of logins) {
+      const { error } = await supabase.auth.signInWithPassword({ email: login, password });
+      if (!error) {
+        failure = null;
+        break;
+      }
+      failure = error.message;
+      if (!/invalid login credentials/i.test(error.message)) break;
+    }
 
-    if (error) {
-      setError(error.message);
+    if (failure) {
+      setError(failure);
       setLoading(false);
       return;
     }
@@ -44,11 +64,13 @@ export default function LoginPage() {
           className="space-y-4 rounded-lg border border-border bg-card p-6 shadow-sm"
         >
           <div className="space-y-1.5">
-            <Label htmlFor="email">Email</Label>
+            <Label htmlFor="email">Email or phone number</Label>
             <Input
               id="email"
-              type="email"
-              autoComplete="email"
+              type="text"
+              autoComplete="username"
+              autoCapitalize="none"
+              spellCheck={false}
               required
               value={email}
               onChange={(e) => setEmail(e.target.value)}

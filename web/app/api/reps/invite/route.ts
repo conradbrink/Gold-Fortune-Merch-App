@@ -1,6 +1,8 @@
 import { createClient as createAdminClient } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/server";
 import { enforceRateLimit, LIMITS } from "@/lib/rate-limit";
+import { parseCompanyConfig } from "@/lib/company-config";
+import { loginPhone, normalisePhone, phoneLogin } from "@/lib/phone-login";
 
 /**
  * Create a field rep or a warehouse clerk, with a starting password.
@@ -113,6 +115,7 @@ export async function POST(request: Request) {
 
     const body = (await request.json()) as {
       email?: string;
+      phone?: string;
       full_name?: string;
       password?: string;
       role?: string;
@@ -207,9 +210,46 @@ export async function POST(request: Request) {
       }
     }
 
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    // Staff without email sign in with their phone number (lib/phone-login.ts):
+    // the number, read in the company's own country, becomes their login.
+    // With both, the email is the login and the number is kept for WhatsApp.
+    const phoneTyped = str(body.phone).trim();
+    let phone: string | null = null;
+    if (phoneTyped) {
+      // Without the company's country a number typed as it is dialled cannot
+      // be read, and calling it "not a mobile number" would blame the typing.
+      const { data: config, error: configError } = await supabase.rpc("my_company_config");
+      if (configError) {
+        return Response.json(
+          { error: `The company's country could not be read (${configError.message}). Try again.` },
+          { status: 502 }
+        );
+      }
+      phone = normalisePhone(phoneTyped, parseCompanyConfig(config)?.settings.country_code ?? null);
+      if (!phone) {
+        return Response.json(
+          { error: "That is not a mobile number. Type it as you would dial it, or with its country code (+…)." },
+          { status: 400 }
+        );
+      }
+    }
+    if (!email && !phone) {
+      return Response.json({ error: "Enter a phone number or an email address." }, { status: 400 });
+    }
+    if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
       return Response.json({ error: "Enter a valid email address." }, { status: 400 });
     }
+    // A phone login typed as the email keeps its own number, as in /api/reps/[id].
+    const loginNumber = loginPhone(email);
+    // A phone login must be a mobile number that sign-in can read back.
+    if (loginNumber && normalisePhone(loginNumber, null) !== loginNumber) {
+      return Response.json({ error: "That login is not a mobile number." }, { status: 400 });
+    }
+    if (loginNumber && phone && phone !== loginNumber) {
+      return Response.json({ error: "The phone number does not match the login." }, { status: 400 });
+    }
+    phone = phone ?? loginNumber;
+    const login = email || phoneLogin(phone!);
     if (!fullName) {
       return Response.json({ error: "Name is required." }, { status: 400 });
     }
@@ -231,7 +271,7 @@ export async function POST(request: Request) {
     // email_confirm skips the confirmation mail — the rep is handed their
     // password in person, so there is nothing to confirm and no inbox to rely on.
     const { data: created, error: createError } = await admin.auth.admin.createUser({
-      email,
+      email: login,
       password,
       email_confirm: true,
       user_metadata: { full_name: fullName },
@@ -241,7 +281,7 @@ export async function POST(request: Request) {
       const message = createError?.message ?? "Could not create the account.";
       const already = /already|registered|exists/i.test(message);
       return Response.json(
-        { error: already ? "That email already has an account." : message },
+        { error: already ? (loginPhone(login) ? "That number already has a login." : "That email already has an account.") : message },
         { status: already ? 409 : 502 }
       );
     }
@@ -257,7 +297,8 @@ export async function POST(request: Request) {
       role,
       job_role_id: jobRoleId || null,
       full_name: fullName,
-      email,
+      email: login,
+      phone,
     });
 
     if (profileError) {
@@ -273,7 +314,8 @@ export async function POST(request: Request) {
 
     return Response.json({
       id: invited.user.id,
-      email,
+      email: login,
+      phone,
       full_name: fullName,
       role,
       job_role_id: jobRoleId || null,
