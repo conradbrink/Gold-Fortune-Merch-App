@@ -4,6 +4,7 @@ import {
 } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/server";
 import { enforceRateLimit, LIMITS } from "@/lib/rate-limit";
+import { loginPhone } from "@/lib/phone-login";
 
 /**
  * Permanently delete a rep.
@@ -118,10 +119,16 @@ async function changeEmail(admin: SupabaseClient, id: string, raw: string, phone
     return Response.json({ error: "Enter a valid email address." }, { status: 400 });
   }
   // A phone login moves with its number (lib/phone-login.ts), so the number
-  // kept for WhatsApp changes in the same write as the login.
+  // kept for WhatsApp changes in the same write as the login. It is the
+  // login's own number: WhatsApp must not reach someone else.
   if (phone !== undefined && (typeof phone !== "string" || !/^\+\d{6,15}$/.test(phone))) {
     return Response.json({ error: "The phone number is not in international form." }, { status: 400 });
   }
+  const loginNumber = loginPhone(email);
+  if (loginNumber && phone !== undefined && phone !== loginNumber) {
+    return Response.json({ error: "The phone number does not match the login." }, { status: 400 });
+  }
+  const newPhone = typeof phone === "string" ? phone : loginNumber;
 
   const { data: before } = await admin.auth.admin.getUserById(id);
   const previous = before?.user?.email ?? null;
@@ -134,14 +141,20 @@ async function changeEmail(admin: SupabaseClient, id: string, raw: string, phone
   if (authError) {
     const taken = /already|registered|exists/i.test(authError.message);
     return Response.json(
-      { error: taken ? "That email already has an account." : authError.message },
+      {
+        error: taken
+          ? loginNumber
+            ? "That number already has a login."
+            : "That email already has an account."
+          : authError.message,
+      },
       { status: taken ? 409 : 502 }
     );
   }
 
   const { error: profileError } = await admin
     .from("profiles")
-    .update(typeof phone === "string" ? { email, phone } : { email })
+    .update(newPhone ? { email, phone: newPhone } : { email })
     .eq("id", id);
   if (profileError) {
     // Put the credential back rather than leave the login and the dashboard

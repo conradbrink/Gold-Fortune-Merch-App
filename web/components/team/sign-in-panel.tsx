@@ -84,7 +84,8 @@ export function SignInPanel({
             onChange={(e) => setNumber(e.target.value)}
             className="max-w-56"
           />
-          <Button onClick={changeNumber} disabled={busy}>
+          {/* The company's country reads a number typed as it is dialled, so wait for it. */}
+          <Button onClick={changeNumber} disabled={busy || !config}>
             {busy ? "Saving…" : "Save"}
           </Button>
           <Button variant="ghost" onClick={() => setMode(null)} disabled={busy}>

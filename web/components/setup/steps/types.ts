@@ -17,6 +17,9 @@ export type StepProps = {
   onNext: () => void;
   /** Reads the company and the wizard's counts again after a step saved. */
   reload: () => Promise<void>;
-  /** Marks the wizard finished, then opens the page. */
-  onFinish: (href: string) => void;
+  /**
+   * Marks the wizard finished, then opens the page. Resolves with what went
+   * wrong when it could not be marked; then nothing opens.
+   */
+  onFinish: (href: string) => Promise<string | null>;
 };

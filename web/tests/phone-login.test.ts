@@ -8,6 +8,7 @@ import {
   formatPhone,
   isPhoneLogin,
   loginCandidates,
+  loginPhone,
   normalisePhone,
   phoneLogin,
   whatsappLink,
@@ -45,6 +46,16 @@ test("the login a number becomes, and back", () => {
   assert.equal(displayLogin("27825550142@staff.tickd.co.za"), "+27 82 555 0142");
   assert.equal(displayLogin("thabo@example.com"), "thabo@example.com");
   assert.equal(formatPhone("+26771234567"), "+267 71 234 567");
+});
+
+test("a phone login's own number, which the routes keep as the person's phone", () => {
+  assert.equal(loginPhone("27825550142@staff.tickd.co.za"), "+27825550142");
+  assert.equal(loginPhone("26771234567@STAFF.TICKD.CO.ZA"), "+26771234567");
+  assert.equal(loginPhone(phoneLogin("+27825550142")), "+27825550142");
+  assert.equal(loginPhone("thabo@example.com"), null);
+  assert.equal(loginPhone("thabo@staff.tickd.co.za"), null);
+  assert.equal(loginPhone(""), null);
+  assert.equal(loginPhone(null), null);
 });
 
 test("sign-in: an email as typed; a number read in the browser's countries", () => {

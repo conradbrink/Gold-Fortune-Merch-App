@@ -2,7 +2,7 @@ import { createClient as createAdminClient } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/server";
 import { enforceRateLimit, LIMITS } from "@/lib/rate-limit";
 import { parseCompanyConfig } from "@/lib/company-config";
-import { normalisePhone, phoneLogin } from "@/lib/phone-login";
+import { loginPhone, normalisePhone, phoneLogin } from "@/lib/phone-login";
 
 /**
  * Create a field rep or a warehouse clerk, with a starting password.
@@ -216,7 +216,15 @@ export async function POST(request: Request) {
     const phoneTyped = str(body.phone).trim();
     let phone: string | null = null;
     if (phoneTyped) {
-      const { data: config } = await supabase.rpc("my_company_config");
+      // Without the company's country a number typed as it is dialled cannot
+      // be read, and calling it "not a mobile number" would blame the typing.
+      const { data: config, error: configError } = await supabase.rpc("my_company_config");
+      if (configError) {
+        return Response.json(
+          { error: `The company's country could not be read (${configError.message}). Try again.` },
+          { status: 502 }
+        );
+      }
       phone = normalisePhone(phoneTyped, parseCompanyConfig(config)?.settings.country_code ?? null);
       if (!phone) {
         return Response.json(
@@ -231,6 +239,12 @@ export async function POST(request: Request) {
     if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
       return Response.json({ error: "Enter a valid email address." }, { status: 400 });
     }
+    // A phone login typed as the email keeps its own number, as in /api/reps/[id].
+    const loginNumber = loginPhone(email);
+    if (loginNumber && phone && phone !== loginNumber) {
+      return Response.json({ error: "The phone number does not match the login." }, { status: 400 });
+    }
+    phone = phone ?? loginNumber;
     const login = email || phoneLogin(phone!);
     if (!fullName) {
       return Response.json({ error: "Name is required." }, { status: 400 });
@@ -263,7 +277,7 @@ export async function POST(request: Request) {
       const message = createError?.message ?? "Could not create the account.";
       const already = /already|registered|exists/i.test(message);
       return Response.json(
-        { error: already ? (email ? "That email already has an account." : "That number already has a login.") : message },
+        { error: already ? (loginPhone(login) ? "That number already has a login." : "That email already has an account.") : message },
         { status: already ? 409 : 502 }
       );
     }

@@ -104,10 +104,13 @@ export default function OnboardingPage() {
     void createClient().rpc("save_setup_step", { p_step: to });
   }
 
-  async function finish(href: string) {
-    await createClient().rpc("save_setup_step", { p_step: "done", p_finished: true });
+  async function finish(href: string): Promise<string | null> {
+    const { error: e } = await createClient().rpc("save_setup_step", { p_step: "done", p_finished: true });
+    // Not marked finished, the wizard would open again next time: stay and say so.
+    if (e) return `Set-up was not saved as finished (${e.message}). Try again.`;
     router.push(href);
     router.refresh();
+    return null;
   }
 
   const products = !!config && moduleEnabled(config.modules, "distribution");
@@ -160,7 +163,7 @@ export default function OnboardingPage() {
         reload={async () => {
           await reload();
         }}
-        onFinish={(href) => void finish(href)}
+        onFinish={finish}
       />
     </div>
   );

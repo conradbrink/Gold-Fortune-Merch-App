@@ -53,10 +53,16 @@ export function formatPhone(e164: string): string {
   return parsed ? parsed.formatInternational() : e164;
 }
 
+/** The number in international form behind a phone login; null for a real email address. */
+export function loginPhone(email: string | null | undefined): string | null {
+  return email && isPhoneLogin(email) ? `+${email.split("@")[0]}` : null;
+}
+
 /** How a login is shown: the phone number for a phone login, the email otherwise. */
 export function displayLogin(email: string | null | undefined): string {
   if (!email) return "";
-  return isPhoneLogin(email) ? formatPhone(`+${email.split("@")[0]}`) : email;
+  const phone = loginPhone(email);
+  return phone ? formatPhone(phone) : email;
 }
 
 /**

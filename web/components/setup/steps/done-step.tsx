@@ -20,6 +20,7 @@ export function DoneStep({ org, setup, icon: Icon, onBack, onFinish }: StepProps
   const config = useCompanyConfig();
   const [firstSite, setFirstSite] = useState<string | null>(null);
   const [going, setGoing] = useState(false);
+  const [problem, setProblem] = useState<string | null>(null);
 
   useEffect(() => {
     void (async () => {
@@ -43,9 +44,15 @@ export function DoneStep({ org, setup, icon: Icon, onBack, onFinish }: StepProps
     ...(org.bank_details ? ["your bank details on every invoice"] : []),
   ];
 
-  function go(href: string) {
+  async function go(href: string) {
     setGoing(true);
-    onFinish(href);
+    setProblem(null);
+    const failed = await onFinish(href);
+    // Still here: the buttons work again for another try.
+    if (failed) {
+      setProblem(failed);
+      setGoing(false);
+    }
   }
 
   return (
@@ -61,13 +68,18 @@ export function DoneStep({ org, setup, icon: Icon, onBack, onFinish }: StepProps
       </div>
       <div className="flex flex-col items-center gap-3 px-6 py-6">
         {doc && (
-          <Button size="lg" onClick={() => go(doc.href)} disabled={going}>
+          <Button size="lg" onClick={() => void go(doc.href)} disabled={going}>
             {doc.label} <ArrowRight className="ml-1.5 size-4" aria-hidden />
           </Button>
         )}
-        <Button variant="ghost" onClick={() => go("/")} disabled={going}>
+        <Button variant="ghost" onClick={() => void go("/")} disabled={going}>
           Go to the dashboard
         </Button>
+        {problem && (
+          <p role="alert" className="max-w-prose text-center text-sm text-destructive">
+            {problem}
+          </p>
+        )}
       </div>
       <div className="border-t border-border px-6 py-5">
         <h3 className="text-sm font-semibold text-foreground">What happens next</h3>
