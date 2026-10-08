@@ -237,6 +237,8 @@ test("a company that does not sell is scored without sales or merchandising, and
   const keys = score.components.map((c) => c.key);
   assert.ok(!keys.includes("sales") && !keys.includes("merchandising"), keys.join(","));
   assert.deepEqual(keys, ["visits", "coverage", "compliance"]);
+  // The printed weights still add up to 100.
+  assert.deepEqual(score.components.map((c) => c.weight), [50, 30, 20]);
   const text = managementSummary(summary, score, missed, "ZAR", goldFortune, false);
   assert.ok(!/sales|merchandising/i.test(text), text);
   // Without the sales clause the sentence still has its subject.

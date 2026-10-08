@@ -312,9 +312,14 @@ function weights(t: Terms, sells: boolean): { key: ScoreKey; label: string; weig
   ];
   // A company that does not sell (no Distribution module) has no sales and no
   // retail audits to be scored on: those components are not part of its
-  // report at all, rather than listed as "excluded". Per-industry weights come
+  // report at all, rather than listed as "excluded". The rest are scaled back
+  // to 100 (50 / 30 / 20), because the Weight column is printed and a table
+  // whose weights add up to 50% reads as a mistake. Per-industry weights come
   // with the industry reports (Stage 7 Part 4).
-  return sells ? all : all.filter((w) => w.key !== "sales" && w.key !== "merchandising");
+  if (sells) return all;
+  const kept = all.filter((w) => w.key !== "sales" && w.key !== "merchandising");
+  const total = kept.reduce((a, w) => a + w.weight, 0);
+  return kept.map((w) => ({ ...w, weight: (w.weight * 100) / total }));
 }
 
 /**
