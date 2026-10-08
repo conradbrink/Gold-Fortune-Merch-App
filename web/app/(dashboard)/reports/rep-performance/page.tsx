@@ -262,6 +262,12 @@ export default function RepPerformancePage() {
       `${meta.repName} · ${meta.territoryLabel}`,
       `${longDate(meta.from)} – ${longDate(meta.to)}`,
     ];
+    // Without Distribution the report shows no sales or retail checks, so the
+    // spreadsheets leave those columns out too (the rows may keep the keys;
+    // only listed columns are written).
+    const RETAIL = new Set(["previous", "orders", "sales", "prior", "checks", "oos"]);
+    const cols = <C extends { key: string }>(all: C[]): C[] =>
+      meta.sells ? all : all.filter((c) => !RETAIL.has(c.key));
     return [
       {
         label: `Missed ${lower(t.job.many)}`,
@@ -269,7 +275,7 @@ export default function RepPerformancePage() {
           title: `Missed ${lower(t.job.many)}`,
           filename: `${staff}-missed-${t.job.many}`,
           context,
-          columns: [
+          columns: cols([
             { header: t.site.one, key: "store" },
             { header: t.site_group.one, key: "group" },
             { header: "Town", key: "city" },
@@ -278,7 +284,7 @@ export default function RepPerformancePage() {
             { header: "Reason", key: "reason" },
             { header: `Last ${lower(t.job.one)} before`, key: "last" },
             { header: "Previous sales", key: "previous", numeric: true },
-          ],
+          ]),
           rows: report.missed.map((m) => ({
             store: m.storeName,
             group: m.storeGroup ?? "",
@@ -297,17 +303,17 @@ export default function RepPerformancePage() {
       {
         label: "Day by day",
         build: (): ExportSheet => ({
-          title: `Daily ${lower(t.job.many)} and sales`,
+          title: meta.sells ? `Daily ${lower(t.job.many)} and sales` : `Daily ${lower(t.job.many)}`,
           filename: `${staff}-daily`,
           context,
-          columns: [
+          columns: cols([
             { header: "Date", key: "day" },
             { header: "Planned", key: "planned", numeric: true },
             { header: "Completed", key: "completed", numeric: true },
             { header: t.job.many, key: "visits", numeric: true },
             { header: "Orders", key: "orders", numeric: true },
             { header: "Sales (excl. VAT)", key: "sales", numeric: true },
-          ],
+          ]),
           rows: report.days.map((d) => ({
             day: d.day,
             planned: d.planned,
@@ -324,7 +330,7 @@ export default function RepPerformancePage() {
           title: `${t.site.one} performance`,
           filename: `${staff}-${t.site.many}`,
           context,
-          columns: [
+          columns: cols([
             { header: t.site.one, key: "store" },
             { header: t.site_group.one, key: "group" },
             { header: "Planned", key: "planned", numeric: true },
@@ -335,7 +341,7 @@ export default function RepPerformancePage() {
             { header: "Stock checks", key: "checks", numeric: true },
             { header: "Out of stock", key: "oos", numeric: true },
             { header: `Last ${lower(t.job.one)}`, key: "last" },
-          ],
+          ]),
           rows: report.stores.map((s) => ({
             store: s.storeName,
             group: s.storeGroup ?? "",

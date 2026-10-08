@@ -17,7 +17,8 @@ import { OosHotspotsTable } from "@/components/reports/oos-hotspots-table";
 import { AdherenceTable } from "@/components/reports/adherence-table";
 import { StorePicker } from "@/components/stores/store-picker";
 import { REPORT_TAB_VALUES, availableReportTabs, reportTabs, type ReportTab } from "@/lib/report-tabs";
-import { useCompanyConfig, useTerms } from "@/lib/use-company-config";
+import { getCompanyConfig, useCompanyConfig, useTerms } from "@/lib/use-company-config";
+import type { ModuleSet } from "@/lib/modules";
 import { lower, withArticle, type Terms } from "@/lib/terms";
 import { fileSlug } from "@/lib/export-filename";
 import { ExportMenu } from "@/components/export-menu";
@@ -115,9 +116,18 @@ export default function ReportsPage() {
   const supabase = createClient();
   const terms = useTerms();
   const config = useCompanyConfig();
+  /**
+   * The modules the last load worked from. The hook keeps `null` for good if
+   * its lookup fails, so the loader asks for the config itself (and shows the
+   * failure with a Retry); this is what the tabs then follow.
+   */
+  const [loadedModules, setLoadedModules] = useState<ModuleSet | null>(null);
   /** Only the tabs whose module the company has (`REPORT_TAB_MODULE`): a
    * cleaning company has no Perfect Store, and asking for it would be refused. */
-  const available = useMemo(() => availableReportTabs(config?.modules ?? null), [config]);
+  const available = useMemo(
+    () => availableReportTabs(config?.modules ?? loadedModules),
+    [config, loadedModules]
+  );
   /** From `lib/report-tabs` so the file that renders the tabs and the file
    * that links to them cannot disagree about what a tab is called. */
   const TABS = reportTabs(terms, available);
@@ -251,8 +261,15 @@ export default function ReportsPage() {
       // Weekly buckets past ~6 weeks, or the x-axis becomes unreadable.
       const bucket = rangeDays(range) > 45 ? "week" : "day";
       // Only the reports this company has; the others are refused by the
-      // database (`require_module`) and would fail the whole page.
-      const has = (t: ReportTab) => available.includes(t);
+      // database (`require_module`) and would fail the whole page. The config
+      // is cached, so this is a request only when nothing has loaded it yet;
+      // if it fails, the page says so and Retry asks again.
+      const cfg = await getCompanyConfig();
+      if (!cfg) throw new Error("Your company's settings could not be read.");
+      if (isStale()) return;
+      setLoadedModules(cfg.modules);
+      const mine = availableReportTabs(cfg.modules);
+      const has = (t: ReportTab) => mine.includes(t);
       const none = <T,>() => Promise.resolve([] as T[]);
       const [g, s, t, f, ps, oh, ad] = await Promise.all([
         has("coverage") ? fetchCoverageGaps(supabase, range) : none<CoverageGap>(),
@@ -288,19 +305,17 @@ export default function ReportsPage() {
       if (!isStale()) setLoading(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [range, templateId, repId, storeId, storeGroupId, available]);
+  }, [range, templateId, repId, storeId, storeGroupId]);
 
   useEffect(() => {
-    // Not before the company's modules are known: they decide which reports
-    // may be asked for at all.
-    if (!urlRead || !config) return;
+    if (!urlRead) return;
     // Behind an async boundary so the loader's own `setLoading(true)`
     // is not a synchronous setState in the effect body. Same call, same
     // tick — `load` still starts before this returns.
     void (async () => {
       await load();
     })();
-  }, [load, urlRead, config]);
+  }, [load, urlRead]);
 
   /**
    * The chain filter, applied to the reports that are one row per store.
