@@ -26,7 +26,8 @@ export type ModuleCode =
   | "reports"
   | "distribution"
   | "warehouse"
-  | "hr";
+  | "hr"
+  | "invoicing";
 
 /** The modules a company has on. `core` is implied and never stored. */
 export type ModuleSet = ReadonlySet<string>;
@@ -56,8 +57,6 @@ export function moduleEnabled(modules: ModuleSet, code: ModuleCode): boolean {
  */
 const MODULE_PATHS: { prefix: string; module: ModuleCode }[] = [
   { prefix: "/orders", module: "distribution" },
-  { prefix: "/quotes", module: "distribution" },
-  { prefix: "/invoices", module: "distribution" },
   { prefix: "/recurring-orders", module: "distribution" },
   { prefix: "/targets", module: "distribution" },
   { prefix: "/commissions", module: "distribution" },
@@ -74,6 +73,12 @@ const MODULE_PATHS: { prefix: string; module: ModuleCode }[] = [
   { prefix: "/forms", module: "checklists_forms" },
 
   { prefix: "/reports", module: "reports" },
+
+  // Quotes, invoices, who owes you and the price list: every trade (Stage 7).
+  { prefix: "/quotes", module: "invoicing" },
+  { prefix: "/invoices", module: "invoicing" },
+  { prefix: "/owed", module: "invoicing" },
+  { prefix: "/price-list", module: "invoicing" },
 ];
 
 /** The module a path belongs to; `core` when no prefix claims it. */

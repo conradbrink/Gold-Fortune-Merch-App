@@ -34,6 +34,8 @@ import {
   Repeat,
   Flag,
   Coins,
+  HandCoins,
+  Tags,
 } from "lucide-react";
 import {
   can,
@@ -166,6 +168,18 @@ export const navGroups: NavGroupDef[] = [
     ],
   },
   {
+    // Quotes, invoices and who owes you, for every trade (Stage 7). Above the
+    // warehouse: getting paid is a daily question for every company, and a
+    // trade without a warehouse sees this group and not that one.
+    label: "Money",
+    items: [
+      { href: "/quotes", label: "Quotes", icon: FileText, permission: "invoicing" },
+      { href: "/invoices", label: "Invoices", icon: Receipt, permission: "invoicing" },
+      { href: "/owed", label: "Who owes you", icon: HandCoins, permission: "invoicing" },
+      { href: "/price-list", label: "Price list", icon: Tags, permission: "invoicing" },
+    ],
+  },
+  {
     // The warehouse clerk's whole job, and the only group they see in full.
     // It sits above Team because for a manager it is a daily operational
     // question ("what is going out today?") rather than a reference one.
@@ -183,19 +197,9 @@ export const navGroups: NavGroupDef[] = [
         icon: ClipboardCheck,
         permission: "warehouse",
       },
-      // Beside Orders: an invoice is made from an order that has gone out,
-      // and a recurring order places orders. Same people, same permission.
-      { href: "/invoices", label: "Tax invoices", icon: Receipt, permission: "warehouse" },
+      // Beside Orders: a recurring order places orders. Same people, same
+      // permission. Invoices and quotes moved to Money (Stage 7).
       { href: "/recurring-orders", label: "Recurring orders", icon: Repeat, permission: "warehouse" },
-      // Beside Orders because a quote is an order that has not been agreed
-      // yet, and the same people write both. `/quotes` is not under `/orders`
-      // so the warehouse's order list stays a list of real orders.
-      {
-        href: "/quotes",
-        label: "Quotes",
-        icon: FileText,
-        permission: "warehouse",
-      },
       {
         href: "/inventory",
         label: "Inventory",

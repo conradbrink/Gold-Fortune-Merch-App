@@ -84,7 +84,14 @@ declare
   v_adj uuid; v_adj_mgr uuid; v_decided text;
 
 begin
-  select id, org_id into v_mgr, v_org from public.profiles where role = 'manager' limit 1;
+  -- The manager of the oldest company with two reps and a store (Gold
+  -- Fortune): trial sign-ups have managers but no field data.
+  select p.id, p.org_id into v_mgr, v_org from public.profiles p
+   where p.role = 'manager'
+     and (select count(*) from public.profiles pr where pr.org_id = p.org_id and pr.role = 'rep') >= 2
+     and exists (select 1 from public.stores st where st.org_id = p.org_id)
+   order by (select o.created_at from public.organizations o where o.id = p.org_id), p.id
+   limit 1;
   select id into v_rep  from public.profiles where role = 'rep' and org_id = v_org order by full_name limit 1;
   select id into v_rep2 from public.profiles where role = 'rep' and org_id = v_org and id <> v_rep limit 1;
   select id into v_store from public.stores where org_id = v_org limit 1;

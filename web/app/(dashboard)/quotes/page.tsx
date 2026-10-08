@@ -24,8 +24,9 @@ import {
   QUOTE_STATUS_LABELS,
   type QuoteListRow,
 } from "@/lib/quotes";
-import { useTerms } from "@/lib/use-company-config";
+import { useCompanyConfig, useTerms } from "@/lib/use-company-config";
 import { lower } from "@/lib/terms";
+import { formatMoney } from "@/lib/money";
 
 /**
  * Every quote, newest first.
@@ -37,6 +38,7 @@ import { lower } from "@/lib/terms";
 export default function QuotesPage() {
   const supabase = createClient();
   const t = useTerms();
+  const currency = useCompanyConfig()?.settings.currency_code ?? "";
   const router = useRouter();
   const [quotes, setQuotes] = useState<QuoteListRow[]>([]);
   const [status, setStatus] = useState("open");
@@ -72,7 +74,7 @@ export default function QuotesPage() {
       if (!q) return true;
       return (
         row.quote_number.toLowerCase().includes(q) ||
-        (row.store_name ?? "").toLowerCase().includes(q) ||
+        row.client_name.toLowerCase().includes(q) ||
         (row.contact_name ?? "").toLowerCase().includes(q)
       );
     });
@@ -84,7 +86,7 @@ export default function QuotesPage() {
         <div>
           <h1 className="text-xl font-semibold tracking-tight text-foreground">Quotes</h1>
           <p className="text-sm text-muted-foreground">
-            Priced offers. The warehouse sees nothing until one is converted to an order.
+            Priced offers. Once one is accepted, invoice it from the quote.
           </p>
         </div>
         <Button nativeButton={false} render={<Link href="/quotes/new" />}>
@@ -100,7 +102,7 @@ export default function QuotesPage() {
           <Input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder={`Search quote number, ${lower(t.site.one)} or contact`}
+            placeholder={`Search quote number, ${lower(t.client.one)} or contact`}
             className="pl-8"
             aria-label="Search quotes"
           />
@@ -127,7 +129,7 @@ export default function QuotesPage() {
             <TableRow>
               <TableHead>Quote</TableHead>
               <TableHead>Created</TableHead>
-              <TableHead>{t.site.one}</TableHead>
+              <TableHead>{t.client.one}</TableHead>
               <TableHead>Valid until</TableHead>
               <TableHead>Status</TableHead>
               <TableHead className="text-right">Total</TableHead>
@@ -157,7 +159,7 @@ export default function QuotesPage() {
                     {new Date(q.created_at).toLocaleDateString()}
                   </TableCell>
                   <TableCell>
-                    {q.store_name}
+                    {q.client_name}
                     {q.contact_name && (
                       <div className="text-xs text-muted-foreground">{q.contact_name}</div>
                     )}
@@ -174,7 +176,7 @@ export default function QuotesPage() {
                     )}
                   </TableCell>
                   <TableCell className="text-right tabular-nums">
-                    {q.total_incl_vat.toFixed(2)}
+                    {formatMoney(q.total_incl_vat, currency)}
                   </TableCell>
                 </TableRow>
               );

@@ -10,6 +10,9 @@ export const site = {
   trialDays: 14,
   url: "https://tickd.co.za",
   appUrl: "https://app.tickd.co.za",
+  // Every "try it" button goes straight to the app's sign-up (the trial
+  // onboarding); the trade picker at the bottom adds ?industry=<code>.
+  signupUrl: "https://app.tickd.co.za/signup",
   // Legal entity shown in the footer and named in the terms and privacy
   // pages (owner, 8 Oct 2026; CIPA extract BW00005187820).
   legalName: "Mobill Media (Pty) Ltd",

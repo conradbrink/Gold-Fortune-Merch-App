@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Download, Search } from "lucide-react";
+import { Download, Plus, Search } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -20,31 +20,56 @@ import {
 } from "@/components/ui/table";
 import { ErrorBanner, EmptyRow } from "@/components/warehouse/stat-tile";
 import { exportCsv } from "@/lib/export";
-import { useTerms } from "@/lib/use-company-config";
+import { useCompanyConfig, useTerms } from "@/lib/use-company-config";
 import { lower } from "@/lib/terms";
 import {
   fetchInvoices,
+  INVOICE_KIND_LABELS,
+  INVOICE_SOURCE_LABELS,
   money,
   PAYMENT_STATUS_LABELS,
   paymentStatus,
   type InvoiceListRow,
 } from "@/lib/invoices";
+import { invoiceSources } from "@/lib/money-workflow";
+import { moduleEnabled } from "@/lib/modules";
 
 function ymd(d: Date) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
 /**
- * The tax invoice register.
+ * The invoice register.
  *
- * Invoices are made from an order, not here — "Issue tax invoice" on an order
- * that has gone out — so this page is the record: what was issued, what has
- * been credited and paid, and what is still owed.
+ * Invoices are made where the work is — from an accepted quote, from completed
+ * jobs, typed in ("New invoice"), or from an order that has gone out — so this
+ * page is the record: what was issued, what has been credited and paid, and
+ * what is still owed.
  */
+
+/** What an invoice was made from, for the second line under its number. */
+function sourceNote(r: InvoiceListRow): string {
+  if (r.order_number) return r.order_number;
+  const kind = INVOICE_KIND_LABELS[r.kind] ?? "";
+  const from = r.source === "quote" && r.reference ? r.reference : (INVOICE_SOURCE_LABELS[r.source] ?? "");
+  return [kind, from].filter(Boolean).join(" · ");
+}
 export default function InvoicesPage() {
   const supabase = createClient();
   const terms = useTerms();
+  const config = useCompanyConfig();
   const router = useRouter();
+  const sw = config
+    ? {
+        quotes: config.settings.money_quotes,
+        deposits: config.settings.money_deposits,
+        jobs: config.settings.money_invoice_from_jobs,
+        direct: config.settings.money_invoice_direct,
+      }
+    : null;
+  const canStart =
+    sw !== null && invoiceSources(sw, config!.modules).some((s) => s === "jobs" || s === "direct");
+  const sells = config ? moduleEnabled(config.modules, "distribution") : false;
   const [range, setRange] = useState(() => {
     const now = new Date();
     return { from: ymd(new Date(now.getFullYear(), now.getMonth() - 2, 1)), to: ymd(now) };
@@ -84,7 +109,8 @@ export default function InvoicesPage() {
       if (!q) return true;
       return (
         r.invoice_number.toLowerCase().includes(q) ||
-        r.order_number.toLowerCase().includes(q) ||
+        (r.order_number ?? "").toLowerCase().includes(q) ||
+        (r.reference ?? "").toLowerCase().includes(q) ||
         r.customer_name.toLowerCase().includes(q)
       );
     });
@@ -107,16 +133,16 @@ export default function InvoicesPage() {
 
   function exportRows() {
     void exportCsv({
-      title: "Tax invoices",
+      title: "Invoices",
       context: [`Issued ${range.from} to ${range.to}`],
-      filename: "tax-invoices",
+      filename: "invoices",
       letterhead: false,
       columns: [
         { header: "Invoice", key: "inv" },
         { header: "Date", key: "date" },
         { header: "Due", key: "due" },
         { header: terms.client.one, key: "customer" },
-        { header: "Order", key: "order" },
+        { header: "Made from", key: "order" },
         { header: "Excl. VAT", key: "sub", numeric: true },
         { header: "VAT", key: "vat", numeric: true },
         { header: "Total", key: "total", numeric: true },
@@ -130,7 +156,7 @@ export default function InvoicesPage() {
         date: r.issue_date,
         due: r.due_date,
         customer: r.customer_name,
-        order: r.order_number,
+        order: sourceNote(r),
         sub: Number(r.subtotal).toFixed(2),
         vat: Number(r.vat).toFixed(2),
         total: Number(r.total).toFixed(2),
@@ -148,14 +174,21 @@ export default function InvoicesPage() {
     <div className="space-y-6">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="text-xl font-semibold tracking-tight text-foreground">Tax invoices</h1>
+          <h1 className="text-xl font-semibold tracking-tight text-foreground">Invoices</h1>
           <p className="text-sm text-muted-foreground">
-            Issued from an order once it has gone out. Corrected with credit notes, never edited.
+            Corrected with credit notes, never edited.
           </p>
         </div>
-        <Button variant="outline" onClick={exportRows}>
-          <Download className="mr-1.5 h-4 w-4" /> CSV
-        </Button>
+        <div className="flex gap-2">
+          <Button variant="outline" onClick={exportRows}>
+            <Download className="mr-1.5 h-4 w-4" /> CSV
+          </Button>
+          {canStart && (
+            <Button nativeButton={false} render={<Link href="/invoices/new" />}>
+              <Plus className="mr-1.5 h-4 w-4" /> New invoice
+            </Button>
+          )}
+        </div>
       </div>
 
       <ErrorBanner message={error} />
@@ -172,7 +205,7 @@ export default function InvoicesPage() {
           <Input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder={`Invoice, order or ${lower(terms.client.one)}`}
+            placeholder={`Invoice, reference or ${lower(terms.client.one)}`}
             className="pl-8"
             aria-label="Search invoices"
           />
@@ -209,10 +242,14 @@ export default function InvoicesPage() {
             {!loading && visible.length === 0 && (
               <EmptyRow colSpan={7}>
                 {rows.length === 0 ? (
-                  <>
-                    No invoices in this period. Open an order that has gone out and choose{" "}
-                    <Link href="/orders" className="text-primary hover:underline">Issue tax invoice</Link>.
-                  </>
+                  sells && !canStart ? (
+                    <>
+                      No invoices in this period. Open an order that has gone out and choose{" "}
+                      <Link href="/orders" className="text-primary hover:underline">Issue tax invoice</Link>.
+                    </>
+                  ) : (
+                    "No invoices in this period."
+                  )
                 ) : (
                   "No invoices match."
                 )}
@@ -228,7 +265,7 @@ export default function InvoicesPage() {
                     <Link href={`/invoices/${r.id}`} className="text-primary hover:underline">
                       {r.invoice_number}
                     </Link>
-                    <div className="text-xs text-muted-foreground">{r.order_number}</div>
+                    <div className="text-xs text-muted-foreground">{sourceNote(r)}</div>
                   </TableCell>
                   <TableCell className="whitespace-nowrap text-muted-foreground">{r.issue_date}</TableCell>
                   <TableCell>{r.customer_name}</TableCell>

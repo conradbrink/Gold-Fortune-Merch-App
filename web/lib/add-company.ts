@@ -226,7 +226,9 @@ export function toggleModule(
 
 /** The settings the defaults step edits: not the brand colours (their own card after creation), country or currency (the details step). */
 export function editableSetting(key: string): boolean {
-  return !key.startsWith("brand_") && key !== "country_code" && key !== "currency_code";
+  // How the company gets paid comes from its trade and is changed by the
+  // company itself on its settings page (Quotes & invoices).
+  return !key.startsWith("brand_") && !key.startsWith("money_") && key !== "country_code" && key !== "currency_code";
 }
 
 /** A stored setting as the text an input holds. */
