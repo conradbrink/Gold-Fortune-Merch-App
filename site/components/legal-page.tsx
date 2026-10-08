@@ -17,7 +17,7 @@ export function LegalPage({ title, children }: { title: string; children: React.
 
   return (
     <>
-      <header className="border-b border-line/70 bg-sand">
+      <header className="border-b border-line/70 bg-mint">
         <div className="mx-auto flex h-14 max-w-3xl items-center px-4 sm:h-16 sm:px-6">
           <Link href="/" aria-label={`${site.name} home`}>
             <Logo />
