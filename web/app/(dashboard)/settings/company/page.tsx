@@ -37,6 +37,7 @@ import { FieldSettingsCard } from "@/components/settings/field-settings-card";
 import { MoneySettingsCard } from "@/components/settings/money-settings-card";
 import { DashboardSettingsCard } from "@/components/settings/dashboard-settings-card";
 import { ReportsSettingsCard } from "@/components/settings/reports-settings-card";
+import { EmailSettingsCard } from "@/components/settings/email-settings-card";
 import { ModulesCard } from "@/components/settings/modules-card";
 import { TerminologyCard } from "@/components/settings/terminology-card";
 import { LogoCard } from "@/components/settings/logo-card";
@@ -241,6 +242,7 @@ export default function CompanyProfilePage() {
           <TabsTrigger value="field">Field settings</TabsTrigger>
           <TabsTrigger value="money">Quotes &amp; invoices</TabsTrigger>
           <TabsTrigger value="dashboard">Dashboard &amp; reports</TabsTrigger>
+          <TabsTrigger value="emails">Emails</TabsTrigger>
           <TabsTrigger value="branding">Terminology &amp; branding</TabsTrigger>
           <TabsTrigger value="plan">Plan</TabsTrigger>
         </TabsList>
@@ -613,6 +615,10 @@ export default function CompanyProfilePage() {
         <TabsContent value="dashboard" className="mt-4 space-y-4">
           {org && <DashboardSettingsCard orgId={org.id} canEdit={canEditCompany} />}
           {org && <ReportsSettingsCard orgId={org.id} canEdit={canEditCompany} />}
+        </TabsContent>
+
+        <TabsContent value="emails" className="mt-4 space-y-4">
+          <EmailSettingsCard supportEmail={form.support_email || null} />
         </TabsContent>
 
         <TabsContent value="branding" className="mt-4 space-y-4">
