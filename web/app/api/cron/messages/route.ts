@@ -90,8 +90,13 @@ export async function GET(request: Request) {
   for (const m of rows ?? []) {
     if (Date.now() - started > 40_000) {
       // Out of time: back in the queue untouched, for the next run.
-      await admin.from("message_outbox").update({ status: "queued", attempts: Math.max(0, m.attempts - 1) }).eq("id", m.id);
-      deferred++;
+      const { error: back } = await admin
+        .from("message_outbox")
+        .update({ status: "queued", attempts: Math.max(0, m.attempts - 1) })
+        .eq("id", m.id)
+        .eq("status", "sending");
+      if (back) console.error("messages: could not put back", m.id, back.message);
+      else deferred++;
       continue;
     }
     const org = await orgOf(m.org_id);

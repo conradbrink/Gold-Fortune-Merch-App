@@ -23,7 +23,7 @@ const STATUS: Record<string, { label: string; tone: string }> = {
   sending: { label: "Sending", tone: "text-muted-foreground" },
   sent: { label: "Sent", tone: "text-emerald-700 dark:text-emerald-400" },
   failed: { label: "Not delivered", tone: "text-destructive" },
-  suppressed: { label: "Not sent: they asked to stop", tone: "text-muted-foreground" },
+  suppressed: { label: "Not sent: this address is blocked or opted out", tone: "text-muted-foreground" },
   cancelled: { label: "Cancelled", tone: "text-muted-foreground" },
 };
 
@@ -69,7 +69,7 @@ export function EmailSettingsCard({ supportEmail }: { supportEmail: string | nul
       const { error: e } = await createClient().rpc("send_test_email");
       if (e) return setError(e.message);
       await load();
-      setNote("On its way. It usually arrives within five minutes.");
+      setNote("Queued. Its status shows below.");
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {

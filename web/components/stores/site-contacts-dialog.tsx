@@ -91,9 +91,10 @@ export function SiteContactsDialog({
   async function remove(c: SiteContact) {
     if (!site) return;
     setBusy(true);
+    setError(null);
     const { data: removed, error: e } = await createClient().from("site_contacts").delete().eq("id", c.id).select("id");
     setBusy(false);
-    if (e) return setError(e.message);
+    if (e) return setError(/row-level security/i.test(e.message) ? ONLY_MANAGERS : e.message);
     if (!removed?.length) return setError(ONLY_MANAGERS);
     await load(site.id);
   }
