@@ -160,7 +160,7 @@ const OWNER_GETS = [
   "Signed job reports sent to your clients",
   "Alerts when something's off",
   "Quotes, invoices and who still owes you",
-  "Reports and a score for each person",
+  "Reports and a score for each employee",
 ];
 
 function TrialButton({ className = "" }: { className?: string }) {
