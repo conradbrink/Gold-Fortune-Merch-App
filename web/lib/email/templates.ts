@@ -110,21 +110,26 @@ const TEMPLATES: Record<string, Renderer> = {
     });
     return { subject: `${l.jobWord} done at ${l.siteName}, ${l.day}`, html, text };
   },
-  // A site's day, every finished job in one email.
+  // A site's evening email: every job finished since the last one. A job
+  // finished after last night's email, or across midnight, can be from
+  // yesterday; then each line says its day.
   job_reports_day: (payload, ctx) => {
     const lines = reportLines(payload);
     const first = lines[0];
     if (!first) throw new Error("A day's report email needs its reports.");
     const jobs = lines.length === 1 ? first.jobWord.toLowerCase() : `${first.jobWord.toLowerCase()}s`;
+    const oneDay = lines.every((l) => l.day === first.day);
+    const when = oneDay ? `on ${first.day}` : "since the last report";
+    const text = (l: ReportLine) => (oneDay ? lineText(l) : `${l.day}, ${lineText(l)}`);
     const items = lines
-      .map((l) => `<li style="margin:0 0 8px">${escapeHtml(lineText(l))}. <a href="${escapeHtml(l.url)}" style="color:#0f5c4f">See and sign</a></li>`)
+      .map((l) => `<li style="margin:0 0 8px">${escapeHtml(text(l))}. <a href="${escapeHtml(l.url)}" style="color:#0f5c4f">See and sign</a></li>`)
       .join("");
-    const { html, text } = layout(ctx, {
-      heading: `Today at ${first.siteName}`,
-      bodyHtml: `<p style="margin:0 0 8px">${lines.length} ${escapeHtml(jobs)} done on ${escapeHtml(first.day)}:</p><ul style="margin:0;padding-left:20px">${items}</ul>`,
-      bodyText: `${lines.length} ${jobs} done on ${first.day}:\n${lines.map((l) => `- ${lineText(l)}. See and sign: ${l.url}`).join("\n")}`,
+    const { html, text: bodyText } = layout(ctx, {
+      heading: oneDay ? `${first.siteName}, ${first.day}` : first.siteName,
+      bodyHtml: `<p style="margin:0 0 8px">${lines.length} ${escapeHtml(jobs)} done ${escapeHtml(when)}:</p><ul style="margin:0;padding-left:20px">${items}</ul>`,
+      bodyText: `${lines.length} ${jobs} done ${when}:\n${lines.map((l) => `- ${text(l)}. See and sign: ${l.url}`).join("\n")}`,
     });
-    return { subject: `${first.siteName}: ${lines.length} ${jobs} done on ${first.day}`, html, text };
+    return { subject: `${first.siteName}: ${lines.length} ${jobs} done ${when}`, html, text: bodyText };
   },
   // One alert, as it is found (alerts_email "instant"). To the company's own
   // people, so no unsubscribe link: the setting is theirs to change.
