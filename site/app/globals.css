@@ -144,6 +144,26 @@ section[id] {
   100% { opacity: 0; transform: translate(-50%, -50%) scale(1.6); }
 }
 .tk-fade { animation: tk-fade 0.35s ease-out both; }
+/* The demo's dashboard card arriving: a short drop from where the sentence
+   above it is, with a strong ease-out (never from scale 0). */
+@keyframes tk-drop {
+  from { opacity: 0; transform: translateY(-10px) scale(0.97); }
+  to { opacity: 1; transform: none; }
+}
+.tk-drop { animation: tk-drop 0.4s cubic-bezier(0.23, 1, 0.32, 1) both; }
+/* The demo's dashboard window: hold the whole screen for a beat, then move in
+   on the number the scene is about (an on-screen move, so ease-in-out). */
+@keyframes tk-push {
+  0%, 30% { transform: translate(0, 0) scale(1); }
+  100% { transform: translate(var(--tx, 0), var(--ty, 0)) scale(var(--z, 1.6)); }
+}
+.tk-push { animation: tk-push 2.4s cubic-bezier(0.77, 0, 0.175, 1) both; }
+@media (prefers-reduced-motion: reduce) {
+  .tk-push { animation: none !important; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .tk-drop { animation: none !important; }
+}
 .tk-ring { animation: tk-ring 0.7s ease-out both; }
 @media (prefers-reduced-motion: reduce) {
   .tk-fade, .tk-ring { animation: none !important; }
