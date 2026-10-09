@@ -13,8 +13,9 @@ const fmt = (n: number) => Math.round(n).toLocaleString("en-US");
 const num = (v: string) => Math.max(0, Number(v) || 0);
 
 export function CostCalculator() {
-  const [staff, setStaff] = useState("10");
-  const [lost, setLost] = useState("1");
+  // Starting values the owner chose (9 Oct 2026): a small team, two hours a day.
+  const [staff, setStaff] = useState("5");
+  const [lost, setLost] = useState("2");
   const [currency, setCurrency] = useState<Currency>("R");
   const [rate, setRate] = useState(String(defaultRate.R));
 
