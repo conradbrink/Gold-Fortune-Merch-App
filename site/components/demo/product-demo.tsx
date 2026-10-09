@@ -344,6 +344,8 @@ const phoneAt = (i: number) => {
   return 0;
 };
 
+const phoneScenes = beats.flatMap((b, i) => (b.phone ? [i] : []));
+
 const CTA = beats.length;
 const END_MS = 4500;
 const END_LINE = "Your whole team and your whole business, in one place.";
@@ -408,26 +410,37 @@ export function ProductDemo() {
   const office = !!beat.window && !end;
   // The phone keeps its last screen while a dashboard scene plays.
   const phoneIdx = phoneAt(shown);
-  const Phone = beats[phoneIdx].phone!;
   const who = beats[phoneIdx].who ?? "Thabo";
-  // The screen that was on show before this one. When the screen changes, it
-  // stays underneath, finished, while the new one fades in over it, so the
-  // phone never shows an empty screen between scenes. (Stored with the
-  // set-state-while-rendering pattern, so it is right on the first paint.)
-  const [screens, setScreens] = useState({ now: phoneIdx, before: phoneIdx });
-  if (screens.now !== phoneIdx) setScreens({ now: phoneIdx, before: screens.now });
-  const Under = screens.before !== phoneIdx ? beats[screens.before].phone : undefined;
+  // Every phone screen is mounted once and stays mounted, stacked: the one on
+  // show on top, the one before it just under. A scene change never mounts an
+  // image, so the phone can never show an empty screen. The new screen goes
+  // to "reset" (its animations off, itself hidden) for one frame, then to
+  // "play", which fades it in over the old one and replays its taps from the
+  // start. (Stored with the set-state-while-rendering pattern, so the order is
+  // right on the first paint.)
+  const [screens, setScreens] = useState({ now: phoneIdx, before: phoneIdx, state: "first" });
+  if (screens.now !== phoneIdx) setScreens({ now: phoneIdx, before: screens.now, state: "reset" });
+  useEffect(() => {
+    if (screens.state !== "reset") return;
+    // Two frames, so the browser paints the reset before the replay starts.
+    let id = requestAnimationFrame(() => {
+      id = requestAnimationFrame(() => setScreens((v) => (v.state === "reset" ? { ...v, state: "play" } : v)));
+    });
+    return () => cancelAnimationFrame(id);
+  }, [screens]);
 
   return (
     <figure ref={ref} className="mx-auto grid w-full max-w-[30rem] gap-4">
       <div
-        className="relative h-[39rem] touch-pan-y select-none overflow-hidden rounded-[2rem] bg-teal-950 ring-1 ring-white/10"
+        className="relative h-[39rem] touch-pan-y select-none overflow-hidden rounded-[2rem] bg-teal-950 ring-1 ring-inset ring-white/10 [clip-path:inset(0_round_2rem)]"
         onPointerDown={(e) => (swipe.current = { x: e.clientX, y: e.clientY })}
         onPointerUp={(e) => onSwipeEnd(e.clientX, e.clientY)}
         onPointerCancel={() => (swipe.current = null)}
         onDragStart={(e) => e.preventDefault()}
       >
-        {/* backdrop */}
+        {/* backdrop (the frame's clip-path keeps the blurred glows inside the
+            rounded corners; Safari lets blurred and moving layers escape a
+            plain overflow-hidden + border-radius) */}
         <div
           aria-hidden="true"
           className="absolute inset-0 opacity-[0.15]"
@@ -493,14 +506,19 @@ export function ProductDemo() {
                 <div className="rounded-[2.2rem] bg-[#1b1d1f] p-2 shadow-2xl shadow-black/50 ring-1 ring-white/10">
                   <div className="relative overflow-hidden rounded-[1.8rem] bg-[#f5f6f7]">
                     <div className="relative aspect-[360/760] overflow-hidden [container-type:inline-size]">
-                      {Under && (
-                        <div key={`under-${screens.before}`} className="tk-settled absolute inset-0">
-                          <Under />
-                        </div>
-                      )}
-                      <div key={`screen-${phoneIdx}`} className={`absolute inset-0 ${Under ? "tk-fade" : ""}`}>
-                        <Phone />
-                      </div>
+                      {phoneScenes.map((i) => {
+                        const Screen = beats[i].phone!;
+                        return (
+                          <div
+                            key={i}
+                            className="tk-screen absolute inset-0"
+                            data-state={i === screens.now ? screens.state : "keep"}
+                            style={{ zIndex: i === screens.now ? 3 : i === screens.before ? 2 : 1 }}
+                          >
+                            <Screen />
+                          </div>
+                        );
+                      })}
                       <PhoneStatus time={beat.when.includes(":") && !office ? beat.when : "09:15"} />
                     </div>
                     <AndroidNav />
