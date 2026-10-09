@@ -176,25 +176,25 @@ const beats: Beat[] = [
     say: "Thabo starts his day with one tap.",
     part: "team",
     // The first scene, so it moves quickly: the owner asked for it faster.
-    ms: 3000,
+    ms: 2000,
     images: [shot("01-day-before"), shot("02-day-started")],
     phone: () => (
       <>
         <ShotScreen
           frames={[
             { src: shot("01-day-before"), at: 0 },
-            { src: shot("02-day-started"), at: 700 },
+            { src: shot("02-day-started"), at: 400 },
           ]}
-          taps={[{ x: 33, y: 266, w: 294, h: 48, at: 400 }]}
+          taps={[{ x: 33, y: 266, w: 294, h: 48, at: 200 }]}
         />
         <JobsToday />
         {/* Time worked: just started, not the screenshot's 33 minutes. */}
-        <Patch box={[16, 37.4, 27, 3.6]} bg="#ffffff" className="tk-fade justify-center text-[4.6cqw] font-bold text-ink" style={at(700)}>
+        <Patch box={[16, 37.4, 27, 3.6]} bg="#ffffff" className="tk-fade justify-center text-[4.6cqw] font-bold text-ink" style={at(400)}>
           0m
         </Patch>
       </>
     ),
-    card: { icon: <Clock className="size-4" />, tone: "teal", title: "Thabo started work", body: "06:58 · 3 jobs today", delay: 1100 },
+    card: { icon: <Clock className="size-4" />, tone: "teal", title: "Thabo started work", body: "06:58 · 3 jobs today", delay: 600 },
   },
   {
     when: "07:31",
