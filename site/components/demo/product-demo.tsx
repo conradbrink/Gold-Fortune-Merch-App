@@ -323,7 +323,7 @@ function DashCard({ card }: { card: NonNullable<Beat["card"]> }) {
 // Android status bar drawn over the screenshot's header inset.
 function PhoneStatus({ time }: { time: string }) {
   return (
-    <div className="absolute inset-x-0 top-0 flex h-[3.2%] items-center justify-between px-4 text-[9px] font-semibold text-white">
+    <div className="absolute inset-x-0 top-0 z-10 flex h-[3.2%] items-center justify-between px-4 text-[9px] font-semibold text-white">
       <span className="tabular-nums">{time}</span>
       <span className="absolute left-1/2 top-1/2 size-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-[#1b1d1f]" />
       <span className="flex items-center gap-1">
