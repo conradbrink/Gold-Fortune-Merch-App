@@ -291,7 +291,7 @@ export default function Home() {
             <div className="grid gap-2.5 sm:justify-items-start">
               <TrialButton />
               <p className="text-center text-sm font-medium text-muted sm:text-left">
-                From {rand(weeklyCeiling())}/week · {site.trialDays} days risk-free
+                {rand(weeklyCeiling())}/week · Team of {pricing.includedUsers} users
               </p>
             </div>
           </div>
