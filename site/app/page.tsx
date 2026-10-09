@@ -323,7 +323,8 @@ export default function Home() {
 
         {/* 3. The calls that eat the owner's day, and the answer with Tickd. */}
         <section aria-labelledby="day-title">
-          <div className={`${wrap} max-w-6xl`}>
+          {/* Less room on top than other sections: the strip above already ends in white space. */}
+          <div className="mx-auto grid max-w-6xl gap-6 px-4 pb-16 pt-10 sm:gap-8 sm:px-6 sm:pb-24 sm:pt-14">
             <div className="grid gap-3">
               <h2 id="day-title" className={h2}>Sound familiar?</h2>
               <p className={lead}>These are the calls that eat up your day. With {site.name}, each one takes a few seconds.</p>
