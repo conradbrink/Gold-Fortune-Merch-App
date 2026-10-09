@@ -157,14 +157,13 @@ const lead = "max-w-2xl text-lg leading-relaxed text-pretty text-ink";
  * unbilled work, being needed on every site), not only the feature.
  */
 const OWNER_GETS = [
-  "You know who came to work, and what time they started and finished.",
-  "You can see where your staff are right now, and how far they've driven.",
-  "Every task gets ticked off with photos, so you know it was really done.",
-  "Your client gets a signed report after every task, so there's no arguing.",
-  "You never forget to invoice for work that's been done.",
-  "You get paid faster, and you can see who still owes you money.",
-  "You get a message when something goes wrong, like a task that was missed.",
-  "You get a performance report for each employee.",
+  "Know where your staff are and what they’re doing.",
+  "Track mileage and keep an eye on fuel costs.",
+  "Get proof of every task with photos and reports.",
+  "Know about missed tasks before your client does.",
+  "Quote, invoice and get paid from one app.",
+  "See who owes you and send payment reminders.",
+  "Track staff performance automatically.",
 ];
 
 function TrialButton({ className = "" }: { className?: string }) {
@@ -324,7 +323,8 @@ export default function Home() {
                   <span className="text-base font-semibold text-muted"> a week</span>
                 </p>
                 <p className="text-sm text-muted">
-                  Team of {pricing.includedUsers} users. {site.trialDays} days free, no card needed.
+                  {rand(pricing.monthly.base)} a month for a team of {pricing.includedUsers} users. {site.trialDays} days free, no card
+                  needed.
                 </p>
               </div>
               <TrialButton />
