@@ -4,10 +4,8 @@ import { Fragment } from "react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { lower } from "@/lib/terms";
 import { useTerms } from "@/lib/use-company-config";
+import { companyTime } from "@/lib/company-time";
 import { minutesLabel, onSiteLabel, serviceLogTotals, type ServiceLogRow } from "@/lib/service-log";
-
-const time = (iso: string | null) =>
-  iso ? new Date(iso).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" }) : "-";
 
 /**
  * Proof of service, grouped by {site}: each finished {job} with who, when,
@@ -15,8 +13,10 @@ const time = (iso: string | null) =>
  * had more than one check-in on a day (rounds), where the longest gap is what
  * a client asks about.
  */
-export function ServiceLogTable({ rows }: { rows: ServiceLogRow[] }) {
+export function ServiceLogTable({ rows, timeZone }: { rows: ServiceLogRow[]; timeZone: string | undefined }) {
   const t = useTerms();
+  // Times on the company\'s clock, like the dates beside them.
+  const time = (iso: string | null) => companyTime(iso, timeZone) || "-";
   if (rows.length === 0) {
     return (
       <p className="px-4 py-10 text-center text-sm text-pretty text-muted-foreground">

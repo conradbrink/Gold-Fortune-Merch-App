@@ -75,22 +75,30 @@ export function ReportsSettingsCard({ orgId, canEdit }: { orgId: string; canEdit
     setBusy(true);
     setError(null);
     const supabase = createClient();
-    const { data: org } = await supabase.from("organizations").select("industries").eq("id", orgId).single();
+    // Any failed lookup stops here: falling back to the defaults would save
+    // distribution's tabs as a service trade's own.
+    const { data: org, error: orgError } = await supabase.from("organizations").select("industries").eq("id", orgId).single();
+    if (orgError) {
+      setBusy(false);
+      return setError(`Your trade could not be read (${orgError.message}). Nothing was changed.`);
+    }
     const trade = (org as { industries: string[] | null } | null)?.industries?.[0] ?? null;
-    const [{ data: rows }, { data: defs }] = await Promise.all([
+    const [{ data: rows, error: rowsError }, { data: defs, error: defsError }] = await Promise.all([
       trade
         ? supabase
             .from("template_settings")
             .select("setting_key, value")
             .eq("template_code", trade)
             .in("setting_key", ["report_tabs", "report_short_day_hours", "report_long_day_hours"])
-        : Promise.resolve({ data: [] as { setting_key: string; value: unknown }[] }),
+        : Promise.resolve({ data: [] as { setting_key: string; value: unknown }[], error: null }),
       supabase
         .from("setting_definitions")
         .select("key, default_value")
         .in("key", ["report_tabs", "report_short_day_hours", "report_long_day_hours"]),
     ]);
     setBusy(false);
+    const failed = rowsError ?? defsError;
+    if (failed) return setError(`Your trade's settings could not be read (${failed.message}). Nothing was changed.`);
     const value = (key: string) =>
       (rows as { setting_key: string; value: unknown }[] | null)?.find((r) => r.setting_key === key)?.value ??
       (defs as { key: string; default_value: unknown }[] | null)?.find((r) => r.key === key)?.default_value;

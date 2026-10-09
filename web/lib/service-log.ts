@@ -6,6 +6,7 @@ import { lower, type Terms } from "@/lib/terms";
 import { fileSlug } from "@/lib/export-filename";
 import { drawMoneyPdf } from "@/lib/money-pdf";
 import { fetchQuoteSeller } from "@/lib/quotes";
+import { companyTime } from "@/lib/company-time";
 
 /**
  * Proof of service: every finished {job} in a period, per {site}, with what
@@ -71,10 +72,9 @@ export function minutesLabel(m: number | null): string {
   return `${Math.floor(m / 60)} h ${String(m % 60).padStart(2, "0")}`;
 }
 
-const time = (iso: string | null) =>
-  iso ? new Date(iso).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" }) : "";
-
-export function serviceLogSheet(rows: readonly ServiceLogRow[], t: Terms, context: string[]): ExportSheet {
+/** In and out times are the company's clock, like the dates beside them. */
+export function serviceLogSheet(rows: readonly ServiceLogRow[], t: Terms, context: string[], timeZone: string): ExportSheet {
+  const time = (iso: string | null) => companyTime(iso, timeZone);
   return {
     title: "Proof of service",
     filename: "proof-of-service",
@@ -116,8 +116,10 @@ export async function downloadServiceLogPdf(
   supabase: SupabaseClient<Database>,
   rows: readonly ServiceLogRow[],
   period: { from: string; to: string },
-  t: Terms
+  t: Terms,
+  timeZone: string
 ) {
+  const time = (iso: string | null) => companyTime(iso, timeZone);
   const first = rows[0];
   if (!first) return;
   const seller = await fetchQuoteSeller(supabase);

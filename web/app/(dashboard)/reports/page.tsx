@@ -21,7 +21,8 @@ import { StorePicker } from "@/components/stores/store-picker";
 import { REPORT_TAB_VALUES, companyReportTabs, reportTabs, type ReportTab } from "@/lib/report-tabs";
 import { downloadServiceLogPdf, fetchServiceLog, serviceLogSheet, type ServiceLogRow } from "@/lib/service-log";
 import { fetchStaffHours, hoursDay, hoursSheet, type StaffHoursRow } from "@/lib/staff-hours";
-import { getCompanyConfig, useCompanyConfig, useTerms } from "@/lib/use-company-config";
+import { getCompanyConfig, useCompanyConfig, useTerms, type CompanyConfig } from "@/lib/use-company-config";
+import { companyRange } from "@/lib/company-time";
 import type { ModuleSet } from "@/lib/modules";
 import { lower, withArticle, type Terms } from "@/lib/terms";
 import { fileSlug } from "@/lib/export-filename";
@@ -127,6 +128,9 @@ export default function ReportsPage() {
    */
   const [loadedModules, setLoadedModules] = useState<ModuleSet | null>(null);
   const [loadedTabs, setLoadedTabs] = useState<string | null>(null);
+  /** The whole configuration the last load worked from, for the same reason. */
+  const [loadedConfig, setLoadedConfig] = useState<CompanyConfig | null>(null);
+  const companyConfig = config ?? loadedConfig;
   /** The company's tabs in its order (`report_tabs`, seeded from its trade),
    * only those whose module it has (`REPORT_TAB_MODULE`): a cleaning company
    * has no Perfect Store, and asking for it would be refused. */
@@ -278,6 +282,10 @@ export default function ReportsPage() {
       if (isStale()) return;
       setLoadedModules(cfg.modules);
       setLoadedTabs(cfg.settings.report_tabs);
+      setLoadedConfig(cfg);
+      // The new reports group by the company's days, so they are asked for
+      // the company's midnights, not the viewer's.
+      const companyDays = companyRange(range, cfg.timezone);
       const mine = companyReportTabs(cfg.modules, cfg.settings.report_tabs);
       const has = (t: ReportTab) => mine.includes(t);
       const none = <T,>() => Promise.resolve([] as T[]);
@@ -296,8 +304,8 @@ export default function ReportsPage() {
         has("score") ? fetchPerfectStoreScore(supabase, range) : none<PerfectStore>(),
         has("oos") ? fetchOosHotspots(supabase, range) : none<OosHotspot>(),
         has("adherence") ? fetchScheduleAdherence(supabase, range) : none<Adherence>(),
-        has("service_log") ? fetchServiceLog(supabase, range, storeId || null) : none<ServiceLogRow>(),
-        has("hours") ? fetchStaffHours(supabase, range) : none<StaffHoursRow>(),
+        has("service_log") ? fetchServiceLog(supabase, companyDays, storeId || null) : none<ServiceLogRow>(),
+        has("hours") ? fetchStaffHours(supabase, companyDays) : none<StaffHoursRow>(),
       ]);
       if (isStale()) return;
       setGaps(g);
@@ -381,11 +389,12 @@ export default function ReportsPage() {
   /** Hours with the trade's short and long day marks. */
   const hoursDays = useMemo(() => {
     const limits = {
-      shortHours: config?.settings.report_short_day_hours ?? 0,
-      longHours: config?.settings.report_long_day_hours ?? 0,
+      shortHours: companyConfig?.settings.report_short_day_hours ?? 0,
+      longHours: companyConfig?.settings.report_long_day_hours ?? 0,
     };
     return hoursRows.map((r) => hoursDay(r, limits));
-  }, [hoursRows, config]);
+  }, [hoursRows, companyConfig]);
+  const timeZone = companyConfig?.timezone;
 
   const pickedStore = stores.find((st) => st.id === storeId) ?? null;
 
@@ -397,7 +406,8 @@ export default function ReportsPage() {
         supabase,
         serviceLog.filter((r) => r.store_id === storeId),
         { from: toLocalDateInput(range.from), to: toLocalDateInput(dayBefore(range.to)) },
-        terms
+        terms,
+        timeZone ?? "UTC"
       );
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -674,9 +684,9 @@ export default function ReportsPage() {
           })),
         };
       case "service_log":
-        return serviceLogSheet(serviceLog, terms, base.context);
+        return serviceLogSheet(serviceLog, terms, base.context, timeZone ?? "UTC");
       case "hours":
-        return hoursSheet(hoursDays, terms, base.context);
+        return hoursSheet(hoursDays, terms, base.context, timeZone ?? "UTC");
       default:
         return null;
     }
@@ -943,7 +953,7 @@ export default function ReportsPage() {
               )}
             </CardHeader>
             <CardContent className="px-0">
-              {loading ? <SkeletonRows /> : <ServiceLogTable rows={serviceLog} />}
+              {loading ? <SkeletonRows /> : <ServiceLogTable rows={serviceLog} timeZone={timeZone} />}
             </CardContent>
           </Card>
         </TabsContent>
@@ -958,7 +968,7 @@ export default function ReportsPage() {
               </p>
             </CardHeader>
             <CardContent className="px-0">
-              {loading ? <SkeletonRows /> : <HoursTable days={hoursDays} />}
+              {loading ? <SkeletonRows /> : <HoursTable days={hoursDays} timeZone={timeZone} />}
             </CardContent>
           </Card>
         </TabsContent>

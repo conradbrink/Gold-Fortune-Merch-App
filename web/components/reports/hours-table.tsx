@@ -3,17 +3,17 @@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { lower } from "@/lib/terms";
 import { useTerms } from "@/lib/use-company-config";
+import { companyTime } from "@/lib/company-time";
 import { clockDuration, hoursTotals, type HoursDay } from "@/lib/staff-hours";
-
-const time = (iso: string | null) =>
-  iso ? new Date(iso).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" }) : "-";
 
 /**
  * Hours: one row per person per day, newest first. A short or long day is
  * named in words, not only in colour; a day still open says so.
  */
-export function HoursTable({ days }: { days: HoursDay[] }) {
+export function HoursTable({ days, timeZone }: { days: HoursDay[]; timeZone: string | undefined }) {
   const t = useTerms();
+  // Times on the company\'s clock, like the dates beside them.
+  const time = (iso: string | null) => companyTime(iso, timeZone) || "-";
   if (days.length === 0) {
     return (
       <p className="px-4 py-10 text-center text-sm text-pretty text-muted-foreground">

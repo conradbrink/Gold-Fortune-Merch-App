@@ -3,6 +3,7 @@ import type { Database } from "@/lib/supabase/types";
 import type { DateRange } from "@/lib/date-range";
 import type { ExportSheet } from "@/lib/export";
 import type { Terms } from "@/lib/terms";
+import { companyTime } from "@/lib/company-time";
 
 /**
  * Hours: one row per person per day, from the workday they started and the
@@ -77,13 +78,12 @@ export function clockDuration(seconds: number | null): string {
   return `${Math.floor(m / 60)}:${String(m % 60).padStart(2, "0")}`;
 }
 
-const time = (iso: string | null) =>
-  iso ? new Date(iso).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" }) : "";
-
 /** For payroll: decimal hours, which a spreadsheet adds up. */
 const decimalHours = (seconds: number | null) => (seconds === null ? "" : Math.round((seconds / 3600) * 100) / 100);
 
-export function hoursSheet(days: readonly HoursDay[], t: Terms, context: string[]): ExportSheet {
+/** First in and last out are the company's clock, like the dates beside them. */
+export function hoursSheet(days: readonly HoursDay[], t: Terms, context: string[], timeZone: string): ExportSheet {
+  const time = (iso: string | null) => companyTime(iso, timeZone);
   return {
     title: "Hours",
     filename: "hours",
