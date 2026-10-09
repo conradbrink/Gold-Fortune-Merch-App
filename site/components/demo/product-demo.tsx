@@ -29,7 +29,9 @@ import { site } from "@/lib/site";
 // Flutter widgets with example data). They were made for a merchandising
 // company, so `Patch` covers the few retail words ("stores", "Store visit",
 // "Take an order") in the screenshot's own colours. Dashboard windows are
-// real screenshots, never cropped. Owner cards say "Your dashboard", not a
+// real screenshots, never cropped. The demo company priced in pula, so in
+// o7-dashboard and o4-rep-performance each "P" was made an "R" (9 Oct 2026)
+// by drawing R's leg in that letter's own colour and stroke. Owner cards say "Your dashboard", not a
 // phone notification: that is where flags, photos and hours really appear.
 
 const shot = (name: string) => `/demo/app/${name}.webp`;
