@@ -151,6 +151,21 @@ const wrap = "mx-auto grid gap-6 px-4 py-10 sm:gap-8 sm:px-6 sm:py-16";
 const h2 = "tk-reveal font-display text-3xl font-bold leading-[1.1] tracking-tight text-balance text-teal-900 sm:text-[2.75rem]";
 const lead = "max-w-2xl text-lg leading-relaxed text-pretty text-ink";
 
+/**
+ * Everything the app does for the owner, in the hero's checklist: each tick
+ * names the problem it ends (unpaid disputes, padded hours, lost renewals,
+ * unbilled work, being needed on every site), not only the feature.
+ */
+const OWNER_GETS = [
+  "Know where your staff are and what they’re doing.",
+  "Track mileage and keep an eye on fuel costs.",
+  "Get proof of every task with photos and reports.",
+  "Know about missed tasks before your client does.",
+  "Quote, invoice and get paid from one app.",
+  "See who owes you and send payment reminders.",
+  "Track staff performance automatically.",
+];
+
 function TrialButton({ className = "" }: { className?: string }) {
   return (
     <a
@@ -271,28 +286,49 @@ export default function Home() {
 
       <main id="top">
         {/* 1. Hero: the outcome, the risk taken away, and the real app. */}
-        <section className="mx-auto grid max-w-6xl items-center gap-10 px-4 pb-10 pt-8 sm:px-6 sm:pb-16 sm:pt-12 lg:grid-cols-[1.1fr_0.9fr] lg:gap-14 lg:pt-16">
+        <section className="mx-auto grid max-w-6xl items-center gap-10 px-4 pb-10 pt-8 sm:px-6 sm:pb-16 sm:pt-12 lg:grid-cols-[1.1fr_0.9fr] lg:gap-14 lg:pt-12">
           <div className="tk-hero grid gap-5 sm:gap-6">
             <p className="max-w-md text-sm font-semibold leading-snug text-teal-700 sm:text-base">
               For cleaning, security, electrical, garden, pest, pool, maintenance and sales teams
             </p>
             <h1 className="font-display text-[2.6rem] font-extrabold leading-[1.02] tracking-tight text-balance text-teal-900 sm:text-6xl lg:text-[4.25rem]">
-              Know every job got{" "}
-              <span className="relative whitespace-nowrap">
-                done
-                <span aria-hidden="true" className="tk-underline absolute inset-x-0 bottom-[-0.02em] h-[0.12em] rounded-full bg-amber-500" />
-              </span>,{" "}
-              <span className="mt-3 block text-[0.6em] leading-[1.1] text-teal-700">without phoning around.</span>
+              <span className="block">Manage your team.</span>
+              <span className="block">
+                Grow your{" "}
+                <span className="relative whitespace-nowrap">
+                  business.
+                  <span aria-hidden="true" className="tk-underline absolute inset-x-0 bottom-[-0.02em] h-[0.12em] rounded-full bg-amber-500" />
+                </span>
+              </span>
             </h1>
             <p className="max-w-xl text-lg leading-relaxed text-pretty text-ink sm:text-xl">
-              Your staff use the {site.name} app on their phones. When they finish a job, you see it on your dashboard, with photos.
-              You don&apos;t have to call anyone to check.
+              Everything you need to manage your team, track your work and run your business better.
             </p>
-            <div className="grid gap-2.5 sm:justify-items-start">
+            <ul className="grid max-w-xl gap-y-2.5" aria-label={`What ${site.name} does for you`}>
+              {OWNER_GETS.map((item) => (
+                <li key={item} className="flex items-start gap-2.5 text-base leading-snug text-ink">
+                  <span
+                    aria-hidden="true"
+                    className="mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-md bg-teal-700 text-white"
+                  >
+                    <Check className="tk-draw size-3.5" strokeWidth={3.5} />
+                  </span>
+                  {item}
+                </li>
+              ))}
+            </ul>
+            <div className="grid max-w-xl gap-3 rounded-2xl bg-white p-5 ring-1 ring-teal-900/10 sm:grid-cols-[1fr_auto] sm:items-center">
+              <div>
+                <p className="font-display text-2xl font-bold leading-tight text-teal-900">
+                  {rand(weeklyCeiling())}
+                  <span className="text-base font-semibold text-muted"> a week</span>
+                </p>
+                <p className="text-sm text-muted">
+                  {rand(pricing.monthly.base)} a month for a team of {pricing.includedUsers} users. {site.trialDays} days free, no card
+                  needed.
+                </p>
+              </div>
               <TrialButton />
-              <p className="text-center text-sm font-medium text-muted sm:text-left">
-                {rand(weeklyCeiling())}/week · Team of {pricing.includedUsers} users
-              </p>
             </div>
           </div>
           <figure className="tk-hero-demo grid gap-3">
