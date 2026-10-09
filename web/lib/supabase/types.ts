@@ -173,6 +173,60 @@ export type Database = {
         }
         Relationships: []
       }
+      job_reports: {
+        Row: {
+          id: string
+          org_id: string
+          visit_id: string
+          store_id: string
+          expires_at: string
+          revoked_at: string | null
+          first_queued_at: string | null
+          last_queued_at: string | null
+          opened_at: string | null
+          signed_at: string | null
+          signed_name: string | null
+          signature_path: string | null
+          signed_ip: string | null
+          signed_user_agent: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          org_id: string
+          visit_id: string
+          store_id: string
+          expires_at?: string
+          revoked_at?: string | null
+          first_queued_at?: string | null
+          last_queued_at?: string | null
+          opened_at?: string | null
+          signed_at?: string | null
+          signed_name?: string | null
+          signature_path?: string | null
+          signed_ip?: string | null
+          signed_user_agent?: string | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          org_id?: string
+          visit_id?: string
+          store_id?: string
+          expires_at?: string
+          revoked_at?: string | null
+          first_queued_at?: string | null
+          last_queued_at?: string | null
+          opened_at?: string | null
+          signed_at?: string | null
+          signed_name?: string | null
+          signature_path?: string | null
+          signed_ip?: string | null
+          signed_user_agent?: string | null
+          created_at?: string
+        }
+        Relationships: []
+      }
       site_contacts: {
         Row: {
           id: string
@@ -7109,6 +7163,26 @@ export type Database = {
       approved_leave_days: {
         Args: { p_from: string; p_to: string }
         Returns: { profile_id: string; day: string }[]
+      }
+      send_job_report: {
+        Args: { p_visit_id: string }
+        Returns: number
+      }
+      job_report_for_visit: {
+        Args: { p_visit_id: string }
+        Returns: string
+      }
+      job_report_view: {
+        Args: { p_report_id: string }
+        Returns: Json
+      }
+      job_report_opened: {
+        Args: { p_report_id: string }
+        Returns: undefined
+      }
+      job_report_sign: {
+        Args: { p_report_id: string; p_name: string; p_signature_path: string; p_ip?: string | null; p_user_agent?: string | null }
+        Returns: boolean
       }
       claim_messages: {
         Args: { p_limit?: number }

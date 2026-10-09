@@ -4,6 +4,10 @@ import { useCallback, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { createClient } from "@/lib/supabase/client";
+import { Input } from "@/components/ui/input";
+import { refreshCompanyConfig, useCompanyConfig, useTerms } from "@/lib/use-company-config";
+import { lower } from "@/lib/terms";
+import type { JobReportSend } from "@/lib/company-config";
 
 type Row = {
   id: string;
@@ -16,7 +20,11 @@ type Row = {
 };
 
 /** What each template is, in words. */
-const TEMPLATE_LABEL: Record<string, string> = { test: "Test email" };
+const TEMPLATE_LABEL: Record<string, string> = {
+  test: "Test email",
+  job_report: "Job report",
+  job_reports_day: "Day's reports",
+};
 
 const STATUS: Record<string, { label: string; tone: string }> = {
   queued: { label: "Waiting to send", tone: "text-muted-foreground" },
@@ -35,7 +43,12 @@ const when = (iso: string) =>
  * to yourself, and the last 20 with what happened to each, so "the client
  * never got it" has an answer.
  */
-export function EmailSettingsCard({ supportEmail }: { supportEmail: string | null }) {
+export function EmailSettingsCard({ supportEmail, orgId, canEdit }: { supportEmail: string | null; orgId: string; canEdit: boolean }) {
+  const t = useTerms();
+  const config = useCompanyConfig();
+  const [mode, setMode] = useState<JobReportSend | null>(null);
+  const [at, setAt] = useState<string | null>(null);
+  const [savedNote, setSavedNote] = useState<string | null>(null);
   const [rows, setRows] = useState<Row[] | null>(null);
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState<string | null>(null);
@@ -60,6 +73,27 @@ export function EmailSettingsCard({ supportEmail }: { supportEmail: string | nul
       await load();
     })();
   }, [load]);
+
+  const currentMode = mode ?? config?.settings.job_report_send ?? "manual";
+  const currentAt = at ?? config?.settings.job_report_send_time ?? "18:00";
+
+  async function saveReports(nextMode: JobReportSend, nextAt: string) {
+    setError(null);
+    setSavedNote(null);
+    if (!/^\d{2}:\d{2}$/.test(nextAt)) return setError("Choose a time, for example 18:00.");
+    const { error: e } = await createClient()
+      .from("company_settings")
+      .upsert(
+        [
+          { org_id: orgId, key: "job_report_send", value: nextMode },
+          { org_id: orgId, key: "job_report_send_time", value: nextAt },
+        ],
+        { onConflict: "org_id,key" }
+      );
+    if (e) return setError(`Not saved: ${e.message}`);
+    refreshCompanyConfig();
+    setSavedNote("Saved.");
+  }
 
   async function sendTest() {
     setBusy(true);
@@ -89,6 +123,48 @@ export function EmailSettingsCard({ supportEmail }: { supportEmail: string | nul
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
+        <fieldset className="space-y-2">
+          <legend className="text-sm font-medium text-foreground">Job reports to your clients</legend>
+          <p className="text-xs text-pretty text-muted-foreground">
+            Each finished {lower(t.job.one)}&apos;s report, with the checklist and photos, goes to the contacts at the{" "}
+            {lower(t.site.one)} who get reports. They can sign it off from the email.
+          </p>
+          {(
+            [
+              ["evening", "One email per site each evening"],
+              ["immediate", `As each ${lower(t.job.one)} is finished`],
+              ["manual", "Only when I send one"],
+            ] as [JobReportSend, string][]
+          ).map(([value, label]) => (
+            <label key={value} className="flex min-h-11 items-center gap-3 text-sm text-foreground">
+              <input
+                type="radio"
+                name="job-report-send"
+                value={value}
+                checked={currentMode === value}
+                disabled={!canEdit}
+                onChange={() => {
+                  setMode(value);
+                  void saveReports(value, currentAt);
+                }}
+                className="size-4 accent-primary"
+              />
+              {label}
+              {value === "evening" && (
+                <Input
+                  type="time"
+                  aria-label="Evening email time"
+                  value={currentAt}
+                  disabled={!canEdit || currentMode !== "evening"}
+                  onChange={(e) => setAt(e.target.value)}
+                  onBlur={() => void saveReports(currentMode, currentAt)}
+                  className="h-9 w-28"
+                />
+              )}
+            </label>
+          ))}
+          {savedNote && <p className="text-xs text-muted-foreground" aria-live="polite">{savedNote}</p>}
+        </fieldset>
         <div className="flex flex-wrap items-center gap-3">
           <Button variant="outline" onClick={sendTest} disabled={busy}>
             {busy ? "Sending…" : "Send me a test email"}

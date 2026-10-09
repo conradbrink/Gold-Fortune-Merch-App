@@ -15,7 +15,7 @@ import { InsightsPanel } from "@/components/reports/insights-panel";
 import { PerfectStoreTable } from "@/components/reports/perfect-store-table";
 import { OosHotspotsTable } from "@/components/reports/oos-hotspots-table";
 import { AdherenceTable } from "@/components/reports/adherence-table";
-import { ServiceLogTable } from "@/components/reports/service-log-table";
+import { ServiceLogTable, type ReportAction, type ReportState } from "@/components/reports/service-log-table";
 import { HoursTable } from "@/components/reports/hours-table";
 import { StaffScoreTable } from "@/components/reports/staff-score-table";
 import {
@@ -240,6 +240,9 @@ export default function ReportsPage() {
   const [hoursFirstDay, setHoursFirstDay] = useState("");
   const [teamInputs, setTeamInputs] = useState<StaffScoreInputs[]>([]);
   const [pdfBusy, setPdfBusy] = useState(false);
+  /** Each finished job's report: signed, sent (Stage 8.3). By visit id. */
+  const [reportStates, setReportStates] = useState<Record<string, ReportState>>({});
+  const [reportNote, setReportNote] = useState<string | null>(null);
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -338,6 +341,7 @@ export default function ReportsPage() {
       setHotspots(oh);
       setAdherence(ad);
       setServiceLog(sl);
+      void loadReportStates(sl.map((r) => r.visit_id));
       setHoursRows(hr);
       setHoursFirstDay(firstDay);
       setTeamInputs(ti);
@@ -434,6 +438,52 @@ export default function ReportsPage() {
   const timeZone = companyConfig?.timezone;
 
   const pickedStore = stores.find((st) => st.id === storeId) ?? null;
+
+  async function loadReportStates(visitIds: string[]) {
+    const next: Record<string, ReportState> = {};
+    for (let i = 0; i < visitIds.length; i += 200) {
+      const { data } = await supabase
+        .from("job_reports")
+        .select("visit_id, signed_name, signed_at, last_queued_at")
+        .in("visit_id", visitIds.slice(i, i + 200));
+      for (const r of data ?? []) next[r.visit_id] = r;
+    }
+    setReportStates(next);
+  }
+
+  async function reportLink(visitId: string): Promise<string> {
+    const res = await fetch(`/api/job-reports/${visitId}/link`);
+    const body = (await res.json().catch(() => ({}))) as { url?: string; error?: string };
+    if (!res.ok || !body.url) throw new Error(body.error ?? "The report link could not be made.");
+    return body.url;
+  }
+
+  async function onReport(visitId: string, action: ReportAction) {
+    setReportNote(null);
+    try {
+      if (action === "open") {
+        // Opened at once (a pop-up blocker allows only that), then pointed at the link.
+        const win = window.open("", "_blank");
+        const url = await reportLink(visitId);
+        if (win) win.location.href = url;
+        else window.location.href = url;
+      } else if (action === "copy") {
+        await navigator.clipboard.writeText(await reportLink(visitId));
+        setReportNote("Link copied. Anyone with it can see this report and sign it.");
+      } else {
+        const { data, error: e } = await supabase.rpc("send_job_report", { p_visit_id: visitId });
+        if (e) throw new Error(e.message);
+        setReportNote(
+          data === 0
+            ? `Nobody at this ${lower(terms.site.one)} gets reports yet. Add a contact with an email under ${terms.site.many}, Contacts.`
+            : `Sent to ${data} ${data === 1 ? "contact" : "contacts"}. It arrives within five minutes.`
+        );
+      }
+      await loadReportStates(serviceLog.map((r) => r.visit_id));
+    } catch (e) {
+      setReportNote(e instanceof Error ? e.message : String(e));
+    }
+  }
 
   // The same configuration the loader chose its mode from, even when the hook's lookup failed.
   const weights = useMemo(() => parseWeights(companyConfig?.settings.staff_score_weights), [companyConfig]);
@@ -1034,7 +1084,16 @@ export default function ReportsPage() {
               )}
             </CardHeader>
             <CardContent className="px-0">
-              {loading ? <SkeletonRows /> : <ServiceLogTable rows={serviceLog} timeZone={timeZone} />}
+              {reportNote && (
+                <p className="mx-4 mb-3 rounded-md bg-muted/60 px-3 py-2 text-sm text-foreground" aria-live="polite">
+                  {reportNote}
+                </p>
+              )}
+              {loading ? (
+                <SkeletonRows />
+              ) : (
+                <ServiceLogTable rows={serviceLog} timeZone={timeZone} reports={reportStates} onReport={onReport} />
+              )}
             </CardContent>
           </Card>
         </TabsContent>

@@ -47,7 +47,13 @@ export type CompanySettings = {
   report_sunday_is_overtime: boolean;
   /** The staff score's parts and weights, "code:weight,…" adding to 100 (lib/staff-score.ts). */
   staff_score_weights: string;
+  /** When clients get the job reports (Stage 8.3): immediate, evening or manual. */
+  job_report_send: JobReportSend;
+  /** The evening email's time, "HH:MM" on the company's clock. */
+  job_report_send_time: string;
 };
+
+export type JobReportSend = "immediate" | "evening" | "manual";
 
 export type CompanyConfig = {
   orgId: string;
@@ -90,6 +96,8 @@ const SETTING_FALLBACK: CompanySettings = {
   report_week_normal_hours: 0,
   report_sunday_is_overtime: false,
   staff_score_weights: "sales:35,visits:25,coverage:15,merchandising:15,compliance:10",
+  job_report_send: "manual",
+  job_report_send_time: "18:00",
 };
 
 function obj(v: unknown): Record<string, unknown> {
@@ -159,6 +167,14 @@ export function parseCompanyConfig(raw: unknown): CompanyConfig | null {
         typeof s.staff_score_weights === "string" && /^([a-z_]+:\d{1,3}(,[a-z_]+:\d{1,3})*)?$/.test(s.staff_score_weights)
           ? s.staff_score_weights
           : f.staff_score_weights,
+      job_report_send:
+        s.job_report_send === "immediate" || s.job_report_send === "evening" || s.job_report_send === "manual"
+          ? s.job_report_send
+          : f.job_report_send,
+      job_report_send_time:
+        typeof s.job_report_send_time === "string" && /^\d{2}:\d{2}/.test(s.job_report_send_time)
+          ? s.job_report_send_time.slice(0, 5)
+          : f.job_report_send_time,
     },
     timezone: typeof r.timezone === "string" && r.timezone !== "" ? r.timezone : "UTC",
     vatRate: Number.isFinite(Number(r.vat_rate)) ? Number(r.vat_rate) : 0,
