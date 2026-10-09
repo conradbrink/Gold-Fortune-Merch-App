@@ -82,6 +82,7 @@ const MODULE_PATHS: { prefix: string; module: ModuleCode }[] = [
   { prefix: "/contracts", module: "invoicing" },
   { prefix: "/invoices", module: "invoicing" },
   { prefix: "/owed", module: "invoicing" },
+  { prefix: "/statements", module: "invoicing" },
   { prefix: "/price-list", module: "invoicing" },
 
   // The vehicle logbook and its list of vehicles (Stage 8).

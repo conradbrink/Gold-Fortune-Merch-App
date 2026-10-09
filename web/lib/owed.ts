@@ -141,6 +141,17 @@ export type StatementSeller = {
   bank_details: string | null;
 };
 
+/** The company's own details and logo, for the head of the statement. */
+export async function fetchStatementSeller(supabase: Client): Promise<StatementSeller> {
+  const { data, error } = await supabase
+    .from("organizations")
+    .select("name, legal_name, address, tax_number, vat_number, registration_number, phone, support_email, logo_path, bank_details")
+    .limit(1)
+    .single();
+  fail(error);
+  return data as StatementSeller;
+}
+
 export async function downloadStatementPdf(
   seller: StatementSeller,
   client: StatementClient & { address?: string | null },
