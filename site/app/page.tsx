@@ -151,16 +151,20 @@ const wrap = "mx-auto grid gap-6 px-4 py-10 sm:gap-8 sm:px-6 sm:py-16";
 const h2 = "tk-reveal font-display text-3xl font-bold leading-[1.1] tracking-tight text-balance text-teal-900 sm:text-[2.75rem]";
 const lead = "max-w-2xl text-lg leading-relaxed text-pretty text-ink";
 
-/** Everything the app does for the owner, in the hero's checklist. */
+/**
+ * Everything the app does for the owner, in the hero's checklist: each tick
+ * names the problem it ends (unpaid disputes, padded hours, lost renewals,
+ * unbilled work, being needed on every site), not only the feature.
+ */
 const OWNER_GETS = [
-  "Who's at work, and their hours for payroll",
-  "Where everyone is, live on a map",
-  "Kilometres driven, for your logbook",
-  "Every task done, with photos and checklists",
-  "Signed task reports sent to your clients",
-  "Alerts when something's off",
-  "Quotes, invoices and who still owes you",
-  "Reports and a score for each employee",
+  "Who's at work, and their real hours",
+  "Where everyone is, live, and km driven",
+  "Every task done, proven with photos",
+  "Signed client reports that win renewals",
+  "Invoice every finished task",
+  "Get paid without arguments, and see who owes you",
+  "Alerts, so you needn't be on every site",
+  "A score for each employee",
 ];
 
 function TrialButton({ className = "" }: { className?: string }) {
