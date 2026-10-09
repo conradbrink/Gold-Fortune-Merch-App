@@ -48,6 +48,8 @@ const message = {
 test("Brevo: a message id is success; a bad request is permanent; a rate limit or an outage is not", async () => {
   process.env.BREVO_API_KEY = "k";
   assert.deepEqual(await sendViaBrevo(message, fakeFetch(201, { messageId: "<m1>" })), { ok: true, messageId: "<m1>" });
+  // Accepted without an id is still accepted: retrying would send it twice.
+  assert.deepEqual(await sendViaBrevo(message, fakeFetch(202, {})), { ok: true, messageId: null });
   const bad = await sendViaBrevo(message, fakeFetch(400, { message: "invalid email" }));
   assert.equal(bad.ok, false);
   assert.equal(!bad.ok && bad.permanent, true);
@@ -82,4 +84,9 @@ test("a contact needs a name and an email or a phone, each valid", () => {
   assert.ok(!none.ok && none.errors.email);
   const bad = checkContact({ ...EMPTY_CONTACT, name: "", email: "nope", phone: "12" }, "ZA");
   assert.ok(!bad.ok && bad.errors.name && bad.errors.email && bad.errors.phone);
+});
+
+test("a contact's email and role fit the database's limits", () => {
+  const long = checkContact({ ...EMPTY_CONTACT, name: "N", email: `${"a".repeat(250)}@example.com`, role: "r".repeat(61) }, "ZA");
+  assert.ok(!long.ok && long.errors.email && long.errors.role);
 });

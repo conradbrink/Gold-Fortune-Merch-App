@@ -13,6 +13,8 @@ import { useCompanyConfig, useTerms } from "@/lib/use-company-config";
 import { EMPTY_CONTACT, checkContact, type ContactDraft, type SiteContact } from "@/lib/site-contacts";
 import { formatPhone } from "@/lib/phone-login";
 
+const ONLY_MANAGERS = "Only a manager can change contacts.";
+
 /**
  * The people at one {site} (Stage 8.2): who to call, and who gets the job
  * reports. Everyone in the company can see them; managers and settings
@@ -31,7 +33,7 @@ export function SiteContactsDialog({
   const [contacts, setContacts] = useState<SiteContact[] | null>(null);
   const [editing, setEditing] = useState<string | "new" | null>(null);
   const [draft, setDraft] = useState<ContactDraft>(EMPTY_CONTACT);
-  const [errors, setErrors] = useState<Partial<Record<"name" | "email" | "phone", string>>>({});
+  const [errors, setErrors] = useState<Partial<Record<"name" | "email" | "phone" | "role", string>>>({});
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -73,12 +75,15 @@ export function SiteContactsDialog({
     setBusy(true);
     setError(null);
     const supabase = createClient();
-    const { error: e } =
+    // An update the database refuses changes no row and says nothing, so the
+    // changed rows are asked back and none means it was not allowed.
+    const { data: changed, error: e } =
       editing === "new"
-        ? await supabase.from("site_contacts").insert({ ...checked.row, org_id: orgId, store_id: site.id })
-        : await supabase.from("site_contacts").update(checked.row).eq("id", editing!);
+        ? await supabase.from("site_contacts").insert({ ...checked.row, org_id: orgId, store_id: site.id }).select("id")
+        : await supabase.from("site_contacts").update(checked.row).eq("id", editing!).select("id");
     setBusy(false);
-    if (e) return setError(/row-level security/i.test(e.message) ? "Only a manager can change contacts." : e.message);
+    if (e) return setError(/row-level security/i.test(e.message) ? ONLY_MANAGERS : e.message);
+    if (!changed?.length) return setError(ONLY_MANAGERS);
     setEditing(null);
     await load(site.id);
   }
@@ -86,9 +91,10 @@ export function SiteContactsDialog({
   async function remove(c: SiteContact) {
     if (!site) return;
     setBusy(true);
-    const { error: e } = await createClient().from("site_contacts").delete().eq("id", c.id);
+    const { data: removed, error: e } = await createClient().from("site_contacts").delete().eq("id", c.id).select("id");
     setBusy(false);
     if (e) return setError(e.message);
+    if (!removed?.length) return setError(ONLY_MANAGERS);
     await load(site.id);
   }
 

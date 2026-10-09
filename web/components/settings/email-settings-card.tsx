@@ -47,7 +47,11 @@ export function EmailSettingsCard({ supportEmail }: { supportEmail: string | nul
       .select("id, to_address, template, status, last_error, created_at, sent_at")
       .order("created_at", { ascending: false })
       .limit(20);
-    if (e) return setError(`The list could not be loaded (${e.message}).`);
+    if (e) {
+      setRows([]);
+      return setError(`The list could not be loaded (${e.message}).`);
+    }
+    setError(null);
     setRows((data ?? []) as Row[]);
   }, []);
 
@@ -61,11 +65,16 @@ export function EmailSettingsCard({ supportEmail }: { supportEmail: string | nul
     setBusy(true);
     setError(null);
     setNote(null);
-    const { error: e } = await createClient().rpc("send_test_email");
-    setBusy(false);
-    if (e) return setError(e.message);
-    setNote("On its way. It usually arrives within five minutes.");
-    await load();
+    try {
+      const { error: e } = await createClient().rpc("send_test_email");
+      if (e) return setError(e.message);
+      await load();
+      setNote("On its way. It usually arrives within five minutes.");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
   }
 
   return (

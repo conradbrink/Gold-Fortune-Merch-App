@@ -13,7 +13,7 @@ export type BrevoMessage = {
   headers?: Record<string, string>;
 };
 
-export type BrevoResult = { ok: true; messageId: string } | { ok: false; error: string; permanent: boolean };
+export type BrevoResult = { ok: true; messageId: string | null } | { ok: false; error: string; permanent: boolean };
 
 export function brevoConfigured(): boolean {
   return !!process.env.BREVO_API_KEY;
@@ -42,7 +42,9 @@ export async function sendViaBrevo(m: BrevoMessage, fetchImpl: typeof fetch = fe
     return { ok: false, error: e instanceof Error ? e.message : String(e), permanent: false };
   }
   const body = (await res.json().catch(() => null)) as { messageId?: string; message?: string } | null;
-  if (res.ok && body?.messageId) return { ok: true, messageId: body.messageId };
+  // Accepted is accepted, even without an id to match delivery news later:
+  // sending it again would send it twice.
+  if (res.ok) return { ok: true, messageId: body?.messageId ?? null };
   // 4xx other than rate limits will not get better by retrying.
   const permanent = res.status >= 400 && res.status < 500 && res.status !== 429;
   return { ok: false, error: `Brevo ${res.status}: ${body?.message ?? "no detail"}`, permanent };

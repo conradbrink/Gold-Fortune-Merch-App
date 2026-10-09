@@ -52,7 +52,20 @@ export async function GET(request: Request) {
   const admin = createAdminClient<Database>(process.env.NEXT_PUBLIC_SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY, {
     auth: { autoRefreshToken: false, persistSession: false },
   });
-  const { data: rows, error } = await admin.rpc("claim_messages", { p_limit: 50 });
+  // A row left "sending" by a run that died mid-send may or may not have been
+  // delivered. Sending it again could send it twice, so after half an hour it
+  // is marked failed with that said, and the company sees it in Settings.
+  const { error: staleError } = await admin
+    .from("message_outbox")
+    .update({ status: "failed", last_error: "Interrupted while sending; it may have been delivered." })
+    .eq("status", "sending")
+    .lt("updated_at", new Date(Date.now() - 30 * 60 * 1000).toISOString());
+  if (staleError) console.error("messages: could not settle interrupted sends", staleError.message);
+
+  // 20 at a time, and none started after 40 seconds: each send may wait 15
+  // seconds and the function has 60. What is left waits for the next run.
+  const started = Date.now();
+  const { data: rows, error } = await admin.rpc("claim_messages", { p_limit: 20 });
   if (error) return Response.json({ error: error.message }, { status: 500 });
 
   const orgs = new Map<string, Org | null>();
@@ -65,15 +78,28 @@ export async function GET(request: Request) {
     return orgs.get(id) ?? null;
   }
 
+  async function finish(args: { p_id: string; p_ok: boolean; p_provider_id?: string | null; p_error?: string | null; p_permanent?: boolean }) {
+    const { error: e } = await admin.rpc("finish_message", args);
+    // Left "sending", the row is settled by the step above on a later run.
+    if (e) console.error("messages: could not record the result of", args.p_id, e.message);
+  }
+
   let sent = 0;
   let failed = 0;
+  let deferred = 0;
   for (const m of rows ?? []) {
+    if (Date.now() - started > 40_000) {
+      // Out of time: back in the queue untouched, for the next run.
+      await admin.from("message_outbox").update({ status: "queued", attempts: Math.max(0, m.attempts - 1) }).eq("id", m.id);
+      deferred++;
+      continue;
+    }
     const org = await orgOf(m.org_id);
     const companyName = org?.name?.trim() || "Tickd";
     const unsubscribeUrl = CLIENT_TEMPLATES.has(m.template) ? `${appUrl()}/c/unsubscribe/${signLink("unsubscribe", m.id)}` : null;
     const email = renderEmail(m.template, (m.payload ?? {}) as Record<string, unknown>, { companyName, unsubscribeUrl });
     if (!email) {
-      await admin.rpc("finish_message", { p_id: m.id, p_ok: false, p_error: `Unknown template ${m.template}`, p_permanent: true });
+      await finish({ p_id: m.id, p_ok: false, p_error: `Unknown template ${m.template}`, p_permanent: true });
       failed++;
       continue;
     }
@@ -87,12 +113,12 @@ export async function GET(request: Request) {
       headers: unsubscribeUrl ? { "List-Unsubscribe": `<${unsubscribeUrl}>` } : undefined,
     });
     if (result.ok) {
-      await admin.rpc("finish_message", { p_id: m.id, p_ok: true, p_provider_id: result.messageId });
+      await finish({ p_id: m.id, p_ok: true, p_provider_id: result.messageId });
       sent++;
     } else {
-      await admin.rpc("finish_message", { p_id: m.id, p_ok: false, p_error: result.error, p_permanent: result.permanent });
+      await finish({ p_id: m.id, p_ok: false, p_error: result.error, p_permanent: result.permanent });
       failed++;
     }
   }
-  return Response.json({ claimed: rows?.length ?? 0, sent, failed });
+  return Response.json({ claimed: rows?.length ?? 0, sent, failed, deferred });
 }

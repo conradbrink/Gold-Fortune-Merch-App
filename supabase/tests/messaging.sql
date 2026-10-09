@@ -80,6 +80,17 @@ begin
     v_fail := v_fail || 'E1 a contact on another company''s site was accepted' || E'\n';
   exception when insufficient_privilege then null;
   end;
+  -- The rule itself must tie the site to the contact's company, not lean on
+  -- the caller being unable to see other companies' sites (CodeRabbit, #107):
+  -- checked on the policy as written, since RLS on stores would hide the case.
+  if not exists (select 1 from pg_policies p
+                  where p.schemaname = 'public' and p.tablename = 'site_contacts' and p.policyname = 'site_contacts_insert'
+                    and p.with_check like '%(s.org_id = site_contacts.org_id)%')
+     or not exists (select 1 from pg_policies p
+                     where p.schemaname = 'public' and p.tablename = 'site_contacts' and p.policyname = 'site_contacts_update'
+                       and p.with_check like '%(s.org_id = site_contacts.org_id)%') then
+    v_fail := v_fail || 'E1 the contact rules do not tie the site to the contact''s company' || E'\n';
+  end if;
   begin
     insert into public.site_contacts (org_id, store_id, name, phone) values (v_org, v_site, 'Bad phone', '082 555 0142');
     v_fail := v_fail || 'E1 a phone not in international form was accepted' || E'\n';

@@ -212,6 +212,8 @@ export default function CompanyProfilePage() {
       setSaveError(error.message);
       return;
     }
+    // The Emails tab says where replies go: the saved address, not the typing.
+    setOrg({ ...org, support_email: form.support_email || null });
     setSaved(true);
   }
 
@@ -618,7 +620,7 @@ export default function CompanyProfilePage() {
         </TabsContent>
 
         <TabsContent value="emails" className="mt-4 space-y-4">
-          <EmailSettingsCard supportEmail={form.support_email || null} />
+          {org && <EmailSettingsCard supportEmail={org.support_email ?? null} />}
         </TabsContent>
 
         <TabsContent value="branding" className="mt-4 space-y-4">

@@ -24,11 +24,13 @@ function admin() {
   });
 }
 
-async function stop(formData: FormData) {
+/** Whether the address is now suppressed. */
+async function stop(formData: FormData): Promise<boolean> {
   "use server";
   const id = verifyLink("unsubscribe", String(formData.get("token") ?? ""));
-  if (!id) return;
-  await admin().rpc("unsubscribe_message", { p_message_id: id });
+  if (!id) return false;
+  const { error } = await admin().rpc("unsubscribe_message", { p_message_id: id });
+  return !error;
 }
 
 export default async function UnsubscribePage({
@@ -39,7 +41,9 @@ export default async function UnsubscribePage({
   searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
 }) {
   const { token } = await params;
-  const done = (await searchParams).done === "1";
+  const query = await searchParams;
+  const done = query.done === "1";
+  const failed = query.failed === "1";
   const id = verifyLink("unsubscribe", token);
   let company: string | null = null;
   let address: string | null = null;
@@ -77,12 +81,17 @@ export default async function UnsubscribePage({
             <p className="text-sm text-pretty text-muted-foreground">
               {address} will no longer get reports or updates from {company ?? "them"} sent through Tickd.
             </p>
+            {failed && (
+              <p role="alert" className="text-sm text-destructive">
+                That did not go through. Please try again in a moment.
+              </p>
+            )}
             <form
               action={async (fd) => {
                 "use server";
-                await stop(fd);
+                const ok = await stop(fd);
                 const { redirect } = await import("next/navigation");
-                redirect(`/c/unsubscribe/${encodeURIComponent(token)}?done=1`);
+                redirect(`/c/unsubscribe/${encodeURIComponent(token)}?${ok ? "done=1" : "failed=1"}`);
               }}
             >
               <input type="hidden" name="token" value={token} />
