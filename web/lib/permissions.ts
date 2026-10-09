@@ -113,6 +113,7 @@ const PATH_PERMISSIONS: { prefix: string; permission: PermissionCode }[] = [
   { prefix: "/contracts", permission: "invoicing" },
   { prefix: "/invoices", permission: "invoicing" },
   { prefix: "/owed", permission: "invoicing" },
+  { prefix: "/statements", permission: "invoicing" },
   { prefix: "/price-list", permission: "invoicing" },
 ];
 

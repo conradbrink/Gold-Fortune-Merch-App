@@ -7277,6 +7277,20 @@ export type Database = {
           last_paid_on: string | null
         }[]
       }
+      statement_clients: {
+        Args: { p_as_of?: string }
+        Returns: {
+          store_id: string | null
+          client_name: string
+          invoices: number
+          invoiced: number
+          credited: number
+          paid: number
+          balance: number
+          first_date: string
+          last_date: string
+        }[]
+      }
       contract_lines_replace: { Args: { p_contract: string; p_lines: Json }; Returns: undefined }
       contract_save: { Args: { p_contract: string | null; p_terms: Json; p_lines: Json }; Returns: string }
       contract_invoices_run_now: {
@@ -7444,6 +7458,10 @@ export type Database = {
         }[]
       }
       debtors_ageing_json: {
+        Args: { p_as_of?: string }
+        Returns: Json
+      }
+      statement_clients_json: {
         Args: { p_as_of?: string }
         Returns: Json
       }
