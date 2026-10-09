@@ -29,9 +29,9 @@ import {
 import { StorePicker } from "@/components/stores/store-picker";
 import { REPORT_TAB_VALUES, companyReportTabs, reportTabs, type ReportTab } from "@/lib/report-tabs";
 import { downloadServiceLogPdf, fetchServiceLog, serviceLogSheet, type ServiceLogRow } from "@/lib/service-log";
-import { fetchStaffHours, hoursDay, hoursSheet, type StaffHoursRow } from "@/lib/staff-hours";
+import { fetchStaffHours, hoursDay, hoursSheet, overtimeOn, overtimeSplit, weekStart, type StaffHoursRow } from "@/lib/staff-hours";
 import { getCompanyConfig, useCompanyConfig, useTerms, type CompanyConfig } from "@/lib/use-company-config";
-import { companyRange } from "@/lib/company-time";
+import { companyMidnight, companyRange } from "@/lib/company-time";
 import type { ModuleSet } from "@/lib/modules";
 import { lower, withArticle, type Terms } from "@/lib/terms";
 import { fileSlug } from "@/lib/export-filename";
@@ -236,6 +236,8 @@ export default function ReportsPage() {
   const [adherence, setAdherence] = useState<Adherence[]>([]);
   const [serviceLog, setServiceLog] = useState<ServiceLogRow[]>([]);
   const [hoursRows, setHoursRows] = useState<StaffHoursRow[]>([]);
+  /** The period's first day; the hours before it only fill in its first week's overtime. */
+  const [hoursFirstDay, setHoursFirstDay] = useState("");
   const [teamInputs, setTeamInputs] = useState<StaffScoreInputs[]>([]);
   const [pdfBusy, setPdfBusy] = useState(false);
 
@@ -296,6 +298,10 @@ export default function ReportsPage() {
       // The new reports group by the company's days, so they are asked for
       // the company's midnights, not the viewer's.
       const companyDays = companyRange(range, cfg.timezone);
+      // A week's overtime needs the whole week, so hours start on the Monday
+      // the period's first week began.
+      const firstDay = toLocalDateInput(range.from);
+      const hoursRange = { from: companyMidnight(weekStart(firstDay), cfg.timezone), to: companyDays.to };
       const mine = companyReportTabs(cfg.modules, cfg.settings.report_tabs);
       const has = (t: ReportTab) => mine.includes(t);
       const none = <T,>() => Promise.resolve([] as T[]);
@@ -320,7 +326,7 @@ export default function ReportsPage() {
         has("oos") ? fetchOosHotspots(supabase, range) : none<OosHotspot>(),
         has("adherence") ? fetchScheduleAdherence(supabase, range) : none<Adherence>(),
         has("service_log") ? fetchServiceLog(supabase, companyDays, storeId || null) : none<ServiceLogRow>(),
-        has("hours") ? fetchStaffHours(supabase, companyDays) : none<StaffHoursRow>(),
+        has("hours") ? fetchStaffHours(supabase, hoursRange) : none<StaffHoursRow>(),
         has("reps") && teamMode ? fetchStaffScoreInputs(supabase, companyDays) : none<StaffScoreInputs>(),
       ]);
       if (isStale()) return;
@@ -333,6 +339,7 @@ export default function ReportsPage() {
       setAdherence(ad);
       setServiceLog(sl);
       setHoursRows(hr);
+      setHoursFirstDay(firstDay);
       setTeamInputs(ti);
     } catch (e) {
       if (isStale()) return;
@@ -403,14 +410,27 @@ export default function ReportsPage() {
     [form]
   );
 
-  /** Hours with the trade's short and long day marks. */
+  /** Overtime rules from the trade; all 0 and off means no overtime is shown. */
+  const overtimeLimits = useMemo(
+    () => ({
+      dayHours: companyConfig?.settings.report_day_normal_hours ?? 0,
+      weekHours: companyConfig?.settings.report_week_normal_hours ?? 0,
+      sundayOvertime: companyConfig?.settings.report_sunday_is_overtime ?? false,
+    }),
+    [companyConfig]
+  );
+  const showOvertime = overtimeOn(overtimeLimits);
+  /** Hours with the trade's short and long day marks and its overtime, the period's days only. */
   const hoursDays = useMemo(() => {
     const limits = {
       shortHours: companyConfig?.settings.report_short_day_hours ?? 0,
       longHours: companyConfig?.settings.report_long_day_hours ?? 0,
     };
-    return hoursRows.map((r) => hoursDay(r, limits));
-  }, [hoursRows, companyConfig]);
+    return overtimeSplit(
+      hoursRows.map((r) => hoursDay(r, limits)),
+      overtimeLimits
+    ).filter((d) => d.day >= hoursFirstDay);
+  }, [hoursRows, hoursFirstDay, companyConfig, overtimeLimits]);
   const timeZone = companyConfig?.timezone;
 
   const pickedStore = stores.find((st) => st.id === storeId) ?? null;
@@ -734,7 +754,7 @@ export default function ReportsPage() {
       case "service_log":
         return serviceLogSheet(serviceLog, terms, base.context, timeZone ?? "UTC");
       case "hours":
-        return hoursSheet(hoursDays, terms, base.context, timeZone ?? "UTC");
+        return hoursSheet(hoursDays, terms, base.context, timeZone ?? "UTC", showOvertime);
       default:
         return null;
     }
@@ -1029,7 +1049,7 @@ export default function ReportsPage() {
               </p>
             </CardHeader>
             <CardContent className="px-0">
-              {loading ? <SkeletonRows /> : <HoursTable days={hoursDays} timeZone={timeZone} />}
+              {loading ? <SkeletonRows /> : <HoursTable days={hoursDays} timeZone={timeZone} overtime={showOvertime} />}
             </CardContent>
           </Card>
         </TabsContent>
