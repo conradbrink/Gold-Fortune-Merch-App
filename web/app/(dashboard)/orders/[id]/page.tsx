@@ -816,11 +816,19 @@ export default function OrderDetailPage() {
                           {Number(l.unit_price).toFixed(2)}
                           {/* The stored price is already net, so the discount
                               is shown as where it came from, not applied again. */}
-                          {Number(l.discount_pct) > 0 && l.list_price != null && (
-                            <span className="block text-xs text-muted-foreground">
-                              {Number(l.list_price).toFixed(2)} less {Number(l.discount_pct)}%
-                            </span>
-                          )}
+                          {l.list_price != null &&
+                            (Number(l.discount_amount) > 0 ? (
+                              <span className="block text-xs text-muted-foreground">
+                                {Number(l.list_price).toFixed(2)} less{" "}
+                                {Number(l.discount_amount).toFixed(2)} on the line
+                              </span>
+                            ) : (
+                              Number(l.discount_pct) > 0 && (
+                                <span className="block text-xs text-muted-foreground">
+                                  {Number(l.list_price).toFixed(2)} less {Number(l.discount_pct)}%
+                                </span>
+                              )
+                            ))}
                         </span>
                       )}
                     </TableCell>

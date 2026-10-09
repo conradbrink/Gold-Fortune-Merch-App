@@ -628,6 +628,61 @@ export function netPrice(listPrice: number, discountPct: number) {
   return rounded / 100;
 }
 
+/** A line's discount is a percentage or an amount off the whole line. */
+export type DiscountKind = "pct" | "amount";
+
+/**
+ * A line's price each after its discount, rounded to the cent.
+ *
+ * An amount comes off the whole line and is spread over the quantity, the way
+ * `order_lines_apply_discount` and the quote line's `unit_price` do it:
+ * `round(list_price - discount_amount / qty, 2)`. P50 off 3 at P20 is P3.33
+ * each, so the line comes to 1 cent more off than typed.
+ */
+export function netUnitPrice(
+  listPrice: number,
+  qty: number,
+  discount: number,
+  kind: DiscountKind
+) {
+  if (kind === "pct") return netPrice(listPrice, discount);
+  if (!(qty > 0)) return listPrice;
+  // In whole cents, rounded half away from zero as Postgres does. Dividing
+  // floats first put P1.14 less P0.29 over 2 at 0.99499… and lost a cent.
+  const cents = Math.round(listPrice * 100);
+  const off = Math.round(discount * 100);
+  const num = cents * qty - off;
+  const half = Math.floor((Math.abs(num) * 2 + qty) / (qty * 2));
+  return (num < 0 ? -half : half) / 100;
+}
+
+/**
+ * What is wrong with a line's discount, as a sentence for the screen, or null.
+ *
+ * The database refuses the same things; this says so before the round trip.
+ * A line with no price yet (a recurring order's catalogue price on the day)
+ * is only checked for the discount itself.
+ */
+export function discountProblem(line: {
+  qty: number;
+  price: number | null;
+  discount: number;
+  kind: DiscountKind;
+}): string | null {
+  const { qty, price, discount, kind } = line;
+  if (kind === "pct") {
+    return discount < 0 || discount > 100 ? "A discount is a percentage between 0 and 100." : null;
+  }
+  if (discount < 0) return "A discount can't be a negative amount.";
+  if (Math.abs(Math.round(discount * 100) - discount * 100) > 1e-6) {
+    return "A discount amount is to the cent.";
+  }
+  if (price != null && qty > 0 && Math.round(discount * 100) > Math.round(price * 100) * qty) {
+    return "A discount can't be more than the line is worth (the quantity times the price).";
+  }
+  return null;
+}
+
 /**
  * Subtotal, VAT and total from VAT-exclusive line prices.
  *
@@ -706,8 +761,15 @@ export async function createManualOrder(
     repId?: string | null;
     /** The accounting system's invoice number, when it already exists. */
     invoiceNumber?: string | null;
-    /** `unitPrice` is before the discount; the database derives the net. */
-    lines: { productId: string; qty: number; unitPrice: number | null; discountPct?: number }[];
+    /** `unitPrice` is before the discount; the database derives the net.
+        `discountAmount` is off the whole line, in place of a percentage. */
+    lines: {
+      productId: string;
+      qty: number;
+      unitPrice: number | null;
+      discountPct?: number;
+      discountAmount?: number;
+    }[];
   }
 ): Promise<string> {
   if (input.lines.length === 0) {
@@ -750,7 +812,8 @@ export async function createManualOrder(
       product_id: l.productId,
       qty_ordered: l.qty,
       unit_price: l.unitPrice,
-      discount_pct: l.discountPct ?? 0,
+      discount_pct: l.discountAmount ? 0 : l.discountPct ?? 0,
+      discount_amount: l.discountAmount ?? 0,
       client_generated_id: crypto.randomUUID(),
     }))
   );

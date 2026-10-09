@@ -11,22 +11,25 @@ import { Label } from "@/components/ui/label";
 import { NativeSelect } from "@/components/ui/native-select";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ErrorBanner } from "@/components/warehouse/stat-tile";
+import { DiscountInput, DiscountNote } from "@/components/money/discount-input";
 import { fetchOrgId } from "@/lib/representatives";
 import {
   createManualOrder,
   createStoreInline,
+  discountProblem,
   fetchOrderableProducts,
   fetchStoresForOrder,
   fetchRepsForOrder,
   fetchVatRate,
   matchProducts,
-  netPrice,
+  netUnitPrice,
   orderTotals,
   unitPriceFor,
   receivedViaOptions,
+  type DiscountKind,
 } from "@/lib/orders";
 import { fetchStockOnHand, type StockLine } from "@/lib/warehouse";
-import { useTerms } from "@/lib/use-company-config";
+import { useCompanyConfig, useTerms } from "@/lib/use-company-config";
 import { lower } from "@/lib/terms";
 
 type Draft = {
@@ -34,8 +37,10 @@ type Draft = {
   productId: string;
   qty: string;
   unitPrice: string;
-  /** Percentage off `unitPrice`; blank means none. */
+  /** Off `unitPrice`, as `discountKind` says; blank means none. */
   discount: string;
+  /** A percentage, or an amount off the whole line. */
+  discountKind: DiscountKind;
 };
 
 const blankLine = (): Draft => ({
@@ -44,6 +49,7 @@ const blankLine = (): Draft => ({
   qty: "1",
   unitPrice: "",
   discount: "",
+  discountKind: "pct",
 });
 
 /**
@@ -58,6 +64,7 @@ const blankLine = (): Draft => ({
 export default function NewOrderPage() {
   const supabase = createClient();
   const t = useTerms();
+  const currency = useCompanyConfig()?.settings.currency_code ?? "";
   const router = useRouter();
 
   const [orgId, setOrgId] = useState<string | null>(null);
@@ -154,7 +161,12 @@ export default function NewOrderPage() {
   const totals = orderTotals(
     lines.map((l) => ({
       qty: Number(l.qty) || 0,
-      unitPrice: netPrice(Number(l.unitPrice) || 0, Number(l.discount) || 0),
+      unitPrice: netUnitPrice(
+        Number(l.unitPrice) || 0,
+        Number(l.qty) || 0,
+        Number(l.discount) || 0,
+        l.discountKind
+      ),
     })),
     vatRate
   );
@@ -184,6 +196,7 @@ export default function NewOrderPage() {
         qty: "1",
         unitPrice: price != null ? price : "",
         discount: "",
+        discountKind: "pct" as const,
       };
       const empty = prev.find((l) => !l.productId);
       return empty
@@ -265,9 +278,17 @@ export default function NewOrderPage() {
     // One line per product is a database constraint; catching it here gives a
     // sentence instead of a unique-violation.
     const ids = filled.map((l) => l.productId);
-    if (filled.some((l) => Number(l.discount) < 0 || Number(l.discount) > 100)) {
-      setError("A discount is a percentage between 0 and 100.");
-      return;
+    for (const l of filled) {
+      const problem = discountProblem({
+        qty: Number(l.qty),
+        price: l.unitPrice === "" ? null : Number(l.unitPrice),
+        discount: Number(l.discount) || 0,
+        kind: l.discountKind,
+      });
+      if (problem) {
+        setError(problem);
+        return;
+      }
     }
     // A discount off nothing would be stored with no list price behind it and
     // then silently not apply when the line is priced later.
@@ -297,7 +318,8 @@ export default function NewOrderPage() {
           productId: l.productId,
           qty: Number(l.qty),
           unitPrice: l.unitPrice === "" ? null : Number(l.unitPrice),
-          discountPct: Number(l.discount) || 0,
+          discountPct: l.discountKind === "pct" ? Number(l.discount) || 0 : 0,
+          discountAmount: l.discountKind === "amount" ? Number(l.discount) || 0 : 0,
         })),
       });
       router.push(`/orders/${id}`);
@@ -579,7 +601,7 @@ export default function NewOrderPage() {
             const short = available !== null && wanted > available;
             const chosen = products.find((p) => p.id === l.productId);
             return (
-              <div key={l.key} className="grid gap-2 sm:grid-cols-[1fr_5rem_7rem_5.5rem_2.5rem]">
+              <div key={l.key} className="grid gap-2 sm:grid-cols-[1fr_5rem_7rem_7rem_2.5rem]">
                 <div>
                   <NativeSelect
                     value={l.productId}
@@ -651,21 +673,21 @@ export default function NewOrderPage() {
                   placeholder="Per unit"
                   aria-label="Price per unit"
                 />
-                <div className="relative">
-                  <Input
-                    type="number"
-                    min={0}
-                    max={100}
-                    step="0.5"
+                <div>
+                  <DiscountInput
                     value={l.discount}
-                    onChange={(e) => update(l.key, { discount: e.target.value })}
-                    placeholder="0"
-                    aria-label="Discount percentage"
-                    className="pr-7"
+                    kind={l.discountKind}
+                    onChange={(discount, discountKind) => update(l.key, { discount, discountKind })}
+                    currency={currency}
+                    aria-label="Discount"
                   />
-                  <span className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">
-                    % off
-                  </span>
+                  <DiscountNote
+                    listPrice={l.unitPrice === "" ? null : Number(l.unitPrice)}
+                    qty={Number(l.qty) || 0}
+                    discount={Number(l.discount) || 0}
+                    kind={l.discountKind}
+                    currency={currency}
+                  />
                 </div>
                 <Button
                   variant="ghost"

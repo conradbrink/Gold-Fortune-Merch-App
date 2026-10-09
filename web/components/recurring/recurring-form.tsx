@@ -9,23 +9,33 @@ import { Label } from "@/components/ui/label";
 import { NativeSelect } from "@/components/ui/native-select";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ErrorBanner } from "@/components/warehouse/stat-tile";
+import { DiscountInput, DiscountNote } from "@/components/money/discount-input";
 import { fetchOrgId } from "@/lib/representatives";
 import {
+  discountProblem,
   fetchOrderableProducts,
   fetchRepsForOrder,
   fetchStoresForOrder,
   unitPriceFor,
+  type DiscountKind,
 } from "@/lib/orders";
 import {
   FREQUENCIES,
   saveRecurringOrder,
   type RecurringDetail,
 } from "@/lib/recurring";
-import { useTerms } from "@/lib/use-company-config";
+import { useCompanyConfig, useTerms } from "@/lib/use-company-config";
 import { lower, withArticle } from "@/lib/terms";
 
 type Product = Awaited<ReturnType<typeof fetchOrderableProducts>>[number];
-type Line = { productId: string; qty: string; price: string; discount: string };
+type Line = {
+  productId: string;
+  qty: string;
+  price: string;
+  discount: string;
+  /** A percentage, or an amount off the whole line. */
+  discountKind: DiscountKind;
+};
 
 function today() {
   const d = new Date();
@@ -50,6 +60,7 @@ export function RecurringForm({
 }) {
   const supabase = createClient();
   const t = useTerms();
+  const currency = useCompanyConfig()?.settings.currency_code ?? "";
   const r = existing?.recurring;
   const [orgId, setOrgId] = useState<string | null>(null);
   const [stores, setStores] = useState<{ id: string; name: string; city: string | null }[]>([]);
@@ -70,7 +81,9 @@ export function RecurringForm({
       productId: l.product_id,
       qty: String(l.qty),
       price: l.unit_price == null ? "" : String(l.unit_price),
-      discount: Number(l.discount_pct) ? String(l.discount_pct) : "",
+      ...(Number(l.discount_amount) > 0
+        ? { discount: String(l.discount_amount), discountKind: "amount" as const }
+        : { discount: Number(l.discount_pct) ? String(l.discount_pct) : "", discountKind: "pct" as const }),
     }))
   );
   const [productQuery, setProductQuery] = useState("");
@@ -132,7 +145,7 @@ export function RecurringForm({
     setLines((prev) =>
       prev.some((l) => l.productId === p.id)
         ? prev.map((l) => (l.productId === p.id ? { ...l, qty: String((Number(l.qty) || 0) + 1) } : l))
-        : [...prev, { productId: p.id, qty: "1", price: "", discount: "" }]
+        : [...prev, { productId: p.id, qty: "1", price: "", discount: "", discountKind: "pct" }]
     );
     setProductQuery("");
   }
@@ -146,8 +159,20 @@ export function RecurringForm({
     if (lines.length === 0) return setError("Add at least one product.");
     if (lines.some((l) => !Number.isInteger(Number(l.qty)) || Number(l.qty) <= 0))
       return setError("Quantities are whole units above zero.");
-    if (lines.some((l) => Number(l.discount) < 0 || Number(l.discount) > 100))
-      return setError("A discount is a percentage between 0 and 100.");
+    for (const l of lines) {
+      // A blank price is the catalogue price on the day; today's is the best
+      // guess at whether an amount off is more than the line is worth.
+      const p = byId.get(l.productId);
+      const catalogue = p ? unitPriceFor(p) : null;
+      const price = l.price !== "" ? l.price : catalogue;
+      const problem = discountProblem({
+        qty: Number(l.qty),
+        price: price ? Number(price) : null,
+        discount: Number(l.discount) || 0,
+        kind: l.discountKind,
+      });
+      if (problem) return setError(problem);
+    }
     setSaving(true);
     try {
       const id = await saveRecurringOrder(
@@ -167,7 +192,8 @@ export function RecurringForm({
             productId: l.productId,
             qty: Number(l.qty),
             unitPrice: l.price === "" ? null : Number(l.price),
-            discountPct: Number(l.discount) || 0,
+            discountPct: l.discountKind === "pct" ? Number(l.discount) || 0 : 0,
+            discountAmount: l.discountKind === "amount" ? Number(l.discount) || 0 : 0,
           })),
         },
         r?.id
@@ -287,17 +313,24 @@ export function RecurringForm({
             const p = byId.get(l.productId);
             const catalogue = p ? unitPriceFor(p) : null;
             return (
-              <div key={l.productId} className="grid items-center gap-2 sm:grid-cols-[1fr_5rem_8rem_5.5rem_2.5rem]">
-                <span className="truncate text-sm">{p?.name ?? "…"}</span>
+              <div key={l.productId} className="grid items-start gap-2 sm:grid-cols-[1fr_5rem_8rem_7rem_2.5rem]">
+                <span className="truncate py-1.5 text-sm">{p?.name ?? "…"}</span>
                 <Input type="number" min={1} value={l.qty} aria-label="Quantity"
                   onChange={(e) => setLines((prev) => prev.map((x) => (x.productId === l.productId ? { ...x, qty: e.target.value } : x)))} />
                 <Input type="number" min={0} step="0.01" value={l.price} aria-label="Price per unit"
                   placeholder={catalogue ? `${catalogue} (list)` : "List price"}
                   onChange={(e) => setLines((prev) => prev.map((x) => (x.productId === l.productId ? { ...x, price: e.target.value } : x)))} />
-                <div className="relative">
-                  <Input type="number" min={0} max={100} step="0.5" value={l.discount} placeholder="0" aria-label="Discount percentage" className="pr-7"
-                    onChange={(e) => setLines((prev) => prev.map((x) => (x.productId === l.productId ? { ...x, discount: e.target.value } : x)))} />
-                  <span className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">%</span>
+                <div>
+                  <DiscountInput value={l.discount} kind={l.discountKind} currency={currency} aria-label="Discount"
+                    onChange={(discount, discountKind) =>
+                      setLines((prev) => prev.map((x) => (x.productId === l.productId ? { ...x, discount, discountKind } : x)))} />
+                  <DiscountNote
+                    listPrice={l.price !== "" ? Number(l.price) : catalogue != null ? Number(catalogue) : null}
+                    qty={Number(l.qty) || 0}
+                    discount={Number(l.discount) || 0}
+                    kind={l.discountKind}
+                    currency={currency}
+                  />
                 </div>
                 <Button variant="ghost" size="icon" aria-label="Remove"
                   onClick={() => setLines((prev) => prev.filter((x) => x.productId !== l.productId))}>
