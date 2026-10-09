@@ -286,22 +286,23 @@ export default function Home() {
 
       <main id="top">
         {/* 1. Hero: the outcome, the risk taken away, and the real app. */}
-        <section className="mx-auto grid max-w-6xl items-center gap-10 px-4 pb-10 pt-8 sm:px-6 sm:pb-16 sm:pt-12 lg:grid-cols-[1.1fr_0.9fr] lg:gap-14 lg:pt-16">
+        <section className="mx-auto grid max-w-6xl items-center gap-10 px-4 pb-10 pt-8 sm:px-6 sm:pb-16 sm:pt-12 lg:grid-cols-[1.1fr_0.9fr] lg:gap-14 lg:pt-12">
           <div className="tk-hero grid gap-5 sm:gap-6">
             <p className="max-w-md text-sm font-semibold leading-snug text-teal-700 sm:text-base">
               For cleaning, security, electrical, garden, pest, pool, maintenance and sales teams
             </p>
             <h1 className="font-display text-[2.6rem] font-extrabold leading-[1.02] tracking-tight text-balance text-teal-900 sm:text-6xl lg:text-[4.25rem]">
-              Know every task got{" "}
-              <span className="relative whitespace-nowrap">
-                done
-                <span aria-hidden="true" className="tk-underline absolute inset-x-0 bottom-[-0.02em] h-[0.12em] rounded-full bg-amber-500" />
-              </span>,{" "}
-              <span className="mt-3 block text-[0.6em] leading-[1.1] text-teal-700">without phoning around.</span>
+              <span className="block">Manage your team.</span>
+              <span className="block">
+                Grow your{" "}
+                <span className="relative whitespace-nowrap">
+                  business.
+                  <span aria-hidden="true" className="tk-underline absolute inset-x-0 bottom-[-0.02em] h-[0.12em] rounded-full bg-amber-500" />
+                </span>
+              </span>
             </h1>
             <p className="max-w-xl text-lg leading-relaxed text-pretty text-ink sm:text-xl">
-              {site.name} is an app for business owners whose staff work on site. They use it on their phones, and you see
-              everything on your dashboard. With {site.name}:
+              Everything you need to manage your team, track your work and run your business better.
             </p>
             <ul className="grid max-w-xl gap-y-2.5" aria-label={`What ${site.name} does for you`}>
               {OWNER_GETS.map((item) => (
