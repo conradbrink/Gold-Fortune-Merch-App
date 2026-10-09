@@ -81,7 +81,14 @@ export async function proxy(request: NextRequest) {
   // checks below for the reason /rep-notice is: it is where they send people.
   const isNotEnabledPage = matchesPrefix(request.nextUrl.pathname, "/not-enabled");
 
-  if (!user && !isLoginPage && !isDownloadPage && !isPasswordResetPage && !isSignupPage) {
+  // Pages for a company's own clients (Stage 8): the link in an email, to stop
+  // those emails or to see and sign a job's report. The person opening them
+  // has no Tickd login, and someone who has one is not asked for it either.
+  // Each page checks its own signed token on the server and shows nothing
+  // without a valid one.
+  const isClientPage = matchesPrefix(request.nextUrl.pathname, "/c");
+
+  if (!user && !isLoginPage && !isDownloadPage && !isPasswordResetPage && !isSignupPage && !isClientPage) {
     const url = request.nextUrl.clone();
     url.pathname = "/login";
     return NextResponse.redirect(url);
@@ -112,7 +119,8 @@ export async function proxy(request: NextRequest) {
     !isDownloadPage &&
     !isPasswordResetPage &&
     !isPlatformPage &&
-    !isNotEnabledPage
+    !isNotEnabledPage &&
+    !isClientPage
   ) {
     // Two questions, asked in parallel so the page waits for one round trip:
     // what may this person do, and what has their company got. Both come from
