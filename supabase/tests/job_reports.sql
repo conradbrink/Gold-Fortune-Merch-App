@@ -4,8 +4,9 @@
 --       nothing unless asked.
 --   J2  Automatic sends: "immediate" queues each finished job once, to the
 --       site's contacts who get reports and have an email; "evening" waits
---       for the company's send time, then one email per site; "manual" and a
---       site with no contacts send nothing.
+--       for the company's send time, then one email per site, once a day:
+--       a job crossing midnight is in it, a job finished after it goes the
+--       next evening; "manual" and a site with no contacts send nothing.
 --   J3  "Send to the client now": a manager can, field staff cannot, nor for
 --       an unfinished job or another company's.
 --   J4  The link's report: made once, the same id after.
@@ -28,7 +29,7 @@ declare
   v_org uuid; v_owner uuid; v_owner_email text; v_staff uuid; v_staff_email text; v_gf_viewer uuid;
   v_tz text; v_s1 uuid; v_s2 uuid; v_s3 uuid; v_form uuid; v_field uuid; v_sub uuid; v_photo uuid;
   v_v1 uuid; v_v2 uuid; v_v3 uuid; v_open uuid; v_gf_visit uuid;
-  v_rep uuid; v_rep2 uuid; v_n int; v_j jsonb; v_ok boolean;
+  v_rep uuid; v_rep2 uuid; v_n int; v_j jsonb; v_ok boolean; v_night uuid; v_late uuid;
 begin
   select p.id, p.email into v_owner, v_owner_email from public.profiles p
    where p.org_id = c_gf and p.role <> 'manager'
@@ -128,6 +129,12 @@ begin
     v_fail := v_fail || 'J2 a job was sent twice' || E'\n';
   end if;
   -- Evening: not before the send time, then one email per site.
+  -- A job checked in before last midnight and out after it.
+  insert into public.visits (org_id, rep_id, store_id, status, checkin_at, checkout_at, duration_seconds, client_generated_id)
+  values (v_org, v_staff, v_s1, 'checked_out',
+          ((now() at time zone v_tz)::date - 1 + time '23:00') at time zone v_tz,
+          ((now() at time zone v_tz)::date + time '00:30') at time zone v_tz, 5400, gen_random_uuid())
+  returning id into v_night;
   delete from public.message_outbox where org_id = v_org;
   update public.job_reports set first_queued_at = null, last_queued_at = null where org_id = v_org;
   update public.company_settings set value = '"evening"' where org_id = v_org and key = 'job_report_send';
@@ -138,14 +145,34 @@ begin
      and (now() at time zone v_tz)::time < time '23:00' then
     v_fail := v_fail || 'J2 the evening email went before its time' || E'\n';
   end if;
+  -- After 23:00 the check above ran tonight's batch; start the evening again.
   update public.company_settings set value = '"00:00"' where org_id = v_org and key = 'job_report_send_time';
   delete from public.message_outbox where org_id = v_org;
+  delete from public.job_report_evenings where org_id = v_org;
+  update public.job_reports set first_queued_at = null, last_queued_at = null where org_id = v_org;
   perform public.queue_job_reports();
-  -- The fixtures check in 1 to 3 hours ago: just after the company's
-  -- midnight some fall on yesterday, so the evening count is not checked then.
-  if (now() at time zone v_tz)::time >= time '04:00'
-     and (select count(*) from public.message_outbox where org_id = v_org and template = 'job_reports_day') <> 2 then
+  if (select count(*) from public.message_outbox where org_id = v_org and template = 'job_reports_day') <> 2 then
     v_fail := v_fail || 'J2 the evening email was not one per site' || E'\n';
+  end if;
+  if not exists (select 1 from public.message_outbox where org_id = v_org and to_address = 'gets@example.com'
+                  and payload -> 'report_ids' ? (select id::text from public.job_reports where visit_id = v_night)) then
+    v_fail := v_fail || 'J2 a job crossing midnight was left out of the evening email' || E'\n';
+  end if;
+  -- A job finished after tonight's email waits for tomorrow's.
+  insert into public.visits (org_id, rep_id, store_id, status, checkin_at, checkout_at, duration_seconds, client_generated_id)
+  values (v_org, v_staff, v_s1, 'checked_out', now() - interval '20 minutes', now() - interval '2 minutes', 1080, gen_random_uuid())
+  returning id into v_late;
+  select count(*) into v_n from public.message_outbox where org_id = v_org;
+  perform public.queue_job_reports();
+  if (select count(*) from public.message_outbox where org_id = v_org) <> v_n then
+    v_fail := v_fail || 'J2 a second evening email went the same night' || E'\n';
+  end if;
+  delete from public.job_report_evenings where org_id = v_org;  -- tomorrow
+  perform public.queue_job_reports();
+  if (select count(*) from public.message_outbox where org_id = v_org) <> v_n + 1
+     or not exists (select 1 from public.message_outbox where org_id = v_org and to_address = 'gets@example.com'
+                     and payload -> 'report_ids' = jsonb_build_array((select id from public.job_reports where visit_id = v_late))) then
+    v_fail := v_fail || 'J2 the job finished after the evening email was not in the next one, alone' || E'\n';
   end if;
 
   ---------------------------------------------------------------- J3 send now
@@ -263,12 +290,16 @@ begin
      or has_function_privilege('authenticated', 'public.ensure_job_report(uuid)', 'execute')
      or has_function_privilege('anon', 'public.send_job_report(uuid)', 'execute')
      or not has_function_privilege('authenticated', 'public.send_job_report(uuid)', 'execute')
-     or not has_function_privilege('service_role', 'public.job_report_view(uuid)', 'execute') then
-    v_fail := v_fail || 'J8 a job report function has the wrong grants' || E'\n';
+     or not has_function_privilege('service_role', 'public.job_report_view(uuid)', 'execute')
+     or has_table_privilege('authenticated', 'public.job_report_evenings', 'select')
+     or has_table_privilege('anon', 'public.job_report_evenings', 'select')
+     or not (select relrowsecurity from pg_class where oid = 'public.job_report_evenings'::regclass) then
+    v_fail := v_fail || 'J8 a job report function or table has the wrong grants' || E'\n';
   end if;
   if (select count(*) from public.module_assignments
        where (kind = 'table' and name = 'job_reports')
-          or (kind = 'function' and name in ('send_job_report', 'job_report_for_visit'))) <> 3
+          or (kind = 'table' and name = 'job_report_evenings')
+          or (kind = 'function' and name in ('send_job_report', 'job_report_for_visit'))) <> 4
      or not exists (select 1 from cron.job where jobname = 'job-reports' and schedule = '*/15 * * * *') then
     v_fail := v_fail || 'J8 registration or the scheduled job is missing' || E'\n';
   end if;

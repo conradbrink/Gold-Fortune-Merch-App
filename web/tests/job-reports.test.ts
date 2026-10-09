@@ -40,6 +40,13 @@ test("a site's day lists every job with its own link", () => {
   assert.match(e.text, /See and sign: https:\/\/x\/2/);
 });
 
+test("jobs from two days (one finished after last night's email) say each day", () => {
+  const e = renderEmail("job_reports_day", { reports: [line({ day: "2026-10-08", timeIn: "17:10", timeOut: "18:40" }), line({ url: "https://x/2" })] }, ctx)!;
+  assert.equal(e.subject, "Sandton Office Park: 2 cleans done since the last report");
+  assert.match(e.html, /2026-10-08, 17:10 to 18:40/);
+  assert.match(e.text, /- 2026-10-09, 07:58 to 09:12/);
+});
+
 test("away from the site is said plainly; what a company typed is escaped", () => {
   const e = renderEmail("job_report", { reports: [line({ onSite: false, siteName: "A & <B>" })] }, ctx)!;
   assert.match(e.html, /checked in away from the site/);
