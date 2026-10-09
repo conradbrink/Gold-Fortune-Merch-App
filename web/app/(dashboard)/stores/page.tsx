@@ -21,6 +21,7 @@ import {
   ArrowUp,
   ArrowDown,
   ArrowUpDown,
+  Users,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -60,6 +61,7 @@ import {
   StoreLocationDialog,
   type GeocodeCapture,
 } from "@/components/stores/store-location-dialog";
+import { SiteContactsDialog } from "@/components/stores/site-contacts-dialog";
 // `components/dashboard/filter-bar.tsx` is deliberately NOT used here: its
 // "Add filter", "Clear" and "Apply" buttons have no onClick at all. It read as
 // decorative chrome next to the real filter row below, and with 200+ stores a
@@ -264,6 +266,7 @@ export default function StoresPage() {
   );
   /** Non-null while the location-provenance dialog is open. */
   const [locationTarget, setLocationTarget] = useState<StoreRow | null>(null);
+  const [contactsTarget, setContactsTarget] = useState<StoreRow | null>(null);
   /** Which column the table is ordered by. Name ascending, matching the order
       the rows are fetched in, so the page opens looking as it always has. */
   const [sort, setSort] = useState<SortState>({ key: "name", dir: "asc" });
@@ -1956,6 +1959,13 @@ export default function StoresPage() {
                           Location details
                         </DropdownMenuItem>
                         <DropdownMenuItem
+                          onClick={() => setContactsTarget(store)}
+                          className="gap-2"
+                        >
+                          <Users className="h-4 w-4" />
+                          Contacts
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
                           onClick={() => openEdit(store)}
                           className="gap-2"
                         >
@@ -2021,6 +2031,10 @@ export default function StoresPage() {
           locationTarget ? sharedWith(locationTarget).sameResult : false
         }
         onClose={() => setLocationTarget(null)}
+      />
+      <SiteContactsDialog
+        site={contactsTarget ? { id: contactsTarget.id, name: contactsTarget.name } : null}
+        onClose={() => setContactsTarget(null)}
       />
     </div>
   );
