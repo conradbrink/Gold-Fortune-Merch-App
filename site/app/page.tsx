@@ -156,8 +156,8 @@ const OWNER_GETS = [
   "Who's at work, and their hours for payroll",
   "Where everyone is, live on a map",
   "Kilometres driven, for your logbook",
-  "Every job done, with photos and checklists",
-  "Signed job reports sent to your clients",
+  "Every task done, with photos and checklists",
+  "Signed task reports sent to your clients",
   "Alerts when something's off",
   "Quotes, invoices and who still owes you",
   "Reports and a score for each employee",
@@ -289,7 +289,7 @@ export default function Home() {
               For cleaning, security, electrical, garden, pest, pool, maintenance and sales teams
             </p>
             <h1 className="font-display text-[2.6rem] font-extrabold leading-[1.02] tracking-tight text-balance text-teal-900 sm:text-6xl lg:text-[4.25rem]">
-              Know every job got{" "}
+              Know every task got{" "}
               <span className="relative whitespace-nowrap">
                 done
                 <span aria-hidden="true" className="tk-underline absolute inset-x-0 bottom-[-0.02em] h-[0.12em] rounded-full bg-amber-500" />
@@ -298,7 +298,7 @@ export default function Home() {
             </h1>
             <p className="max-w-xl text-lg leading-relaxed text-pretty text-ink sm:text-xl">
               The all-in-one app for running a team that works on site. Your staff use it on their phones, and you see
-              everything from yours:
+              everything from your dashboard:
             </p>
             <ul className="grid max-w-xl gap-x-6 gap-y-2.5 sm:grid-cols-2" aria-label={`What ${site.name} does for you`}>
               {OWNER_GETS.map((item) => (
