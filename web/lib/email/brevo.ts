@@ -11,6 +11,8 @@ export type BrevoMessage = {
   html: string;
   text: string;
   headers?: Record<string, string>;
+  /** Files to attach: the name and the file as base64. */
+  attachments?: { name: string; content: string }[];
 };
 
 export type BrevoResult = { ok: true; messageId: string | null } | { ok: false; error: string; permanent: boolean };
@@ -35,6 +37,7 @@ export async function sendViaBrevo(m: BrevoMessage, fetchImpl: typeof fetch = fe
         htmlContent: m.html,
         textContent: m.text,
         ...(m.headers ? { headers: m.headers } : {}),
+        ...(m.attachments?.length ? { attachment: m.attachments.map((a) => ({ name: a.name, content: a.content })) } : {}),
       }),
       signal: AbortSignal.timeout(15000),
     });

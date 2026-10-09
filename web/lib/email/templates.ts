@@ -16,6 +16,8 @@ export type EmailContext = {
   companyName: string;
   /** Where "stop these emails" goes; null for mail to the company's own people. */
   unsubscribeUrl: string | null;
+  /** The document's PDF is attached to this email. */
+  attached?: boolean;
 };
 
 export type RenderedEmail = { subject: string; html: string; text: string };
@@ -36,13 +38,16 @@ export function layout(
   const stop = ctx.unsubscribeUrl
     ? ` <a href="${escapeHtml(ctx.unsubscribeUrl)}" style="color:#5b6b66">Stop these emails</a>.`
     : "";
+  const attachedHtml = ctx.attached
+    ? `<p style="margin:0;font-size:13px;color:#5b6b66">The PDF is attached to this email.</p>`
+    : "";
   const html = `<!doctype html><html><body style="margin:0;background:#f4f7f6;font-family:Arial,Helvetica,sans-serif;color:#14211e">
 <div style="max-width:560px;margin:0 auto;padding:24px 16px">
 <p style="margin:0 0 16px;font-size:15px;font-weight:700">${company}</p>
 <div style="background:#ffffff;border-radius:12px;padding:24px;line-height:1.5;font-size:15px">
 <h1 style="margin:0 0 12px;font-size:20px">${escapeHtml(parts.heading)}</h1>
 ${parts.bodyHtml}
-${button}
+${button}${attachedHtml}
 </div>
 <p style="margin:16px 0 0;font-size:12px;color:#5b6b66;line-height:1.5">Sent for ${company} by Tickd.${stop}</p>
 </div></body></html>`;
@@ -53,6 +58,7 @@ ${button}
     "",
     parts.bodyText,
     parts.button ? `\n${parts.button.label}: ${parts.button.url}` : "",
+    ctx.attached ? "\nThe PDF is attached to this email." : "",
     "",
     `Sent for ${ctx.companyName} by Tickd.${ctx.unsubscribeUrl ? ` Stop these emails: ${ctx.unsubscribeUrl}` : ""}`,
   ].join("\n");
