@@ -173,6 +173,132 @@ export type Database = {
         }
         Relationships: []
       }
+      site_contacts: {
+        Row: {
+          id: string
+          org_id: string
+          store_id: string
+          name: string
+          email: string | null
+          phone: string | null
+          role: string | null
+          receives_reports: boolean
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          org_id: string
+          store_id: string
+          name: string
+          email?: string | null
+          phone?: string | null
+          role?: string | null
+          receives_reports?: boolean
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          org_id?: string
+          store_id?: string
+          name?: string
+          email?: string | null
+          phone?: string | null
+          role?: string | null
+          receives_reports?: boolean
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      message_outbox: {
+        Row: {
+          id: string
+          org_id: string | null
+          channel: string
+          to_address: string
+          to_name: string | null
+          template: string
+          payload: Json
+          related_kind: string | null
+          related_id: string | null
+          status: string
+          attempts: number
+          last_error: string | null
+          provider_message_id: string | null
+          send_after: string
+          sent_at: string | null
+          created_by: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          org_id?: string | null
+          channel?: string
+          to_address: string
+          to_name?: string | null
+          template: string
+          payload?: Json
+          related_kind?: string | null
+          related_id?: string | null
+          status?: string
+          attempts?: number
+          last_error?: string | null
+          provider_message_id?: string | null
+          send_after?: string
+          sent_at?: string | null
+          created_by?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          org_id?: string | null
+          channel?: string
+          to_address?: string
+          to_name?: string | null
+          template?: string
+          payload?: Json
+          related_kind?: string | null
+          related_id?: string | null
+          status?: string
+          attempts?: number
+          last_error?: string | null
+          provider_message_id?: string | null
+          send_after?: string
+          sent_at?: string | null
+          created_by?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      message_suppressions: {
+        Row: {
+          id: string
+          org_id: string | null
+          address: string
+          reason: string
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          org_id?: string | null
+          address: string
+          reason: string
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          org_id?: string | null
+          address?: string
+          reason?: string
+          created_at?: string
+        }
+        Relationships: []
+      }
       service_contracts: {
         Row: {
           id: string
@@ -7058,6 +7184,26 @@ export type Database = {
       approved_leave_days: {
         Args: { p_from: string; p_to: string }
         Returns: { profile_id: string; day: string }[]
+      }
+      claim_messages: {
+        Args: { p_limit?: number }
+        Returns: { id: string; org_id: string | null; channel: string; to_address: string; to_name: string | null; template: string; payload: Json; related_kind: string | null; related_id: string | null; status: string; attempts: number; last_error: string | null; provider_message_id: string | null; send_after: string; sent_at: string | null; created_by: string | null; created_at: string; updated_at: string }[]
+      }
+      finish_message: {
+        Args: { p_id: string; p_ok: boolean; p_provider_id?: string | null; p_error?: string | null; p_suppressed?: boolean; p_permanent?: boolean }
+        Returns: undefined
+      }
+      record_message_event: {
+        Args: { p_provider_id: string; p_event: string }
+        Returns: undefined
+      }
+      unsubscribe_message: {
+        Args: { p_message_id: string }
+        Returns: string | null
+      }
+      send_test_email: {
+        Args: Record<PropertyKey, never>
+        Returns: string
       }
       service_log: {
         Args: { p_from: string; p_to: string; p_store_id?: string | null }
