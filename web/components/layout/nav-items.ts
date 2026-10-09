@@ -37,6 +37,7 @@ import {
   HandCoins,
   Tags,
   FileSignature,
+  Car,
 } from "lucide-react";
 import {
   can,
@@ -165,6 +166,9 @@ export const navGroups: NavGroupDef[] = [
       // are readable by the manager role only, so anyone else would be shown
       // an empty map that looks like nobody is working.
       { href: "/tracking", label: "Tracking", icon: Navigation, permission: "insights" },
+      // Beside Tracking, whose kilometres it turns into a travel logbook. The
+      // vehicle list hangs off the logbook page (`/logbook/vehicles`).
+      { href: "/logbook", label: "Vehicle logbook", icon: Car, permission: "insights" },
       {
         // One destination, two names in the old menu. The feed is where a
         // manager starts, and the per-visit drill-down hangs off it.
