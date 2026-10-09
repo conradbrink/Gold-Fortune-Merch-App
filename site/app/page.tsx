@@ -41,10 +41,11 @@ const nav = [
 ];
 
 // The three things that make it easy to say yes, straight under the hero.
+// Each item answers the strip's question, "What do you need to start?"
 const easy = [
-  { icon: Smartphone, title: "No new phones", body: "It runs on the Android phones they already have." },
-  { icon: CloudOff, title: "Works without signal", body: "It catches up when the signal comes back." },
-  { icon: ClipboardCheck, title: "Ready on day one", body: "Pick your type of work, and the checklists are already there." },
+  { icon: Smartphone, title: "Just their own phones", body: "Tickd runs on the Android phones your team already has." },
+  { icon: CloudOff, title: "Not even good signal", body: "The app keeps working, and catches up when the signal comes back." },
+  { icon: ClipboardCheck, title: "No checklists to write", body: "Pick your type of work, and they're already there." },
 ];
 
 // The calls that eat an owner's day, in the words people actually say,
@@ -301,18 +302,23 @@ export default function Home() {
         </section>
 
         {/* 2. Easy to say yes: the effort it doesn't take. */}
-        <section aria-label="Why it's easy to start" className="border-y border-line bg-white">
-          <ul className="mx-auto grid max-w-6xl gap-5 px-4 py-8 sm:px-6 md:grid-cols-3 md:gap-0 md:divide-x md:divide-line md:py-10">
-            {easy.map(({ icon: Icon, title, body }) => (
-              <li key={title} className="tk-reveal tk-timeline flex gap-3.5 md:px-8 md:first:pl-0 md:last:pr-0">
-                <Icon className="tk-draw mt-0.5 size-6 shrink-0 text-teal-700" strokeWidth={2} aria-hidden="true" />
-                <span className="grid gap-0.5">
-                  <span className="font-display text-lg font-bold text-teal-900">{title}</span>
-                  <span className="leading-relaxed text-ink">{body}</span>
-                </span>
-              </li>
-            ))}
-          </ul>
+        <section aria-labelledby="start-title" className="border-y border-line bg-white">
+          <div className="mx-auto grid max-w-6xl gap-5 px-4 py-10 sm:px-6 md:gap-6 md:py-12">
+            <h2 id="start-title" className="tk-reveal font-display text-2xl font-bold leading-tight text-teal-900 sm:text-3xl">
+              What do you need to start?
+            </h2>
+            <ul className="grid gap-5 md:grid-cols-3 md:gap-0 md:divide-x md:divide-line">
+              {easy.map(({ icon: Icon, title, body }) => (
+                <li key={title} className="tk-reveal tk-timeline flex gap-3.5 md:px-8 md:first:pl-0 md:last:pr-0">
+                  <Icon className="tk-draw mt-0.5 size-6 shrink-0 text-teal-700" strokeWidth={2} aria-hidden="true" />
+                  <span className="grid gap-0.5">
+                    <span className="font-display text-lg font-bold text-teal-900">{title}</span>
+                    <span className="leading-relaxed text-ink">{body}</span>
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </div>
         </section>
 
         {/* 3. The calls that eat the owner's day, and the answer with Tickd. */}
