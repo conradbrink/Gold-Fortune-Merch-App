@@ -22,6 +22,7 @@ import { createClient } from "@/lib/supabase/client";
 import { GlobalSearch } from "@/components/layout/global-search";
 import { ThemeToggle } from "@/components/layout/theme-toggle";
 import { NotificationsBell } from "@/components/hr/notifications-bell";
+import { AlertsBell } from "@/components/alerts/alerts-bell";
 import { WorkdayControl } from "@/components/workday/workday-control";
 import { can } from "@/lib/permissions";
 import { usePermissions } from "@/lib/use-permissions";
@@ -36,6 +37,13 @@ export function TopBar({ onOpenNav }: { onOpenNav?: () => void }) {
   // HR notifications only exist with the HR module; without it the bell would
   // poll a table the database answers with nothing.
   const hasHr = company !== null && moduleEnabled(company.modules, "hr");
+  // Alerts (Stage 8.4) are for the people who read how the field went, at a
+  // company with the module; the database refuses everyone else.
+  const hasAlerts =
+    company !== null &&
+    moduleEnabled(company.modules, "owner_notifications") &&
+    permissions !== null &&
+    can(permissions, "insights");
   // Global search spans four modules, not one. It used to follow the store
   // estate alone, which was wrong in both directions: a warehouse-and-resources
   // person got no box at all, and somebody with only the store estate got a box
@@ -119,6 +127,7 @@ export function TopBar({ onOpenNav }: { onOpenNav?: () => void }) {
             somebody comes to the app specifically to press. Renders nothing for
             anybody without the `workday` permission. */}
         <WorkdayControl />
+        {hasAlerts && <AlertsBell />}
         {hasHr && <NotificationsBell />}
         {/* Outside the manager gate, unlike search and settings. How the screen
             looks is nobody's permission to grant, and warehouse staff work the

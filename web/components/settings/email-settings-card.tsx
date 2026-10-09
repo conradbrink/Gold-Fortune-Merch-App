@@ -24,6 +24,8 @@ const TEMPLATE_LABEL: Record<string, string> = {
   test: "Test email",
   job_report: "Job report",
   job_reports_day: "Day's reports",
+  alert: "Alert",
+  alerts_digest: "Day's alerts",
 };
 
 const STATUS: Record<string, { label: string; tone: string }> = {

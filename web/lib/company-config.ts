@@ -2,6 +2,7 @@ import { toModuleSet, type ModuleSet } from "@/lib/modules";
 import { parseTerms, type Terms } from "@/lib/terms";
 import { parseBranding, type Branding } from "@/lib/branding";
 import { isMoneyWorkflow, type MoneyWorkflow } from "@/lib/money-workflow";
+import type { AlertEmailMode } from "@/lib/alerts";
 
 /**
  * The shape of `my_company_config()` and the parser for it, with nothing
@@ -51,6 +52,14 @@ export type CompanySettings = {
   job_report_send: JobReportSend;
   /** The evening email's time, "HH:MM" on the company's clock. */
   job_report_send_time: string;
+  /** The alert rules that are on (Stage 8.4), comma-separated codes (lib/alerts.ts). */
+  alerts_on: string;
+  /** How alerts are emailed: one each, one a day, or not at all. */
+  alerts_email: AlertEmailMode;
+  /** The end of the company's day: planned work not done by then is missed, and the day's email goes. "HH:MM". */
+  alerts_digest_time: string;
+  /** A site that goes longer than this between check-ins on one day raises an alert. */
+  alerts_patrol_gap_minutes: number;
 };
 
 export type JobReportSend = "immediate" | "evening" | "manual";
@@ -98,6 +107,10 @@ const SETTING_FALLBACK: CompanySettings = {
   staff_score_weights: "sales:35,visits:25,coverage:15,merchandising:15,compliance:10",
   job_report_send: "manual",
   job_report_send_time: "18:00",
+  alerts_on: "off_site_checkin,short_job,missed_planned",
+  alerts_email: "digest",
+  alerts_digest_time: "17:30",
+  alerts_patrol_gap_minutes: 90,
 };
 
 function obj(v: unknown): Record<string, unknown> {
@@ -175,6 +188,16 @@ export function parseCompanyConfig(raw: unknown): CompanyConfig | null {
         typeof s.job_report_send_time === "string" && /^\d{2}:\d{2}/.test(s.job_report_send_time)
           ? s.job_report_send_time.slice(0, 5)
           : f.job_report_send_time,
+      alerts_on: list(s.alerts_on, f.alerts_on),
+      alerts_email:
+        s.alerts_email === "instant" || s.alerts_email === "digest" || s.alerts_email === "off"
+          ? s.alerts_email
+          : f.alerts_email,
+      alerts_digest_time:
+        typeof s.alerts_digest_time === "string" && /^\d{2}:\d{2}/.test(s.alerts_digest_time)
+          ? s.alerts_digest_time.slice(0, 5)
+          : f.alerts_digest_time,
+      alerts_patrol_gap_minutes: int(s.alerts_patrol_gap_minutes, f.alerts_patrol_gap_minutes),
     },
     timezone: typeof r.timezone === "string" && r.timezone !== "" ? r.timezone : "UTC",
     vatRate: Number.isFinite(Number(r.vat_rate)) ? Number(r.vat_rate) : 0,
