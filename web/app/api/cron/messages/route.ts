@@ -2,7 +2,7 @@ import { timingSafeEqual } from "node:crypto";
 import { createClient as createAdminClient } from "@supabase/supabase-js";
 import type { Database } from "@/lib/supabase/types";
 import { brevoConfigured, sendViaBrevo } from "@/lib/email/brevo";
-import { ALERT_TEMPLATES, CLIENT_TEMPLATES, REPORT_TEMPLATES, renderEmail, type ReportLine } from "@/lib/email/templates";
+import { ALERT_TEMPLATES, CLIENT_TEMPLATES, DOCUMENT_TEMPLATES, REPORT_TEMPLATES, renderEmail, type ReportLine } from "@/lib/email/templates";
 import { companyTime } from "@/lib/company-time";
 import { appUrl, signLink } from "@/lib/email/links";
 
@@ -28,6 +28,8 @@ export const runtime = "nodejs";
 export const maxDuration = 60;
 
 const SENDER_EMAIL = "reports@tickd.co.za";
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
 function matches(given: string, want: string): boolean {
   const a = Buffer.from(given);
@@ -149,6 +151,30 @@ export async function GET(request: Request) {
         failed++;
         continue;
       }
+    }
+    // An invoice, quote, statement or reminder links to a page that shows the
+    // document as it is now. A link that is gone (expired, withdrawn, its
+    // invoice voided) cannot be sent; one that could not be looked up is tried
+    // again on the next run.
+    if (DOCUMENT_TEMPLATES.has(m.template)) {
+      const linkId = typeof payload.link_id === "string" ? payload.link_id : "";
+      if (!UUID.test(linkId)) {
+        await finish({ p_id: m.id, p_ok: false, p_error: "The email has no document to link to", p_permanent: true });
+        failed++;
+        continue;
+      }
+      const { data: view, error: lookupError } = await admin.rpc("document_link_view", { p_link_id: linkId });
+      if (lookupError) {
+        await finish({ p_id: m.id, p_ok: false, p_error: `The document could not be looked up: ${lookupError.message}` });
+        failed++;
+        continue;
+      }
+      if (!view) {
+        await finish({ p_id: m.id, p_ok: false, p_error: "The link expired or was withdrawn", p_permanent: true });
+        failed++;
+        continue;
+      }
+      payload = { ...payload, url: `${appUrl()}/c/doc/${signLink("doc", linkId)}` };
     }
     // Alerts carry everything they show; the links need the app's address.
     if (ALERT_TEMPLATES.has(m.template)) payload = { ...payload, app_url: appUrl() };

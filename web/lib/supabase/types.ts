@@ -317,6 +317,47 @@ export type Database = {
         }
         Relationships: []
       }
+      document_links: {
+        Row: {
+          id: string
+          org_id: string
+          kind: string
+          invoice_id: string | null
+          quote_id: string | null
+          store_id: string | null
+          customer_name: string | null
+          period_from: string | null
+          period_to: string | null
+          created_by: string | null
+          created_at: string
+          expires_at: string
+          revoked_at: string | null
+          opened_at: string | null
+          last_opened_at: string | null
+          open_count: number
+        }
+        Insert: never
+        Update: never
+        Relationships: []
+      }
+      document_sends: {
+        Row: {
+          id: string
+          org_id: string
+          kind: string
+          related_id: string | null
+          link_id: string
+          store_id: string | null
+          customer_name: string | null
+          to_address: string
+          outbox_id: string | null
+          created_by: string | null
+          created_at: string
+        }
+        Insert: never
+        Update: never
+        Relationships: []
+      }
       site_contacts: {
         Row: {
           id: string
@@ -327,6 +368,7 @@ export type Database = {
           phone: string | null
           role: string | null
           receives_reports: boolean
+          receives_accounts: boolean
           created_at: string
           updated_at: string
         }
@@ -339,6 +381,7 @@ export type Database = {
           phone?: string | null
           role?: string | null
           receives_reports?: boolean
+          receives_accounts?: boolean
           created_at?: string
           updated_at?: string
         }
@@ -351,6 +394,7 @@ export type Database = {
           phone?: string | null
           role?: string | null
           receives_reports?: boolean
+          receives_accounts?: boolean
           created_at?: string
           updated_at?: string
         }
@@ -7469,6 +7513,57 @@ export type Database = {
       debtors_ageing_json: {
         Args: { p_as_of?: string }
         Returns: Json
+      }
+      client_overdue_invoices: {
+        Args: { p_store_id: string | null; p_customer_name: string | null }
+        Returns: Json
+      }
+      send_invoice_email: {
+        Args: { p_invoice_id: string; p_to: string[]; p_note?: string | null; p_copy_me?: boolean }
+        Returns: Json
+      }
+      send_quote_email: {
+        Args: { p_quote_id: string; p_to: string[]; p_note?: string | null; p_copy_me?: boolean }
+        Returns: Json
+      }
+      send_statement_email: {
+        Args: {
+          p_store_id: string | null
+          p_customer_name: string | null
+          p_from: string
+          p_to: string
+          p_to_addrs: string[]
+          p_note?: string | null
+          p_copy_me?: boolean
+        }
+        Returns: Json
+      }
+      send_payment_reminder: {
+        Args: {
+          p_store_id: string | null
+          p_customer_name: string | null
+          p_to_addrs: string[]
+          p_tone: string
+          p_message: string
+          p_copy_me?: boolean
+        }
+        Returns: Json
+      }
+      document_sends_for: {
+        Args: { p_kind: string; p_related_id?: string | null; p_store_id?: string | null; p_customer_name?: string | null }
+        Returns: Json
+      }
+      document_send_summary: {
+        Args: { p_kind: string }
+        Returns: Json
+      }
+      document_link_view: {
+        Args: { p_link_id: string }
+        Returns: Json
+      }
+      document_link_opened: {
+        Args: { p_link_id: string }
+        Returns: undefined
       }
       statement_clients_json: {
         Args: { p_as_of?: string }

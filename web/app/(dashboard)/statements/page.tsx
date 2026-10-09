@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
-import { Download } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Download, Send } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -10,6 +10,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { StatementTable } from "@/components/money/statement-table";
 import { ErrorBanner } from "@/components/warehouse/stat-tile";
 import { ExportMenu } from "@/components/export-menu";
+import { SendDocumentDialog } from "@/components/send/send-document-dialog";
+import { fetchSendSummary, indexSummaries, shortDate, summaryForClient, type SendSummaries } from "@/lib/document-sends";
 import {
   downloadStatementPdf,
   fetchAgeing,
@@ -68,7 +70,23 @@ export default function StatementsPage() {
   const [result, setResult] = useState<Loaded | Failed | null>(null);
   const [pdfBusy, setPdfBusy] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [sending, setSending] = useState(false);
+  const [sent, setSent] = useState<SendSummaries | null>(null);
   const detailRef = useRef<HTMLDivElement>(null);
+
+  // When each statement was last sent. A note on each row: if it cannot be read, the rows stay as they were.
+  const loadSent = useCallback(async () => {
+    try {
+      setSent(indexSummaries(await fetchSendSummary(supabase, "statement")));
+    } catch {
+      setSent(null);
+    }
+  }, [supabase]);
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    loadSent();
+  }, [loadSent]);
 
   useEffect(() => {
     let cancelled = false;
@@ -158,11 +176,21 @@ export default function StatementsPage() {
       <div>
         <h1 className="text-xl font-semibold tracking-tight text-foreground">Statements</h1>
         <p className="text-sm text-muted-foreground">
-          {`Pick a ${lower(t.client.one)} and the dates, and download their statement.`}
+          {`Pick a ${lower(t.client.one)} and the dates, and send or download their statement.`}
         </p>
       </div>
 
       <ErrorBanner message={listError ?? actionError} />
+
+      <SendDocumentDialog
+        target={
+          sending && selected && loaded
+            ? { kind: "statement", clientName: selected.client_name, storeId: selected.store_id, from: loaded.from, to: loaded.to }
+            : null
+        }
+        onClose={() => setSending(false)}
+        onSent={loadSent}
+      />
 
       <div className="grid items-start gap-6 lg:grid-cols-[22rem_minmax(0,1fr)]">
         <section aria-label={t.client.many} className="overflow-hidden rounded-xl ring-1 ring-foreground/10">
@@ -194,6 +222,7 @@ export default function StatementsPage() {
               {visible.map((c) => {
                 const k = clientKey(c);
                 const state = balanceState(c.balance);
+                const lastSent = sent ? summaryForClient(sent, { storeId: c.store_id, name: c.client_name }) : undefined;
                 return (
                   <li key={k}>
                     <button
@@ -209,6 +238,9 @@ export default function StatementsPage() {
                         <span className="block text-xs text-muted-foreground">
                           {`${c.invoices} invoice${c.invoices === 1 ? "" : "s"} · last activity ${c.last_date}`}
                         </span>
+                        {lastSent && (
+                          <span className="block text-xs text-muted-foreground">{`Last sent ${shortDate(lastSent.lastSentAt)}`}</span>
+                        )}
                       </span>
                       <span className="shrink-0 text-right text-sm tabular-nums">
                         {state === "settled" ? (
@@ -299,7 +331,10 @@ export default function StatementsPage() {
                         <p className="mt-1 text-2xl font-semibold tabular-nums">{m(closing)}</p>
                       </div>
                       <div className="flex flex-wrap items-center gap-2">
-                        <Button disabled={pdfBusy} onClick={statementPdf}>
+                        <Button onClick={() => setSending(true)}>
+                          <Send className="mr-1.5 h-4 w-4" /> Send to client
+                        </Button>
+                        <Button variant="outline" disabled={pdfBusy} onClick={statementPdf}>
                           <Download className="mr-1.5 h-4 w-4" />
                           {pdfBusy ? "Preparing…" : "Download PDF"}
                         </Button>

@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { Download, Trash2 } from "lucide-react";
+import { Download, Send, Trash2 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -20,6 +20,9 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { ErrorBanner } from "@/components/warehouse/stat-tile";
+import { SendDocumentDialog } from "@/components/send/send-document-dialog";
+import { SentLines } from "@/components/send/sent-lines";
+import { fetchSendsFor, type SendRow } from "@/lib/document-sends";
 import {
   deletePayment,
   downloadCreditNotePdf,
@@ -62,6 +65,8 @@ export default function InvoiceDetailPage() {
   const [detail, setDetail] = useState<InvoiceDetail | null>(null);
   const [proof, setProof] = useState<ProofRow[] | null>(null);
   const [panel, setPanel] = useState<"pay" | "credit" | "void" | null>(null);
+  const [sending, setSending] = useState(false);
+  const [sends, setSends] = useState<SendRow[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -89,6 +94,20 @@ export default function InvoiceDetailPage() {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     load();
   }, [load]);
+
+  // Where it has been sent. Only a note under the header: if it cannot be read, the page goes on without it.
+  const loadSends = useCallback(async () => {
+    try {
+      setSends(await fetchSendsFor(supabase, "invoice", id));
+    } catch {
+      setSends([]);
+    }
+  }, [supabase, id]);
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    loadSends();
+  }, [loadSends]);
 
   async function run(fn: () => Promise<void>) {
     setBusy(true);
@@ -167,8 +186,16 @@ export default function InvoiceDetailPage() {
               </>
             )}
           </p>
+          <div className="mt-1.5">
+            <SentLines rows={sends} />
+          </div>
         </div>
         <div className="flex flex-wrap gap-2">
+          {live && (
+            <Button onClick={() => setSending(true)}>
+              <Send className="mr-1.5 h-4 w-4" /> Send to client
+            </Button>
+          )}
           <Button variant="outline" onClick={() => downloadInvoicePdf(detail)}>
             <Download className="mr-1.5 h-4 w-4" /> PDF
           </Button>
@@ -191,6 +218,23 @@ export default function InvoiceDetailPage() {
       </div>
 
       <ErrorBanner message={error} />
+
+      <SendDocumentDialog
+        target={
+          sending
+            ? {
+                kind: "invoice",
+                id: inv.id,
+                number: inv.invoice_number,
+                clientName: inv.customer_name,
+                storeId: inv.store_id,
+                email: inv.customer_email,
+              }
+            : null
+        }
+        onClose={() => setSending(false)}
+        onSent={loadSends}
+      />
 
       {inv.status === "void" && (
         <p className="rounded-lg border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive">

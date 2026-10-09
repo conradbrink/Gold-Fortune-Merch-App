@@ -1,6 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database, Json } from "@/lib/supabase/types";
-import { drawMoneyPdf, money } from "@/lib/money-pdf";
+import { drawMoneyPdf, money, type PdfSpec } from "@/lib/money-pdf";
 import { formatQty } from "@/lib/money-docs";
 import { periodLabel } from "@/lib/contract-periods";
 
@@ -339,7 +339,8 @@ function totalsOf(inv: Invoice, subtotal: number, vat: number, total: number, cr
 
 const qtyCell = (qty: number, unit: string | null | undefined) => (unit ? `${formatQty(qty)} ${unit}` : formatQty(qty));
 
-export async function downloadInvoicePdf(detail: InvoiceDetail) {
+/** The invoice as the PDF drawer takes it; pure, so the client's page builds the same one from its own data. */
+export function invoicePdfSpec(detail: Pick<InvoiceDetail, "invoice" | "lines" | "visits">): PdfSpec {
   const inv = detail.invoice;
   const meta: [string, string][] = [
     ["Invoice no", inv.invoice_number],
@@ -360,7 +361,7 @@ export async function downloadInvoicePdf(detail: InvoiceDetail) {
         .join(", ")}.`
     );
   }
-  await drawMoneyPdf({
+  return {
     heading: invoiceHeading(inv),
     fileName: inv.invoice_number,
     seller: sellerOf(inv),
@@ -379,16 +380,20 @@ export async function downloadInvoicePdf(detail: InvoiceDetail) {
     notes,
     payTo: inv.bank_details,
     footer: inv.footer,
-  });
+  };
 }
 
-export async function downloadCreditNotePdf(
-  detail: InvoiceDetail,
+export async function downloadInvoicePdf(detail: InvoiceDetail) {
+  await drawMoneyPdf(invoicePdfSpec(detail));
+}
+
+export function creditNotePdfSpec(
+  detail: Pick<InvoiceDetail, "invoice" | "lines">,
   credit: CreditNote & { lines: CreditNoteLine[] }
-) {
+): PdfSpec {
   const byId = new Map(detail.lines.map((l) => [l.id, l]));
   const inv = detail.invoice;
-  await drawMoneyPdf({
+  return {
     heading: "CREDIT NOTE",
     fileName: credit.credit_number,
     seller: sellerOf(inv),
@@ -413,7 +418,14 @@ export async function downloadCreditNotePdf(
     totals: totalsOf(inv, Number(credit.subtotal), Number(credit.vat), Number(credit.total), true),
     notes: [`Reason: ${credit.reason}`],
     footer: inv.footer,
-  });
+  };
+}
+
+export async function downloadCreditNotePdf(
+  detail: InvoiceDetail,
+  credit: CreditNote & { lines: CreditNoteLine[] }
+) {
+  await drawMoneyPdf(creditNotePdfSpec(detail, credit));
 }
 
 const PROOF_STATUS: Record<string, string> = { done: "Done", caught_up: "Caught up later", missed: "Missed" };
