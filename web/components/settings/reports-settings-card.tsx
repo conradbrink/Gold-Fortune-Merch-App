@@ -74,14 +74,21 @@ export function ReportsSettingsCard({ orgId, canEdit }: { orgId: string; canEdit
   async function resetToTrade() {
     setBusy(true);
     setError(null);
+    try {
+      await loadTradeDefaults();
+    } catch (e) {
+      setError(`Your trade's settings could not be read (${e instanceof Error ? e.message : String(e)}). Nothing was changed.`);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function loadTradeDefaults() {
     const supabase = createClient();
     // Any failed lookup stops here: falling back to the defaults would save
     // distribution's tabs as a service trade's own.
     const { data: org, error: orgError } = await supabase.from("organizations").select("industries").eq("id", orgId).single();
-    if (orgError) {
-      setBusy(false);
-      return setError(`Your trade could not be read (${orgError.message}). Nothing was changed.`);
-    }
+    if (orgError) return setError(`Your trade could not be read (${orgError.message}). Nothing was changed.`);
     const trade = (org as { industries: string[] | null } | null)?.industries?.[0] ?? null;
     const [{ data: rows, error: rowsError }, { data: defs, error: defsError }] = await Promise.all([
       trade
@@ -96,7 +103,6 @@ export function ReportsSettingsCard({ orgId, canEdit }: { orgId: string; canEdit
         .select("key, default_value")
         .in("key", ["report_tabs", "report_short_day_hours", "report_long_day_hours"]),
     ]);
-    setBusy(false);
     const failed = rowsError ?? defsError;
     if (failed) return setError(`Your trade's settings could not be read (${failed.message}). Nothing was changed.`);
     const value = (key: string) =>

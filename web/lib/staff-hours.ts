@@ -4,6 +4,7 @@ import type { DateRange } from "@/lib/date-range";
 import type { ExportSheet } from "@/lib/export";
 import type { Terms } from "@/lib/terms";
 import { companyTime } from "@/lib/company-time";
+import { allPages } from "@/lib/all-pages";
 
 /**
  * Hours: one row per person per day, from the workday they started and the
@@ -14,12 +15,15 @@ import { companyTime } from "@/lib/company-time";
 export type StaffHoursRow = Database["public"]["Functions"]["staff_hours"]["Returns"][number];
 
 export async function fetchStaffHours(supabase: SupabaseClient<Database>, range: DateRange): Promise<StaffHoursRow[]> {
-  const { data, error } = await supabase.rpc("staff_hours", {
-    p_from: range.from.toISOString(),
-    p_to: range.to.toISOString(),
-  });
-  if (error) throw new Error(error.message);
-  return data ?? [];
+  // Every row, in pages: newest day first, a person and a day being unique.
+  return allPages((from, to) =>
+    supabase
+      .rpc("staff_hours", { p_from: range.from.toISOString(), p_to: range.to.toISOString() })
+      .order("day", { ascending: false })
+      .order("staff_name")
+      .order("staff_id")
+      .range(from, to)
+  );
 }
 
 export type DayMark = "short" | "long" | null;

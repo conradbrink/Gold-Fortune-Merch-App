@@ -30,10 +30,18 @@ function offsetAt(timeZone: string, at: number): number {
 export function companyMidnight(day: string, timeZone: string): Date {
   const [y, m, d] = day.split("-").map(Number);
   const guess = Date.UTC(y, m - 1, d);
-  let at = guess - offsetAt(timeZone, guess);
-  // Across a daylight-saving change the offset at midnight differs from the guess's.
-  at = guess - offsetAt(timeZone, at);
-  return new Date(at);
+  // The two offsets either side of a daylight-saving change give two
+  // candidates; the day starts at the earlier one that falls on it. Where the
+  // clocks jump from 00:00 to 01:00 (Santiago, September) midnight never
+  // happens and the day starts at 01:00.
+  const first = guess - offsetAt(timeZone, guess);
+  const second = guess - offsetAt(timeZone, first);
+  const onDay = [first, second].filter((at) => localDate(timeZone, at) === day);
+  return new Date(onDay.length > 0 ? Math.min(...onDay) : Math.max(first, second));
+}
+
+function localDate(timeZone: string, at: number): string {
+  return new Intl.DateTimeFormat("en-CA", { timeZone, year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(at));
 }
 
 /**

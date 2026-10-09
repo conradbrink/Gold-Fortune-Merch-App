@@ -7,6 +7,7 @@ import { fileSlug } from "@/lib/export-filename";
 import { drawMoneyPdf } from "@/lib/money-pdf";
 import { fetchQuoteSeller } from "@/lib/quotes";
 import { companyTime } from "@/lib/company-time";
+import { allPages } from "@/lib/all-pages";
 
 /**
  * Proof of service: every finished {job} in a period, per {site}, with what
@@ -21,13 +22,16 @@ export async function fetchServiceLog(
   range: DateRange,
   storeId: string | null
 ): Promise<ServiceLogRow[]> {
-  const { data, error } = await supabase.rpc("service_log", {
-    p_from: range.from.toISOString(),
-    p_to: range.to.toISOString(),
-    p_store_id: storeId,
-  });
-  if (error) throw new Error(error.message);
-  return data ?? [];
+  // Every row, in pages, in the report's order with the job as the tie-break.
+  return allPages((from, to) =>
+    supabase
+      .rpc("service_log", { p_from: range.from.toISOString(), p_to: range.to.toISOString(), p_store_id: storeId })
+      .order("store_name")
+      .order("store_id")
+      .order("checkin_at")
+      .order("visit_id")
+      .range(from, to)
+  );
 }
 
 export type ServiceLogTotals = {
