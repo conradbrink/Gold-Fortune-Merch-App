@@ -5,7 +5,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { canReachPath, moduleForPath, toModuleSet } from "@/lib/modules";
-import { homeFor, toPermissionSet } from "@/lib/permissions";
+import { canAccessPath, homeFor, toPermissionSet } from "@/lib/permissions";
 import { visibleNavGroups } from "@/components/layout/nav-items";
 import { formatMoney, formatMoneyShort } from "@/lib/money";
 import { parseTerms, type Terms } from "@/lib/terms";
@@ -38,6 +38,8 @@ test("each gated page belongs to its module, and anything else is core", () => {
   assert.equal(moduleForPath("/stores"), "core");
   assert.equal(moduleForPath("/schedule"), "core");
   assert.equal(moduleForPath("/tracking"), "core");
+  assert.equal(moduleForPath("/logbook"), "vehicle_logbook");
+  assert.equal(moduleForPath("/logbook/vehicles"), "vehicle_logbook");
 });
 
 test("prefixes match whole segments only", () => {
@@ -125,6 +127,17 @@ test("the sidebar names things in the company's words", () => {
   assert.equal(gf.get("/leads"), "Leads");
   // Words that are not terms stay as written.
   assert.equal(gf.get("/orders"), "Orders");
+});
+
+test("the vehicle logbook is offered with its module, to those who read the km", () => {
+  const items = (permissions: string[], modules: ReturnType<typeof toModuleSet>) =>
+    visibleNavGroups(toPermissionSet(permissions), modules).flatMap((g) => g.items.map((i) => i.href));
+  const withLogbook = toModuleSet({ vehicle_logbook: true });
+  assert.ok(items(["insights"], withLogbook).includes("/logbook"));
+  assert.ok(!items(["insights"], coreOnly).includes("/logbook"));
+  assert.ok(!items(["field_ops", "workday"], withLogbook).includes("/logbook"));
+  assert.ok(!canAccessPath(toPermissionSet(["field_ops"]), "/logbook/vehicles"));
+  assert.ok(canAccessPath(toPermissionSet(["insights"]), "/logbook/vehicles"));
 });
 
 test("money is the company's currency, written as the business writes it", () => {
