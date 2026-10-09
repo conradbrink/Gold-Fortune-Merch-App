@@ -77,8 +77,10 @@ test("a contact's phone may be a landline, kept in international form", () => {
 test("a contact needs a name and an email or a phone, each valid", () => {
   assert.deepEqual(checkContact({ ...EMPTY_CONTACT, name: "Nomsa", email: " Nomsa@Example.com " }, "ZA"), {
     ok: true,
-    row: { name: "Nomsa", email: "nomsa@example.com", phone: null, role: null, receives_reports: true },
+    row: { name: "Nomsa", email: "nomsa@example.com", phone: null, role: null, receives_reports: true, receives_accounts: false },
   });
+  const accounts = checkContact({ ...EMPTY_CONTACT, name: "Accounts", email: "a@b.com", receivesReports: false, receivesAccounts: true }, "ZA");
+  assert.ok(accounts.ok && accounts.row.receives_accounts && !accounts.row.receives_reports);
   const none = checkContact({ ...EMPTY_CONTACT, name: "Nomsa" }, "ZA");
   assert.equal(none.ok, false);
   assert.ok(!none.ok && none.errors.email);

@@ -20,6 +20,7 @@ import {
 } from "@/components/ui/table";
 import { ErrorBanner, EmptyRow } from "@/components/warehouse/stat-tile";
 import { exportCsv } from "@/lib/export";
+import { fetchSendSummary, indexSummaries, sentCell, type SendSummaries } from "@/lib/document-sends";
 import { useCompanyConfig, useTerms } from "@/lib/use-company-config";
 import { lower } from "@/lib/terms";
 import {
@@ -72,6 +73,23 @@ export default function InvoicesPage() {
   const [pay, setPay] = useState("all");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [sent, setSent] = useState<SendSummaries | null>(null);
+
+  // When each invoice was last sent. A column of notes: if it cannot be read, it stays blank.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const r = await fetchSendSummary(supabase, "invoice");
+        if (!cancelled) setSent(indexSummaries(r));
+      } catch {
+        if (!cancelled) setSent(null);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [supabase]);
 
   useEffect(() => {
     let cancelled = false;
@@ -233,12 +251,13 @@ export default function InvoicesPage() {
               <TableHead className="text-right">Total</TableHead>
               <TableHead className="text-right">Outstanding</TableHead>
               <TableHead>Status</TableHead>
+              <TableHead className="hidden sm:table-cell">Sent</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
-            {loading && <EmptyRow colSpan={7}>Loading…</EmptyRow>}
+            {loading && <EmptyRow colSpan={8}>Loading…</EmptyRow>}
             {!loading && visible.length === 0 && (
-              <EmptyRow colSpan={7}>
+              <EmptyRow colSpan={8}>
                 {rows.length === 0 ? (
                   sells && !canStart ? (
                     <>
@@ -277,6 +296,9 @@ export default function InvoicesPage() {
                       {overdue && st !== "void" ? "Overdue" : PAYMENT_STATUS_LABELS[st]}
                     </Badge>
                   </TableCell>
+                  <TableCell className="hidden whitespace-nowrap sm:table-cell">
+                    <SentCell cell={sentCell(sent?.byDocument.get(r.id))} />
+                  </TableCell>
                 </TableRow>
               );
             })}
@@ -284,6 +306,18 @@ export default function InvoicesPage() {
         </Table>
       </div>
     </div>
+  );
+}
+
+/** When it was last emailed to the client; blank if it never was. */
+function SentCell({ cell }: { cell: ReturnType<typeof sentCell> }) {
+  if (!cell) return null;
+  return (
+    <span className="text-sm text-muted-foreground">
+      {cell.date}
+      {cell.opened && <span className="text-foreground">{" · Opened"}</span>}
+      {cell.problem && <span className="text-destructive">{" · Not delivered"}</span>}
+    </span>
   );
 }
 

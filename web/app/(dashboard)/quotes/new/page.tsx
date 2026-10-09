@@ -79,6 +79,8 @@ export default function NewQuotePage() {
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  // Which button was pressed, so only that one says it is saving.
+  const [savingToSend, setSavingToSend] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -139,7 +141,8 @@ export default function NewQuotePage() {
     setProductLines((prev) => prev.map((l) => (l.productId === productId ? { ...l, ...patch } : l)));
   }
 
-  async function save() {
+  /** Saves the quote; "Save and send" then opens it with the send box ready. */
+  async function save(thenSend = false) {
     setError(null);
     if (!orgId || !doc) return;
     const who = billToProblem(billTo, t);
@@ -187,6 +190,7 @@ export default function NewQuotePage() {
       ),
     ];
     setSaving(true);
+    setSavingToSend(thenSend);
     try {
       const id = await createQuote(supabase, {
         orgId,
@@ -203,7 +207,7 @@ export default function NewQuotePage() {
         notes,
         lines: all,
       });
-      router.push(`/quotes/${id}`);
+      router.push(thenSend ? `/quotes/${id}?send=1` : `/quotes/${id}`);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
       setSaving(false);
@@ -404,12 +408,15 @@ export default function NewQuotePage() {
         </CardContent>
       </Card>
 
-      <div className="flex justify-end gap-2">
+      <div className="flex flex-wrap justify-end gap-2">
         <Button variant="outline" nativeButton={false} render={<Link href="/quotes" />}>
           Cancel
         </Button>
-        <Button onClick={save} disabled={saving || loading}>
-          {saving ? "Saving…" : "Save quote"}
+        <Button variant="outline" onClick={() => save()} disabled={saving || loading}>
+          {saving && !savingToSend ? "Saving…" : "Save quote"}
+        </Button>
+        <Button onClick={() => save(true)} disabled={saving || loading}>
+          {saving && savingToSend ? "Saving…" : "Save and send"}
         </Button>
       </div>
     </div>

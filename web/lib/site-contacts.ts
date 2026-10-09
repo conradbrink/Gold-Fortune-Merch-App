@@ -15,11 +15,27 @@ export type SiteContact = {
   phone: string | null;
   role: string | null;
   receives_reports: boolean;
+  /** Gets the invoices, quotes, statements and payment reminders sent to the client. */
+  receives_accounts: boolean;
 };
 
-export type ContactDraft = { name: string; email: string; phone: string; role: string; receivesReports: boolean };
+export type ContactDraft = {
+  name: string;
+  email: string;
+  phone: string;
+  role: string;
+  receivesReports: boolean;
+  receivesAccounts: boolean;
+};
 
-export const EMPTY_CONTACT: ContactDraft = { name: "", email: "", phone: "", role: "", receivesReports: true };
+export const EMPTY_CONTACT: ContactDraft = {
+  name: "",
+  email: "",
+  phone: "",
+  role: "",
+  receivesReports: true,
+  receivesAccounts: false,
+};
 
 export function contactPhone(raw: string, countryCode: string | null | undefined): string | null {
   const typed = raw.trim().replace(/^00/, "+");
@@ -34,7 +50,17 @@ export function checkContact(
   d: ContactDraft,
   countryCode: string | null | undefined
 ):
-  | { ok: true; row: { name: string; email: string | null; phone: string | null; role: string | null; receives_reports: boolean } }
+  | {
+      ok: true;
+      row: {
+        name: string;
+        email: string | null;
+        phone: string | null;
+        role: string | null;
+        receives_reports: boolean;
+        receives_accounts: boolean;
+      };
+    }
   | { ok: false; errors: Partial<Record<"name" | "email" | "phone" | "role", string>> } {
   const errors: Partial<Record<"name" | "email" | "phone" | "role", string>> = {};
   const name = d.name.trim();
@@ -50,6 +76,13 @@ export function checkContact(
   if (Object.keys(errors).length) return { ok: false, errors };
   return {
     ok: true,
-    row: { name, email: email || null, phone, role: d.role.trim() || null, receives_reports: d.receivesReports },
+    row: {
+      name,
+      email: email || null,
+      phone,
+      role: d.role.trim() || null,
+      receives_reports: d.receivesReports,
+      receives_accounts: d.receivesAccounts,
+    },
   };
 }

@@ -1,7 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/lib/supabase/types";
 import { documentTotals, formatQty, lineTotal } from "@/lib/money-docs";
-import { drawMoneyPdf, money } from "@/lib/money-pdf";
+import { drawMoneyPdf, money, type PdfSpec } from "@/lib/money-pdf";
 
 /**
  * Everything the quote screens read and do.
@@ -150,7 +150,10 @@ export async function fetchQuote(supabase: Client, id: string): Promise<QuoteDet
 }
 
 /** The quote's own totals, in its VAT basis. */
-export function quoteTotals(detail: Pick<QuoteDetail, "quote" | "lines">) {
+export function quoteTotals(detail: {
+  quote: Pick<QuoteRow, "vat_rate" | "prices_include_vat">;
+  lines: { qty: number; unit_price: number | null }[];
+}) {
   return documentTotals(
     detail.lines.map((l) => ({ qty: Number(l.qty), unitPrice: Number(l.unit_price ?? 0) })),
     Number(detail.quote.vat_rate),
@@ -336,7 +339,18 @@ export async function fetchQuoteSeller(supabase: Client): Promise<QuoteSeller> {
   return data as QuoteSeller;
 }
 
-export async function downloadQuotePdf(detail: QuoteDetail, seller: QuoteSeller) {
+/** What the quote's PDF reads from a quote: pure, so the client's page builds the same one from its own data. */
+export type QuotePdfInput = {
+  quote: Pick<
+    QuoteRow,
+    "quote_number" | "created_at" | "valid_until" | "customer_name" | "customer_address" | "delivery_address" | "contact_email" | "vat_rate" | "prices_include_vat" | "notes"
+  >;
+  storeName: string | null;
+  storeAddress: string | null;
+  lines: { label: string; brand: string | null; unit: string | null; qty: number; unit_price: number | null }[];
+};
+
+export function quotePdfSpec(detail: QuotePdfInput, seller: QuoteSeller): PdfSpec {
   const q = detail.quote;
   const totals = quoteTotals(detail);
   const rate = Number(q.vat_rate);
@@ -345,7 +359,7 @@ export async function downloadQuotePdf(detail: QuoteDetail, seller: QuoteSeller)
     ["Date", q.created_at.slice(0, 10)],
   ];
   if (q.valid_until) meta.push(["Valid until", q.valid_until]);
-  await drawMoneyPdf({
+  return {
     heading: "QUOTE",
     fileName: q.quote_number,
     seller: {
@@ -383,5 +397,9 @@ export async function downloadQuotePdf(detail: QuoteDetail, seller: QuoteSeller)
           ],
     notes: q.notes ? [q.notes] : [],
     payTo: seller.bank_details,
-  });
+  };
+}
+
+export async function downloadQuotePdf(detail: QuoteDetail, seller: QuoteSeller) {
+  await drawMoneyPdf(quotePdfSpec(detail, seller));
 }

@@ -1,8 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
+import { Send } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -19,6 +20,9 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { ErrorBanner } from "@/components/warehouse/stat-tile";
+import { SendDocumentDialog } from "@/components/send/send-document-dialog";
+import { SentLines } from "@/components/send/sent-lines";
+import { fetchSendsFor, type SendRow } from "@/lib/document-sends";
 import {
   convertQuote,
   deleteQuote,
@@ -60,6 +64,8 @@ export default function QuoteDetailPage() {
   const [error, setError] = useState<string | null>(null);
   const [depositKind, setDepositKind] = useState<"percent" | "amount">("percent");
   const [depositValue, setDepositValue] = useState("50");
+  const [sending, setSending] = useState(false);
+  const [sends, setSends] = useState<SendRow[]>([]);
 
   const load = useCallback(async () => {
     try {
@@ -74,6 +80,34 @@ export default function QuoteDetailPage() {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     load();
   }, [load]);
+
+  // Where it has been sent. Only a note under the header: if it cannot be read, the page goes on without it.
+  const loadSends = useCallback(async () => {
+    try {
+      setSends(await fetchSendsFor(supabase, "quote", id));
+    } catch {
+      setSends([]);
+    }
+  }, [supabase, id]);
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    loadSends();
+  }, [loadSends]);
+
+  // "Save and send" on the new quote form lands here with ?send=1: open the
+  // send box once the quote is on screen, and take the mark out of the address
+  // so a refresh does not open it again.
+  const status = detail?.quote.status;
+  const askedToSend = useRef(false);
+  useEffect(() => {
+    if (!status || askedToSend.current) return;
+    askedToSend.current = true;
+    if (new URLSearchParams(window.location.search).get("send") !== "1") return;
+    window.history.replaceState(null, "", window.location.pathname);
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (status !== "declined") setSending(true);
+  }, [status]);
 
   async function run(action: () => Promise<void>) {
     setBusy(true);
@@ -150,8 +184,16 @@ export default function QuoteDetailPage() {
             </Badge>
           </div>
           <p className="text-sm text-muted-foreground">{quoteClientName(q, detail.storeName)}</p>
+          <div className="mt-1.5">
+            <SentLines rows={sends} />
+          </div>
         </div>
         <div className="flex flex-wrap gap-2">
+          {q.status !== "declined" && (
+            <Button variant={q.status === "draft" ? "default" : "outline"} disabled={busy} onClick={() => setSending(true)}>
+              <Send className="mr-1.5 h-4 w-4" /> Send quote
+            </Button>
+          )}
           <Button
             variant="outline"
             disabled={busy}
@@ -164,7 +206,7 @@ export default function QuoteDetailPage() {
             Download PDF
           </Button>
           {q.status === "draft" && (
-            <Button variant="outline" disabled={busy} onClick={() => setStatus("sent")}>
+            <Button variant="ghost" disabled={busy} onClick={() => setStatus("sent")}>
               Mark as sent
             </Button>
           )}
@@ -221,6 +263,26 @@ export default function QuoteDetailPage() {
       </div>
 
       <ErrorBanner message={error} />
+
+      <SendDocumentDialog
+        target={
+          sending
+            ? {
+                kind: "quote",
+                id: q.id,
+                number: q.quote_number,
+                clientName: quoteClientName(q, detail.storeName),
+                storeId: q.store_id,
+                email: q.contact_email,
+              }
+            : null
+        }
+        onClose={() => setSending(false)}
+        onSent={() => {
+          void load();
+          void loadSends();
+        }}
+      />
 
       {q.converted_order_id && (
         <p className="rounded-lg border border-border bg-muted/40 p-3 text-sm">

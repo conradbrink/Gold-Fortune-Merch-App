@@ -1,6 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/lib/supabase/types";
-import { drawMoneyPdf, money } from "@/lib/money-pdf";
+import { drawMoneyPdf, money, type PdfSpec } from "@/lib/money-pdf";
 import { AGEING_COLUMNS } from "@/lib/money-docs";
 import type { ExportSheet } from "@/lib/export";
 
@@ -152,15 +152,15 @@ export async function fetchStatementSeller(supabase: Client): Promise<StatementS
   return data as StatementSeller;
 }
 
-export async function downloadStatementPdf(
+export function statementPdfSpec(
   seller: StatementSeller,
   client: StatementClient & { address?: string | null },
   from: string,
   to: string,
   rows: StatementRow[]
-) {
+): PdfSpec {
   const closing = rows.length ? rows[rows.length - 1].balance : 0;
-  await drawMoneyPdf({
+  return {
     heading: "STATEMENT",
     fileName: `Statement ${client.name} ${to}`,
     seller: {
@@ -192,5 +192,15 @@ export async function downloadStatementPdf(
     ]),
     totals: [["Balance due", money(closing)]],
     payTo: seller.bank_details,
-  });
+  };
+}
+
+export async function downloadStatementPdf(
+  seller: StatementSeller,
+  client: StatementClient & { address?: string | null },
+  from: string,
+  to: string,
+  rows: StatementRow[]
+) {
+  await drawMoneyPdf(statementPdfSpec(seller, client, from, to, rows));
 }

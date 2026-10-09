@@ -1,10 +1,11 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { Download } from "lucide-react";
+import { Download, Send } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -19,6 +20,9 @@ import {
 import { StatementTable } from "@/components/money/statement-table";
 import { ErrorBanner, EmptyRow } from "@/components/warehouse/stat-tile";
 import { ExportMenu } from "@/components/export-menu";
+import { ReminderDialog } from "@/components/send/reminder-dialog";
+import { SendDocumentDialog } from "@/components/send/send-document-dialog";
+import { fetchSendSummary, indexSummaries, relativeTime, summaryForClient, type SendSummaries } from "@/lib/document-sends";
 import {
   ageingTotals,
   downloadStatementPdf,
@@ -68,6 +72,28 @@ export default function OwedPage() {
   const statementSeq = useRef(0);
   const [busy, setBusy] = useState(false);
 
+  // Reminders are sent by a person, one client at a time, each message read first.
+  // `queue` is who is being reminded now: one client, or the ticked ones in turn.
+  const [ticked, setTicked] = useState<Set<string>>(new Set());
+  const [queue, setQueue] = useState<AgeingRow[] | null>(null);
+  const [step, setStep] = useState(0);
+  const [sendingStatement, setSendingStatement] = useState(false);
+  const [reminded, setReminded] = useState<SendSummaries | null>(null);
+
+  // When each client was last reminded. A note on each row: if it cannot be read, the rows stay as they were.
+  const loadReminded = useCallback(async () => {
+    try {
+      setReminded(indexSummaries(await fetchSendSummary(supabase, "reminder")));
+    } catch {
+      setReminded(null);
+    }
+  }, [supabase]);
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    loadReminded();
+  }, [loadReminded]);
+
   useEffect(() => {
     let cancelled = false;
     // The balances belong to their date: nothing from the previous date stays
@@ -95,6 +121,31 @@ export default function OwedPage() {
 
   const totals = ageingTotals(rows);
   const statementClient = client ? { storeId: client.store_id, name: client.client_name } : null;
+  // Only clients who are past their due date can be reminded.
+  const remindable = useMemo(() => rows.filter((r) => r.total - r.not_due > 0.004), [rows]);
+  const tickedRows = remindable.filter((r) => ticked.has(rowKey(r)));
+  const allTicked = remindable.length > 0 && tickedRows.length === remindable.length;
+  const reminding = queue ? queue[step] : null;
+
+  function tick(r: AgeingRow, on: boolean) {
+    setTicked((prev) => {
+      const next = new Set(prev);
+      if (on) next.add(rowKey(r));
+      else next.delete(rowKey(r));
+      return next;
+    });
+  }
+
+  function endReminders(finished: boolean) {
+    setQueue(null);
+    setStep(0);
+    if (finished) setTicked(new Set());
+  }
+
+  function nextReminder() {
+    if (queue && step + 1 < queue.length) setStep(step + 1);
+    else endReminders(true);
+  }
 
   async function openStatement(row: AgeingRow) {
     const n = ++statementSeq.current;
@@ -156,16 +207,65 @@ export default function OwedPage() {
 
       <ErrorBanner message={error} />
 
+      <ReminderDialog
+        client={reminding ? { storeId: reminding.store_id, name: reminding.client_name } : null}
+        progress={queue && queue.length > 1 ? { position: step + 1, total: queue.length, onNext: nextReminder } : undefined}
+        onClose={() => endReminders(false)}
+        onSent={loadReminded}
+      />
+      <SendDocumentDialog
+        target={
+          sendingStatement && client && statement
+            ? { kind: "statement", clientName: client.client_name, storeId: client.store_id, from: statement.from, to: statement.to }
+            : null
+        }
+        onClose={() => setSendingStatement(false)}
+      />
+
       <div className="grid gap-3 sm:grid-cols-3">
         <Tile label="Outstanding" value={m(totals.total)} />
         <Tile label="Overdue" value={m(totals.total - totals.not_due)} loud={totals.total - totals.not_due > 0} />
         <Tile label="Over 90 days" value={m(totals.days_over_90)} loud={totals.days_over_90 > 0} />
       </div>
 
+      {remindable.length > 0 && (
+        <div className="flex min-h-8 flex-wrap items-center gap-2">
+          {tickedRows.length > 0 ? (
+            <>
+              <Button
+                size="sm"
+                onClick={() => {
+                  setStep(0);
+                  setQueue(tickedRows);
+                }}
+              >
+                <Send className="mr-1.5 h-3.5 w-3.5" /> {`Remind selected (${tickedRows.length})`}
+              </Button>
+              <Button size="sm" variant="ghost" onClick={() => setTicked(new Set())}>
+                Clear
+              </Button>
+            </>
+          ) : (
+            <p className="text-sm text-muted-foreground">
+              {`Tick the ${lower(t.client.many)} to remind, and you read each message before it goes.`}
+            </p>
+          )}
+        </div>
+      )}
+
       <div className="overflow-x-auto rounded-xl ring-1 ring-foreground/10">
         <Table>
           <TableHeader>
             <TableRow>
+              <TableHead className="w-10">
+                {remindable.length > 0 && (
+                  <Checkbox
+                    checked={allTicked}
+                    aria-label={`Select every ${lower(t.client.one)} who is overdue`}
+                    onCheckedChange={(v) => setTicked(v === true ? new Set(remindable.map(rowKey)) : new Set())}
+                  />
+                )}
+              </TableHead>
               <TableHead>{t.client.one}</TableHead>
               {AGEING_COLUMNS.map((c) => (
                 <TableHead key={c.key} className="text-right">
@@ -177,39 +277,66 @@ export default function OwedPage() {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {loading && <EmptyRow colSpan={8}>Loading…</EmptyRow>}
+            {loading && <EmptyRow colSpan={9}>Loading…</EmptyRow>}
             {!loading && rows.length === 0 && (
-              <EmptyRow colSpan={8}>
+              <EmptyRow colSpan={9}>
                 {error ? "Could not load the balances for this date." : "Nobody owes you anything as at this date."}
               </EmptyRow>
             )}
-            {rows.map((r) => (
-              <TableRow key={`${r.store_id ?? ""}|${r.client_name}`}>
-                <TableCell>
-                  <span className="font-medium">{r.client_name}</span>
-                  <div className="text-xs text-muted-foreground">
-                    {r.invoices} invoice{r.invoices === 1 ? "" : "s"}
-                    {r.last_paid_on && ` · last paid ${r.last_paid_on}`}
-                  </div>
-                </TableCell>
-                {AGEING_COLUMNS.map((c) => (
-                  <TableCell
-                    key={c.key}
-                    className={`text-right tabular-nums ${c.key !== "not_due" && r[c.key] > 0 ? "text-destructive" : ""}`}
-                  >
-                    {r[c.key] > 0 ? m(r[c.key]) : "—"}
+            {rows.map((r) => {
+              const lastReminder = reminded ? summaryForClient(reminded, { storeId: r.store_id, name: r.client_name }) : undefined;
+              const canRemind = r.total - r.not_due > 0.004;
+              return (
+                <TableRow key={rowKey(r)}>
+                  <TableCell className="w-10">
+                    {canRemind && (
+                      <Checkbox
+                        checked={ticked.has(rowKey(r))}
+                        aria-label={`Select ${r.client_name}`}
+                        onCheckedChange={(v) => tick(r, v === true)}
+                      />
+                    )}
                   </TableCell>
-                ))}
-                <TableCell className="text-right font-medium tabular-nums">{m(r.total)}</TableCell>
-                <TableCell className="text-right">
-                  <Button variant="ghost" size="sm" disabled={busy} onClick={() => openStatement(r)}>
-                    Statement
-                  </Button>
-                </TableCell>
-              </TableRow>
-            ))}
+                  <TableCell>
+                    <span className="font-medium">{r.client_name}</span>
+                    <div className="text-xs text-muted-foreground">
+                      {r.invoices} invoice{r.invoices === 1 ? "" : "s"}
+                      {r.last_paid_on && ` · last paid ${r.last_paid_on}`}
+                      {lastReminder && ` · Reminded ${relativeTime(lastReminder.lastSentAt)}`}
+                    </div>
+                  </TableCell>
+                  {AGEING_COLUMNS.map((c) => (
+                    <TableCell
+                      key={c.key}
+                      className={`text-right tabular-nums ${c.key !== "not_due" && r[c.key] > 0 ? "text-destructive" : ""}`}
+                    >
+                      {r[c.key] > 0 ? m(r[c.key]) : "—"}
+                    </TableCell>
+                  ))}
+                  <TableCell className="text-right font-medium tabular-nums">{m(r.total)}</TableCell>
+                  <TableCell className="whitespace-nowrap text-right">
+                    {canRemind && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => {
+                          setStep(0);
+                          setQueue([r]);
+                        }}
+                      >
+                        Send reminder
+                      </Button>
+                    )}{" "}
+                    <Button variant="ghost" size="sm" disabled={busy} onClick={() => openStatement(r)}>
+                      Statement
+                    </Button>
+                  </TableCell>
+                </TableRow>
+              );
+            })}
             {rows.length > 0 && (
               <TableRow className="font-medium">
+                <TableCell />
                 <TableCell>Total</TableCell>
                 {AGEING_COLUMNS.map((c) => (
                   <TableCell key={c.key} className="text-right tabular-nums">
@@ -239,6 +366,9 @@ export default function OwedPage() {
               <Button variant="outline" disabled={busy} onClick={() => openStatement(client)}>
                 Refresh
               </Button>
+              <Button disabled={busy || !statement} onClick={() => setSendingStatement(true)}>
+                <Send className="mr-1.5 h-4 w-4" /> Send to client
+              </Button>
               <Button variant="outline" disabled={busy || !statement} onClick={statementPdf}>
                 <Download className="mr-1.5 h-4 w-4" /> PDF
               </Button>
@@ -256,6 +386,8 @@ export default function OwedPage() {
     </div>
   );
 }
+
+const rowKey = (r: AgeingRow) => `${r.store_id ?? ""}|${r.client_name}`;
 
 function Tile({ label, value, loud }: { label: string; value: string; loud?: boolean }) {
   return (

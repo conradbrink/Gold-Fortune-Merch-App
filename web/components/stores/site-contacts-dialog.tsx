@@ -15,6 +15,15 @@ import { formatPhone } from "@/lib/phone-login";
 
 const ONLY_MANAGERS = "Only a manager can change contacts.";
 
+/** What a contact is sent, as the list says it: nothing is sent to someone without an email address. */
+function contactGets(c: SiteContact): string {
+  const gets = [
+    c.receives_reports && c.email ? "the reports" : null,
+    c.receives_accounts && c.email ? "invoices and statements" : null,
+  ].filter(Boolean);
+  return gets.length ? `Gets ${gets.join(" and ")}` : "No reports";
+}
+
 /**
  * The people at one {site} (Stage 8.2): who to call, and who gets the job
  * reports. Everyone in the company can see them; managers and settings
@@ -40,7 +49,7 @@ export function SiteContactsDialog({
   const load = useCallback(async (siteId: string) => {
     const { data, error: e } = await createClient()
       .from("site_contacts")
-      .select("id, store_id, name, email, phone, role, receives_reports")
+      .select("id, store_id, name, email, phone, role, receives_reports, receives_accounts")
       .eq("store_id", siteId)
       .order("name");
     if (e) return setError(`The contacts could not be loaded (${e.message}).`);
@@ -63,7 +72,14 @@ export function SiteContactsDialog({
     setEditing(c ? c.id : "new");
     setDraft(
       c
-        ? { name: c.name, email: c.email ?? "", phone: c.phone ?? "", role: c.role ?? "", receivesReports: c.receives_reports }
+        ? {
+            name: c.name,
+            email: c.email ?? "",
+            phone: c.phone ?? "",
+            role: c.role ?? "",
+            receivesReports: c.receives_reports,
+            receivesAccounts: c.receives_accounts,
+          }
         : EMPTY_CONTACT
     );
   }
@@ -156,7 +172,7 @@ export function SiteContactsDialog({
                     </a>
                   )}
                   <span className="block text-xs text-muted-foreground">
-                    {c.receives_reports && c.email ? "Gets the reports" : "No reports"}
+                    {contactGets(c)}
                   </span>
                 </span>
                 <Button variant="ghost" size="icon-sm" aria-label={`Edit ${c.name}`} onClick={() => startEdit(c)}>
@@ -188,6 +204,13 @@ export function SiteContactsDialog({
                 onCheckedChange={(v) => setDraft({ ...draft, receivesReports: v === true })}
               />
               Send them each finished {lower(t.job.one)}&apos;s report
+            </label>
+            <label className="flex items-center gap-2 text-sm text-foreground">
+              <Checkbox
+                checked={draft.receivesAccounts}
+                onCheckedChange={(v) => setDraft({ ...draft, receivesAccounts: v === true })}
+              />
+              Gets invoices and statements
             </label>
             <div className="flex justify-end gap-2">
               <Button type="button" variant="ghost" onClick={() => setEditing(null)}>
