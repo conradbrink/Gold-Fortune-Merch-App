@@ -23,9 +23,11 @@ import { PricingSection } from "@/components/pricing-section";
 import { confirmed, pricing, rand, site } from "@/lib/site";
 
 // Copy: ~/Downloads/site-copy-final-v7.md, reworked on 8 Oct 2026 with the
-// Hormozi offer skills (audit in the site-offer worktree's OFFER-AUDIT.md):
-// the outcome leads, the owner's day is shown before and after, and the pun
-// closes the page. Still plain words, no dashes, and only live features.
+// Hormozi offer skills (audit in the site-offer worktree's OFFER-AUDIT.md),
+// then rewritten on 9 Oct 2026 to read the way you'd say it to an owner:
+// say what Tickd does in the hero, one idea per sentence, no bold title that
+// only repeats its sentence, no puns, body text in ink (grey is for small
+// print), and as few words as will do. Still no dashes, and only live features.
 // Lines v7 marks [CONFIRM] sit behind `confirmed` in lib/site.ts.
 // Mobile first: every style below is the phone's; sm:/md:/lg: only add room.
 // Light only, on purpose: owners read this on a phone outdoors, between jobs,
@@ -39,34 +41,36 @@ const nav = [
 ];
 
 // The three things that make it easy to say yes, straight under the hero.
+// Each item answers the strip's question, "What do you need to start?"
 const easy = [
-  { icon: Smartphone, title: "The phones they already have", body: "Tickd runs on Android, so there's nothing new to buy." },
-  { icon: CloudOff, title: "Works with no signal", body: "Everything syncs when the phone is back online." },
-  { icon: ClipboardCheck, title: "Ready on day one", body: "Pick your trade, and its checklists come set up." },
+  { icon: Smartphone, title: "Just their own phones", body: "Tickd runs on the Android phones your team already has." },
+  { icon: CloudOff, title: "No signal needed on site", body: "The app works without signal, and sends everything once they have signal again." },
+  { icon: ClipboardCheck, title: "No checklists to write", body: "Pick your type of work, and they're already there." },
 ];
 
-// The owner's day: what happens now, and what happens with Tickd.
+// The calls that eat an owner's day, in the words people actually say,
+// and what the owner does instead with Tickd.
 const day = [
-  ["07:40", "A client asks if your team is on the way. You phone around.", "You check the live map and tell them."],
-  ["10:15", "A client wants proof the job was done. You dig through old chats.", "You send the signed report, photos and all."],
-  ["15:10", "The bakkie has been out all day. You don't know where.", "You see each person's route and the kilometres they drove."],
-  ["Friday", "A client says a visit was missed. Nobody can show it wasn't.", "The check-ins show who was there, and when."],
-  ["Payday", "Someone says they worked late. Nobody wrote it down.", "Their hours are already on the timesheet."],
-  ["Month end", "You type invoices from paper job cards.", "You tick the finished jobs, and the invoice is made."],
+  ["“Is your team on the way?”", "Open the map and tell them."],
+  ["“Can you prove the job was done?”", "Send them the job report, with photos."],
+  ["“Nobody came on Friday.”", "Show them who was there, and when."],
+  ["“I worked two hours overtime.”", "Check the timesheet. The hours are already there."],
+  ["“Where has the bakkie been all day?”", "See the driver's route and how far they went."],
+  ["“When will I get the invoice?”", "Tick the finished jobs, and the invoice is made."],
 ];
 
 // Who does what: the team works on their phones, the owner runs it from anywhere.
 const teamSteps = [
-  ["Start the day.", "One tap on their phone starts the workday, and today's jobs are right there, in order."],
-  ["Do the job.", "They check in when they arrive on site, take photos with the app's camera and fill in the checklist for the job."],
-  ["Finish the job.", "When the work is done, your client gets a signed report for the job."],
-  ["End the day.", "One more tap ends the day, and their hours go straight onto the timesheet for payroll."],
+  ["Clock in.", "One tap starts their day and shows today's jobs."],
+  ["Do the job.", "They check in, take photos and tick the checklist."],
+  ["Finish.", "Your client gets a signed report."],
+  ["Clock out.", "Their hours go straight onto the timesheet."],
 ];
 const ownerSteps = [
-  ["Set it up.", "We help you add your team, your clients and their sites, so you're ready from day one."],
-  ["Plan the work.", "Give each person their jobs for the day, and change the plan when something comes up."],
-  ["See the day.", "A live map shows where everyone is, with photos coming in and alerts when something's off."],
-  ["Get paid.", "Send quotes and invoices from the same app, and see at a glance who still owes you."],
+  ["Set it up.", "We help you add your team and your clients."],
+  ["Plan the day.", "Give each person their jobs."],
+  ["Watch it happen.", "See everyone on a map, and photos as they come in."],
+  ["Get paid.", "Send quotes and invoices, and see who still owes you."],
 ];
 
 // What the one app takes the place of: the value is the mess it removes.
@@ -82,10 +86,10 @@ const replaces = [
 // along the roads (settled after the day), off-site check-ins with the
 // distance, the live map and each person's day (/tracking).
 const whereItWent = [
-  { icon: Route, title: "Kilometres, per person, per day", body: "Worked out along the roads from the day's trail. No more guessing where the petrol went." },
-  { icon: MapPin, title: "Check-ins pinned to the site", body: "Check in away from the site and it's flagged, with how far away they were." },
-  { icon: Navigation, title: "A live map of your team", body: "See where everyone was last seen, and how long ago." },
-  { icon: MapPinned, title: "Each person's day, stop by stop", body: "Their route on a map, in the order they went, with their hours for the day." },
+  { icon: Navigation, text: "A live map of where everyone is." },
+  { icon: MapPinned, text: "Each person's day on a map, stop by stop." },
+  { icon: Route, text: "How far each person drove, for your petrol claims." },
+  { icon: MapPin, text: "A warning when someone checks in away from the job." },
 ];
 
 // The money side, for every trade once PR #93 (Stage 7 Part 1a) is merged:
@@ -93,16 +97,16 @@ const whereItWent = [
 // deposit, final), from finished jobs or typed in, payments and who owes you.
 // Not yet: emailing documents or pay-now links, so the copy says "download".
 const money = [
-  { icon: FileText, title: "Quotes from your price list", body: "Use your prices or type the lines. Download the PDF and send it to your client." },
-  { icon: Receipt, title: "Invoice the way you work", body: "Bill the whole quote, take a deposit first, or tick the jobs you finished this month." },
-  { icon: Wallet, title: "Know who owes you", body: "Record payments as they come in. See who is 30, 60 or 90 days late, and print their statement." },
+  { icon: FileText, text: "Make a quote from your price list, and download it to send." },
+  { icon: Receipt, text: "Invoice the whole job, a deposit, or everything you finished this month." },
+  { icon: Wallet, text: "See who has paid, and who is 30, 60 or 90 days late." },
 ];
 
 const team = [
-  ["No more “he said, she said”.", "Photos and times speak up for your team, so good work gets the credit it deserves."],
-  ["Hours logged accurately.", "Every hour they work lands on the timesheet, so nobody has to argue about overtime."],
-  ["Less admin.", "No more voice notes, paper forms and end of day phone calls to report back."],
-  ["Work time only.", "Tickd only runs from the start to the end of the workday, and never after hours."],
+  ["No more “he said, she said”.", "The photos and times speak for them."],
+  ["Overtime is on record.", "There's nothing to argue about on payday."],
+  ["Less reporting back.", "No more voice notes or calls at the end of the day."],
+  ["Their evenings are their own.", "Tickd only works during work hours."],
 ];
 
 const faqs = [
@@ -112,38 +116,40 @@ const faqs = [
   },
   {
     q: "How fast can we start?",
-    a: "Today. Pick your trade when you sign up, and its checklists and settings are ready. Your team puts the app on their phones and taps start.",
+    a: "Today. Sign up, and your team can put the app on their phones and clock in.",
   },
   {
     q: `What happens after ${site.trialDays} days?`,
-    a: "Choose a plan to keep going. We never asked for your card, so nothing is charged unless you do.",
+    a: "If you want to keep going, you choose a plan. We don't take your card for the trial, so you're never charged by surprise.",
   },
   { q: "Do they need new phones?", a: "No. Tickd runs on the Android phones your team already has." },
   {
-    q: "No signal or load-shedding?",
-    a: "Tickd keeps working with no signal, and everything syncs as soon as the phone is back online.",
+    q: "What if there's no signal, or load-shedding?",
+    a: "It keeps working, and catches up when the signal comes back.",
   },
   {
     q: "Can clients trust the photos?",
-    a: "Yes. Photos can only be taken with the camera in the app, and each one carries the time and place.",
+    a: "Yes. They can only be taken inside the app, and each one shows the time and place.",
   },
   {
     q: "Can someone check in from home?",
-    a: "No. If someone checks in away from the site, it gets flagged so you can see it straight away.",
+    a: "Tickd flags it. Every check-in records how far the person was from the job, so one made from home stands out.",
   },
   {
-    q: "Will my team get ticked off?",
-    a: "No. It only runs during work hours, and it gives them proof of the good work they do.",
+    q: "Will my team mind?",
+    a: "It only works during work hours, and it proves the good work they do. That protects them too.",
   },
   ...(confirmed.legalFaq
-    ? [{ q: "Is it legal?", a: "Yes, when you tell your team how it works. Our welcome message does that." }]
+    ? [{ q: "Is it legal?", a: "Yes, when you tell your team how it works. We cover that on the training day." }]
     : []),
   { q: "Who is it not for?", a: "One-person businesses that only need to send quotes and invoices." },
 ];
 
-const wrap = "mx-auto grid gap-6 px-4 py-16 sm:gap-8 sm:px-6 sm:py-24";
+// One spacing rhythm for every section: 80px between sections on a phone, 128px
+// from sm up, and 24px (32px) between a heading block and what follows it.
+const wrap = "mx-auto grid gap-6 px-4 py-10 sm:gap-8 sm:px-6 sm:py-16";
 const h2 = "tk-reveal font-display text-3xl font-bold leading-[1.1] tracking-tight text-balance text-teal-900 sm:text-[2.75rem]";
-const lead = "max-w-2xl text-lg leading-relaxed text-pretty text-muted";
+const lead = "max-w-2xl text-lg leading-relaxed text-pretty text-ink";
 
 function TrialButton({ className = "" }: { className?: string }) {
   return (
@@ -190,7 +196,7 @@ function Lane({
             </span>
             <span className="grid gap-0.5">
               <h3 className="font-display text-lg font-bold text-teal-900 sm:text-xl">{title}</h3>
-              <p className="leading-relaxed text-muted">{body}</p>
+              <p className="leading-relaxed text-ink">{body}</p>
             </span>
           </li>
         ))}
@@ -199,18 +205,15 @@ function Lane({
   );
 }
 
-function Points({ items }: { items: { icon: typeof Smartphone; title: string; body: string }[] }) {
+function Points({ items, badge }: { items: { icon: typeof Smartphone; text: string }[]; badge: string }) {
   return (
-    <ul className="grid gap-5 sm:grid-cols-2 sm:gap-x-8 sm:gap-y-6 lg:grid-cols-1">
-      {items.map(({ icon: Icon, title, body }) => (
-        <li key={title} className="tk-reveal tk-timeline flex gap-3.5">
-          <span className="tk-pop tk-icon-hover grid size-10 shrink-0 place-items-center rounded-xl bg-teal-900 text-amber-500">
+    <ul className="grid gap-4">
+      {items.map(({ icon: Icon, text }) => (
+        <li key={text} className="tk-reveal tk-timeline flex items-center gap-3.5">
+          <span className={`tk-pop tk-icon-hover grid size-10 shrink-0 place-items-center rounded-xl ${badge}`}>
             <Icon className="tk-draw size-5" strokeWidth={2.25} aria-hidden="true" />
           </span>
-          <span className="grid gap-0.5">
-            <span className="font-display text-lg font-bold leading-snug text-teal-900">{title}</span>
-            <span className="leading-relaxed text-muted">{body}</span>
-          </span>
+          <span className="text-lg leading-snug text-ink">{text}</span>
         </li>
       ))}
     </ul>
@@ -268,26 +271,27 @@ export default function Home() {
 
       <main id="top">
         {/* 1. Hero: the outcome, the risk taken away, and the real app. */}
-        <section className="mx-auto grid max-w-6xl items-center gap-10 px-4 pb-14 pt-8 sm:px-6 sm:pb-20 sm:pt-12 lg:grid-cols-[1.1fr_0.9fr] lg:gap-14 lg:pt-16">
+        <section className="mx-auto grid max-w-6xl items-center gap-10 px-4 pb-10 pt-8 sm:px-6 sm:pb-16 sm:pt-12 lg:grid-cols-[1.1fr_0.9fr] lg:gap-14 lg:pt-16">
           <div className="tk-hero grid gap-5 sm:gap-6">
             <p className="max-w-md text-sm font-semibold leading-snug text-teal-700 sm:text-base">
               For cleaning, security, electrical, garden, pest, pool, maintenance and sales teams
             </p>
             <h1 className="font-display text-[2.6rem] font-extrabold leading-[1.02] tracking-tight text-balance text-teal-900 sm:text-6xl lg:text-[4.25rem]">
-              See every job{" "}
+              Know every job got{" "}
               <span className="relative whitespace-nowrap">
                 done
                 <span aria-hidden="true" className="tk-underline absolute inset-x-0 bottom-[-0.02em] h-[0.12em] rounded-full bg-amber-500" />
-              </span>.{" "}
-              <span className="mt-3 block text-[0.6em] leading-[1.1] text-teal-700">Without phoning around.</span>
+              </span>,{" "}
+              <span className="mt-3 block text-[0.6em] leading-[1.1] text-teal-700">without phoning around.</span>
             </h1>
             <p className="max-w-xl text-lg leading-relaxed text-pretty text-ink sm:text-xl">
-              Your team&apos;s check-ins, photos and kilometres, live. Then quote, invoice and get paid from the same app.
+              Your staff use the {site.name} app on their phones. When they finish a job, you see it on your dashboard, with photos.
+              You don&apos;t have to call anyone to check.
             </p>
             <div className="grid gap-2.5 sm:justify-items-start">
               <TrialButton />
               <p className="text-center text-sm font-medium text-muted sm:text-left">
-                No card needed. Then from {rand(pricing.monthly.base)} a month.
+                No card needed. After the trial, from {rand(pricing.monthly.base)} a month.
               </p>
             </div>
           </div>
@@ -300,72 +304,59 @@ export default function Home() {
         </section>
 
         {/* 2. Easy to say yes: the effort it doesn't take. */}
-        <section aria-label="Why it's easy to start" className="border-y border-line bg-white">
-          <ul className="mx-auto grid max-w-6xl gap-5 px-4 py-8 sm:px-6 md:grid-cols-3 md:gap-0 md:divide-x md:divide-line md:py-10">
-            {easy.map(({ icon: Icon, title, body }) => (
-              <li key={title} className="tk-reveal tk-timeline flex gap-3.5 md:px-8 md:first:pl-0 md:last:pr-0">
-                <Icon className="tk-draw mt-0.5 size-6 shrink-0 text-teal-700" strokeWidth={2} aria-hidden="true" />
-                <span className="grid gap-0.5">
-                  <span className="font-display text-lg font-bold text-teal-900">{title}</span>
-                  <span className="leading-relaxed text-muted">{body}</span>
-                </span>
-              </li>
-            ))}
-          </ul>
+        <section aria-labelledby="start-title" className="border-y border-line bg-white">
+          <div className={`${wrap} max-w-6xl`}>
+            <h2 id="start-title" className="tk-reveal font-display text-2xl font-bold leading-tight text-teal-900 sm:text-3xl">
+              What do you need to start?
+            </h2>
+            <ul className="grid gap-5 md:grid-cols-3 md:gap-0 md:divide-x md:divide-line">
+              {easy.map(({ icon: Icon, title, body }) => (
+                <li key={title} className="tk-reveal tk-timeline flex gap-3.5 md:px-8 md:first:pl-0 md:last:pr-0">
+                  <Icon className="tk-draw mt-0.5 size-6 shrink-0 text-teal-700" strokeWidth={2} aria-hidden="true" />
+                  <span className="grid gap-0.5">
+                    <span className="font-display text-lg font-bold text-teal-900">{title}</span>
+                    <span className="leading-relaxed text-ink">{body}</span>
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </div>
         </section>
 
-        {/* 3. The owner's day, before and after. */}
+        {/* 3. The calls that eat the owner's day, and the answer with Tickd. */}
         <section aria-labelledby="day-title">
           <div className={`${wrap} max-w-6xl`}>
-            <h2 id="day-title" className={h2}>Sound familiar?</h2>
-            <div>
-              <div aria-hidden="true" className="hidden grid-cols-[4.5rem_1fr_1fr] gap-6 pb-3 text-sm font-semibold text-muted md:grid">
-                <span />
-                <span>Your day now</span>
-                <span className="text-teal-700">Your day with {site.name}</span>
-              </div>
-              <ol className="divide-y divide-line border-t border-line">
-                {day.map(([t, now, fix]) => (
-                  <li key={t} className="tk-reveal tk-timeline grid grid-cols-[3.75rem_1fr] gap-x-3 gap-y-2 py-4 md:grid-cols-[4.5rem_1fr_1fr] md:gap-x-6 md:py-5">
-                    <span className="row-span-2 pt-0.5 text-sm font-semibold tabular-nums text-flag md:row-span-1">{t}</span>
-                    <p className="leading-relaxed text-ink sm:text-lg">{now}</p>
-                    <p className="tk-reveal-late flex gap-2 font-semibold leading-relaxed text-teal-900 sm:text-lg">
-                      <Check className="tk-draw mt-1 size-4 shrink-0 text-teal-700 sm:size-5" strokeWidth={3} aria-hidden="true" />
-                      <span>
-                        <span className="sr-only">With {site.name}: </span>
-                        {fix}
-                      </span>
-                    </p>
-                  </li>
-                ))}
-              </ol>
+            <div className="grid gap-3">
+              <h2 id="day-title" className={h2}>Sound familiar?</h2>
+              <p className={lead}>These are the calls that eat up your day. With {site.name}, each one takes a few seconds.</p>
             </div>
+            <ul className="grid gap-3 md:grid-cols-2 md:gap-4">
+              {day.map(([heard, answer]) => (
+                <li key={heard} className="tk-reveal tk-timeline grid gap-2 rounded-2xl bg-white p-5 ring-1 ring-line">
+                  <p className="font-display text-xl font-bold leading-snug text-teal-900">{heard}</p>
+                  <p className="tk-reveal-late flex gap-2 text-lg leading-snug text-ink">
+                    <Check className="tk-draw mt-1 size-5 shrink-0 text-teal-700" strokeWidth={3} aria-hidden="true" />
+                    <span>
+                      <span className="sr-only">With {site.name}: </span>
+                      {answer}
+                    </span>
+                  </p>
+                </li>
+              ))}
+            </ul>
             <p className="font-display text-xl font-bold leading-snug text-balance text-teal-900 sm:text-2xl">
               You didn&apos;t start a business to spend your day chasing people for updates.
             </p>
           </div>
         </section>
 
-        {/* 4. What lost time costs, next to what Tickd costs. */}
-        <section className="border-t border-line bg-white">
+        {/* 4. How it works */}
+        <section id="how" className="border-t border-line bg-white">
           <div className={`${wrap} max-w-6xl`}>
             <div className="grid gap-3">
-              <h2 className={h2}>What is lost time costing you?</h2>
-              <p className={lead}>Put in your team, the time you think goes to waiting and admin each day, and what you pay an hour.</p>
-            </div>
-            <div className="tk-reveal">
-              <CostCalculator />
-            </div>
-          </div>
-        </section>
-
-        {/* 5. How it works */}
-        <section id="how" className="border-t border-line">
-          <div className={`${wrap} max-w-6xl`}>
-            <div className="grid gap-3">
-              <h2 className={h2}>Simple for your team. Clear for you.</h2>
+              <h2 className={h2}>How {site.name} works</h2>
               <p className={lead}>
-                Your team does the work on their phones, and you see everything as it happens, wherever you are.
+                Your team uses the app on their phones. You follow along on your computer, or on your own phone.
               </p>
             </div>
             <div className="grid gap-4 md:grid-cols-2 md:gap-6">
@@ -382,7 +373,7 @@ export default function Home() {
                 who="You"
                 where="From the office, or your phone"
                 steps={ownerSteps}
-                className="bg-white ring-teal-100"
+                className="bg-mint ring-teal-100"
                 badge="bg-teal-900 text-sand"
               />
             </div>
@@ -390,7 +381,7 @@ export default function Home() {
               <div className="grid gap-2">
                 <p className="font-display text-2xl font-bold leading-tight text-amber-500 sm:text-3xl">One app instead of five.</p>
                 <p className="leading-relaxed text-teal-100">
-                  Plan, prove, sell, invoice and get paid in one place. HR and deliveries are there as add-ons when you need them.
+                  {site.name} replaces all of these. If you need HR or deliveries later, you can add them.
                 </p>
               </div>
               <ul className="grid gap-x-8 gap-y-3 sm:grid-cols-2">
@@ -410,19 +401,15 @@ export default function Home() {
           </div>
         </section>
 
-        {/* 6. Where the day went: locations and kilometres. */}
-        <section id="tracking" className="border-t border-line bg-white">
+        {/* 5. Where the day went: locations and kilometres. */}
+        <section id="tracking" className="border-t border-line">
           <div className={`${wrap} max-w-6xl lg:grid-cols-[1fr_1.05fr] lg:items-center lg:gap-14`}>
-            <div className="grid content-start gap-6">
+            <div className="grid content-start gap-6 sm:gap-8">
               <div className="grid gap-3">
-                <h2 className={h2}>Every stop. Every kilometre.</h2>
-                <p className={lead}>
-                  From the start to the end of the workday, their phone keeps a trail. You see where your team went, how long they
-                  stayed and how far they drove.
-                </p>
+                <h2 className={h2}>See where your team went.</h2>
+                <p className={lead}>While they&apos;re clocked in, the app keeps track of where they go. It stops when they clock out.</p>
               </div>
-              <Points items={whereItWent} />
-              <p className="text-sm font-medium text-muted">Only during work hours. Never after they end the day.</p>
+              <Points items={whereItWent} badge="bg-teal-900 text-amber-500" />
             </div>
             <Shot
               src="/demo/dash/site-day-history.webp"
@@ -433,8 +420,8 @@ export default function Home() {
           </div>
         </section>
 
-        {/* 7. The money: quote, invoice, get paid. */}
-        <section id="money" className="border-t border-line">
+        {/* 6. The money: quote, invoice, get paid. */}
+        <section id="money" className="border-t border-line bg-white">
           <div className={`${wrap} max-w-6xl lg:grid-cols-[1.05fr_1fr] lg:items-center lg:gap-14`}>
             <div className="order-2 lg:order-1">
               <Shot
@@ -444,62 +431,69 @@ export default function Home() {
                 height={1069}
               />
             </div>
-            <div className="order-1 grid content-start gap-6 lg:order-2">
+            <div className="order-1 grid content-start gap-6 sm:gap-8 lg:order-2">
               <div className="grid gap-3">
-                <h2 className={h2}>Quote, invoice and get paid.</h2>
-                <p className={lead}>No second app, and no typing invoices from paper job cards. The work and the money live in one place.</p>
+                <h2 className={h2}>Send quotes and invoices from the same app.</h2>
+                <p className={lead}>No more typing invoices from paper job cards.</p>
               </div>
-              <ul className="grid gap-5">
-                {money.map(({ icon: Icon, title, body }) => (
-                  <li key={title} className="tk-reveal tk-timeline flex gap-3.5">
-                    <span className="tk-pop tk-icon-hover grid size-10 shrink-0 place-items-center rounded-xl bg-amber-500 text-teal-950">
-                      <Icon className="tk-draw size-5" strokeWidth={2.25} aria-hidden="true" />
-                    </span>
-                    <span className="grid gap-0.5">
-                      <span className="font-display text-lg font-bold leading-snug text-teal-900">{title}</span>
-                      <span className="leading-relaxed text-muted">{body}</span>
-                    </span>
-                  </li>
-                ))}
-              </ul>
-              <p className="text-sm font-medium text-muted">Add VAT or leave it off. Your bank details go on every invoice.</p>
+              <Points items={money} badge="bg-amber-500 text-teal-950" />
+              <p className="text-sm font-medium text-muted">VAT is up to you, and your bank details go on every invoice.</p>
             </div>
           </div>
         </section>
 
-        {/* 8. Your trade */}
-        <section id="trades" className="border-t border-line bg-white">
+        {/* 7. Your trade */}
+        <section id="trades" className="border-t border-line">
           <div className={`${wrap} max-w-6xl`}>
-            <h2 className={h2}>What do your clients want to see?</h2>
+            <div className="grid gap-3">
+              <h2 className={h2}>What you can show your clients</h2>
+              <p className={lead}>Tap your type of work.</p>
+            </div>
             <div className="tk-reveal">
               <TradeTabs />
             </div>
           </div>
         </section>
 
-        {/* 9. Good for your team too */}
-        <section id="team" className="border-t border-line">
+        {/* 8. Good for your team too */}
+        <section id="team" className="border-t border-line bg-white">
           <div className={`${wrap} max-w-6xl md:grid-cols-[0.8fr_1.2fr] md:gap-12`}>
             <div className="grid content-start gap-3">
               <h2 className={h2}>Your team will like it too.</h2>
-              <p className={lead}>It backs up the good work they already do.</p>
+              <p className={lead}>It proves the good work they already do.</p>
             </div>
             <ul className="grid gap-x-8 gap-y-6 sm:grid-cols-2">
               {team.map(([title, body]) => (
                 <li key={title} className="tk-reveal relative grid gap-1.5 pt-4">
                   <span aria-hidden="true" className="tk-rule absolute inset-x-0 top-0 h-0.5 bg-amber-500" />
                   <span className="font-display text-lg font-bold text-teal-900">{title}</span>
-                  <span className="leading-relaxed text-muted">{body}</span>
+                  <span className="leading-relaxed text-ink">{body}</span>
                 </li>
               ))}
             </ul>
           </div>
         </section>
 
+        {/* 9. What lost time costs, next to what Tickd costs: the value, just before the price. */}
+        <section className="border-t border-line">
+          <div className={`${wrap} max-w-6xl`}>
+            <div className="grid gap-3">
+              <h2 className={h2}>What is lost time costing you?</h2>
+              <p className={lead}>
+                Put in your own numbers. It shows what waiting and paperwork cost you each month, and what {site.name} would
+                cost.
+              </p>
+            </div>
+            <div className="tk-reveal">
+              <CostCalculator />
+            </div>
+          </div>
+        </section>
+
         {/* 10. Pricing */}
         <section id="pricing" className="border-t border-line bg-white">
           <div className={`${wrap} max-w-6xl`}>
-            <h2 className={h2}>One price. Every box {site.name}.</h2>
+            <h2 className={h2}>One simple price, with everything included.</h2>
             <div className="tk-reveal">
               <PricingSection />
             </div>
@@ -508,7 +502,7 @@ export default function Home() {
 
         {/* 11. Questions */}
         <section id="faq" className="border-t border-line">
-          <div className="mx-auto grid max-w-3xl gap-6 px-4 py-16 sm:px-6 sm:py-24">
+          <div className={`${wrap} max-w-3xl`}>
             <h2 className={h2}>Questions</h2>
             <div className="divide-y divide-line border-y border-line">
               {faqs.map((f) => (
@@ -520,21 +514,21 @@ export default function Home() {
                       aria-hidden="true"
                     />
                   </summary>
-                  <p className="tk-answer max-w-2xl pb-5 leading-relaxed text-muted">{f.a}</p>
+                  <p className="tk-answer max-w-2xl pb-5 leading-relaxed text-ink">{f.a}</p>
                 </details>
               ))}
             </div>
           </div>
         </section>
 
-        {/* 12. Sign up: the pun lands once the reader knows the product. */}
-        <section id="start" className="px-4 pb-14 sm:px-6 sm:pb-16">
+        {/* 12. Sign up: the offer again, in plain words. */}
+        <section id="start" className="px-4 pb-14 pt-10 sm:px-6 sm:pb-16 sm:pt-16">
           <div className="tk-reveal mx-auto grid max-w-6xl gap-5 rounded-2xl bg-teal-900 p-6 text-sand sm:gap-6 sm:p-10">
             <h2 className="font-display text-3xl font-extrabold leading-[1.1] tracking-tight text-balance sm:text-5xl">
-              Every job {site.name} off. <span className="text-amber-500">Except you.</span>
+              Try {site.name} free for {site.trialDays} days.
             </h2>
             <p className="max-w-2xl leading-relaxed text-pretty text-teal-100 sm:text-lg">
-              See your team&apos;s whole day and show your clients the proof. It costs nothing to try.
+              See your team&apos;s whole day, and show clients proof of every job. You don&apos;t need a card.
             </p>
             <StartTrial />
           </div>

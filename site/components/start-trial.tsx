@@ -49,7 +49,7 @@ export function StartTrial() {
     <div className="grid gap-6">
       <fieldset className="grid gap-2.5">
         <legend className="mb-2.5 text-sm font-medium text-teal-100">
-          What does your team do? <span className="text-teal-100/70">Optional, we&apos;ll set it up for you.</span>
+          What does your team do? <span className="text-teal-100/70">Optional.</span>
         </legend>
         <div
           role="radiogroup"
@@ -90,7 +90,7 @@ export function StartTrial() {
           Talk to us first
         </a>
       </div>
-      <p className="text-sm text-teal-100">No card needed. Your trade&apos;s words and checklists are ready when you sign up.</p>
+      <p className="text-sm text-teal-100">No card needed.</p>
     </div>
   );
 }
