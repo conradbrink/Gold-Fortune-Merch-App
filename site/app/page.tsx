@@ -139,7 +139,7 @@ const faqs = [
     a: "It only works during work hours, and it proves the good work they do. That protects them too.",
   },
   ...(confirmed.legalFaq
-    ? [{ q: "Is it legal?", a: "Yes, when you tell your team how it works. Our welcome message does that." }]
+    ? [{ q: "Is it legal?", a: "Yes, when you tell your team how it works. We cover that on the training day." }]
     : []),
   { q: "Who is it not for?", a: "One-person businesses that only need to send quotes and invoices." },
 ];

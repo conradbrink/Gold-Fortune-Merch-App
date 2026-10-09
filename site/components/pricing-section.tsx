@@ -144,7 +144,10 @@ export function PricingSection() {
             <Item>
               <strong>Checklists for your type of work:</strong> Ready on day one
             </Item>
-            <Item>WhatsApp welcome message for your team: Free</Item>
+            <Item>
+              <strong>A free day of hands-on training:</strong> your team learns the app, and you learn your way around
+              the dashboard
+            </Item>
           </ul>
           <div className="mt-auto grid gap-2">
             <a
@@ -185,10 +188,6 @@ export function PricingSection() {
           </p>
         </div>
       )}
-
-      <p className="text-center text-sm text-muted">
-        Prices are in rand. We&apos;re not VAT registered, so no VAT is added. Prices go up once a year, by no more than inflation.
-      </p>
     </div>
   );
 }
