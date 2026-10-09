@@ -4,6 +4,8 @@ import { at } from "@/components/demo/phone-screens";
 // Plays real app screenshots (rendered from the Flutter widgets with example
 // data, 360×760 logical px) like the app: a tap ring on the real button, then
 // the next screen fades in. Tap rects come from the renderer's manifest.
+// No background of its own: until a screenshot has painted, whatever is under
+// it (the previous scene's screen) shows, never an empty colour.
 
 export type ShotTap = { x: number; y: number; w: number; h: number; at: number };
 export type ShotFrame = { src: string; at: number };
@@ -13,7 +15,7 @@ const H = 760;
 
 export function ShotScreen({ frames, taps = [] }: { frames: ShotFrame[]; taps?: ShotTap[] }) {
   return (
-    <div className="relative h-full w-full bg-[#0f3d3e]">
+    <div className="relative h-full w-full">
       {frames.map((f, i) => (
         <div key={f.src} className={`absolute inset-0 ${i ? "tk-fade" : ""}`} style={i ? at(f.at) : undefined}>
           <Image src={f.src} alt="" fill unoptimized className="object-cover object-top" priority={i === 0} />
