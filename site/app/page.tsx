@@ -44,7 +44,7 @@ const nav = [
 // Each item answers the strip's question, "What do you need to start?"
 const easy = [
   { icon: Smartphone, title: "Just their own phones", body: "Tickd runs on the Android phones your team already has." },
-  { icon: CloudOff, title: "Not even good signal", body: "The app keeps working, and catches up when the signal comes back." },
+  { icon: CloudOff, title: "No signal needed on site", body: "The app works without signal, and sends everything once they have signal again." },
   { icon: ClipboardCheck, title: "No checklists to write", body: "Pick your type of work, and they're already there." },
 ];
 
