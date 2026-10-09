@@ -20,7 +20,7 @@ import { Logo } from "@/components/logo";
 import { TradeTabs } from "@/components/trade-tabs";
 import { StartTrial } from "@/components/start-trial";
 import { PricingSection } from "@/components/pricing-section";
-import { confirmed, pricing, rand, site } from "@/lib/site";
+import { confirmed, pricing, rand, site, weeklyCeiling } from "@/lib/site";
 
 // Copy: ~/Downloads/site-copy-final-v7.md, reworked on 8 Oct 2026 with the
 // Hormozi offer skills (audit in the site-offer worktree's OFFER-AUDIT.md),
@@ -291,7 +291,7 @@ export default function Home() {
             <div className="grid gap-2.5 sm:justify-items-start">
               <TrialButton />
               <p className="text-center text-sm font-medium text-muted sm:text-left">
-                No card needed. After the trial, from {rand(pricing.monthly.base)} a month.
+                Free for {site.trialDays} days, no card needed. Then under {rand(weeklyCeiling())} a week.
               </p>
             </div>
           </div>
