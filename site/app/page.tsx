@@ -301,9 +301,8 @@ export default function Home() {
               <span className="mt-3 block text-[0.6em] leading-[1.1] text-teal-700">without phoning around.</span>
             </h1>
             <p className="max-w-xl text-lg leading-relaxed text-pretty text-ink sm:text-xl">
-              {site.name} is an app for business owners whose staff work out on site, like cleaners, security guards,
-              gardeners and technicians. Your staff use it on their phones while they work, and you see it all on your phone or
-              computer. With {site.name}:
+              {site.name} is an app for business owners whose staff work on site. They use it on their phones, and you see
+              everything on yours. With {site.name}:
             </p>
             <ul className="grid max-w-xl gap-y-2.5" aria-label={`What ${site.name} does for you`}>
               {OWNER_GETS.map((item) => (
