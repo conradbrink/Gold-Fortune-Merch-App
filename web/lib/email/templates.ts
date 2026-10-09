@@ -57,7 +57,59 @@ ${button}
 
 type Renderer = (payload: Record<string, unknown>, ctx: EmailContext) => RenderedEmail;
 
+/** One job in a report email, as the sender looked it up (job_report_view) with its signed link. */
+export type ReportLine = {
+  url: string;
+  siteName: string;
+  staffName: string | null;
+  day: string;
+  timeIn: string;
+  timeOut: string;
+  photos: number;
+  onSite: boolean | null;
+  jobWord: string;
+};
+
+function reportLines(payload: Record<string, unknown>): ReportLine[] {
+  return Array.isArray(payload.reports) ? (payload.reports as ReportLine[]) : [];
+}
+
+function lineText(l: ReportLine): string {
+  const where = l.onSite === null ? "" : l.onSite ? ", checked in on site" : ", checked in away from the site";
+  const photos = l.photos === 1 ? "1 photo" : `${l.photos} photos`;
+  return `${l.timeIn} to ${l.timeOut}${l.staffName ? `, ${l.staffName}` : ""}${where}, ${photos}`;
+}
+
 const TEMPLATES: Record<string, Renderer> = {
+  // One finished job, as it is finished.
+  job_report: (payload, ctx) => {
+    const l = reportLines(payload)[0];
+    if (!l) throw new Error("A job report email needs its report.");
+    const job = l.jobWord.toLowerCase();
+    const { html, text } = layout(ctx, {
+      heading: `${l.jobWord} done at ${l.siteName}`,
+      bodyHtml: `<p style="margin:0 0 8px">${escapeHtml(l.day)}: ${escapeHtml(lineText(l))}.</p><p style="margin:0">See the checklist and photos, and sign it off if you are happy with the ${escapeHtml(job)}.</p>`,
+      bodyText: `${l.day}: ${lineText(l)}.\nSee the checklist and photos, and sign it off if you are happy with the ${job}.`,
+      button: { label: "See the report and sign", url: l.url },
+    });
+    return { subject: `${l.jobWord} done at ${l.siteName}, ${l.day}`, html, text };
+  },
+  // A site's day, every finished job in one email.
+  job_reports_day: (payload, ctx) => {
+    const lines = reportLines(payload);
+    const first = lines[0];
+    if (!first) throw new Error("A day's report email needs its reports.");
+    const jobs = lines.length === 1 ? first.jobWord.toLowerCase() : `${first.jobWord.toLowerCase()}s`;
+    const items = lines
+      .map((l) => `<li style="margin:0 0 8px">${escapeHtml(lineText(l))}. <a href="${escapeHtml(l.url)}" style="color:#0f5c4f">See and sign</a></li>`)
+      .join("");
+    const { html, text } = layout(ctx, {
+      heading: `Today at ${first.siteName}`,
+      bodyHtml: `<p style="margin:0 0 8px">${lines.length} ${escapeHtml(jobs)} done on ${escapeHtml(first.day)}:</p><ul style="margin:0;padding-left:20px">${items}</ul>`,
+      bodyText: `${lines.length} ${jobs} done on ${first.day}:\n${lines.map((l) => `- ${lineText(l)}. See and sign: ${l.url}`).join("\n")}`,
+    });
+    return { subject: `${first.siteName}: ${lines.length} ${jobs} done on ${first.day}`, html, text };
+  },
   test: (_payload, ctx) => {
     const { html, text } = layout(ctx, {
       heading: "Your emails are working",
@@ -75,4 +127,7 @@ export function renderEmail(template: string, payload: Record<string, unknown>, 
 }
 
 /** Templates a company's clients receive; they carry a "stop these emails" link. */
-export const CLIENT_TEMPLATES = new Set<string>([]);
+export const CLIENT_TEMPLATES = new Set<string>(["job_report", "job_reports_day"]);
+
+/** Templates whose payload holds report ids the sender looks up before rendering. */
+export const REPORT_TEMPLATES = new Set<string>(["job_report", "job_reports_day"]);

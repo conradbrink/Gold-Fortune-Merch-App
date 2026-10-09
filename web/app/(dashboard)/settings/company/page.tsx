@@ -620,7 +620,7 @@ export default function CompanyProfilePage() {
         </TabsContent>
 
         <TabsContent value="emails" className="mt-4 space-y-4">
-          {org && <EmailSettingsCard supportEmail={org.support_email ?? null} />}
+          {org && <EmailSettingsCard supportEmail={org.support_email ?? null} orgId={org.id} canEdit={canEditCompany} />}
         </TabsContent>
 
         <TabsContent value="branding" className="mt-4 space-y-4">

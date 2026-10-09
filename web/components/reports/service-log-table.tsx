@@ -1,6 +1,9 @@
 "use client";
 
 import { Fragment } from "react";
+import { FileSignature, MoreHorizontal } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { lower } from "@/lib/terms";
 import { useTerms } from "@/lib/use-company-config";
@@ -13,7 +16,23 @@ import { minutesLabel, onSiteLabel, serviceLogTotals, type ServiceLogRow } from 
  * had more than one check-in on a day (rounds), where the longest gap is what
  * a client asks about.
  */
-export function ServiceLogTable({ rows, timeZone }: { rows: ServiceLogRow[]; timeZone: string | undefined }) {
+/** A job's report as the app sees it (Stage 8.3). */
+export type ReportState = { signed_name: string | null; signed_at: string | null; last_queued_at: string | null };
+export type ReportAction = "open" | "copy" | "send";
+
+export function ServiceLogTable({
+  rows,
+  timeZone,
+  reports = {},
+  onReport,
+}: {
+  rows: ServiceLogRow[];
+  timeZone: string | undefined;
+  /** By visit id. */
+  reports?: Record<string, ReportState>;
+  /** Present when the person may open and send reports. */
+  onReport?: (visitId: string, action: ReportAction) => void;
+}) {
   const t = useTerms();
   // Times on the company\'s clock, like the dates beside them.
   const time = (iso: string | null) => companyTime(iso, timeZone) || "-";
@@ -53,6 +72,7 @@ export function ServiceLogTable({ rows, timeZone }: { rows: ServiceLogRow[]; tim
             <TableHead className="hidden text-right md:table-cell">Forms</TableHead>
             <TableHead className="text-right">Photos</TableHead>
             {rounds && <TableHead className="hidden text-right lg:table-cell">Since last</TableHead>}
+            {onReport && <TableHead className="text-right">Report</TableHead>}
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -60,7 +80,7 @@ export function ServiceLogTable({ rows, timeZone }: { rows: ServiceLogRow[]; tim
             <Fragment key={r.visit_id}>
               {(i === 0 || rows[i - 1].store_id !== r.store_id) && (
                 <TableRow className="bg-muted/40 hover:bg-muted/40">
-                  <TableCell colSpan={rounds ? 9 : 8} className="py-2">
+                  <TableCell colSpan={8 + (rounds ? 1 : 0) + (onReport ? 1 : 0)} className="py-2">
                     <span className="font-medium text-foreground">{r.store_name}</span>
                     {r.store_address && <span className="ml-2 text-xs text-muted-foreground">{r.store_address}</span>}
                   </TableCell>
@@ -89,11 +109,48 @@ export function ServiceLogTable({ rows, timeZone }: { rows: ServiceLogRow[]; tim
                     {r.gap_minutes === null ? "-" : minutesLabel(r.gap_minutes)}
                   </TableCell>
                 )}
+                {onReport && (
+                  <TableCell className="text-right whitespace-nowrap">
+                    <ReportCell state={reports[r.visit_id]} onAction={(a) => onReport(r.visit_id, a)} />
+                  </TableCell>
+                )}
               </TableRow>
             </Fragment>
           ))}
         </TableBody>
       </Table>
     </div>
+  );
+}
+
+/** Signed, sent or nothing yet, and what can be done with the report. */
+function ReportCell({ state, onAction }: { state: ReportState | undefined; onAction: (a: ReportAction) => void }) {
+  return (
+    <span className="inline-flex items-center gap-1">
+      {state?.signed_at ? (
+        <span className="text-xs font-medium text-emerald-700 dark:text-emerald-400" title={`Signed by ${state.signed_name}`}>
+          Signed
+        </span>
+      ) : state?.last_queued_at ? (
+        <span className="hidden text-xs text-muted-foreground sm:inline">Sent</span>
+      ) : null}
+      <DropdownMenu>
+        <DropdownMenuTrigger
+          render={
+            <Button variant="ghost" size="icon-sm" aria-label="Report actions">
+              <MoreHorizontal className="size-4" aria-hidden />
+            </Button>
+          }
+        />
+        <DropdownMenuContent align="end">
+          <DropdownMenuItem onClick={() => onAction("open")} className="gap-2">
+            <FileSignature className="size-4" aria-hidden />
+            Open report
+          </DropdownMenuItem>
+          <DropdownMenuItem onClick={() => onAction("copy")}>Copy link for the client</DropdownMenuItem>
+          <DropdownMenuItem onClick={() => onAction("send")}>Send to the client now</DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+    </span>
   );
 }

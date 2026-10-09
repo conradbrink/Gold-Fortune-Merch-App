@@ -2,7 +2,8 @@ import { timingSafeEqual } from "node:crypto";
 import { createClient as createAdminClient } from "@supabase/supabase-js";
 import type { Database } from "@/lib/supabase/types";
 import { brevoConfigured, sendViaBrevo } from "@/lib/email/brevo";
-import { CLIENT_TEMPLATES, renderEmail } from "@/lib/email/templates";
+import { CLIENT_TEMPLATES, REPORT_TEMPLATES, renderEmail, type ReportLine } from "@/lib/email/templates";
+import { companyTime } from "@/lib/company-time";
 import { appUrl, signLink } from "@/lib/email/links";
 
 /**
@@ -84,6 +85,42 @@ export async function GET(request: Request) {
     if (e) console.error("messages: could not record the result of", args.p_id, e.message);
   }
 
+  // Each report as one line of the email: looked up when it is sent, so the
+  // email says what the report says now, with its own signed link.
+  async function reportLines(ids: unknown): Promise<ReportLine[]> {
+    const lines: ReportLine[] = [];
+    for (const id of Array.isArray(ids) ? ids : []) {
+      if (typeof id !== "string") continue;
+      const { data, error: lookupError } = await admin.rpc("job_report_view", { p_report_id: id });
+      // A lookup that failed is not a report that expired: the caller retries it.
+      if (lookupError) throw new Error(lookupError.message);
+      const v = data as {
+        timezone: string;
+        job_word: string;
+        site: { name: string } | null;
+        staff_name: string | null;
+        day: string;
+        checkin_at: string;
+        checkout_at: string | null;
+        on_site: boolean | null;
+        photos: unknown[];
+      } | null;
+      if (!v) continue;
+      lines.push({
+        url: `${appUrl()}/c/report/${signLink("report", id)}`,
+        siteName: v.site?.name ?? "",
+        staffName: v.staff_name,
+        day: v.day,
+        timeIn: companyTime(v.checkin_at, v.timezone),
+        timeOut: companyTime(v.checkout_at, v.timezone),
+        photos: v.photos.length,
+        onSite: v.on_site,
+        jobWord: v.job_word,
+      });
+    }
+    return lines;
+  }
+
   let sent = 0;
   let failed = 0;
   let deferred = 0;
@@ -102,9 +139,36 @@ export async function GET(request: Request) {
     const org = await orgOf(m.org_id);
     const companyName = org?.name?.trim() || "Tickd";
     const unsubscribeUrl = CLIENT_TEMPLATES.has(m.template) ? `${appUrl()}/c/unsubscribe/${signLink("unsubscribe", m.id)}` : null;
-    const email = renderEmail(m.template, (m.payload ?? {}) as Record<string, unknown>, { companyName, unsubscribeUrl });
+    let payload = (m.payload ?? {}) as Record<string, unknown>;
+    if (REPORT_TEMPLATES.has(m.template)) {
+      try {
+        payload = { ...payload, reports: await reportLines(payload.report_ids) };
+      } catch (e) {
+        // Back in the queue, not failed: the next run tries again.
+        await finish({ p_id: m.id, p_ok: false, p_error: `The report could not be looked up: ${e instanceof Error ? e.message : String(e)}` });
+        failed++;
+        continue;
+      }
+    }
+    let email: ReturnType<typeof renderEmail> = null;
+    let renderError: string | null = null;
+    try {
+      email = renderEmail(m.template, payload, { companyName, unsubscribeUrl });
+    } catch (e) {
+      renderError = e instanceof Error ? e.message : String(e);
+    }
     if (!email) {
-      await finish({ p_id: m.id, p_ok: false, p_error: `Unknown template ${m.template}`, p_permanent: true });
+      await finish({
+        p_id: m.id,
+        p_ok: false,
+        // Every lookup worked and found nothing: the reports expired or were
+        // withdrawn before sending. Anything else is the template's own fault.
+        p_error:
+          REPORT_TEMPLATES.has(m.template) && renderError
+            ? "The report expired or was withdrawn"
+            : renderError ?? `Unknown template ${m.template}`,
+        p_permanent: true,
+      });
       failed++;
       continue;
     }
