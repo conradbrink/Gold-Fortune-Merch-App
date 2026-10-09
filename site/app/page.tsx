@@ -145,7 +145,9 @@ const faqs = [
   { q: "Who is it not for?", a: "One-person businesses that only need to send quotes and invoices." },
 ];
 
-const wrap = "mx-auto grid gap-6 px-4 py-16 sm:gap-8 sm:px-6 sm:py-24";
+// One spacing rhythm for every section: 80px between sections on a phone, 128px
+// from sm up, and 24px (32px) between a heading block and what follows it.
+const wrap = "mx-auto grid gap-6 px-4 py-10 sm:gap-8 sm:px-6 sm:py-16";
 const h2 = "tk-reveal font-display text-3xl font-bold leading-[1.1] tracking-tight text-balance text-teal-900 sm:text-[2.75rem]";
 const lead = "max-w-2xl text-lg leading-relaxed text-pretty text-ink";
 
@@ -269,7 +271,7 @@ export default function Home() {
 
       <main id="top">
         {/* 1. Hero: the outcome, the risk taken away, and the real app. */}
-        <section className="mx-auto grid max-w-6xl items-center gap-10 px-4 pb-14 pt-8 sm:px-6 sm:pb-20 sm:pt-12 lg:grid-cols-[1.1fr_0.9fr] lg:gap-14 lg:pt-16">
+        <section className="mx-auto grid max-w-6xl items-center gap-10 px-4 pb-10 pt-8 sm:px-6 sm:pb-16 sm:pt-12 lg:grid-cols-[1.1fr_0.9fr] lg:gap-14 lg:pt-16">
           <div className="tk-hero grid gap-5 sm:gap-6">
             <p className="max-w-md text-sm font-semibold leading-snug text-teal-700 sm:text-base">
               For cleaning, security, electrical, garden, pest, pool, maintenance and sales teams
@@ -303,7 +305,7 @@ export default function Home() {
 
         {/* 2. Easy to say yes: the effort it doesn't take. */}
         <section aria-labelledby="start-title" className="border-y border-line bg-white">
-          <div className="mx-auto grid max-w-6xl gap-5 px-4 py-10 sm:px-6 md:gap-6 md:py-12">
+          <div className={`${wrap} max-w-6xl`}>
             <h2 id="start-title" className="tk-reveal font-display text-2xl font-bold leading-tight text-teal-900 sm:text-3xl">
               What do you need to start?
             </h2>
@@ -323,8 +325,7 @@ export default function Home() {
 
         {/* 3. The calls that eat the owner's day, and the answer with Tickd. */}
         <section aria-labelledby="day-title">
-          {/* Less room on top than other sections: the strip above already ends in white space. */}
-          <div className="mx-auto grid max-w-6xl gap-6 px-4 pb-16 pt-10 sm:gap-8 sm:px-6 sm:pb-24 sm:pt-14">
+          <div className={`${wrap} max-w-6xl`}>
             <div className="grid gap-3">
               <h2 id="day-title" className={h2}>Sound familiar?</h2>
               <p className={lead}>These are the calls that eat up your day. With {site.name}, each one takes a few seconds.</p>
@@ -403,7 +404,7 @@ export default function Home() {
         {/* 5. Where the day went: locations and kilometres. */}
         <section id="tracking" className="border-t border-line">
           <div className={`${wrap} max-w-6xl lg:grid-cols-[1fr_1.05fr] lg:items-center lg:gap-14`}>
-            <div className="grid content-start gap-6">
+            <div className="grid content-start gap-6 sm:gap-8">
               <div className="grid gap-3">
                 <h2 className={h2}>See where your team went.</h2>
                 <p className={lead}>While they&apos;re clocked in, the app keeps track of where they go. It stops when they clock out.</p>
@@ -430,7 +431,7 @@ export default function Home() {
                 height={1069}
               />
             </div>
-            <div className="order-1 grid content-start gap-6 lg:order-2">
+            <div className="order-1 grid content-start gap-6 sm:gap-8 lg:order-2">
               <div className="grid gap-3">
                 <h2 className={h2}>Send quotes and invoices from the same app.</h2>
                 <p className={lead}>No more typing invoices from paper job cards.</p>
@@ -501,7 +502,7 @@ export default function Home() {
 
         {/* 11. Questions */}
         <section id="faq" className="border-t border-line">
-          <div className="mx-auto grid max-w-3xl gap-6 px-4 py-16 sm:px-6 sm:py-24">
+          <div className={`${wrap} max-w-3xl`}>
             <h2 className={h2}>Questions</h2>
             <div className="divide-y divide-line border-y border-line">
               {faqs.map((f) => (
@@ -521,7 +522,7 @@ export default function Home() {
         </section>
 
         {/* 12. Sign up: the offer again, in plain words. */}
-        <section id="start" className="px-4 pb-14 sm:px-6 sm:pb-16">
+        <section id="start" className="px-4 pb-14 pt-10 sm:px-6 sm:pb-16 sm:pt-16">
           <div className="tk-reveal mx-auto grid max-w-6xl gap-5 rounded-2xl bg-teal-900 p-6 text-sand sm:gap-6 sm:p-10">
             <h2 className="font-display text-3xl font-extrabold leading-[1.1] tracking-tight text-balance sm:text-5xl">
               Try {site.name} free for {site.trialDays} days.
