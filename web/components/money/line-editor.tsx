@@ -51,9 +51,14 @@ export function lineProblem(lines: EditableLine[]): string | null {
   return null;
 }
 
-export function editableTotals(lines: EditableLine[], vatRate: number, inclusive: boolean) {
+export function editableTotals(
+  lines: EditableLine[],
+  vatRate: number,
+  inclusive: boolean,
+  otherLines: { qty: number; unitPrice: number }[] = []
+) {
   return documentTotals(
-    lines.map((l) => ({ qty: Number(l.qty) || 0, unitPrice: Number(l.price) || 0 })),
+    [...lines.map((l) => ({ qty: Number(l.qty) || 0, unitPrice: Number(l.price) || 0 })), ...otherLines],
     vatRate,
     inclusive
   );
@@ -66,6 +71,7 @@ export function LineEditor({
   currency,
   vatRate,
   pricesIncludeVat,
+  otherLines,
   disabled,
 }: {
   lines: EditableLine[];
@@ -74,9 +80,11 @@ export function LineEditor({
   currency: string;
   vatRate: number;
   pricesIncludeVat: boolean;
+  /** Lines edited elsewhere on the same document (a quote's products), counted in the totals. */
+  otherLines?: { qty: number; unitPrice: number }[];
   disabled?: boolean;
 }) {
-  const totals = editableTotals(lines, vatRate, pricesIncludeVat);
+  const totals = editableTotals(lines, vatRate, pricesIncludeVat, otherLines);
   const byId = new Map(items.map((i) => [i.id, i]));
   const update = (key: string, patch: Partial<EditableLine>) =>
     onChange(lines.map((l) => (l.key === key ? { ...l, ...patch } : l)));

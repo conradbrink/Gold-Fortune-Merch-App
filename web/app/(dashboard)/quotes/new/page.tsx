@@ -25,8 +25,7 @@ import {
 import { createQuote, type NewQuoteLine } from "@/lib/quotes";
 import { fetchServiceItems, type ServiceItem } from "@/lib/service-items";
 import { daysFromToday, fetchDocumentSettings, type DocumentSettings } from "@/lib/document-settings";
-import { documentTotals, validPrice } from "@/lib/money-docs";
-import { formatMoney } from "@/lib/money";
+import { validPrice } from "@/lib/money-docs";
 import { moduleEnabled } from "@/lib/modules";
 import { useCompanyConfig, useTerms } from "@/lib/use-company-config";
 import { lower } from "@/lib/terms";
@@ -112,17 +111,10 @@ export default function NewQuotePage() {
   const vatRate = Number(doc?.vat_rate ?? 0);
   const inclusive = doc?.prices_include_vat ?? false;
 
-  const totals = documentTotals(
-    [
-      ...productLines.map((l) => ({
-        qty: Number(l.qty) || 0,
-        unitPrice: netPrice(Number(l.price) || 0, Number(l.discount) || 0),
-      })),
-      ...lines.map((l) => ({ qty: Number(l.qty) || 0, unitPrice: Number(l.price) || 0 })),
-    ],
-    vatRate,
-    inclusive
-  );
+  const productTotalsLines = productLines.map((l) => ({
+    qty: Number(l.qty) || 0,
+    unitPrice: netPrice(Number(l.price) || 0, Number(l.discount) || 0),
+  }));
 
   function addProduct(p: Product) {
     setProductLines((prev) =>
@@ -383,13 +375,9 @@ export default function NewQuotePage() {
             currency={currency}
             vatRate={vatRate}
             pricesIncludeVat={inclusive}
+            otherLines={productTotalsLines}
             disabled={loading}
           />
-          {productLines.length > 0 && (
-            <p className="mt-3 text-right text-sm font-medium">
-              Quote total, products included: {formatMoney(totals.total, currency)}
-            </p>
-          )}
         </CardContent>
       </Card>
 
