@@ -133,7 +133,7 @@ const faqs = [
   },
   {
     q: "Can someone check in from home?",
-    a: "No. If someone checks in away from the job, Tickd warns you straight away.",
+    a: "Tickd flags it. Every check-in records how far the person was from the job, so one made from home stands out.",
   },
   {
     q: "Will my team mind?",
@@ -285,7 +285,7 @@ export default function Home() {
               <span className="mt-3 block text-[0.6em] leading-[1.1] text-teal-700">without phoning around.</span>
             </h1>
             <p className="max-w-xl text-lg leading-relaxed text-pretty text-ink sm:text-xl">
-              Your staff use the {site.name} app on their phones. When they finish a job, you see it straight away, with photos.
+              Your staff use the {site.name} app on their phones. When they finish a job, you see it on your dashboard, with photos.
               You don&apos;t have to call anyone to check.
             </p>
             <div className="grid gap-2.5 sm:justify-items-start">

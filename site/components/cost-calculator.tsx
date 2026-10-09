@@ -23,7 +23,9 @@ export function CostCalculator() {
   const monthly = hours * num(rate);
   // The anchor: Tickd's monthly price for the same team, from the same
   // numbers as the pricing section. Prices are in rand, so only beside rand.
-  const tickd = people > 0 ? planPrice(people, "monthly") : 0;
+  // Every active login is a paid seat (billing_seats_used), the owner's too,
+  // so the price is for the staff on site plus you.
+  const tickd = people > 0 ? planPrice(people + 1, "monthly") : 0;
 
   const field =
     "w-full min-h-11 rounded-lg bg-mint px-3 py-2.5 ring-1 ring-line focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-700";
@@ -78,7 +80,7 @@ export function CostCalculator() {
         {currency === "R" && tickd > 0 && (
           <p className="flex flex-wrap items-baseline gap-x-2 border-t border-line pt-5 text-lg leading-snug">
             <span>
-              {site.name} for {people} {people === 1 ? "user" : "users"}:
+              {site.name} for {people} {people === 1 ? "person" : "people"} and you:
             </span>
             <strong className="font-display text-2xl font-extrabold tabular-nums text-teal-900">{rand(tickd)} a month</strong>
           </p>

@@ -431,7 +431,7 @@ export function ProductDemo() {
               </p>
             </div>
 
-            {beat.card && !reduced && (
+            {beat.card && (
               <div key={`card-${shown}`}>
                 <DashCard card={beat.card} />
               </div>
