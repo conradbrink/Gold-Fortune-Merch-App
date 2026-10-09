@@ -464,7 +464,13 @@ export default function ReportsPage() {
       if (action === "open") {
         // Opened at once (a pop-up blocker allows only that), then pointed at the link.
         const win = window.open("", "_blank");
-        const url = await reportLink(visitId);
+        let url: string;
+        try {
+          url = await reportLink(visitId);
+        } catch (e) {
+          win?.close();
+          throw e;
+        }
         if (win) win.location.href = url;
         else window.location.href = url;
       } else if (action === "copy") {

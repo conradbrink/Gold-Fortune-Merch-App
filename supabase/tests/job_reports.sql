@@ -141,7 +141,10 @@ begin
   update public.company_settings set value = '"00:00"' where org_id = v_org and key = 'job_report_send_time';
   delete from public.message_outbox where org_id = v_org;
   perform public.queue_job_reports();
-  if (select count(*) from public.message_outbox where org_id = v_org and template = 'job_reports_day') <> 2 then
+  -- The fixtures check in 1 to 3 hours ago: just after the company's
+  -- midnight some fall on yesterday, so the evening count is not checked then.
+  if (now() at time zone v_tz)::time >= time '04:00'
+     and (select count(*) from public.message_outbox where org_id = v_org and template = 'job_reports_day') <> 2 then
     v_fail := v_fail || 'J2 the evening email was not one per site' || E'\n';
   end if;
 

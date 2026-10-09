@@ -14,6 +14,10 @@ export function SignaturePad({ onChange }: { onChange: (path: string) => void })
   const svg = useRef<SVGSVGElement>(null);
   const drawing = useRef(false);
   const [path, setPath] = useState("");
+  // The strokes so far, read by each pointer event: a fast stroke fires several
+  // moves before React renders, and each must add to the last, not to the
+  // value captured at the previous render.
+  const strokes = useRef("");
 
   function point(e: React.PointerEvent): string {
     const box = svg.current!.getBoundingClientRect();
@@ -23,6 +27,7 @@ export function SignaturePad({ onChange }: { onChange: (path: string) => void })
   }
 
   function update(next: string) {
+    strokes.current = next;
     setPath(next);
     onChange(next);
   }
@@ -38,10 +43,10 @@ export function SignaturePad({ onChange }: { onChange: (path: string) => void })
         onPointerDown={(e) => {
           e.currentTarget.setPointerCapture(e.pointerId);
           drawing.current = true;
-          update(`${path}M${point(e)}`);
+          update(`${strokes.current}M${point(e)}`);
         }}
         onPointerMove={(e) => {
-          if (drawing.current) update(`${path}L${point(e)}`);
+          if (drawing.current) update(`${strokes.current}L${point(e)}`);
         }}
         onPointerUp={() => {
           drawing.current = false;

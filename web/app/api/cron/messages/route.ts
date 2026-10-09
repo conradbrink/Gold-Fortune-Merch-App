@@ -91,7 +91,9 @@ export async function GET(request: Request) {
     const lines: ReportLine[] = [];
     for (const id of Array.isArray(ids) ? ids : []) {
       if (typeof id !== "string") continue;
-      const { data } = await admin.rpc("job_report_view", { p_report_id: id });
+      const { data, error: lookupError } = await admin.rpc("job_report_view", { p_report_id: id });
+      // A lookup that failed is not a report that expired: the caller retries it.
+      if (lookupError) throw new Error(lookupError.message);
       const v = data as {
         timezone: string;
         job_word: string;
@@ -138,19 +140,33 @@ export async function GET(request: Request) {
     const companyName = org?.name?.trim() || "Tickd";
     const unsubscribeUrl = CLIENT_TEMPLATES.has(m.template) ? `${appUrl()}/c/unsubscribe/${signLink("unsubscribe", m.id)}` : null;
     let payload = (m.payload ?? {}) as Record<string, unknown>;
-    if (REPORT_TEMPLATES.has(m.template)) payload = { ...payload, reports: await reportLines(payload.report_ids) };
+    if (REPORT_TEMPLATES.has(m.template)) {
+      try {
+        payload = { ...payload, reports: await reportLines(payload.report_ids) };
+      } catch (e) {
+        // Back in the queue, not failed: the next run tries again.
+        await finish({ p_id: m.id, p_ok: false, p_error: `The report could not be looked up: ${e instanceof Error ? e.message : String(e)}` });
+        failed++;
+        continue;
+      }
+    }
     let email: ReturnType<typeof renderEmail> = null;
+    let renderError: string | null = null;
     try {
       email = renderEmail(m.template, payload, { companyName, unsubscribeUrl });
-    } catch {
-      // A report that expired or was withdrawn before sending: nothing to send.
-      email = null;
+    } catch (e) {
+      renderError = e instanceof Error ? e.message : String(e);
     }
     if (!email) {
       await finish({
         p_id: m.id,
         p_ok: false,
-        p_error: REPORT_TEMPLATES.has(m.template) ? "The report expired or was withdrawn" : `Unknown template ${m.template}`,
+        // Every lookup worked and found nothing: the reports expired or were
+        // withdrawn before sending. Anything else is the template's own fault.
+        p_error:
+          REPORT_TEMPLATES.has(m.template) && renderError
+            ? "The report expired or was withdrawn"
+            : renderError ?? `Unknown template ${m.template}`,
         p_permanent: true,
       });
       failed++;
