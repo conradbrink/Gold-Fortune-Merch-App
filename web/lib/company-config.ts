@@ -35,6 +35,11 @@ export type CompanySettings = {
   dashboard_cards: string;
   /** The cards a new user's dashboard starts with, comma-separated widget ids. */
   dashboard_layout: string;
+  /** The Reports page's tabs, in order, comma-separated ids (lib/report-tabs.ts). */
+  report_tabs: string;
+  /** The Hours report marks a finished workday shorter or longer than these; 0 = no mark. */
+  report_short_day_hours: number;
+  report_long_day_hours: number;
 };
 
 export type CompanyConfig = {
@@ -71,6 +76,9 @@ const SETTING_FALLBACK: CompanySettings = {
   money_contracts: false,
   dashboard_cards: "jobs_done_pct,missed,gps_verified_pct,owed",
   dashboard_layout: "headline,sales,pipeline,field_team,store_health,live_reps",
+  report_tabs: "score,oos,coverage,adherence,reps,trends,form,photos",
+  report_short_day_hours: 0,
+  report_long_day_hours: 0,
 };
 
 function obj(v: unknown): Record<string, unknown> {
@@ -130,6 +138,9 @@ export function parseCompanyConfig(raw: unknown): CompanyConfig | null {
       money_contracts: bool(s.money_contracts, f.money_contracts),
       dashboard_cards: list(s.dashboard_cards, f.dashboard_cards),
       dashboard_layout: list(s.dashboard_layout, f.dashboard_layout),
+      report_tabs: list(s.report_tabs, f.report_tabs),
+      report_short_day_hours: int(s.report_short_day_hours, f.report_short_day_hours),
+      report_long_day_hours: int(s.report_long_day_hours, f.report_long_day_hours),
     },
     timezone: typeof r.timezone === "string" && r.timezone !== "" ? r.timezone : "UTC",
     vatRate: Number.isFinite(Number(r.vat_rate)) ? Number(r.vat_rate) : 0,

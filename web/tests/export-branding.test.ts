@@ -58,12 +58,16 @@ test("no logo, or one that cannot be fetched, is no logo rather than a failed ex
 });
 
 test("report tabs read in the company's words", () => {
-  const gf = reportTabs(goldFortune);
+  // Gold Fortune's `report_tabs` is today's eight; its labels are unchanged.
+  const gf = reportTabs(goldFortune, REPORT_TAB_VALUES.slice(0, 8));
   assert.deepEqual(
     gf.map((t) => t.label),
     ["Perfect Store", "Out of stock", "Coverage", "Adherence", "Reps", "Trends", "Form", "Photos"]
   );
-  assert.deepEqual(gf.map((t) => t.value), [...REPORT_TAB_VALUES]);
+  assert.deepEqual(
+    reportTabs(goldFortune).map((t) => t.value),
+    [...REPORT_TAB_VALUES]
+  );
   const neutral = reportTabs(DEFAULT_TERMS);
   assert.equal(neutral[0].label, "Perfect Site");
   assert.equal(neutral[4].label, "Staff");

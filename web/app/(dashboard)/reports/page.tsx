@@ -15,9 +15,14 @@ import { InsightsPanel } from "@/components/reports/insights-panel";
 import { PerfectStoreTable } from "@/components/reports/perfect-store-table";
 import { OosHotspotsTable } from "@/components/reports/oos-hotspots-table";
 import { AdherenceTable } from "@/components/reports/adherence-table";
+import { ServiceLogTable } from "@/components/reports/service-log-table";
+import { HoursTable } from "@/components/reports/hours-table";
 import { StorePicker } from "@/components/stores/store-picker";
-import { REPORT_TAB_VALUES, availableReportTabs, reportTabs, type ReportTab } from "@/lib/report-tabs";
-import { getCompanyConfig, useCompanyConfig, useTerms } from "@/lib/use-company-config";
+import { REPORT_TAB_VALUES, companyReportTabs, reportTabs, type ReportTab } from "@/lib/report-tabs";
+import { downloadServiceLogPdf, fetchServiceLog, serviceLogSheet, type ServiceLogRow } from "@/lib/service-log";
+import { fetchStaffHours, hoursDay, hoursSheet, type StaffHoursRow } from "@/lib/staff-hours";
+import { getCompanyConfig, useCompanyConfig, useTerms, type CompanyConfig } from "@/lib/use-company-config";
+import { companyRange } from "@/lib/company-time";
 import type { ModuleSet } from "@/lib/modules";
 import { lower, withArticle, type Terms } from "@/lib/terms";
 import { fileSlug } from "@/lib/export-filename";
@@ -122,11 +127,16 @@ export default function ReportsPage() {
    * failure with a Retry); this is what the tabs then follow.
    */
   const [loadedModules, setLoadedModules] = useState<ModuleSet | null>(null);
-  /** Only the tabs whose module the company has (`REPORT_TAB_MODULE`): a
-   * cleaning company has no Perfect Store, and asking for it would be refused. */
+  const [loadedTabs, setLoadedTabs] = useState<string | null>(null);
+  /** The whole configuration the last load worked from, for the same reason. */
+  const [loadedConfig, setLoadedConfig] = useState<CompanyConfig | null>(null);
+  const companyConfig = config ?? loadedConfig;
+  /** The company's tabs in its order (`report_tabs`, seeded from its trade),
+   * only those whose module it has (`REPORT_TAB_MODULE`): a cleaning company
+   * has no Perfect Store, and asking for it would be refused. */
   const available = useMemo(
-    () => availableReportTabs(config?.modules ?? loadedModules),
-    [config, loadedModules]
+    () => companyReportTabs(config?.modules ?? loadedModules, config?.settings.report_tabs ?? loadedTabs),
+    [config, loadedModules, loadedTabs]
   );
   /** From `lib/report-tabs` so the file that renders the tabs and the file
    * that links to them cannot disagree about what a tab is called. */
@@ -215,6 +225,9 @@ export default function ReportsPage() {
   const [perfect, setPerfect] = useState<PerfectStore[]>([]);
   const [hotspots, setHotspots] = useState<OosHotspot[]>([]);
   const [adherence, setAdherence] = useState<Adherence[]>([]);
+  const [serviceLog, setServiceLog] = useState<ServiceLogRow[]>([]);
+  const [hoursRows, setHoursRows] = useState<StaffHoursRow[]>([]);
+  const [pdfBusy, setPdfBusy] = useState(false);
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -268,10 +281,15 @@ export default function ReportsPage() {
       if (!cfg) throw new Error("Your company's settings could not be read.");
       if (isStale()) return;
       setLoadedModules(cfg.modules);
-      const mine = availableReportTabs(cfg.modules);
+      setLoadedTabs(cfg.settings.report_tabs);
+      setLoadedConfig(cfg);
+      // The new reports group by the company's days, so they are asked for
+      // the company's midnights, not the viewer's.
+      const companyDays = companyRange(range, cfg.timezone);
+      const mine = companyReportTabs(cfg.modules, cfg.settings.report_tabs);
       const has = (t: ReportTab) => mine.includes(t);
       const none = <T,>() => Promise.resolve([] as T[]);
-      const [g, s, t, f, ps, oh, ad] = await Promise.all([
+      const [g, s, t, f, ps, oh, ad, sl, hr] = await Promise.all([
         has("coverage") ? fetchCoverageGaps(supabase, range) : none<CoverageGap>(),
         has("reps") ? fetchRepScorecard(supabase, range) : none<RepScore>(),
         has("trends")
@@ -286,6 +304,8 @@ export default function ReportsPage() {
         has("score") ? fetchPerfectStoreScore(supabase, range) : none<PerfectStore>(),
         has("oos") ? fetchOosHotspots(supabase, range) : none<OosHotspot>(),
         has("adherence") ? fetchScheduleAdherence(supabase, range) : none<Adherence>(),
+        has("service_log") ? fetchServiceLog(supabase, companyDays, storeId || null) : none<ServiceLogRow>(),
+        has("hours") ? fetchStaffHours(supabase, companyDays) : none<StaffHoursRow>(),
       ]);
       if (isStale()) return;
       setGaps(g);
@@ -295,6 +315,8 @@ export default function ReportsPage() {
       setPerfect(ps);
       setHotspots(oh);
       setAdherence(ad);
+      setServiceLog(sl);
+      setHoursRows(hr);
     } catch (e) {
       if (isStale()) return;
       setError(e instanceof Error ? e.message : String(e));
@@ -364,6 +386,36 @@ export default function ReportsPage() {
     [form]
   );
 
+  /** Hours with the trade's short and long day marks. */
+  const hoursDays = useMemo(() => {
+    const limits = {
+      shortHours: companyConfig?.settings.report_short_day_hours ?? 0,
+      longHours: companyConfig?.settings.report_long_day_hours ?? 0,
+    };
+    return hoursRows.map((r) => hoursDay(r, limits));
+  }, [hoursRows, companyConfig]);
+  const timeZone = companyConfig?.timezone;
+
+  const pickedStore = stores.find((st) => st.id === storeId) ?? null;
+
+  async function serviceLogPdf() {
+    if (!storeId || serviceLog.length === 0) return;
+    setPdfBusy(true);
+    try {
+      await downloadServiceLogPdf(
+        supabase,
+        serviceLog.filter((r) => r.store_id === storeId),
+        { from: toLocalDateInput(range.from), to: toLocalDateInput(dayBefore(range.to)) },
+        terms,
+        timeZone ?? "UTC"
+      );
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setPdfBusy(false);
+    }
+  }
+
   const submissionsInPeriod = trends.reduce(
     (n, t) => n + Number(t.submissions ?? 0),
     0
@@ -403,7 +455,9 @@ export default function ReportsPage() {
     // lie about rows covering the whole estate, which is worse than a file with
     // no context at all: this one reads as evidence.
     const formFilters =
-      tab === "form"
+      tab === "service_log"
+        ? [storeId ? `${terms.site.one}: ${pickedStore?.name ?? storeId}` : null]
+        : tab === "form"
         ? [
             repId
               ? `${terms.staff.one}: ${reps.find((r) => r.id === repId)?.full_name ?? repId}`
@@ -629,6 +683,10 @@ export default function ReportsPage() {
             summary: summariseFieldStats(f),
           })),
         };
+      case "service_log":
+        return serviceLogSheet(serviceLog, terms, base.context, timeZone ?? "UTC");
+      case "hours":
+        return hoursSheet(hoursDays, terms, base.context, timeZone ?? "UTC");
       default:
         return null;
     }
@@ -866,6 +924,51 @@ export default function ReportsPage() {
             </CardHeader>
             <CardContent>
               {loading ? <SkeletonRows /> : <ComplianceTrendChart rows={trends} />}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="service_log" className="mt-4">
+          <Card>
+            <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-3 pb-2">
+              <div className="min-w-0 space-y-1">
+                <CardTitle className="text-base">Proof of service</CardTitle>
+                <p className="text-xs text-pretty text-muted-foreground">
+                  Every finished {lower(terms.job.one)}, by {lower(terms.site.one)}: who, when, whether they checked in on site, and the
+                  forms and photos that show it.{" "}
+                  {pickedStore
+                    ? `Showing ${pickedStore.name} only.`
+                    : `Pick one ${lower(terms.site.one)} above to make its PDF for your ${lower(terms.client.one)}.`}
+                </p>
+              </div>
+              {pickedStore && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={serviceLogPdf}
+                  disabled={loading || pdfBusy || serviceLog.length === 0}
+                >
+                  {pdfBusy ? "Making PDF…" : `PDF for ${pickedStore.name}`}
+                </Button>
+              )}
+            </CardHeader>
+            <CardContent className="px-0">
+              {loading ? <SkeletonRows /> : <ServiceLogTable rows={serviceLog} timeZone={timeZone} />}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="hours" className="mt-4">
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-base">Hours</CardTitle>
+              <p className="text-xs text-pretty text-muted-foreground">
+                Each {lower(terms.staff.one)}&apos;s day from the workday they started on the phone. &ldquo;Between&rdquo; is the workday not
+                spent on a {lower(terms.job.one)}: travel and waiting. Export it for payroll.
+              </p>
+            </CardHeader>
+            <CardContent className="px-0">
+              {loading ? <SkeletonRows /> : <HoursTable days={hoursDays} timeZone={timeZone} />}
             </CardContent>
           </Card>
         </TabsContent>

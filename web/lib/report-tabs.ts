@@ -18,6 +18,8 @@ export const REPORT_TAB_VALUES = [
   "trends",
   "form",
   "photos",
+  "service_log",
+  "hours",
 ] as const;
 
 export type ReportTab = (typeof REPORT_TAB_VALUES)[number];
@@ -39,12 +41,41 @@ export const REPORT_TAB_MODULE: Record<ReportTab, ModuleCode> = {
   trends: "distribution",
   form: "checklists_forms",
   photos: "checklists_forms",
+  service_log: "reports",
+  hours: "reports",
 };
 
-/** The tabs this company has, in order. Before the config loads: none. */
+/** The tabs the company's modules allow, in the catalogue's order. Before the config loads: none. */
 export function availableReportTabs(modules: ModuleSet | null): ReportTab[] {
   if (!modules) return [];
   return REPORT_TAB_VALUES.filter((tab) => moduleEnabled(modules, REPORT_TAB_MODULE[tab]));
+}
+
+function isReportTab(v: string): v is ReportTab {
+  return (REPORT_TAB_VALUES as readonly string[]).includes(v);
+}
+
+/** The tab ids in a `report_tabs` setting, in its order: known ones only, each once. */
+export function tabsFromSetting(setting: string): ReportTab[] {
+  const out: ReportTab[] = [];
+  for (const code of setting.split(",")) {
+    const c = code.trim();
+    if (isReportTab(c) && !out.includes(c)) out.push(c);
+  }
+  return out;
+}
+
+/**
+ * The tabs this company sees, in its order: the company setting `report_tabs`
+ * (seeded from its trade), less any whose module it does not have. A setting
+ * that names no tab it can have falls back to every tab its modules allow, so
+ * the page is never empty. Gold Fortune's setting is today's eight in today's
+ * order.
+ */
+export function companyReportTabs(modules: ModuleSet | null, setting: string | null | undefined): ReportTab[] {
+  if (!modules) return [];
+  const chosen = tabsFromSetting(setting ?? "").filter((tab) => moduleEnabled(modules, REPORT_TAB_MODULE[tab]));
+  return chosen.length > 0 ? chosen : availableReportTabs(modules);
 }
 
 /**
@@ -62,6 +93,8 @@ export function reportTabs(t: Terms, only?: readonly ReportTab[]): { value: Repo
     trends: "Trends",
     form: "Form",
     photos: "Photos",
+    service_log: "Proof of service",
+    hours: "Hours",
   };
   return (only ?? REPORT_TAB_VALUES).map((value) => ({ value, label: labels[value] }));
 }
