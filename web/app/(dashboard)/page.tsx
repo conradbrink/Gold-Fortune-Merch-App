@@ -20,7 +20,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { createClient } from "@/lib/supabase/client";
 import { getCompanyConfig, useCompanyConfig, useTerms } from "@/lib/use-company-config";
-import { rangeDays, rangeForPreset, toLocalDateInput, type DateRange } from "@/lib/date-range";
+import { rangeDays, rangeForPreset, type DateRange } from "@/lib/date-range";
 import { fetchLiveReps, type LiveReps } from "@/lib/live-reps";
 import { fetchTargetProgress, monthStart } from "@/lib/targets";
 import {
@@ -49,6 +49,7 @@ import {
   fetchContractsDue,
   fetchNumbers,
   fetchToday,
+  localDay,
   type ContractsDue,
   type Numbers,
   type Today,
@@ -418,9 +419,8 @@ export default function InsightsDashboardPage() {
       const [n, td, cd] = await Promise.allSettled([
         codes.length > 0 ? fetchNumbers(supabase, range, codes) : Promise.resolve(null),
         wantsToday ? fetchToday(supabase, company.timezone) : Promise.resolve(null),
-        wantsContracts
-          ? fetchContractsDue(supabase, toLocalDateInput(new Date()))
-          : Promise.resolve(null),
+        // From the company's today, like every other number here, not the browser's.
+        wantsContracts ? fetchContractsDue(supabase, localDay(company.timezone)) : Promise.resolve(null),
       ]);
       if (cancelled) return;
       if (n.status === "fulfilled") setNumbers(n.value);

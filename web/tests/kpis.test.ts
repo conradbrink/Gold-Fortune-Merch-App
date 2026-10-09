@@ -95,6 +95,8 @@ test("numbers read as people say them", () => {
   assert.equal(formatKpi(findKpi("owed")!, 650, money), "R 650");
   assert.equal(formatKpi(findKpi("time_on_site")!, 35.2, money), "35 min");
   assert.equal(formatKpi(findKpi("longest_gap")!, 240, money), "4 h 0 min");
+  assert.equal(formatKpi(findKpi("longest_gap")!, 119.6, money), "2 h 0 min"); // rounded before the split
+  assert.equal(formatKpi(findKpi("time_on_site")!, 89.6, money), "1 h 30 min");
   assert.equal(formatKpi(findKpi("km")!, 6416.1, money), "6,416 km");
   assert.equal(formatKpi(findKpi("km_per_job")!, 10, money), "10 km");
   assert.equal(formatKpi(findKpi("hours_worked")!, 923.9, money), "923.9 h");

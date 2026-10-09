@@ -36,7 +36,23 @@ export type TodayJob = {
 
 export type Today = { jobs: TodayJob[] };
 
-function localDay(timeZone: string, d = new Date()): string {
+/**
+ * The Today card's line, "{done} of {of} done, {underway} under way": counted
+ * against the plan when there is one. Work nobody planned is listed, not added
+ * to the plan's count, or the card could say 2 of 3 with all 3 still open.
+ */
+export function todayProgress(jobs: TodayJob[]): { done: number; underway: number; of: number } {
+  const planned = jobs.filter((j) => j.planned);
+  const base = planned.length > 0 ? planned : jobs;
+  return {
+    done: base.filter((j) => j.status === "done").length,
+    underway: base.filter((j) => j.status === "in_progress").length,
+    of: base.length,
+  };
+}
+
+/** The company's calendar day ("YYYY-MM-DD") at `d`, which can differ from the browser's. */
+export function localDay(timeZone: string, d = new Date()): string {
   return new Intl.DateTimeFormat("en-CA", { timeZone, year: "numeric", month: "2-digit", day: "2-digit" }).format(d);
 }
 

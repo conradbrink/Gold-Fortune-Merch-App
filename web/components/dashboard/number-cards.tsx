@@ -17,7 +17,7 @@ import {
   type Kpi,
   type KpiDef,
 } from "@/lib/kpis";
-import type { ContractsDue, Numbers, Today } from "@/lib/dashboard-numbers";
+import { todayProgress, type ContractsDue, type Numbers, type Today } from "@/lib/dashboard-numbers";
 
 /**
  * The trade dashboards' cards (Stage 7 Part 3). They use the headline's own
@@ -224,9 +224,7 @@ export function YourNumbers({
 /** Today: who is where, the late and not-started first; done work as a count. */
 export function TodayCard({ today }: { today: Today }) {
   const t = useTerms();
-  const planned = today.jobs.filter((j) => j.planned);
-  const done = today.jobs.filter((j) => j.status === "done").length;
-  const underway = today.jobs.filter((j) => j.status === "in_progress").length;
+  const { done, underway, of } = todayProgress(today.jobs);
   const open = today.jobs.filter((j) => j.status !== "done");
   const shown = [...open.filter((j) => j.status === "in_progress"), ...open.filter((j) => j.status === "not_started")].slice(0, 6);
   return (
@@ -250,7 +248,7 @@ export function TodayCard({ today }: { today: Today }) {
             <span className="text-2xl font-semibold tabular-nums">{done}</span>
             <span className="text-muted-foreground">
               {" "}
-              of {planned.length > 0 ? planned.length : today.jobs.length} done
+              of {of} done
               {underway > 0 ? `, ${underway} under way` : ""}
             </span>
           </p>

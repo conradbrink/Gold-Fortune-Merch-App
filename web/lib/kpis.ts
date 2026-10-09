@@ -309,8 +309,11 @@ export function formatKpi(def: KpiDef, value: number, money: (n: number) => stri
       return `${Math.round(value * 100)}%`;
     case "money":
       return money(value);
-    case "minutes":
-      return value >= 90 ? `${Math.floor(value / 60)} h ${Math.round(value % 60)} min` : `${Math.round(value)} min`;
+    case "minutes": {
+      // Rounded once, before the split: 119.6 is "2 h 0 min", never "1 h 60 min".
+      const m = Math.round(value);
+      return m >= 90 ? `${Math.floor(m / 60)} h ${m % 60} min` : `${m} min`;
+    }
     case "hours":
       return `${value.toLocaleString("en-GB", { maximumFractionDigits: 1 })} h`;
     case "km":
