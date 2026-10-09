@@ -291,7 +291,7 @@ export default function Home() {
             <div className="grid gap-2.5 sm:justify-items-start">
               <TrialButton />
               <p className="text-center text-sm font-medium text-muted sm:text-left">
-                Free for {site.trialDays} days, no card needed. Then under {rand(weeklyCeiling())} a week.
+                {rand(weeklyCeiling())}/week · {site.trialDays} days risk-free
               </p>
             </div>
           </div>

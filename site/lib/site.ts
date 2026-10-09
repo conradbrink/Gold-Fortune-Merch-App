@@ -87,7 +87,7 @@ export function planPrice(users: number, billing: Billing): number {
 }
 
 /** The monthly starting price as a week, rounded up to the next R10, for
- *  "under R350 a week" (R1,499 × 12 ÷ 52 = R345.92). */
+ *  the hero's "R350/week" (R1,499 × 12 ÷ 52 = R345.92). */
 export function weeklyCeiling(): number {
   return Math.ceil((pricing.monthly.base * 12) / 52 / 10) * 10;
 }
