@@ -157,14 +157,14 @@ const lead = "max-w-2xl text-lg leading-relaxed text-pretty text-ink";
  * unbilled work, being needed on every site), not only the feature.
  */
 const OWNER_GETS = [
-  "Who's at work, and their real hours",
-  "Where everyone is, live, and km driven",
-  "Every task done, proven with photos",
-  "Signed client reports that win renewals",
-  "Invoice every finished task",
-  "Get paid without arguments, and see who owes you",
-  "Alerts, so you needn't be on every site",
-  "A score for each employee",
+  "See who's at work and the hours they've worked",
+  "See where your staff are, live, and how far they drive",
+  "Photos and GPS proof that every task was done",
+  "A signed report for your client after every task",
+  "Never forget to invoice a finished task",
+  "Get paid on time and see who still owes you",
+  "An alert when something goes wrong",
+  "A performance report for each employee",
 ];
 
 function TrialButton({ className = "" }: { className?: string }) {
