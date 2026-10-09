@@ -15,17 +15,35 @@ import { lower } from "@/lib/terms";
 import { SCORE_PARTS, findPart, parseWeights, weightsSetting } from "@/lib/staff-score";
 
 type DraftWeight = { code: string; weight: string };
-type Draft = { tabs: ReportTab[]; shortHours: string; longHours: string; weights: DraftWeight[] };
+type Draft = {
+  tabs: ReportTab[];
+  shortHours: string;
+  longHours: string;
+  dayNormal: string;
+  weekNormal: string;
+  sundayOvertime: boolean;
+  weights: DraftWeight[];
+};
 
-const SETTING_KEYS = ["report_tabs", "report_short_day_hours", "report_long_day_hours", "staff_score_weights"];
+const SETTING_KEYS = [
+  "report_tabs",
+  "report_short_day_hours",
+  "report_long_day_hours",
+  "report_day_normal_hours",
+  "report_week_normal_hours",
+  "report_sunday_is_overtime",
+  "staff_score_weights",
+];
 const toDraftWeights = (setting: string) => parseWeights(setting).map((w) => ({ code: w.code, weight: String(w.weight) }));
 const weightOk = (v: string) => /^\d{1,3}$/.test(v) && Number(v) <= 100;
 
 const hoursOk = (v: string) => /^\d{1,2}$/.test(v) && Number(v) <= 24;
+const weekHoursOk = (v: string) => /^\d{1,3}$/.test(v) && Number(v) <= 168;
 
 /**
- * The Reports page's tabs and their order (`report_tabs`), and the Hours
- * report's short and long day marks, all seeded from the trade at sign-up.
+ * The Reports page's tabs and their order (`report_tabs`), the Hours
+ * report's short and long day marks and its overtime rules, all seeded from
+ * the trade at sign-up.
  */
 export function ReportsSettingsCard({ orgId, canEdit }: { orgId: string; canEdit: boolean }) {
   const t = useTerms();
@@ -42,6 +60,9 @@ export function ReportsSettingsCard({ orgId, canEdit }: { orgId: string; canEdit
     tabs: companyReportTabs(config.modules, config.settings.report_tabs),
     shortHours: String(config.settings.report_short_day_hours),
     longHours: String(config.settings.report_long_day_hours),
+    dayNormal: String(config.settings.report_day_normal_hours),
+    weekNormal: String(config.settings.report_week_normal_hours),
+    sundayOvertime: config.settings.report_sunday_is_overtime,
     weights: toDraftWeights(config.settings.staff_score_weights),
   };
   const d = draft ?? current;
@@ -70,6 +91,8 @@ export function ReportsSettingsCard({ orgId, canEdit }: { orgId: string; canEdit
   async function save() {
     if (d.tabs.length === 0) return setError("Keep at least one tab.");
     if (!hoursOk(d.shortHours) || !hoursOk(d.longHours)) return setError("Hours are a whole number from 0 to 24.");
+    if (!hoursOk(d.dayNormal)) return setError("A normal day is a whole number of hours from 0 to 24.");
+    if (!weekHoursOk(d.weekNormal)) return setError("A normal week is a whole number of hours from 0 to 168.");
     if (d.weights.length === 0 || d.weights.some((w) => !weightOk(w.weight)) || total !== 100) {
       return setError(`The score's weights must be whole numbers adding up to 100 (now ${total}).`);
     }
@@ -82,6 +105,9 @@ export function ReportsSettingsCard({ orgId, canEdit }: { orgId: string; canEdit
           { org_id: orgId, key: "report_tabs", value: d.tabs.join(",") },
           { org_id: orgId, key: "report_short_day_hours", value: Number(d.shortHours) },
           { org_id: orgId, key: "report_long_day_hours", value: Number(d.longHours) },
+          { org_id: orgId, key: "report_day_normal_hours", value: Number(d.dayNormal) },
+          { org_id: orgId, key: "report_week_normal_hours", value: Number(d.weekNormal) },
+          { org_id: orgId, key: "report_sunday_is_overtime", value: d.sundayOvertime },
           {
             org_id: orgId,
             key: "staff_score_weights",
@@ -145,6 +171,9 @@ export function ReportsSettingsCard({ orgId, canEdit }: { orgId: string; canEdit
       tabs,
       shortHours: String(Number(value("report_short_day_hours") ?? 0)),
       longHours: String(Number(value("report_long_day_hours") ?? 0)),
+      dayNormal: String(Number(value("report_day_normal_hours") ?? 0)),
+      weekNormal: String(Number(value("report_week_normal_hours") ?? 0)),
+      sundayOvertime: value("report_sunday_is_overtime") === true,
       weights: toDraftWeights(String(value("staff_score_weights") ?? "")),
     });
   }
@@ -154,8 +183,8 @@ export function ReportsSettingsCard({ orgId, canEdit }: { orgId: string; canEdit
       <CardHeader>
         <CardTitle className="text-base">Reports</CardTitle>
         <CardDescription>
-          The tabs on the Reports page, in this order, when the Hours report marks a day as short or long, and what
-          the {lower(t.staff.one)} score is made of.
+          The tabs on the Reports page, in this order, when the Hours report marks a day as short or long or counts
+          overtime, and what the {lower(t.staff.one)} score is made of.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -241,6 +270,49 @@ export function ReportsSettingsCard({ orgId, canEdit }: { orgId: string; canEdit
             0 turns a mark off. Only finished workdays are marked.
           </p>
         </div>
+        <fieldset className="grid gap-4 sm:grid-cols-2">
+          <legend className="mb-3 text-sm font-medium text-foreground">Overtime</legend>
+          <div className="space-y-1.5">
+            <Label htmlFor="report-day-normal">Normal day (hours)</Label>
+            <Input
+              id="report-day-normal"
+              inputMode="numeric"
+              value={d.dayNormal}
+              disabled={!canEdit}
+              aria-invalid={!hoursOk(d.dayNormal)}
+              aria-describedby="report-overtime-hint"
+              onChange={(e) => change({ dayNormal: e.target.value.trim() })}
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="report-week-normal">Normal week (hours)</Label>
+            <Input
+              id="report-week-normal"
+              inputMode="numeric"
+              value={d.weekNormal}
+              disabled={!canEdit}
+              aria-invalid={!weekHoursOk(d.weekNormal)}
+              aria-describedby="report-overtime-hint"
+              onChange={(e) => change({ weekNormal: e.target.value.trim() })}
+            />
+          </div>
+          <p id="report-overtime-hint" className="text-xs text-pretty text-muted-foreground sm:col-span-2">
+            Hours past a normal day, or past a normal week from Monday, count as overtime. 0 turns it off.
+          </p>
+          <label className="flex min-h-11 items-start gap-2 text-sm sm:col-span-2">
+            <input
+              type="checkbox"
+              className="mt-0.5 size-4"
+              checked={d.sundayOvertime}
+              disabled={!canEdit}
+              onChange={(e) => change({ sundayOvertime: e.target.checked })}
+            />
+            <span>
+              <span className="font-medium">Sunday is all overtime</span>
+              <span className="block text-xs text-muted-foreground">Every hour worked on a Sunday counts as overtime.</span>
+            </span>
+          </label>
+        </fieldset>
         <fieldset className="space-y-3">
           <legend className="text-sm font-medium text-foreground">{t.staff.one} score</legend>
           <p className="text-xs text-pretty text-muted-foreground">

@@ -8,9 +8,18 @@ import { clockDuration, hoursTotals, type HoursDay } from "@/lib/staff-hours";
 
 /**
  * Hours: one row per person per day, newest first. A short or long day is
- * named in words, not only in colour; a day still open says so.
+ * named in words, not only in colour; a day still open says so. With an
+ * overtime rule on, each day is split into normal hours and overtime.
  */
-export function HoursTable({ days, timeZone }: { days: HoursDay[]; timeZone: string | undefined }) {
+export function HoursTable({
+  days,
+  timeZone,
+  overtime = false,
+}: {
+  days: HoursDay[];
+  timeZone: string | undefined;
+  overtime?: boolean;
+}) {
   const t = useTerms();
   // Times on the company\'s clock, like the dates beside them.
   const time = (iso: string | null) => companyTime(iso, timeZone) || "-";
@@ -29,6 +38,11 @@ export function HoursTable({ days, timeZone }: { days: HoursDay[]; timeZone: str
         <span className="font-medium text-foreground tabular-nums">{clockDuration(totals.workdaySeconds)}</span> hours worked by{" "}
         <span className="tabular-nums">{totals.people}</span> {lower(totals.people === 1 ? t.staff.one : t.staff.many)},{" "}
         <span className="tabular-nums">{clockDuration(totals.onsiteSeconds)}</span> of it on site,{" "}
+        {overtime && (
+          <>
+            <span className="tabular-nums">{clockDuration(totals.overtimeSeconds)}</span> of it overtime,{" "}
+          </>
+        )}
         <span className="tabular-nums">{totals.km.toLocaleString("en-GB")}</span> km
         {totals.short > 0 && (
           <>
@@ -50,6 +64,8 @@ export function HoursTable({ days, timeZone }: { days: HoursDay[]; timeZone: str
             <TableHead className="hidden text-right sm:table-cell">First in</TableHead>
             <TableHead className="hidden text-right sm:table-cell">Last out</TableHead>
             <TableHead className="text-right">Workday</TableHead>
+            {overtime && <TableHead className="hidden text-right lg:table-cell">Normal</TableHead>}
+            {overtime && <TableHead className="hidden text-right sm:table-cell">Overtime</TableHead>}
             <TableHead className="hidden text-right md:table-cell">On site</TableHead>
             <TableHead className="hidden text-right lg:table-cell">Between</TableHead>
             <TableHead className="text-right">{t.job.many}</TableHead>
@@ -73,7 +89,23 @@ export function HoursTable({ days, timeZone }: { days: HoursDay[]; timeZone: str
                 {d.mark && (
                   <span className="ml-1.5 text-xs font-medium text-destructive">{d.mark === "short" ? "short" : "long"}</span>
                 )}
+                {/* On a phone the overtime sits under the workday rather than in its own column. */}
+                {overtime && (d.overtimeSeconds ?? 0) > 0 && (
+                  <span className="block text-xs text-muted-foreground sm:hidden">{clockDuration(d.overtimeSeconds)} over</span>
+                )}
               </TableCell>
+              {overtime && (
+                <TableCell className="hidden text-right tabular-nums text-muted-foreground lg:table-cell">
+                  {clockDuration(d.normalSeconds)}
+                </TableCell>
+              )}
+              {overtime && (
+                <TableCell
+                  className={`hidden text-right tabular-nums sm:table-cell ${(d.overtimeSeconds ?? 0) > 0 ? "font-medium" : "text-muted-foreground"}`}
+                >
+                  {clockDuration(d.overtimeSeconds)}
+                </TableCell>
+              )}
               <TableCell className="hidden text-right tabular-nums md:table-cell">{clockDuration(d.onsite_seconds)}</TableCell>
               <TableCell className="hidden text-right tabular-nums text-muted-foreground lg:table-cell">
                 {clockDuration(d.betweenSeconds)}

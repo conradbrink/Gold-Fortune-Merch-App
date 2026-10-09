@@ -40,6 +40,11 @@ export type CompanySettings = {
   /** The Hours report marks a finished workday shorter or longer than these; 0 = no mark. */
   report_short_day_hours: number;
   report_long_day_hours: number;
+  /** Hours report overtime: past these hours a day or ISO week; 0 = no rule (lib/staff-hours.ts). */
+  report_day_normal_hours: number;
+  report_week_normal_hours: number;
+  /** Every Sunday hour is overtime. */
+  report_sunday_is_overtime: boolean;
   /** The staff score's parts and weights, "code:weight,…" adding to 100 (lib/staff-score.ts). */
   staff_score_weights: string;
 };
@@ -81,6 +86,9 @@ const SETTING_FALLBACK: CompanySettings = {
   report_tabs: "score,oos,coverage,adherence,reps,trends,form,photos",
   report_short_day_hours: 0,
   report_long_day_hours: 0,
+  report_day_normal_hours: 0,
+  report_week_normal_hours: 0,
+  report_sunday_is_overtime: false,
   staff_score_weights: "sales:35,visits:25,coverage:15,merchandising:15,compliance:10",
 };
 
@@ -144,6 +152,9 @@ export function parseCompanyConfig(raw: unknown): CompanyConfig | null {
       report_tabs: list(s.report_tabs, f.report_tabs),
       report_short_day_hours: int(s.report_short_day_hours, f.report_short_day_hours),
       report_long_day_hours: int(s.report_long_day_hours, f.report_long_day_hours),
+      report_day_normal_hours: int(s.report_day_normal_hours, f.report_day_normal_hours),
+      report_week_normal_hours: int(s.report_week_normal_hours, f.report_week_normal_hours),
+      report_sunday_is_overtime: bool(s.report_sunday_is_overtime, f.report_sunday_is_overtime),
       staff_score_weights:
         typeof s.staff_score_weights === "string" && /^([a-z_]+:\d{1,3}(,[a-z_]+:\d{1,3})*)?$/.test(s.staff_score_weights)
           ? s.staff_score_weights
