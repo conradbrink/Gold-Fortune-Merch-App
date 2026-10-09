@@ -161,6 +161,8 @@ type Beat = {
   /** Whose phone it is, when it is not Thabo's. */
   who?: string;
   phone?: () => ReactNode;
+  /** The phone scene's images, loaded ahead so a scene change never waits on one. */
+  images?: string[];
   window?: { url: string; src: string; mark: Box; zoom: number; focus?: Box };
   /** Office scenes: what the screen tells you, under the window. */
   points?: string[];
@@ -174,6 +176,7 @@ const beats: Beat[] = [
     say: "Thabo starts his day with one tap.",
     part: "team",
     ms: 4600,
+    images: [shot("01-day-before"), shot("02-day-started")],
     phone: () => (
       <>
         <ShotScreen
@@ -197,6 +200,7 @@ const beats: Beat[] = [
     say: "He checks in when he gets to the first job.",
     part: "team",
     ms: 4600,
+    images: [shot("03-site-before-checkin"), shot("04-site-checked-in")],
     phone: () => (
       <>
         <ShotScreen
@@ -222,6 +226,7 @@ const beats: Beat[] = [
     part: "team",
     ms: 4600,
     phone: CameraThenForm,
+    images: ["/demo/washroom.jpg", shot("05b-photo-taken")],
     card: { icon: <Camera className="size-4" />, tone: "teal", title: "New photos from Office block", body: "Bathrooms · 07:44", photo: "/demo/washroom.jpg", delay: 2100 },
   },
   {
@@ -230,6 +235,7 @@ const beats: Beat[] = [
     part: "team",
     who: "Sipho",
     ms: 4600,
+    images: [shot("03-site-before-checkin")],
     phone: () => (
       <>
         <ShotScreen frames={[{ src: shot("03-site-before-checkin"), at: 0 }]} taps={[{ x: 16, y: 309, w: 328, h: 52, at: 900 }]} />
@@ -329,9 +335,14 @@ function PhoneStatus({ time }: { time: string }) {
 }
 
 // Each beat's images, so the next beat's can load while this one plays.
-const beatImages: string[][] = beats.map((b) =>
-  b.window ? [b.window.src] : b.phone === CameraThenForm ? ["/demo/washroom.jpg", shot("05b-photo-taken")] : [],
-);
+const beatImages: string[][] = beats.map((b) => (b.window ? [b.window.src] : (b.images ?? [])));
+
+// The scene whose phone screen is on show at scene `i`: its own, or the last
+// one before it (the phone holds its screen through dashboard scenes).
+const phoneAt = (i: number) => {
+  for (let j = Math.min(i, beats.length - 1); j >= 0; j--) if (beats[j].phone) return j;
+  return 0;
+};
 
 const CTA = beats.length;
 const END_MS = 4500;
@@ -377,6 +388,8 @@ export function ProductDemo() {
     for (const src of beatImages[(step + 1) % beatImages.length] ?? []) {
       const img = new window.Image();
       img.src = src;
+      // Decode now, not when the scene mounts: an undecoded image paints blank.
+      img.decode?.().catch(() => {});
     }
   }, [step, visible]);
 
@@ -394,9 +407,16 @@ export function ProductDemo() {
   const beat = beats[Math.min(shown, beats.length - 1)];
   const office = !!beat.window && !end;
   // The phone keeps its last screen while a dashboard scene plays.
-  const lastPhone = [...beats.slice(0, Math.min(shown, beats.length - 1) + 1)].reverse().find((b) => b.phone)!;
-  const Phone = (beat.phone ?? lastPhone.phone)!;
-  const who = beat.who ?? lastPhone.who ?? "Thabo";
+  const phoneIdx = phoneAt(shown);
+  const Phone = beats[phoneIdx].phone!;
+  const who = beats[phoneIdx].who ?? "Thabo";
+  // The screen that was on show before this one. When the screen changes, it
+  // stays underneath, finished, while the new one fades in over it, so the
+  // phone never shows an empty screen between scenes. (Stored with the
+  // set-state-while-rendering pattern, so it is right on the first paint.)
+  const [screens, setScreens] = useState({ now: phoneIdx, before: phoneIdx });
+  if (screens.now !== phoneIdx) setScreens({ now: phoneIdx, before: screens.now });
+  const Under = screens.before !== phoneIdx ? beats[screens.before].phone : undefined;
 
   return (
     <figure ref={ref} className="mx-auto grid w-full max-w-[30rem] gap-4">
@@ -472,8 +492,15 @@ export function ProductDemo() {
                 <p className="mb-2 text-center text-xs font-semibold text-teal-100/80">{who}&apos;s phone</p>
                 <div className="rounded-[2.2rem] bg-[#1b1d1f] p-2 shadow-2xl shadow-black/50 ring-1 ring-white/10">
                   <div className="relative overflow-hidden rounded-[1.8rem] bg-[#f5f6f7]">
-                    <div className="relative aspect-[360/760] overflow-hidden [container-type:inline-size]" key={office ? "held" : shown}>
-                      <Phone />
+                    <div className="relative aspect-[360/760] overflow-hidden [container-type:inline-size]">
+                      {Under && (
+                        <div key={`under-${screens.before}`} className="tk-settled absolute inset-0">
+                          <Under />
+                        </div>
+                      )}
+                      <div key={`screen-${phoneIdx}`} className={`absolute inset-0 ${Under ? "tk-fade" : ""}`}>
+                        <Phone />
+                      </div>
                       <PhoneStatus time={beat.when.includes(":") && !office ? beat.when : "09:15"} />
                     </div>
                     <AndroidNav />
