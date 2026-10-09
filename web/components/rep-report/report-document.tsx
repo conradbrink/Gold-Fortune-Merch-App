@@ -1,3 +1,4 @@
+import { parseWeights } from "@/lib/staff-score";
 import {
   visitsServed,
   classifyScore,
@@ -65,6 +66,8 @@ export type ReportMeta = {
    * has no sales or merchandising sections and they are not in the score.
    */
   sells: boolean;
+  /** The company's score weights (`staff_score_weights`, lib/staff-score.ts). */
+  weights: string;
 };
 
 /** Above 18 rows the missed list runs in two columns instead of one. */
@@ -108,7 +111,11 @@ export function RepPerformanceReport({
   const jobs = lower(t.job.many);
   const served = visitsServed(summary, missed);
   const sells = meta.sells;
-  const score = computeScore(summary, stores, missed, t, sells);
+  const score = computeScore(summary, stores, missed, t, {
+    weights: parseWeights(meta.weights),
+    team: report.team,
+    sells,
+  });
   const merch = merchandisingCompliance(summary);
   const top = topStores(stores);
   const currency = meta.currency;
@@ -256,11 +263,15 @@ export function RepPerformanceReport({
               </thead>
               <tbody>
                 {score.components.map((c) => (
-                  <tr key={c.key} className={c.value === null ? "rr-row-muted" : undefined}>
+                  <tr key={c.key} className={c.state !== "scored" ? "rr-row-muted" : undefined}>
                     <td>{c.label}</td>
-                    <td className="rr-num">{c.weight}%</td>
+                    <td className="rr-num">{Number.isInteger(c.weight) ? c.weight : c.weight.toFixed(1)}%</td>
                     <td className="rr-num">
-                      {c.value === null ? "excluded" : `${c.effectiveWeight.toFixed(1)}%`}
+                      {c.state === "scored"
+                        ? `${c.effectiveWeight.toFixed(1)}%`
+                        : c.state === "not_enough"
+                          ? "not enough data"
+                          : "not measured yet"}
                     </td>
                     <td className="rr-num">{percentOf100(c.value)}</td>
                     <td className="rr-basis">{c.basis}</td>
@@ -268,10 +279,17 @@ export function RepPerformanceReport({
                 ))}
               </tbody>
             </table>
+            {score.focus && (
+              <p className="rr-focus">
+                Work on this next: <strong>{score.focus.label}</strong> ({percentOf100(score.focus.value)}), the
+                part losing the most points.
+              </p>
+            )}
             {score.reweighted && (
               <p className="rr-footnote">
-                A component the database cannot measure is excluded and its weight shared
-                across the rest in proportion, rather than counted as nil.
+                A part that is not measured yet, or rests on fewer than five events, sits out and its
+                weight is shared across the rest in proportion, rather than counted as nil. Planned work
+                on approved leave days is left out.
               </p>
             )}
           </div>

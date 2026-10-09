@@ -40,6 +40,8 @@ export type CompanySettings = {
   /** The Hours report marks a finished workday shorter or longer than these; 0 = no mark. */
   report_short_day_hours: number;
   report_long_day_hours: number;
+  /** The staff score's parts and weights, "code:weight,…" adding to 100 (lib/staff-score.ts). */
+  staff_score_weights: string;
 };
 
 export type CompanyConfig = {
@@ -79,6 +81,7 @@ const SETTING_FALLBACK: CompanySettings = {
   report_tabs: "score,oos,coverage,adherence,reps,trends,form,photos",
   report_short_day_hours: 0,
   report_long_day_hours: 0,
+  staff_score_weights: "sales:35,visits:25,coverage:15,merchandising:15,compliance:10",
 };
 
 function obj(v: unknown): Record<string, unknown> {
@@ -141,6 +144,10 @@ export function parseCompanyConfig(raw: unknown): CompanyConfig | null {
       report_tabs: list(s.report_tabs, f.report_tabs),
       report_short_day_hours: int(s.report_short_day_hours, f.report_short_day_hours),
       report_long_day_hours: int(s.report_long_day_hours, f.report_long_day_hours),
+      staff_score_weights:
+        typeof s.staff_score_weights === "string" && /^([a-z_]+:\d{1,3}(,[a-z_]+:\d{1,3})*)?$/.test(s.staff_score_weights)
+          ? s.staff_score_weights
+          : f.staff_score_weights,
     },
     timezone: typeof r.timezone === "string" && r.timezone !== "" ? r.timezone : "UTC",
     vatRate: Number.isFinite(Number(r.vat_rate)) ? Number(r.vat_rate) : 0,

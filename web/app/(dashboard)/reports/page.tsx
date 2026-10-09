@@ -17,6 +17,15 @@ import { OosHotspotsTable } from "@/components/reports/oos-hotspots-table";
 import { AdherenceTable } from "@/components/reports/adherence-table";
 import { ServiceLogTable } from "@/components/reports/service-log-table";
 import { HoursTable } from "@/components/reports/hours-table";
+import { StaffScoreTable } from "@/components/reports/staff-score-table";
+import {
+  fetchStaffScoreInputs,
+  findPart,
+  parseWeights,
+  teamScorable,
+  teamScores,
+  type StaffScoreInputs,
+} from "@/lib/staff-score";
 import { StorePicker } from "@/components/stores/store-picker";
 import { REPORT_TAB_VALUES, companyReportTabs, reportTabs, type ReportTab } from "@/lib/report-tabs";
 import { downloadServiceLogPdf, fetchServiceLog, serviceLogSheet, type ServiceLogRow } from "@/lib/service-log";
@@ -227,6 +236,7 @@ export default function ReportsPage() {
   const [adherence, setAdherence] = useState<Adherence[]>([]);
   const [serviceLog, setServiceLog] = useState<ServiceLogRow[]>([]);
   const [hoursRows, setHoursRows] = useState<StaffHoursRow[]>([]);
+  const [teamInputs, setTeamInputs] = useState<StaffScoreInputs[]>([]);
   const [pdfBusy, setPdfBusy] = useState(false);
 
   const [loading, setLoading] = useState(true);
@@ -289,9 +299,14 @@ export default function ReportsPage() {
       const mine = companyReportTabs(cfg.modules, cfg.settings.report_tabs);
       const has = (t: ReportTab) => mine.includes(t);
       const none = <T,>() => Promise.resolve([] as T[]);
-      const [g, s, t, f, ps, oh, ad, sl, hr] = await Promise.all([
+      // The {Staff} tab scores everyone on the company's weights when every
+      // part can be measured for the whole team at once; otherwise (sales and
+      // retail audits, which only the employee report measures) it keeps the
+      // scorecard it has always had.
+      const teamMode = teamScorable(parseWeights(cfg.settings.staff_score_weights));
+      const [g, s, t, f, ps, oh, ad, sl, hr, ti] = await Promise.all([
         has("coverage") ? fetchCoverageGaps(supabase, range) : none<CoverageGap>(),
-        has("reps") ? fetchRepScorecard(supabase, range) : none<RepScore>(),
+        has("reps") && !teamMode ? fetchRepScorecard(supabase, range) : none<RepScore>(),
         has("trends")
           ? fetchComplianceTrends(supabase, range, bucket, storeGroupId || null)
           : none<TrendPointRow>(),
@@ -306,6 +321,7 @@ export default function ReportsPage() {
         has("adherence") ? fetchScheduleAdherence(supabase, range) : none<Adherence>(),
         has("service_log") ? fetchServiceLog(supabase, companyDays, storeId || null) : none<ServiceLogRow>(),
         has("hours") ? fetchStaffHours(supabase, companyDays) : none<StaffHoursRow>(),
+        has("reps") && teamMode ? fetchStaffScoreInputs(supabase, companyDays) : none<StaffScoreInputs>(),
       ]);
       if (isStale()) return;
       setGaps(g);
@@ -317,6 +333,7 @@ export default function ReportsPage() {
       setAdherence(ad);
       setServiceLog(sl);
       setHoursRows(hr);
+      setTeamInputs(ti);
     } catch (e) {
       if (isStale()) return;
       setError(e instanceof Error ? e.message : String(e));
@@ -397,6 +414,11 @@ export default function ReportsPage() {
   const timeZone = companyConfig?.timezone;
 
   const pickedStore = stores.find((st) => st.id === storeId) ?? null;
+
+  // The same configuration the loader chose its mode from, even when the hook's lookup failed.
+  const weights = useMemo(() => parseWeights(companyConfig?.settings.staff_score_weights), [companyConfig]);
+  const teamMode = teamScorable(weights);
+  const scored = useMemo(() => (teamMode ? teamScores(teamInputs, weights, terms) : []), [teamMode, teamInputs, weights, terms]);
 
   async function serviceLogPdf() {
     if (!storeId || serviceLog.length === 0) return;
@@ -620,6 +642,32 @@ export default function ReportsPage() {
           })),
         };
       case "reps":
+        if (teamMode) {
+          return {
+            ...base,
+            title: `${staff} scores`,
+            filename: `${fileSlug(staff)}-scores`,
+            columns: [
+              { header: staff, key: "name" },
+              { header: "Score", key: "score", numeric: true },
+              { header: "Band", key: "band" },
+              ...weights.map((w) => ({ header: `${findPart(w.code)!.label(terms)} (${w.weight}%)`, key: w.code })),
+              { header: "Work on this next", key: "focus" },
+            ],
+            rows: scored.map((r) => ({
+              name: r.name,
+              score: r.result.score ?? "",
+              band: r.result.band,
+              ...Object.fromEntries(
+                r.result.components.map((c) => [
+                  c.key,
+                  c.state === "scored" ? Math.round(c.value ?? 0) : c.state === "not_enough" ? "Not enough data" : "Not measured yet",
+                ])
+              ),
+              focus: r.result.focus?.label ?? "",
+            })),
+          };
+        }
         return {
           ...base,
           title: `${staff} scorecard`,
@@ -910,9 +958,22 @@ export default function ReportsPage() {
           <Card>
             <CardHeader className="pb-2">
               <CardTitle className="text-base">{terms.staff.one} scorecard</CardTitle>
+              {teamMode && (
+                <p className="text-xs text-pretty text-muted-foreground">
+                  Each {lower(terms.staff.one)}&apos;s score on your weights (Settings, Dashboard &amp; reports). A month reads
+                  best: a part needs at least five events, speed is compared with the team&apos;s middle person, and planned
+                  work on approved leave is left out.
+                </p>
+              )}
             </CardHeader>
             <CardContent className="px-0">
-              {loading ? <SkeletonRows /> : <RepScorecardTable rows={scores} />}
+              {loading ? (
+                <SkeletonRows />
+              ) : teamMode ? (
+                <StaffScoreTable scores={scored} weights={weights} />
+              ) : (
+                <RepScorecardTable rows={scores} />
+              )}
             </CardContent>
           </Card>
         </TabsContent>

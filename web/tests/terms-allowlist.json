@@ -128,5 +128,10 @@
     "file": "app/download/page.tsx",
     "text": "Play Store",
     "reason": "Google's Play Store, a product name, not a site"
+  },
+  {
+    "file": "lib/staff-score.ts",
+    "text": "Merchandising execution",
+    "reason": "The same score part as lib/rep-report.ts, now in the shared score catalogue: Merchandising audits (availability, planogram, price, condition) are retail-execution vocabulary with no term key; the rep report's neutral-terms fixture in tests/rep-report-text.test.ts pins this wording for every company."
   }
 ]

@@ -446,6 +446,13 @@
   color: var(--rr-ink-faint);
 }
 
+.rr-focus {
+  margin: 2mm 0 0;
+  font-size: 2.6mm;
+  line-height: 1.4;
+  color: var(--rr-ink);
+}
+
 .rr-footnote {
   margin: 1.6mm 0 0;
   font-size: 2.3mm;
