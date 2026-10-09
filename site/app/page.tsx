@@ -302,7 +302,7 @@ export default function Home() {
             </h1>
             <p className="max-w-xl text-lg leading-relaxed text-pretty text-ink sm:text-xl">
               {site.name} is an app for business owners whose staff work on site. They use it on their phones, and you see
-              everything on yours. With {site.name}:
+              everything on your dashboard. With {site.name}:
             </p>
             <ul className="grid max-w-xl gap-y-2.5" aria-label={`What ${site.name} does for you`}>
               {OWNER_GETS.map((item) => (
