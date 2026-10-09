@@ -69,7 +69,7 @@ export function EmailSettingsCard({ supportEmail }: { supportEmail: string | nul
       const { error: e } = await createClient().rpc("send_test_email");
       if (e) return setError(e.message);
       await load();
-      setNote("Queued. Its status shows below.");
+      setNote("Queued.");
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
