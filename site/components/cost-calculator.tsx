@@ -26,17 +26,17 @@ export function CostCalculator() {
   const tickd = people > 0 ? planPrice(people, "monthly") : 0;
 
   const field =
-    "w-full min-h-11 rounded-lg bg-white px-3 py-2.5 ring-1 ring-line focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-700";
+    "w-full min-h-11 rounded-lg bg-mint px-3 py-2.5 ring-1 ring-line focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-700";
 
   return (
-    <div className="grid gap-8 rounded-2xl bg-mint p-5 ring-1 ring-line sm:p-8 md:grid-cols-2">
+    <div className="grid gap-8 rounded-2xl bg-white p-5 ring-1 ring-line sm:p-8 md:grid-cols-2">
       <div className="grid content-start gap-4">
         <label className="grid gap-1.5 text-sm font-medium">
-          People in the field
+          Staff who work out on site
           <input className={field} type="number" min={1} max={500} inputMode="numeric" value={staff} onChange={(e) => setStaff(e.target.value)} />
         </label>
         <label className="grid gap-1.5 text-sm font-medium">
-          Hours lost a day to delays and admin
+          Hours each person loses a day to waiting and paperwork
           <input className={field} type="number" min={0} max={8} step={0.25} inputMode="decimal" value={lost} onChange={(e) => setLost(e.target.value)} />
         </label>
         <div className="grid gap-1.5 text-sm font-medium">

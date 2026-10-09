@@ -50,7 +50,7 @@ function Calculator({ billing }: { billing: Billing }) {
   return (
     <div className="grid gap-4 rounded-2xl bg-teal-900 p-5 text-sand sm:p-7">
       <label htmlFor={id} className="flex items-baseline justify-between gap-4">
-        <span className="font-semibold">How many users on your team?</span>
+        <span className="font-semibold">How many people will use {site.name}?</span>
         <span className="font-display text-3xl font-extrabold tabular-nums text-amber-500">{users}</span>
       </label>
       <input
@@ -136,13 +136,13 @@ export function PricingSection() {
             </p>
           </div>
           <ul className="grid gap-2">
-            <Item>Everything in one app: plan, prove, sell, invoice, get paid</Item>
+            <Item>Everything included: jobs, photos, tracking, timesheets, quotes and invoices</Item>
             <Item>
               <strong>Setup worth {rand(pricing.setupValue)}:</strong>{" "}
               {yearly ? "Free" : `${rand(pricing.setupValue)} once-off`}
             </Item>
             <Item>
-              <strong>Your trade&apos;s checklists and settings:</strong> Ready on day one
+              <strong>Checklists for your type of work:</strong> Ready on day one
             </Item>
             <Item>WhatsApp welcome message for your team: Free</Item>
           </ul>

@@ -72,7 +72,7 @@ export function TradeTabs() {
               className={`flex min-h-11 shrink-0 snap-start items-center gap-2.5 whitespace-nowrap rounded-full px-4 text-sm font-semibold transition-[background-color,color,box-shadow] duration-150 ease-out md:min-h-12 md:rounded-xl md:px-4 md:text-base ${
                 on
                   ? "bg-teal-900 text-sand"
-                  : "bg-white text-teal-900 ring-1 ring-line hover:bg-mint md:bg-transparent md:ring-0"
+                  : "bg-white text-teal-900 ring-1 ring-line md:bg-transparent md:ring-0 md:hover:bg-white"
               }`}
             >
               <TabIcon className={`size-4 shrink-0 md:size-5 ${on ? "text-amber-500" : "text-teal-700"}`} strokeWidth={2.25} aria-hidden="true" />
@@ -86,7 +86,7 @@ export function TradeTabs() {
         id="trade-panel"
         role="tabpanel"
         aria-labelledby={`trade-tab-${active}`}
-        className="grid content-between gap-6 rounded-2xl bg-mint p-5 sm:p-8"
+        className="grid content-between gap-6 rounded-2xl bg-white p-5 ring-1 ring-line sm:p-8"
       >
         <div key={active} className={`grid gap-4 ${animate ? "tk-swap" : ""}`}>
           <span className="tk-icon-spring grid size-12 place-items-center rounded-xl bg-amber-500 text-teal-950">
