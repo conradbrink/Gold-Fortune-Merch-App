@@ -2,7 +2,7 @@ import { timingSafeEqual } from "node:crypto";
 import { createClient as createAdminClient } from "@supabase/supabase-js";
 import type { Database } from "@/lib/supabase/types";
 import { brevoConfigured, sendViaBrevo } from "@/lib/email/brevo";
-import { CLIENT_TEMPLATES, REPORT_TEMPLATES, renderEmail, type ReportLine } from "@/lib/email/templates";
+import { ALERT_TEMPLATES, CLIENT_TEMPLATES, REPORT_TEMPLATES, renderEmail, type ReportLine } from "@/lib/email/templates";
 import { companyTime } from "@/lib/company-time";
 import { appUrl, signLink } from "@/lib/email/links";
 
@@ -150,6 +150,8 @@ export async function GET(request: Request) {
         continue;
       }
     }
+    // Alerts carry everything they show; the links need the app's address.
+    if (ALERT_TEMPLATES.has(m.template)) payload = { ...payload, app_url: appUrl() };
     let email: ReturnType<typeof renderEmail> = null;
     let renderError: string | null = null;
     try {
@@ -166,7 +168,9 @@ export async function GET(request: Request) {
         p_error:
           REPORT_TEMPLATES.has(m.template) && renderError
             ? "The report expired or was withdrawn"
-            : renderError ?? `Unknown template ${m.template}`,
+            : ALERT_TEMPLATES.has(m.template) && renderError
+              ? "The alert email had nothing to show"
+              : renderError ?? `Unknown template ${m.template}`,
         p_permanent: true,
       });
       failed++;

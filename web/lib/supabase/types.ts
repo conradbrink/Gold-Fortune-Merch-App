@@ -227,6 +227,96 @@ export type Database = {
         }
         Relationships: []
       }
+      alerts: {
+        Row: {
+          id: string
+          org_id: string
+          rule: string
+          occurred_at: string
+          day: string
+          visit_id: string | null
+          route_id: string | null
+          store_id: string | null
+          profile_id: string | null
+          detail: Json
+          dedupe_key: string
+          email_handled_at: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          org_id: string
+          rule: string
+          occurred_at: string
+          day: string
+          visit_id?: string | null
+          route_id?: string | null
+          store_id?: string | null
+          profile_id?: string | null
+          detail?: Json
+          dedupe_key: string
+          email_handled_at?: string | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          org_id?: string
+          rule?: string
+          occurred_at?: string
+          day?: string
+          visit_id?: string | null
+          route_id?: string | null
+          store_id?: string | null
+          profile_id?: string | null
+          detail?: Json
+          dedupe_key?: string
+          email_handled_at?: string | null
+          created_at?: string
+        }
+        Relationships: []
+      }
+      alert_reads: {
+        Row: {
+          alert_id: string
+          profile_id: string
+          org_id: string
+          read_at: string
+        }
+        Insert: {
+          alert_id: string
+          profile_id: string
+          org_id: string
+          read_at?: string
+        }
+        Update: {
+          alert_id?: string
+          profile_id?: string
+          org_id?: string
+          read_at?: string
+        }
+        Relationships: []
+      }
+      alert_digests: {
+        Row: {
+          org_id: string
+          day: string
+          alert_count: number
+          queued_at: string
+        }
+        Insert: {
+          org_id: string
+          day: string
+          alert_count?: number
+          queued_at?: string
+        }
+        Update: {
+          org_id?: string
+          day?: string
+          alert_count?: number
+          queued_at?: string
+        }
+        Relationships: []
+      }
       site_contacts: {
         Row: {
           id: string
@@ -7238,6 +7328,27 @@ export type Database = {
       approved_leave_days: {
         Args: { p_from: string; p_to: string }
         Returns: { profile_id: string; day: string }[]
+      }
+      my_alerts: {
+        Args: { p_limit?: number }
+        Returns: {
+          id: string
+          rule: string
+          occurred_at: string
+          day: string
+          visit_id: string | null
+          route_id: string | null
+          store_id: string | null
+          profile_id: string | null
+          site_name: string | null
+          staff_name: string | null
+          detail: Json
+          unread: boolean
+        }[]
+      }
+      mark_alerts_read: {
+        Args: { p_ids?: string[] | null }
+        Returns: number
       }
       send_job_report: {
         Args: { p_visit_id: string }

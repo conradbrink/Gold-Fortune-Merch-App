@@ -234,6 +234,7 @@ export function editableSetting(key: string): boolean {
     !key.startsWith("dashboard_") &&
     !key.startsWith("report_") &&
     !key.startsWith("job_report_") &&
+    !key.startsWith("alerts_") &&
     key !== "country_code" &&
     key !== "currency_code"
   );

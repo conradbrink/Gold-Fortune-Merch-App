@@ -60,7 +60,7 @@ export function FieldSettingsCard({ orgId }: { orgId: string }) {
       // Quotes & invoices tab; as plain text boxes here they would be edited twice.
       setDefinitions(
         defs.data.filter(
-          (d) => !d.key.startsWith("brand_") && !d.key.startsWith("money_") && !d.key.startsWith("dashboard_") && !d.key.startsWith("report_") && !d.key.startsWith("job_report_")
+          (d) => !d.key.startsWith("brand_") && !d.key.startsWith("money_") && !d.key.startsWith("dashboard_") && !d.key.startsWith("report_") && !d.key.startsWith("job_report_") && !d.key.startsWith("alerts_")
         )
       );
       setValues(effective);

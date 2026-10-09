@@ -38,13 +38,15 @@ import { MoneySettingsCard } from "@/components/settings/money-settings-card";
 import { DashboardSettingsCard } from "@/components/settings/dashboard-settings-card";
 import { ReportsSettingsCard } from "@/components/settings/reports-settings-card";
 import { EmailSettingsCard } from "@/components/settings/email-settings-card";
+import { AlertsSettingsCard } from "@/components/settings/alerts-settings-card";
 import { ModulesCard } from "@/components/settings/modules-card";
 import { TerminologyCard } from "@/components/settings/terminology-card";
 import { LogoCard } from "@/components/settings/logo-card";
 import { BrandColoursCard } from "@/components/settings/brand-colours-card";
 import { usePermissions } from "@/lib/use-permissions";
 import { can } from "@/lib/permissions";
-import { useTerms } from "@/lib/use-company-config";
+import { useCompanyConfig, useTerms } from "@/lib/use-company-config";
+import { moduleEnabled } from "@/lib/modules";
 import { count, lower, withArticle } from "@/lib/terms";
 
 type Organization = Tables<"organizations">;
@@ -63,6 +65,8 @@ export default function CompanyProfilePage() {
   // read-only until the answer is known.
   const permissions = usePermissions();
   const canEditCompany = permissions !== null && can(permissions, "company_settings");
+  const config = useCompanyConfig();
+  const hasAlerts = config !== null && moduleEnabled(config.modules, "owner_notifications");
   const [org, setOrg] = useState<Organization | null>(null);
   const [members, setMembers] = useState<Profile[]>([]);
   const [loading, setLoading] = useState(true);
@@ -245,6 +249,7 @@ export default function CompanyProfilePage() {
           <TabsTrigger value="money">Quotes &amp; invoices</TabsTrigger>
           <TabsTrigger value="dashboard">Dashboard &amp; reports</TabsTrigger>
           <TabsTrigger value="emails">Emails</TabsTrigger>
+          {hasAlerts && <TabsTrigger value="alerts">Alerts</TabsTrigger>}
           <TabsTrigger value="branding">Terminology &amp; branding</TabsTrigger>
           <TabsTrigger value="plan">Plan</TabsTrigger>
         </TabsList>
@@ -622,6 +627,12 @@ export default function CompanyProfilePage() {
         <TabsContent value="emails" className="mt-4 space-y-4">
           {org && <EmailSettingsCard supportEmail={org.support_email ?? null} orgId={org.id} canEdit={canEditCompany} />}
         </TabsContent>
+
+        {hasAlerts && (
+          <TabsContent value="alerts" className="mt-4 space-y-4">
+            {org && <AlertsSettingsCard orgId={org.id} canEdit={canEditCompany} />}
+          </TabsContent>
+        )}
 
         <TabsContent value="branding" className="mt-4 space-y-4">
           {org && (

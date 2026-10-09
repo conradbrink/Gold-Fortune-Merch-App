@@ -28,7 +28,9 @@ export type ModuleCode =
   | "warehouse"
   | "hr"
   | "invoicing"
-  | "vehicle_logbook";
+  | "vehicle_logbook"
+  /** Alerts when something's off (Stage 8.4): the bell and its emails, no page of its own. */
+  | "owner_notifications";
 
 /** The modules a company has on. `core` is implied and never stored. */
 export type ModuleSet = ReadonlySet<string>;

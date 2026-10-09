@@ -8,6 +8,9 @@
  * strip most of what a web page would use.
  */
 
+import { alertHref, alertText, dayText, type AlertItem } from "@/lib/alerts";
+import { parseTerms } from "@/lib/terms";
+
 export type EmailContext = {
   companyName: string;
   /** Where "stop these emails" goes; null for mail to the company's own people. */
@@ -80,6 +83,19 @@ function lineText(l: ReportLine): string {
   return `${l.timeIn} to ${l.timeOut}${l.staffName ? `, ${l.staffName}` : ""}${where}, ${photos}`;
 }
 
+function alertsOf(payload: Record<string, unknown>): AlertItem[] {
+  return Array.isArray(payload.alerts) ? (payload.alerts as AlertItem[]) : [];
+}
+
+/** The company's words and clock from the payload, and the app's address the sender added. */
+function alertContext(payload: Record<string, unknown>) {
+  return {
+    terms: parseTerms(payload.terms),
+    timeZone: typeof payload.timezone === "string" && payload.timezone ? payload.timezone : "UTC",
+    appUrl: (typeof payload.app_url === "string" && payload.app_url ? payload.app_url : "https://app.tickd.co.za").replace(/\/$/, ""),
+  };
+}
+
 const TEMPLATES: Record<string, Renderer> = {
   // One finished job, as it is finished.
   job_report: (payload, ctx) => {
@@ -110,6 +126,43 @@ const TEMPLATES: Record<string, Renderer> = {
     });
     return { subject: `${first.siteName}: ${lines.length} ${jobs} done on ${first.day}`, html, text };
   },
+  // One alert, as it is found (alerts_email "instant"). To the company's own
+  // people, so no unsubscribe link: the setting is theirs to change.
+  alert: (payload, ctx) => {
+    const a = alertsOf(payload)[0];
+    if (!a) throw new Error("An alert email needs its alert.");
+    const { terms, timeZone, appUrl } = alertContext(payload);
+    const { title, body } = alertText(a, terms, timeZone);
+    const { html, text } = layout(ctx, {
+      heading: title,
+      bodyHtml: `<p style="margin:0">${escapeHtml(body)}</p>`,
+      bodyText: body,
+      button: { label: "See it in Tickd", url: `${appUrl}${alertHref(a, null)}` },
+    });
+    return { subject: `${title}: ${a.site_name?.trim() || ctx.companyName}`, html, text };
+  },
+  // The day's alerts in one email (alerts_email "digest").
+  alerts_digest: (payload, ctx) => {
+    const list = alertsOf(payload);
+    if (list.length === 0) throw new Error("A day's alert email needs its alerts.");
+    const { terms, timeZone, appUrl } = alertContext(payload);
+    const total = typeof payload.total === "number" && payload.total > list.length ? payload.total : list.length;
+    const day = typeof payload.day === "string" ? dayText(payload.day) : "Today";
+    const lines = list.map((a) => ({ ...alertText(a, terms, timeZone), url: `${appUrl}${alertHref(a, null)}` }));
+    const more = total > list.length ? total - list.length : 0;
+    const things = total === 1 ? "1 thing to check" : `${total} things to check`;
+    const items = lines
+      .map((l) => `<li style="margin:0 0 10px"><strong>${escapeHtml(l.title)}</strong><br>${escapeHtml(l.body)} <a href="${escapeHtml(l.url)}" style="color:#0f5c4f">See it</a></li>`)
+      .join("");
+    const moreLine = more > 0 ? `And ${more} more in Tickd.` : "";
+    const { html, text } = layout(ctx, {
+      heading: `${things}, ${day}`,
+      bodyHtml: `<ul style="margin:0;padding-left:20px">${items}</ul>${moreLine ? `<p style="margin:8px 0 0">${escapeHtml(moreLine)}</p>` : ""}`,
+      bodyText: `${lines.map((l) => `- ${l.title}. ${l.body} ${l.url}`).join("\n")}${moreLine ? `\n${moreLine}` : ""}`,
+      button: { label: "Open Tickd", url: appUrl },
+    });
+    return { subject: `${ctx.companyName}: ${things}, ${day}`, html, text };
+  },
   test: (_payload, ctx) => {
     const { html, text } = layout(ctx, {
       heading: "Your emails are working",
@@ -131,3 +184,6 @@ export const CLIENT_TEMPLATES = new Set<string>(["job_report", "job_reports_day"
 
 /** Templates whose payload holds report ids the sender looks up before rendering. */
 export const REPORT_TEMPLATES = new Set<string>(["job_report", "job_reports_day"]);
+
+/** Alert emails: to the company's own people (no unsubscribe link); the sender adds the app's address. */
+export const ALERT_TEMPLATES = new Set<string>(["alert", "alerts_digest"]);

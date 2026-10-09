@@ -53,6 +53,15 @@ export default function RepDayPage() {
   const [focus, setFocus] = useState<{ lat: number; lng: number } | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  // `?date=YYYY-MM-DD` opens that day (an alert links to the day it is
+  // about). Read after mount, as Reports reads its range: an initialiser that
+  // reads the URL renders one day on the server and another in the browser.
+  useEffect(() => {
+    const asked = new URLSearchParams(window.location.search).get("date");
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (asked && /^\d{4}-\d{2}-\d{2}$/.test(asked)) setDate(asked);
+  }, []);
+
   useEffect(() => {
     let cancelled = false;
     supabase
