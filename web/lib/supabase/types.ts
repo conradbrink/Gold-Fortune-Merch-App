@@ -6957,6 +6957,33 @@ export type Database = {
           status: string
         }[]
       }
+      staff_score_inputs: {
+        Args: { p_from: string; p_to: string; p_territory_id?: string | null }
+        Returns: {
+          staff_id: string
+          staff_name: string | null
+          planned: number
+          served: number
+          leave_planned: number
+          leave_served: number
+          sites_planned: number
+          sites_reached: number
+          finished: number
+          proven: number
+          with_form: number
+          rounds_proven: number
+          with_fix: number
+          inside: number
+          onsite_seconds: number
+          workday_seconds: number
+          workdays: number
+          staff_days: number
+        }[]
+      }
+      approved_leave_days: {
+        Args: { p_from: string; p_to: string }
+        Returns: { profile_id: string; day: string }[]
+      }
       service_log: {
         Args: { p_from: string; p_to: string; p_store_id?: string | null }
         Returns: {

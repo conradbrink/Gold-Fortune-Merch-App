@@ -1,8 +1,23 @@
 import { formatMoney, formatMoneyShort } from "@/lib/money";
 import type { SupabaseClient } from "@supabase/supabase-js";
+import type { Database } from "@/lib/supabase/types";
 import { callRpc } from "@/lib/rpc";
 import type { DateRange } from "@/lib/date-range";
 import { lower, type Terms, type TermKey } from "@/lib/terms";
+import {
+  MIN_EVENTS,
+  classifyScore,
+  fetchStaffScoreInputs,
+  teamScorable,
+  teamValues,
+  weighScore,
+  weightsTotal,
+  type PartValue,
+  type StaffScoreInputs,
+  type WeighedPart,
+  type WeighedScore,
+  type Weight,
+} from "@/lib/staff-score";
 
 /**
  * The Rep Performance Report — everything except the pixels.
@@ -144,6 +159,8 @@ export type RepReport = {
   days: RepDay[];
   missed: MissedVisit[];
   stores: RepStore[];
+  /** Everyone's shared score inputs for the same period and area (lib/staff-score.ts). */
+  team: StaffScoreInputs[];
 };
 
 function unwrap(res: { data: unknown; error: { message: string } | null }): Record<string, unknown>[] {
@@ -176,11 +193,12 @@ export async function fetchRepReport(
   t: Terms
 ): Promise<RepReport> {
   const a = args(repId, range, territoryId);
-  const [summaryRows, dayRows, missedRows, storeRows] = await Promise.all([
+  const [summaryRows, dayRows, missedRows, storeRows, team] = await Promise.all([
     callRpc(supabase, "rep_performance_summary", a).then(unwrap),
     callRpc(supabase, "rep_performance_daily", a).then(unwrap),
     callRpc(supabase, "rep_performance_missed", a).then(unwrap),
     callRpc(supabase, "rep_performance_stores", a).then(unwrap),
+    fetchStaffScoreInputs(supabase as SupabaseClient<Database>, range, territoryId),
   ]);
 
   const s = summaryRows[0];
@@ -261,6 +279,7 @@ export async function fetchRepReport(
       merchOk: int(r.merch_ok),
       lastVisitAt: (r.last_visit_at as string | null) ?? null,
     })),
+    team,
   };
 }
 
@@ -268,57 +287,42 @@ export async function fetchRepReport(
 // The score
 // ---------------------------------------------------------------------------
 
-export type ScoreKey =
-  | "sales"
-  | "visits"
-  | "coverage"
-  | "merchandising"
-  | "compliance";
+/** The score's result and its parts: the shared engine's (lib/staff-score.ts). */
+export type RepScoreResult = WeighedScore;
+export type ScoreComponent = WeighedPart;
+export { classifyScore };
 
-export type ScoreComponent = {
-  key: ScoreKey;
-  label: string;
-  /** The published weight, as a percentage. Always shown, even when excluded. */
-  weight: number;
-  /** The weight after the excluded components' share is redistributed. */
-  effectiveWeight: number;
-  /** 0–100, or null when nothing in the database can measure it. */
-  value: number | null;
-  /** How the value was arrived at, in the manager's words. */
-  basis: string;
-};
-
-export type RepScoreResult = {
-  /** 0–100, or null when not one component could be measured. */
-  score: number | null;
-  band: "Excellent" | "Good" | "Needs Improvement" | "Poor" | "Not scored";
-  components: ScoreComponent[];
-  /** True when at least one component was dropped and the rest re-weighted. */
-  reweighted: boolean;
+/**
+ * How the page asks for the score: the company's weights
+ * (`staff_score_weights`, seeded per trade) and every person's shared inputs
+ * for the same period and area (`staff_score_inputs`), which carry the team's
+ * middle figures and the planned work on approved leave.
+ */
+export type ScoreOptions = {
+  weights: Weight[];
+  team: StaffScoreInputs[];
+  /** Whether the company sells, for a company with no weights setting. */
+  sells: boolean;
+  minEvents?: number;
 };
 
 /**
- * The published weights. They are the report's contract with the reader, so
- * they are shown whether or not the data can fill them. The weights are fixed;
- * only the labels follow the company's words.
+ * The weights before they were data: today's distribution five, or for a
+ * company that does not sell, completion, coverage and compliance scaled back
+ * to 100 (50 / 30 / 20), because the Weight column is printed and a table
+ * whose weights add up to 50% reads as a mistake.
  */
-function weights(t: Terms, sells: boolean): { key: ScoreKey; label: string; weight: number }[] {
-  const all: { key: ScoreKey; label: string; weight: number }[] = [
-    { key: "sales", label: "Sales performance", weight: 35 },
-    { key: "visits", label: `${t.job.one} completion`, weight: 25 },
-    { key: "coverage", label: `${t.site.one} coverage`, weight: 15 },
-    { key: "merchandising", label: "Merchandising execution", weight: 15 },
-    { key: "compliance", label: "App / data compliance", weight: 10 },
+function legacyWeights(sells: boolean): Weight[] {
+  const all: Weight[] = [
+    { code: "sales", weight: 35 },
+    { code: "visits", weight: 25 },
+    { code: "coverage", weight: 15 },
+    { code: "merchandising", weight: 15 },
+    { code: "compliance", weight: 10 },
   ];
-  // A company that does not sell (no Distribution module) has no sales and no
-  // retail audits to be scored on: those components are not part of its
-  // report at all, rather than listed as "excluded". The rest are scaled back
-  // to 100 (50 / 30 / 20), because the Weight column is printed and a table
-  // whose weights add up to 50% reads as a mistake. Per-industry weights come
-  // with the industry reports (Stage 7 Part 4).
   if (sells) return all;
-  const kept = all.filter((w) => w.key !== "sales" && w.key !== "merchandising");
-  const total = kept.reduce((a, w) => a + w.weight, 0);
+  const kept = all.filter((w) => w.code !== "sales" && w.code !== "merchandising");
+  const total = weightsTotal(kept);
   return kept.map((w) => ({ ...w, weight: (w.weight * 100) / total }));
 }
 
@@ -368,63 +372,91 @@ export function merchandisingCompliance(s: RepSummary): number | null {
 /**
  * The overall score, and every number behind it.
  *
- * **Re-weighting is the whole design.** Sales performance is 35% of the score
- * and there is no target table in this database, so on today's schema it can
- * never be measured — scoring it as zero would mark every rep in the company
- * down by 35 points for something nobody has entered. A component with no
- * data is therefore dropped and its share spread across the rest in
- * proportion, which is what `rep_scorecard` and `perfect_store_score` already
- * do with their own pillars.
+ * **Re-weighting is the whole design.** A part with no data (sales, while no
+ * target is recorded) is not scored as zero, which would mark every person
+ * down for something nobody entered: it sits out and its share is spread over
+ * the rest in proportion. A score built from four parts is not the same
+ * measurement as one built from five, and the page says so next to the number.
  *
- * The consequence to be honest about: a 100-point score built from four
- * components is not the same measurement as one built from five, and the page
- * says so next to the number.
+ * Two ways in:
+ * - `computeScore(…, sells)`: the old form, today's fixed weights, no event
+ *   floor and no leave (kept so its tests pin today's arithmetic);
+ * - `computeScore(…, { weights, team })`: the page's. When every part can be
+ *   measured from the shared inputs, the person is scored from them alone,
+ *   exactly as the {Staff} tab scores them. Otherwise (sales and retail audits,
+ *   which only this report measures) today's five come from this report's own
+ *   figures, with completion's planned work on approved leave left out, and
+ *   any other part from the shared inputs. Both apply the research's floor of
+ *   five events.
  *
- * Store coverage is counted from the store rows rather than the summary
- * because "planned stores reached" is not "distinct stores visited" — a rep
- * who called on six shops nobody planned would otherwise score coverage above
- * 100%.
+ * {Site} coverage is counted from the {site} rows rather than the summary
+ * because "planned {sites} reached" is not "distinct {sites} visited".
  */
 export function computeScore(
   summary: RepSummary,
   stores: RepStore[],
   missed: MissedVisit[],
   t: Terms,
-  sells = true
+  opts: boolean | ScoreOptions = true
 ): RepScoreResult {
-  const published = weights(t, sells);
+  if (typeof opts === "boolean") {
+    return weighScore(legacyWeights(opts), ownValues(summary, stores, missed, t, null), t, 0);
+  }
+  const weights = opts.weights.length > 0 ? opts.weights : legacyWeights(opts.sells);
+  const me = opts.team.find((r) => r.staff_id === summary.repId) ?? null;
+  const shared = me ? teamValues(me, opts.team, t) : {};
+  const values = me && teamScorable(weights) ? shared : { ...shared, ...ownValues(summary, stores, missed, t, me) };
+  return weighScore(weights, values, t, opts.minEvents ?? MIN_EVENTS);
+}
+
+/** Today's five parts, from this report's own figures. */
+function ownValues(
+  summary: RepSummary,
+  stores: RepStore[],
+  missed: MissedVisit[],
+  t: Terms,
+  me: StaffScoreInputs | null
+): Record<string, PartValue> {
   const jobs = lower(t.job.many);
   const served = visitsServed(summary, missed);
+  // Planned work on approved leave days leaves completion (owner, 8 Oct).
+  const leavePlanned = me?.leave_planned ?? 0;
+  const leaveServed = me?.leave_served ?? 0;
+  const planned = summary.plannedVisits - leavePlanned;
+  const servedAll = served.served - leaveServed;
+  const leave = leavePlanned > 0 ? `; ${leavePlanned} on approved leave left out` : "";
   const plannedStores = stores.filter((s) => s.planned > 0);
   const coveredStores = plannedStores.filter((s) => s.completed > 0);
-
   const merch = merchandisingCompliance(summary);
   const compliance = meanOf([
     summary.formComplianceRate === null ? null : summary.formComplianceRate * 100,
     summary.gpsVerifiedRate === null ? null : summary.gpsVerifiedRate * 100,
   ]);
-
-  const measured: Record<ScoreKey, { value: number | null; basis: string }> = {
+  return {
     sales: {
-      // No target table exists, so there is no denominator. Stated rather than
-      // approximated: scoring sales against last period, or against the team,
-      // would be a different measurement wearing this one's name.
+      // No target table is read yet, so there is no denominator. Stated rather
+      // than approximated: scoring sales against last period, or against the
+      // team, would be a different measurement wearing this one's name.
       value: null,
+      events: null,
       basis: `No sales target is recorded for this ${lower(t.staff.one)}`,
     },
     visits: {
-      value: pct(served.served, summary.plannedVisits),
+      value: pct(servedAll, planned),
+      events: planned,
       basis:
-        served.caughtUp > 0
+        (served.caughtUp > 0
           ? `${served.served} of ${summary.plannedVisits} planned ${jobs} served — ${summary.completedPlanned} on the day, ${served.caughtUp} gone back to`
-          : `${summary.completedPlanned} of ${summary.plannedVisits} planned ${jobs} completed`,
+          : `${summary.completedPlanned} of ${summary.plannedVisits} planned ${jobs} completed`) + leave,
     },
     coverage: {
       value: pct(coveredStores.length, plannedStores.length),
+      events: plannedStores.length,
       basis: `${coveredStores.length} of ${plannedStores.length} planned ${lower(t.site.many)} reached at least once`,
     },
     merchandising: {
       value: merch,
+      events: summary.audits,
       basis:
         merch === null
           ? "No merchandising audit was completed in the period"
@@ -432,50 +464,13 @@ export function computeScore(
     },
     compliance: {
       value: compliance,
+      events: summary.completedVisits,
       basis:
         compliance === null
           ? "No form submission or location fix to measure"
           : `Mean of form completion per ${lower(t.job.one)} and GPS-verified check-ins`,
     },
   };
-
-  const available = published.filter((w) => measured[w.key].value !== null);
-  const availableWeight = available.reduce((a, w) => a + w.weight, 0);
-
-  const components: ScoreComponent[] = published.map((w) => ({
-    key: w.key,
-    label: w.label,
-    weight: w.weight,
-    effectiveWeight:
-      measured[w.key].value === null || availableWeight === 0
-        ? 0
-        : (w.weight / availableWeight) * 100,
-    value: measured[w.key].value,
-    basis: measured[w.key].basis,
-  }));
-
-  const score =
-    availableWeight === 0
-      ? null
-      : components.reduce(
-          (total, c) => total + (c.value ?? 0) * (c.effectiveWeight / 100),
-          0
-        );
-
-  return {
-    score: score === null ? null : Math.round(score),
-    band: classifyScore(score === null ? null : Math.round(score)),
-    components,
-    reweighted: available.length > 0 && available.length < published.length,
-  };
-}
-
-export function classifyScore(score: number | null): RepScoreResult["band"] {
-  if (score === null) return "Not scored";
-  if (score >= 90) return "Excellent";
-  if (score >= 80) return "Good";
-  if (score >= 70) return "Needs Improvement";
-  return "Poor";
 }
 
 // ---------------------------------------------------------------------------

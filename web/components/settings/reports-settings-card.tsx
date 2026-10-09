@@ -10,8 +10,16 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { createClient } from "@/lib/supabase/client";
 import { refreshCompanyConfig, useCompanyConfig, useTerms } from "@/lib/use-company-config";
 import { availableReportTabs, companyReportTabs, reportTabs, tabsFromSetting, type ReportTab } from "@/lib/report-tabs";
+import { moduleEnabled } from "@/lib/modules";
+import { lower } from "@/lib/terms";
+import { SCORE_PARTS, findPart, parseWeights, weightsSetting } from "@/lib/staff-score";
 
-type Draft = { tabs: ReportTab[]; shortHours: string; longHours: string };
+type DraftWeight = { code: string; weight: string };
+type Draft = { tabs: ReportTab[]; shortHours: string; longHours: string; weights: DraftWeight[] };
+
+const SETTING_KEYS = ["report_tabs", "report_short_day_hours", "report_long_day_hours", "staff_score_weights"];
+const toDraftWeights = (setting: string) => parseWeights(setting).map((w) => ({ code: w.code, weight: String(w.weight) }));
+const weightOk = (v: string) => /^\d{1,3}$/.test(v) && Number(v) <= 100;
 
 const hoursOk = (v: string) => /^\d{1,2}$/.test(v) && Number(v) <= 24;
 
@@ -24,6 +32,7 @@ export function ReportsSettingsCard({ orgId, canEdit }: { orgId: string; canEdit
   const config = useCompanyConfig();
   const [draft, setDraft] = useState<Draft | null>(null);
   const [adding, setAdding] = useState("");
+  const [addingPart, setAddingPart] = useState("");
   const [busy, setBusy] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -33,10 +42,19 @@ export function ReportsSettingsCard({ orgId, canEdit }: { orgId: string; canEdit
     tabs: companyReportTabs(config.modules, config.settings.report_tabs),
     shortHours: String(config.settings.report_short_day_hours),
     longHours: String(config.settings.report_long_day_hours),
+    weights: toDraftWeights(config.settings.staff_score_weights),
   };
   const d = draft ?? current;
   const labels = new Map(reportTabs(t).map((x) => [x.value, x.label]));
   const offered = availableReportTabs(config.modules).filter((tab) => !d.tabs.includes(tab));
+  // Sales and retail audits are measured only where the company sells.
+  const sells = moduleEnabled(config.modules, "distribution");
+  const offeredParts = SCORE_PARTS.filter(
+    (p) => !d.weights.some((w) => w.code === p.code) && (!p.reportOnly || sells)
+  );
+  const total = d.weights.reduce((a, w) => a + (weightOk(w.weight) ? Number(w.weight) : 0), 0);
+  const setWeight = (code: string, weight: string) =>
+    change({ weights: d.weights.map((w) => (w.code === code ? { ...w, weight } : w)) });
   const change = (next: Partial<Draft>) => {
     setSaved(false);
     setDraft({ ...d, ...next });
@@ -52,6 +70,9 @@ export function ReportsSettingsCard({ orgId, canEdit }: { orgId: string; canEdit
   async function save() {
     if (d.tabs.length === 0) return setError("Keep at least one tab.");
     if (!hoursOk(d.shortHours) || !hoursOk(d.longHours)) return setError("Hours are a whole number from 0 to 24.");
+    if (d.weights.length === 0 || d.weights.some((w) => !weightOk(w.weight)) || total !== 100) {
+      return setError(`The score's weights must be whole numbers adding up to 100 (now ${total}).`);
+    }
     setBusy(true);
     setError(null);
     const { error: e } = await createClient()
@@ -61,6 +82,11 @@ export function ReportsSettingsCard({ orgId, canEdit }: { orgId: string; canEdit
           { org_id: orgId, key: "report_tabs", value: d.tabs.join(",") },
           { org_id: orgId, key: "report_short_day_hours", value: Number(d.shortHours) },
           { org_id: orgId, key: "report_long_day_hours", value: Number(d.longHours) },
+          {
+            org_id: orgId,
+            key: "staff_score_weights",
+            value: weightsSetting(d.weights.map((w) => ({ code: w.code, weight: Number(w.weight) }))),
+          },
         ],
         { onConflict: "org_id,key" }
       );
@@ -96,12 +122,12 @@ export function ReportsSettingsCard({ orgId, canEdit }: { orgId: string; canEdit
             .from("template_settings")
             .select("setting_key, value")
             .eq("template_code", trade)
-            .in("setting_key", ["report_tabs", "report_short_day_hours", "report_long_day_hours"])
+            .in("setting_key", SETTING_KEYS)
         : Promise.resolve({ data: [] as { setting_key: string; value: unknown }[], error: null }),
       supabase
         .from("setting_definitions")
         .select("key, default_value")
-        .in("key", ["report_tabs", "report_short_day_hours", "report_long_day_hours"]),
+        .in("key", SETTING_KEYS),
     ]);
     const failed = rowsError ?? defsError;
     if (failed) return setError(`Your trade's settings could not be read (${failed.message}). Nothing was changed.`);
@@ -116,6 +142,7 @@ export function ReportsSettingsCard({ orgId, canEdit }: { orgId: string; canEdit
       tabs,
       shortHours: String(Number(value("report_short_day_hours") ?? 0)),
       longHours: String(Number(value("report_long_day_hours") ?? 0)),
+      weights: toDraftWeights(String(value("staff_score_weights") ?? "")),
     });
   }
 
@@ -124,7 +151,8 @@ export function ReportsSettingsCard({ orgId, canEdit }: { orgId: string; canEdit
       <CardHeader>
         <CardTitle className="text-base">Reports</CardTitle>
         <CardDescription>
-          The tabs on the Reports page, in this order, and when the Hours report marks a day as short or long.
+          The tabs on the Reports page, in this order, when the Hours report marks a day as short or long, and what
+          the {lower(t.staff.one)} score is made of.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -210,6 +238,85 @@ export function ReportsSettingsCard({ orgId, canEdit }: { orgId: string; canEdit
             0 turns a mark off. Only finished workdays are marked.
           </p>
         </div>
+        <fieldset className="space-y-3">
+          <legend className="text-sm font-medium text-foreground">{t.staff.one} score</legend>
+          <p className="text-xs text-pretty text-muted-foreground">
+            Your trade&apos;s parts and weights, from industry research. A part that is not measured yet sits out and its
+            weight is shared across the rest until Tickd records what it needs.
+          </p>
+          <ul className="divide-y divide-border rounded-lg border border-border">
+            {d.weights.map((w) => {
+              const part = findPart(w.code)!;
+              const note = part.needs ?? part.standIn ?? null;
+              return (
+                <li key={w.code} className="flex min-h-11 items-center gap-3 px-3 py-2">
+                  <span className="min-w-0 flex-1">
+                    <span className="block text-sm font-medium text-foreground">{part.label(t)}</span>
+                    {note && (
+                      <span className="block text-xs text-muted-foreground">
+                        {part.needs ? `Not measured yet. ${part.needs}.` : `${note}.`}
+                      </span>
+                    )}
+                  </span>
+                  <Input
+                    aria-label={`Weight of ${part.label(t)}`}
+                    inputMode="numeric"
+                    className="w-16 text-right tabular-nums"
+                    value={w.weight}
+                    disabled={!canEdit}
+                    aria-invalid={!weightOk(w.weight)}
+                    onChange={(e) => setWeight(w.code, e.target.value.trim())}
+                  />
+                  <span className="w-3 text-sm text-muted-foreground">%</span>
+                  {canEdit && (
+                    <Button
+                      variant="ghost"
+                      size="icon-sm"
+                      aria-label={`Remove ${part.label(t)}`}
+                      disabled={d.weights.length === 1}
+                      onClick={() => change({ weights: d.weights.filter((x) => x.code !== w.code) })}
+                    >
+                      <X className="size-4" aria-hidden />
+                    </Button>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            {canEdit && offeredParts.length > 0 ? (
+              <div className="flex flex-wrap items-center gap-2">
+                <NativeSelect aria-label="Add a part" value={addingPart} onChange={(e) => setAddingPart(e.target.value)} className="max-w-xs">
+                  <option value="">Add a part…</option>
+                  {offeredParts.map((p) => (
+                    <option key={p.code} value={p.code}>
+                      {p.label(t)}
+                      {p.needs ? " (not measured yet)" : ""}
+                    </option>
+                  ))}
+                </NativeSelect>
+                <Button
+                  variant="outline"
+                  disabled={!addingPart}
+                  onClick={() => {
+                    change({ weights: [...d.weights, { code: addingPart, weight: "0" }] });
+                    setAddingPart("");
+                  }}
+                >
+                  Add
+                </Button>
+              </div>
+            ) : (
+              <span />
+            )}
+            <span
+              aria-live="polite"
+              className={`text-sm tabular-nums ${total === 100 ? "text-muted-foreground" : "font-medium text-destructive"}`}
+            >
+              Adds up to {total} of 100
+            </span>
+          </div>
+        </fieldset>
         {error && <p className="text-sm text-destructive">{error}</p>}
         {canEdit && (
           <div className="flex flex-wrap items-center justify-end gap-3">

@@ -242,6 +242,7 @@ export default function RepPerformancePage() {
         generatedAt: new Date(),
         currency,
         sells: moduleEnabled(company.modules, "distribution"),
+        weights: company.settings.staff_score_weights,
       });
     } catch (e) {
       if (runId !== runSeq.current) return;
