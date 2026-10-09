@@ -27,6 +27,10 @@ export function CostCalculator() {
   // Every active login is a paid seat (billing_seats_used), the owner's too,
   // so the price is for the staff on site plus you.
   const tickd = people > 0 ? planPrice(people + 1, "monthly") : 0;
+  // What is left over if that time is won back, after paying for Tickd. Said
+  // as an "if": Tickd shows where the time goes; the team still has to win it
+  // back. Only shown when it is a gain.
+  const ahead = Math.round(monthly - tickd);
 
   const field =
     "w-full min-h-11 rounded-lg bg-mint px-3 py-2.5 ring-1 ring-line focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-700";
@@ -39,8 +43,21 @@ export function CostCalculator() {
           <input className={field} type="number" min={1} max={500} inputMode="numeric" value={staff} onChange={(e) => setStaff(e.target.value)} />
         </label>
         <label className="grid gap-1.5 text-sm font-medium">
-          Hours each person loses a day to waiting and paperwork
-          <input className={field} type="number" min={0} max={8} step={0.25} inputMode="decimal" value={lost} onChange={(e) => setLost(e.target.value)} />
+          Hours each person loses a day
+          <input
+            className={field}
+            type="number"
+            min={0}
+            max={8}
+            step={0.25}
+            inputMode="decimal"
+            value={lost}
+            onChange={(e) => setLost(e.target.value)}
+            aria-describedby="lost-why"
+          />
+          <span id="lost-why" className="font-normal text-muted">
+            Late starts, long breaks and detours.
+          </span>
         </label>
         <div className="grid gap-1.5 text-sm font-medium">
           <label htmlFor="rate">Pay per hour</label>
@@ -84,6 +101,12 @@ export function CostCalculator() {
               {site.name} for {people} {people === 1 ? "person" : "people"} and you:
             </span>
             <strong className="font-display text-2xl font-extrabold tabular-nums text-teal-900">{rand(tickd)} a month</strong>
+          </p>
+        )}
+        {currency === "R" && tickd > 0 && ahead > 0 && (
+          <p className="grid gap-1 rounded-2xl bg-teal-900 px-5 py-4 text-sand">
+            <span className="leading-snug text-teal-100">Win back that time, and after paying for {site.name} you&apos;re ahead by</span>
+            <strong className="font-display text-3xl font-extrabold tabular-nums text-amber-500 sm:text-4xl">{rand(ahead)} a month</strong>
           </p>
         )}
       </div>

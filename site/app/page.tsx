@@ -480,8 +480,7 @@ export default function Home() {
             <div className="grid gap-3">
               <h2 className={h2}>What is lost time costing you?</h2>
               <p className={lead}>
-                Put in your own numbers. It shows what waiting and paperwork cost you each month, and what {site.name} would
-                cost.
+                Most lost time on site is late starts, long breaks and detours. Put in your numbers to see what it costs you.
               </p>
             </div>
             <div className="tk-reveal">
