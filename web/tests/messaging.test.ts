@@ -45,6 +45,21 @@ const message = {
   text: "H",
 };
 
+test("Brevo: an attachment goes in the request as a name and its base64 content, and only when there is one", async () => {
+  process.env.BREVO_API_KEY = "k";
+  const bodies: Record<string, unknown>[] = [];
+  const spy = (async (_url: unknown, init?: RequestInit) => {
+    bodies.push(JSON.parse(String(init?.body)));
+    return new Response(JSON.stringify({ messageId: "<m>" }), { status: 201 });
+  }) as unknown as typeof fetch;
+  await sendViaBrevo({ ...message, attachments: [{ name: "Invoice INV-1.pdf", content: "JVBERi0=" }] }, spy);
+  await sendViaBrevo(message, spy);
+  await sendViaBrevo({ ...message, attachments: [] }, spy);
+  assert.deepEqual(bodies[0].attachment, [{ name: "Invoice INV-1.pdf", content: "JVBERi0=" }]);
+  assert.equal("attachment" in bodies[1], false);
+  assert.equal("attachment" in bodies[2], false);
+});
+
 test("Brevo: a message id is success; a bad request is permanent; a rate limit or an outage is not", async () => {
   process.env.BREVO_API_KEY = "k";
   assert.deepEqual(await sendViaBrevo(message, fakeFetch(201, { messageId: "<m1>" })), { ok: true, messageId: "<m1>" });

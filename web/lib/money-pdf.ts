@@ -99,7 +99,7 @@ function headerClassic(c: Ctx): number {
   let sellerTop = 52;
   if (logo) {
     const box = fitBox(logo.width, logo.height, 160, 44);
-    doc.addImage(logo.dataUrl, "PNG", left, 30, box.width, box.height);
+    doc.addImage(logo.dataUrl, logo.format ?? "PNG", left, 30, box.width, box.height);
     sellerTop = 30 + box.height + 18;
   }
 
@@ -150,7 +150,7 @@ function headerBold(c: Ctx): number {
     const box = fitBox(logo.width, logo.height, 150, 48);
     doc.setFillColor(255, 255, 255);
     doc.roundedRect(left, 26, box.width + 16, box.height + 16, 6, 6, "F");
-    doc.addImage(logo.dataUrl, "PNG", left + 8, 34, box.width, box.height);
+    doc.addImage(logo.dataUrl, logo.format ?? "PNG", left + 8, 34, box.width, box.height);
   } else {
     doc.setFont("helvetica", "bold");
     doc.setFontSize(17);
@@ -200,7 +200,7 @@ function headerClean(c: Ctx): number {
   let y = 40;
   if (logo) {
     const box = fitBox(logo.width, logo.height, 150, 46);
-    doc.addImage(logo.dataUrl, "PNG", (width - box.width) / 2, y, box.width, box.height);
+    doc.addImage(logo.dataUrl, logo.format ?? "PNG", (width - box.width) / 2, y, box.width, box.height);
     y += box.height + 16;
   } else {
     y += 8;

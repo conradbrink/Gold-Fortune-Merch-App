@@ -16,6 +16,8 @@ export type LogoImage = {
   dataUrl: string;
   width: number;
   height: number;
+  /** The image's own format when it is not the PNG the browser loader always makes. */
+  format?: "PNG" | "JPEG";
 };
 
 /** Long enough for a small image on a slow line, short enough that Export still feels like a button. */

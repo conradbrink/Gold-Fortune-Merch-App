@@ -5,6 +5,8 @@ import { brevoConfigured, sendViaBrevo } from "@/lib/email/brevo";
 import { ALERT_TEMPLATES, CLIENT_TEMPLATES, DOCUMENT_TEMPLATES, REPORT_TEMPLATES, renderEmail, type ReportLine } from "@/lib/email/templates";
 import { companyTime } from "@/lib/company-time";
 import { appUrl, signLink } from "@/lib/email/links";
+import { documentPdfAttachment } from "@/lib/email/attachment";
+import type { DocumentView } from "@/lib/client-document";
 
 /**
  * Sends what is due in the outbox (Stage 8.1).
@@ -156,6 +158,7 @@ export async function GET(request: Request) {
     // document as it is now. A link that is gone (expired, withdrawn, its
     // invoice voided) cannot be sent; one that could not be looked up is tried
     // again on the next run.
+    let attachment: { name: string; content: string } | null = null;
     if (DOCUMENT_TEMPLATES.has(m.template)) {
       const linkId = typeof payload.link_id === "string" ? payload.link_id : "";
       if (!UUID.test(linkId)) {
@@ -175,13 +178,20 @@ export async function GET(request: Request) {
         continue;
       }
       payload = { ...payload, url: `${appUrl()}/c/doc/${signLink("doc", linkId)}` };
+      // The PDF goes with it. It is a courtesy on top of the link: if it cannot
+      // be made, the email goes without it.
+      try {
+        attachment = await documentPdfAttachment(view as unknown as DocumentView);
+      } catch (e) {
+        console.error("messages: could not make the PDF for", m.id, e instanceof Error ? e.message : String(e));
+      }
     }
     // Alerts carry everything they show; the links need the app's address.
     if (ALERT_TEMPLATES.has(m.template)) payload = { ...payload, app_url: appUrl() };
     let email: ReturnType<typeof renderEmail> = null;
     let renderError: string | null = null;
     try {
-      email = renderEmail(m.template, payload, { companyName, unsubscribeUrl });
+      email = renderEmail(m.template, payload, { companyName, unsubscribeUrl, attached: attachment !== null });
     } catch (e) {
       renderError = e instanceof Error ? e.message : String(e);
     }
@@ -210,6 +220,7 @@ export async function GET(request: Request) {
       html: email.html,
       text: email.text,
       headers: unsubscribeUrl ? { "List-Unsubscribe": `<${unsubscribeUrl}>` } : undefined,
+      attachments: attachment ? [attachment] : undefined,
     });
     if (result.ok) {
       await finish({ p_id: m.id, p_ok: true, p_provider_id: result.messageId });

@@ -440,3 +440,76 @@ test("each kind of page draws its PDF in every look, with no login and no logo",
     }
   }
 });
+
+// The PDF that goes with the email.
+
+import { documentPdfAttachment, imageDimensions, loadLogoServer, safeFileName } from "@/lib/email/attachment";
+
+const PNG_1X1 = Buffer.from(
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==",
+  "base64"
+);
+// A 1x1 baseline JPEG.
+const JPEG_1X1 = Buffer.from(
+  "/9j/4AAQSkZJRgABAQEASABIAAD/2wBDAP//////////////////////////////////////////////////////////////////////////////////////wgALCAABAAEBAREA/8QAFBABAAAAAAAAAAAAAAAAAAAAAP/aAAgBAQABPxA=",
+  "base64"
+);
+
+test("a logo's format and size are read from its first bytes: PNG and JPEG, nothing else", () => {
+  assert.deepEqual(imageDimensions(PNG_1X1), { format: "PNG", width: 1, height: 1 });
+  assert.deepEqual(imageDimensions(JPEG_1X1), { format: "JPEG", width: 1, height: 1 });
+  assert.equal(imageDimensions(Buffer.from("RIFF....WEBPVP8 ")), null);
+  assert.equal(imageDimensions(Buffer.alloc(0)), null);
+  assert.equal(imageDimensions(Buffer.from("<svg></svg>")), null);
+});
+
+test("the server loads a PNG or JPEG logo and leaves off anything it cannot use", async () => {
+  const serve = (body: Buffer, status = 200) => (async () => new Response(new Uint8Array(body), { status })) as unknown as typeof fetch;
+  const png = await loadLogoServer("https://x/logo.png", serve(PNG_1X1));
+  assert.equal(png?.format, "PNG");
+  assert.match(png?.dataUrl ?? "", /^data:image\/png;base64,/);
+  assert.equal((await loadLogoServer("https://x/logo.jpg", serve(JPEG_1X1)))?.format, "JPEG");
+  assert.equal(await loadLogoServer("https://x/logo.webp", serve(Buffer.from("RIFF....WEBPVP8 "))), null);
+  assert.equal(await loadLogoServer("https://x/missing.png", serve(PNG_1X1, 404)), null);
+  assert.equal(await loadLogoServer(null), null);
+  assert.equal(await loadLogoServer("https://x/slow.png", (async () => { throw new Error("offline"); }) as unknown as typeof fetch), null);
+});
+
+test("attachment names are safe for mail systems", () => {
+  assert.equal(safeFileName("Invoice INV-0042"), "Invoice INV-0042.pdf");
+  assert.equal(safeFileName('Statement: A/B "Co" <x>'), "Statement A B Co x.pdf");
+  assert.equal(safeFileName("   "), "Document.pdf");
+  assert.ok(safeFileName("x".repeat(300)).length <= 84);
+});
+
+test("each document email gets its PDF as an attachment that is a real PDF", async () => {
+  for (const view of [invoiceView, quoteView, statementView]) {
+    const a = await documentPdfAttachment(view, undefined);
+    assert.ok(a, view.kind);
+    assert.match(a.name, /\.pdf$/);
+    const bytes = Buffer.from(a.content, "base64");
+    assert.equal(bytes.subarray(0, 5).toString("latin1"), "%PDF-");
+    assert.ok(bytes.length > 1000 && bytes.length < 3_000_000);
+  }
+});
+
+test("the email says the PDF is attached only when it is", () => {
+  const payload = { link_id: "x", url, number: "INV-0042", customer_name: "A", total: 100, issue_date: "2026-10-09", due_date: "2026-11-08", currency: "ZAR", company_name: "Acme" };
+  const without = renderEmail("invoice", payload, ctx)!;
+  assert.doesNotMatch(without.html + without.text, /attached/);
+  const withPdf = renderEmail("invoice", payload, { ...ctx, attached: true })!;
+  assert.match(withPdf.html, /The PDF is attached to this email\./);
+  assert.match(withPdf.text, /The PDF is attached to this email\./);
+});
+
+test("a PNG or a JPEG logo embeds in every look", async () => {
+  const spec = documentPdfSpec(invoiceView);
+  for (const img of [PNG_1X1, JPEG_1X1]) {
+    const logo = await loadLogoServer("https://x/l", (async () => new Response(new Uint8Array(img))) as unknown as typeof fetch);
+    assert.ok(logo);
+    for (const style of ["classic", "bold", "clean"] as const) {
+      const doc = await buildMoneyPdf(spec, { style, primary: "#0F3D3E", accent: "#F5A524" }, logo);
+      assert.equal(doc.getNumberOfPages(), 1);
+    }
+  }
+});
