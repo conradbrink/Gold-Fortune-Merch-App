@@ -35,6 +35,7 @@ import {
   Flag,
   Coins,
   HandCoins,
+  ScrollText,
   Tags,
   FileSignature,
   Car,
@@ -196,6 +197,7 @@ export const navGroups: NavGroupDef[] = [
         when: (s) => s.money_contracts,
       },
       { href: "/owed", label: "Who owes you", icon: HandCoins, permission: "invoicing" },
+      { href: "/statements", label: "Statements", icon: ScrollText, permission: "invoicing" },
       {
         href: "/price-list",
         label: "Price list",

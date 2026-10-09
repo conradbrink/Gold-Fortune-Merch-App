@@ -16,6 +16,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { StatementTable } from "@/components/money/statement-table";
 import { ErrorBanner, EmptyRow } from "@/components/warehouse/stat-tile";
 import { ExportMenu } from "@/components/export-menu";
 import {
@@ -23,12 +24,10 @@ import {
   downloadStatementPdf,
   fetchAgeing,
   fetchStatement,
-  STATEMENT_KIND_LABELS,
-  statementDetail,
+  fetchStatementSeller,
   statementSheet,
   type AgeingRow,
   type StatementRow,
-  type StatementSeller,
 } from "@/lib/owed";
 import { AGEING_COLUMNS } from "@/lib/money-docs";
 import { formatMoney } from "@/lib/money";
@@ -126,13 +125,8 @@ export default function OwedPage() {
     if (!statementClient || !statement) return;
     setBusy(true);
     try {
-      const { data, error: e } = await supabase
-        .from("organizations")
-        .select("name, legal_name, address, tax_number, vat_number, registration_number, phone, support_email, logo_path, bank_details")
-        .limit(1)
-        .single();
-      if (e) throw new Error(e.message);
-      await downloadStatementPdf(data as StatementSeller, statementClient, statement.from, statement.to, statement.rows);
+      const seller = await fetchStatementSeller(supabase);
+      await downloadStatementPdf(seller, statementClient, statement.from, statement.to, statement.rows);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -149,7 +143,10 @@ export default function OwedPage() {
             {`Every ${lower(t.client.one)} with money outstanding, by how long it has been due.`}
           </p>
         </div>
-        <div className="flex items-end gap-2">
+        <div className="flex items-end gap-3">
+          <Link href="/statements" className="pb-2 text-sm text-primary hover:underline">
+            All statements
+          </Link>
           <div>
             <Label htmlFor="as-of">As at</Label>
             <Input id="as-of" type="date" value={asOf} onChange={(e) => changeDates({ asOf: e.target.value })} className="w-40" />
@@ -252,42 +249,7 @@ export default function OwedPage() {
                 />
               )}
             </div>
-            {statement && (
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Date</TableHead>
-                    <TableHead>Type</TableHead>
-                    <TableHead>Number</TableHead>
-                    <TableHead>Detail</TableHead>
-                    <TableHead className="text-right">Debit</TableHead>
-                    <TableHead className="text-right">Credit</TableHead>
-                    <TableHead className="text-right">Balance</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {statement.rows.map((r, i) => (
-                    <TableRow key={`${r.document_id ?? "open"}-${i}`}>
-                      <TableCell className="whitespace-nowrap text-muted-foreground">{r.entry_date}</TableCell>
-                      <TableCell>{STATEMENT_KIND_LABELS[r.entry_kind] ?? r.entry_kind}</TableCell>
-                      <TableCell>
-                        {r.entry_kind === "invoice" && r.document_id ? (
-                          <Link href={`/invoices/${r.document_id}`} className="text-primary hover:underline">
-                            {r.document_number}
-                          </Link>
-                        ) : (
-                          (r.document_number ?? "")
-                        )}
-                      </TableCell>
-                      <TableCell className="text-muted-foreground">{statementDetail(r)}</TableCell>
-                      <TableCell className="text-right tabular-nums">{r.debit === null ? "" : m(r.debit)}</TableCell>
-                      <TableCell className="text-right tabular-nums">{r.credit === null ? "" : m(r.credit)}</TableCell>
-                      <TableCell className="text-right tabular-nums">{m(r.balance)}</TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            )}
+            {statement && <StatementTable rows={statement.rows} />}
           </CardContent>
         </Card>
       )}
