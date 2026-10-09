@@ -218,7 +218,9 @@ begin
   ---------------------------------------------------------------- S6 grants
   if has_function_privilege('anon', 'public.staff_score_inputs(timestamptz, timestamptz, uuid)', 'execute')
      or has_function_privilege('anon', 'public.approved_leave_days(date, date)', 'execute')
-     or not has_function_privilege('authenticated', 'public.staff_score_inputs(timestamptz, timestamptz, uuid)', 'execute') then
+     or not has_function_privilege('authenticated', 'public.staff_score_inputs(timestamptz, timestamptz, uuid)', 'execute')
+     -- staff_score_inputs (invoker) calls it as the signed-in user.
+     or not has_function_privilege('authenticated', 'public.approved_leave_days(date, date)', 'execute') then
     v_fail := v_fail || 'S6 a score function has the wrong grants' || E'\n';
   end if;
   if (select count(*) from public.module_assignments

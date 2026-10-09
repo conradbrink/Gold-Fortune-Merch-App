@@ -65,7 +65,15 @@ export function StaffScoreTable({ scores, weights }: { scores: TeamScore[]; weig
         <TableBody>
           {scores.map(({ staffId, name, result }) => (
             <TableRow key={staffId}>
-              <TableCell className="max-w-44 truncate font-medium">{name || "-"}</TableCell>
+              <TableCell className="max-w-44 truncate font-medium">
+                {name || "-"}
+                {/* On a phone the next step sits under the name rather than in its own column. */}
+                {result.focus && (
+                  <span className="block truncate text-xs font-normal text-muted-foreground md:hidden">
+                    Next: {result.focus.label}
+                  </span>
+                )}
+              </TableCell>
               <TableCell className="text-right whitespace-nowrap">
                 {result.score === null ? (
                   <span className="text-sm text-muted-foreground">Not enough data</span>

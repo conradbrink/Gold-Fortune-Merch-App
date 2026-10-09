@@ -415,7 +415,8 @@ export default function ReportsPage() {
 
   const pickedStore = stores.find((st) => st.id === storeId) ?? null;
 
-  const weights = useMemo(() => parseWeights(config?.settings.staff_score_weights), [config]);
+  // The same configuration the loader chose its mode from, even when the hook's lookup failed.
+  const weights = useMemo(() => parseWeights(companyConfig?.settings.staff_score_weights), [companyConfig]);
   const teamMode = teamScorable(weights);
   const scored = useMemo(() => (teamMode ? teamScores(teamInputs, weights, terms) : []), [teamMode, teamInputs, weights, terms]);
 

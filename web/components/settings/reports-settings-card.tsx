@@ -138,6 +138,9 @@ export function ReportsSettingsCard({ orgId, canEdit }: { orgId: string; canEdit
       availableReportTabs(config!.modules).includes(tab)
     );
     if (tabs.length === 0) return setError("Your trade has no standard tabs to go back to.");
+    // A part picked before the reset may now be among the weights again.
+    setAddingPart("");
+    setAdding("");
     change({
       tabs,
       shortHours: String(Number(value("report_short_day_hours") ?? 0)),
@@ -297,8 +300,9 @@ export function ReportsSettingsCard({ orgId, canEdit }: { orgId: string; canEdit
                 </NativeSelect>
                 <Button
                   variant="outline"
-                  disabled={!addingPart}
+                  disabled={!offeredParts.some((p) => p.code === addingPart)}
                   onClick={() => {
+                    if (!offeredParts.some((p) => p.code === addingPart)) return;
                     change({ weights: [...d.weights, { code: addingPart, weight: "0" }] });
                     setAddingPart("");
                   }}
