@@ -467,6 +467,81 @@ export type Database = {
         }
         Relationships: []
       }
+      logbook_vehicles: {
+        Row: {
+          id: string
+          org_id: string
+          name: string
+          registration: string
+          notes: string | null
+          active: boolean
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          org_id: string
+          name: string
+          registration: string
+          notes?: string | null
+          active?: boolean
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          org_id?: string
+          name?: string
+          registration?: string
+          notes?: string | null
+          active?: boolean
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      vehicle_days: {
+        Row: {
+          id: string
+          org_id: string
+          vehicle_id: string
+          profile_id: string
+          day: string
+          purpose: string
+          odometer_start: number | null
+          odometer_end: number | null
+          notes: string | null
+          created_by: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          org_id: string
+          vehicle_id: string
+          profile_id: string
+          day: string
+          purpose?: string
+          odometer_start?: number | null
+          odometer_end?: number | null
+          notes?: string | null
+          created_by?: string | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          org_id?: string
+          vehicle_id?: string
+          profile_id?: string
+          day?: string
+          purpose?: string
+          odometer_start?: number | null
+          odometer_end?: number | null
+          notes?: string | null
+          created_by?: string | null
+          created_at?: string
+        }
+        Relationships: []
+      }
       tax_invoice_visits: {
         Row: {
           invoice_id: string
@@ -7147,6 +7222,25 @@ export type Database = {
           photos: number
           planned: boolean
           gap_minutes: number | null
+        }[]
+      }
+      vehicle_logbook: {
+        Args: { p_from: string; p_to: string; p_vehicle_id?: string | null }
+        Returns: {
+          vehicle_day_id: string
+          vehicle_id: string
+          vehicle_name: string
+          registration: string
+          day: string
+          driver_id: string
+          driver_name: string | null
+          purpose: string
+          km: number | null
+          odometer_start: number | null
+          odometer_end: number | null
+          first_in: string | null
+          last_out: string | null
+          notes: string | null
         }[]
       }
       staff_hours: {

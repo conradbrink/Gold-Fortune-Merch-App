@@ -27,7 +27,8 @@ export type ModuleCode =
   | "distribution"
   | "warehouse"
   | "hr"
-  | "invoicing";
+  | "invoicing"
+  | "vehicle_logbook";
 
 /** The modules a company has on. `core` is implied and never stored. */
 export type ModuleSet = ReadonlySet<string>;
@@ -80,6 +81,9 @@ const MODULE_PATHS: { prefix: string; module: ModuleCode }[] = [
   { prefix: "/invoices", module: "invoicing" },
   { prefix: "/owed", module: "invoicing" },
   { prefix: "/price-list", module: "invoicing" },
+
+  // The vehicle logbook and its list of vehicles (Stage 8).
+  { prefix: "/logbook", module: "vehicle_logbook" },
 ];
 
 /** The module a path belongs to; `core` when no prefix claims it. */

@@ -98,6 +98,9 @@ const PATH_PERMISSIONS: { prefix: string; permission: PermissionCode }[] = [
   { prefix: "/activities", permission: "field_ops" },
   { prefix: "/visits", permission: "field_ops" },
   { prefix: "/tracking", permission: "insights" },
+  // The logbook is the km per person per day that Tracking and the Hours
+  // report already show, with the vehicle added: the same people keep it.
+  { prefix: "/logbook", permission: "insights" },
   { prefix: "/promotions", permission: "field_ops" },
   { prefix: "/representatives", permission: "team" },
   { prefix: "/products", permission: "resources" },
