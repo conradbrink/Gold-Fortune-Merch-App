@@ -157,14 +157,14 @@ const lead = "max-w-2xl text-lg leading-relaxed text-pretty text-ink";
  * unbilled work, being needed on every site), not only the feature.
  */
 const OWNER_GETS = [
-  "See who's at work and the hours they've worked",
-  "See where your staff are, live, and how far they drive",
-  "Photos and GPS proof that every task was done",
-  "A signed report for your client after every task",
-  "Never forget to invoice a finished task",
-  "Get paid on time and see who still owes you",
-  "An alert when something goes wrong",
-  "A performance report for each employee",
+  "You know who came to work, and what time they started and finished.",
+  "You can see where your staff are right now, and how far they've driven.",
+  "Every task gets ticked off with photos, so you know it was really done.",
+  "Your client gets a signed report after every task, so there's no arguing.",
+  "You never forget to invoice for work that's been done.",
+  "You get paid faster, and you can see who still owes you money.",
+  "You get a message when something goes wrong, like a task that was missed.",
+  "You get a performance report for each employee.",
 ];
 
 function TrialButton({ className = "" }: { className?: string }) {
@@ -301,10 +301,11 @@ export default function Home() {
               <span className="mt-3 block text-[0.6em] leading-[1.1] text-teal-700">without phoning around.</span>
             </h1>
             <p className="max-w-xl text-lg leading-relaxed text-pretty text-ink sm:text-xl">
-              The all-in-one app for running a team that works on site. Your staff use it on their phones, and you see
-              everything from your dashboard:
+              {site.name} is an app for business owners whose staff work out on site, like cleaners, security guards,
+              gardeners and technicians. Your staff use it on their phones while they work, and you see it all on your phone or
+              computer. With {site.name}:
             </p>
-            <ul className="grid max-w-xl gap-x-6 gap-y-2.5 sm:grid-cols-2" aria-label={`What ${site.name} does for you`}>
+            <ul className="grid max-w-xl gap-y-2.5" aria-label={`What ${site.name} does for you`}>
               {OWNER_GETS.map((item) => (
                 <li key={item} className="flex items-start gap-2.5 text-base leading-snug text-ink">
                   <span
