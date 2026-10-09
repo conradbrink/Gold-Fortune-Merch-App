@@ -12,7 +12,7 @@ const outfit = Outfit({
 const inter = Inter({ subsets: ["latin"], variable: "--font-inter" });
 
 const description =
-  "Tickd is the app for teams that work on site. Your team checks in at every job and takes photos. You see where they are, how long they stay and what got done. Then you invoice and get paid, all in one app. Made for Southern Africa.";
+  "Tickd is the all-in-one app for teams that work on site. See who's at work and their hours, where everyone is, the kilometres they drive and every job done with photos. Send clients signed job reports, get alerts when something's off, and quote, invoice and see who owes you. Made for Southern Africa.";
 
 export const metadata: Metadata = {
   metadataBase: new URL(site.url),
