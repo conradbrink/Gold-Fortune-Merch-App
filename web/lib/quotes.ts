@@ -169,7 +169,15 @@ export function invoicedSoFar(detail: Pick<QuoteDetail, "invoices">) {
 }
 
 export type NewQuoteLine =
-  | { kind: "product"; productId: string; qty: number; listPrice: number; discountPct: number }
+  | {
+      kind: "product";
+      productId: string;
+      qty: number;
+      listPrice: number;
+      discountPct: number;
+      /** Off the whole line, in place of the percentage. */
+      discountAmount: number;
+    }
   | { kind: "service"; serviceItemId: string; description: string; unit: string | null; qty: number; price: number }
   | { kind: "text"; description: string; unit: string | null; qty: number; price: number };
 
@@ -237,7 +245,8 @@ export async function createQuote(
             product_id: l.productId,
             qty: l.qty,
             list_price: l.listPrice,
-            discount_pct: l.discountPct,
+            discount_pct: l.discountAmount > 0 ? 0 : l.discountPct,
+            discount_amount: l.discountAmount,
           }
         : {
             org_id: input.orgId,

@@ -13,14 +13,17 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ErrorBanner } from "@/components/warehouse/stat-tile";
 import { LineEditor, lineProblem, type EditableLine } from "@/components/money/line-editor";
 import { BillToPicker, billToProblem, type BillTo } from "@/components/money/bill-to-picker";
+import { DiscountInput, DiscountNote } from "@/components/money/discount-input";
 import { fetchOrgId } from "@/lib/representatives";
 import {
+  discountProblem,
   fetchOrderableProducts,
   fetchRepsForOrder,
   fetchStoresForOrder,
   matchProducts,
-  netPrice,
+  netUnitPrice,
   unitPriceFor,
+  type DiscountKind,
 } from "@/lib/orders";
 import { createQuote, type NewQuoteLine } from "@/lib/quotes";
 import { fetchServiceItems, type ServiceItem } from "@/lib/service-items";
@@ -31,7 +34,14 @@ import { useCompanyConfig, useTerms } from "@/lib/use-company-config";
 import { lower } from "@/lib/terms";
 
 type Product = Awaited<ReturnType<typeof fetchOrderableProducts>>[number];
-type ProductLine = { productId: string; qty: string; price: string; discount: string };
+type ProductLine = {
+  productId: string;
+  qty: string;
+  price: string;
+  discount: string;
+  /** A percentage, or an amount off the whole line. */
+  discountKind: DiscountKind;
+};
 
 /**
  * Writing a quote.
@@ -113,14 +123,14 @@ export default function NewQuotePage() {
 
   const productTotalsLines = productLines.map((l) => ({
     qty: Number(l.qty) || 0,
-    unitPrice: netPrice(Number(l.price) || 0, Number(l.discount) || 0),
+    unitPrice: netUnitPrice(Number(l.price) || 0, Number(l.qty) || 0, Number(l.discount) || 0, l.discountKind),
   }));
 
   function addProduct(p: Product) {
     setProductLines((prev) =>
       prev.some((l) => l.productId === p.id)
         ? prev.map((l) => (l.productId === p.id ? { ...l, qty: String((Number(l.qty) || 0) + 1) } : l))
-        : [...prev, { productId: p.id, qty: "1", price: unitPriceFor(p) ?? "", discount: "" }]
+        : [...prev, { productId: p.id, qty: "1", price: unitPriceFor(p) ?? "", discount: "", discountKind: "pct" }]
     );
     setProductQuery("");
   }
@@ -145,8 +155,14 @@ export default function NewQuotePage() {
     if (productLines.some((l) => !validPrice(l.price))) {
       return setError("Every product needs a price, to the cent.");
     }
-    if (productLines.some((l) => Number(l.discount) < 0 || Number(l.discount) > 100)) {
-      return setError("A discount is a percentage between 0 and 100.");
+    for (const l of productLines) {
+      const problem = discountProblem({
+        qty: Number(l.qty),
+        price: Number(l.price),
+        discount: Number(l.discount) || 0,
+        kind: l.discountKind,
+      });
+      if (problem) return setError(problem);
     }
     const all: NewQuoteLine[] = [
       ...productLines.map((l) => ({
@@ -154,7 +170,8 @@ export default function NewQuotePage() {
         productId: l.productId,
         qty: Number(l.qty),
         listPrice: Number(l.price),
-        discountPct: Number(l.discount) || 0,
+        discountPct: l.discountKind === "pct" ? Number(l.discount) || 0 : 0,
+        discountAmount: l.discountKind === "amount" ? Number(l.discount) || 0 : 0,
       })),
       ...lines.map((l) =>
         l.serviceItemId
@@ -306,7 +323,7 @@ export default function NewQuotePage() {
             </div>
             {productLines.length > 0 && (
               <div className="space-y-2">
-                <div className="hidden gap-2 px-1 text-xs font-medium text-muted-foreground sm:grid sm:grid-cols-[1fr_5rem_7rem_5.5rem_2.5rem]">
+                <div className="hidden gap-2 px-1 text-xs font-medium text-muted-foreground sm:grid sm:grid-cols-[1fr_5rem_7rem_7rem_2.5rem]">
                   <span>Product</span>
                   <span>Qty</span>
                   <span>Price/unit</span>
@@ -316,8 +333,8 @@ export default function NewQuotePage() {
                 {productLines.map((l) => {
                   const p = byId.get(l.productId);
                   return (
-                    <div key={l.productId} className="grid items-center gap-2 sm:grid-cols-[1fr_5rem_7rem_5.5rem_2.5rem]">
-                      <span className="min-w-0 truncate text-sm">
+                    <div key={l.productId} className="grid items-start gap-2 sm:grid-cols-[1fr_5rem_7rem_7rem_2.5rem]">
+                      <span className="min-w-0 truncate py-1.5 text-sm">
                         {p?.name}
                         {p?.brand && <span className="text-muted-foreground"> — {p.brand}</span>}
                       </span>
@@ -336,16 +353,22 @@ export default function NewQuotePage() {
                         onChange={(e) => updateProduct(l.productId, { price: e.target.value })}
                         aria-label="Price per unit"
                       />
-                      <Input
-                        type="number"
-                        min={0}
-                        max={100}
-                        step="0.5"
-                        value={l.discount}
-                        onChange={(e) => updateProduct(l.productId, { discount: e.target.value })}
-                        placeholder="0"
-                        aria-label="Discount percentage"
-                      />
+                      <div>
+                        <DiscountInput
+                          value={l.discount}
+                          kind={l.discountKind}
+                          onChange={(discount, discountKind) => updateProduct(l.productId, { discount, discountKind })}
+                          currency={currency}
+                          aria-label="Discount"
+                        />
+                        <DiscountNote
+                          listPrice={validPrice(l.price) ? Number(l.price) : null}
+                          qty={Number(l.qty) || 0}
+                          discount={Number(l.discount) || 0}
+                          kind={l.discountKind}
+                          currency={currency}
+                        />
+                      </div>
                       <Button
                         variant="ghost"
                         size="icon"

@@ -89,7 +89,14 @@ export type RecurringInput = {
   nextRun: string;
   maxRuns: number | null;
   notes: string | null;
-  lines: { productId: string; qty: number; unitPrice: number | null; discountPct: number }[];
+  /** `discountAmount` is off the whole line, in place of the percentage. */
+  lines: {
+    productId: string;
+    qty: number;
+    unitPrice: number | null;
+    discountPct: number;
+    discountAmount: number;
+  }[];
 };
 
 /**
@@ -124,7 +131,8 @@ export async function saveRecurringOrder(
       product_id: l.productId,
       qty: l.qty,
       unit_price: l.unitPrice == null ? "" : String(l.unitPrice),
-      discount_pct: String(l.discountPct),
+      discount_pct: String(l.discountAmount > 0 ? 0 : l.discountPct),
+      discount_amount: String(l.discountAmount),
     })) as unknown as Json,
   });
   fail(error);

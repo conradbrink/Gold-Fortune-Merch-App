@@ -186,7 +186,7 @@ export default function RecurringOrderPage() {
             </TableHeader>
             <TableBody>
               {detail.lines.map((l) => (
-                <ProductRow key={l.id} productId={l.product_id} qty={l.qty} price={l.unit_price} discount={Number(l.discount_pct)} />
+                <ProductRow key={l.id} productId={l.product_id} qty={l.qty} price={l.unit_price} discount={Number(l.discount_pct)} discountAmount={Number(l.discount_amount)} />
               ))}
             </TableBody>
           </Table>
@@ -228,7 +228,20 @@ function localToday() {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
-function ProductRow({ productId, qty, price, discount }: { productId: string; qty: number; price: number | null; discount: number }) {
+function ProductRow({
+  productId,
+  qty,
+  price,
+  discount,
+  discountAmount,
+}: {
+  productId: string;
+  qty: number;
+  price: number | null;
+  discount: number;
+  /** Off the whole line, in place of the percentage. */
+  discountAmount: number;
+}) {
   const supabase = createClient();
   const [name, setName] = useState("…");
   useEffect(() => {
@@ -248,7 +261,9 @@ function ProductRow({ productId, qty, price, discount }: { productId: string; qt
       <TableCell>{name}</TableCell>
       <TableCell className="text-right tabular-nums">{qty}</TableCell>
       <TableCell className="text-right tabular-nums">{price == null ? "List price" : Number(price).toFixed(2)}</TableCell>
-      <TableCell className="text-right tabular-nums">{discount ? `${discount}%` : "—"}</TableCell>
+      <TableCell className="text-right tabular-nums">
+        {discountAmount > 0 ? `${discountAmount.toFixed(2)} off the line` : discount ? `${discount}%` : "—"}
+      </TableCell>
     </TableRow>
   );
 }

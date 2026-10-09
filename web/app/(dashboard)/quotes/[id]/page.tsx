@@ -345,10 +345,16 @@ export default function QuoteDetailPage() {
                     </TableCell>
                     <TableCell className="text-right tabular-nums">
                       {m(Number(l.unit_price ?? 0))}
-                      {Number(l.discount_pct) > 0 && (
+                      {Number(l.discount_amount) > 0 ? (
                         <span className="block text-xs text-muted-foreground">
-                          {m(Number(l.list_price))} less {Number(l.discount_pct)}%
+                          {m(Number(l.list_price))} less {m(Number(l.discount_amount))} on the line
                         </span>
+                      ) : (
+                        Number(l.discount_pct) > 0 && (
+                          <span className="block text-xs text-muted-foreground">
+                            {m(Number(l.list_price))} less {Number(l.discount_pct)}%
+                          </span>
+                        )
                       )}
                     </TableCell>
                     <TableCell className="text-right tabular-nums">

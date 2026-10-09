@@ -743,6 +743,7 @@ export type Database = {
           qty: number
           list_price: number
           discount_pct: number
+          discount_amount: number
           unit_price: number | null
           created_at: string
           service_item_id: string | null
@@ -758,6 +759,7 @@ export type Database = {
           qty: number
           list_price: number
           discount_pct?: number
+          discount_amount?: number
           unit_price?: number | null
           created_at?: string
           service_item_id?: string | null
@@ -773,6 +775,7 @@ export type Database = {
           qty?: number
           list_price?: number
           discount_pct?: number
+          discount_amount?: number
           unit_price?: number | null
           created_at?: string
           service_item_id?: string | null
@@ -2456,6 +2459,7 @@ export type Database = {
           unit_price: number | null
           list_price: number | null
           discount_pct: number
+          discount_amount: number
           unit_cost_excl_vat: number | null
         }
         Insert: {
@@ -2475,6 +2479,7 @@ export type Database = {
           unit_price?: number | null
           list_price?: number | null
           discount_pct?: number
+          discount_amount?: number
           unit_cost_excl_vat?: number | null
         }
         Update: {
@@ -2494,6 +2499,7 @@ export type Database = {
           unit_price?: number | null
           list_price?: number | null
           discount_pct?: number
+          discount_amount?: number
           unit_cost_excl_vat?: number | null
         }
         Relationships: [
@@ -2633,6 +2639,7 @@ export type Database = {
           qty: number
           unit_price: number | null
           discount_pct: number
+          discount_amount: number
         }
         Insert: {
           id?: string
@@ -2641,6 +2648,7 @@ export type Database = {
           qty: number
           unit_price?: number | null
           discount_pct?: number
+          discount_amount?: number
         }
         Update: {
           id?: string
@@ -2649,6 +2657,7 @@ export type Database = {
           qty?: number
           unit_price?: number | null
           discount_pct?: number
+          discount_amount?: number
         }
         Relationships: []
       }
