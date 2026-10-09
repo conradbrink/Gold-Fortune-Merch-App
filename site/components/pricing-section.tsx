@@ -42,6 +42,48 @@ function Item({ children }: { children: ReactNode }) {
   );
 }
 
+// The free bonuses with the plan, each with what it is worth, and what the
+// customer saves in total. Setup is only free on yearly, so on monthly it is
+// a line in the plan instead (paid once), not a bonus.
+function Bonuses({ yearly }: { yearly: boolean }) {
+  const bonuses = [
+    ...(yearly ? [{ name: "Setup", note: "", worth: pricing.setupValue, status: "Free" }] : []),
+    {
+      name: "A day of hands-on training",
+      note: "Your team learns the app, and you learn the dashboard.",
+      worth: pricing.trainingValue,
+      status: "Free",
+    },
+    {
+      name: `${pricing.supportMonths} months of one-on-one support`,
+      note: "",
+      worth: pricing.supportValue,
+      status: "Included",
+    },
+  ];
+  const saved = bonuses.reduce((sum, b) => sum + b.worth, 0);
+  return (
+    <div className="grid gap-3 border-t border-line pt-4">
+      <p className="font-display text-lg font-bold text-teal-900">Free bonuses</p>
+      <ul className="grid gap-3">
+        {bonuses.map((b) => (
+          <li key={b.name} className="grid grid-cols-[1fr_auto] items-baseline gap-x-4 gap-y-0.5">
+            <span className="font-semibold leading-snug text-ink">{b.name}</span>
+            <span className="text-right font-semibold text-teal-700">{b.status}</span>
+            <span className="col-span-2 text-sm leading-snug text-muted">
+              {b.note ? `${b.note} ` : ""}Worth {rand(b.worth)}.
+            </span>
+          </li>
+        ))}
+      </ul>
+      <p className="flex items-baseline justify-between gap-4 rounded-xl bg-amber-100 px-4 py-3 font-display text-lg font-bold text-teal-950">
+        <span>You save</span>
+        <span className="tabular-nums">{rand(saved)}</span>
+      </p>
+    </div>
+  );
+}
+
 function Calculator({ billing }: { billing: Billing }) {
   const [users, setUsers] = useState(10);
   const id = useId();
@@ -138,17 +180,15 @@ export function PricingSection() {
           <ul className="grid gap-2">
             <Item>Everything included: jobs, photos, tracking, timesheets, quotes and invoices</Item>
             <Item>
-              <strong>Setup worth {rand(pricing.setupValue)}:</strong>{" "}
-              {yearly ? "Free" : `${rand(pricing.setupValue)} once-off`}
-            </Item>
-            <Item>
               <strong>Checklists for your type of work:</strong> Ready on day one
             </Item>
-            <Item>
-              <strong>A free day of hands-on training:</strong> your team learns the app, and you learn your way around
-              the dashboard
-            </Item>
+            {!yearly && (
+              <Item>
+                <strong>Setup:</strong> {rand(pricing.setupValue)} once-off. It&apos;s free if you pay yearly.
+              </Item>
+            )}
           </ul>
+          <Bonuses yearly={yearly} />
           <div className="mt-auto grid gap-2">
             <a
               href={site.signupUrl}

@@ -52,6 +52,11 @@ export const pricing = {
   monthly: { base: 1499, perExtra: 349 },
   yearly: { base: 14990, perExtra: 3490 },
   setupValue: 2500,
+  // Free bonuses with every plan (owner, 9 Oct 2026): a hands-on training
+  // day, and one-on-one support for the first months.
+  trainingValue: 2500,
+  supportMonths: 2,
+  supportValue: 10000,
   doneForYou: 14990,
 } as const;
 
