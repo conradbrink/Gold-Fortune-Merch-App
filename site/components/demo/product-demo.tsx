@@ -450,84 +450,87 @@ export function ProductDemo() {
         <div aria-hidden="true" className="absolute -bottom-20 -left-10 size-72 rounded-full bg-teal-700/50 blur-3xl" />
 
         {/* One column, top to bottom: the sentence, the dashboard card, then
-            the phone or the dashboard window. Even gaps; nothing overlaps. */}
-        {!end && (
-          <div className="relative z-10 flex h-full flex-col gap-4 px-5 pt-5" aria-hidden="true">
-            <div key={`say-${shown}`} className="grid min-h-[5.25rem] content-start gap-1.5">
-              <span className="tk-in flex items-center gap-2 text-sm font-semibold">
-                <Clock className="size-4 text-amber-500" />
-                <span className="tabular-nums text-amber-500">{beat.when}</span>
-                <span className="text-teal-100/70">· {beat.part === "team" ? "Your team" : "Your office"}</span>
-              </span>
-              <p className="tk-in font-display text-xl font-bold leading-snug text-balance text-sand sm:text-2xl" style={at(80)}>
-                {beat.say}
-              </p>
+            the phone or the dashboard window. Even gaps; nothing overlaps.
+            It stays mounted under the end card (only faded out), so the phone
+            screens stay mounted for the whole loop. */}
+        <div
+          className={`relative z-10 flex h-full flex-col gap-4 px-5 pt-5 transition-opacity duration-300 ease-out ${end ? "opacity-0" : ""}`}
+          aria-hidden="true"
+        >
+          <div key={`say-${shown}`} className="grid min-h-[5.25rem] content-start gap-1.5">
+            <span className="tk-in flex items-center gap-2 text-sm font-semibold">
+              <Clock className="size-4 text-amber-500" />
+              <span className="tabular-nums text-amber-500">{beat.when}</span>
+              <span className="text-teal-100/70">· {beat.part === "team" ? "Your team" : "Your office"}</span>
+            </span>
+            <p className="tk-in font-display text-xl font-bold leading-snug text-balance text-sand sm:text-2xl" style={at(80)}>
+              {beat.say}
+            </p>
+          </div>
+
+          {beat.card && (
+            <div key={`card-${shown}`}>
+              <DashCard card={beat.card} />
+            </div>
+          )}
+
+          <div className="relative min-h-0 flex-1">
+            {/* the dashboard window */}
+            <div
+              className={`absolute inset-x-0 top-0 transition-[opacity,translate] duration-500 ease-[cubic-bezier(0.23,1,0.32,1)] ${
+                office ? "translate-y-0 opacity-100" : "pointer-events-none translate-y-6 opacity-0"
+              }`}
+            >
+              {beat.window && <DashWindow key={shown} {...beat.window} />}
+              {office && beat.points && (
+                <ul key={`points-${shown}`} className="mt-4 grid gap-2">
+                  {beat.points.map((pt, i) => (
+                    <li
+                      key={pt}
+                      className="tk-from-left flex items-center gap-3 rounded-2xl bg-white/10 px-3.5 py-2.5 text-sm font-semibold leading-snug text-sand ring-1 ring-white/10 sm:px-4 sm:py-3 sm:text-[15px]"
+                      style={at(600 + i * 220)}
+                    >
+                      <span className="grid size-6 shrink-0 place-items-center rounded-full bg-amber-500 text-teal-950">
+                        <Check className="size-3.5" strokeWidth={3.5} />
+                      </span>
+                      {pt}
+                    </li>
+                  ))}
+                </ul>
+              )}
             </div>
 
-            {beat.card && (
-              <div key={`card-${shown}`}>
-                <DashCard card={beat.card} />
-              </div>
-            )}
-
-            <div className="relative min-h-0 flex-1">
-              {/* the dashboard window */}
-              <div
-                className={`absolute inset-x-0 top-0 transition-[opacity,translate] duration-500 ease-[cubic-bezier(0.23,1,0.32,1)] ${
-                  office ? "translate-y-0 opacity-100" : "pointer-events-none translate-y-6 opacity-0"
-                }`}
-              >
-                {beat.window && <DashWindow key={shown} {...beat.window} />}
-                {office && beat.points && (
-                  <ul key={`points-${shown}`} className="mt-4 grid gap-2">
-                    {beat.points.map((pt, i) => (
-                      <li
-                        key={pt}
-                        className="tk-from-left flex items-center gap-3 rounded-2xl bg-white/10 px-3.5 py-2.5 text-sm font-semibold leading-snug text-sand ring-1 ring-white/10 sm:px-4 sm:py-3 sm:text-[15px]"
-                        style={at(600 + i * 220)}
-                      >
-                        <span className="grid size-6 shrink-0 place-items-center rounded-full bg-amber-500 text-teal-950">
-                          <Check className="size-3.5" strokeWidth={3.5} />
-                        </span>
-                        {pt}
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </div>
-
-              {/* the worker's phone, running off the bottom edge */}
-              <div
-                className={`absolute left-1/2 top-0 w-[14rem] -translate-x-1/2 transition-[opacity,translate] duration-500 ease-[cubic-bezier(0.23,1,0.32,1)] ${
-                  office ? "pointer-events-none translate-y-24 opacity-0" : "translate-y-0"
-                }`}
-              >
-                <p className="mb-2 text-center text-xs font-semibold text-teal-100/80">{who}&apos;s phone</p>
-                <div className="rounded-[2.2rem] bg-[#1b1d1f] p-2 shadow-2xl shadow-black/50 ring-1 ring-white/10">
-                  <div className="relative overflow-hidden rounded-[1.8rem] bg-[#f5f6f7]">
-                    <div className="relative aspect-[360/760] overflow-hidden [container-type:inline-size]">
-                      {phoneScenes.map((i) => {
-                        const Screen = beats[i].phone!;
-                        return (
-                          <div
-                            key={i}
-                            className="tk-screen absolute inset-0"
-                            data-state={i === screens.now ? screens.state : "keep"}
-                            style={{ zIndex: i === screens.now ? 3 : i === screens.before ? 2 : 1 }}
-                          >
-                            <Screen />
-                          </div>
-                        );
-                      })}
-                      <PhoneStatus time={beat.when.includes(":") && !office ? beat.when : "09:15"} />
-                    </div>
-                    <AndroidNav />
+            {/* the worker's phone, running off the bottom edge */}
+            <div
+              className={`absolute left-1/2 top-0 w-[14rem] -translate-x-1/2 transition-[opacity,translate] duration-500 ease-[cubic-bezier(0.23,1,0.32,1)] ${
+                office ? "pointer-events-none translate-y-24 opacity-0" : "translate-y-0"
+              }`}
+            >
+              <p className="mb-2 text-center text-xs font-semibold text-teal-100/80">{who}&apos;s phone</p>
+              <div className="rounded-[2.2rem] bg-[#1b1d1f] p-2 shadow-2xl shadow-black/50 ring-1 ring-white/10">
+                <div className="relative overflow-hidden rounded-[1.8rem] bg-[#f5f6f7]">
+                  <div className="relative aspect-[360/760] overflow-hidden [container-type:inline-size]">
+                    {phoneScenes.map((i) => {
+                      const Screen = beats[i].phone!;
+                      return (
+                        <div
+                          key={i}
+                          className="tk-screen absolute inset-0"
+                          data-state={i === screens.now ? screens.state : "keep"}
+                          style={{ zIndex: i === screens.now ? 3 : i === screens.before ? 2 : 1 }}
+                        >
+                          <Screen />
+                        </div>
+                      );
+                    })}
+                    <PhoneStatus time={beat.when.includes(":") && !office ? beat.when : "09:15"} />
                   </div>
+                  <AndroidNav />
                 </div>
               </div>
             </div>
           </div>
-        )}
+        </div>
 
         {/* end card */}
         {end && (
