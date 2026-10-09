@@ -151,9 +151,14 @@ section[id] {
   to { opacity: 1; transform: none; }
 }
 .tk-drop { animation: tk-drop 0.4s cubic-bezier(0.23, 1, 0.32, 1) both; }
-/* The demo's previous phone screen, kept under the next one: every animation
-   inside it jumps to its end, so it shows the scene as it finished. */
-.tk-settled * { animation-delay: -60s !important; }
+/* The demo's phone screens stay mounted and stacked. "reset": the screen
+   about to play is hidden and its animations are off for a frame; "play":
+   it fades in over the screen before it and its animations start again from
+   the beginning. "first" and "keep" change nothing. */
+.tk-screen[data-state="reset"] { opacity: 0; }
+.tk-screen[data-state="reset"],
+.tk-screen[data-state="reset"] * { animation: none !important; }
+.tk-screen[data-state="play"] { animation: tk-fade 0.35s ease-out both; }
 /* The demo's dashboard window: hold the whole screen for a beat, then move in
    on the number the scene is about (an on-screen move, so ease-in-out). */
 @keyframes tk-push {

@@ -20,7 +20,7 @@ import { Logo } from "@/components/logo";
 import { TradeTabs } from "@/components/trade-tabs";
 import { StartTrial } from "@/components/start-trial";
 import { PricingSection } from "@/components/pricing-section";
-import { confirmed, pricing, rand, site } from "@/lib/site";
+import { confirmed, pricing, rand, site, weeklyCeiling } from "@/lib/site";
 
 // Copy: ~/Downloads/site-copy-final-v7.md, reworked on 8 Oct 2026 with the
 // Hormozi offer skills (audit in the site-offer worktree's OFFER-AUDIT.md),
@@ -291,7 +291,7 @@ export default function Home() {
             <div className="grid gap-2.5 sm:justify-items-start">
               <TrialButton />
               <p className="text-center text-sm font-medium text-muted sm:text-left">
-                No card needed. After the trial, from {rand(pricing.monthly.base)} a month.
+                {rand(weeklyCeiling())}/week · Team of {pricing.includedUsers} users
               </p>
             </div>
           </div>
@@ -480,8 +480,7 @@ export default function Home() {
             <div className="grid gap-3">
               <h2 className={h2}>What is lost time costing you?</h2>
               <p className={lead}>
-                Put in your own numbers. It shows what waiting and paperwork cost you each month, and what {site.name} would
-                cost.
+                Most lost time on site is late starts, long breaks and detours. Put in your numbers to see what it costs you.
               </p>
             </div>
             <div className="tk-reveal">

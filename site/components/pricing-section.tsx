@@ -85,7 +85,8 @@ function Bonuses({ yearly }: { yearly: boolean }) {
 }
 
 function Calculator({ billing }: { billing: Billing }) {
-  const [users, setUsers] = useState(10);
+  // Starts at 5, like the cost calculator above it (owner, 9 Oct 2026).
+  const [users, setUsers] = useState(5);
   const id = useId();
   const total = planPrice(users, billing);
   const extra = Math.max(0, users - pricing.includedUsers);

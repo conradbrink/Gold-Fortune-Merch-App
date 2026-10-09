@@ -86,6 +86,12 @@ export function planPrice(users: number, billing: Billing): number {
   return p.base + Math.max(0, users - pricing.includedUsers) * p.perExtra;
 }
 
+/** The monthly starting price as a week, rounded up to the next R10, for
+ *  the hero's "R350/week" (R1,499 × 12 ÷ 52 = R345.92). */
+export function weeklyCeiling(): number {
+  return Math.ceil((pricing.monthly.base * 12) / 52 / 10) * 10;
+}
+
 export function rand(amount: number): string {
   // en-US for "R1,499": en-ZA groups with a non-breaking space.
   return `${pricing.currency}${amount.toLocaleString("en-US")}`;
