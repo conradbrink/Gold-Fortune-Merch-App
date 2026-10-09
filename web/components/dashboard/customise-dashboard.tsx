@@ -16,6 +16,7 @@ import {
   widgetAvailable,
 } from "@/components/dashboard/widget-registry";
 import type { ModuleSet } from "@/lib/modules";
+import type { PermissionSet } from "@/lib/permissions";
 import { useTerms } from "@/lib/use-company-config";
 
 /**
@@ -28,6 +29,7 @@ import { useTerms } from "@/lib/use-company-config";
  */
 export function CustomiseDashboard({
   modules,
+  permissions = null,
   open,
   onOpenChange,
   layout,
@@ -38,6 +40,8 @@ export function CustomiseDashboard({
 }: {
   /** The company's modules; cards for modules it lacks are not offered. */
   modules: ModuleSet | null;
+  /** This person's permissions; cards that need one they lack are not offered. */
+  permissions?: PermissionSet | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   /** The layout in force, copied into the draft each time the dialog opens. */
@@ -79,7 +83,7 @@ export function CustomiseDashboard({
   }
 
   const hidden = WIDGETS.filter(
-    (w) => !draft.includes(w.id) && modules !== null && widgetAvailable(w, modules)
+    (w) => !draft.includes(w.id) && modules !== null && widgetAvailable(w, modules, permissions)
   );
 
   function move(index: number, direction: -1 | 1) {
@@ -138,7 +142,7 @@ export function CustomiseDashboard({
             const widget = findWidget(id);
             // A saved card whose module was since switched off stays in the
             // stored layout (it comes back if the module does) but is not listed.
-            if (!widget || (modules !== null && !widgetAvailable(widget, modules))) return null;
+            if (!widget || (modules !== null && !widgetAvailable(widget, modules, permissions))) return null;
             return (
               <div
                 key={id}

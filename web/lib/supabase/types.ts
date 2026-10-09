@@ -460,6 +460,8 @@ export type Database = {
           customer_address: string | null
           contact_email: string | null
           prices_include_vat: boolean
+          sent_at: string | null
+          decided_at: string | null
         }
         Insert: {
           id?: string
@@ -483,6 +485,8 @@ export type Database = {
           customer_address?: string | null
           contact_email?: string | null
           prices_include_vat?: boolean
+          sent_at?: string | null
+          decided_at?: string | null
         }
         Update: {
           id?: string
@@ -506,6 +510,8 @@ export type Database = {
           customer_address?: string | null
           contact_email?: string | null
           prices_include_vat?: boolean
+          sent_at?: string | null
+          decided_at?: string | null
         }
         Relationships: []
       }
@@ -689,6 +695,24 @@ export type Database = {
           updated_at?: string
           wizard_finished_at?: string | null
           wizard_step?: string | null
+        }
+        Relationships: []
+      }
+      template_settings: {
+        Row: {
+          template_code: string
+          setting_key: string
+          value: Json
+        }
+        Insert: {
+          template_code: string
+          setting_key: string
+          value: Json
+        }
+        Update: {
+          template_code?: string
+          setting_key?: string
+          value?: Json
         }
         Relationships: []
       }
@@ -7566,6 +7590,14 @@ export type Database = {
       my_onboarding: { Args: never; Returns: Json }
       dismiss_onboarding: { Args: never; Returns: undefined }
       my_setup: { Args: never; Returns: Json }
+      dashboard_kpis: {
+        Args: { p_from: string; p_to: string; p_codes?: string[] | null }
+        Returns: Json
+      }
+      dashboard_kpi_window: {
+        Args: { p_d0: string; p_d1: string; p_today: string; p_caught: string[]; p_money: boolean; p_forms: boolean }
+        Returns: Json
+      }
       save_setup_step: { Args: { p_step: string; p_finished?: boolean }; Returns: undefined }
       my_team_status: {
         Args: never

@@ -31,6 +31,10 @@ export type CompanySettings = {
   money_invoice_from_jobs: boolean;
   money_invoice_direct: boolean;
   money_contracts: boolean;
+  /** The numbers "Your numbers" shows, comma-separated codes (lib/kpis.ts). */
+  dashboard_cards: string;
+  /** The cards a new user's dashboard starts with, comma-separated widget ids. */
+  dashboard_layout: string;
 };
 
 export type CompanyConfig = {
@@ -65,6 +69,8 @@ const SETTING_FALLBACK: CompanySettings = {
   money_invoice_from_jobs: true,
   money_invoice_direct: true,
   money_contracts: false,
+  dashboard_cards: "jobs_done_pct,missed,gps_verified_pct,owed",
+  dashboard_layout: "headline,sales,pipeline,field_team,store_health,live_reps",
 };
 
 function obj(v: unknown): Record<string, unknown> {
@@ -75,6 +81,11 @@ function obj(v: unknown): Record<string, unknown> {
 
 function bool(v: unknown, fallback: boolean): boolean {
   return typeof v === "boolean" ? v : fallback;
+}
+
+/** A comma list of codes, as the setting's pattern allows; anything else is the default. */
+function list(v: unknown, fallback: string): string {
+  return typeof v === "string" && /^([a-z0-9_]+(,[a-z0-9_]+)*)?$/.test(v) ? v : fallback;
 }
 
 function int(v: unknown, fallback: number): number {
@@ -117,6 +128,8 @@ export function parseCompanyConfig(raw: unknown): CompanyConfig | null {
       money_invoice_from_jobs: bool(s.money_invoice_from_jobs, f.money_invoice_from_jobs),
       money_invoice_direct: bool(s.money_invoice_direct, f.money_invoice_direct),
       money_contracts: bool(s.money_contracts, f.money_contracts),
+      dashboard_cards: list(s.dashboard_cards, f.dashboard_cards),
+      dashboard_layout: list(s.dashboard_layout, f.dashboard_layout),
     },
     timezone: typeof r.timezone === "string" && r.timezone !== "" ? r.timezone : "UTC",
     vatRate: Number.isFinite(Number(r.vat_rate)) ? Number(r.vat_rate) : 0,

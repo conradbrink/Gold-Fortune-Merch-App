@@ -35,6 +35,7 @@ import { FREQUENCIES, WEEKDAYS } from "@/lib/schedule";
 import type { Tables } from "@/lib/supabase/types";
 import { FieldSettingsCard } from "@/components/settings/field-settings-card";
 import { MoneySettingsCard } from "@/components/settings/money-settings-card";
+import { DashboardSettingsCard } from "@/components/settings/dashboard-settings-card";
 import { ModulesCard } from "@/components/settings/modules-card";
 import { TerminologyCard } from "@/components/settings/terminology-card";
 import { LogoCard } from "@/components/settings/logo-card";
@@ -238,6 +239,7 @@ export default function CompanyProfilePage() {
           <TabsTrigger value="team">Team Members</TabsTrigger>
           <TabsTrigger value="field">Field settings</TabsTrigger>
           <TabsTrigger value="money">Quotes &amp; invoices</TabsTrigger>
+          <TabsTrigger value="dashboard">Dashboard</TabsTrigger>
           <TabsTrigger value="branding">Terminology &amp; branding</TabsTrigger>
           <TabsTrigger value="plan">Plan</TabsTrigger>
         </TabsList>
@@ -605,6 +607,10 @@ export default function CompanyProfilePage() {
 
         <TabsContent value="money" className="mt-4 space-y-4">
           {org && <MoneySettingsCard orgId={org.id} canEdit={canEditCompany} />}
+        </TabsContent>
+
+        <TabsContent value="dashboard" className="mt-4 space-y-4">
+          {org && <DashboardSettingsCard orgId={org.id} canEdit={canEditCompany} />}
         </TabsContent>
 
         <TabsContent value="branding" className="mt-4 space-y-4">
