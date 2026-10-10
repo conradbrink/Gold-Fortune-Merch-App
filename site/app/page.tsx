@@ -273,7 +273,6 @@ function Shot({
         sizes="(min-width: 1024px) 560px, 100vw"
         className="h-auto w-full rounded-2xl bg-white ring-1 ring-line"
       />
-      <figcaption className="text-sm text-muted">Real screen from the {site.name} dashboard, with example data.</figcaption>
     </figure>
   );
 }
@@ -372,9 +371,6 @@ export default function Home() {
           </div>
           <figure className="tk-hero-demo grid gap-3">
             <ProductDemo />
-            <figcaption className="text-center text-sm text-muted">
-              Real screens from the {site.name} app, with example data.
-            </figcaption>
           </figure>
         </section>
 
@@ -492,7 +488,6 @@ export default function Home() {
                 }
               />
             </div>
-            <p className="-mt-2 text-sm text-muted sm:-mt-4">Real screens from the {site.name} app and dashboard, with example data.</p>
             <div className="tk-reveal grid gap-6 rounded-2xl bg-teal-950 p-6 text-sand sm:p-8 md:grid-cols-[0.8fr_1.2fr] md:items-center md:gap-10">
               <div className="grid gap-2">
                 <p className="font-display text-2xl font-bold leading-tight text-amber-500 sm:text-3xl">One app instead of five.</p>

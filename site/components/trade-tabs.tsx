@@ -163,7 +163,6 @@ export function TradeTabs() {
               />
             ))}
           </div>
-          <figcaption className="sr-only lg:not-sr-only lg:mt-3 lg:max-w-56 lg:text-center lg:text-xs lg:text-muted">Real screen from the app, with example data.</figcaption>
         </figure>
       </div>
     </div>
