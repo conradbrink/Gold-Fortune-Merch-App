@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { Inter, Outfit } from "next/font/google";
 import { site } from "@/lib/site";
 import { Analytics } from "@/components/analytics";
+import { MetaPixel } from "@/components/meta-pixel";
 import "./globals.css";
 
 const outfit = Outfit({
@@ -38,6 +39,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body>
         {children}
         <Analytics />
+        <MetaPixel />
       </body>
     </html>
   );

@@ -57,7 +57,7 @@ export default function PrivacyPage() {
       )}
       {usesMetaPixel && (
         <p>
-          On the Founding page, the Meta Pixel tells Facebook when someone visits the page or applies, so we can see
+          On this website, the Meta Pixel tells Facebook when someone visits a page or applies, so we can see
           which of our Facebook and Instagram adverts work.
         </p>
       )}

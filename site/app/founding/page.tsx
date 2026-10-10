@@ -4,7 +4,6 @@ import Link from "next/link";
 import { FoundingForm } from "@/components/founding-form";
 import { SpotsText } from "@/components/founding-spots";
 import { Logo } from "@/components/logo";
-import { MetaPixel } from "@/components/meta-pixel";
 import { ProofSection } from "@/components/proof-section";
 import { founding, pricing, rand, site } from "@/lib/site";
 
@@ -98,7 +97,6 @@ function Ticks({ items }: { items: string[] }) {
 export default function FoundingPage() {
   return (
     <>
-      <MetaPixel />
       <header className="sticky top-0 z-40 border-b border-line/70 bg-mint/90 backdrop-blur">
         <div className="mx-auto flex h-14 max-w-6xl items-center justify-between px-4 sm:h-16 sm:px-6">
           <Link href="/" aria-label={`${site.name} home`}>
