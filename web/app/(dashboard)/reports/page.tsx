@@ -1,9 +1,10 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { NativeSelect } from "@/components/ui/native-select";
 import { DateRangePicker } from "@/components/dashboard/date-range-picker";
 import { FieldReportCard } from "@/components/reports/field-report-card";
@@ -27,13 +28,33 @@ import {
   type StaffScoreInputs,
 } from "@/lib/staff-score";
 import { StorePicker } from "@/components/stores/store-picker";
-import { REPORT_TAB_VALUES, companyReportTabs, reportTabs, type ReportTab } from "@/lib/report-tabs";
+import { companyReportTabs, type ReportTab } from "@/lib/report-tabs";
+import { companyReports, openReport, viewFilters, type ReportId, type ViewId } from "@/lib/report-catalogue";
+import {
+  daysBetween,
+  hoursText,
+  jobsPerDay,
+  missedRows,
+  pct,
+  salesSummary,
+  serviceSummary,
+  teamBreakdown,
+} from "@/lib/report-summary";
+import {
+  CompletedTable,
+  DailyBars,
+  MissedTable,
+  SummaryTiles,
+  TeamBreakdownTable,
+  type Tile,
+} from "@/components/reports/report-views";
+import { moduleEnabled } from "@/lib/modules";
 import { downloadServiceLogPdf, fetchServiceLog, serviceLogSheet, type ServiceLogRow } from "@/lib/service-log";
 import { fetchStaffHours, hoursDay, hoursSheet, overtimeOn, overtimeSplit, weekStart, type StaffHoursRow } from "@/lib/staff-hours";
 import { getCompanyConfig, useCompanyConfig, useTerms, type CompanyConfig } from "@/lib/use-company-config";
-import { companyMidnight, companyRange } from "@/lib/company-time";
+import { companyMidnight, companyRange, companyTime } from "@/lib/company-time";
 import type { ModuleSet } from "@/lib/modules";
-import { lower, withArticle, type Terms } from "@/lib/terms";
+import { lower } from "@/lib/terms";
 import { fileSlug } from "@/lib/export-filename";
 import { ExportMenu } from "@/components/export-menu";
 import type { ExportSheet } from "@/lib/export";
@@ -99,32 +120,7 @@ type StoreGroup = { id: string; name: string };
  * dropping rows, and neither RPC does that yet. Listing them here rather than
  * scattering `tab !== "reps"` checks keeps the honest answer in one place.
  */
-const CHAIN_AWARE_TABS: ReportTab[] = ["score", "oos", "coverage", "trends"];
-
-/**
- * Why each remaining tab ignores the chain, in its own words.
- *
- * Two different reasons, and one message for both was wrong for two of them.
- * The rep-level reports genuinely need work in Postgres; Form and Photos are
- * filtered by store and template already and simply have no chain concept, so
- * telling somebody they are "one row per rep" is nonsense they cannot act on.
- */
-function chainUnfilteredReason(t: Terms, tab: ReportTab): string {
-  const site = lower(t.site.one);
-  const group = lower(t.site_group.one);
-  const perStaff = `this report is one row per ${lower(t.staff.one)}, and ${withArticle(t, "staff")} works more than one ${group}, so narrowing it needs their ${lower(t.job.many)} recounted rather than rows removed.`;
-  switch (tab) {
-    case "reps":
-    case "adherence":
-      return perStaff;
-    case "form":
-      return `form results are grouped by question, not by ${site}. Use the ${site} picker above to narrow them.`;
-    case "photos":
-      return `the gallery is grouped by ${site} already. Use the ${site} picker above to narrow it.`;
-    default:
-      return `this report is not filtered by ${group}.`;
-  }
-}
+const CHAIN_AWARE_TABS: readonly ViewId[] = ["score", "oos", "coverage", "trends", "summary"];
 
 export default function ReportsPage() {
   const supabase = createClient();
@@ -147,9 +143,16 @@ export default function ReportsPage() {
     () => companyReportTabs(config?.modules ?? loadedModules, config?.settings.report_tabs ?? loadedTabs),
     [config, loadedModules, loadedTabs]
   );
-  /** From `lib/report-tabs` so the file that renders the tabs and the file
-   * that links to them cannot disagree about what a tab is called. */
-  const TABS = reportTabs(terms, available);
+  const modulesNow = config?.modules ?? loadedModules;
+  /**
+   * The company's reports and the views in each (`lib/report-catalogue.ts`):
+   * the old tabs it has, regrouped into Performance, Service, Team,
+   * Compliance and Evidence (or a distributor's six).
+   */
+  const reports = useMemo(
+    () => companyReports(modulesNow, config?.settings.report_tabs ?? loadedTabs, terms),
+    [modulesNow, config, loadedTabs, terms]
+  );
 
   /**
    * The range and the tab both come from the URL when it names them, because
@@ -165,9 +168,12 @@ export default function ReportsPage() {
    * version of Next, which is the same trade the global search declined.
    */
   const [range, setRange] = useState<DateRange>(() => rangeForPreset("30d"));
-  const [chosenTab, setTab] = useState<ReportTab>("score");
-  /** The open tab: the chosen one when the company has it, else its first. */
-  const tab: ReportTab = available.includes(chosenTab) ? chosenTab : (available[0] ?? chosenTab);
+  /** The report and view asked for: by a click, or by the link that opened the page. */
+  const [chosen, setChosen] = useState<{ tab: string | null; view: string | null }>({ tab: null, view: null });
+  /** What is open: the chosen report and view when the company has them, else its first. */
+  const opened = useMemo(() => openReport(reports, chosen.tab, chosen.view), [reports, chosen]);
+  const tab: ViewId = opened?.view.id ?? "summary";
+  const filters = viewFilters(tab, modulesNow);
   /**
    * Whether the URL has been read yet.
    *
@@ -204,8 +210,9 @@ export default function ReportsPage() {
     // the user has changed one would put it back.
     setUrlRead(true);
     const q = new URLSearchParams(window.location.search);
-    const asked = q.get("tab") ?? "";
-    if ((REPORT_TAB_VALUES as readonly string[]).includes(asked)) setTab(asked as ReportTab);
+    // A report (`?tab=compliance&view=…`) or an old tab name (`?tab=adherence`),
+    // which opens the view it became: every dashboard link keeps working.
+    setChosen({ tab: q.get("tab"), view: q.get("view") });
 
     const from = q.get("from");
     const to = q.get("to");
@@ -496,6 +503,99 @@ export default function ReportsPage() {
   const teamMode = teamScorable(weights);
   const scored = useMemo(() => (teamMode ? teamScores(teamInputs, weights, terms) : []), [teamMode, teamInputs, weights, terms]);
 
+  /** What the company has, so a figure from a report it lacks is left out rather than shown as nought. */
+  const has = (t: ReportTab) => available.includes(t);
+  const sells = modulesNow !== null && moduleEnabled(modulesNow, "distribution");
+  const fromDay = toLocalDateInput(range.from);
+  const toDay = toLocalDateInput(dayBefore(range.to));
+  /** A person's full performance report, for the same period. */
+  const staffReportHref = useCallback(
+    (staffId: string) =>
+      `/reports/rep-performance?${new URLSearchParams({ rep: staffId, from: fromDay, to: toLocalDateInput(range.to) }).toString()}`,
+    [fromDay, range.to]
+  );
+  const service = useMemo(
+    () =>
+      serviceSummary({
+        adherence: has("adherence") ? adherence : null,
+        serviceLog: has("service_log") ? serviceLog : null,
+        hours: has("hours") ? hoursDays : null,
+        gaps: has("coverage") ? gaps : null,
+      }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [available, adherence, serviceLog, hoursDays, gaps]
+  );
+  const sales = useMemo(
+    () =>
+      salesSummary({
+        perfect: has("score") ? perfectShown : null,
+        hotspots: has("oos") ? hotspotsShown : null,
+        gaps: has("coverage") ? gapsShown : null,
+        adherence: has("adherence") ? adherence : null,
+        trends: has("trends") ? trends : null,
+      }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [available, perfectShown, hotspotsShown, gapsShown, adherence, trends]
+  );
+  const team = useMemo(
+    () => teamBreakdown(has("adherence") ? adherence : null, has("hours") ? hoursDays : null),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [available, adherence, hoursDays]
+  );
+  const missed = useMemo(() => missedRows(adherence), [adherence]);
+  const daily = useMemo(() => jobsPerDay(serviceLog, daysBetween(fromDay, toDay)), [serviceLog, fromDay, toDay]);
+  /** Links from a tile to the report that explains it. */
+  const go = (report: ReportId, view?: ViewId) => () => chooseView(report, view ?? null);
+
+  /** The headline figures for the open Performance summary, only those the company has data for. */
+  function summaryTiles(): Tile[] {
+    const job = lower(terms.job.many);
+    const tiles: Tile[] = [];
+    if (!sells) {
+      if (service.completed !== null) tiles.push({ label: `${terms.job.many} done`, value: String(service.completed), onClick: go("service", "completed") });
+      if (service.completionRate !== null)
+        tiles.push({ label: "Done as planned", value: pct(service.completionRate), sub: `${service.planned} planned`, onClick: go("compliance") });
+      if (service.missed !== null) tiles.push({ label: `Missed ${job}`, value: String(service.missed), onClick: go("service", "missed") });
+      if (service.sitesServiced !== null) tiles.push({ label: `${terms.site.many} served`, value: String(service.sitesServiced) });
+      if (service.coverage !== null)
+        tiles.push({ label: `${terms.site.one} coverage`, value: pct(service.coverage), sub: `${terms.site.many} with a ${lower(terms.job.one)}`, onClick: go("performance", "coverage") });
+      if (service.hours !== null) tiles.push({ label: "Hours worked", value: hoursText(service.hours), onClick: go("team", "hours") });
+    } else {
+      if (sales.perfectStore !== null) tiles.push({ label: `Perfect ${terms.site.one}`, value: String(sales.perfectStore), sub: "Average score", onClick: go("perfect_store") });
+      if (sales.oosRate !== null) tiles.push({ label: "Out of stock", value: pct(sales.oosRate), sub: "Of checks", onClick: go("availability") });
+      if (sales.coverage !== null) tiles.push({ label: "Coverage", value: pct(sales.coverage), sub: `${terms.site.many} visited`, onClick: go("coverage") });
+      if (sales.adherence !== null)
+        tiles.push({
+          label: "Done as planned",
+          value: pct(sales.adherence),
+          sub: chainName ? `All ${lower(terms.site_group.many)}` : undefined,
+          onClick: go("compliance"),
+        });
+      if (sales.audits !== null) tiles.push({ label: "Audits", value: String(sales.audits), onClick: go("perfect_store", "trends") });
+    }
+    return tiles;
+  }
+
+  /**
+   * Open a report (and one of its views). Filters the new view does not use
+   * are cleared: a {site} picked on Proof of service must not quietly narrow
+   * the Performance summary.
+   */
+  function chooseView(report: ReportId, view: ViewId | null) {
+    const next = openReport(reports, report, view);
+    if (!next) return;
+    const keep = viewFilters(next.view.id, modulesNow);
+    if (!keep.includes("chain")) setStoreGroupId("");
+    if (!keep.includes("staff")) setRepId("");
+    if (!keep.includes("site")) setStoreId("");
+    setChosen({ tab: next.report.id, view: next.view.id });
+    // In the address, so a reload, a shared link or Back opens the same place.
+    const url = new URL(window.location.href);
+    url.searchParams.set("tab", next.report.id);
+    url.searchParams.set("view", next.view.id);
+    window.history.replaceState(null, "", url);
+  }
+
   async function serviceLogPdf() {
     if (!storeId || serviceLog.length === 0) return;
     setPdfBusy(true);
@@ -514,10 +614,6 @@ export default function ReportsPage() {
     }
   }
 
-  const submissionsInPeriod = trends.reduce(
-    (n, t) => n + Number(t.submissions ?? 0),
-    0
-  );
 
   /**
    * The open tab, as a spreadsheet.
@@ -553,7 +649,7 @@ export default function ReportsPage() {
     // lie about rows covering the whole estate, which is worse than a file with
     // no context at all: this one reads as evidence.
     const formFilters =
-      tab === "service_log"
+      tab === "service_log" || tab === "completed"
         ? [storeId ? `${terms.site.one}: ${pickedStore?.name ?? storeId}` : null]
         : tab === "form"
         ? [
@@ -807,6 +903,57 @@ export default function ReportsPage() {
             summary: summariseFieldStats(f),
           })),
         };
+      case "summary":
+        // The figures on screen, then the team behind them.
+        return {
+          ...base,
+          title: "Performance summary",
+          filename: "performance",
+          columns: [
+            { header: "Measure", key: "measure" },
+            { header: "Value", key: "value" },
+            { header: "Note", key: "note" },
+          ],
+          rows: summaryTiles().map((tile) => ({ measure: tile.label, value: tile.value, note: tile.sub ?? "" })),
+        };
+      case "completed":
+        return {
+          ...base,
+          title: `Completed ${lower(terms.job.many)}`,
+          filename: `completed-${fileSlug(terms.job.many)}`,
+          columns: [
+            { header: "Date", key: "date" },
+            { header: terms.site.one, key: "site" },
+            { header: staff, key: "staff" },
+            { header: "Start", key: "start" },
+            { header: "End", key: "end" },
+            { header: "Minutes", key: "minutes", numeric: true },
+            { header: "Planned", key: "planned" },
+          ],
+          rows: [...serviceLog]
+            .sort((x, y) => y.checkin_at.localeCompare(x.checkin_at))
+            .map((r) => ({
+              date: r.day,
+              site: r.store_name,
+              staff: r.staff_name ?? "",
+              start: companyTime(r.checkin_at, timeZone),
+              end: companyTime(r.checkout_at, timeZone),
+              minutes: r.minutes,
+              planned: r.planned ? "Planned" : "Not planned",
+            })),
+        };
+      case "missed":
+        return {
+          ...base,
+          title: `Missed ${lower(terms.job.many)}`,
+          filename: `missed-${fileSlug(terms.job.many)}`,
+          columns: [
+            { header: "Date", key: "date" },
+            { header: terms.site.one, key: "site" },
+            { header: staff, key: "staff" },
+          ],
+          rows: missed.map((m) => ({ date: m.date, site: m.site, staff: m.staff })),
+        };
       case "service_log":
         return serviceLogSheet(serviceLog, terms, base.context, timeZone ?? "UTC");
       case "hours":
@@ -816,61 +963,101 @@ export default function ReportsPage() {
     }
   }
 
+  const viewLabel = opened?.view.label ?? "";
+  const reportLabel = opened?.report.label ?? "Reports";
+
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="text-xl font-semibold tracking-tight text-foreground">
-            Reports
-          </h1>
-          <p className="text-sm text-muted-foreground">
-            {submissionsInPeriod} audit{submissionsInPeriod === 1 ? "" : "s"}{" "}
-            submitted in the selected period
-          </p>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0">
+          <h1 className="text-xl font-semibold tracking-tight text-foreground">{reportLabel}</h1>
+          <p className="text-sm text-pretty text-muted-foreground">{opened?.report.question ?? "Reports"}</p>
         </div>
-        {/* The Form tab is the one tab with two honest answers to "export
-            this": the responses themselves, and the summary of them that used
-            to be the only option. Responses first — it is what people mean. */}
-        <ExportMenu
-          variants={
-            tab === "form"
-              ? [
-                  { label: "Every response", build: formResponsesSheet },
-                  { label: "Question summary", build: sheetForTab },
-                ]
-              : [{ build: sheetForTab }]
-          }
-          disabled={loading}
-          label={`Export ${TABS.find((t) => t.value === tab)?.label ?? ""}`}
-        />
+        {/* Forms have two honest answers to "export this": the responses
+            themselves, and the summary of them. Responses first. Photos are a
+            gallery, not a table, and have nothing to export. */}
+        {tab !== "photos" && (
+          <ExportMenu
+            variants={
+              tab === "form"
+                ? [
+                    { label: "Every response", build: formResponsesSheet },
+                    { label: "Question summary", build: sheetForTab },
+                  ]
+                : [{ build: sheetForTab }]
+            }
+            disabled={loading || !opened}
+            label={`Export ${viewLabel === "Summary" ? reportLabel : viewLabel}`}
+          />
+        )}
       </div>
+
+      {/* The reports: few, each answering one question. */}
+      <Tabs
+        value={opened?.report.id ?? ""}
+        onValueChange={(v) => chooseView(v as ReportId, null)}
+      >
+        <TabsList className="max-w-full justify-start overflow-x-auto px-1 [&::-webkit-scrollbar]:hidden [&>*]:shrink-0 [&>*]:px-3">
+          {reports.map((r) => (
+            <TabsTrigger key={r.id} value={r.id}>
+              {r.label}
+            </TabsTrigger>
+          ))}
+        </TabsList>
+      </Tabs>
+
+      {/* The views of the open report, when it has more than one: underlined,
+          so they read as parts of the report above rather than as filters. */}
+      {opened && opened.report.views.length > 1 && (
+        <div role="tablist" aria-label={`${reportLabel} views`} className="-mt-1 flex flex-wrap gap-x-5 border-b border-border">
+          {opened.report.views.map((v) => {
+            const on = v.id === tab;
+            return (
+              <button
+                key={v.id}
+                type="button"
+                role="tab"
+                aria-selected={on}
+                onClick={() => chooseView(opened.report.id, v.id)}
+                className={`-mb-px inline-flex h-9 items-center border-b-2 text-sm transition-colors focus-visible:rounded-sm focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ring ${
+                  on
+                    ? "border-gold font-semibold text-foreground"
+                    : "border-transparent font-medium text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                {v.label}
+              </button>
+            );
+          })}
+        </div>
+      )}
 
       <div className="flex flex-wrap items-center gap-3 rounded-lg border border-border bg-card p-3">
         <DateRangePicker value={range} onChange={setRange} />
-        {/* The chain sits next to the date range rather than with the form
-            pickers below, because unlike those it narrows most of the page
-            rather than only the Form tab. */}
-        <NativeSelect
-          aria-label={terms.site_group.one}
-          className="w-[13rem]"
-          value={storeGroupId}
-          onChange={(e) => setStoreGroupId(e.target.value)}
-        >
-          <option value="">All {lower(terms.site_group.many)}</option>
-          {storeGroups.map((g) => (
-            <option key={g.id} value={g.id}>
-              {g.name}
-            </option>
-          ))}
-        </NativeSelect>
-        <div className="flex flex-wrap items-center gap-2">
+        {/* Only the filters this view uses: a filter it ignores is not offered. */}
+        {filters.includes("chain") && storeGroups.length > 0 && (
           <NativeSelect
-            aria-label="Form template"
+            aria-label={terms.site_group.one}
+            className="w-[13rem]"
+            value={storeGroupId}
+            onChange={(e) => setStoreGroupId(e.target.value)}
+          >
+            <option value="">All {lower(terms.site_group.many)}</option>
+            {storeGroups.map((g) => (
+              <option key={g.id} value={g.id}>
+                {g.name}
+              </option>
+            ))}
+          </NativeSelect>
+        )}
+        {filters.includes("template") && (
+          <NativeSelect
+            aria-label="Form"
             className="w-[15rem]"
             value={templateId ?? ""}
             onChange={(e) => setTemplateId(e.target.value || null)}
           >
-            {templates.length === 0 && <option value="">No templates</option>}
+            {templates.length === 0 && <option value="">No forms</option>}
             {/* Archived forms are offered, and say so: this page reads what
                 was submitted, and a form taken off the phones last week still
                 has last month's answers. */}
@@ -880,6 +1067,8 @@ export default function ReportsPage() {
               </option>
             ))}
           </NativeSelect>
+        )}
+        {filters.includes("staff") && (
           <NativeSelect
             aria-label={terms.staff.one}
             className="w-[11rem]"
@@ -893,6 +1082,8 @@ export default function ReportsPage() {
               </option>
             ))}
           </NativeSelect>
+        )}
+        {filters.includes("site") && (
           <StorePicker
             className="w-[13rem]"
             stores={stores}
@@ -901,7 +1092,7 @@ export default function ReportsPage() {
             allLabel={`All ${lower(terms.site.many)}`}
             placeholder={`All ${lower(terms.site.many)}`}
           />
-        </div>
+        )}
       </div>
 
       {error && (
@@ -914,222 +1105,260 @@ export default function ReportsPage() {
         </div>
       )}
 
-      <InsightsPanel
-        request={{ reportType: "reports", range, templateId }}
-        title="Manager briefing"
-        blurb={`Summarise this period’s coverage, ${lower(terms.staff.one)} performance and compliance metrics, and surface anomalies worth acting on.`}
-      />
+      {!opened && !loading && !error && (
+        <EmptyCard>Reports are not part of your plan yet.</EmptyCard>
+      )}
 
-      {/* Ordered by what a manager acts on first: which store is worst, what is
-          out of stock, who has been neglected — then the descriptive reports. */}
-      {/* A chain is selected but this tab ignores it. Said out loud, because
-          the alternative is a rep scorecard that silently shows estate-wide
-          figures while a chain is named in the filter bar above it — which
-          reads as "Jerry in Choppies" and is not.
-
-          The reason differs by tab and the notice has to say the true one. The
-          first version gave the rep-level explanation on all four unfiltered
-          tabs, which was simply wrong on Form and Photos: neither is one row
-          per rep. */}
-      {chainName && !CHAIN_AWARE_TABS.includes(tab) && (
-        <div className="rounded-md border border-border bg-muted/40 px-4 py-2 text-sm text-muted-foreground">
-          Showing all {lower(terms.site_group.many)}. {chainName} cannot be applied here yet —{" "}
-          {chainUnfilteredReason(terms, tab)}
+      {/* ------------------------------------------------- Performance summary */}
+      {tab === "summary" && opened && (
+        <div className="space-y-4">
+          {loading ? <SkeletonRows /> : <SummaryTiles tiles={summaryTiles()} />}
+          {!sells && has("service_log") && (
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-base">{terms.job.many} done each day</CardTitle>
+              </CardHeader>
+              <CardContent>{loading ? <SkeletonRows /> : <DailyBars data={daily} label={terms.job.many} />}</CardContent>
+            </Card>
+          )}
+          {sells && has("trends") && (
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-base">{terms.site.one} standards over time</CardTitle>
+              </CardHeader>
+              <CardContent>{loading ? <SkeletonRows /> : <ComplianceTrendChart rows={trends} />}</CardContent>
+            </Card>
+          )}
+          {(has("adherence") || has("hours")) && (
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-base">By {lower(terms.staff.one)}</CardTitle>
+                <p className="text-xs text-muted-foreground">
+                  Click a name for that {lower(terms.staff.one)}&apos;s full report for these dates.
+                </p>
+              </CardHeader>
+              <CardContent className="px-0">
+                {loading ? <SkeletonRows /> : <TeamBreakdownTable rows={team} reportHref={staffReportHref} />}
+              </CardContent>
+            </Card>
+          )}
+          <InsightsPanel
+            request={{ reportType: "reports", range, templateId }}
+            title="Manager briefing"
+            blurb={`Summarise this period’s coverage, ${lower(terms.staff.one)} performance and compliance, and point out what is worth acting on.`}
+          />
         </div>
       )}
 
-      <Tabs value={tab} onValueChange={(v) => setTab(v as ReportTab)}>
-        {/* One row, scrolled — never wrapped. TabsList is a fixed-height pill,
-            so wrapping pushes the second row outside its own background and the
-            triggers' `flex-1` stretches them into ragged spacing. Labels are
-            kept short so all eight fit without scrolling on a normal screen. */}
-        <TabsList className="max-w-full justify-start overflow-x-auto px-1 [&::-webkit-scrollbar]:hidden [&>*]:shrink-0 [&>*]:px-2.5">
-          {TABS.map((t) => (
-            <TabsTrigger key={t.value} value={t.value}>
-              {t.label}
-            </TabsTrigger>
-          ))}
-        </TabsList>
+      {/* ------------------------------------------------------ Service */}
+      {tab === "completed" && (
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base">Completed {lower(terms.job.many)}</CardTitle>
+            <p className="text-xs text-pretty text-muted-foreground">
+              Every {lower(terms.job.one)} finished in the period, newest first.{" "}
+              {has("service_log") && "Its photos, forms and check-in location are on Evidence."}
+            </p>
+          </CardHeader>
+          <CardContent className="px-0">
+            {loading ? <SkeletonRows /> : <CompletedTable rows={serviceLog} timeZone={timeZone} />}
+          </CardContent>
+        </Card>
+      )}
 
-        <TabsContent value="score" className="mt-4">
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-base">Perfect {terms.site.one} score</CardTitle>
-              <p className="text-xs text-muted-foreground">
-                Availability, planogram, price accuracy and stock condition
-                averaged into one index, worst {lower(terms.site.one)} first.
-                Promotional displays are excluded — they track whether a promo
-                was running, not whether the {lower(terms.site.one)} executed.
-              </p>
-            </CardHeader>
-            <CardContent className="px-0">
-              {loading ? <SkeletonRows /> : <PerfectStoreTable rows={perfectShown} />}
-            </CardContent>
-          </Card>
-        </TabsContent>
+      {tab === "missed" && (
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base">Missed {lower(terms.job.many)}</CardTitle>
+            <p className="text-xs text-muted-foreground">
+              Planned {lower(terms.job.many)} that were not done. Future dates are not counted.
+            </p>
+          </CardHeader>
+          <CardContent className="px-0">{loading ? <SkeletonRows /> : <MissedTable rows={missed} />}</CardContent>
+        </Card>
+      )}
 
-        <TabsContent value="oos" className="mt-4">
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-base">Out-of-stock hotspots</CardTitle>
-              <p className="text-xs text-muted-foreground">
-                &ldquo;Worst run&rdquo; is the longest unbroken sequence of{" "}
-                {lower(terms.job.many)} that found an empty shelf — the difference between a chronic
-                supply problem and an unlucky day.
-              </p>
-            </CardHeader>
-            <CardContent className="px-0">
-              {loading ? <SkeletonRows /> : <OosHotspotsTable rows={hotspotsShown} />}
-            </CardContent>
-          </Card>
-        </TabsContent>
+      {/* --------------------------------------------- Perfect Store, Availability */}
+      {tab === "score" && (
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base">Perfect {terms.site.one} score</CardTitle>
+            <p className="text-xs text-muted-foreground">
+              Availability, planogram, price accuracy and stock condition averaged into one index, worst{" "}
+              {lower(terms.site.one)} first. Promotional displays are left out: they show whether a promotion was
+              running, not whether the {lower(terms.site.one)} carried it out.
+            </p>
+          </CardHeader>
+          <CardContent className="px-0">{loading ? <SkeletonRows /> : <PerfectStoreTable rows={perfectShown} />}</CardContent>
+        </Card>
+      )}
 
-        <TabsContent value="adherence" className="mt-4">
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-base">Schedule adherence</CardTitle>
-              <p className="text-xs text-muted-foreground">
-                Planned routes versus {lower(terms.job.many)} actually completed.
-                Future-dated routes are excluded.
-              </p>
-            </CardHeader>
-            <CardContent className="px-0">
-              {loading ? <SkeletonRows /> : <AdherenceTable rows={adherence} />}
-            </CardContent>
-          </Card>
-        </TabsContent>
+      {tab === "trends" && (
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base">Standards over time</CardTitle>
+            <p className="text-xs text-muted-foreground">Out of stock, planogram and price, by day, or by week over six weeks.</p>
+          </CardHeader>
+          <CardContent>{loading ? <SkeletonRows /> : <ComplianceTrendChart rows={trends} />}</CardContent>
+        </Card>
+      )}
 
-        <TabsContent value="form" className="mt-4">
-          {loading ? (
-            <SkeletonGrid />
-          ) : chartFields.length === 0 ? (
-            <EmptyCard>
-              No responses for this template in the selected period.
-            </EmptyCard>
-          ) : (
-            <div className="grid gap-4 lg:grid-cols-2">
-              {chartFields.map((f) => (
-                <FieldReportCard key={f.field_id} field={f} />
-              ))}
-            </div>
+      {tab === "oos" && (
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base">Out of stock</CardTitle>
+            <p className="text-xs text-muted-foreground">
+              &ldquo;Worst run&rdquo; is the longest unbroken run of {lower(terms.job.many)} that found an empty shelf:
+              the difference between a supply problem and an unlucky day.
+            </p>
+          </CardHeader>
+          <CardContent className="px-0">{loading ? <SkeletonRows /> : <OosHotspotsTable rows={hotspotsShown} />}</CardContent>
+        </Card>
+      )}
+
+      {/* ----------------------------------------------------- Coverage */}
+      {tab === "coverage" && (
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base">{terms.site.one} coverage</CardTitle>
+            <p className="text-xs text-muted-foreground">
+              Longest gap first. &ldquo;Last {lower(terms.job.one)}&rdquo; looks across all history, not just this
+              period.
+            </p>
+          </CardHeader>
+          <CardContent className="px-0">{loading ? <SkeletonRows /> : <CoverageTable rows={gapsShown} />}</CardContent>
+        </Card>
+      )}
+
+      {/* --------------------------------------------------------- Team */}
+      {tab === "reps" && (
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base">{terms.staff.one} scores</CardTitle>
+            <p className="text-xs text-pretty text-muted-foreground">
+              {teamMode
+                ? `Each ${lower(terms.staff.one)}'s score, weighted for your trade. A month reads best: a part needs at least five events, and planned work on approved leave is left out. `
+                : ""}
+              Click a name for that {lower(terms.staff.one)}&apos;s full report.
+            </p>
+          </CardHeader>
+          <CardContent className="px-0">
+            {loading ? (
+              <SkeletonRows />
+            ) : teamMode ? (
+              <StaffScoreTable scores={scored} weights={weights} reportHref={staffReportHref} />
+            ) : (
+              <RepScorecardTable rows={scores} reportHref={staffReportHref} />
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      {tab === "hours" && (
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base">Hours</CardTitle>
+            <p className="text-xs text-pretty text-muted-foreground">
+              Each {lower(terms.staff.one)}&apos;s day from the workday they started on the phone. &ldquo;Between&rdquo;
+              is the workday not spent on a {lower(terms.job.one)}: travel and waiting. Export it for payroll.
+            </p>
+          </CardHeader>
+          <CardContent className="px-0">
+            {loading ? <SkeletonRows /> : <HoursTable days={hoursDays} timeZone={timeZone} overtime={showOvertime} />}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* --------------------------------------------------- Compliance */}
+      {tab === "adherence" && (
+        <div className="space-y-4">
+          {!loading && (
+            <SummaryTiles
+              tiles={[
+                { label: "Planned", value: String(service.planned ?? 0) },
+                { label: "Done as planned", value: pct(service.completionRate) },
+                { label: `Missed ${lower(terms.job.many)}`, value: String(service.missed ?? 0), onClick: go("service", "missed") },
+              ]}
+            />
           )}
-        </TabsContent>
-
-        <TabsContent value="coverage" className="mt-4">
           <Card>
             <CardHeader className="pb-2">
-              <CardTitle className="text-base">{terms.site.one} coverage</CardTitle>
-              <p className="text-xs text-muted-foreground">
-                Ranked by longest gap. &ldquo;Last {lower(terms.job.one)}&rdquo;
-                looks across all history, not just this period.
-              </p>
-            </CardHeader>
-            <CardContent className="px-0">
-              {loading ? <SkeletonRows /> : <CoverageTable rows={gapsShown} />}
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        <TabsContent value="reps" className="mt-4">
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-base">{terms.staff.one} scorecard</CardTitle>
-              {teamMode && (
-                <p className="text-xs text-pretty text-muted-foreground">
-                  Each {lower(terms.staff.one)}&apos;s score, weighted for your trade. A month reads
-                  best: a part needs at least five events, speed is compared with the team&apos;s middle person, and planned
-                  work on approved leave is left out.
-                </p>
-              )}
-            </CardHeader>
-            <CardContent className="px-0">
-              {loading ? (
-                <SkeletonRows />
-              ) : teamMode ? (
-                <StaffScoreTable scores={scored} weights={weights} />
-              ) : (
-                <RepScorecardTable rows={scores} />
-              )}
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        <TabsContent value="trends" className="mt-4">
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-base">Compliance over time</CardTitle>
-            </CardHeader>
-            <CardContent>
-              {loading ? <SkeletonRows /> : <ComplianceTrendChart rows={trends} />}
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        <TabsContent value="service_log" className="mt-4">
-          <Card>
-            <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-3 pb-2">
-              <div className="min-w-0 space-y-1">
-                <CardTitle className="text-base">Proof of service</CardTitle>
-                <p className="text-xs text-pretty text-muted-foreground">
-                  Every finished {lower(terms.job.one)}, by {lower(terms.site.one)}: who, when, whether they checked in on site, and the
-                  forms and photos that show it.{" "}
-                  {pickedStore
-                    ? `Showing ${pickedStore.name} only.`
-                    : `Pick one ${lower(terms.site.one)} above to make its PDF for your ${lower(terms.client.one)}.`}
-                </p>
-              </div>
-              {pickedStore && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={serviceLogPdf}
-                  disabled={loading || pdfBusy || serviceLog.length === 0}
-                >
-                  {pdfBusy ? "Making PDF…" : `PDF for ${pickedStore.name}`}
-                </Button>
-              )}
-            </CardHeader>
-            <CardContent className="px-0">
-              {reportNote && (
-                <p className="mx-4 mb-3 rounded-md bg-muted/60 px-3 py-2 text-sm text-foreground" aria-live="polite">
-                  {reportNote}
-                </p>
-              )}
-              {loading ? (
-                <SkeletonRows />
-              ) : (
-                <ServiceLogTable rows={serviceLog} timeZone={timeZone} reports={reportStates} onReport={onReport} />
-              )}
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        <TabsContent value="hours" className="mt-4">
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-base">Hours</CardTitle>
+              <CardTitle className="text-base">{terms.staff.one} adherence</CardTitle>
               <p className="text-xs text-pretty text-muted-foreground">
-                Each {lower(terms.staff.one)}&apos;s day from the workday they started on the phone. &ldquo;Between&rdquo; is the workday not
-                spent on a {lower(terms.job.one)}: travel and waiting. Export it for payroll.
+                Planned {lower(terms.job.many)} against those done. Future dates are not counted. Check-ins away from
+                the {lower(terms.site.one)} are on{" "}
+                <Link className="underline" href={`/visits/off-site?from=${fromDay}&to=${toLocalDateInput(range.to)}`}>
+                  Off-site check-ins
+                </Link>
+                , and every check-in on{" "}
+                <Link className="underline" href="/activities">
+                  Activity
+                </Link>
+                .
               </p>
             </CardHeader>
-            <CardContent className="px-0">
-              {loading ? <SkeletonRows /> : <HoursTable days={hoursDays} timeZone={timeZone} overtime={showOvertime} />}
-            </CardContent>
+            <CardContent className="px-0">{loading ? <SkeletonRows /> : <AdherenceTable rows={adherence} />}</CardContent>
           </Card>
-        </TabsContent>
+        </div>
+      )}
 
-        <TabsContent value="photos" className="mt-4">
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-base">Shelf photos</CardTitle>
-            </CardHeader>
-            <CardContent>
-              {loading ? <SkeletonRows /> : <PhotoGrid groups={photoGroups} />}
-            </CardContent>
-          </Card>
-        </TabsContent>
-      </Tabs>
+      {/* ----------------------------------------------------- Evidence */}
+      {tab === "service_log" && (
+        <Card>
+          <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-3 pb-2">
+            <div className="min-w-0 space-y-1">
+              <CardTitle className="text-base">Proof of service</CardTitle>
+              <p className="text-xs text-pretty text-muted-foreground">
+                Every finished {lower(terms.job.one)}, by {lower(terms.site.one)}: who, when, whether they checked in on
+                site, and the forms and photos that show it.{" "}
+                {pickedStore
+                  ? `Showing ${pickedStore.name} only.`
+                  : `Pick one ${lower(terms.site.one)} above to make its PDF for your ${lower(terms.client.one)}.`}
+              </p>
+            </div>
+            {pickedStore && (
+              <Button variant="outline" size="sm" onClick={serviceLogPdf} disabled={loading || pdfBusy || serviceLog.length === 0}>
+                {pdfBusy ? "Making PDF…" : `PDF for ${pickedStore.name}`}
+              </Button>
+            )}
+          </CardHeader>
+          <CardContent className="px-0">
+            {reportNote && (
+              <p className="mx-4 mb-3 rounded-md bg-muted/60 px-3 py-2 text-sm text-foreground" aria-live="polite">
+                {reportNote}
+              </p>
+            )}
+            {loading ? (
+              <SkeletonRows />
+            ) : (
+              <ServiceLogTable rows={serviceLog} timeZone={timeZone} reports={reportStates} onReport={onReport} />
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      {tab === "photos" && (
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base">Photos</CardTitle>
+            <p className="text-xs text-muted-foreground">The photos taken on the form chosen above.</p>
+          </CardHeader>
+          <CardContent>{loading ? <SkeletonRows /> : <PhotoGrid groups={photoGroups} />}</CardContent>
+        </Card>
+      )}
+
+      {tab === "form" &&
+        (loading ? (
+          <SkeletonGrid />
+        ) : chartFields.length === 0 ? (
+          <EmptyCard>No responses to this form in the selected period.</EmptyCard>
+        ) : (
+          <div className="grid gap-4 lg:grid-cols-2">
+            {chartFields.map((f) => (
+              <FieldReportCard key={f.field_id} field={f} />
+            ))}
+          </div>
+        ))}
     </div>
   );
 }

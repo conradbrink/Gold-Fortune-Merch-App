@@ -179,7 +179,7 @@ function nextDay(day: string): string {
 export function alertHref(a: AlertItem, modules: ModuleSet | null): string {
   const day = /^\d{4}-\d{2}-\d{2}$/.test(a.day) ? a.day : null;
   if (a.rule === "patrol_gap" && day && modules && moduleEnabled(modules, "reports")) {
-    const q = new URLSearchParams({ tab: "service_log", from: day, to: nextDay(day) });
+    const q = new URLSearchParams({ tab: "service", view: "completed", from: day, to: nextDay(day) });
     return `/reports?${q.toString()}`;
   }
   if (a.profile_id) {

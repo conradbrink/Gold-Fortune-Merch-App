@@ -121,7 +121,7 @@ test("each alert links to where its facts are", () => {
   assert.equal(alertHref(alert({}), withReports), "/tracking/p1?date=2026-10-08");
   assert.equal(
     alertHref(alert({ rule: "patrol_gap" }), withReports),
-    "/reports?tab=service_log&from=2026-10-08&to=2026-10-09"
+    "/reports?tab=service&view=completed&from=2026-10-08&to=2026-10-09"
   );
   // Without the reports module, the person's day instead.
   assert.equal(alertHref(alert({ rule: "patrol_gap" }), toModuleSet({})), "/tracking/p1?date=2026-10-08");

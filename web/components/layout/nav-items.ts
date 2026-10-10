@@ -331,16 +331,13 @@ const REPORTS: ItemDef = {
   label: "Reports",
   icon: BarChart3,
   permission: "insights",
-  // Each report page is a tab here rather than a line in the menu. The tabs
-  // inside the Reports page itself (coverage, adherence and the rest) already
-  // follow the company's trade (`lib/report-tabs.ts`).
+  // Each report page is a tab here rather than a line in the menu. The
+  // reports inside the Reports page follow the company's trade
+  // (`lib/report-catalogue.ts`). One person's full report
+  // (`/reports/rep-performance`) opens from their name on Team or the
+  // Performance summary, and counts as Reports.
   tabs: [
     { href: "/reports", label: "Reports", permission: "insights" },
-    {
-      href: "/reports/rep-performance",
-      label: (t) => `${t.staff.one} performance`,
-      permission: "insights",
-    },
     { href: "/sales", label: "Sales", permission: "insights" },
     { href: "/targets", label: "Targets", permission: "insights" },
     { href: "/warehouse/insights", label: "Warehouse insights", permission: "insights" },
