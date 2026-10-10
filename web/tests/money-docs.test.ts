@@ -3,7 +3,7 @@
 // the money suite (supabase/tests/money.sql) checks against the database.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { ageingKey, documentTotals, formatQty, lineTotal, validPrice, validQty } from "@/lib/money-docs";
+import { ageingKey, documentTotals, formatQty, grossPrice, lineTotal, validPrice, validQty } from "@/lib/money-docs";
 import { invoiceSources, usesPriceList, workflowPreset, MONEY_WORKFLOWS } from "@/lib/money-workflow";
 import { toModuleSet } from "@/lib/modules";
 import { DEFAULT_TERMS } from "@/lib/terms";
@@ -72,4 +72,18 @@ test("which ways of invoicing a company is offered", () => {
   assert.deepEqual(invoiceSources(gf, distributor), ["quote", "order"]);
   assert.equal(usesPriceList(plumber, trade), true);
   assert.equal(usesPriceList(gf, distributor), false);
+});
+
+test("a product's VAT-exclusive price becomes its VAT-inclusive price, to the cent", () => {
+  assert.equal(grossPrice(100, 15), 115);
+  assert.equal(grossPrice(59.95, 14), 68.34); // 68.343 rounds down
+  assert.equal(grossPrice(0.35, 15), 0.4); // 0.4025
+  assert.equal(grossPrice(10, 0), 10);
+});
+
+test("a product on a VAT-inclusive quote adds up to the same total as on an exclusive one", () => {
+  // 10 at R100 excl. at 15%: R1,150 either way.
+  const exclusive = documentTotals([{ qty: 10, unitPrice: 100 }], 15, false);
+  const inclusive = documentTotals([{ qty: 10, unitPrice: grossPrice(100, 15) }], 15, true);
+  assert.deepEqual(inclusive, exclusive);
 });
