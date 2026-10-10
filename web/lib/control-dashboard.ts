@@ -156,3 +156,25 @@ export function healthProblems(h: Health, now: Date = new Date()): string[] {
   }
   return out;
 }
+
+/**
+ * The dashboard's one-sentence funnel, worded for how far the period got, so
+ * it never says things like "none of applicants".
+ */
+export function funnelSentence(visitors: number | null, applied: number, companies: number, firstJob: number): string {
+  const pct = (part: number, whole: number) => {
+    const p = (part / whole) * 100;
+    return `${p > 0 && p < 10 ? p.toFixed(1) : Math.round(p)}%`;
+  };
+  const people = (n: number) => `${n} ${n === 1 ? "visitor" : "visitors"}`;
+  const billing = " Paying companies appear once billing is live.";
+  if (visitors === null) return "The funnel fills in as people come to the website and apply.";
+  if (visitors === 0 && applied === 0) return "Nobody has come to the website in this period yet.";
+  if (applied === 0) return `${people(visitors)} so far, and no applications yet.${billing}`;
+  const appliedPart = visitors > 0 ? `${pct(applied, visitors)} of visitors applied (${applied})` : `${applied} applied`;
+  if (companies === 0) return `${appliedPart}; none has a company set up yet.${billing}`;
+  if (firstJob === 0) {
+    return `${appliedPart}, and ${pct(companies, applied)} of applicants got a company; none has finished a first job yet.${billing}`;
+  }
+  return `${appliedPart}, ${pct(companies, applied)} of applicants got a company, and ${pct(firstJob, companies)} of those finished a first job.${billing}`;
+}
