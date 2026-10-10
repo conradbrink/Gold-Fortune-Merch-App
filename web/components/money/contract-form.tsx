@@ -165,8 +165,8 @@ export function ContractForm({
             {termsFixed
               ? "This contract has been invoiced, so how it is billed is fixed. End it and start a new one to change that."
               : first
-                ? `First invoice on ${formatDateOnly(first.invoiceOn)}, for ${periodLabel(first.start, first.end)}. Billing starts with the first whole month, and nothing before today is invoiced by itself.`
-                : "Billing starts with the first whole month after the service starts."}
+                ? `First invoice on ${formatDateOnly(first.invoiceOn)}, for ${periodLabel(first.start, first.end)}. Billing starts with the first whole month, and nothing before today is invoiced by itself. If the service ends part-way through a month, that month is charged for the days served.`
+                : "Billing starts with the first whole month after the service starts. If the service ends part-way through a month, that month is charged for the days served."}
           </p>
         </CardContent>
       </Card>

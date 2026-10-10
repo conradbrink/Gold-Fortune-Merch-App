@@ -54,11 +54,26 @@ export function firstBilledPeriod(startsOn: string, terms: ContractTerms, today:
   return null;
 }
 
-/** "October 2026", or "Oct–Dec 2026" for a quarter. */
+/**
+ * "October 2026", or "Oct–Dec 2026" for a quarter. A contract's last period
+ * can stop part-way (it is charged by the days served), and then the days are
+ * named: "1–15 March 2026", "1 Jan–1 Feb 2026".
+ */
 export function periodLabel(start: string, end: string): string {
   const s = parse(start);
   const e = parse(end);
   const month = (d: Date, style: "long" | "short") => d.toLocaleString("en-GB", { month: style, timeZone: "UTC" });
+  const lastDay = new Date(Date.UTC(e.getUTCFullYear(), e.getUTCMonth() + 1, 0)).getUTCDate();
+  if (s.getUTCDate() !== 1 || e.getUTCDate() !== lastDay) {
+    const sy = s.getUTCFullYear();
+    const ey = e.getUTCFullYear();
+    if (s.getUTCMonth() === e.getUTCMonth() && sy === ey) {
+      return `${s.getUTCDate()}–${e.getUTCDate()} ${month(e, "long")} ${ey}`;
+    }
+    return sy === ey
+      ? `${s.getUTCDate()} ${month(s, "short")}–${e.getUTCDate()} ${month(e, "short")} ${ey}`
+      : `${s.getUTCDate()} ${month(s, "short")} ${sy}–${e.getUTCDate()} ${month(e, "short")} ${ey}`;
+  }
   if (s.getUTCMonth() === e.getUTCMonth() && s.getUTCFullYear() === e.getUTCFullYear()) {
     return `${month(s, "long")} ${s.getUTCFullYear()}`;
   }
