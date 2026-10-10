@@ -72,7 +72,15 @@ export default async function AcquisitionOverview({
             value={count.format(own.freePeriodsStarted.current)}
             change={formatChange(change(own.freePeriodsStarted.current, own.freePeriodsStarted.previous))}
           />
-          <Stat label="Activated" value={null} missing="Not measured yet (step 3)." />
+          <Stat
+            label="First job finished"
+            value={(() => {
+              const step = steps.find((s) => s.key === "activated");
+              return step && step.count !== null ? count.format(step.count) : null;
+            })()}
+            missing="Needs a database update."
+            href="/platform/onboarding"
+          />
           <Stat label="Paying" value={null} missing="Billing isn't live yet." />
         </div>
         <p className="text-sm text-muted-foreground">

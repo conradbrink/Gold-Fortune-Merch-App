@@ -8313,6 +8313,30 @@ export type Database = {
         Args: Record<string, never>
         Returns: number
       }
+      platform_company_activation: {
+        Args: Record<string, never>
+        Returns: {
+          org_id: string
+          name: string
+          created_at: string
+          timezone: string
+          setup_started: boolean
+          setup_finished_at: string | null
+          people: number
+          team_on_at: string | null
+          first_client_at: string | null
+          first_workday_at: string | null
+          first_job_started_at: string | null
+          first_job_finished_at: string | null
+          finished_days_14: number
+          last_activity_at: string | null
+          last_sign_in_at: string | null
+          trial_ends_at: string | null
+          contact_name: string | null
+          contact_email: string | null
+          contact_phone: string | null
+        }[]
+      }
       start_trial_company: {
         Args: { p_company: Json; p_templates: string[]; p_owner: string }
         Returns: string

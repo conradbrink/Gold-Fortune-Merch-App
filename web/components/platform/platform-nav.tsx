@@ -12,6 +12,7 @@ const ITEMS = [
   { href: "/platform", label: "Companies", exact: true },
   { href: "/platform/users", label: "Users" },
   { href: "/platform/acquisition", label: "Acquisition" },
+  { href: "/platform/onboarding", label: "Onboarding" },
   { href: "/platform/founding", label: "Founding applications" },
 ];
 

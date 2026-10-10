@@ -149,7 +149,13 @@ export type ApplicationRow = {
   organization_id: string | null;
 };
 
-export type CompanyFacts = { id: string; name: string; freePeriod: boolean };
+export type CompanyFacts = {
+  id: string;
+  name: string;
+  freePeriod: boolean;
+  /** Its team has finished a job in Tickd; null while that can't be read yet. */
+  activated: boolean | null;
+};
 
 export type Tally = { applications: number; companies: number; freePeriods: number };
 
@@ -259,7 +265,16 @@ export function acquisitionStages(input: {
       count: linked.filter((a) => input.companies.get(a.organization_id!)?.freePeriod).length,
       from: "tickd",
     },
-    { key: "activated", label: "Activated", count: null, note: "Not measured yet (Control Centre step 3).", from: "tickd" },
+    {
+      key: "activated",
+      label: "First job finished",
+      count: linked.some((a) => input.companies.get(a.organization_id!)?.activated === null)
+        ? null
+        : linked.filter((a) => input.companies.get(a.organization_id!)?.activated).length,
+      note: "Needs a database update that hasn't been applied yet.",
+      from: "tickd",
+      href: "/platform/onboarding",
+    },
     { key: "paying", label: "Paying", count: null, note: "Billing isn't live yet.", from: "tickd" },
   ];
 }
