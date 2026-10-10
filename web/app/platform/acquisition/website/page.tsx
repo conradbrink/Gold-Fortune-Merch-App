@@ -36,7 +36,7 @@ export default async function WebsitePage({
 }) {
   const params = await searchParams;
   const range = readRange(params.range);
-  const device = typeof params.device === "string" && params.device in DEVICE_LABEL ? params.device : "";
+  const device = typeof params.device === "string" && Object.hasOwn(DEVICE_LABEL, params.device) ? params.device : "";
   const country = typeof params.country === "string" && /^[A-Z]{2}$/.test(params.country) ? params.country : "";
   await requireOperator(`/platform/acquisition/website?range=${range}`);
   const p = periods(range, new Date());
@@ -50,7 +50,8 @@ export default async function WebsitePage({
   const prev = before.ok ? before.value : null;
   const stat = (pick: (s: NonNullable<typeof web>) => number) =>
     web ? { value: count.format(pick(web)), change: formatChange(change(pick(web), prev ? pick(prev) : null)) } : { value: null, change: null };
-  const g = google.ok ? google.value : null;
+  // Google's rates mean nothing until it has processed some sessions.
+  const g = google.ok && google.value.sessions.current > 0 ? google.value : null;
   const daily = web ? new Map(web.daily.map((d) => [d.day, d.visitors])) : null;
 
   return (

@@ -13,6 +13,9 @@
 --                         the kind of device and the country. No IP address,
 --                         no user agent, nothing that names anyone. Written and
 --                         read by the service role only.
+--   retention             rows older than 25 months are deleted nightly
+--                         (pg_cron 'web-events-retention'): the 12-month view
+--                         and the 12 months before it, and no more.
 --   platform_web_stats()  the Control Centre's numbers for a period, in one
 --                         call: visitors, new visitors, sessions, page views,
 --                         visitors per day, pages, people per event, and
@@ -123,3 +126,7 @@ $function$;
 
 revoke all on function public.platform_web_stats(timestamptz, timestamptz, text, text, text) from public, anon, authenticated;
 grant execute on function public.platform_web_stats(timestamptz, timestamptz, text, text, text) to service_role;
+
+-- Keep two years and a month: enough for "12 months against the 12 before".
+select cron.schedule('web-events-retention', '17 3 * * *',
+  $cron$delete from public.web_events where at < now() - interval '25 months'$cron$);

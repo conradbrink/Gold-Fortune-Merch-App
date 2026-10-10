@@ -9,7 +9,8 @@ import { checkWebEvent, deviceOf, isRobot } from "@/lib/web-events";
  *
  * The site sends with navigator.sendBeacon as text/plain, a "simple" request,
  * so there is no preflight; only the sales site's own origins are answered in
- * a browser. Robots are ignored, each address is limited, and the answer is
+ * a browser, and a request without an Origin (a script) isn't counted. Robots
+ * are ignored, each address is limited, and the answer is
  * always 204: counting must never break the site or tell a caller anything.
  * `/api` is outside the sign-in proxy on purpose (see proxy.ts).
  */
@@ -37,11 +38,14 @@ export async function OPTIONS(request: Request) {
 }
 
 export async function POST(request: Request) {
-  const origin = request.headers.get("origin");
-  if (origin && !corsOrigin(origin, isProduction())) return done(request);
+  // Browsers always send Origin on this cross-origin request, so one that has
+  // none (a script, a server) isn't a visitor.
+  if (!corsOrigin(request.headers.get("origin"), isProduction())) return done(request);
   const userAgent = request.headers.get("user-agent");
   if (isRobot(userAgent)) return done(request);
 
+  // A real event is a few hundred bytes; refuse a big one before reading it.
+  if (Number(request.headers.get("content-length") ?? 0) > 4000) return done(request);
   const raw = await request.text().catch(() => "");
   if (raw.length > 4000) return done(request);
   let body: unknown = null;

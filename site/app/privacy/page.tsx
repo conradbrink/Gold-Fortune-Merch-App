@@ -65,7 +65,8 @@ export default function PrivacyPage() {
         We also count visits ourselves, so we can see straight away how many people visit. For each page you open we
         record a random number for your browser (kept in your browser, not a cookie), a random number for that visit,
         the page, the website or advert that sent you, whether you&apos;re on a phone, tablet or computer, and your
-        country. We don&apos;t record your IP address or anything that says who you are.
+        country. We don&apos;t record your IP address or anything that says who you are, and we delete these records
+        after two years.
       </p>
       <p>
         Your browser also keeps a note of how you first found us: the advert or website that sent you and the first

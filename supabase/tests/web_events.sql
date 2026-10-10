@@ -4,6 +4,7 @@
 --       anonymous and signed-in callers; the service role can use both.
 --   W2  The table refuses what it shouldn't hold: a path that isn't a path,
 --       an unknown click type, a lower-case country, a made-up device.
+--   W4  Old rows are deleted nightly: the retention job is scheduled.
 --   W3  The numbers: two visitors, three page views, two visits; one started
 --       applying on /founding; a returning visitor isn't new; a filter by device
 --       keeps only that device; sources count people, per source.
@@ -76,6 +77,11 @@ begin
   j := public.platform_web_stats(t0, now() + interval '1 minute');
   if (j->>'new_visitors')::int > (j->>'visitors')::int - 1 then
     v_fail := v_fail || 'W3 a returning visitor was counted as new' || E'\n';
+  end if;
+
+  ------------------------------------------------------------ W4 retention
+  if not exists (select 1 from cron.job where jobname = 'web-events-retention' and command like '%25 months%') then
+    v_fail := v_fail || 'W4 the retention job is not scheduled' || E'\n';
   end if;
 
   if v_fail <> '' then
