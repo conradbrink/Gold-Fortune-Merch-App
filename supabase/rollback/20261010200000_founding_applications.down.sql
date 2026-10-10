@@ -1,0 +1,11 @@
+-- Rollback for founding_applications: the applications and the spots count go.
+-- The applications are the owner's list of people to phone: export them first
+-- (select * from public.founding_applications) if any are still being worked.
+
+delete from public.module_assignments
+ where (kind = 'function' and name = 'founding_spots')
+    or (kind = 'table' and name = 'founding_applications');
+
+drop function public.founding_spots();
+drop table public.founding_applications;
+delete from public.platform_settings where key = 'founding_spots';

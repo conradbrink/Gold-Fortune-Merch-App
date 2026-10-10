@@ -18,7 +18,8 @@ import { CostCalculator } from "@/components/cost-calculator";
 import { ProductDemo } from "@/components/demo/product-demo";
 import { Logo } from "@/components/logo";
 import { TradeTabs } from "@/components/trade-tabs";
-import { StartTrial } from "@/components/start-trial";
+import { ApplyForm } from "@/components/apply-form";
+import { SpotsMeter, SpotsText } from "@/components/founding-spots";
 import { PricingSection } from "@/components/pricing-section";
 import { confirmed, pricing, rand, site, weeklyCeiling } from "@/lib/site";
 
@@ -166,14 +167,19 @@ const OWNER_GETS = [
   "Track staff performance automatically.",
 ];
 
+// The Founding 10: the button asks for an application (the form at the foot of
+// the page) instead of starting the trial, and the spots left sit under it.
 function TrialButton({ className = "" }: { className?: string }) {
   return (
-    <a
-      href={site.signupUrl}
-      className={`flex w-full items-center justify-center rounded-full bg-amber-500 px-6 py-4 text-lg font-semibold text-teal-950 transition-[background-color,transform] duration-150 ease-out hover:bg-amber-400 active:scale-[0.97] sm:inline-flex sm:w-auto sm:py-3.5 sm:text-base ${className}`}
-    >
-      Get {site.name} free for {site.trialDays} days
-    </a>
+    <div className={`grid gap-2 sm:justify-items-center ${className}`}>
+      <a
+        href="#start"
+        className="flex w-full items-center justify-center rounded-full bg-amber-500 px-6 py-4 text-lg font-semibold text-teal-950 transition-[background-color,transform] duration-150 ease-out hover:bg-amber-400 active:scale-[0.97] sm:inline-flex sm:w-auto sm:py-3.5 sm:text-base"
+      >
+        Apply for a Founding spot
+      </a>
+      <SpotsText className="text-center text-sm font-semibold text-teal-700" />
+    </div>
   );
 }
 
@@ -275,10 +281,10 @@ export default function Home() {
               Sign in
             </a>
             <a
-              href={site.signupUrl}
+              href="#start"
               className="rounded-full bg-teal-900 px-4 py-2 text-sm font-semibold text-sand transition-[background-color,transform] duration-150 ease-out hover:bg-teal-800 active:scale-[0.97]"
             >
-              Free trial
+              Apply now
             </a>
           </div>
         </div>
@@ -565,7 +571,8 @@ export default function Home() {
             <p className="max-w-2xl leading-relaxed text-pretty text-teal-100 sm:text-lg">
               See your team&apos;s whole day, and show clients proof of every job. You don&apos;t need a card.
             </p>
-            <StartTrial />
+            <SpotsMeter tone="light" />
+            <ApplyForm />
           </div>
         </section>
       </main>

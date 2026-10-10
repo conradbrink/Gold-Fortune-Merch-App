@@ -61,6 +61,23 @@ export const pricing = {
   doneForYou: 14990,
 } as const;
 
+// The Founding 10 (owner, 10 Oct 2026): the first businesses get Tickd free
+// for 60 days, set up for them, and apply by form so each one can be phoned.
+// The spots left come from the app (GET {apiUrl}), the same table the form
+// posts to; `spots` is only what the page shows before that answer arrives or
+// when it cannot be had. The founding price is promised but its amount is not
+// on the site until the owner names it.
+export const founding = {
+  spots: 10,
+  days: 60,
+  // How soon someone answers an application, in words.
+  replyWithin: "a few hours",
+  // How soon a business that says yes is running, in words.
+  runningIn: "48 hours",
+  // The app's endpoint. NEXT_PUBLIC_FOUNDING_API points a local site at a local app.
+  apiUrl: process.env.NEXT_PUBLIC_FOUNDING_API || "https://app.tickd.co.za/api/founding",
+} as const;
+
 export type Billing = "monthly" | "yearly";
 
 // The details the legal pages need, in one place. Each must be the owner's

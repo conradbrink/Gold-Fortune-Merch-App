@@ -1153,6 +1153,51 @@ export type Database = {
         }
         Relationships: []
       }
+      founding_applications: {
+        Row: {
+          business_name: string
+          created_at: string
+          headache: string | null
+          id: string
+          name: string
+          notified_at: string | null
+          source: string | null
+          status: string
+          status_changed_at: string | null
+          team_size: string
+          trade: string
+          whatsapp: string
+        }
+        Insert: {
+          business_name: string
+          created_at?: string
+          headache?: string | null
+          id?: string
+          name: string
+          notified_at?: string | null
+          source?: string | null
+          status?: string
+          status_changed_at?: string | null
+          team_size: string
+          trade: string
+          whatsapp: string
+        }
+        Update: {
+          business_name?: string
+          created_at?: string
+          headache?: string | null
+          id?: string
+          name?: string
+          notified_at?: string | null
+          source?: string | null
+          status?: string
+          status_changed_at?: string | null
+          team_size?: string
+          trade?: string
+          whatsapp?: string
+        }
+        Relationships: []
+      }
       industry_templates: {
         Row: {
           code: string
@@ -8213,6 +8258,10 @@ export type Database = {
       }
       consume_anonymous_rate_limit: {
         Args: { p_bucket: string; p_subject: string; p_limit: number; p_window_seconds: number }
+        Returns: Json
+      }
+      founding_spots: {
+        Args: Record<string, never>
         Returns: Json
       }
       start_trial_company: {
