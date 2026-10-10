@@ -56,7 +56,7 @@ const ask = [
 const lookingFor = [
   "Teams of 2 to 15 people who work away from the office.",
   "Clients who ask you for proof.",
-  "Cleaning, security, CCTV, maintenance, garden, pest, pool and sales teams. One per trade first.",
+  "Cleaning, security, CCTV, maintenance, garden, pest, pool and sales teams.",
 ];
 
 // How it works: a date and what happens on it.
@@ -75,7 +75,7 @@ const faqs = [
     `What happens after ${founding.days} days?`,
     `Stay at ${rand(founding.price)} a month for ${founding.priceMonths} months. Or walk away. No card, no strings.`,
   ],
-  ["Who gets picked?", "Teams of 2 to 15 whose clients ask for proof. One per trade first."],
+  ["Who gets picked?", "Teams of 2 to 15 whose clients ask for proof."],
   ["What if I'm not picked?", "You're first on the list for the next round. You can still try Tickd free for 14 days."],
 ];
 
