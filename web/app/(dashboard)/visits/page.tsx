@@ -1,5 +1,6 @@
 "use client";
 
+import { allPages } from "@/lib/all-pages";
 import { Suspense, useEffect, useState } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { ClipboardCheck, Store, ChevronRight } from "lucide-react";
@@ -101,21 +102,26 @@ function VisitsContent() {
       setLoading(true);
       setError(null);
       try {
-      const { data: visitRows, error: visitsError } = await supabase
-        .from("visits")
-        .select(
-          // `stores!visits_store_id_fkey` — two foreign keys join these tables
-          // (visits.store_id, and stores.geocode_visit_id pointing back), so
-          // the embed has to say which one it means or PostgREST refuses it.
-          "id, status, checkin_at, checkout_at, duration_seconds, stores!visits_store_id_fkey(name), profiles(full_name), routes(scheduled_start_at, scheduled_end_at)"
-        )
-        .order("checkin_at", { ascending: false, nullsFirst: false });
-      if (visitsError) throw visitsError;
+      // Paged: the API stops at 1,000 rows a request, and both lists pass
+      // that within weeks for a busy team. `id` breaks ties so no row is
+      // skipped or repeated between pages.
+      const visitRows = await allPages((from, to) =>
+        supabase
+          .from("visits")
+          .select(
+            // `stores!visits_store_id_fkey` — two foreign keys join these tables
+            // (visits.store_id, and stores.geocode_visit_id pointing back), so
+            // the embed has to say which one it means or PostgREST refuses it.
+            "id, status, checkin_at, checkout_at, duration_seconds, stores!visits_store_id_fkey(name), profiles(full_name), routes(scheduled_start_at, scheduled_end_at)"
+          )
+          .order("checkin_at", { ascending: false, nullsFirst: false })
+          .order("id")
+          .range(from, to)
+      );
 
-      const { data: submissionRows, error: subsError } = await supabase
-        .from("form_submissions")
-        .select("visit_id");
-      if (subsError) throw subsError;
+      const submissionRows = await allPages((from, to) =>
+        supabase.from("form_submissions").select("id, visit_id").order("id").range(from, to)
+      );
 
       const formCounts: Record<string, number> = {};
       for (const s of submissionRows ?? []) {
