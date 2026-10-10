@@ -83,3 +83,20 @@ test("system health: all well, and each problem in plain words", () => {
   ]);
   assert.deepEqual(parseHealth(null).jobs, []);
 });
+
+test("review fixes: a stalled daily job is a problem; signing in counts as active", async () => {
+  const { runsDaily } = await import("@/lib/control-dashboard");
+  assert.equal(runsDaily("*/5 * * * *"), true);
+  assert.equal(runsDaily("17 3 * * *"), true);
+  assert.equal(runsDaily("0 7 * * 1"), false, "weekly");
+  assert.equal(runsDaily("0 0 1 * *"), false, "monthly");
+  const stalled = parseHealth({
+    jobs: [
+      { name: "alerts-detect", schedule: "*/5 * * * *", active: true, last_run: daysAgo(3), last_status: "succeeded", failed_24h: 0 },
+      { name: "weekly", schedule: "0 7 * * 1", active: true, last_run: daysAgo(5), last_status: "succeeded", failed_24h: 0 },
+      { name: "new-job", schedule: "17 3 * * *", active: true, last_run: null, last_status: null, failed_24h: 0 },
+    ],
+  });
+  assert.deepEqual(healthProblems(stalled, now), ['The scheduled job "alerts-detect" hasn\'t run for 3 days.']);
+  assert.equal(isActive(company({ lastActivityAt: null, lastSignInAt: daysAgo(2) }), now), true, "an office-only company that signs in is active");
+});

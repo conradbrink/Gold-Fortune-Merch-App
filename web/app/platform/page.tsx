@@ -47,14 +47,20 @@ export default async function DashboardPage({
   const now = new Date();
   const p = periods(range, now);
 
-  const [activation, web, webBefore, own, health, use] = await Promise.all([
-    loadActivation(),
-    ownStats(p.current),
-    ownStats(p.previous),
-    loadFirstParty(p),
+  // Each read stands alone: if one fails, its section says so and the rest still show.
+  const safe = <T,>(read: Promise<T>) => read.then((value) => ({ ok: true as const, value })).catch(() => ({ ok: false as const }));
+  const activationRead = loadActivation();
+  const [activationResult, web, webBefore, ownResult, health, useResult] = await Promise.all([
+    safe(activationRead),
+    safe(ownStats(p.current)),
+    safe(ownStats(p.previous)),
+    safe(loadFirstParty(p, activationRead)),
     loadHealth(),
-    loadModuleUse(),
+    safe(loadModuleUse()),
   ]);
+  const activation = activationResult.ok ? activationResult.value : { ok: false as const, message: "Companies couldn't be read just now. Reload in a moment." };
+  const own = ownResult.ok ? ownResult.value : null;
+  const use = useResult.ok ? useResult.value : null;
 
   const companies = activation.ok ? activation.companies : [];
   const total = companies.length;
@@ -68,14 +74,16 @@ export default async function DashboardPage({
     .filter((r) => r.reasons.length > 0)
     .sort((a, b) => b.reasons[0].urgency - a.reasons[0].urgency);
 
-  const visitors = web.ok ? web.value.visitors : null;
-  const applied = own.applications.length;
-  const linked = own.applications.filter((a) => a.organization_id && own.companies.has(a.organization_id));
-  const firstJob = linked.filter((a) => own.companies.get(a.organization_id!)?.activated).length;
+  const webNow = web.ok && web.value.ok ? web.value.value : null;
+  const webPrev = webBefore.ok && webBefore.value.ok ? webBefore.value.value : null;
+  const visitors = webNow?.visitors ?? null;
+  const applied = own?.applications.length ?? 0;
+  const linked = own ? own.applications.filter((a) => a.organization_id && own.companies.has(a.organization_id)) : [];
+  const firstJob = own ? linked.filter((a) => own.companies.get(a.organization_id!)?.activated).length : 0;
 
   const months = newPerMonth(companies, now);
   const top = Math.max(1, ...months.map((m) => m.count));
-  const modules = moduleAdoption(use.modules, use.enabled, total).slice(0, 6);
+  const modules = use ? moduleAdoption(use.modules, use.enabled, total).slice(0, 6) : null;
   const problems = health.ok ? healthProblems(health.value) : [];
   const rangeLabel = RANGES[range].label;
 
@@ -110,7 +118,7 @@ export default async function DashboardPage({
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <Stat label="Companies" value={count.format(total)} href="/platform/companies" />
           <Stat
-            label={`Active (last ${ACTIVE_DAYS} days)`}
+            label={`Active (used in the last ${ACTIVE_DAYS} days)`}
             value={total ? `${count.format(active)} of ${count.format(total)}` : "0"}
             href="/platform/onboarding?view=all"
           />
@@ -177,18 +185,19 @@ export default async function DashboardPage({
           <Stat
             label="Website visitors"
             value={visitors !== null ? count.format(visitors) : null}
-            change={web.ok && webBefore.ok ? formatChange(change(web.value.visitors, webBefore.value.visitors)) : null}
-            missing="Needs a database update."
+            change={webNow && webPrev ? formatChange(change(webNow.visitors, webPrev.visitors)) : null}
+            missing="Couldn't be read just now."
             href={`/platform/acquisition/website?range=${range}`}
           />
           <Stat
             label="Applied"
-            value={count.format(applied)}
-            change={formatChange(change(applied, own.previousApplications))}
+            value={own ? count.format(applied) : null}
+            change={own ? formatChange(change(applied, own.previousApplications)) : null}
+            missing="Couldn't be read just now."
             href="/platform/founding"
           />
-          <Stat label="Company set up" value={count.format(linked.length)} href="/platform/founding" />
-          <Stat label="First job finished" value={count.format(firstJob)} href="/platform/onboarding" />
+          <Stat label="Company set up" value={own ? count.format(linked.length) : null} missing="Couldn't be read just now." href="/platform/founding" />
+          <Stat label="First job finished" value={own ? count.format(firstJob) : null} missing="Couldn't be read just now." href="/platform/onboarding" />
         </div>
         <p className="text-sm text-muted-foreground">
           {visitors
@@ -200,15 +209,17 @@ export default async function DashboardPage({
       <div className="grid gap-8 lg:grid-cols-2">
         <Section title="New companies per month" href="/platform/companies" link="All companies">
           <div className="rounded-lg border border-border bg-card p-4">
-            <ol className="flex h-36 items-end gap-1.5" aria-label="New companies per month, last 12 months">
+            <ol className="flex items-end gap-1.5" aria-label="New companies per month, last 12 months">
               {months.map((m) => (
-                <li key={m.month} className="flex h-full flex-1 flex-col items-center justify-end gap-1">
-                  <span className="text-xs tabular-nums text-muted-foreground">{m.count || ""}</span>
-                  <div
-                    className="w-full rounded-t-[4px] bg-[var(--series)]"
-                    style={{ height: `${(m.count / top) * 100}%`, minHeight: m.count ? 4 : 0 }}
-                    title={`${m.label}: ${plural(m.count, "new company", "new companies")}`}
-                  />
+                <li key={m.month} className="flex flex-1 flex-col items-center gap-1">
+                  <span className="h-4 text-xs tabular-nums text-muted-foreground">{m.count || ""}</span>
+                  <div className="flex h-24 w-full items-end">
+                    <div
+                      className="w-full rounded-t-[4px] bg-[var(--series)]"
+                      style={{ height: `${(m.count / top) * 100}%`, minHeight: m.count ? 4 : 0 }}
+                      title={`${m.label}: ${plural(m.count, "new company", "new companies")}`}
+                    />
+                  </div>
                   <span className="text-[11px] text-muted-foreground">{m.label}</span>
                 </li>
               ))}
@@ -219,7 +230,9 @@ export default async function DashboardPage({
 
         <Section title="Modules companies use">
           <div className="space-y-2 rounded-lg border border-border bg-card p-4">
-            {modules.length === 0 ? (
+            {modules === null ? (
+              <p className="text-sm text-muted-foreground">Modules couldn&apos;t be read just now.</p>
+            ) : modules.length === 0 ? (
               <p className="text-sm text-muted-foreground">No modules yet.</p>
             ) : (
               modules.map((m) => (

@@ -30,7 +30,11 @@ export type FirstParty = {
   freePeriodsStarted: { current: number; previous: number };
 };
 
-export async function loadFirstParty(p: TwoPeriods): Promise<FirstParty> {
+export async function loadFirstParty(
+  p: TwoPeriods,
+  /** Every company's activation, when the caller has already started reading it (the dashboard). */
+  activationRead?: ReturnType<typeof loadActivation>
+): Promise<FirstParty> {
   const admin = platformAdminClient();
   const count = async (q: PromiseLike<{ count: number | null; error: unknown }>) => {
     const { count: n, error } = await q;
@@ -54,7 +58,7 @@ export async function loadFirstParty(p: TwoPeriods): Promise<FirstParty> {
     const [{ data: orgs, error: orgError }, { data: accounts, error: accountError }, activation] = await Promise.all([
       admin.from("organizations").select("id, name").in("id", orgIds),
       admin.from("company_account").select("org_id, trial_ends_at").in("org_id", orgIds),
-      loadActivation(orgIds),
+      activationRead ?? loadActivation(orgIds),
     ]);
     if (orgError) throw orgError;
     if (accountError) throw accountError;

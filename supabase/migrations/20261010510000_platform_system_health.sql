@@ -4,8 +4,8 @@
 -- "All systems operational" or name the problem. This reads what Tickd
 -- already records about its own machinery:
 --
---   scheduled jobs   pg_cron's history (cron.job_run_details): each job's last
---                    run and any failures in the last 24 hours
+--   scheduled jobs   pg_cron's history (cron.job_run_details): each job's
+--                    schedule, last run and any failures in the last 24 hours
 --   email            message_outbox: failed in the last 24 hours, and anything
 --                    still waiting more than 30 minutes after it was due
 --   website count    web_events in the last 24 hours, and the latest one
@@ -27,6 +27,7 @@ as $function$
     'jobs', (
       select coalesce(jsonb_agg(jsonb_build_object(
                'name', j.jobname,
+               'schedule', j.schedule,
                'active', j.active,
                'last_run', l.start_time,
                'last_status', l.status,

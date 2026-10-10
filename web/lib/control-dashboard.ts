@@ -10,11 +10,16 @@ import type { Period } from "@/lib/acquisition";
 
 const DAY = 24 * 60 * 60 * 1000;
 
-/** Active: something was done in Tickd (a workday or a job) in the last 14 days. */
+/**
+ * Active: someone signed in, or a workday or job happened, in the last 14 days.
+ * Signing in counts so a company using Tickd only in the office (quotes,
+ * invoices, HR) is active too.
+ */
 export const ACTIVE_DAYS = 14;
 
 export function isActive(c: CompanyActivation, now: Date): boolean {
-  return c.lastActivityAt !== null && now.getTime() - Date.parse(c.lastActivityAt) <= ACTIVE_DAYS * DAY;
+  const recent = (iso: string | null) => iso !== null && now.getTime() - Date.parse(iso) <= ACTIVE_DAYS * DAY;
+  return recent(c.lastActivityAt) || recent(c.lastSignInAt);
 }
 
 export function inFreePeriod(c: CompanyActivation, now: Date): boolean {
@@ -71,7 +76,15 @@ export function moduleAdoption(
 }
 
 export type Health = {
-  jobs: { name: string; active: boolean; lastRun: string | null; lastStatus: string | null; failed24h: number; lastError: string | null }[];
+  jobs: {
+    name: string;
+    schedule: string;
+    active: boolean;
+    lastRun: string | null;
+    lastStatus: string | null;
+    failed24h: number;
+    lastError: string | null;
+  }[];
   emailsFailed24h: number;
   emailsWaiting: number;
   webEvents24h: number;
@@ -88,6 +101,7 @@ export function parseHealth(json: unknown): Health {
   return {
     jobs: jobs.map((j) => ({
       name: String(j.name ?? ""),
+      schedule: String(j.schedule ?? ""),
       active: j.active === true,
       lastRun: str(j.last_run),
       lastStatus: str(j.last_status),
@@ -101,11 +115,28 @@ export function parseHealth(json: unknown): Health {
   };
 }
 
+/**
+ * A cron schedule that runs at least once a day: its day-of-month, month and
+ * day-of-week fields are all "*". Only those can be called stalled after 26
+ * hours without a run.
+ */
+export function runsDaily(schedule: string): boolean {
+  const f = schedule.trim().split(/\s+/);
+  return f.length === 5 && f[2] === "*" && f[3] === "*" && f[4] === "*";
+}
+
 /** What's wrong with Tickd's machinery right now, in plain words; empty when all is well. */
-export function healthProblems(h: Health): string[] {
+export function healthProblems(h: Health, now: Date = new Date()): string[] {
   const out: string[] = [];
   for (const j of h.jobs) {
     if (!j.active) continue;
+    // A daily-or-more job that hasn't run for over 26 hours has stalled, failures or not.
+    // (Never run at all: it may be brand new, so that isn't reported.)
+    const hoursSince = j.lastRun ? (now.getTime() - Date.parse(j.lastRun)) / 3_600_000 : 0;
+    if (runsDaily(j.schedule) && hoursSince > 26) {
+      out.push(`The scheduled job "${j.name}" hasn't run for ${Math.floor(hoursSince / 24)} ${Math.floor(hoursSince / 24) === 1 ? "day" : "days"}.`);
+      continue;
+    }
     if (j.failed24h > 0) {
       out.push(`The scheduled job "${j.name}" failed ${j.failed24h === 1 ? "once" : `${j.failed24h} times`} in the last 24 hours.`);
     } else if (j.lastStatus === "failed") {
