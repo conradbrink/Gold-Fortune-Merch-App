@@ -17,6 +17,33 @@ export type BrevoMessage = {
 
 export type BrevoResult = { ok: true; messageId: string | null } | { ok: false; error: string; permanent: boolean };
 
+/**
+ * The event Brevo reports, as the database knows it (`record_message_event`).
+ * Brevo's own transactional payload says `unsubscribe` (the marketing and the
+ * API spell it `unsubscribed`) and reports an address it cannot deliver to as
+ * `invalid_email`, which is as final as a hard bounce. Anything that should not
+ * stop mail to the address (delivered, opened, a soft bounce) comes back null.
+ */
+export function brevoEvent(raw: unknown): "hard_bounce" | "spam" | "blocked" | "unsubscribed" | null {
+  switch (typeof raw === "string" ? raw.trim().toLowerCase() : "") {
+    case "hard_bounce":
+    case "hardbounce":
+    case "invalid_email":
+    case "invalid":
+      return "hard_bounce";
+    case "spam":
+    case "complaint":
+      return "spam";
+    case "blocked":
+      return "blocked";
+    case "unsubscribe":
+    case "unsubscribed":
+      return "unsubscribed";
+    default:
+      return null;
+  }
+}
+
 export function brevoConfigured(): boolean {
   return !!process.env.BREVO_API_KEY;
 }

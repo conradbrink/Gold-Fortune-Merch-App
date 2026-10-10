@@ -107,3 +107,19 @@ test("a contact's email and role fit the database's limits", () => {
   const long = checkContact({ ...EMPTY_CONTACT, name: "N", email: `${"a".repeat(250)}@example.com`, role: "r".repeat(61) }, "ZA");
   assert.ok(!long.ok && long.errors.email && long.errors.role);
 });
+
+import { brevoEvent } from "@/lib/email/brevo";
+
+test("Brevo's event names map to what the database stops mail for, and nothing else does", () => {
+  assert.equal(brevoEvent("hard_bounce"), "hard_bounce");
+  assert.equal(brevoEvent("invalid_email"), "hard_bounce");
+  assert.equal(brevoEvent("spam"), "spam");
+  assert.equal(brevoEvent("blocked"), "blocked");
+  // Brevo's transactional payload says "unsubscribe"; the API says "unsubscribed".
+  assert.equal(brevoEvent("unsubscribe"), "unsubscribed");
+  assert.equal(brevoEvent("unsubscribed"), "unsubscribed");
+  assert.equal(brevoEvent(" Hard_Bounce "), "hard_bounce");
+  for (const quiet of ["delivered", "request", "opened", "unique_opened", "click", "soft_bounce", "deferred", "error", "", null, undefined, 5]) {
+    assert.equal(brevoEvent(quiet), null, String(quiet));
+  }
+});
