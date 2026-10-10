@@ -10,6 +10,7 @@
 
 import { alertHref, alertText, dayText, type AlertItem } from "@/lib/alerts";
 import { parseTerms } from "@/lib/terms";
+import { PROMO, TICKD_LOGO_FILE, emailAssetUrl } from "@/lib/email/brand";
 import { ageingParts, amountText, dayText as dateText, overdueText, periodText } from "@/lib/client-document";
 
 export type EmailContext = {
@@ -18,6 +19,8 @@ export type EmailContext = {
   unsubscribeUrl: string | null;
   /** The document's PDF is attached to this email. */
   attached?: boolean;
+  /** Replies reach the company (it has an email address on its profile). */
+  canReply?: boolean;
 };
 
 export type RenderedEmail = { subject: string; html: string; text: string };
@@ -29,28 +32,54 @@ export function escapeHtml(s: string): string {
 /** The shared frame: heading, body paragraphs (already HTML), optional button, footer. */
 export function layout(
   ctx: EmailContext,
-  parts: { heading: string; bodyHtml: string; bodyText: string; button?: { label: string; url: string } }
+  parts: {
+    heading: string;
+    bodyHtml: string;
+    bodyText: string;
+    button?: { label: string; url: string };
+    /** The line some mail programs show beside the subject. */
+    preheader?: string;
+    /** The sign-off, after the button. */
+    closing?: { html: string; text: string };
+  }
 ): { html: string; text: string } {
   const company = escapeHtml(ctx.companyName);
+  // An email to a company's clients carries Tickd's name and a short advert;
+  // one to the company's own people (alerts, tests) does not.
+  const toClients = ctx.unsubscribeUrl !== null;
   const button = parts.button
-    ? `<p style="margin:24px 0"><a href="${escapeHtml(parts.button.url)}" style="background:#0f5c4f;color:#ffffff;text-decoration:none;padding:12px 20px;border-radius:8px;display:inline-block;font-weight:600">${escapeHtml(parts.button.label)}</a></p>`
+    ? `<p style="margin:26px 0 0"><a href="${escapeHtml(parts.button.url)}" style="background:#0f5c4f;color:#ffffff;text-decoration:none;padding:13px 24px;border-radius:8px;display:inline-block;font-weight:700;font-size:15px">${escapeHtml(parts.button.label)}</a></p>`
     : "";
+  const small = (text: string) => `<p style="margin:14px 0 0;font-size:13px;line-height:1.5;color:#5b6b66">${text}</p>`;
+  const attachedHtml = ctx.attached ? small("The PDF is attached to this email.") : "";
+  const replyHtml = toClients && ctx.canReply ? small(`Questions? Just reply to this email and it will reach ${company}.`) : "";
   const stop = ctx.unsubscribeUrl
     ? ` <a href="${escapeHtml(ctx.unsubscribeUrl)}" style="color:#5b6b66">Stop these emails</a>.`
     : "";
-  const attachedHtml = ctx.attached
-    ? `<p style="margin:0;font-size:13px;color:#5b6b66">The PDF is attached to this email.</p>`
+  const preheader = parts.preheader
+    ? `<div style="display:none;max-height:0;overflow:hidden;opacity:0;color:transparent;font-size:1px;line-height:1px">${escapeHtml(parts.preheader)}${"&nbsp;&zwnj;".repeat(40)}</div>`
     : "";
-  const html = `<!doctype html><html><body style="margin:0;background:#f4f7f6;font-family:Arial,Helvetica,sans-serif;color:#14211e">
-<div style="max-width:560px;margin:0 auto;padding:24px 16px">
-<p style="margin:0 0 16px;font-size:15px;font-weight:700">${company}</p>
-<div style="background:#ffffff;border-radius:12px;padding:24px;line-height:1.5;font-size:15px">
-<h1 style="margin:0 0 12px;font-size:20px">${escapeHtml(parts.heading)}</h1>
+  const promoHtml = toClients
+    ? `<tr><td style="padding:16px 0 0">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#ffffff;border:1px solid #dfe7e4;border-radius:12px"><tr><td style="padding:20px 22px">
+<a href="${escapeHtml(PROMO.url)}" style="text-decoration:none"><img src="${escapeHtml(emailAssetUrl(TICKD_LOGO_FILE))}" width="112" height="41" alt="Tickd" style="display:block;border:0;height:auto;margin:0 0 12px"></a>
+<p style="margin:0 0 4px;font-size:15px;font-weight:700;color:#14211e">${escapeHtml(PROMO.headline)}</p>
+<p style="margin:0 0 12px;font-size:13px;line-height:1.55;color:#44554f">${escapeHtml(PROMO.body)}</p>
+<a href="${escapeHtml(PROMO.url)}" style="font-size:13px;font-weight:700;color:#0f5c4f;text-decoration:underline">${escapeHtml(PROMO.cta)}</a>
+</td></tr></table></td></tr>`
+    : "";
+  const html = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light"><title>${escapeHtml(parts.heading)}</title></head><body style="margin:0;padding:0;background:#eef2f1;font-family:Arial,Helvetica,sans-serif;color:#14211e">${preheader}
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#eef2f1"><tr><td align="center" style="padding:24px 12px">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px">
+<tr><td style="padding:0 4px 12px;font-size:15px;font-weight:700">${company}</td></tr>
+<tr><td style="background:#ffffff;border-radius:12px;border-top:4px solid #0f5c4f;padding:28px 24px;line-height:1.55;font-size:15px">
+<h1 style="margin:0 0 16px;font-size:21px;line-height:1.3">${escapeHtml(parts.heading)}</h1>
 ${parts.bodyHtml}
-${button}${attachedHtml}
-</div>
-<p style="margin:16px 0 0;font-size:12px;color:#5b6b66;line-height:1.5">Sent for ${company} by Tickd.${stop}</p>
-</div></body></html>`;
+${button}${parts.closing?.html ?? ""}${attachedHtml}${replyHtml}
+</td></tr>
+${promoHtml}
+<tr><td style="padding:16px 4px 0;font-size:12px;color:#5b6b66;line-height:1.5">Sent for ${company} by Tickd.${stop}</td></tr>
+</table></td></tr></table></body></html>`;
   const text = [
     ctx.companyName,
     "",
@@ -58,10 +87,15 @@ ${button}${attachedHtml}
     "",
     parts.bodyText,
     parts.button ? `\n${parts.button.label}: ${parts.button.url}` : "",
+    parts.closing ? `\n${parts.closing.text}` : "",
     ctx.attached ? "\nThe PDF is attached to this email." : "",
+    toClients && ctx.canReply ? `\nQuestions? Just reply to this email and it will reach ${ctx.companyName}.` : "",
+    toClients ? `\n---\n${PROMO.headline} ${PROMO.body}\n${PROMO.cta}: ${PROMO.url}\n---` : "",
     "",
     `Sent for ${ctx.companyName} by Tickd.${ctx.unsubscribeUrl ? ` Stop these emails: ${ctx.unsubscribeUrl}` : ""}`,
-  ].join("\n");
+  ]
+    .filter((line, i, all) => !(line === "" && all[i - 1] === ""))
+    .join("\n");
   return { html, text };
 }
 
@@ -116,31 +150,39 @@ function htmlLines(s: string): string {
   return escapeHtml(s).replace(/\r?\n/g, "<br>");
 }
 
-/** The sender's optional note, as a quoted line; nothing when there is none. */
-function noteBlock(payload: Record<string, unknown>): { html: string; text: string } {
+/** The sender's optional note, as a quoted line under who it is from; nothing when there is none. */
+function noteBlock(payload: Record<string, unknown>, company: string): { html: string; text: string } {
   const note = str(payload.note);
   if (!note) return { html: "", text: "" };
   return {
-    html: `<p style="margin:16px 0 0;padding:12px 14px;background:#f4f7f6;border-radius:8px;font-style:italic;color:#2f3f3b">&ldquo;${htmlLines(note)}&rdquo;</p>`,
-    text: note
-      .split(/\r?\n/)
-      .map((l) => `> ${l}`)
-      .join("\n"),
+    html: `<p style="margin:18px 0 6px;font-size:12px;color:#5b6b66;text-transform:uppercase;letter-spacing:.04em">A note from ${escapeHtml(company)}</p><p style="margin:0;padding:12px 14px;background:#f2f6f5;border-left:3px solid #0f5c4f;border-radius:6px;font-style:italic;color:#2f3f3b">${htmlLines(note)}</p>`,
+    text:
+      `A note from ${company}:\n` +
+      note
+        .split(/\r?\n/)
+        .map((l) => `> ${l}`)
+        .join("\n"),
   };
 }
 
 type Fact = { label: string; value: string; strong?: boolean };
 
-/** The few figures an email is about, as a small table. */
+/** The few figures an email is about: a shaded card, the first (strong) one large. */
 function factsBlock(facts: Fact[]): { html: string; text: string } {
-  const rows = facts
+  const [first, ...rest] = facts;
+  if (!first) return { html: "", text: "" };
+  const hero = first.strong
+    ? `<p style="margin:0;font-size:12px;color:#5b6b66;text-transform:uppercase;letter-spacing:.04em">${escapeHtml(first.label)}</p><p style="margin:2px 0 0;font-size:28px;line-height:1.2;font-weight:700;color:#0f5c4f">${escapeHtml(first.value)}</p>`
+    : "";
+  const rows = (first.strong ? rest : facts)
     .map(
       (f) =>
-        `<tr><td style="padding:4px 16px 4px 0;color:#5b6b66;vertical-align:top">${escapeHtml(f.label)}</td><td style="padding:4px 0;${f.strong ? "font-weight:700;font-size:17px" : "font-weight:600"}">${escapeHtml(f.value)}</td></tr>`
+        `<tr><td style="padding:5px 16px 5px 0;color:#5b6b66;vertical-align:top;font-size:14px">${escapeHtml(f.label)}</td><td style="padding:5px 0;font-weight:600;font-size:14px">${escapeHtml(f.value)}</td></tr>`
     )
     .join("");
+  const table = rows ? `<table role="presentation" style="margin:${first.strong ? "10px" : "0"} 0 0;border-collapse:collapse">${rows}</table>` : "";
   return {
-    html: `<table role="presentation" style="margin:16px 0 0;border-collapse:collapse">${rows}</table>`,
+    html: `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:18px 0 0;background:#f2f6f5;border-radius:10px"><tr><td style="padding:16px 18px">${hero}${table}</td></tr></table>`,
     text: facts.map((f) => `${f.label}: ${f.value}`).join("\n"),
   };
 }
@@ -162,14 +204,16 @@ const fromCompany = (payload: Record<string, unknown>, ctx: EmailContext) => str
 function documentEmail(
   ctx: EmailContext,
   payload: Record<string, unknown>,
-  email: { subject: string; heading: string; body: { html: string; text: string }; button: string }
+  email: { subject: string; preheader?: string; heading: string; body: { html: string; text: string }; closing?: { html: string; text: string }; button: string }
 ): RenderedEmail {
   const url = str(payload.url);
   if (!url) throw new Error("A document email needs the link to its page.");
   const { html, text } = layout(ctx, {
     heading: email.heading,
+    preheader: email.preheader,
     bodyHtml: email.body.html,
     bodyText: email.body.text,
+    closing: email.closing,
     button: { label: email.button, url },
   });
   return { subject: email.subject, html, text };
@@ -181,10 +225,29 @@ const TEMPLATES: Record<string, Renderer> = {
     const l = reportLines(payload)[0];
     if (!l) throw new Error("A job report email needs its report.");
     const job = l.jobWord.toLowerCase();
+    const facts: Fact[] = [
+      { label: "Where", value: l.siteName },
+      { label: "Day", value: l.day },
+      { label: "Time", value: `${l.timeIn} to ${l.timeOut}` },
+      ...(l.staffName ? [{ label: "Done by", value: l.staffName }] : []),
+      ...(l.onSite === null ? [] : [{ label: "Check-in", value: l.onSite ? "On site" : "Away from the site" }]),
+      { label: "Photos", value: String(l.photos) },
+    ];
     const { html, text } = layout(ctx, {
       heading: `${l.jobWord} done at ${l.siteName}`,
-      bodyHtml: `<p style="margin:0 0 8px">${escapeHtml(l.day)}: ${escapeHtml(lineText(l))}.</p><p style="margin:0">See the checklist and photos, and sign it off if you are happy with the ${escapeHtml(job)}.</p>`,
-      bodyText: `${l.day}: ${lineText(l)}.\nSee the checklist and photos, and sign it off if you are happy with the ${job}.`,
+      preheader: `${l.day}, ${l.timeIn} to ${l.timeOut}`,
+      bodyHtml: stack([
+        para("Hello,", true),
+        para(`The ${job} at ${l.siteName} is done. Here are the details.`),
+        factsBlock(facts),
+        para(`See the checklist and photos, and sign it off if you are happy with the ${job}.`),
+      ]).html,
+      bodyText: stack([
+        para("Hello,", true),
+        para(`The ${job} at ${l.siteName} is done. Here are the details.`),
+        factsBlock(facts),
+        para(`See the checklist and photos, and sign it off if you are happy with the ${job}.`),
+      ]).text,
       button: { label: "See the report and sign", url: l.url },
     });
     return { subject: `${l.jobWord} done at ${l.siteName}, ${l.day}`, html, text };
@@ -201,12 +264,14 @@ const TEMPLATES: Record<string, Renderer> = {
     const when = oneDay ? `on ${first.day}` : "since the last report";
     const text = (l: ReportLine) => (oneDay ? lineText(l) : `${l.day}, ${lineText(l)}`);
     const items = lines
-      .map((l) => `<li style="margin:0 0 8px">${escapeHtml(text(l))}. <a href="${escapeHtml(l.url)}" style="color:#0f5c4f">See and sign</a></li>`)
+      .map((l) => `<li style="margin:0 0 10px">${escapeHtml(text(l))}. <a href="${escapeHtml(l.url)}" style="color:#0f5c4f;font-weight:600">See and sign</a></li>`)
       .join("");
+    const intro = `${lines.length} ${jobs} done at ${first.siteName} ${when}:`;
     const { html, text: bodyText } = layout(ctx, {
       heading: oneDay ? `${first.siteName}, ${first.day}` : first.siteName,
-      bodyHtml: `<p style="margin:0 0 8px">${lines.length} ${escapeHtml(jobs)} done ${escapeHtml(when)}:</p><ul style="margin:0;padding-left:20px">${items}</ul>`,
-      bodyText: `${lines.length} ${jobs} done ${when}:\n${lines.map((l) => `- ${text(l)}. See and sign: ${l.url}`).join("\n")}`,
+      preheader: `${lines.length} ${jobs} done ${when}`,
+      bodyHtml: `<p style="margin:0">Hello,</p><p style="margin:16px 0 0">${escapeHtml(intro)}</p><ul style="margin:12px 0 0;padding-left:20px">${items}</ul><p style="margin:16px 0 0">Open any of them to see the checklist and photos, and to sign it off.</p>`,
+      bodyText: `Hello,\n\n${intro}\n${lines.map((l) => `- ${text(l)}. See and sign: ${l.url}`).join("\n")}\n\nOpen any of them to see the checklist and photos, and to sign it off.`,
     });
     return { subject: `${first.siteName}: ${lines.length} ${jobs} done ${when}`, html, text: bodyText };
   },
@@ -252,23 +317,27 @@ const TEMPLATES: Record<string, Renderer> = {
     const number = str(payload.number);
     if (!number) throw new Error("An invoice email needs the invoice number.");
     const company = fromCompany(payload, ctx);
-    const currency = payload.currency;
     const who = str(payload.customer_name);
+    const total = amountText(payload.total, payload.currency);
+    const due = str(payload.due_date) ? dateText(str(payload.due_date)) : "";
     const facts: Fact[] = [
-      { label: "Amount", value: amountText(payload.total, currency), strong: true },
+      { label: "Invoice total", value: total, strong: true },
+      ...(due ? [{ label: "Payment due", value: due }] : []),
       ...(str(payload.issue_date) ? [{ label: "Invoice date", value: dateText(str(payload.issue_date)) }] : []),
-      ...(str(payload.due_date) ? [{ label: "Payment due", value: dateText(str(payload.due_date)) }] : []),
       ...(str(payload.reference) ? [{ label: "Reference", value: str(payload.reference) }] : []),
     ];
     return documentEmail(ctx, payload, {
       subject: `Invoice ${number} from ${company}`,
+      preheader: `${total}${due ? `, due ${due}` : ""}`,
       heading: `Invoice ${number}`,
       body: stack([
-        para(`${company} has sent you invoice ${number}${who ? `, made out to ${who}` : ""}.`, true),
+        para(`Hello${who ? ` ${who}` : ""},`, true),
+        para(`Here is invoice ${number} from ${company}.`),
         factsBlock(facts),
-        noteBlock(payload),
-        para("Open it to see the full invoice, what has been paid so far, how to pay, and to download a PDF."),
+        noteBlock(payload, company),
+        para(`The bank details and your payment reference are on the invoice.`),
       ]),
+      closing: para(`Thank you,\n${company}`),
       button: "View invoice",
     });
   },
@@ -278,19 +347,24 @@ const TEMPLATES: Record<string, Renderer> = {
     if (!number) throw new Error("A quote email needs the quote number.");
     const company = fromCompany(payload, ctx);
     const who = str(payload.customer_name);
+    const total = amountText(payload.total, payload.currency);
+    const until = str(payload.valid_until) ? dateText(str(payload.valid_until)) : "";
     const facts: Fact[] = [
-      { label: "Total", value: amountText(payload.total, payload.currency), strong: true },
-      ...(str(payload.valid_until) ? [{ label: "Valid until", value: dateText(str(payload.valid_until)) }] : []),
+      { label: "Quote total", value: total, strong: true },
+      ...(until ? [{ label: "Valid until", value: until }] : []),
     ];
     return documentEmail(ctx, payload, {
       subject: `Quote ${number} from ${company}`,
+      preheader: `${total}${until ? `, valid until ${until}` : ""}`,
       heading: `Quote ${number}`,
       body: stack([
-        para(`${company} has sent you quote ${number}${who ? ` for ${who}` : ""}.`, true),
+        para(`Hello${who ? ` ${who}` : ""},`, true),
+        para(`Here is quote ${number} from ${company}.`),
         factsBlock(facts),
-        noteBlock(payload),
-        para("Open it to see every line and the total, and to download a PDF."),
+        noteBlock(payload, company),
+        para(ctx.canReply ? "If you are happy with it, just reply to this email and we will get things going." : "If you are happy with it, let us know and we will get things going."),
       ]),
+      closing: para(`Kind regards,\n${company}`),
       button: "View quote",
     });
   },
@@ -301,20 +375,24 @@ const TEMPLATES: Record<string, Renderer> = {
     if (!from || !to) throw new Error("A statement email needs its dates.");
     const company = fromCompany(payload, ctx);
     const who = str(payload.client_name);
+    const balance = amountText(payload.balance, payload.currency);
     const ageing = ageingParts(payload.ageing as Record<string, number> | undefined);
     const facts: Fact[] = [
-      { label: `Balance at ${dateText(to)}`, value: amountText(payload.balance, payload.currency), strong: true },
+      { label: `Balance at ${dateText(to)}`, value: balance, strong: true },
       ...ageing.map((a) => ({ label: a.label, value: amountText(a.amount, payload.currency) })),
     ];
     return documentEmail(ctx, payload, {
       subject: `Statement from ${company}, ${periodText(from, to)}`,
+      preheader: `${balance} at ${dateText(to)}`,
       heading: "Your statement",
       body: stack([
-        para(`${company} has sent you a statement${who ? ` for ${who}` : ""}, from ${dateText(from)} to ${dateText(to)}.`, true),
+        para(`Hello${who ? ` ${who}` : ""},`, true),
+        para(`Here is your statement from ${company}, from ${dateText(from)} to ${dateText(to)}.`),
         factsBlock(facts),
-        noteBlock(payload),
-        para("Open it to see every invoice, credit note and payment in the period, and to download a PDF."),
+        noteBlock(payload, company),
+        para(ctx.canReply ? "If anything does not look right, just reply to this email and we will sort it out." : "If anything does not look right, let us know and we will sort it out."),
       ]),
+      closing: para(`Thank you,\n${company}`),
       button: "View statement",
     });
   },
@@ -338,7 +416,7 @@ const TEMPLATES: Record<string, Renderer> = {
       html: `<table role="presentation" style="margin:16px 0 0;border-collapse:collapse;width:100%">${lines
         .map(
           (l) =>
-            `<tr><td style="padding:6px 12px 6px 0;border-bottom:1px solid #e3e9e7;font-weight:600">${escapeHtml(l.number)}</td><td style="padding:6px 12px 6px 0;border-bottom:1px solid #e3e9e7;color:#5b6b66">Due ${escapeHtml(l.due)}, ${escapeHtml(l.late)}</td><td style="padding:6px 0;border-bottom:1px solid #e3e9e7;text-align:right;white-space:nowrap">${escapeHtml(l.amount)}</td></tr>`
+            `<tr><td style="padding:6px 12px 6px 0;border-bottom:1px solid #e3e9e7;font-weight:600;white-space:nowrap">${escapeHtml(l.number)}</td><td style="padding:6px 12px 6px 0;border-bottom:1px solid #e3e9e7;color:#5b6b66">Due ${escapeHtml(l.due)}, ${escapeHtml(l.late)}</td><td style="padding:6px 0;border-bottom:1px solid #e3e9e7;text-align:right;white-space:nowrap">${escapeHtml(l.amount)}</td></tr>`
         )
         .join("")}<tr><td colspan="2" style="padding:8px 12px 0 0;font-weight:700">Total overdue${today ? ` at ${escapeHtml(dateText(today))}` : ""}</td><td style="padding:8px 0 0;text-align:right;font-weight:700;white-space:nowrap">${escapeHtml(total)}</td></tr></table>`,
       text: `${lines.map((l) => `- ${l.number}: due ${l.due}, ${l.late}, ${l.amount}`).join("\n")}\nTotal overdue${today ? ` at ${dateText(today)}` : ""}: ${total}`,
@@ -347,15 +425,17 @@ const TEMPLATES: Record<string, Renderer> = {
     return documentEmail(ctx, payload, {
       subject: `${final ? "Final notice" : "Payment reminder"} from ${company}: ${total} overdue`,
       heading: final ? "Final notice" : tone === "friendly" ? "A friendly reminder" : "Payment reminder",
-      body: stack([message ? para(message, true) : para(`${company} is asking you to settle what is overdue.`, true), list, para("Open your statement to see everything on your account, how to pay, and to download a PDF.")]),
+      preheader: `${total} overdue`,
+      body: stack([message ? para(message, true) : para(`${company} is asking you to settle what is overdue.`, true), list, para("Your statement shows everything on your account and how to pay.")]),
       button: "View statement and pay",
     });
   },
   test: (_payload, ctx) => {
     const { html, text } = layout(ctx, {
       heading: "Your emails are working",
-      bodyHtml: `<p style="margin:0">This is a test from ${escapeHtml(ctx.companyName)}'s Tickd account. Reports and alerts will arrive like this, and replies go to your company's email address.</p>`,
-      bodyText: `This is a test from ${ctx.companyName}'s Tickd account. Reports and alerts will arrive like this, and replies go to your company's email address.`,
+      preheader: "This is a test from Tickd.",
+      bodyHtml: `<p style="margin:0">This is a test from ${escapeHtml(ctx.companyName)}'s Tickd account.</p><p style="margin:16px 0 0">If you can read this, emails are working. Job reports, invoices, quotes, statements and alerts will arrive like this, and replies go to your company's email address.</p>`,
+      bodyText: `This is a test from ${ctx.companyName}'s Tickd account.\n\nIf you can read this, emails are working. Job reports, invoices, quotes, statements and alerts will arrive like this, and replies go to your company's email address.`,
     });
     return { subject: `Test email from ${ctx.companyName}`, html, text };
   },
