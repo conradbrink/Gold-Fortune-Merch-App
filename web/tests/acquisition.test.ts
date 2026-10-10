@@ -141,3 +141,30 @@ test("first job finished waits for the activation read, rather than guessing", (
   assert.equal(steps[6].count, null);
   assert.equal(steps[6].note, "Needs a database update that hasn't been applied yet.");
 });
+
+test("own-count stats are read defensively, and grouped like applications", async () => {
+  const { parseOwnStats, groupSources, asAttribution, eventsMap, campaignSlug } = await import("@/lib/acquisition");
+  const s = parseOwnStats({
+    visitors: 5, new_visitors: "3", sessions: 6, page_views: 11,
+    daily: [{ day: "2026-10-10", visitors: 5, views: 11 }],
+    pages: [{ path: "/founding", visitors: 4, views: 7, started: 2 }],
+    events: { page_view: 5, signup_started: 2 },
+    sources: [
+      { utm_source: "fb", utm_medium: "paid_social", utm_campaign: "founding-oct", referrer: null, click_id: "fbclid", visitors: 3, started: 2, applied: 1 },
+      { utm_source: "ig", utm_medium: "paid_social", utm_campaign: "founding-oct", referrer: null, click_id: null, visitors: 1, started: 0, applied: 0 },
+      { utm_source: null, utm_medium: null, utm_campaign: null, referrer: "www.google.co.za", click_id: null, visitors: 1, started: 0, applied: 0 },
+    ],
+    devices: ["mobile", 3], countries: ["ZA"],
+  });
+  assert.equal(s.newVisitors, 3);
+  assert.deepEqual(s.devices, ["mobile"]);
+  assert.deepEqual(parseOwnStats(null).visitors, 0);
+  const byChannel = groupSources(s.sources, (x) => channelOf(asAttribution(x)));
+  assert.deepEqual(byChannel.get("Paid Social"), { visitors: 4, started: 2 });
+  assert.deepEqual(byChannel.get("Organic Search"), { visitors: 1, started: 0 });
+  assert.deepEqual(groupSources(s.sources, (x) => x.utm_campaign).get("founding-oct"), { visitors: 4, started: 2 });
+  assert.equal(eventsMap(s).get("signup_started")?.current, 2);
+  assert.equal(sourceOf({ utm_source: "ig" }), "instagram");
+  assert.equal(campaignSlug("Founding October: Cleaners & Gardeners!"), "founding-october-cleaners-gardeners");
+  assert.equal(campaignSlug("Café Owners"), "cafe-owners");
+});

@@ -1,12 +1,14 @@
 import { requireOperator } from "@/lib/operator";
-import { channelOf, CHANNELS, percent, periods, readRange, sourceOf, tallyApplications } from "@/lib/acquisition";
-import { byGroup, loadFirstParty } from "@/lib/acquisition-data";
+import { asAttribution, channelOf, CHANNELS, groupSources, percent, periods, readRange, sourceOf, tallyApplications } from "@/lib/acquisition";
+import { loadFirstParty, ownStats } from "@/lib/acquisition-data";
 import { AcquisitionFrame, count } from "@/components/platform/acquisition-frame";
 
 /**
- * Where people come from (spec sections 21 and 32): Google's channels with the
- * visitors and the people who started applying, next to Tickd's own count of
+ * Where people come from (spec sections 21 and 32): visitors and the people
+ * who started applying per channel (Tickd's own count, instant), next to the
  * applications and companies from each channel. Customers, not just traffic.
+ * Visits and applications are sorted into Google's channel names by the same
+ * rules (channelOf), so a row means the same thing on both sides.
  */
 
 export const dynamic = "force-dynamic";
@@ -20,10 +22,11 @@ export default async function SourcesPage({
   const range = readRange((await searchParams).range);
   await requireOperator(`/platform/acquisition/sources?range=${range}`);
   const p = periods(range, new Date());
-  const [ga, own] = await Promise.all([byGroup(p, "sessionDefaultChannelGroup"), loadFirstParty(p)]);
+  const [stats, own] = await Promise.all([ownStats(p.current), loadFirstParty(p)]);
   const byChannel = tallyApplications(own.applications, (a) => channelOf(a.attribution), own.companies);
   const bySource = tallyApplications(own.applications, (a) => sourceOf(a.attribution), own.companies);
-  const web = ga.ok ? ga.value : null;
+  // Visitors per channel from Tickd's own count, sorted by the same rules as applications.
+  const web = stats.ok ? groupSources(stats.value.sources, (x) => channelOf(asAttribution(x))) : null;
 
   const names = [...new Set([...CHANNELS, ...(web ? [...web.keys()] : [])])].filter(
     (c) => (web?.get(c)?.visitors ?? 0) > 0 || (byChannel.get(c)?.applications ?? 0) > 0
@@ -34,7 +37,7 @@ export default async function SourcesPage({
   const na = <span className="text-muted-foreground">n/a</span>;
 
   return (
-    <AcquisitionFrame tab="/platform/acquisition/sources" range={range} ga={ga.ok ? { ok: true } : ga}>
+    <AcquisitionFrame tab="/platform/acquisition/sources" range={range} notice={stats.ok ? null : stats.message}>
       <section className="space-y-2">
         <h2 className="text-sm font-semibold text-foreground">By channel</h2>
         {rows.length === 0 ? (
@@ -59,7 +62,7 @@ export default async function SourcesPage({
                   <tr key={r.channel} className="border-b border-border last:border-0">
                     <td className="px-4 py-2 font-medium">{r.channel}</td>
                     <td className="px-4 py-2 text-right tabular-nums">{web ? count.format(r.web?.visitors ?? 0) : na}</td>
-                    <td className="px-4 py-2 text-right tabular-nums">{web ? count.format(r.web?.startedApplying ?? 0) : na}</td>
+                    <td className="px-4 py-2 text-right tabular-nums">{web ? count.format(r.web?.started ?? 0) : na}</td>
                     <td className="px-4 py-2 text-right tabular-nums">{count.format(r.own?.applications ?? 0)}</td>
                     <td className="px-4 py-2 text-right tabular-nums">{count.format(r.own?.companies ?? 0)}</td>
                     <td className="px-4 py-2 text-right tabular-nums">

@@ -99,8 +99,14 @@ const SEARCH_NAMES = /^(google|bing|yahoo|duckduckgo|ecosia|baidu|yandex)$/;
 const SOCIAL_NAMES = /^(facebook|fb|ig|instagram|linkedin|twitter|x|tiktok|youtube|pinterest|whatsapp|threads|reddit|meta)$/;
 
 /** A source as one plain word: the utm_source, else the other site's name, else "direct". */
+// Meta's {{site_source_name}} sends short codes.
+const SOURCE_ALIAS: Record<string, string> = { fb: "facebook", ig: "instagram", msg: "messenger", an: "audience network" };
+
 export function sourceOf(a: Attribution | null | undefined): string {
-  if (a?.utm_source) return a.utm_source.toLowerCase();
+  if (a?.utm_source) {
+    const s = a.utm_source.toLowerCase();
+    return SOURCE_ALIAS[s] ?? s;
+  }
   if (a?.referrer) {
     const host = a.referrer.replace(/^(www|m|l|lm|web|mobile)\./, "");
     const parts = host.split(".");
@@ -277,4 +283,99 @@ export function acquisitionStages(input: {
     },
     { key: "paying", label: "Paying", count: null, note: "Billing isn't live yet.", from: "tickd" },
   ];
+}
+
+// ------------------------------------------------------------ Tickd's own count
+
+export type OwnSource = {
+  utm_source: string | null;
+  utm_medium: string | null;
+  utm_campaign: string | null;
+  referrer: string | null;
+  click_id: string | null;
+  visitors: number;
+  started: number;
+  applied: number;
+};
+
+export type OwnStats = {
+  visitors: number;
+  newVisitors: number;
+  sessions: number;
+  pageViews: number;
+  daily: { day: string; visitors: number; views: number }[];
+  pages: { path: string; visitors: number; views: number; started: number }[];
+  /** People who did each event: page_view, pricing_view, signup_started… */
+  events: Record<string, number>;
+  sources: OwnSource[];
+  devices: string[];
+  countries: string[];
+};
+
+const num = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? v : Number(v) || 0);
+const str = (v: unknown) => (typeof v === "string" && v ? v : null);
+const arr = (v: unknown): Record<string, unknown>[] => (Array.isArray(v) ? (v as Record<string, unknown>[]) : []);
+
+/** platform_web_stats()'s JSON, read defensively into numbers and strings. */
+export function parseOwnStats(json: unknown): OwnStats {
+  const o = (json && typeof json === "object" ? json : {}) as Record<string, unknown>;
+  const events = (o.events && typeof o.events === "object" ? o.events : {}) as Record<string, unknown>;
+  return {
+    visitors: num(o.visitors),
+    newVisitors: num(o.new_visitors),
+    sessions: num(o.sessions),
+    pageViews: num(o.page_views),
+    daily: arr(o.daily).map((d) => ({ day: String(d.day ?? ""), visitors: num(d.visitors), views: num(d.views) })),
+    pages: arr(o.pages).map((p) => ({ path: String(p.path ?? ""), visitors: num(p.visitors), views: num(p.views), started: num(p.started) })),
+    events: Object.fromEntries(Object.entries(events).map(([k, v]) => [k, num(v)])),
+    sources: arr(o.sources).map((x) => ({
+      utm_source: str(x.utm_source),
+      utm_medium: str(x.utm_medium),
+      utm_campaign: str(x.utm_campaign),
+      referrer: str(x.referrer),
+      click_id: str(x.click_id),
+      visitors: num(x.visitors),
+      started: num(x.started),
+      applied: num(x.applied),
+    })),
+    devices: (Array.isArray(o.devices) ? o.devices : []).filter((d): d is string => typeof d === "string"),
+    countries: (Array.isArray(o.countries) ? o.countries : []).filter((c): c is string => typeof c === "string"),
+  };
+}
+
+/** Visitors and people who started applying, per channel or campaign, from the own count's sources. */
+export function groupSources(sources: OwnSource[], key: (s: OwnSource) => string | null): Map<string, { visitors: number; started: number }> {
+  const out = new Map<string, { visitors: number; started: number }>();
+  for (const s of sources) {
+    const k = key(s);
+    if (k === null) continue;
+    const t = out.get(k) ?? { visitors: 0, started: 0 };
+    t.visitors += s.visitors;
+    t.started += s.started;
+    out.set(k, t);
+  }
+  return out;
+}
+
+/** An own-count source as the attribution shape channelOf() reads. */
+export const asAttribution = (s: OwnSource): Attribution => ({
+  ...(s.utm_source ? { utm_source: s.utm_source } : {}),
+  ...(s.utm_medium ? { utm_medium: s.utm_medium } : {}),
+  ...(s.utm_campaign ? { utm_campaign: s.utm_campaign } : {}),
+  ...(s.referrer ? { referrer: s.referrer } : {}),
+  ...(s.click_id ? { click_id: s.click_id as Attribution["click_id"] } : {}),
+});
+
+/** The funnel's per-event people, in the shape acquisitionStages() reads. */
+export const eventsMap = (s: OwnStats) => new Map(Object.entries(s.events).map(([k, v]) => [k, { current: v }]));
+
+/** A campaign name as it should travel in a link: lower case, words joined by dashes. */
+export function campaignSlug(name: string): string {
+  return name
+    .toLowerCase()
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 60);
 }

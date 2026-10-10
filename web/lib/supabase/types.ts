@@ -5380,6 +5380,57 @@ export type Database = {
           },
         ]
       }
+      web_events: {
+        Row: {
+          at: string
+          click_id: string | null
+          country: string | null
+          device: string | null
+          id: number
+          name: string
+          path: string
+          referrer_host: string | null
+          section: string | null
+          session_id: string
+          utm_campaign: string | null
+          utm_medium: string | null
+          utm_source: string | null
+          visitor_id: string
+        }
+        Insert: {
+          at?: string
+          click_id?: string | null
+          country?: string | null
+          device?: string | null
+          id?: never
+          name: string
+          path: string
+          referrer_host?: string | null
+          section?: string | null
+          session_id: string
+          utm_campaign?: string | null
+          utm_medium?: string | null
+          utm_source?: string | null
+          visitor_id: string
+        }
+        Update: {
+          at?: string
+          click_id?: string | null
+          country?: string | null
+          device?: string | null
+          id?: never
+          name?: string
+          path?: string
+          referrer_host?: string | null
+          section?: string | null
+          session_id?: string
+          utm_campaign?: string | null
+          utm_medium?: string | null
+          utm_source?: string | null
+          visitor_id?: string
+        }
+        Relationships: []
+      }
       workday_sessions: {
         Row: {
           auto_ended_at: string | null
@@ -8312,6 +8363,10 @@ export type Database = {
       founding_spots_left: {
         Args: Record<string, never>
         Returns: number
+      }
+      platform_web_stats: {
+        Args: { p_from: string; p_to: string; p_tz?: string; p_device?: string; p_country?: string }
+        Returns: Json
       }
       platform_company_activation: {
         Args: { p_org_ids?: string[] }
