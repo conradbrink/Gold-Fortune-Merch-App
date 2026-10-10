@@ -86,7 +86,7 @@ export const founding = {
 // so only while it is set.
 export const gaMeasurementId: string = "G-7Q710H1MSW";
 
-// The Meta (Facebook) Pixel for /founding. Paste the Pixel ID between the
+// The Meta (Facebook) Pixel, on every page. Paste the Pixel ID between the
 // quotes; while it is empty, nothing loads and nothing is sent.
 export const metaPixelId: string = "1009164142204684";
 

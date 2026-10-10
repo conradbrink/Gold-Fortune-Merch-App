@@ -3,7 +3,7 @@
 import Script from "next/script";
 import { metaPixelId } from "@/lib/site";
 
-// The Meta (Facebook) Pixel, on /founding only. The ID lives in lib/site.ts
+// The Meta (Facebook) Pixel, on every page (the ads land on the home page). The ID lives in lib/site.ts
 // (`metaPixelId`); while it is empty nothing loads and nothing is sent. It
 // counts the page view, and the form fires a "Lead" when an application is sent.
 
