@@ -28,7 +28,7 @@ import {
 import { createQuote, type NewQuoteLine } from "@/lib/quotes";
 import { fetchServiceItems, type ServiceItem } from "@/lib/service-items";
 import { daysFromToday, fetchDocumentSettings, type DocumentSettings } from "@/lib/document-settings";
-import { validPrice } from "@/lib/money-docs";
+import { grossPrice, validPrice } from "@/lib/money-docs";
 import { moduleEnabled } from "@/lib/modules";
 import { useCompanyConfig, useTerms } from "@/lib/use-company-config";
 import { lower } from "@/lib/terms";
@@ -123,6 +123,12 @@ export default function NewQuotePage() {
   const vatRate = Number(doc?.vat_rate ?? 0);
   const inclusive = doc?.prices_include_vat ?? false;
 
+  /** A product's price in the quote's own basis: its VAT-exclusive price, with the VAT added when the quote's prices include it. */
+  function productPrice(p: Product): string {
+    const net = unitPriceFor(p);
+    return net !== null && inclusive ? grossPrice(Number(net), vatRate).toFixed(2) : (net ?? "");
+  }
+
   const productTotalsLines = productLines.map((l) => ({
     qty: Number(l.qty) || 0,
     unitPrice: netUnitPrice(Number(l.price) || 0, Number(l.qty) || 0, Number(l.discount) || 0, l.discountKind),
@@ -132,7 +138,7 @@ export default function NewQuotePage() {
     setProductLines((prev) =>
       prev.some((l) => l.productId === p.id)
         ? prev.map((l) => (l.productId === p.id ? { ...l, qty: String((Number(l.qty) || 0) + 1) } : l))
-        : [...prev, { productId: p.id, qty: "1", price: unitPriceFor(p) ?? "", discount: "", discountKind: "pct" }]
+        : [...prev, { productId: p.id, qty: "1", price: productPrice(p), discount: "", discountKind: "pct" }]
     );
     setProductQuery("");
   }
@@ -330,7 +336,7 @@ export default function NewQuotePage() {
                 <div className="hidden gap-2 px-1 text-xs font-medium text-muted-foreground sm:grid sm:grid-cols-[1fr_5rem_7rem_7rem_2.5rem]">
                   <span>Product</span>
                   <span>Qty</span>
-                  <span>Price/unit</span>
+                  <span>{inclusive ? "Price incl. VAT" : "Price/unit"}</span>
                   <span>Discount</span>
                   <span />
                 </div>
@@ -355,7 +361,7 @@ export default function NewQuotePage() {
                         step="0.01"
                         value={l.price}
                         onChange={(e) => updateProduct(l.productId, { price: e.target.value })}
-                        aria-label="Price per unit"
+                        aria-label={inclusive ? "Price per unit, VAT included" : "Price per unit"}
                       />
                       <div>
                         <DiscountInput
