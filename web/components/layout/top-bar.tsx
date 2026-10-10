@@ -7,8 +7,8 @@ import { useRouter } from "next/navigation";
 import {
   Search,
   ChevronDown,
+  IdCard,
   LogOut,
-  Menu,
   UserRound,
   X,
 } from "lucide-react";
@@ -21,6 +21,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { createClient } from "@/lib/supabase/client";
+import { CompanyMark } from "@/components/layout/company-mark";
 import { GlobalSearch } from "@/components/layout/global-search";
 import { ThemeToggle } from "@/components/layout/theme-toggle";
 import { NotificationsBell } from "@/components/hr/notifications-bell";
@@ -31,7 +32,7 @@ import { usePermissions } from "@/lib/use-permissions";
 import { useCompanyConfig } from "@/lib/use-company-config";
 import { moduleEnabled } from "@/lib/modules";
 
-export function TopBar({ onOpenNav }: { onOpenNav?: () => void }) {
+export function TopBar() {
   const router = useRouter();
   const supabase = createClient();
   const permissions = usePermissions();
@@ -92,16 +93,17 @@ export function TopBar({ onOpenNav }: { onOpenNav?: () => void }) {
 
   return (
     <header className="flex h-14 shrink-0 items-center gap-3 border-b border-border bg-background px-4 sm:px-6">
-      {/* Hidden while the mobile search is open — the box needs the whole row. */}
-      <Button
-        variant="ghost"
-        size="icon"
-        className={searchRevealed ? "hidden" : "md:hidden"}
-        onClick={onOpenNav}
-        aria-label="Open navigation"
-      >
-        <Menu className="h-5 w-5" />
-      </Button>
+      {/* On a phone the sidebar is gone (its places are in the bottom bar), so
+          the company's mark tells you whose app this is. Hidden while the
+          search box needs the row. */}
+      {!searchRevealed && company && (
+        <div className="flex min-w-0 items-center gap-2 md:hidden">
+          <CompanyMark branding={company.branding} />
+          <span className="truncate text-sm font-bold tracking-tight text-foreground sm:hidden">
+            {company.branding.name}
+          </span>
+        </div>
+      )}
 
       {canSearch && permissions !== null && (
         <GlobalSearch permissions={permissions} revealed={searchRevealed} />
@@ -154,6 +156,14 @@ export function TopBar({ onOpenNav }: { onOpenNav?: () => void }) {
             <div className="max-w-[16rem] truncate px-2 py-1.5 text-xs text-muted-foreground">
               {label}
             </div>
+            {/* A person's own HR record is theirs, not a part of running the
+                business, so it sits with their name rather than in the menu. */}
+            {hasHr && (
+              <DropdownMenuItem onClick={() => router.push("/hr/me")} className="gap-2">
+                <IdCard className="h-4 w-4" />
+                My HR
+              </DropdownMenuItem>
+            )}
             <DropdownMenuItem onClick={handleSignOut} className="gap-2">
               <LogOut className="h-4 w-4" />
               Sign out

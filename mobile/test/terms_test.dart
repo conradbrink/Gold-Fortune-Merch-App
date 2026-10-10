@@ -41,7 +41,7 @@ void main() {
       expect(d.staff.one, 'Staff member');
       expect(d.staff.many, 'Staff');
       expect(d.client.one, 'Client');
-      expect(d.territory.one, 'Area');
+      expect(d.territory.one, 'Territory');
       expect(d.scheduleCycle.one, 'Recurring schedule');
       expect(d.dayPlan.one, "Today's jobs");
     });

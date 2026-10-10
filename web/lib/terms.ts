@@ -56,7 +56,7 @@ export const DEFAULT_TERMS: Terms = {
   staff: { one: "Staff member", many: "Staff", article: null },
   client: { one: "Client", many: "Clients", article: null },
   region: { one: "Region", many: "Regions", article: null },
-  territory: { one: "Area", many: "Areas", article: null },
+  territory: { one: "Territory", many: "Territories", article: null },
   prospect: { one: "Lead", many: "Leads", article: null },
   schedule_cycle: { one: "Recurring schedule", many: "Recurring schedules", article: null },
   day_plan: { one: "Today's jobs", many: "Today's jobs", article: null },

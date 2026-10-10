@@ -6,7 +6,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { canReachPath, moduleForPath, toModuleSet } from "@/lib/modules";
 import { canAccessPath, homeFor, toPermissionSet } from "@/lib/permissions";
-import { visibleNavGroups } from "@/components/layout/nav-items";
+import { reachablePages, visibleNavGroups } from "@/components/layout/nav-items";
 import { formatMoney, formatMoneyShort } from "@/lib/money";
 import { parseTerms, type Terms } from "@/lib/terms";
 
@@ -93,7 +93,7 @@ test("the seeded CFO and clerk land on invoices at a company without the warehou
 test("the sidebar offers no page of a module the company lacks", () => {
   const admin = toPermissionSet(["admin"]);
   const hrefs = (modules: ReturnType<typeof toModuleSet>) =>
-    visibleNavGroups(admin, modules).flatMap((g) => g.items.map((i) => i.href));
+    reachablePages(visibleNavGroups(admin, modules)).map((p) => p.href);
 
   const full = hrefs(everything);
   assert.ok(full.includes("/orders"));
@@ -112,17 +112,16 @@ test("the sidebar names things in the company's words", () => {
   const admin = toPermissionSet(["admin"]);
   const labels = (terms?: Terms) =>
     new Map(
-      visibleNavGroups(admin, everything, terms).flatMap((g) =>
-        g.items.map((i) => [i.href, i.label] as const)
-      )
+      reachablePages(visibleNavGroups(admin, everything, terms)).map((p) => [p.href, p.label] as const)
     );
 
   const neutral = labels();
   assert.equal(neutral.get("/stores"), "Sites");
   assert.equal(neutral.get("/representatives"), "Staff");
-  assert.equal(neutral.get("/activities"), "Jobs & Activities");
+  assert.equal(neutral.get("/visits"), "Jobs");
+  assert.equal(neutral.get("/territories"), "Territories");
 
-  // Gold Fortune's menu reads as it always has, bar "Representatives".
+  // Gold Fortune's menu in its own words.
   const gf = labels(
     parseTerms({
       site: { one: "Store", many: "Stores" },
@@ -134,7 +133,8 @@ test("the sidebar names things in the company's words", () => {
   assert.equal(gf.get("/stores"), "Stores");
   assert.equal(gf.get("/territories"), "Territories");
   assert.equal(gf.get("/representatives"), "Reps");
-  assert.equal(gf.get("/activities"), "Visits & Activities");
+  assert.equal(gf.get("/visits"), "Visits");
+  assert.equal(gf.get("/activities"), "Activity");
   assert.equal(gf.get("/reports/rep-performance"), "Rep performance");
   assert.equal(gf.get("/leads"), "Leads");
   // Words that are not terms stay as written.
@@ -143,7 +143,7 @@ test("the sidebar names things in the company's words", () => {
 
 test("the vehicle logbook is offered with its module, to those who read the km", () => {
   const items = (permissions: string[], modules: ReturnType<typeof toModuleSet>) =>
-    visibleNavGroups(toPermissionSet(permissions), modules).flatMap((g) => g.items.map((i) => i.href));
+    reachablePages(visibleNavGroups(toPermissionSet(permissions), modules)).map((p) => p.href);
   const withLogbook = toModuleSet({ vehicle_logbook: true });
   assert.ok(items(["insights"], withLogbook).includes("/logbook"));
   assert.ok(!items(["insights"], coreOnly).includes("/logbook"));
@@ -160,25 +160,17 @@ test("money is the company's currency, written as the business writes it", () =>
   assert.equal(formatMoney(5, "XYZ"), "XYZ5.00");
 });
 
-test("menu headings are the trade's own words; a distributor keeps its sales headings", () => {
+test("menu headings name the areas of the business; a distributor adds its sales and stock", () => {
   const admin = toPermissionSet(["admin"]);
-  const headings = (modules: ReturnType<typeof toModuleSet>, terms: Terms) =>
-    visibleNavGroups(admin, modules, terms).map((g) => g.label);
-  const cleaning = parseTerms({
-    site: { one: "Site", many: "Sites" },
-    staff: { one: "Cleaner", many: "Cleaners" },
-    territory: { one: "Area", many: "Areas" },
-  });
-  const forCleaning = headings(toModuleSet({ invoicing: true, reports: true }), cleaning);
-  assert.ok(forCleaning.includes("Sites & Areas"));
-  assert.ok(forCleaning.includes("Cleaners in the field"));
-  assert.ok(!forCleaning.some((h) => h?.includes("Sales")));
-  const goldFortune = parseTerms({
-    site: { one: "Store", many: "Stores" },
-    staff: { one: "Rep", many: "Reps" },
-    territory: { one: "Territory", many: "Territories" },
-  });
-  const forGf = headings(toModuleSet({ distribution: true, warehouse: true, invoicing: true, reports: true }), goldFortune);
-  assert.ok(forGf.includes("Sales & Coverage"));
-  assert.ok(forGf.includes("Sales Team"));
+  const headings = (modules: ReturnType<typeof toModuleSet>) =>
+    visibleNavGroups(admin, modules).map((g) => g.label);
+  // A cleaning company: no "Sales" anywhere, and no heading that repeats its item.
+  assert.deepEqual(
+    headings(toModuleSet({ invoicing: true, reports: true, checklists_forms: true, recurring_jobs: true })),
+    [null, "Customers", "Operations", "Team", "Finance", null, "Admin", "Resources"]
+  );
+  assert.deepEqual(
+    headings(toModuleSet({ distribution: true, warehouse: true, invoicing: true, reports: true, checklists_forms: true, hr: true })),
+    [null, "Sales", "Field team", "Inventory", "Finance", null, "People", "Admin", "Resources"]
+  );
 });

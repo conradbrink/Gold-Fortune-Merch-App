@@ -234,7 +234,7 @@ begin
   end if;
   select payload into v_j from public.message_outbox where org_id = v_org and template = 'alert'
    and related_id = (select id from public.alerts where org_id = v_org and rule = 'off_site_checkin');
-  if v_j -> 'terms' -> 'job' ->> 'one' is distinct from 'Clean'
+  if v_j -> 'terms' -> 'job' ->> 'one' is distinct from 'Visit'
      or v_j ->> 'timezone' is distinct from 'Africa/Johannesburg'
      or (v_j ->> 'total')::int is distinct from 1
      or v_j -> 'alerts' -> 0 ->> 'site_name' is distinct from 'Alert site one'
