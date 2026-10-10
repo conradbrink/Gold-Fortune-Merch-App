@@ -24,6 +24,9 @@
 --   B9  grants and isolation: server-only functions out of reach of signed-in
 --       callers; the payment log unreadable; invoices only for the company's
 --       settings managers, and only its own.
+--   B10 every company table carries the gate's three policies, including
+--       tables made after the gate (20261010270000); only the service's own
+--       tables (catalogues, templates, settings, logs, billing) are left out.
 --
 -- HOW TO RUN: paste into execute_sql (or psql -f). One DO block that always
 -- ends in `raise exception`, so nothing survives — including the two quiet
@@ -461,8 +464,30 @@ begin
   end if;
   reset role;
 
+  -- B10 -----------------------------------------------------------------
+  select string_agg(a.name, ', ' order by a.name) into v_t
+    from public.module_assignments a
+   where a.kind = 'table'
+     and to_regclass('public.' || quote_ident(a.name)) is not null
+     and a.name not in (
+       'app_permissions', 'app_releases', 'module_assignments', 'module_dependencies',
+       'modules', 'platform_admins', 'platform_audit_log', 'platform_settings',
+       'rate_limits', 'security_events', 'service_flags', 'setting_definitions',
+       'industry_templates', 'template_modules', 'template_terminology', 'template_settings',
+       'template_job_types', 'template_checklist_items', 'template_forms',
+       'onboarding_steps', 'price_list', 'company_account', 'billing_counters',
+       'billing_charges', 'billing_invoices', 'billing_payments',
+       'template_service_items', 'founding_applications')
+     and (select count(*) from pg_policies p
+           where p.schemaname = 'public' and p.tablename = a.name
+             and p.policyname in ('billing_gate_insert', 'billing_gate_update', 'billing_gate_delete')
+             and p.permissive = 'RESTRICTIVE') <> 3;
+  if v_t is not null then
+    v_fail := v_fail || 'B10 company tables without the billing gate: ' || v_t || E'\n';
+  end if;
+
   if v_fail = '' then
-    raise exception 'BILLING SUITE: ALL PASS (B1-B9) — rolled back';
+    raise exception 'BILLING SUITE: ALL PASS (B1-B10) — rolled back';
   end if;
   raise exception E'BILLING SUITE FAILURES:\n%', v_fail;
 end;
