@@ -58,6 +58,8 @@ function fromKeyFile(raw: string | undefined, field: "client_email" | "private_k
       /* not the whole file after all: read it as a plain value */
     }
   }
+  // The whole line copied, label included: "private_key": "-----BEGIN…",
+  v = v.replace(new RegExp(`^"?${field}"?\\s*:\\s*`), "");
   v = v.replace(/,$/, "").trim();
   if (v.length >= 2 && v.startsWith('"') && v.endsWith('"')) v = v.slice(1, -1);
   return v.replace(/\\n/g, "\n").trim();
@@ -134,9 +136,12 @@ async function accessToken(config: GaConfig, fetcher: typeof fetch): Promise<str
   return token.value;
 }
 
-/** Forgets cached answers and the token (tests). */
+let setupOnce: ReturnType<typeof gaSetup> | null = null;
+
+/** Forgets cached answers, the token and the setup (tests). */
 export function resetGaCache() {
   token = null;
+  setupOnce = null;
   cache.clear();
 }
 
@@ -147,7 +152,9 @@ export async function runReport(
   fetcher: typeof fetch = fetch
 ): Promise<GaResult> {
   if (config === undefined) {
-    const setup = gaSetup();
+    // Worked out once per server instance: the variables can't change within a deployment.
+    setupOnce ??= gaSetup();
+    const setup = setupOnce;
     if (!setup.ok) return { ok: false, reason: "not-connected", message: setup.problem };
     config = setup.config;
   }

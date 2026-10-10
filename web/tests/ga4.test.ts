@@ -80,6 +80,10 @@ test("the usual pasting slips are forgiven", () => {
   assert.equal(quoted.clientEmail, email);
   assert.ok(quoted.privateKey.startsWith("-----BEGIN PRIVATE KEY-----\n"));
   // The whole key file pasted into either variable.
+  // The whole line, label and all.
+  const line = gaConfig({ GA4_CLIENT_EMAIL: `"client_email": "${email}",`, GA4_PRIVATE_KEY: `"private_key": "${escaped}\\n",` });
+  assert.equal(line?.clientEmail, email);
+  assert.ok(line?.privateKey.startsWith("-----BEGIN PRIVATE KEY-----"));
   const file = JSON.stringify({ type: "service_account", client_email: email, private_key: pem });
   const whole = gaConfig({ GA4_CLIENT_EMAIL: file, GA4_PRIVATE_KEY: file });
   assert.equal(whole?.clientEmail, email);
