@@ -11,6 +11,8 @@ export const FOUNDING_OFFER = {
   price: 749,
   priceMonths: 12,
   closes: "Monday 19 October",
+  /** The days we call every applicant. */
+  callsBetween: "20 and 22 October",
   /** When every applicant hears back. */
   tellsBy: "Friday 23 October",
   /** When the picked businesses are set up, and when their free days start. */

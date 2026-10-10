@@ -370,8 +370,8 @@ export async function linkFoundingApplication(formData: FormData): Promise<void>
 
 /**
  * Founding applications: set an application's status (new, contacted, accepted,
- * declined, waiting list) and, when the operator ticks "Email them", send the
- * applicant the answer for accepted or declined through the outbox. Audit-logged
+ * declined, waiting list) and, when the operator ticks "Email them" on Accepted,
+ * send the applicant the "you are in" email through the outbox. Audit-logged
  * first, like linking. The same answer is never emailed twice (the outbox is
  * looked at first), and an applicant with no email address is simply not emailed.
  */
@@ -403,6 +403,7 @@ export async function setFoundingStatus(formData: FormData): Promise<void> {
   }
 
   const template = sendEmail ? outcomeTemplate(status) : null;
+  const ignoredTick = sendEmail && template === null;
   const { data: audit, error: auditError } = await admin
     .from("platform_audit_log")
     .insert({
@@ -422,7 +423,10 @@ export async function setFoundingStatus(formData: FormData): Promise<void> {
     .update({ status, status_changed_at: new Date().toISOString() })
     .eq("id", applicationId);
   if (error) {
-    await admin.from("platform_audit_log").update({ detail: { application: applicationId, refused: error.message } }).eq("id", audit.id);
+    await admin
+      .from("platform_audit_log")
+      .update({ detail: { application: applicationId, from: app.status, to: status, emailed: template, refused: error.message } })
+      .eq("id", audit.id);
     redirect(`${back}?error=${encodeURIComponent(`Not changed: ${error.message}`)}`);
   }
 
@@ -432,16 +436,11 @@ export async function setFoundingStatus(formData: FormData): Promise<void> {
     }
     const { data: already } = await admin
       .from("message_outbox")
-      .select("template")
+      .select("id")
       .eq("related_kind", OUTCOME_RELATED_KIND)
       .eq("related_id", applicationId)
       .in("status", ["queued", "sending", "sent"]);
-    const told = (already ?? []).map((r) => r.template);
-    if (told.some((t) => t !== template)) {
-      // They were already given the other answer: a second, opposite email is never sent by a click.
-      redirect(`${back}?error=${encodeURIComponent("Status saved. They were already emailed the other answer, so nothing more was sent: write to them yourself.")}#${applicationId}`);
-    }
-    if (told.length === 0) {
+    if ((already ?? []).length === 0) {
       const { error: queueError } = await admin.rpc("queue_email", {
         p_org: null,
         p_to: app.email,
@@ -455,6 +454,9 @@ export async function setFoundingStatus(formData: FormData): Promise<void> {
         redirect(`${back}?error=${encodeURIComponent(`Status saved, but the email was not queued: ${queueError.message}`)}#${applicationId}`);
       }
     }
+  }
+  if (ignoredTick) {
+    redirect(`${back}?error=${encodeURIComponent("Status saved. No email was sent: only Accepted sends one.")}#${applicationId}`);
   }
   redirect(`${back}#${applicationId}`);
 }
