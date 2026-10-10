@@ -9,6 +9,9 @@
 --   W3  The day is the owner's (platform_settings trial_offer_day), and a
 --       setting that is not a number is 45, not a stopped job.
 --   W4  Grants, the daily job and the table's registration.
+--   W5  The days count from trial_offer_counts_from when a company was made
+--       before it (the Founding days begin on 2 November); a cleared or invalid
+--       date counts from the company's own start.
 --
 -- HOW TO RUN: as dashboard.sql. One DO block that always ends in
 -- `raise exception`, so nothing survives.
@@ -30,6 +33,9 @@ begin
   values ('A', 'B', '27820000000', 'cleaning', '5-10', 'Town', 'paper', 'Late starts', true, true, true, 'a@example.com');
   insert into public.founding_applications (name, business_name, whatsapp, trade, team_size, town, how_run, biggest_cost, whole_team, video_review, marketing_ok)
   values ('C', 'D', '27820000001', 'cleaning', '5-10', 'Town', 'paper', 'Late starts', true, true, true);
+
+  -- W2 and W3 are about the 45 days alone: the date the days count from is in the past here (W5 tests it).
+  update public.platform_settings set value = '"2000-01-01"' where key = 'trial_offer_counts_from';
 
   ---------------------------------------------------------------- W2 the offer
   -- Gold Fortune stands in for a company: its administrator has an email, and
@@ -117,6 +123,35 @@ begin
      or not exists (select 1 from public.module_assignments where kind = 'table' and name = 'trial_offers')
      or not exists (select 1 from public.platform_settings where key = 'trial_offer_day') then
     v_fail := v_fail || 'W4 a grant, the daily job or the registration is wrong' || E'\n';
+  end if;
+
+  ---------------------------------------------------------------- W5 the days count from the day the free days begin
+  delete from public.trial_offers; delete from public.message_outbox where template = 'trial_offer';
+  update public.company_account set status = 'trial', trial_ends_at = now() + interval '60 days', created_at = now() - interval '50 days' where org_id = v_org;
+  update public.organizations set created_at = now() - interval '50 days' where id = v_org;
+  -- Made 50 days ago, but the free days only begin in ten days: not yet 45 days in.
+  update public.platform_settings set value = to_jsonb((current_date + 10)::text) where key = 'trial_offer_counts_from';
+  if public.queue_trial_offers() <> 0 then v_fail := v_fail || 'W5 a company was asked before 45 days from the day the free days begin' || E'\n'; end if;
+  -- The free days began 46 days ago: asked.
+  update public.platform_settings set value = to_jsonb((current_date - 46)::text) where key = 'trial_offer_counts_from';
+  if public.queue_trial_offers() < 1 then v_fail := v_fail || 'W5 a company 46 days past the day the free days began was not asked' || E'\n'; end if;
+  -- A company made after that day counts from its own start (here 20 days: not asked).
+  delete from public.trial_offers; delete from public.message_outbox where template = 'trial_offer';
+  update public.company_account set created_at = now() - interval '20 days' where org_id = v_org;
+  update public.organizations set created_at = now() - interval '20 days' where id = v_org;
+  update public.platform_settings set value = to_jsonb((current_date - 60)::text) where key = 'trial_offer_counts_from';
+  if public.queue_trial_offers() <> 0 then v_fail := v_fail || 'W5 a company made after the day was counted from before it' || E'\n'; end if;
+  -- A date that is not a date, or none: the company's own start (50 days: asked), and the job still runs.
+  update public.company_account set created_at = now() - interval '50 days' where org_id = v_org;
+  update public.organizations set created_at = now() - interval '50 days' where id = v_org;
+  update public.platform_settings set value = '"2026-13-45"' where key = 'trial_offer_counts_from';
+  begin
+    if public.queue_trial_offers() < 1 then v_fail := v_fail || 'W5 an invalid date stopped the offers' || E'\n'; end if;
+  exception when others then
+    v_fail := v_fail || format('W5 an invalid date stopped the job: %s', sqlerrm) || E'\n';
+  end;
+  if not exists (select 1 from public.platform_settings where key = 'trial_offer_counts_from') then
+    v_fail := v_fail || 'W5 the setting is missing' || E'\n';
   end if;
 
   if v_fail <> '' then
