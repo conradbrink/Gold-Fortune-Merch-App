@@ -55,6 +55,7 @@ export default async function FoundingApplicationsPage({
   const problem = typeof params.error === "string" ? params.error : null;
   const trade = (code: string) => templates.find((t) => t.code === code)?.name ?? code;
   const applications = rows ?? [];
+  const withEmail = applications.filter((a) => a.email).length;
 
   return (
     <main className="mx-auto max-w-6xl space-y-6 p-4 sm:p-8">
@@ -64,6 +65,16 @@ export default async function FoundingApplicationsPage({
           {applications.length} so far. The site shows {typeof left === "number" ? `${left} of 10` : "?"} spots left. Change it
           in platform_settings, key founding_spots_left. Times are UTC.
         </p>
+        {applications.length > 0 && (
+          <p className="flex flex-wrap items-center gap-x-4 gap-y-1 pt-1 text-sm">
+            <span className="text-muted-foreground">
+              {withEmail} of {applications.length} left an email address.
+            </span>
+            <a href="/platform/founding/leads" download className="font-medium underline underline-offset-4">
+              Download all names and emails (CSV)
+            </a>
+          </p>
+        )}
       </header>
 
       {problem && (
@@ -88,6 +99,18 @@ export default async function FoundingApplicationsPage({
                 </p>
               </div>
               <dl className="grid gap-x-6 gap-y-1 sm:grid-cols-2 lg:grid-cols-3">
+                <div>
+                  <dt className="text-muted-foreground">Email</dt>
+                  <dd>
+                    {a.email ? (
+                      <a className="break-all underline" href={`mailto:${a.email}`}>
+                        {a.email}
+                      </a>
+                    ) : (
+                      "none given"
+                    )}
+                  </dd>
+                </div>
                 <div>
                   <dt className="text-muted-foreground">WhatsApp</dt>
                   <dd>
