@@ -1,6 +1,5 @@
 import Link from "next/link";
-import { notFound, redirect } from "next/navigation";
-import { createClient } from "@/lib/supabase/server";
+import { requireOperator } from "@/lib/operator";
 import { listTemplates, platformAdminClient } from "@/lib/platform";
 import { HOW_RUN_LABEL, checkAttribution, describeAttribution, type HowRun } from "@/lib/founding";
 import { linkFoundingApplication } from "@/app/platform/actions";
@@ -38,15 +37,7 @@ export default async function FoundingApplicationsPage({
 }: {
   searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
 }) {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) redirect("/login");
-
-  const { data: isOperator, error } = await supabase.rpc("is_platform_admin");
-  if (error) throw error;
-  if (!isOperator) notFound();
+  await requireOperator("/platform/founding");
 
   const admin = platformAdminClient();
   const [{ data: rows, error: listError }, { data: left }, templates, { data: orgs, error: orgError }] = await Promise.all([

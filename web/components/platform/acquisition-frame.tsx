@@ -130,3 +130,9 @@ export function Stat({
 }
 
 export const count = new Intl.NumberFormat("en-ZA");
+
+/** Why a website number is missing, in a few words: never "not connected" when it is connected but failed. */
+export function gaMissing(r: { ok: boolean; reason?: "not-connected" | "error" }): string {
+  if (r.ok) return "No answer from Google Analytics.";
+  return r.reason === "not-connected" ? "Google Analytics isn't connected yet." : "Google Analytics didn't answer (see above).";
+}

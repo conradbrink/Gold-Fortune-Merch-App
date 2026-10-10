@@ -2,7 +2,7 @@ import Link from "next/link";
 import { requireOperator } from "@/lib/operator";
 import { acquisitionStages, buildFunnel, change, formatChange, percent, periods, readRange, RANGES } from "@/lib/acquisition";
 import { funnelEvents, loadFirstParty, websiteTotals } from "@/lib/acquisition-data";
-import { AcquisitionFrame, Stat, count } from "@/components/platform/acquisition-frame";
+import { AcquisitionFrame, Stat, count, gaMissing } from "@/components/platform/acquisition-frame";
 
 /**
  * Acquisition overview: the headline numbers for the period against the one
@@ -12,7 +12,7 @@ import { AcquisitionFrame, Stat, count } from "@/components/platform/acquisition
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Platform · Acquisition" };
 
-const GA_MISSING = "Google Analytics isn't connected yet.";
+
 
 export default async function AcquisitionOverview({
   searchParams,
@@ -25,6 +25,7 @@ export default async function AcquisitionOverview({
   const [totals, events, own] = await Promise.all([websiteTotals(p), funnelEvents(p), loadFirstParty(p)]);
 
   const ga = totals.ok ? totals.value : null;
+  const GA_MISSING = gaMissing(totals.ok ? events : totals);
   const pair = (v: { current: number; previous: number } | undefined) =>
     v ? { value: count.format(v.current), change: formatChange(change(v.current, v.previous)) } : { value: null, change: null };
   const applied = { current: own.applications.length, previous: own.previousApplications };

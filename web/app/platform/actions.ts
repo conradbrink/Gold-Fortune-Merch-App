@@ -319,24 +319,39 @@ export async function linkFoundingApplication(formData: FormData): Promise<void>
   }
 
   const admin = platformAdminClient();
-  const { error: auditError } = await admin.from("platform_audit_log").insert({
-    actor_id: user.id,
-    action: orgId ? "founding.link" : "founding.unlink",
-    target_org_id: orgId || null,
-    detail: { application: applicationId },
-  });
+  const { data: audit, error: auditError } = await admin
+    .from("platform_audit_log")
+    .insert({
+      actor_id: user.id,
+      action: orgId ? "founding.link" : "founding.unlink",
+      target_org_id: orgId || null,
+      detail: { application: applicationId, refused: null },
+    })
+    .select("id")
+    .single();
   if (auditError) {
     redirect(`${back}?error=${encodeURIComponent(`Not changed: the audit log could not be written (${auditError.message}).`)}`);
   }
 
-  const { error } = await admin
+  const { data: changed, error } = await admin
     .from("founding_applications")
     .update({ organization_id: orgId || null })
-    .eq("id", applicationId);
-  if (error) {
-    const message =
-      error.code === "23505" ? "That company is already linked to another application." : error.message;
-    redirect(`${back}?error=${encodeURIComponent(`Not linked: ${message}`)}`);
+    .eq("id", applicationId)
+    .select("id");
+  const refused = error
+    ? error.code === "23505"
+      ? "That company is already linked to another application."
+      : error.message
+    : (changed ?? []).length === 0
+      ? "That application no longer exists."
+      : null;
+  if (refused) {
+    // The attempt is already logged; record why it was refused, as for modules.
+    await admin
+      .from("platform_audit_log")
+      .update({ detail: { application: applicationId, refused } })
+      .eq("id", audit.id);
+    redirect(`${back}?error=${encodeURIComponent(`Not ${orgId ? "linked" : "unlinked"}: ${refused}`)}`);
   }
   redirect(`${back}#${applicationId}`);
 }

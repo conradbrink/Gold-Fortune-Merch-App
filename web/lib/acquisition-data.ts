@@ -37,29 +37,14 @@ export async function loadFirstParty(p: TwoPeriods): Promise<FirstParty> {
   };
   const head = { count: "exact" as const, head: true };
 
-  const [{ data: apps, error: appError }, previousApplications, newNow, newBefore, freeNow, freeBefore] =
-    await Promise.all([
-      admin
-        .from("founding_applications")
-        .select("id, created_at, attribution, organization_id")
-        .gte("created_at", p.current.from)
-        .lt("created_at", p.current.to)
-        .order("created_at")
-        .range(0, 9999),
-      count(admin.from("founding_applications").select("id", head).gte("created_at", p.previous.from).lt("created_at", p.previous.to)),
-      count(admin.from("organizations").select("id", head).gte("created_at", p.current.from).lt("created_at", p.current.to)),
-      count(admin.from("organizations").select("id", head).gte("created_at", p.previous.from).lt("created_at", p.previous.to)),
-      count(admin.from("company_account").select("org_id", head).not("trial_ends_at", "is", null).gte("created_at", p.current.from).lt("created_at", p.current.to)),
-      count(admin.from("company_account").select("org_id", head).not("trial_ends_at", "is", null).gte("created_at", p.previous.from).lt("created_at", p.previous.to)),
-    ]);
-  if (appError) throw appError;
-
-  const applications: ApplicationRow[] = (apps ?? []).map((a) => ({
-    id: a.id,
-    created_at: a.created_at,
-    attribution: checkAttribution(a.attribution),
-    organization_id: a.organization_id,
-  }));
+  const [applications, previousApplications, newNow, newBefore, freeNow, freeBefore] = await Promise.all([
+    applicationsIn(p.current),
+    count(admin.from("founding_applications").select("id", head).gte("created_at", p.previous.from).lt("created_at", p.previous.to)),
+    count(admin.from("organizations").select("id", head).gte("created_at", p.current.from).lt("created_at", p.current.to)),
+    count(admin.from("organizations").select("id", head).gte("created_at", p.previous.from).lt("created_at", p.previous.to)),
+    freePeriodsStartedIn(p.current),
+    freePeriodsStartedIn(p.previous),
+  ]);
 
   const orgIds = [...new Set(applications.map((a) => a.organization_id).filter((id): id is string => Boolean(id)))];
   const companies = new Map<string, CompanyFacts>();
@@ -81,6 +66,78 @@ export async function loadFirstParty(p: TwoPeriods): Promise<FirstParty> {
     newCompanies: { current: newNow, previous: newBefore },
     freePeriodsStarted: { current: freeNow, previous: freeBefore },
   };
+}
+
+const PAGE = 1000;
+
+/**
+ * The period's applications, every one: read in pages, so the funnel never
+ * stops silently at PostgREST's row limit. Until the company-link migration is
+ * applied the column is missing (PostgREST 42703 / PGRST204); then they are
+ * read without it, as not linked, rather than taking the pages down.
+ */
+async function applicationsIn(period: Period): Promise<ApplicationRow[]> {
+  const admin = platformAdminClient();
+  const read = async (columns: string) => {
+    const rows: Record<string, unknown>[] = [];
+    for (let from = 0; ; from += PAGE) {
+      const { data, error } = await admin
+        .from("founding_applications")
+        .select(columns)
+        .gte("created_at", period.from)
+        .lt("created_at", period.to)
+        .order("created_at")
+        .order("id")
+        .range(from, from + PAGE - 1);
+      if (error) return { rows, error };
+      rows.push(...((data ?? []) as unknown as Record<string, unknown>[]));
+      if ((data ?? []).length < PAGE) return { rows, error: null };
+    }
+  };
+  let result = await read("id, created_at, attribution, organization_id");
+  if (result.error && ["42703", "PGRST204"].includes((result.error as { code?: string }).code ?? "")) {
+    result = await read("id, created_at, attribution");
+  }
+  if (result.error) throw result.error;
+  return result.rows.map((a) => ({
+    id: String(a.id),
+    created_at: String(a.created_at),
+    attribution: checkAttribution(a.attribution),
+    organization_id: typeof a.organization_id === "string" ? a.organization_id : null,
+  }));
+}
+
+/**
+ * Companies whose free period began in the period. It begins either when a
+ * sign-up's company is made with a trial (its company_account row is created
+ * with trial_ends_at), or when the operator first gives one ("trial.extend"
+ * with no previous end, platform_audit_log). Each company counts once.
+ */
+async function freePeriodsStartedIn(period: Period): Promise<number> {
+  const admin = platformAdminClient();
+  const [{ data: accounts, error: accountError }, { data: audits, error: auditError }] = await Promise.all([
+    admin
+      .from("company_account")
+      .select("org_id")
+      .not("trial_ends_at", "is", null)
+      .gte("created_at", period.from)
+      .lt("created_at", period.to)
+      .range(0, 9999),
+    admin
+      .from("platform_audit_log")
+      .select("target_org_id")
+      .eq("action", "trial.extend")
+      .is("detail->>from", null)
+      .gte("created_at", period.from)
+      .lt("created_at", period.to)
+      .range(0, 9999),
+  ]);
+  if (accountError) throw accountError;
+  if (auditError) throw auditError;
+  const ids = new Set<string>();
+  for (const a of accounts ?? []) ids.add(a.org_id);
+  for (const a of audits ?? []) if (a.target_org_id) ids.add(a.target_org_id);
+  return ids.size;
 }
 
 // ------------------------------------------------------------ Google Analytics
@@ -152,13 +209,19 @@ export async function dailyVisitors(p: TwoPeriods, filter?: unknown): Promise<Ga
     limit: 400,
   });
   if (!r.ok) return r;
-  return {
-    ok: true,
-    value: r.rows.map((row) => {
-      const d = row.dimensions[0];
-      return { date: `${d.slice(0, 4)}-${d.slice(4, 6)}-${d.slice(6, 8)}`, visitors: row.metrics[0] };
-    }),
-  };
+  // GA has no row for a day nobody came, so every day of the period is laid
+  // out and the missing ones are 0: the chart is spaced by day, not by row.
+  const seen = new Map(r.rows.map((row) => [row.dimensions[0], row.metrics[0]]));
+  return { ok: true, value: everyDay(p.current).map((date) => ({ date, visitors: seen.get(date.replaceAll("-", "")) ?? 0 })) };
+}
+
+/** Every date of a period, oldest first, as YYYY-MM-DD. */
+export function everyDay(period: Period): string[] {
+  const out: string[] = [];
+  for (let t = Date.parse(period.startDate + "T00:00:00Z"); t <= Date.parse(period.endDate + "T00:00:00Z"); t += 86_400_000) {
+    out.push(new Date(t).toISOString().slice(0, 10));
+  }
+  return out;
 }
 
 export type PageRow = {

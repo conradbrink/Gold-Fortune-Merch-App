@@ -1,4 +1,5 @@
 import "server-only";
+import { cache } from "react";
 import { notFound, redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 
@@ -9,13 +10,24 @@ import { createClient } from "@/lib/supabase/server";
  * in proxy.ts.
  */
 export async function requireOperator(returnTo: string): Promise<{ id: string }> {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const { user, isOperator, error } = await operatorCheck();
   if (!user) redirect(`/login?next=${encodeURIComponent(returnTo)}`);
-  const { data: isOperator, error } = await supabase.rpc("is_platform_admin");
   if (error) throw error;
   if (!isOperator) notFound();
   return { id: user.id };
 }
+
+/**
+ * Who is asking and whether they are an operator, asked once per request:
+ * React's `cache` shares the answer between app/platform/layout.tsx (which
+ * only decides whether to draw the nav) and the page's own gate.
+ */
+export const operatorCheck = cache(async () => {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { user: null, isOperator: false, error: null };
+  const { data, error } = await supabase.rpc("is_platform_admin");
+  return { user, isOperator: data === true, error };
+});

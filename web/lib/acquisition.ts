@@ -104,9 +104,11 @@ export function sourceOf(a: Attribution | null | undefined): string {
   if (a?.referrer) {
     const host = a.referrer.replace(/^(www|m|l|lm|web|mobile)\./, "");
     const parts = host.split(".");
-    // facebook.com → facebook; co.za style endings keep the name before them.
-    const name = parts.length >= 3 && parts[parts.length - 2].length <= 3 ? parts[parts.length - 3] : parts[parts.length - 2];
-    return name ?? host;
+    // facebook.com → facebook; google.co.za → google (co.za, com.au, org.uk… are
+    // endings, not names); app.hey.com → hey.
+    const secondLevel = /^(co|com|org|net|gov|ac|edu|nom|ltd|plc|web)$/;
+    const ending = parts.length >= 3 && secondLevel.test(parts[parts.length - 2]) ? 2 : 1;
+    return parts[parts.length - 1 - ending] ?? host;
   }
   if (a?.click_id === "gclid") return "google";
   if (a?.click_id === "fbclid") return "facebook";
@@ -130,7 +132,7 @@ export function channelOf(a: Attribution | null | undefined): Channel {
   if (medium === "email" || source === "email" || source === "newsletter") return "Email";
   if (a.click_id === "gclid" || a.click_id === "msclkid") return "Paid Search";
   if (isPaid) return isSocial ? "Paid Social" : "Paid Search";
-  if (isSocial) return "Organic Social";
+  if (isSocial || /^(social|social-network|social-media|sm|social network|social media)$/.test(medium)) return "Organic Social";
   if (isSearch) return "Organic Search";
   if (medium === "referral" || referrer) return "Referral";
   if (a.utm_source || a.utm_campaign) return "Unassigned";

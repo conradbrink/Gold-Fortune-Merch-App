@@ -2,7 +2,7 @@ import Link from "next/link";
 import { requireOperator } from "@/lib/operator";
 import { acquisitionStages, buildFunnel, percent, periods, readRange } from "@/lib/acquisition";
 import { funnelEvents, loadFirstParty } from "@/lib/acquisition-data";
-import { AcquisitionFrame, count } from "@/components/platform/acquisition-frame";
+import { AcquisitionFrame, count, gaMissing } from "@/components/platform/acquisition-frame";
 
 /**
  * The funnel, visitor to paying (spec sections 19, 20 and 29). Each step shows
@@ -26,7 +26,7 @@ export default async function FunnelPage({
   const { steps, leak } = buildFunnel(
     acquisitionStages({
       events: events.ok ? events.value : null,
-      gaMissing: "Google Analytics isn't connected yet.",
+      gaMissing: gaMissing(events),
       applications: own.applications,
       companies: own.companies,
       range,

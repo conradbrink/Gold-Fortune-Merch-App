@@ -1,6 +1,5 @@
 import Link from "next/link";
-import { notFound, redirect } from "next/navigation";
-import { createClient } from "@/lib/supabase/server";
+import { requireOperator } from "@/lib/operator";
 import { listPlatformUsers } from "@/lib/platform";
 import { filterUsers, readStatus, summarise } from "@/lib/platform-users";
 import { Input } from "@/components/ui/input";
@@ -43,15 +42,7 @@ export default async function PlatformUsersPage({
 }: {
   searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
 }) {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) redirect("/login?next=/platform/users");
-
-  const { data: isOperator, error } = await supabase.rpc("is_platform_admin");
-  if (error) throw error;
-  if (!isOperator) notFound();
+  const user = await requireOperator("/platform/users");
 
   const params = await searchParams;
   const q = typeof params.q === "string" ? params.q : "";

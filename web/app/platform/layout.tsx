@@ -1,4 +1,4 @@
-import { createClient } from "@/lib/supabase/server";
+import { operatorCheck } from "@/lib/operator";
 import { PlatformNav } from "@/components/platform/platform-nav";
 
 /**
@@ -8,11 +8,7 @@ import { PlatformNav } from "@/components/platform/platform-nav";
  * so a non-operator never learns what the area contains.
  */
 export default async function PlatformLayout({ children }: { children: React.ReactNode }) {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  const { data: isOperator } = user ? await supabase.rpc("is_platform_admin") : { data: false };
+  const { isOperator } = await operatorCheck();
   if (!isOperator) return children;
   return (
     <>

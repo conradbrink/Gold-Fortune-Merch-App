@@ -119,3 +119,18 @@ test("GA's two-period rows are read by name and period", () => {
   assert.deepEqual(m.get("page_view"), { current: 40, previous: 25 });
   assert.deepEqual(m.get(""), { current: 7, previous: 0 });
 });
+
+test("review fixes: short domains, social medium", () => {
+  assert.equal(sourceOf({ referrer: "app.hey.com" }), "hey");
+  assert.equal(sourceOf({ referrer: "blog.abc.com" }), "abc");
+  assert.equal(sourceOf({ referrer: "www.bbc.co.uk" }), "bbc");
+  assert.equal(sourceOf({ referrer: "news24.com" }), "news24");
+  assert.equal(channelOf({ utm_source: "cleaners_group", utm_medium: "social" }), "Organic Social");
+});
+
+test("every day of a period is laid out, so a day nobody came is 0, not missing", async () => {
+  const { everyDay } = await import("@/lib/acquisition-data");
+  const p = periods("7d", new Date("2026-10-10T12:00:00Z")).current;
+  assert.deepEqual(everyDay(p), ["2026-10-04", "2026-10-05", "2026-10-06", "2026-10-07", "2026-10-08", "2026-10-09", "2026-10-10"]);
+  assert.equal(everyDay(periods("12m", new Date("2026-10-10T12:00:00Z")).current).length, 365);
+});

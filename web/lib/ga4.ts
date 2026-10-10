@@ -141,6 +141,10 @@ export async function runReport(
     result = { ok: false, reason: "error", message: e instanceof Error ? e.message : String(e) };
   }
   // Failures are not kept, so a fixed setting shows at once.
-  if (result.ok) cache.set(key, { at: Date.now(), result });
+  if (result.ok) {
+    const now = Date.now();
+    for (const [k, v] of cache) if (now - v.at >= CACHE_MS) cache.delete(k);
+    cache.set(key, { at: now, result });
+  }
   return result;
 }
