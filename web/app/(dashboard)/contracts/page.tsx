@@ -96,7 +96,7 @@ export default function ContractsPage() {
       {notice && <p className="rounded-lg border border-border bg-muted/40 p-3 text-sm">{notice}</p>}
       {config && !on && (
         <p className="rounded-lg border border-border bg-muted/40 p-3 text-sm">
-          Contracts are switched off for this company. Switch them on under Settings → Company → Quotes &amp; invoices.
+          Contracts are switched off for this company. Switch them on under Company settings → Billing.
         </p>
       )}
 

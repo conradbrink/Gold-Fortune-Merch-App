@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Tables } from "@/lib/supabase/types";
 import { lower, type Terms } from "@/lib/terms";
+import { moduleEnabled, type ModuleSet } from "@/lib/modules";
 
 /**
  * Reading and changing who may do what.
@@ -220,6 +221,24 @@ export async function createUser(input: {
   };
 }
 
+/**
+ * The permissions worth offering at this company: none for a module it does
+ * not have. A cleaning company is not asked whether someone may run the
+ * warehouse. Grants already held are untouched; they open nothing without
+ * the module, and the database enforces both.
+ */
+export function permissionsForCompany(permissions: AppPermission[], modules: ModuleSet | null): AppPermission[] {
+  if (!modules) return permissions;
+  const needs: Record<string, (m: ModuleSet) => boolean> = {
+    hr: (m) => moduleEnabled(m, "hr"),
+    hr_settings: (m) => moduleEnabled(m, "hr"),
+    invoicing: (m) => moduleEnabled(m, "invoicing"),
+    warehouse: (m) => moduleEnabled(m, "distribution") || moduleEnabled(m, "warehouse"),
+    warehouse_approve: (m) => moduleEnabled(m, "warehouse"),
+  };
+  return permissions.filter((p) => needs[p.code]?.(modules) ?? true);
+}
+
 /** Permissions grouped by the area they light up, for the tick-box grid. */
 export function groupByArea(
   permissions: AppPermission[]
@@ -295,12 +314,13 @@ export function baseRoleNotes(t: Terms): Record<string, string> {
   const modules = ["sales", t.site.many, t.job.many, t.prospect.many, "forms", "files"]
     .map(lower)
     .join(", ");
+  // Plain words for what the base role still decides: the phone app, and
+  // the parts of Tickd the tick boxes do not cover yet.
   return {
-    rep: "Signs in to the Android app. In the modules not yet on permissions, sees only their own records.",
-    manager: `No Android app. In the modules not yet on permissions — ${modules} — sees everything, whatever the tick boxes below say.`,
+    rep: `Uses the phone app. Where the tick boxes below do not reach yet (${modules}), sees only their own.`,
+    manager: `Uses the website, not the phone app. Where the tick boxes below do not reach yet (${modules}), sees everything.`,
     warehouse:
-      "No Android app. In the modules not yet on permissions, sees nothing. The safest base for a role built out of tick boxes.",
-    hr_manager:
-      "No Android app. In the modules not yet on permissions, sees nothing.",
+      "Uses the website, not the phone app. Where the tick boxes below do not reach yet, sees nothing: the safest start for a role you build from the tick boxes.",
+    hr_manager: "Uses the website, not the phone app. Where the tick boxes below do not reach yet, sees nothing.",
   };
 }

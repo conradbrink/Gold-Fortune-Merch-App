@@ -1,5 +1,6 @@
 "use client";
 
+import { useCompanyConfig } from "@/lib/use-company-config";
 import { useState } from "react";
 import { AlertTriangle, Info, Plus, Smartphone, Trash2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
@@ -16,7 +17,7 @@ import { useTerms } from "@/lib/use-company-config";
 import {
   baseRoleNotes,
   deleteJobRole,
-  groupByArea,
+  groupByArea, permissionsForCompany,
   peopleOnRole,
   reapplyJobRole,
   saveJobRole,
@@ -135,7 +136,8 @@ export function JobRoleEditor({
   }
 
   const people = draft?.id ? peopleOnRole(directory, draft.id) : 0;
-  const areas = groupByArea(directory.permissions);
+  const modules = useCompanyConfig()?.modules ?? null;
+  const areas = groupByArea(permissionsForCompany(directory.permissions, modules));
 
   return (
     <div className="grid gap-4 lg:grid-cols-[18rem_1fr]">
@@ -155,7 +157,7 @@ export function JobRoleEditor({
                   <span className="flex items-center gap-1.5 text-sm font-medium text-foreground">
                     {r.name}
                     {r.base_role === "rep" && (
-                      <Smartphone className="h-3 w-3 shrink-0" aria-label="Uses the Android app" />
+                      <Smartphone className="h-3 w-3 shrink-0" aria-label="Uses the phone app" />
                     )}
                     {!r.active && (
                       <Badge variant="outline" className="font-normal">
@@ -232,10 +234,8 @@ export function JobRoleEditor({
                 <p className="flex gap-2 rounded-md bg-muted/50 p-3 text-xs text-muted-foreground">
                   <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" />
                   <span>
-                    A built-in role. Rename it, describe it and change its
-                    permissions freely — it keeps a hidden identifier (
-                    <code>{draft.code}</code>) so new accounts still find it. It
-                    cannot be deleted; disable it instead.
+                    A built-in role. You can rename it, describe it and change its permissions. It cannot
+                    be deleted; switch it off instead.
                   </span>
                 </p>
               )}

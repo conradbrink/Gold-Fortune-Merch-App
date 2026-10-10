@@ -120,7 +120,7 @@ export function AlertsSettingsCard({ orgId, canEdit }: { orgId: string; canEdit:
                   <span className="block text-xs text-pretty text-muted-foreground">
                     {labels[rule].explain}
                     {rule === "short_job" && s.short_visit_minutes === 0 && d.rules.includes("short_job") && (
-                      <> The minimum in Field settings is 0, so this never fires.</>
+                      <> The shortest normal {lower(t.job.one)} on Operations is 0, so this never fires.</>
                     )}
                   </span>
                 </span>

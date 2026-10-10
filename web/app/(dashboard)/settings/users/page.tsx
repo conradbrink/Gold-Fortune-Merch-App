@@ -25,13 +25,13 @@ import { generatePassword } from "@/lib/representatives";
 import { displayLogin } from "@/lib/phone-login";
 import { WelcomeCard } from "@/components/team/welcome-card";
 import { SignInPanel } from "@/components/team/sign-in-panel";
-import { useTerms } from "@/lib/use-company-config";
+import { useCompanyConfig, useTerms } from "@/lib/use-company-config";
 import { lower } from "@/lib/terms";
 import {
   applyJobRole,
   createUser,
   fetchAccessDirectory,
-  groupByArea,
+  groupByArea, permissionsForCompany,
   setPermission,
   type AccessDirectory,
 } from "@/lib/access";
@@ -91,9 +91,10 @@ export default function UsersPage() {
     () => directory?.users.find((u) => u.id === selectedId) ?? null,
     [directory, selectedId]
   );
+  const company = useCompanyConfig();
   const areas = useMemo(
-    () => groupByArea(directory?.permissions ?? []),
-    [directory]
+    () => groupByArea(permissionsForCompany(directory?.permissions ?? [], company?.modules ?? null)),
+    [directory, company]
   );
   const isAdminUser = selected?.permissions.includes("admin") ?? false;
 

@@ -90,6 +90,77 @@ export async function setCompanyModule(formData: FormData): Promise<void> {
 // ------------------------------------------------------------ Add company
 
 /** The caller's user id if they are a platform operator; null otherwise. */
+/**
+ * Change one of Tickd's own settings for a company (GPS timing, distance
+ * thresholds, report formulas). Operator only, logged first like a module
+ * change, and only for internal settings: a business setting is the
+ * company's to change, on its own Company settings.
+ */
+export async function setCompanySetting(formData: FormData): Promise<void> {
+  const orgId = String(formData.get("orgId") ?? "");
+  const key = String(formData.get("key") ?? "");
+  const raw = String(formData.get("value") ?? "").trim();
+  const back = `/platform/companies/${encodeURIComponent(orgId)}`;
+
+  const actor = await operatorId();
+  if (!actor) redirect("/");
+  if (!/^[0-9a-f-]{36}$/i.test(orgId) || !/^[a-z][a-z_]*$/.test(key)) {
+    redirect(`${back}?error=${encodeURIComponent("That request was not understood.")}`);
+  }
+
+  const admin = platformAdminClient();
+  const { data: def, error: defError } = await admin
+    .from("setting_definitions")
+    .select("key, value_type, audience")
+    .eq("key", key)
+    .maybeSingle();
+  if (defError || !def) redirect(`${back}?error=${encodeURIComponent("No such setting.")}`);
+  if (def.audience !== "internal") {
+    redirect(`${back}?error=${encodeURIComponent("That is the company's own setting, changed on its Company settings.")}`);
+  }
+
+  // The database validates the value (range, pattern) and says what is wrong.
+  let value: string | number | boolean = raw;
+  if (def.value_type === "integer") {
+    if (!/^-?\d+$/.test(raw)) redirect(`${back}?error=${encodeURIComponent("Enter a whole number.")}`);
+    value = Number(raw);
+  } else if (def.value_type === "boolean") {
+    value = raw === "true";
+  }
+
+  const { data: before } = await admin
+    .from("company_settings")
+    .select("value")
+    .eq("org_id", orgId)
+    .eq("key", key)
+    .maybeSingle();
+  const { data: audit, error: auditError } = await admin
+    .from("platform_audit_log")
+    .insert({
+      actor_id: actor,
+      action: "setting.change",
+      target_org_id: orgId,
+      detail: { key, from: before?.value ?? null, to: value, refused: null },
+    })
+    .select("id")
+    .single();
+  if (auditError) {
+    redirect(`${back}?error=${encodeURIComponent(`Not changed: the audit log could not be written (${auditError.message}).`)}`);
+  }
+
+  const { error } = await admin
+    .from("company_settings")
+    .upsert({ org_id: orgId, key, value, updated_by: actor }, { onConflict: "org_id,key" });
+  if (error) {
+    await admin
+      .from("platform_audit_log")
+      .update({ detail: { key, from: before?.value ?? null, to: value, refused: error.message } })
+      .eq("id", audit.id);
+    redirect(`${back}?error=${encodeURIComponent(error.message)}`);
+  }
+  redirect(back);
+}
+
 async function operatorId(): Promise<string | null> {
   const supabase = await createClient();
   const {

@@ -237,7 +237,7 @@ export default function NewInvoicePage() {
 
       {config && sources.length === 0 && (
         <p className="text-sm text-muted-foreground">
-          Invoicing is switched off in this company&apos;s settings (Settings → Company → How you get paid).
+          Invoicing is switched off in this company&apos;s settings (Company settings → Billing → How you get paid).
         </p>
       )}
 

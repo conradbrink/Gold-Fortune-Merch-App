@@ -198,7 +198,7 @@ export function TeamStep({ setup, text, icon, onBack, onNext, reload }: StepProp
         )}
 
         <p className="text-xs text-muted-foreground">
-          Add the rest of your {lower(t.staff.many)} now or later in Settings → Users. Need a second administrator, such
+          Add the rest of your {lower(t.staff.many)} now or later in People & permissions. Need a second administrator, such
           as a partner? Ask us and we add it for you.
         </p>
       </div>

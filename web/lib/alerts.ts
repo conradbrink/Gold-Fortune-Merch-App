@@ -58,11 +58,11 @@ export function ruleLabels(t: Terms): Record<AlertRule, { label: string; explain
   return {
     off_site_checkin: {
       label: `Checked in away from the ${site}`,
-      explain: `A check-in farther from the ${site} than its check-in radius.`,
+      explain: `A check-in further from the ${site} than its check-in distance.`,
     },
     short_job: {
       label: `Short ${job}`,
-      explain: `A finished ${job} shorter than the minimum minutes set in Field settings.`,
+      explain: `A finished ${job} shorter than the shortest normal ${job} set on Operations.`,
     },
     missed_planned: {
       label: `Planned ${job} not done`,
@@ -73,8 +73,8 @@ export function ruleLabels(t: Terms): Record<AlertRule, { label: string; explain
       explain: `A ${site} that goes longer than the longest gap between check-ins on one day.`,
     },
     no_gps: {
-      label: "Check-in without GPS",
-      explain: "A check-in the phone saved without a position.",
+      label: "Check-in with no location",
+      explain: "A check-in where the phone could not tell where it was.",
     },
   };
 }
