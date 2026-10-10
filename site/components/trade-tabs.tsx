@@ -131,7 +131,7 @@ export function TradeTabs() {
         id="trade-panel"
         role="tabpanel"
         aria-labelledby={`trade-tab-${active}`}
-        className="grid gap-6 overflow-hidden rounded-2xl bg-white p-5 ring-1 ring-line sm:p-8 md:grid-cols-[1fr_auto] md:gap-8"
+        className="grid gap-6 overflow-hidden rounded-2xl bg-white p-5 ring-1 ring-line sm:p-8 lg:grid-cols-[1fr_auto] lg:gap-8"
       >
         <div className="grid content-between gap-6">
           <div key={active} className={`grid gap-4 ${animate ? "tk-swap" : ""}`}>
@@ -148,10 +148,10 @@ export function TradeTabs() {
           </p>
         </div>
         {/* Every screen is mounted once and stacked, and the chosen one shows:
-            changing trade never waits on an image. On a phone only the top
+            changing trade never waits on an image. Below lg only the top
             of the screen rises out of the panel's bottom edge. */}
-        <figure className="-mx-5 -mb-5 grid justify-items-center bg-amber-100/70 px-5 pt-6 sm:-mx-8 sm:-mb-8 md:m-0 md:bg-transparent md:p-0">
-          <div className="grid h-64 w-48 overflow-hidden md:h-auto md:w-52 md:overflow-visible lg:w-56">
+        <figure className="-mx-5 -mb-5 grid justify-items-center bg-amber-100/70 px-5 pt-6 sm:-mx-8 sm:-mb-8 lg:m-0 lg:content-start lg:bg-transparent lg:p-0">
+          <div className="grid h-64 w-48 overflow-hidden sm:w-52 lg:h-auto lg:w-56 lg:overflow-visible">
             {trades.map((tr, i) => (
               <PhoneShot
                 key={tr.screen}
@@ -163,7 +163,7 @@ export function TradeTabs() {
               />
             ))}
           </div>
-          <figcaption className="sr-only md:not-sr-only md:mt-3 md:max-w-56 md:text-center md:text-xs md:text-muted">Real screen from the app, with example data.</figcaption>
+          <figcaption className="sr-only lg:not-sr-only lg:mt-3 lg:max-w-56 lg:text-center lg:text-xs lg:text-muted">Real screen from the app, with example data.</figcaption>
         </figure>
       </div>
     </div>

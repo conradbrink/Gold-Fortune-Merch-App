@@ -19,7 +19,7 @@ import { ProductDemo } from "@/components/demo/product-demo";
 import { Logo } from "@/components/logo";
 import { TradeTabs } from "@/components/trade-tabs";
 import { FoundingStart } from "@/components/founding-start";
-import { PhonePeek } from "@/components/phone-shot";
+import { Peek, PhonePeek } from "@/components/phone-shot";
 import { PricingSection } from "@/components/pricing-section";
 import { ProofSection } from "@/components/proof-section";
 import { SectionViews } from "@/components/analytics";
@@ -254,14 +254,12 @@ function Shot({
   alt,
   width,
   height,
-  caption = `Real screen from the ${site.name} dashboard, with example data.`,
   className = "",
 }: {
   src: string;
   alt: string;
   width: number;
   height: number;
-  caption?: string;
   className?: string;
 }) {
   return (
@@ -275,7 +273,7 @@ function Shot({
         sizes="(min-width: 1024px) 560px, 100vw"
         className="h-auto w-full rounded-2xl bg-white ring-1 ring-line"
       />
-      <figcaption className="text-sm text-muted">{caption}</figcaption>
+      <figcaption className="text-sm text-muted">Real screen from the {site.name} dashboard, with example data.</figcaption>
     </figure>
   );
 }
@@ -481,7 +479,7 @@ export default function Home() {
                 className="bg-mint ring-teal-100"
                 badge="bg-teal-900 text-sand"
                 picture={
-                  <div className="relative h-60 overflow-hidden rounded-xl bg-teal-100/70 sm:h-64">
+                  <Peek className="bg-teal-100/70">
                     <Image
                       src="/demo/dash/site-dashboard.webp"
                       alt="The owner's dashboard: money owed to you, sites visited in the last 30 days, and sales by month."
@@ -490,7 +488,7 @@ export default function Home() {
                       unoptimized
                       className="absolute left-5 top-6 w-[150%] max-w-none rounded-lg bg-white shadow-xl shadow-teal-950/15 ring-1 ring-black/5"
                     />
-                  </div>
+                  </Peek>
                 }
               />
             </div>
