@@ -26,6 +26,7 @@ import { createPrivateKey, createSign } from "node:crypto";
 const TOKEN_URL = "https://oauth2.googleapis.com/token";
 const SCOPE = "https://www.googleapis.com/auth/analytics.readonly";
 const CACHE_MS = 10 * 60 * 1000;
+const REALTIME_CACHE_MS = 30 * 1000;
 /** Tickd's GA4 property (tickd.co.za, web stream G-7Q710H1MSW). */
 export const TICKD_PROPERTY_ID = "558341664";
 
@@ -151,6 +152,32 @@ export async function runReport(
   config?: GaConfig | null,
   fetcher: typeof fetch = fetch
 ): Promise<GaResult> {
+  return call("runReport", report, CACHE_MS, config, fetcher);
+}
+
+/** What a realtime report asks for: the last 30 minutes, so no date ranges. */
+export type GaRealtimeReport = { dimensions?: string[]; metrics: string[]; limit?: number };
+
+/**
+ * A realtime report: visits from the last 30 minutes, with none of the
+ * processing delay of `runReport` (Google's processed reports can lag a day).
+ * Kept for 30 seconds only, so a visit shows up almost at once.
+ */
+export async function runRealtimeReport(
+  report: GaRealtimeReport,
+  config?: GaConfig | null,
+  fetcher: typeof fetch = fetch
+): Promise<GaResult> {
+  return call("runRealtimeReport", report, REALTIME_CACHE_MS, config, fetcher);
+}
+
+async function call(
+  method: "runReport" | "runRealtimeReport",
+  report: GaReport | GaRealtimeReport,
+  keepMs: number,
+  config: GaConfig | null | undefined,
+  fetcher: typeof fetch
+): Promise<GaResult> {
   if (config === undefined) {
     // Worked out once per server instance: the variables can't change within a deployment.
     setupOnce ??= gaSetup();
@@ -159,13 +186,13 @@ export async function runReport(
     config = setup.config;
   }
   if (!config) return { ok: false, reason: "not-connected" };
-  const key = config.propertyId + JSON.stringify(report);
+  const key = method + config.propertyId + JSON.stringify(report);
   const hit = cache.get(key);
-  if (hit && Date.now() - hit.at < CACHE_MS) return hit.result;
+  if (hit && Date.now() - hit.at < keepMs) return hit.result;
   let result: GaResult;
   try {
     const res = await fetcher(
-      `https://analyticsdata.googleapis.com/v1beta/properties/${config.propertyId}:runReport`,
+      `https://analyticsdata.googleapis.com/v1beta/properties/${config.propertyId}:${method}`,
       {
         method: "POST",
         headers: {

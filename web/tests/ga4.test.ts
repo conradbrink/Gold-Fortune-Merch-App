@@ -3,7 +3,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createVerify, generateKeyPairSync } from "node:crypto";
-import { gaConfig, gaSetup, resetGaCache, runReport, signedAssertion, TICKD_PROPERTY_ID } from "@/lib/ga4";
+import { gaConfig, gaSetup, resetGaCache, runRealtimeReport, runReport, signedAssertion, TICKD_PROPERTY_ID } from "@/lib/ga4";
 
 const { privateKey, publicKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
 const pem = privateKey.export({ type: "pkcs8", format: "pem" }).toString();
@@ -103,4 +103,25 @@ test("a setup that can't be used says which variable, never its value", () => {
   assert.match(cutProblem, /couldn't be read as a key/);
   assert.ok(!cutProblem.includes("MII"), "the key itself is never shown");
   assert.equal(problem({ GA4_CLIENT_EMAIL: email, GA4_PRIVATE_KEY: pem }), null);
+});
+
+test("the realtime report asks Google's live view, separately from the processed one", async () => {
+  resetGaCache();
+  const urls: string[] = [];
+  const fake = (async (url: string | URL | Request, init?: RequestInit) => {
+    urls.push(String(url));
+    if (String(url).includes("oauth2")) return Response.json({ access_token: "tok", expires_in: 3600 });
+    if (String(url).endsWith(":runRealtimeReport")) {
+      assert.ok(!String(init?.body).includes("dateRanges"), "a realtime report has no date ranges");
+    }
+    return Response.json({ rows: [{ metricValues: [{ value: "3" }] }] });
+  }) as typeof fetch;
+  const config = { propertyId: "558341664", clientEmail: email, privateKey: pem };
+  const r = await runRealtimeReport({ metrics: ["activeUsers"] }, config, fake);
+  assert.deepEqual(r, { ok: true, rows: [{ dimensions: [], metrics: [3] }] });
+  assert.ok(urls[1].endsWith("/properties/558341664:runRealtimeReport"));
+  // The same metrics as a processed report are not mixed up in the cache.
+  const processed = await runReport({ dateRanges: [], metrics: ["activeUsers"] }, config, fake);
+  assert.equal(processed.ok, true);
+  assert.ok(urls.some((u) => u.endsWith(":runReport")));
 });

@@ -1,7 +1,7 @@
 import "server-only";
 import { checkAttribution } from "@/lib/founding";
 import { platformAdminClient } from "@/lib/platform";
-import { runReport, type GaResult } from "@/lib/ga4";
+import { runRealtimeReport, runReport, type GaResult } from "@/lib/ga4";
 import { loadActivation } from "@/lib/activation-data";
 import { isActivated } from "@/lib/activation";
 import { byNameAndPeriod, type ApplicationRow, type CompanyFacts, type Period } from "@/lib/acquisition";
@@ -329,4 +329,28 @@ export function websiteFilter(device: string, country: string): unknown {
   ].filter(Boolean);
   if (parts.length === 0) return undefined;
   return parts.length === 1 ? parts[0] : { andGroup: { expressions: parts } };
+}
+
+/**
+ * People on the website in the last 30 minutes, and the pages they're on,
+ * from Google's realtime report: a visit shows here within seconds, while the
+ * processed numbers above can take hours to arrive.
+ */
+export async function visitorsNow(): Promise<Ga<{ total: number; pages: { title: string; visitors: number }[] }>> {
+  const [total, pages] = await Promise.all([
+    runRealtimeReport({ metrics: ["activeUsers"] }),
+    runRealtimeReport({ dimensions: ["unifiedScreenName"], metrics: ["activeUsers"], limit: 5 }),
+  ]);
+  if (!total.ok) return total;
+  return {
+    ok: true,
+    value: {
+      total: total.rows[0]?.metrics[0] ?? 0,
+      pages: pages.ok
+        ? pages.rows
+            .map((r) => ({ title: r.dimensions[0], visitors: r.metrics[0] }))
+            .sort((a, b) => b.visitors - a.visitors)
+        : [],
+    },
+  };
 }

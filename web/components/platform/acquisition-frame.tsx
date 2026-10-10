@@ -136,3 +136,35 @@ export function gaMissing(r: { ok: boolean; reason?: "not-connected" | "error" }
   if (r.ok) return "No answer from Google Analytics.";
   return r.reason === "not-connected" ? "Google Analytics isn't connected yet." : "Google Analytics didn't answer (see above).";
 }
+
+/**
+ * Who is on the website in the last 30 minutes (Google's realtime view). The
+ * quickest proof that tracking works: open tickd.co.za and reload this page.
+ */
+export function RightNow({
+  now,
+}: {
+  now: { ok: true; value: { total: number; pages: { title: string; visitors: number }[] } } | { ok: false };
+}) {
+  if (!now.ok) return null;
+  const { total, pages } = now.value;
+  return (
+    <div className="rounded-lg border border-border bg-card p-4 text-sm">
+      <div className="text-foreground">
+        <span className="font-semibold tabular-nums">{count.format(total)}</span>{" "}
+        {total === 1 ? "person is" : "people are"} on the website right now
+        <span className="text-muted-foreground"> (last 30 minutes, live from Google)</span>
+        {pages.length > 0 && <span className="text-muted-foreground">: </span>}
+        {pages.map((p, i) => (
+          <span key={p.title} className="text-muted-foreground">
+            {i > 0 && ", "}
+            {p.title} ({p.visitors})
+          </span>
+        ))}
+      </div>
+      <div className="mt-1 text-xs text-muted-foreground">
+        The numbers below come from Google&apos;s processed reports, which can take a few hours to catch up.
+      </div>
+    </div>
+  );
+}

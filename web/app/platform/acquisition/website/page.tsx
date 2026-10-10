@@ -1,7 +1,7 @@
 import { requireOperator } from "@/lib/operator";
 import { change, formatChange, periods, readRange, RANGES } from "@/lib/acquisition";
-import { dailyVisitors, filterChoices, pages, websiteFilter, websiteTotals } from "@/lib/acquisition-data";
-import { AcquisitionFrame, Stat, count } from "@/components/platform/acquisition-frame";
+import { dailyVisitors, filterChoices, pages, visitorsNow, websiteFilter, websiteTotals } from "@/lib/acquisition-data";
+import { AcquisitionFrame, RightNow, Stat, count } from "@/components/platform/acquisition-frame";
 import { VisitorsChart } from "@/components/platform/visitors-chart";
 import { NativeSelect } from "@/components/ui/native-select";
 import { Button } from "@/components/ui/button";
@@ -30,11 +30,12 @@ export default async function WebsitePage({
   await requireOperator(`/platform/acquisition/website?range=${range}`);
   const p = periods(range, new Date());
   const filter = websiteFilter(device, country);
-  const [totals, daily, rows, choices] = await Promise.all([
+  const [totals, daily, rows, choices, live] = await Promise.all([
     websiteTotals(p, filter),
     dailyVisitors(p, filter),
     pages(p, filter),
     filterChoices(p),
+    visitorsNow(),
   ]);
   const t = totals.ok ? totals.value : null;
   const stat = (v: { current: number; previous: number } | undefined, asPct = false) =>
@@ -86,6 +87,8 @@ export default async function WebsitePage({
           </Button>
         </form>
       )}
+
+      <RightNow now={live} />
 
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <Stat label="Visitors" {...stat(t?.visitors)} missing="Not connected" />

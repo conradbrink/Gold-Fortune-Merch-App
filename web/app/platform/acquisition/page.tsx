@@ -1,8 +1,8 @@
 import Link from "next/link";
 import { requireOperator } from "@/lib/operator";
 import { acquisitionStages, buildFunnel, change, formatChange, percent, periods, readRange, RANGES } from "@/lib/acquisition";
-import { funnelEvents, loadFirstParty, websiteTotals } from "@/lib/acquisition-data";
-import { AcquisitionFrame, Stat, count, gaMissing } from "@/components/platform/acquisition-frame";
+import { funnelEvents, loadFirstParty, visitorsNow, websiteTotals } from "@/lib/acquisition-data";
+import { AcquisitionFrame, RightNow, Stat, count, gaMissing } from "@/components/platform/acquisition-frame";
 
 /**
  * Acquisition overview: the headline numbers for the period against the one
@@ -22,7 +22,7 @@ export default async function AcquisitionOverview({
   const range = readRange((await searchParams).range);
   await requireOperator(`/platform/acquisition?range=${range}`);
   const p = periods(range, new Date());
-  const [totals, events, own] = await Promise.all([websiteTotals(p), funnelEvents(p), loadFirstParty(p)]);
+  const [totals, events, own, live] = await Promise.all([websiteTotals(p), funnelEvents(p), loadFirstParty(p), visitorsNow()]);
 
   const ga = totals.ok ? totals.value : null;
   const GA_MISSING = gaMissing(totals.ok ? events : totals);
@@ -44,6 +44,8 @@ export default async function AcquisitionOverview({
 
   return (
     <AcquisitionFrame tab="/platform/acquisition" range={range} ga={totals.ok ? { ok: true } : totals}>
+      <RightNow now={live} />
+
       <section className="space-y-3">
         <h2 className="text-sm font-semibold text-foreground">
           The website, last {RANGES[range].label}{" "}
