@@ -144,6 +144,8 @@ class VisitRepository {
       clientGeneratedId: clientId,
       payload: jsonEncode({
         'client_generated_id': clientId,
+        // Whose work this is, so the drain holds it for them (`ownerOf`).
+        'rep_id': repId,
         'changes': {
           'status': 'checked_out',
           'checkout_at': checkoutAt.toUtc().toIso8601String(),

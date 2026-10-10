@@ -57,6 +57,21 @@ List<OutboxEntry> replayableEntries(
   return replayable;
 }
 
+/// The rep an outbox entry was queued by, when its payload says so
+/// (`rep_id`); null when it does not, which the drain treats as "anyone's".
+@visibleForTesting
+String? ownerOf(OutboxEntry entry) {
+  try {
+    final payload = jsonDecode(entry.payload);
+    if (payload is Map && payload['rep_id'] is String) {
+      return payload['rep_id'] as String;
+    }
+  } catch (_) {
+    // A payload that is not JSON is the replay's problem, not this check's.
+  }
+  return null;
+}
+
 /// The queued operation this entry cannot land without, if it has one.
 ///
 /// [replayableEntries] holds back work that shares a *client id* with a stalled
@@ -164,11 +179,26 @@ class SyncStatus {
 /// Drains the local outbox against Supabase. Triggered by connectivity
 /// regained, app foreground, and a slow safety-net timer.
 class SyncEngine {
-  SyncEngine(this._db, this._client, {Future<String?> Function()? readBuild})
-    : _readBuild = readBuild ?? _installedBuild;
+  SyncEngine(
+    this._db,
+    this._client, {
+    Future<String?> Function()? readBuild,
+    String? Function()? signedInUser,
+  }) : _readBuild = readBuild ?? _installedBuild,
+       _signedInUser =
+           signedInUser ?? (() => _client.auth.currentSession?.user.id);
 
   final AppDatabase _db;
   final SupabaseClient _client;
+
+  /// Who is signed in right now, or null. Injectable for tests.
+  ///
+  /// The outbox outlives a session: a rep can sign out, or have their session
+  /// revoked, with work still queued. Replayed with no session, every insert
+  /// was refused by RLS and charged an attempt, and after [kMaxAttempts]
+  /// drains the rep's day was given up. Replayed under a colleague's session,
+  /// the first rep's entries failed the same way at the head of the queue.
+  final String? Function() _signedInUser;
 
   /// The running build's number, or null when it cannot be read.
   ///
@@ -263,6 +293,13 @@ class SyncEngine {
     _running = true;
 
     try {
+      // Nobody signed in: hold everything, at no cost, until someone is.
+      final me = _signedInUser();
+      if (me == null) {
+        await _emit(SyncState.idle);
+        return;
+      }
+
       // The window excludes entries that have given up, so a backlog of them
       // cannot crowd out newer work; their client ids come across separately so
       // whatever was queued behind them is still held back.
@@ -294,6 +331,10 @@ class SyncEngine {
             !landed.contains(dependency)) {
           continue;
         }
+        // Someone else's work, queued before they signed out: held for them
+        // rather than replayed (and refused) under this session.
+        final owner = ownerOf(entry);
+        if (owner != null && owner != me) continue;
 
         try {
           await _replay(entry, queued: queued);

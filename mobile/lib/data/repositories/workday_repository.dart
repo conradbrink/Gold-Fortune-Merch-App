@@ -56,6 +56,16 @@ class WorkdayRepository {
 
       if (row != null) {
         final server = WorkdaySession.fromMap(row);
+        // Ended on this phone with the end still queued: the server row stays
+        // open until the outbox drains, but the day is over. Trusting the row
+        // re-opened the day on the next launch and restarted GPS tracking
+        // after clock-out, and a second End queued a second, later end.
+        if (await hasPendingEnd(server.clientGeneratedId)) {
+          if (local?.clientGeneratedId == server.clientGeneratedId) {
+            await clearActiveSession(repId);
+          }
+          return null;
+        }
         // Locally accrued mileage is ahead of the server until the pings
         // drain, so keep whichever is greater.
         final merged = local != null &&
@@ -83,6 +93,15 @@ class WorkdayRepository {
     final raw = await _db.getValue(_activeKey(repId));
     if (raw == null) return null;
     return WorkdaySession.fromMap(jsonDecode(raw) as Map<String, dynamic>);
+  }
+
+  /// Whether this phone has the end of [clientGeneratedId] queued. Read from
+  /// every queued key, not a window: a day's pings can outnumber any window.
+  Future<bool> hasPendingEnd(String clientGeneratedId) async {
+    final queued = await _db.queuedEntryKeys();
+    return queued.contains(
+      outboxEntryKey(OutboxType.workdayEnd, clientGeneratedId),
+    );
   }
 
   Future<bool> _hasPendingStart(String clientGeneratedId) async {
@@ -235,6 +254,8 @@ class WorkdayRepository {
       clientGeneratedId: session.clientGeneratedId,
       payload: jsonEncode({
         'client_generated_id': session.clientGeneratedId,
+        // Whose work this is, so the drain holds it for them (`ownerOf`).
+        'rep_id': repId,
         'changes': {
           'ended_at': endedAt.toUtc().toIso8601String(),
           'end_lat': position?.latitude,
