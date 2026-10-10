@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import {
   Table,
   TableBody,
@@ -53,7 +54,14 @@ function RepScoreBadge({
  * with no fix is unknown, never a failure, since scoring it as one would punish
  * a rep for a flat battery.
  */
-export function RepScorecardTable({ rows }: { rows: RepScore[] }) {
+export function RepScorecardTable({
+  rows,
+  reportHref,
+}: {
+  rows: RepScore[];
+  /** Where a name leads: that person's full performance report. */
+  reportHref?: (staffId: string) => string;
+}) {
   const t = useTerms();
   if (rows.length === 0) {
     return (
@@ -82,7 +90,13 @@ export function RepScorecardTable({ rows }: { rows: RepScore[] }) {
         {rows.map((r) => (
           <TableRow key={r.rep_id}>
             <TableCell className="font-medium">
-              {r.rep_name ?? `Unknown ${lower(t.staff.one)}`}
+              {reportHref ? (
+                <Link href={reportHref(r.rep_id)} className="hover:underline focus-visible:underline">
+                  {r.rep_name ?? `Unknown ${lower(t.staff.one)}`}
+                </Link>
+              ) : (
+                (r.rep_name ?? `Unknown ${lower(t.staff.one)}`)
+              )}
               <span className="block text-xs text-muted-foreground sm:hidden">
                 {formatRate(r.completion_rate)} done as planned
               </span>

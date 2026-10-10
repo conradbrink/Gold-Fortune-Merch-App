@@ -1,6 +1,6 @@
 import { lower, type Terms } from "@/lib/terms";
 import { toLocalDateInput, type DateRange } from "@/lib/date-range";
-import type { ReportTab } from "@/lib/report-tabs";
+import type { ReportId, ViewId } from "@/lib/report-catalogue";
 
 /**
  * The numbers a dashboard can show (Stage 7 Part 3): the catalogue in code,
@@ -42,9 +42,19 @@ export type KpiDef = {
   href: (range: DateRange) => string;
 };
 
-function report(tab: ReportTab) {
+/**
+ * A link into Reports: the report that answers the number's question (and the
+ * view in it), over the same days. `lib/report-catalogue.ts` opens the nearest
+ * view a company has when it lacks this one.
+ */
+function report(tab: ReportId, view?: ViewId) {
   return (range: DateRange) =>
-    `/reports?${new URLSearchParams({ tab, from: toLocalDateInput(range.from), to: toLocalDateInput(range.to) }).toString()}`;
+    `/reports?${new URLSearchParams({
+      tab,
+      ...(view ? { view } : {}),
+      from: toLocalDateInput(range.from),
+      to: toLocalDateInput(range.to),
+    }).toString()}`;
 }
 const page = (path: string) => () => path;
 
@@ -53,13 +63,13 @@ export const KPIS: KpiDef[] = [
     code: "jobs_done_pct",
     label: (t) => `${t.job.many} done as planned`,
     hint: (t) => `Planned ${lower(t.job.many)} done on the day, or caught up later.`,
-    format: "percent", better: "up", scope: "window", minEvents: 5, href: report("adherence"),
+    format: "percent", better: "up", scope: "window", minEvents: 5, href: report("compliance"),
   },
   {
     code: "missed",
     label: (t) => `Missed ${lower(t.job.many)}`,
     hint: (t) => `Planned ${lower(t.job.many)} on days gone by that nobody did.`,
-    format: "count", better: "down", scope: "window", minEvents: 1, href: report("adherence"),
+    format: "count", better: "down", scope: "window", minEvents: 1, href: report("service", "missed"),
   },
   {
     code: "jobs_done",
@@ -83,31 +93,31 @@ export const KPIS: KpiDef[] = [
     code: "proof_pct",
     label: () => "Proof captured",
     hint: (t) => `Finished ${lower(t.job.many)} with a photo and, where you use them, a checklist.`,
-    format: "percent", better: "up", scope: "window", minEvents: 5, href: report("photos"),
+    format: "percent", better: "up", scope: "window", minEvents: 5, href: report("evidence", "service_log"),
   },
   {
     code: "gps_verified_pct",
     label: () => "Checked in on site",
     hint: (t) => `Check-ins made at the ${lower(t.site.one)}, of those where the phone knew where it was.`,
-    format: "percent", better: "up", scope: "window", minEvents: 5, href: report("reps"),
+    format: "percent", better: "up", scope: "window", minEvents: 5, href: report("compliance"),
   },
   {
     code: "rounds_proven_pct",
     label: (t) => `${t.job.many} proven`,
     hint: () => "Checked in on site and with a photo.",
-    format: "percent", better: "up", scope: "window", minEvents: 5, href: report("reps"),
+    format: "percent", better: "up", scope: "window", minEvents: 5, href: report("compliance"),
   },
   {
     code: "planned_share",
     label: () => "Planned work",
     hint: (t) => `Finished ${lower(t.job.many)} that were on the plan, not added on the day.`,
-    format: "percent", better: "up", scope: "window", minEvents: 5, href: report("adherence"),
+    format: "percent", better: "up", scope: "window", minEvents: 5, href: report("compliance"),
   },
   {
     code: "time_on_site",
     label: (t) => `Time per ${lower(t.job.one)}`,
     hint: (t) => `Average time on site per finished ${lower(t.job.one)}.`,
-    format: "minutes", better: "none", scope: "window", minEvents: 5, href: report("reps"),
+    format: "minutes", better: "none", scope: "window", minEvents: 5, href: report("team"),
   },
   {
     code: "onsite_share",
@@ -119,7 +129,7 @@ export const KPIS: KpiDef[] = [
     code: "jobs_per_staff_day",
     label: (t) => `${t.job.many} per ${lower(t.staff.one)} a day`,
     hint: (t) => `Finished ${lower(t.job.many)} per person per working day.`,
-    format: "decimal", better: "up", scope: "window", minEvents: 5, href: report("reps"),
+    format: "decimal", better: "up", scope: "window", minEvents: 5, href: report("team"),
   },
   {
     code: "jobs_per_hour",
@@ -161,13 +171,13 @@ export const KPIS: KpiDef[] = [
     code: "photos_taken",
     label: () => "Photos",
     hint: (t) => `Photos taken on finished ${lower(t.job.many)}.`,
-    format: "count", better: "up", scope: "window", minEvents: 0, href: report("photos"),
+    format: "count", better: "up", scope: "window", minEvents: 0, href: report("evidence", "photos"),
   },
   {
     code: "forms_done",
     label: () => "Checklists",
     hint: (t) => `Checklists and forms filled in on finished ${lower(t.job.many)}.`,
-    format: "count", better: "up", scope: "window", minEvents: 0, href: report("form"),
+    format: "count", better: "up", scope: "window", minEvents: 0, href: report("evidence", "form"),
   },
   {
     code: "owed",

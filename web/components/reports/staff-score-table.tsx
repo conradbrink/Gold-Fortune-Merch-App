@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { lower } from "@/lib/terms";
 import { useTerms } from "@/lib/use-company-config";
@@ -21,7 +22,16 @@ function tone(score: number) {
  * part to work on next. The employee report shows the same score for each
  * person, with every part's basis.
  */
-export function StaffScoreTable({ scores, weights }: { scores: TeamScore[]; weights: Weight[] }) {
+export function StaffScoreTable({
+  scores,
+  weights,
+  reportHref,
+}: {
+  scores: TeamScore[];
+  weights: Weight[];
+  /** Where a name leads: that person's full performance report. */
+  reportHref?: (staffId: string) => string;
+}) {
   const t = useTerms();
   if (scores.length === 0) {
     return (
@@ -66,7 +76,13 @@ export function StaffScoreTable({ scores, weights }: { scores: TeamScore[]; weig
           {scores.map(({ staffId, name, result }) => (
             <TableRow key={staffId}>
               <TableCell className="max-w-44 truncate font-medium">
-                {name || "-"}
+                {reportHref ? (
+                  <Link href={reportHref(staffId)} className="hover:underline focus-visible:underline">
+                    {name || "-"}
+                  </Link>
+                ) : (
+                  name || "-"
+                )}
                 {/* On a phone the next step sits under the name rather than in its own column. */}
                 {result.focus && (
                   <span className="block truncate text-xs font-normal text-muted-foreground md:hidden">
