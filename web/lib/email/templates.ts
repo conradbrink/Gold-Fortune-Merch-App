@@ -495,6 +495,57 @@ const TEMPLATES: Record<string, Renderer> = {
     });
     return { subject: waitlist ? "You are on the Tickd waiting list" : `We have your application${first ? `, ${first}` : ""}`, html, text };
   },
+  // To a founding applicant the owner has picked.
+  founding_accepted: (payload, ctx) => {
+    const first = str(payload.first_name);
+    const business = str(payload.business_name);
+    const whatsapp = str(payload.whatsapp);
+    const facts: Fact[] = [
+      { label: "We set you up from", value: FOUNDING_OFFER.setupFrom },
+      { label: `Your ${FOUNDING_OFFER.days} free days start`, value: FOUNDING_OFFER.startsOn },
+      { label: "After that", value: `R${FOUNDING_OFFER.price} a month for ${FOUNDING_OFFER.priceMonths} months, or walk away` },
+    ];
+    const body = stack([
+      para(`Hello${first ? ` ${first}` : ""},`, true),
+      para(`Good news. ${business ? business : "Your business"} is one of Tickd's first ${FOUNDING_OFFER.spots} founding businesses.`),
+      factsBlock(facts),
+      para(
+        whatsapp
+          ? `We will message you on +${whatsapp} to book your set-up. We do it with you, so you do not have to work anything out alone.`
+          : "We will message you to book your set-up. We do it with you, so you do not have to work anything out alone."
+      ),
+      para("There is nothing to pay now, and we do not need a card. If you would rather talk first, just reply to this email."),
+    ]);
+    const { html, text } = layout(ctx, {
+      heading: "You are one of our founding businesses",
+      preheader: `We set you up from ${FOUNDING_OFFER.setupFrom}.`,
+      bodyHtml: body.html,
+      bodyText: body.text,
+      closing: para("Welcome aboard,\nThe Tickd team"),
+    });
+    return { subject: `You are in${first ? `, ${first}` : ""}: one of Tickd's first ${FOUNDING_OFFER.spots}`, html, text };
+  },
+  // To a founding applicant the owner could not offer a place this time.
+  founding_declined: (payload, ctx) => {
+    const first = str(payload.first_name);
+    const business = str(payload.business_name);
+    const body = stack([
+      para(`Hello${first ? ` ${first}` : ""},`, true),
+      para(
+        `Thank you for applying to be one of Tickd's first ${FOUNDING_OFFER.spots} founding businesses. We had more good applications than places, and we could not offer ${business ? business : "you"} a place this time.`
+      ),
+      para("You are first on the list for the next round. We will message you as soon as it opens."),
+      para("Thank you for your time, and for wanting to try Tickd."),
+    ]);
+    const { html, text } = layout(ctx, {
+      heading: "Thank you for applying",
+      preheader: "You are first on the list for the next round.",
+      bodyHtml: body.html,
+      bodyText: body.text,
+      closing: para("Thank you,\nThe Tickd team"),
+    });
+    return { subject: "About your Tickd application", html, text };
+  },
   // To the owner of a company that has just been set up.
   welcome: (payload, ctx) => {
     const first = str(payload.first_name);
@@ -593,7 +644,7 @@ export const REPORT_TEMPLATES = new Set<string>(["job_report", "job_reports_day"
 export const ALERT_TEMPLATES = new Set<string>(["alert", "alerts_digest"]);
 
 /** Emails from Tickd itself, to a company's owner or an applicant: sent as Tickd, replies go to the Tickd team, no advert and no stop link. */
-export const TICKD_TEMPLATES = new Set<string>(["application_received", "welcome", "trial_offer"]);
+export const TICKD_TEMPLATES = new Set<string>(["application_received", "welcome", "trial_offer", "founding_accepted", "founding_declined"]);
 
 /** Invoices, quotes, statements and reminders: their payload holds a link id the sender looks up before rendering, and turns into the page's address. */
 export const DOCUMENT_TEMPLATES = new Set<string>(["invoice", "quote", "statement", "payment_reminder"]);

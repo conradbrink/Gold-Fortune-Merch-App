@@ -2,7 +2,8 @@ import Link from "next/link";
 import { requireOperator } from "@/lib/operator";
 import { listTemplates, platformAdminClient } from "@/lib/platform";
 import { HOW_RUN_LABEL, checkAttribution, describeAttribution, type HowRun } from "@/lib/founding";
-import { linkFoundingApplication } from "@/app/platform/actions";
+import { linkFoundingApplication, setFoundingStatus } from "@/app/platform/actions";
+import { FOUNDING_STATUSES, FOUNDING_STATUS_LABEL, OUTCOME_RELATED_KIND } from "@/lib/founding-outcome";
 import { NativeSelect } from "@/components/ui/native-select";
 import { Button } from "@/components/ui/button";
 
@@ -48,6 +49,18 @@ export default async function FoundingApplicationsPage({
   ]);
   if (listError) throw listError;
   if (orgError) throw orgError;
+  const { data: outcomes } = await admin
+    .from("message_outbox")
+    .select("related_id, template, status, sent_at, created_at")
+    .eq("related_kind", OUTCOME_RELATED_KIND)
+    .order("created_at", { ascending: false });
+  /** The answer already emailed to each applicant: the newest one. */
+  const emailed = new Map<string, { template: string; status: string; at: string }>();
+  for (const o of outcomes ?? []) {
+    if (o.related_id && !emailed.has(o.related_id)) {
+      emailed.set(o.related_id, { template: o.template, status: o.status, at: o.sent_at ?? o.created_at });
+    }
+  }
   const companies = orgs ?? [];
   const companyName = new Map(companies.map((c) => [c.id, c.name]));
   const linked = new Set((rows ?? []).map((r) => r.organization_id).filter(Boolean));
@@ -94,7 +107,10 @@ export default async function FoundingApplicationsPage({
                   {a.business_name} <span className="font-normal text-muted-foreground">· {a.name}</span>
                 </p>
                 <p className="text-muted-foreground">
-                  {dateTime.format(new Date(a.created_at))} · <span className="font-medium text-foreground">{a.status}</span>
+                  {dateTime.format(new Date(a.created_at))} ·{" "}
+                  <span className="font-medium text-foreground">
+                    {FOUNDING_STATUS_LABEL[a.status as keyof typeof FOUNDING_STATUS_LABEL] ?? a.status}
+                  </span>
                   {a.notified_at ? "" : " · email not sent"}
                 </p>
               </div>
@@ -156,6 +172,38 @@ export default async function FoundingApplicationsPage({
                 <span className="text-muted-foreground">Costs them the most: </span>
                 <span className="whitespace-pre-wrap">{a.biggest_cost}</span>
               </p>
+              <form action={setFoundingStatus} className="flex flex-wrap items-center gap-2 border-t border-border pt-3">
+                <input type="hidden" name="applicationId" value={a.id} />
+                <label htmlFor={`status-${a.id}`} className="text-muted-foreground">
+                  Answer:
+                </label>
+                <div className="w-44">
+                  <NativeSelect id={`status-${a.id}`} name="status" defaultValue={a.status}>
+                    {FOUNDING_STATUSES.map((s) => (
+                      <option key={s} value={s}>
+                        {FOUNDING_STATUS_LABEL[s]}
+                      </option>
+                    ))}
+                  </NativeSelect>
+                </div>
+                {a.email ? (
+                  <label className="flex items-center gap-2">
+                    <input type="checkbox" name="sendEmail" />
+                    Email them the answer (Accepted or Not this time)
+                  </label>
+                ) : (
+                  <span className="text-muted-foreground">No email address, so call or WhatsApp them.</span>
+                )}
+                <Button type="submit" variant="outline" size="sm">
+                  Save
+                </Button>
+                {emailed.has(a.id) && (
+                  <span className="text-muted-foreground">
+                    {emailed.get(a.id)!.template === "founding_accepted" ? "Accepted" : "Not this time"} email{" "}
+                    {emailed.get(a.id)!.status === "sent" ? "sent" : emailed.get(a.id)!.status} {dateTime.format(new Date(emailed.get(a.id)!.at))}
+                  </span>
+                )}
+              </form>
               <form action={linkFoundingApplication} className="flex flex-wrap items-center gap-2 border-t border-border pt-3">
                 <input type="hidden" name="applicationId" value={a.id} />
                 {a.organization_id ? (
