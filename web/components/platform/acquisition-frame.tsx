@@ -144,17 +144,17 @@ export function gaMissing(r: { ok: boolean; reason?: "not-connected" | "error" }
 export function RightNow({
   now,
 }: {
-  now: { ok: true; value: { total: number; pages: { title: string; visitors: number }[] } } | { ok: false };
+  now: { ok: true; value: { total: number; views: number; pages: { title: string; visitors: number }[] } } | { ok: false };
 }) {
   if (!now.ok) return null;
-  const { total, pages } = now.value;
+  const { total, views, pages } = now.value;
   return (
     <div className="rounded-lg border border-border bg-card p-4 text-sm">
       <div className="text-foreground">
-        <span className="font-semibold tabular-nums">{count.format(total)}</span>{" "}
-        {total === 1 ? "person is" : "people are"} on the website right now
-        <span className="text-muted-foreground"> (last 30 minutes, live from Google)</span>
-        {pages.length > 0 && <span className="text-muted-foreground">: </span>}
+        <span className="font-semibold">Last 30 minutes, live from Google:</span>{" "}
+        <span className="tabular-nums">{count.format(views)}</span> {views === 1 ? "page view" : "page views"} by{" "}
+        <span className="tabular-nums">{count.format(total)}</span> {total === 1 ? "person" : "people"}
+        {pages.length > 0 && <span className="text-muted-foreground">. Pages: </span>}
         {pages.map((p, i) => (
           <span key={p.title} className="text-muted-foreground">
             {i > 0 && ", "}
@@ -163,7 +163,8 @@ export function RightNow({
         ))}
       </div>
       <div className="mt-1 text-xs text-muted-foreground">
-        Google&apos;s numbers below come from its processed reports, which can take a few hours to catch up.
+        Google counts a person once they&apos;ve stayed about 10 seconds or clicked, so someone who leaves quickly shows as a view
+        first. Google&apos;s numbers below come from its processed reports, which can take a few hours to catch up.
         Tickd&apos;s own records (applications and companies) are up to the minute.
       </div>
     </div>

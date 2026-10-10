@@ -336,16 +336,22 @@ export function websiteFilter(device: string, country: string): unknown {
  * from Google's realtime report: a visit shows here within seconds, while the
  * processed numbers above can take hours to arrive.
  */
-export async function visitorsNow(): Promise<Ga<{ total: number; pages: { title: string; visitors: number }[] }>> {
+export async function visitorsNow(): Promise<
+  Ga<{ total: number; views: number; pages: { title: string; visitors: number }[] }>
+> {
+  // Views as well as people: Google only counts someone as an "active user"
+  // once they engage (about 10 seconds, or a click), so a quick visit shows as
+  // a view straight away and as a person a little later, or not at all.
   const [total, pages] = await Promise.all([
-    runRealtimeReport({ metrics: ["activeUsers"] }),
-    runRealtimeReport({ dimensions: ["unifiedScreenName"], metrics: ["activeUsers"], limit: 5 }),
+    runRealtimeReport({ metrics: ["activeUsers", "screenPageViews"] }),
+    runRealtimeReport({ dimensions: ["unifiedScreenName"], metrics: ["screenPageViews"], limit: 5 }),
   ]);
   if (!total.ok) return total;
   return {
     ok: true,
     value: {
       total: total.rows[0]?.metrics[0] ?? 0,
+      views: total.rows[0]?.metrics[1] ?? 0,
       pages: pages.ok
         ? pages.rows
             .map((r) => ({ title: shortTitle(r.dimensions[0]), visitors: r.metrics[0] }))
