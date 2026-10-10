@@ -234,11 +234,11 @@ export default function CompanyProfilePage() {
     <div className="space-y-4">
       <div>
         <h1 className="text-xl font-semibold tracking-tight text-foreground">
-          Company Profile
+          Company settings
         </h1>
         <p className="text-sm text-muted-foreground">
-          Manage your organization&apos;s details, team members, field
-          settings, terminology, branding and plan.
+          Your company&apos;s details, team, how the field works, money, emails,
+          words and branding, and your plan.
         </p>
       </div>
 
@@ -246,8 +246,8 @@ export default function CompanyProfilePage() {
         {/* Scrolls on its own on a phone, as on Reports: nine tabs are wider
             than the screen and pushed the whole page sideways. */}
         <TabsList className="max-w-full justify-start overflow-x-auto px-1 [&::-webkit-scrollbar]:hidden [&>*]:shrink-0 [&>*]:px-2.5">
-          <TabsTrigger value="details">Company Details</TabsTrigger>
-          <TabsTrigger value="team">Team Members</TabsTrigger>
+          <TabsTrigger value="details">Company details</TabsTrigger>
+          <TabsTrigger value="team">Team members</TabsTrigger>
           <TabsTrigger value="field">Field settings</TabsTrigger>
           <TabsTrigger value="money">Quotes &amp; invoices</TabsTrigger>
           <TabsTrigger value="dashboard">Dashboard &amp; reports</TabsTrigger>

@@ -110,7 +110,7 @@ class Terms {
     staff: Term('Staff member', 'Staff'),
     client: Term('Client', 'Clients'),
     region: Term('Region', 'Regions'),
-    territory: Term('Area', 'Areas'),
+    territory: Term('Territory', 'Territories'),
     prospect: Term('Lead', 'Leads'),
     scheduleCycle: Term('Recurring schedule', 'Recurring schedules'),
     dayPlan: Term("Today's jobs", "Today's jobs"),

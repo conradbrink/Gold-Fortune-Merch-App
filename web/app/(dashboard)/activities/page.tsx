@@ -273,7 +273,7 @@ export default function ActivitiesPage() {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-xl font-semibold tracking-tight text-foreground">
-            Activities
+            Activity
           </h1>
           <p className="text-sm text-muted-foreground">
             {/* A sales call has no store row and no geofence, so it has nothing

@@ -316,7 +316,7 @@ function Header({ asOf }: { asOf: string | null }) {
     <div className="flex flex-wrap items-center justify-between gap-3">
       <div>
         <h1 className="text-xl font-semibold tracking-tight text-foreground">
-          Human Resources
+          HR overview
         </h1>
         <p className="text-sm text-muted-foreground">
           {asOf ? `As at ${formatDateOnly(asOf)}` : "Loading…"}

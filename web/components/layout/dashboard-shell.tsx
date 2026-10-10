@@ -2,13 +2,15 @@
 
 import { useState } from "react";
 import { SidebarNav } from "@/components/layout/sidebar-nav";
-import { MobileNav } from "@/components/layout/mobile-nav";
+import { MobileNav, MobileTabBar } from "@/components/layout/mobile-nav";
+import { NavProvider } from "@/components/layout/nav-context";
+import { SectionTabs } from "@/components/layout/section-tabs";
 import { TopBar } from "@/components/layout/top-bar";
 import { CompanyConfigProvider } from "@/lib/use-company-config";
 
 /**
- * The signed-in frame: sidebar, top bar, scrolling main. Client-side for the
- * mobile nav's open state; the server layout around it has already fetched the
+ * The signed-in frame: sidebar, top bar, scrolling main, and on a phone a bar
+ * along the bottom. Client-side for the phone menu's open state; the server layout around it has already fetched the
  * company configuration and hands it in here.
  */
 export function DashboardShell({
@@ -23,6 +25,7 @@ export function DashboardShell({
 
   return (
     <CompanyConfigProvider initialConfig={initialConfig}>
+      <NavProvider>
       {/*
        * The three `data-app-*` attributes are print hooks, and nothing reads them
        * on screen. `components/rep-report/report-print.css` uses them to drop the
@@ -35,15 +38,20 @@ export function DashboardShell({
         <SidebarNav />
         <MobileNav open={navOpen} onClose={() => setNavOpen(false)} />
         <div className="flex min-w-0 flex-1 flex-col" data-app-body>
-          <TopBar onOpenNav={() => setNavOpen(true)} />
+          <TopBar />
+          {/* Room at the foot on a phone, so the bottom bar never covers the
+              last row of a page. */}
           <main
             data-app-main
-            className="min-w-0 flex-1 overflow-y-auto bg-background p-4 sm:px-8 sm:py-7"
+            className="min-w-0 flex-1 overflow-y-auto bg-background p-4 pb-24 sm:px-8 sm:pt-7 sm:pb-24 md:pb-7"
           >
+            <SectionTabs />
             {children}
           </main>
         </div>
+        <MobileTabBar onOpenMore={() => setNavOpen(true)} />
       </div>
+      </NavProvider>
     </CompanyConfigProvider>
   );
 }

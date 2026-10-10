@@ -133,5 +133,10 @@
     "file": "lib/staff-score.ts",
     "text": "Merchandising execution",
     "reason": "The same score part as lib/rep-report.ts, now in the shared score catalogue: Merchandising audits (availability, planogram, price, condition) are retail-execution vocabulary with no term key; the rep report's neutral-terms fixture in tests/rep-report-text.test.ts pins this wording for every company."
+  },
+  {
+    "file": "components/layout/nav-items.ts",
+    "text": "Customers",
+    "reason": "A menu heading naming the area of the business (who the company works for), not the client term: it stays \"Customers\" whether the company calls them sites, properties, clients or stops, and the items under it carry the company's own word."
   }
 ]

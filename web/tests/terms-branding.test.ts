@@ -63,7 +63,9 @@ test("noun picks the form a number calls for", () => {
 
 test("articles follow the first letter unless the company overrides", () => {
   assert.equal(withArticle(goldFortune, "site"), "a store");
-  assert.equal(withArticle(DEFAULT_TERMS, "territory"), "an area");
+  assert.equal(withArticle(DEFAULT_TERMS, "territory"), "a territory");
+  const areas = parseTerms({ territory: { one: "Area", many: "Areas" } });
+  assert.equal(withArticle(areas, "territory"), "an area");
   const outlet = parseTerms({ site: { one: "Outlet", many: "Outlets" } });
   assert.equal(withArticle(outlet, "site"), "an outlet");
   const unit = parseTerms({ site: { one: "Unit", many: "Units", article: "a" } });
