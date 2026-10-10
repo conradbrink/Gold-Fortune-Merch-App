@@ -39,6 +39,8 @@ export default async function AcquisitionOverview({
     })
   );
   const visitors = ga?.visitors.current ?? null;
+  const finishedStep = steps.find((s) => s.key === "activated");
+  const firstJobFinished = finishedStep && finishedStep.count !== null ? count.format(finishedStep.count) : null;
 
   return (
     <AcquisitionFrame tab="/platform/acquisition" range={range} ga={totals.ok ? { ok: true } : totals}>
@@ -72,7 +74,12 @@ export default async function AcquisitionOverview({
             value={count.format(own.freePeriodsStarted.current)}
             change={formatChange(change(own.freePeriodsStarted.current, own.freePeriodsStarted.previous))}
           />
-          <Stat label="Activated" value={null} missing="Not measured yet (step 3)." />
+          <Stat
+            label="First job finished"
+            value={firstJobFinished}
+            missing="Needs a database update."
+            href="/platform/onboarding"
+          />
           <Stat label="Paying" value={null} missing="Billing isn't live yet." />
         </div>
         <p className="text-sm text-muted-foreground">

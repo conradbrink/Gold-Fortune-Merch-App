@@ -2,6 +2,8 @@ import "server-only";
 import { checkAttribution } from "@/lib/founding";
 import { platformAdminClient } from "@/lib/platform";
 import { runReport, type GaResult } from "@/lib/ga4";
+import { loadActivation } from "@/lib/activation-data";
+import { isActivated } from "@/lib/activation";
 import { byNameAndPeriod, type ApplicationRow, type CompanyFacts, type Period } from "@/lib/acquisition";
 
 /**
@@ -49,14 +51,18 @@ export async function loadFirstParty(p: TwoPeriods): Promise<FirstParty> {
   const orgIds = [...new Set(applications.map((a) => a.organization_id).filter((id): id is string => Boolean(id)))];
   const companies = new Map<string, CompanyFacts>();
   if (orgIds.length > 0) {
-    const [{ data: orgs, error: orgError }, { data: accounts, error: accountError }] = await Promise.all([
+    const [{ data: orgs, error: orgError }, { data: accounts, error: accountError }, activation] = await Promise.all([
       admin.from("organizations").select("id, name").in("id", orgIds),
       admin.from("company_account").select("org_id, trial_ends_at").in("org_id", orgIds),
+      loadActivation(orgIds),
     ]);
     if (orgError) throw orgError;
     if (accountError) throw accountError;
     const free = new Set((accounts ?? []).filter((a) => a.trial_ends_at !== null).map((a) => a.org_id));
-    for (const o of orgs ?? []) companies.set(o.id, { id: o.id, name: o.name, freePeriod: free.has(o.id) });
+    const activated = activation.ok ? new Set(activation.companies.filter(isActivated).map((c) => c.orgId)) : null;
+    for (const o of orgs ?? []) {
+      companies.set(o.id, { id: o.id, name: o.name, freePeriod: free.has(o.id), activated: activated ? activated.has(o.id) : null });
+    }
   }
 
   return {

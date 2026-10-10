@@ -68,8 +68,8 @@ test("a source is one plain word", () => {
 });
 
 const companies = new Map<string, CompanyFacts>([
-  ["org-1", { id: "org-1", name: "Ndlovu Plumbing", freePeriod: true }],
-  ["org-2", { id: "org-2", name: "Mokoena Cleaning", freePeriod: false }],
+  ["org-1", { id: "org-1", name: "Ndlovu Plumbing", freePeriod: true, activated: true }],
+  ["org-2", { id: "org-2", name: "Mokoena Cleaning", freePeriod: false, activated: false }],
 ]);
 const apps: ApplicationRow[] = [
   { id: "a1", created_at: "2026-10-05T08:00:00Z", attribution: { utm_source: "facebook", utm_medium: "paid_social", utm_campaign: "founding-oct" }, organization_id: "org-1" },
@@ -92,11 +92,11 @@ test("the funnel shows each step's share and names the biggest drop", () => {
     ["signup_started", { current: 12 }],
   ]);
   const { steps, leak } = buildFunnel(acquisitionStages({ events, gaMissing: "x", applications: apps, companies, range: "30d" }));
-  assert.deepEqual(steps.map((s) => s.count), [400, 120, 12, 3, 2, 1, null, null]);
+  assert.deepEqual(steps.map((s) => s.count), [400, 120, 12, 3, 2, 1, 1, null]);
   assert.equal(steps[1].ofPrevious, 0.3);
   assert.equal(steps[2].ofPrevious, 0.1);
   assert.equal(steps[0].ofPrevious, null);
-  assert.equal(steps[6].ofPrevious, null, "a step not measured has no share");
+  assert.equal(steps[7].ofPrevious, null, "a step not measured has no share");
   assert.equal(steps[7].note, "Billing isn't live yet.");
   assert.deepEqual(leak, { from: "Saw the prices", to: "Started an application", lost: 108, of: 120 });
 });
@@ -133,4 +133,11 @@ test("every day of a period is laid out, so a day nobody came is 0, not missing"
   const p = periods("7d", new Date("2026-10-10T12:00:00Z")).current;
   assert.deepEqual(everyDay(p), ["2026-10-04", "2026-10-05", "2026-10-06", "2026-10-07", "2026-10-08", "2026-10-09", "2026-10-10"]);
   assert.equal(everyDay(periods("12m", new Date("2026-10-10T12:00:00Z")).current).length, 365);
+});
+
+test("first job finished waits for the activation read, rather than guessing", () => {
+  const unknown = new Map([...companies].map(([k, v]) => [k, { ...v, activated: null }]));
+  const { steps } = buildFunnel(acquisitionStages({ events: null, gaMissing: "x", applications: apps, companies: unknown, range: "7d" }));
+  assert.equal(steps[6].count, null);
+  assert.equal(steps[6].note, "Needs a database update that hasn't been applied yet.");
 });
