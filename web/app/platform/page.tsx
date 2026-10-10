@@ -48,7 +48,13 @@ export default async function DashboardPage({
   const p = periods(range, now);
 
   // Each read stands alone: if one fails, its section says so and the rest still show.
-  const safe = <T,>(read: Promise<T>) => read.then((value) => ({ ok: true as const, value })).catch(() => ({ ok: false as const }));
+  const safe = <T,>(read: Promise<T>) =>
+    read
+      .then((value) => ({ ok: true as const, value }))
+      .catch((error: unknown) => {
+        console.error("dashboard: a read failed", error instanceof Error ? error.message : error);
+        return { ok: false as const };
+      });
   const activationRead = loadActivation();
   const [activationResult, web, webBefore, ownResult, health, useResult] = await Promise.all([
     safe(activationRead),
@@ -63,6 +69,8 @@ export default async function DashboardPage({
   const use = useResult.ok ? useResult.value : null;
 
   const companies = activation.ok ? activation.companies : [];
+  // Without the company read, its numbers are unknown, not zero.
+  const known = activation.ok;
   const total = companies.length;
   const active = companies.filter((c) => isActive(c, now)).length;
   const free = companies.filter((c) => inFreePeriod(c, now)).length;
@@ -116,17 +124,19 @@ export default async function DashboardPage({
 
       <Section title="The business">
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          <Stat label="Companies" value={count.format(total)} href="/platform/companies" />
+          <Stat label="Companies" value={known ? count.format(total) : null} missing="Couldn't be read just now." href="/platform/companies" />
           <Stat
             label={`Active (used in the last ${ACTIVE_DAYS} days)`}
-            value={total ? `${count.format(active)} of ${count.format(total)}` : "0"}
+            value={known ? (total ? `${count.format(active)} of ${count.format(total)}` : "0") : null}
+            missing="Couldn't be read just now."
             href="/platform/onboarding?view=all"
           />
-          <Stat label="In a free period" value={count.format(free)} href="/platform/onboarding?view=all" />
+          <Stat label="In a free period" value={known ? count.format(free) : null} missing="Couldn't be read just now." href="/platform/onboarding?view=all" />
           <Stat
             label={`New, last ${rangeLabel}`}
-            value={count.format(newNow)}
-            change={formatChange(change(newNow, newBefore))}
+            value={known ? count.format(newNow) : null}
+            change={known ? formatChange(change(newNow, newBefore)) : null}
+            missing="Couldn't be read just now."
             href="/platform/companies"
           />
         </div>
@@ -141,7 +151,11 @@ export default async function DashboardPage({
         href="/platform/onboarding?view=attention"
         link="Onboarding"
       >
-        {attention.length === 0 ? (
+        {!known ? (
+          <p className="rounded-lg border border-border bg-card p-4 text-sm text-muted-foreground">
+            Companies couldn&apos;t be read just now, so this can&apos;t say who needs you. Reload in a moment.
+          </p>
+        ) : attention.length === 0 ? (
           <p className="rounded-lg border border-border bg-card p-4 text-sm text-muted-foreground">
             Nobody needs you right now: every company is on track.
           </p>
@@ -209,6 +223,7 @@ export default async function DashboardPage({
       <div className="grid gap-8 lg:grid-cols-2">
         <Section title="New companies per month" href="/platform/companies" link="All companies">
           <div className="rounded-lg border border-border bg-card p-4">
+            {!known && <p className="mb-2 text-sm text-muted-foreground">Companies couldn&apos;t be read just now.</p>}
             <ol className="flex items-end gap-1.5" aria-label="New companies per month, last 12 months">
               {months.map((m) => (
                 <li key={m.month} className="flex flex-1 flex-col items-center gap-1">
