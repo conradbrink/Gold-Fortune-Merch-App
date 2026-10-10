@@ -21,7 +21,10 @@ const ctx = { companyName: "Sparkle Cleaning", unsubscribeUrl: "https://app.tick
 test("one job: the site, the day, who and when, and the button to see and sign", () => {
   const e = renderEmail("job_report", { reports: [line({})] }, ctx)!;
   assert.equal(e.subject, "Clean done at Sandton Office Park, 2026-10-09");
-  assert.match(e.html, /07:58 to 09:12, Thandi Mokoena, checked in on site, 3 photos/);
+  assert.match(e.html, /07:58 to 09:12/);
+  assert.match(e.html, /Thandi Mokoena/);
+  assert.match(e.html, /On site/);
+  assert.match(e.html, /Photos<\/td><td[^>]*>3</);
   assert.match(e.html, /See the report and sign/);
   assert.match(e.html, /href="https:\/\/app\.tickd\.co\.za\/c\/report\/abc\.def"/);
   assert.match(e.text, /See the report and sign: https:\/\/app\.tickd\.co\.za\/c\/report\/abc\.def/);
@@ -49,7 +52,7 @@ test("jobs from two days (one finished after last night's email) say each day", 
 
 test("away from the site is said plainly; what a company typed is escaped", () => {
   const e = renderEmail("job_report", { reports: [line({ onSite: false, siteName: "A & <B>" })] }, ctx)!;
-  assert.match(e.html, /checked in away from the site/);
+  assert.match(e.html, /Away from the site/);
   assert.match(e.html, /A &amp; &lt;B&gt;/);
 });
 
