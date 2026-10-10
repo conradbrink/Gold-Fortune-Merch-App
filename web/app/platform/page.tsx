@@ -54,12 +54,20 @@ export default async function PlatformPage() {
             Every company on the platform. Open one to switch its modules. Times are UTC.
           </p>
         </div>
-        <Link
-          href="/platform/companies/new"
-          className="inline-flex h-8 items-center rounded-md bg-primary px-3 text-sm text-primary-foreground hover:bg-primary/90"
-        >
-          Add company
-        </Link>
+        <div className="flex items-center gap-4">
+          <Link href="/platform/users" className="text-sm text-muted-foreground hover:underline">
+            Users
+          </Link>
+          <Link href="/platform/founding" className="text-sm text-muted-foreground hover:underline">
+            Founding applications
+          </Link>
+          <Link
+            href="/platform/companies/new"
+            className="inline-flex h-8 items-center rounded-md bg-primary px-3 text-sm text-primary-foreground hover:bg-primary/90"
+          >
+            Add company
+          </Link>
+        </div>
       </header>
 
       <div className="overflow-x-auto rounded-lg border border-border bg-card">
