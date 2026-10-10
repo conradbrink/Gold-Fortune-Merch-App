@@ -2,6 +2,10 @@ import {
   LayoutDashboard,
   Target,
   Store,
+  Building2,
+  House,
+  Briefcase,
+  MapPin,
   Map as MapIcon,
   Calendar,
   ClipboardList,
@@ -9,40 +13,30 @@ import {
   Users,
   Package,
   FileText,
+  FilePen,
   Folder,
   BarChart3,
-  Gauge,
-  TrendingUp,
   Warehouse,
   Boxes,
   ClipboardCheck,
-  Settings2,
-  PieChart,
   Contact,
   CalendarCheck,
   CalendarOff,
   FolderLock,
   Star,
   ShieldAlert,
-  SlidersHorizontal,
-  UserRound,
-  UserCheck,
   ShieldCheck,
-  Building2,
+  Settings,
   Navigation,
   Receipt,
   Repeat,
-  Flag,
   Coins,
   HandCoins,
-  ScrollText,
-  Tags,
-  FileSignature,
-  Car,
 } from "lucide-react";
 import {
   can,
   canAccessPath,
+  matchesPrefix,
   type PermissionCode,
   type PermissionSet,
 } from "@/lib/permissions";
@@ -51,383 +45,548 @@ import { DEFAULT_TERMS, type Terms } from "@/lib/terms";
 import type { CompanySettings } from "@/lib/company-config";
 import { switchesOf, usesPriceList } from "@/lib/money-workflow";
 
-export type NavItem = {
+/**
+ * The sidebar: simple navigation, deep pages.
+ *
+ * The sidebar shows the areas of the business (customers, the work, the team,
+ * money, reports, settings), not every feature. A page that belongs to an area
+ * is a tab at the top of that area's page, so it is one click away without
+ * being one more line in the menu. `docs/navigation.md` maps every route to
+ * its place.
+ *
+ * One configuration serves every trade. Labels are the company's words, the
+ * modules decide which items exist, and a company with the Distribution module
+ * gets the sales layout (it has orders, stock and a warehouse to find); every
+ * other company gets the service layout. No route moved: only where it is
+ * offered.
+ */
+
+type Label = string | ((t: Terms) => string);
+
+/** A page: a sidebar item, or a tab inside one. */
+type PageDef = {
   href: string;
-  label: string;
-  icon: typeof LayoutDashboard;
+  label: Label;
   /**
-   * The permission this destination needs.
+   * The permission this page needs.
    *
    * Presentation, not enforcement: `canAccessPath` in `lib/permissions.ts`
-   * decides what is actually served, and `visibleNavGroups` requires both — so
-   * forgetting one here makes an item quietly disappear rather than become a
-   * dead end. Omitted means everyone, which is true of exactly one item.
+   * decides what is actually served, and both are required here, so a gap in
+   * either makes the page quietly disappear rather than become a dead end.
+   * Omitted means everyone with access to the path.
    */
   permission?: PermissionCode;
-};
-
-/**
- * An item as written below: a label that names one of the company's things
- * (stores, visits, reps) is a function of its words, so a cleaning company's
- * menu says "Sites" where Gold Fortune's says "Stores". `visibleNavGroups`
- * resolves it; everything after that sees a plain string.
- */
-type NavItemDef = Omit<NavItem, "label"> & {
-  label: string | ((t: Terms) => string);
   /**
    * Shown only when the company's settings say it uses this (the money
    * switches). Without settings (a caller that only asks which pages exist)
-   * the item is shown.
+   * the page is offered.
    */
   when?: (settings: CompanySettings, modules: ModuleSet) => boolean;
 };
 
-type NavGroupDef = {
+type ItemDef = PageDef & {
+  icon: typeof LayoutDashboard;
+  /** An icon chosen by the company's words, in place of `icon`. */
+  iconFor?: (t: Terms) => typeof LayoutDashboard;
   /**
-   * A heading, or one built from the company's words and modules, so a
-   * cleaning company is not shown a distributor's "Sales" headings.
+   * The pages that live inside this item, shown as tabs at the top of each of
+   * them. The first is normally the item's own page. A tab the person cannot
+   * open is left out, and the row is not drawn for a single tab.
    */
-  label: string | null | ((t: Terms, modules: ModuleSet) => string);
-  items: NavItemDef[];
+  tabs?: PageDef[];
+  /** Other paths that count as being here, with no tab of their own. */
+  also?: string[];
 };
 
-/**
- * The sidebar, grouped by what a person came to do.
- *
- * A flat list of eleven destinations made the reader scan the whole thing every
- * time; the groups are the questions the app answers — who are we selling to,
- * what is happening in the field, who does it, what they need, and what came of
- * it.
- *
- * Dashboard sits outside the groups on purpose. It is the landing page and the
- * only item that is not part of a workflow, and putting it under a heading of
- * its own ("Overview") would give a one-item group a label that says less than
- * the item does.
- */
+type GroupDef = {
+  /** Null for the Dashboard, which needs no heading. */
+  label: string | null;
+  items: ItemDef[];
+};
+
+/** A page as resolved for one person at one company. */
+export type NavPage = { href: string; label: string };
+
+export type NavItem = {
+  /**
+   * Which item this is: the href it is written with. Stable whoever is
+   * looking, unlike `href`, which may point at a tab (see `resolveItem`).
+   */
+  id: string;
+  /** Where clicking it goes: its own page, or the first tab this person may open. */
+  href: string;
+  label: string;
+  icon: typeof LayoutDashboard;
+  permission?: PermissionCode;
+  /** The tabs this person may open, in order. Empty or one: no tab row. */
+  tabs: NavPage[];
+  /** Every path prefix that highlights this item. */
+  matches: string[];
+};
+
 export type NavGroup = {
-  /** Null renders the items with no heading — used for Dashboard and My HR. */
+  /** Null renders the items with no heading. */
   label: string | null;
   items: NavItem[];
 };
 
-export const navGroups: NavGroupDef[] = [
-  {
-    label: null,
-    items: [{ href: "/", label: "Dashboard", icon: LayoutDashboard, permission: "dashboard" }],
-  },
-  {
-    // Directly under Dashboard, because it answers the same question at the
-    // same altitude: the dashboard is today, this is the trend behind it. It
-    // used to sit last, below Resources, which put the reporting a manager
-    // opens daily underneath the files they open monthly.
-    //
-    // Manager-only throughout, by the `roles` default. Every item here is
-    // management information about a colleague — revenue by rep, fulfilment
-    // time by clerk — and `canAccessPath` refuses all three for the other
-    // roles, so the menu hiding them is the second guard rather than the only
-    // one.
-    label: "Insights",
-    items: [
-      { href: "/sales", label: "Sales", icon: TrendingUp, permission: "insights" },
-      { href: "/reports", label: "Reports", icon: BarChart3, permission: "insights" },
-      // Directly under Reports, because it is one: the same visits, orders and
-      // audits, cut to one rep and one period and laid out for printing rather
-      // than for browsing. `canAccessPath` resolves `/reports/rep-performance`
-      // through the `/reports` prefix, so it needs no entry of its own there.
-      {
-        href: "/reports/rep-performance",
-        label: (t) => `${t.staff.one} performance`,
-        icon: UserCheck,
-        permission: "insights",
-      },
-      // Moved out of Warehouse & Fulfilment. It reads as warehouse work
-      // because of its URL, but it ranks staff by fulfilment time and
-      // accuracy — which is the same kind of thing as Sales, and not the
-      // day-to-day "what is going out today?" the rest of that group answers.
-      // Its own icon rather than Reports' bar chart: the two sat adjacent with
-      // the same glyph, which read as one entry duplicated. A gauge also says
-      // what it is — fulfilment speed and accuracy, not another report.
-      { href: "/warehouse/insights", label: "Warehouse insights", icon: Gauge, permission: "insights" },
-      // Targets and commissions are pay and performance information about
-      // colleagues, so they sit with the rest of the manager-only reporting.
-      // A rep's own figures reach them through RLS, not through these pages.
-      { href: "/targets", label: "Targets", icon: Flag, permission: "insights" },
-      { href: "/commissions", label: "Commissions", icon: Coins, permission: "insights" },
-    ],
-  },
-  {
-    // A distributor sells into its stores; every other trade keeps a list of
-    // the places it works and the areas they fall in, in its own words
-    // ("Sites & Areas", "Clients & Areas", "Stops & Areas").
-    label: (t, modules) =>
-      moduleEnabled(modules, "distribution") ? "Sales & Coverage" : `${t.site.many} & ${t.territory.many}`,
-    items: [
-      { href: "/leads", label: (t) => t.prospect.many, icon: Target, permission: "sales_coverage" },
-      { href: "/stores", label: (t) => t.site.many, icon: Store, permission: "sales_coverage" },
-      { href: "/territories", label: (t) => t.territory.many, icon: MapIcon, permission: "sales_coverage" },
-    ],
-  },
-  {
-    label: "Field Operations",
-    items: [
-      { href: "/schedule", label: "Schedule", icon: Calendar, permission: "field_ops" },
-      // Gated by `insights`, not `field_ops`: `location_pings` and `visits`
-      // are readable by the manager role only, so anyone else would be shown
-      // an empty map that looks like nobody is working.
-      { href: "/tracking", label: "Tracking", icon: Navigation, permission: "insights" },
-      // Beside Tracking, whose kilometres it turns into a travel logbook. The
-      // vehicle list hangs off the logbook page (`/logbook/vehicles`).
-      { href: "/logbook", label: "Vehicle logbook", icon: Car, permission: "insights" },
-      {
-        // One destination, two names in the old menu. The feed is where a
-        // manager starts, and the per-visit drill-down hangs off it.
-        href: "/activities",
-        label: (t) => `${t.job.many} & Activities`,
-        icon: ClipboardList,
-        permission: "field_ops",
-      },
-      { href: "/promotions", label: "Promotions", icon: BadgePercent, permission: "field_ops" },
-    ],
-  },
-  {
-    // Quotes, invoices and who owes you, for every trade (Stage 7). Above the
-    // warehouse: getting paid is a daily question for every company, and a
-    // trade without a warehouse sees this group and not that one.
-    label: "Money",
-    items: [
-      { href: "/quotes", label: "Quotes", icon: FileText, permission: "invoicing" },
-      { href: "/invoices", label: "Invoices", icon: Receipt, permission: "invoicing" },
-      {
-        href: "/contracts",
-        label: "Contracts",
-        icon: FileSignature,
-        permission: "invoicing",
-        when: (s) => s.money_contracts,
-      },
-      { href: "/owed", label: "Who owes you", icon: HandCoins, permission: "invoicing" },
-      { href: "/statements", label: "Statements", icon: ScrollText, permission: "invoicing" },
-      {
-        href: "/price-list",
-        label: "Price list",
-        icon: Tags,
-        permission: "invoicing",
-        when: (s, m) => usesPriceList(switchesOf(s), m),
-      },
-    ],
-  },
-  {
-    // The warehouse clerk's whole job, and the only group they see in full.
-    // It sits above Team because for a manager it is a daily operational
-    // question ("what is going out today?") rather than a reference one.
-    label: "Warehouse & Fulfilment",
-    items: [
-      {
-        href: "/warehouse",
-        label: "Warehouse",
-        icon: Warehouse,
-        permission: "warehouse",
-      },
-      {
-        href: "/orders",
-        label: "Orders",
-        icon: ClipboardCheck,
-        permission: "warehouse",
-      },
-      // Beside Orders: a recurring order places orders. Same people, same
-      // permission. Invoices and quotes moved to Money (Stage 7).
-      { href: "/recurring-orders", label: "Recurring orders", icon: Repeat, permission: "warehouse" },
-      {
-        href: "/inventory",
-        label: "Inventory",
-        icon: Boxes,
-        permission: "warehouse",
-      },
-      // Moved out of Resources, and it belongs here: Inventory is how much of
-      // a line is in the building, Products is what the line *is* — price,
-      // pack size, code — and the two are read together and edited together.
-      //
-      // ⚠️ It keeps `resources`, not `warehouse`. Moving an item between
-      // groups is a change to where it appears, not to who may open it: the
-      // group heading grants nothing, `visibleNavGroups` filters per item, and
-      // `canAccessPath` still refuses `/products` to anyone without
-      // `resources`. A clerk who could not open Products yesterday still
-      // cannot see it here today.
-      {
-        href: "/products",
-        label: "Products",
-        icon: Package,
-        permission: "resources",
-      },
-      // Reachable by clerks on purpose: adding the driver who started this
-      // morning should not wait for a manager, and RLS already permits it. The
-      // manager-only tabs inside are gated by the page and by RLS.
-      {
-        href: "/warehouse/settings",
-        label: "Warehouse setup",
-        icon: Settings2,
-        permission: "warehouse",
-      },
-    ],
-  },
-  {
-    // "Sales Team", not "Team". The old heading sat a few inches above a Human
-    // Resources group containing "Employees" and gave no signal about which of
-    // the two answered which question — they are the same five people described
-    // two different ways.
-    //
-    // The names now carry that: Employees is the employment record — department,
-    // manager, contract, status. This is field coverage — who covers which store,
-    // and when they were last out. Neither set of columns appears on the other
-    // page, which is why folding one into the other would lose something rather
-    // than tidy something.
-    //
-    // Only a distributor's people are a sales team. Everyone else's heading is
-    // their own word for them, still saying "the field side" so it is not
-    // mistaken for the HR group's Employees ("Cleaners in the field").
-    label: (t, modules) =>
-      moduleEnabled(modules, "distribution") ? "Sales Team" : `${t.staff.many} in the field`,
-    items: [
-      // The company's word for its people. Gold Fortune's is "Reps", which
-      // replaced the longer "Representatives" here on purpose (Stage 3).
-      { href: "/representatives", label: (t) => t.staff.many, icon: Users, permission: "team" },
-    ],
-  },
-  {
-    // The whole HR module, and the only group an `hr_manager` account sees.
-    //
-    // Eight destinations under one heading rather than a collapsing sub-menu:
-    // the sidebar has no nesting today, and adding a second interaction model
-    // for one group would make HR the odd section rather than a section. The
-    // group heading does the work the parent item would have done.
-    label: "Human Resources",
-    items: [
-      { href: "/hr", label: "HR dashboard", icon: PieChart, permission: "hr" },
-      { href: "/hr/employees", label: "Employees", icon: Contact, permission: "hr" },
-      { href: "/hr/attendance", label: "Attendance", icon: CalendarCheck, permission: "hr" },
-      { href: "/hr/leave", label: "Leave", icon: CalendarOff, permission: "hr" },
-      { href: "/hr/documents", label: "Documents", icon: FolderLock, permission: "hr" },
-      { href: "/hr/performance", label: "Performance", icon: Star, permission: "hr" },
-      { href: "/hr/disciplinary", label: "Disciplinary", icon: ShieldAlert, permission: "hr" },
-      { href: "/hr/settings", label: "HR settings", icon: SlidersHorizontal, permission: "hr_settings" },
-    ],
-  },
-  {
-    // Everybody, including a rep who otherwise never sees this shell. Its own
-    // group rather than an entry under Human Resources, because for three of
-    // the four roles it is the only HR destination there is, and a lone item
-    // under a heading called "Human Resources" would read as a module they had
-    // been given and could not open.
-    //
-    // Directly under Human Resources and above Administration: for anyone who
-    // holds `hr` it now sits with the module it belongs to, and for everyone
-    // else it is the last thing before the administrator-only section rather
-    // than something below it.
-    label: null,
-    items: [
-      {
-        href: "/hr/me",
-        label: "My HR",
-        icon: UserRound,
-        // The one destination with no permission: a person's own record.
-      },
-    ],
-  },
-  {
-    // Reachable only by an administrator, and deliberately in the sidebar
-    // rather than behind the top-bar gear: who can see what is a thing people
-    // go looking for, and a settings icon is where features go to be lost.
-    label: "Administration",
-    items: [
-      {
-        href: "/settings/users",
-        label: "Users & permissions",
-        icon: ShieldCheck,
-        permission: "admin",
-      },
-      {
-        href: "/settings/company",
-        label: "Company profile",
-        icon: Building2,
-        permission: "company_settings",
-      },
-    ],
-  },
-  {
-    // Products used to head this group; it now sits with Inventory under
-    // Warehouse & Fulfilment. What is left is the two reference destinations —
-    // the forms reps fill in and the files they are given.
-    label: "Resources",
-    items: [
-      { href: "/forms", label: "Forms", icon: FileText, permission: "resources" },
-      { href: "/files", label: "Files", icon: Folder, permission: "resources" },
-    ],
-  },
-];
+/* ----------------------------------------------------------------- pages */
 
-/** Flat list, for anything that only needs the destinations. */
-export const navItems: NavItemDef[] = navGroups.flatMap((g) => g.items);
+const DASHBOARD: ItemDef = {
+  href: "/",
+  label: "Dashboard",
+  icon: LayoutDashboard,
+  permission: "dashboard",
+};
 
 /**
- * The one destination that counts as "where you are", or null.
- *
- * Longest match wins, and that is the whole point: `/warehouse/insights` starts
- * with `/warehouse`, so a plain `startsWith` per item lights up two entries at
- * once. That was survivable while both sat in the same group and merely looked
- * untidy; with Insights lifted to the top it would highlight in two separate
- * groups and claim you are in two places.
- *
- * `/` is matched exactly, or it prefixes every path in the app.
+ * The customer's icon follows the company's word for it: a shop front for
+ * stores, a house for properties, a briefcase for clients, a pin for stops.
  */
-export function activeHref(pathname: string): string | null {
-  let best: string | null = null;
-  for (const item of navItems) {
-    const hit =
-      item.href === "/"
-        ? pathname === "/"
-        : pathname === item.href || pathname.startsWith(`${item.href}/`);
-    if (hit && (best === null || item.href.length > best.length)) best = item.href;
+function siteIcon(t: Terms): typeof LayoutDashboard {
+  switch (t.site.one.toLowerCase()) {
+    case "store":
+    case "shop":
+      return Store;
+    case "property":
+    case "home":
+    case "house":
+      return House;
+    case "client":
+    case "customer":
+      return Briefcase;
+    case "stop":
+      return MapPin;
+    default:
+      return Building2;
   }
-  return best;
+}
+
+const SITES: ItemDef = {
+  href: "/stores",
+  label: (t) => t.site.many,
+  icon: Building2,
+  iconFor: siteIcon,
+  permission: "sales_coverage",
+  tabs: [
+    { href: "/stores", label: (t) => t.site.many, permission: "sales_coverage" },
+    // Locations that could not settle themselves. A button on the page used to
+    // be the only way in.
+    { href: "/stores/review", label: "Location exceptions", permission: "field_ops" },
+  ],
+};
+
+const TERRITORIES: ItemDef = {
+  href: "/territories",
+  label: (t) => t.territory.many,
+  icon: MapIcon,
+  permission: "sales_coverage",
+};
+
+const LEADS: ItemDef = {
+  href: "/leads",
+  label: (t) => t.prospect.many,
+  icon: Target,
+  permission: "sales_coverage",
+};
+
+const SCHEDULE: ItemDef = {
+  href: "/schedule",
+  label: "Schedule",
+  icon: Calendar,
+  permission: "field_ops",
+};
+
+const JOBS: ItemDef = {
+  // The list of the work itself, in the company's word ("Cleans", "Patrols",
+  // "Visits"). It used to be reachable only from dashboard tiles, while the
+  // menu offered the check-in feed as "Jobs & Activities"; the feed is now a
+  // tab beside it.
+  href: "/visits",
+  label: (t) => t.job.many,
+  icon: ClipboardList,
+  permission: "field_ops",
+  tabs: [
+    { href: "/visits", label: (t) => t.job.many, permission: "field_ops" },
+    { href: "/activities", label: "Activity", permission: "field_ops" },
+    { href: "/visits/off-site", label: "Off-site check-ins", permission: "field_ops" },
+  ],
+};
+
+const TRACKING: ItemDef = {
+  // Gated by `insights`, not `field_ops`: `location_pings` and `visits` are
+  // readable by the manager role only, so anyone else would be shown an empty
+  // map that looks like nobody is working.
+  href: "/tracking",
+  label: "Tracking",
+  icon: Navigation,
+  permission: "insights",
+  tabs: [
+    { href: "/tracking", label: "Live map", permission: "insights" },
+    // Where the vehicles went and how far: the same question as the map, a
+    // day later.
+    { href: "/logbook", label: "Vehicle logbook", permission: "insights" },
+  ],
+};
+
+const PROMOTIONS: ItemDef = {
+  href: "/promotions",
+  label: "Promotions",
+  icon: BadgePercent,
+  permission: "field_ops",
+};
+
+const STAFF: ItemDef = {
+  href: "/representatives",
+  label: (t) => t.staff.many,
+  icon: Users,
+  permission: "team",
+};
+
+const ORDERS: ItemDef = {
+  href: "/orders",
+  label: "Orders",
+  icon: ClipboardCheck,
+  permission: "warehouse",
+};
+
+const QUOTES: ItemDef = {
+  href: "/quotes",
+  label: "Quotes",
+  icon: FilePen,
+  permission: "invoicing",
+};
+
+const PRODUCTS: ItemDef = {
+  // Keeps `resources`, not `warehouse`: moving an item between groups changes
+  // where it appears, not who may open it.
+  href: "/products",
+  label: "Products",
+  icon: Package,
+  permission: "resources",
+};
+
+const INVENTORY: ItemDef = {
+  href: "/inventory",
+  label: "Inventory",
+  icon: Boxes,
+  permission: "warehouse",
+};
+
+const WAREHOUSE: ItemDef = {
+  // The dispatch and delivery board: what is waiting, moving and outstanding.
+  href: "/warehouse",
+  label: "Warehouse",
+  icon: Warehouse,
+  permission: "warehouse",
+};
+
+const RECURRING_ORDERS: ItemDef = {
+  href: "/recurring-orders",
+  label: "Recurring orders",
+  icon: Repeat,
+  permission: "warehouse",
+};
+
+const INVOICES: ItemDef = {
+  href: "/invoices",
+  label: "Invoices",
+  icon: Receipt,
+  permission: "invoicing",
+  tabs: [
+    { href: "/invoices", label: "Invoices", permission: "invoicing" },
+    {
+      href: "/contracts",
+      label: "Contracts",
+      permission: "invoicing",
+      when: (s) => s.money_contracts,
+    },
+    { href: "/statements", label: "Statements", permission: "invoicing" },
+    {
+      href: "/price-list",
+      label: "Price list",
+      permission: "invoicing",
+      when: (s, m) => usesPriceList(switchesOf(s), m),
+    },
+  ],
+};
+
+const OWED: ItemDef = {
+  href: "/owed",
+  label: "Who owes you",
+  icon: HandCoins,
+  permission: "invoicing",
+};
+
+const COMMISSIONS: ItemDef = {
+  // Pay information about colleagues: manager-only, as it was under Insights.
+  href: "/commissions",
+  label: "Commissions",
+  icon: Coins,
+  permission: "insights",
+};
+
+const REPORTS: ItemDef = {
+  href: "/reports",
+  label: "Reports",
+  icon: BarChart3,
+  permission: "insights",
+  // Each report page is a tab here rather than a line in the menu. The tabs
+  // inside the Reports page itself (coverage, adherence and the rest) already
+  // follow the company's trade (`lib/report-tabs.ts`).
+  tabs: [
+    { href: "/reports", label: "Reports", permission: "insights" },
+    {
+      href: "/reports/rep-performance",
+      label: (t) => `${t.staff.one} performance`,
+      permission: "insights",
+    },
+    { href: "/sales", label: "Sales", permission: "insights" },
+    { href: "/targets", label: "Targets", permission: "insights" },
+    { href: "/warehouse/insights", label: "Warehouse insights", permission: "insights" },
+  ],
+};
+
+/**
+ * The HR module. The HR overview is a tab on Employees rather than a second
+ * dashboard in the menu: the Dashboard stays the one place to start.
+ */
+const HR_ITEMS: ItemDef[] = [
+  {
+    href: "/hr/employees",
+    label: "Employees",
+    icon: Contact,
+    permission: "hr",
+    tabs: [
+      { href: "/hr/employees", label: "Employees", permission: "hr" },
+      { href: "/hr", label: "Overview", permission: "hr" },
+    ],
+  },
+  { href: "/hr/attendance", label: "Attendance", icon: CalendarCheck, permission: "hr" },
+  { href: "/hr/leave", label: "Leave", icon: CalendarOff, permission: "hr" },
+  { href: "/hr/performance", label: "Performance", icon: Star, permission: "hr" },
+  { href: "/hr/documents", label: "Documents", icon: FolderLock, permission: "hr" },
+  { href: "/hr/disciplinary", label: "Disciplinary", icon: ShieldAlert, permission: "hr" },
+];
+
+const PEOPLE_AND_PERMISSIONS: ItemDef = {
+  href: "/settings/users",
+  label: "People & permissions",
+  icon: ShieldCheck,
+  permission: "admin",
+};
+
+const COMPANY_SETTINGS: ItemDef = {
+  href: "/settings/company",
+  label: "Company settings",
+  icon: Settings,
+  permission: "company_settings",
+  // Every kind of setting in one place. Each tab keeps its own permission: an
+  // HR manager reaches HR settings here, and a warehouse clerk the warehouse
+  // setup (suppliers, drivers, vehicles), exactly as before; the item opens
+  // whichever of them they may see first.
+  tabs: [
+    { href: "/settings/company", label: "Company", permission: "company_settings" },
+    { href: "/hr/settings", label: "HR", permission: "hr_settings" },
+    { href: "/warehouse/settings", label: "Warehouse", permission: "warehouse" },
+  ],
+  also: ["/plans"],
+};
+
+const FORMS: ItemDef = { href: "/forms", label: "Forms", icon: FileText, permission: "resources" };
+const FILES: ItemDef = { href: "/files", label: "Files", icon: Folder, permission: "resources" };
+
+/* --------------------------------------------------------------- layouts */
+
+const PEOPLE: GroupDef = { label: "People", items: HR_ITEMS };
+const ADMIN: GroupDef = { label: "Admin", items: [PEOPLE_AND_PERMISSIONS, COMPANY_SETTINGS] };
+const RESOURCES: GroupDef = { label: "Resources", items: [FORMS, FILES] };
+// "Reports" over a single "Reports" says nothing the item does not, so the
+// item stands alone, like the Dashboard.
+const REPORTS_GROUP: GroupDef = { label: null, items: [REPORTS] };
+
+/**
+ * Cleaning, garden, plumbing, installation, maintenance, security, pest
+ * control, pool, delivery and general: who the customers are, today's work,
+ * the team, the money, how it went, and the company.
+ */
+const SERVICE_LAYOUT: GroupDef[] = [
+  { label: null, items: [DASHBOARD] },
+  { label: "Customers", items: [SITES, TERRITORIES] },
+  { label: "Operations", items: [SCHEDULE, JOBS, TRACKING] },
+  { label: "Team", items: [STAFF] },
+  { label: "Finance", items: [QUOTES, INVOICES, OWED] },
+  REPORTS_GROUP,
+  PEOPLE,
+  ADMIN,
+  RESOURCES,
+];
+
+/**
+ * Distribution and FMCG: the same areas, plus the stock and the orders that a
+ * company selling its own products has to find.
+ */
+const DISTRIBUTION_LAYOUT: GroupDef[] = [
+  { label: null, items: [DASHBOARD] },
+  { label: "Sales", items: [SITES, LEADS, ORDERS, QUOTES, PROMOTIONS] },
+  { label: "Field team", items: [SCHEDULE, JOBS, TRACKING, STAFF, TERRITORIES] },
+  { label: "Inventory", items: [PRODUCTS, INVENTORY, WAREHOUSE, RECURRING_ORDERS] },
+  { label: "Finance", items: [INVOICES, OWED, COMMISSIONS] },
+  REPORTS_GROUP,
+  PEOPLE,
+  ADMIN,
+  RESOURCES,
+];
+
+export function layoutFor(modules: ModuleSet): GroupDef[] {
+  return moduleEnabled(modules, "distribution") ? DISTRIBUTION_LAYOUT : SERVICE_LAYOUT;
+}
+
+/** Every item in either layout, once: for checks that ask what exists. */
+export const allItemDefs: readonly ItemDef[] = [
+  ...new Set([...SERVICE_LAYOUT, ...DISTRIBUTION_LAYOUT].flatMap((g) => g.items)),
+];
+
+/* ------------------------------------------------------------- resolving */
+
+function text(label: Label, terms: Terms): string {
+  return typeof label === "function" ? label(terms) : label;
+}
+
+function offered(
+  page: PageDef,
+  permissions: PermissionSet,
+  modules: ModuleSet,
+  settings: CompanySettings | undefined
+): boolean {
+  return (
+    (page.permission === undefined || can(permissions, page.permission)) &&
+    canAccessPath(permissions, page.href) &&
+    canReachPath(modules, page.href) &&
+    (page.when === undefined || settings === undefined || page.when(settings, modules))
+  );
 }
 
 /**
- * The groups this role should be shown, with empty groups dropped.
+ * The item as this person sees it, or null when there is nothing in it they
+ * may open. When its own page is closed to them but a tab is open, the item
+ * leads to that tab: an HR manager's "Company settings" opens HR settings.
+ */
+function resolveItem(
+  item: ItemDef,
+  permissions: PermissionSet,
+  modules: ModuleSet,
+  terms: Terms,
+  settings: CompanySettings | undefined
+): NavItem | null {
+  const tabs = (item.tabs ?? [])
+    .filter((tab) => offered(tab, permissions, modules, settings))
+    .map((tab) => ({ href: tab.href, label: text(tab.label, terms) }));
+  const ownPage = offered(item, permissions, modules, settings);
+  const href = ownPage ? item.href : tabs[0]?.href;
+  if (href === undefined) return null;
+  return {
+    id: item.href,
+    href,
+    label: text(item.label, terms),
+    icon: item.iconFor ? item.iconFor(terms) : item.icon,
+    permission: item.permission,
+    tabs,
+    matches: [...new Set([item.href, ...tabs.map((t) => t.href), ...(item.also ?? [])])],
+  };
+}
+
+/**
+ * The groups this person should be shown, with empty groups dropped.
  *
- * The `permission` field says what we *intend* to offer; `canAccessPath` says
+ * The `permission` field says what we intend to offer; `canAccessPath` says
  * what the proxy will actually serve. Requiring both means the two can never
- * drift into offering a link that bounces: get the path map wrong and the item
- * quietly disappears from the menu rather than becoming a dead end.
+ * drift into offering a link that bounces.
  */
 export function visibleNavGroups(
   permissions: PermissionSet,
-  // The company's modules. A destination whose module is off is not offered,
-  // whatever the person's permissions: the proxy would only explain that it is
-  // not part of the plan. Which module an item belongs to comes from its path
-  // (`moduleForPath`), the same map the proxy uses, so the two cannot drift.
+  // The company's modules. A page whose module is off is not offered, whatever
+  // the person's permissions. Which module a page belongs to comes from its
+  // path (`moduleForPath`), the same map the proxy uses.
   modules: ModuleSet,
   // The company's words for the labels. Defaulted so a caller that only asks
-  // which destinations are offered need not care what they are called.
+  // which pages are offered need not care what they are called.
   terms: Terms = DEFAULT_TERMS,
-  // The company's settings, for items it may not use (contracts, the price list).
   settings?: CompanySettings
 ): NavGroup[] {
-  return navGroups
+  return layoutFor(modules)
     .map((group) => ({
-      label: typeof group.label === "function" ? group.label(terms, modules) : group.label,
+      label: group.label,
       items: group.items
-        .filter(
-          (item) =>
-            (item.permission === undefined || can(permissions, item.permission)) &&
-            canAccessPath(permissions, item.href) &&
-            canReachPath(modules, item.href) &&
-            (item.when === undefined || settings === undefined || item.when(settings, modules))
-        )
-        .map((item) => ({
-          href: item.href,
-          icon: item.icon,
-          permission: item.permission,
-          label: typeof item.label === "function" ? item.label(terms) : item.label,
-        })),
+        .map((item) => resolveItem(item, permissions, modules, terms, settings))
+        .filter((item): item is NavItem => item !== null),
     }))
     .filter((group) => group.items.length > 0);
+}
+
+/** Every page the menu leads to, items and tabs alike. */
+export function reachablePages(groups: NavGroup[]): NavPage[] {
+  const seen = new Map<string, NavPage>();
+  for (const item of groups.flatMap((g) => g.items)) {
+    seen.set(item.href, { href: item.href, label: item.label });
+    for (const tab of item.tabs) if (!seen.has(tab.href)) seen.set(tab.href, tab);
+  }
+  return [...seen.values()];
+}
+
+/** Pages reached from the profile menu rather than the sidebar. */
+const OUTSIDE_THE_MENU = ["/hr/me"];
+
+/**
+ * The item that counts as "where you are", or null.
+ *
+ * Longest match wins, and that is the whole point: `/warehouse/insights` is a
+ * Reports tab and `/warehouse/settings` a Company settings tab, while
+ * `/warehouse` is the Warehouse item; a plain `startsWith` would light up two
+ * items at once. `/` is matched exactly, or it prefixes every path in the app.
+ */
+export function activeItem(groups: NavGroup[], pathname: string): NavItem | null {
+  // My HR is in the profile menu, so no sidebar item is "here", though its
+  // path sits under the HR overview's.
+  if (OUTSIDE_THE_MENU.some((p) => matchesPrefix(pathname, p))) return null;
+  let best: { item: NavItem; length: number } | null = null;
+  for (const item of groups.flatMap((g) => g.items)) {
+    for (const prefix of item.matches) {
+      const hit = prefix === "/" ? pathname === "/" : matchesPrefix(pathname, prefix);
+      if (hit && (best === null || prefix.length > best.length)) best = { item, length: prefix.length };
+    }
+  }
+  return best?.item ?? null;
+}
+
+/**
+ * The tab row for this page: the active item's tabs, when there are at least
+ * two and this page is one of them. A detail page (one invoice, one employee)
+ * has its own way back and no row.
+ */
+export function tabsFor(groups: NavGroup[], pathname: string): { tabs: NavPage[]; current: string } | null {
+  const item = activeItem(groups, pathname);
+  if (!item || item.tabs.length < 2) return null;
+  const current = item.tabs.find((t) => t.href === pathname);
+  return current ? { tabs: item.tabs, current: current.href } : null;
+}
+
+/**
+ * The destinations the phone's bottom bar offers, in order of use: the day's
+ * work first, then the customers and the team. Somebody who has none of those
+ * (an HR manager, a warehouse clerk) gets the first places in their own menu
+ * instead. Four at most; "More" opens the full menu.
+ */
+const MOBILE_PRIORITY = ["/", "/visits", "/schedule", "/stores", "/representatives", "/reports"];
+
+export function mobilePrimary(groups: NavGroup[]): NavItem[] {
+  const items = groups.flatMap((g) => g.items);
+  const chosen = MOBILE_PRIORITY.map((id) => items.find((i) => i.id === id)).filter(
+    (i): i is NavItem => i !== undefined
+  );
+  for (const item of items) {
+    if (chosen.length >= 4) break;
+    if (!chosen.includes(item)) chosen.push(item);
+  }
+  return chosen.slice(0, 4);
 }

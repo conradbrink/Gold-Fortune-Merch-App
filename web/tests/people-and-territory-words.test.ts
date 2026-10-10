@@ -76,21 +76,24 @@ test("Gold Fortune's territory refusals read as they always did", async () => {
 });
 
 test("another company's territory refusals use its words", async () => {
+  // A company that calls its territories "areas" (the old default, which a
+  // company may still choose), with the neutral words for everything else.
+  const areas = parseTerms({ territory: { one: "Area", many: "Areas" } });
   assert.equal(
-    await message(createTerritory(duplicate, "org", "North", "r1", "territory", DEFAULT_TERMS)),
+    await message(createTerritory(duplicate, "org", "North", "r1", "territory", areas)),
     'There is already an area called "North" here.'
   );
   assert.equal(
-    await message(moveTerritory(nothing, "t1", "r1", DEFAULT_TERMS)),
+    await message(moveTerritory(nothing, "t1", "r1", areas)),
     "The area was not moved — you may not have permission."
   );
   assert.equal(
-    await message(setStoreTerritory(nothing, "s1", "t1", DEFAULT_TERMS)),
+    await message(setStoreTerritory(nothing, "s1", "t1", areas)),
     "The site was not moved — you may not have permission."
   );
   assert.equal(
     await message(
-      deleteTerritory(answering({ data: null, error: { code: "23503", message: "fk" } }), "t1", DEFAULT_TERMS)
+      deleteTerritory(answering({ data: null, error: { code: "23503", message: "fk" } }), "t1", areas)
     ),
     "Still in use. Move its sites and sub-areas out first."
   );

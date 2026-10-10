@@ -37,7 +37,7 @@ import {
 } from "@/lib/access";
 
 /**
- * Users and permissions.
+ * People and permissions.
  *
  * A job role is a starting point, not a cage: choosing one ticks its boxes and
  * you then tick or untick individually. That is the QuickBooks arrangement, and
@@ -113,7 +113,7 @@ export default function UsersPage() {
   if (!directory) {
     return error ? (
       <div className="space-y-4">
-        <h1 className="text-xl font-semibold tracking-tight text-foreground">Users and permissions</h1>
+        <h1 className="text-xl font-semibold tracking-tight text-foreground">People and permissions</h1>
         <div className="rounded-md border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive">
           <p className="font-medium">Could not load users</p>
           <p className="mt-1">{error}</p>
@@ -132,7 +132,7 @@ export default function UsersPage() {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-xl font-semibold tracking-tight text-foreground">
-            Users and permissions
+            People and permissions
           </h1>
           <p className="text-sm text-muted-foreground">
             {directory.users.length} people · a job role ticks the boxes, then
@@ -153,7 +153,7 @@ export default function UsersPage() {
       <Tabs defaultValue="people">
         <TabsList>
           <TabsTrigger value="people">People</TabsTrigger>
-          <TabsTrigger value="roles">Job roles</TabsTrigger>
+          <TabsTrigger value="roles">Roles and permissions</TabsTrigger>
         </TabsList>
 
         <TabsContent value="people" className="mt-4">

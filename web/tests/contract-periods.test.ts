@@ -47,21 +47,22 @@ test("period labels", () => {
   assert.equal(periodLabel("2028-02-01", "2028-02-29"), "February 2028");
 });
 
-// The Money menu follows the company's switches: Contracts only when it uses
-// them, the price list only when it quotes or invoices services.
-import { visibleNavGroups } from "@/components/layout/nav-items";
+// The Finance menu follows the company's switches: Contracts only when it uses
+// them, the price list only when it quotes or invoices services. Both are tabs
+// on Invoices.
+import { reachablePages, visibleNavGroups } from "@/components/layout/nav-items";
 import { toModuleSet } from "@/lib/modules";
 import { toPermissionSet } from "@/lib/permissions";
 import { parseCompanyConfig } from "@/lib/company-config";
 
-test("the Money menu follows the company's switches", () => {
+test("the Finance menu follows the company's switches", () => {
   const admin = toPermissionSet(["admin"]);
   const settings = (s: Record<string, unknown>) =>
     parseCompanyConfig({ org_id: "o", settings: s, modules: {} })!.settings;
   const money = (modules: Record<string, boolean>, s: Record<string, unknown>) =>
-    visibleNavGroups(admin, toModuleSet(modules), undefined, settings(s))
-      .find((g) => g.label === "Money")
-      ?.items.map((i) => i.href) ?? [];
+    reachablePages(
+      visibleNavGroups(admin, toModuleSet(modules), undefined, settings(s)).filter((g) => g.label === "Finance")
+    ).map((p) => p.href);
   const cleaner = money({ invoicing: true }, { money_workflow: "contract_extras", money_contracts: true });
   assert.ok(cleaner.includes("/contracts") && cleaner.includes("/price-list"), cleaner.join(","));
   const distributor = money(
