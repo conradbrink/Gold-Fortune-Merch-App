@@ -6,7 +6,7 @@ import { SpotsText } from "@/components/founding-spots";
 import { Logo } from "@/components/logo";
 import { MetaPixel } from "@/components/meta-pixel";
 import { ProofSection } from "@/components/proof-section";
-import { founding, foundingVideoUrl, pricing, rand, site } from "@/lib/site";
+import { founding, pricing, rand, site } from "@/lib/site";
 
 // The Founding 10 page, for visitors who arrive from Facebook: it has to make
 // sense on its own, and the offer has to be the first thing they see. So the
@@ -135,7 +135,7 @@ export default function FoundingPage() {
             </div>
           </div>
 
-          <div className="grid content-start gap-4 rounded-2xl bg-white p-5 shadow-sm ring-1 ring-teal-900/15 sm:p-7 lg:col-start-2 lg:row-span-2 lg:row-start-1">
+          <div className="grid content-start gap-4 rounded-2xl bg-white p-5 shadow-sm ring-1 ring-teal-900/15 sm:p-7 lg:col-start-2 lg:row-start-1">
             <h2 className="font-display text-2xl font-extrabold leading-tight text-teal-900">What you get as a founder</h2>
             <ul className="grid gap-2.5">
               {gets.map(([label, value]) => (
@@ -168,22 +168,6 @@ export default function FoundingPage() {
             </a>
           </div>
 
-          {/* The video goes here when it is ready. */}
-          <div className="lg:col-start-1 lg:row-start-2">
-            {foundingVideoUrl ? (
-              <video
-                src={foundingVideoUrl}
-                controls
-                playsInline
-                preload="metadata"
-                className="aspect-video w-full rounded-2xl bg-teal-950 ring-1 ring-line"
-              />
-            ) : (
-              <div className="grid aspect-video w-full place-items-center rounded-2xl border-2 border-dashed border-teal-700/40 bg-white p-6 text-center text-sm font-semibold text-teal-700">
-                [Video goes here]
-              </div>
-            )}
-          </div>
         </section>
 
         {/* 2. Proof, straight under the offer */}

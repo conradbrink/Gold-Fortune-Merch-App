@@ -80,10 +80,6 @@ export const founding = {
   apiUrl: process.env.NEXT_PUBLIC_FOUNDING_API || "https://app.tickd.co.za/api/founding",
 } as const;
 
-// The demo video at the top of /founding. Paste the address of the video file
-// (or leave it empty): until it is set the page shows a clearly marked space.
-export const foundingVideoUrl: string = "";
-
 // Google Analytics 4 for the whole site. Paste the Measurement ID ("G-" and
 // letters, from Admin > Data streams in Google Analytics) between the quotes;
 // while it is empty, nothing loads and nothing is sent. The privacy page says
