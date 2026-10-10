@@ -21,6 +21,8 @@ export type EmailContext = {
   attached?: boolean;
   /** Replies reach the company (it has an email address on its profile). */
   canReply?: boolean;
+  /** The company's own logo, a public address, shown at the top in place of its name. */
+  companyLogoUrl?: string | null;
 };
 
 export type RenderedEmail = { subject: string; html: string; text: string };
@@ -50,6 +52,11 @@ export function layout(
   const button = parts.button
     ? `<p style="margin:26px 0 0"><a href="${escapeHtml(parts.button.url)}" style="background:#0f5c4f;color:#ffffff;text-decoration:none;padding:13px 24px;border-radius:8px;display:inline-block;font-weight:700;font-size:15px">${escapeHtml(parts.button.label)}</a></p>`
     : "";
+  // The company's own logo when it has one (its name is the picture's text for a
+  // program that does not load pictures); otherwise its name.
+  const companyMark = ctx.companyLogoUrl
+    ? `<img src="${escapeHtml(ctx.companyLogoUrl)}" alt="${company}" style="display:block;border:0;width:auto;height:auto;max-width:200px;max-height:56px">`
+    : company;
   const small = (text: string) => `<p style="margin:14px 0 0;font-size:13px;line-height:1.5;color:#5b6b66">${text}</p>`;
   const attachedHtml = ctx.attached ? small("The PDF is attached to this email.") : "";
   const replyHtml = toClients && ctx.canReply ? small(`Questions? Just reply to this email and it will reach ${company}.`) : "";
@@ -71,7 +78,7 @@ export function layout(
   const html = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light"><title>${escapeHtml(parts.heading)}</title></head><body style="margin:0;padding:0;background:#eef2f1;font-family:Arial,Helvetica,sans-serif;color:#14211e">${preheader}
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#eef2f1"><tr><td align="center" style="padding:24px 12px">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px">
-<tr><td style="padding:0 4px 12px;font-size:15px;font-weight:700">${company}</td></tr>
+<tr><td style="padding:0 4px 14px;font-size:15px;font-weight:700">${companyMark}</td></tr>
 <tr><td style="background:#ffffff;border-radius:12px;border-top:4px solid #0f5c4f;padding:28px 24px;line-height:1.55;font-size:15px">
 <h1 style="margin:0 0 16px;font-size:21px;line-height:1.3">${escapeHtml(parts.heading)}</h1>
 ${parts.bodyHtml}

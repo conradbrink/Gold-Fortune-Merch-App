@@ -4,6 +4,7 @@ import type { Database } from "@/lib/supabase/types";
 import { brevoConfigured, sendViaBrevo } from "@/lib/email/brevo";
 import { ALERT_TEMPLATES, CLIENT_TEMPLATES, DOCUMENT_TEMPLATES, REPORT_TEMPLATES, renderEmail, type ReportLine } from "@/lib/email/templates";
 import { companyTime } from "@/lib/company-time";
+import { logoUrl } from "@/lib/branding";
 import { appUrl, signLink } from "@/lib/email/links";
 import { documentPdfAttachment } from "@/lib/email/attachment";
 import type { DocumentView } from "@/lib/client-document";
@@ -39,7 +40,7 @@ function matches(given: string, want: string): boolean {
   return a.length === b.length && timingSafeEqual(a, b);
 }
 
-type Org = { name: string; support_email: string | null };
+type Org = { name: string; support_email: string | null; logo_path: string | null };
 
 export async function GET(request: Request) {
   const secret = process.env.CRON_SECRET;
@@ -77,7 +78,7 @@ export async function GET(request: Request) {
   async function orgOf(id: string | null): Promise<Org | null> {
     if (!id) return null;
     if (!orgs.has(id)) {
-      const { data } = await admin.from("organizations").select("name, support_email").eq("id", id).maybeSingle();
+      const { data } = await admin.from("organizations").select("name, support_email, logo_path").eq("id", id).maybeSingle();
       orgs.set(id, (data as Org | null) ?? null);
     }
     return orgs.get(id) ?? null;
@@ -141,6 +142,7 @@ export async function GET(request: Request) {
       continue;
     }
     const org = await orgOf(m.org_id);
+    const companyLogo = process.env.NEXT_PUBLIC_SUPABASE_URL ? logoUrl(process.env.NEXT_PUBLIC_SUPABASE_URL, org?.logo_path ?? null) : null;
     const companyName = org?.name?.trim() || "Tickd";
     const unsubscribeUrl = CLIENT_TEMPLATES.has(m.template) ? `${appUrl()}/c/unsubscribe/${signLink("unsubscribe", m.id)}` : null;
     let payload = (m.payload ?? {}) as Record<string, unknown>;
@@ -196,7 +198,7 @@ export async function GET(request: Request) {
     let email: ReturnType<typeof renderEmail> = null;
     let renderError: string | null = null;
     try {
-      email = renderEmail(m.template, payload, { companyName, unsubscribeUrl, attached: attachment !== null, canReply: !!org?.support_email });
+      email = renderEmail(m.template, payload, { companyName, unsubscribeUrl, attached: attachment !== null, canReply: !!org?.support_email, companyLogoUrl: companyLogo });
     } catch (e) {
       renderError = e instanceof Error ? e.message : String(e);
     }
