@@ -430,6 +430,24 @@ const TEMPLATES: Record<string, Renderer> = {
       button: "View statement and pay",
     });
   },
+  // Tickd's own message to a new trial's owner: open the link to confirm the
+  // address, which lets the company email its clients (20261010250000).
+  confirm_email: (payload, ctx) => {
+    const url = typeof payload.url === "string" ? payload.url : null;
+    if (!url) throw new Error("A confirmation email needs its link.");
+    const { html, text } = layout(ctx, {
+      heading: "Confirm your email address",
+      preheader: "One click, and your invoices and quotes can go to clients.",
+      bodyHtml: `<p style="margin:0">Thanks for starting your free trial of Tickd.</p><p style="margin:16px 0 0">Please confirm this is your email address. Until you do, ${escapeHtml(ctx.companyName)} can use everything in Tickd, but cannot email invoices, quotes, statements or job reports to clients.</p>`,
+      bodyText: `Thanks for starting your free trial of Tickd.\n\nPlease confirm this is your email address. Until you do, ${ctx.companyName} can use everything in Tickd, but cannot email invoices, quotes, statements or job reports to clients.`,
+      button: { label: "Confirm my email address", url },
+      closing: {
+        html: `<p style="margin:16px 0 0">If you did not sign up for Tickd, you can ignore this email.</p>`,
+        text: "If you did not sign up for Tickd, you can ignore this email.",
+      },
+    });
+    return { subject: "Confirm your email address for Tickd", html, text };
+  },
   test: (_payload, ctx) => {
     const { html, text } = layout(ctx, {
       heading: "Your emails are working",

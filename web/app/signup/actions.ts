@@ -4,7 +4,8 @@ import { headers } from "next/headers";
 import { createClient } from "@/lib/supabase/server";
 import { platformAdminClient, templateDefaults } from "@/lib/platform";
 import { parseTemplateDefaults } from "@/lib/add-company";
-import { clientAddress, signupCompanyPayload, signupProblems, type SignupInput } from "@/lib/signup";
+import { SELF_SERVE_SIGNUP_OPEN, clientAddress, signupCompanyPayload, signupProblems, type SignupInput } from "@/lib/signup";
+import { FOUNDING_OFFER } from "@/lib/founding-offer";
 
 /**
  * The public free-trial sign-up (Stage 5). No session: anyone can post here,
@@ -65,6 +66,9 @@ export async function previewIndustries(
 export async function signupAction(
   input: SignupInput
 ): Promise<{ ok: true; signedIn: boolean } | { ok: false; error: string }> {
+  if (!SELF_SERVE_SIGNUP_OPEN) {
+    return { ok: false, error: `Sign-up is closed for now. Apply to be a founding member at ${FOUNDING_OFFER.applyUrl}.` };
+  }
   const problems = signupProblems(input);
   if (problems.length > 0) return { ok: false, error: problems.join(" ") };
 
@@ -105,7 +109,7 @@ export async function signupAction(
     };
   }
 
-  const { error } = await admin.rpc("start_trial_company", {
+  const { data: orgId, error } = await admin.rpc("start_trial_company", {
     p_company: company,
     p_templates: input.templates,
     p_owner: created.user.id,
@@ -124,6 +128,21 @@ export async function signupAction(
   }
 
   // Signed in on this browser, so the next page is their own dashboard.
+  // The trial is instant, but the company cannot email clients until the
+  // owner opens this link (20261010250000). Sent by the outbox like any other
+  // email; a failure here only means they ask for it again from the
+  // dashboard, so it never stops the sign-up.
+  if (typeof orgId === "string") {
+    const { error: confirmError } = await admin.rpc("queue_email", {
+      p_org: orgId,
+      p_to: company.owner.email,
+      p_to_name: company.owner.full_name,
+      p_template: "confirm_email",
+      p_payload: {},
+    });
+    if (confirmError) console.error("signup: the confirmation email was not queued", orgId, confirmError.message);
+  }
+
   const supabase = await createClient();
   const { error: signInError } = await supabase.auth.signInWithPassword({
     email: company.owner.email,

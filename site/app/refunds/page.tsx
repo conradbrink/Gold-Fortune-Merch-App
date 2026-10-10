@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { LegalPage } from "@/components/legal-page";
-import { site } from "@/lib/site";
+import { founding, site } from "@/lib/site";
 
 // DRAFT for the owner's lawyer to check before launch (owner, 8 Oct 2026).
 // Payfast's review asks for a cancellation and refund policy on the website.
@@ -12,7 +12,7 @@ export default function RefundsPage() {
     <LegalPage title="Cancellations and refunds">
       <h2>Try it first</h2>
       <p>
-        Every account starts with a {site.trialDays}-day free trial, with no card needed, so you can see whether{" "}
+        Every Founding member starts with {founding.days} days free, with no card needed, so you can see whether{" "}
         {site.name} works for your team before you pay anything.
       </p>
 

@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import { ArrowRight, CheckCircle2, Circle, Clock, Sparkles, X } from "lucide-react";
+import { ArrowRight, CheckCircle2, Circle, Clock, MailCheck, Sparkles, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { createClient } from "@/lib/supabase/client";
@@ -41,6 +41,12 @@ export function AccountCards() {
 function AccountCardsFor() {
   const terms = useTerms();
   const [trialEndsAt, setTrialEndsAt] = useState<string | null>(null);
+  const [confirmation, setConfirmation] = useState<{ needed: boolean; email: string | null } | null>(null);
+  const [resend, setResend] = useState<{ busy: boolean; message: string | null; failed: boolean }>({
+    busy: false,
+    message: null,
+    failed: false,
+  });
   const [onboarding, setOnboarding] = useState<Onboarding | null>(null);
   const [setup, setSetup] = useState<Setup | null>(null);
   const [team, setTeam] = useState<TeamLine[]>([]);
@@ -49,13 +55,18 @@ function AccountCardsFor() {
 
   const load = useCallback(async () => {
     const supabase = createClient();
-    const [account, list, wizard] = await Promise.all([
+    const [account, list, wizard, confirm] = await Promise.all([
       supabase.from("company_account").select("trial_ends_at").maybeSingle(),
       supabase.rpc("my_onboarding"),
       supabase.rpc("my_setup"),
+      supabase.rpc("my_email_confirmation"),
     ]);
     // Quietly absent on failure: these cards are a help, not the dashboard.
     if (!account.error) setTrialEndsAt(account.data?.trial_ends_at ?? null);
+    if (!confirm.error && confirm.data && typeof confirm.data === "object" && !Array.isArray(confirm.data)) {
+      const c = confirm.data as { needed?: unknown; email?: unknown };
+      setConfirmation({ needed: c.needed === true, email: typeof c.email === "string" ? c.email : null });
+    }
     const steps = list.error ? null : parseOnboarding(list.data);
     setOnboarding(steps);
     if (!wizard.error) setSetup(parseSetup(wizard.data));
@@ -88,6 +99,22 @@ function AccountCardsFor() {
       cancelled = true;
     };
   }, [load]);
+
+  async function sendConfirmation() {
+    setResend({ busy: true, message: null, failed: false });
+    const { data, error } = await createClient().rpc("request_email_confirmation");
+    if (error) {
+      setResend({ busy: false, message: error.message, failed: true });
+      return;
+    }
+    // Null: confirmed meanwhile (on another device), so the banner can go.
+    if (data === null) {
+      await load();
+      setResend({ busy: false, message: null, failed: false });
+      return;
+    }
+    setResend({ busy: false, message: `Sent to ${data}. Check your inbox, and your spam folder.`, failed: false });
+  }
 
   async function hide() {
     setHiding(true);
@@ -125,6 +152,25 @@ function AccountCardsFor() {
           </span>
           <Button variant="outline" size="sm" nativeButton={false} render={<Link href="/plans" />}>
             {trial.kind === "ended" ? "Talk to us" : "View plans"}
+          </Button>
+        </div>
+      )}
+
+      {confirmation?.needed && (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-900 dark:text-amber-200">
+          <span className="flex min-w-0 items-start gap-2">
+            <MailCheck className="mt-0.5 size-4 shrink-0" aria-hidden />
+            <span>
+              <span className="font-medium">Confirm your email address to send invoices and quotes to clients.</span>{" "}
+              {resend.message ? (
+                <span role={resend.failed ? "alert" : "status"}>{resend.message}</span>
+              ) : (
+                `We sent a link to ${confirmation.email ?? "your email address"}.`
+              )}
+            </span>
+          </span>
+          <Button variant="outline" size="sm" disabled={resend.busy} onClick={() => void sendConfirmation()}>
+            {resend.busy ? "Sending…" : "Send it again"}
           </Button>
         </div>
       )}

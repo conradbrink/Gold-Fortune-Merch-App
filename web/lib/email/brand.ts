@@ -17,7 +17,7 @@ export const TICKD_LOGO_FILE = "tickd-logo-email.png";
 export const PROMO = {
   headline: "Know what your team got done today.",
   body: "Tickd is the app for businesses whose staff work out on site. See where your people are, get photo proof of every task, and send quotes and invoices, all in one place.",
-  cta: "Try Tickd free for 14 days",
-  /** The site's address with a tag that says where the visit came from. */
-  url: `${TICKD_SITE_URL}/?utm_source=client-email&utm_medium=email&utm_campaign=sent-with-tickd`,
+  cta: "Become a Tickd founding member",
+  /** The Founding offer's page, with a tag that says where the visit came from. */
+  url: `${TICKD_SITE_URL}/founding?utm_source=client-email&utm_medium=email&utm_campaign=sent-with-tickd`,
 } as const;

@@ -81,7 +81,7 @@ export default function PrivacyPage() {
       <ul>
         <li>For as long as your account is open.</li>
         <li>
-          When a trial ends unpaid or a plan ends, the account becomes read-only. After 30 days we may delete the
+          When the free days end unpaid or a plan ends, the account becomes read-only. After 30 days we may delete the
           company&apos;s data, after letting you know.
         </li>
         <li>Invoices and payment records are kept for five years, as tax law requires.</li>

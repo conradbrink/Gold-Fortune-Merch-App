@@ -234,7 +234,12 @@ begin
   end if;
   select payload into v_j from public.message_outbox where org_id = v_org and template = 'alert'
    and related_id = (select id from public.alerts where org_id = v_org and rule = 'off_site_checkin');
-  if v_j -> 'terms' -> 'job' ->> 'one' is distinct from 'Visit'
+  -- The company's own word for a job, as it has it now (a trade's words are
+  -- data and change): the payload must carry that one.
+  if v_j -> 'terms' -> 'job' ->> 'one' is distinct from
+       (select coalesce(ct.singular, d.singular) from public.term_definitions d
+          left join public.company_terminology ct on ct.org_id = v_org and ct.key = d.key
+         where d.key = 'job')
      or v_j ->> 'timezone' is distinct from 'Africa/Johannesburg'
      or (v_j ->> 'total')::int is distinct from 1
      or v_j -> 'alerts' -> 0 ->> 'site_name' is distinct from 'Alert site one'

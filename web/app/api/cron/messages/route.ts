@@ -188,6 +188,11 @@ export async function GET(request: Request) {
     }
     // Alerts carry everything they show; the links need the app's address.
     if (ALERT_TEMPLATES.has(m.template)) payload = { ...payload, app_url: appUrl() };
+    // The confirmation link is signed here, as the unsubscribe link is, so the
+    // link itself is never stored in the outbox.
+    if (m.template === "confirm_email" && m.org_id) {
+      payload = { ...payload, url: `${appUrl()}/c/confirm/${signLink("confirm_email", m.org_id)}` };
+    }
     let email: ReturnType<typeof renderEmail> = null;
     let renderError: string | null = null;
     try {
