@@ -19,7 +19,7 @@ import { founding, foundingVideoUrl, pricing, rand, site } from "@/lib/site";
 
 export const metadata: Metadata = {
   title: `Become one of our Founding 10 | ${site.name}`,
-  description: `We're picking ${founding.spots} businesses to run ${site.name} free for ${founding.days} days. We set it all up. You get proof of every job. We get your story.`,
+  description: `We're taking on our first founding businesses to run ${site.name} free for ${founding.days} days. We set it all up. You get proof of every job. We get your story.`,
 };
 
 const h2 = "font-display text-2xl font-bold leading-[1.1] tracking-tight text-balance text-teal-900 sm:text-4xl";
@@ -62,8 +62,8 @@ const lookingFor = [
 // How it works: a date and what happens on it.
 const steps: [when: string, what: string][] = [
   [`Apply by ${founding.closes}`, `Apply by ${founding.closes}.`],
-  ["20 to 22 October", "We call our top picks from 20 to 22 October."],
-  [founding.tellsBy, `We tell the Founding ${founding.spots} on ${founding.tellsBy}.`],
+  ["20 to 22 October", "We call everyone who applies, from 20 to 22 October."],
+  [founding.tellsBy, `We confirm your place by ${founding.tellsBy}.`],
   ["From 26 October", "We set you up from 26 October."],
   ["Monday 2 November", `Your ${founding.days} days start on Monday 2 November.`],
   ["15 December to 5 January", "We pause the clock from 15 December to 5 January, so the holidays don't count."],
@@ -75,8 +75,8 @@ const faqs = [
     `What happens after ${founding.days} days?`,
     `Stay at ${rand(founding.price)} a month for ${founding.priceMonths} months. Or walk away. No card, no strings.`,
   ],
-  ["Who gets picked?", "Teams of 2 to 15 whose clients ask for proof."],
-  ["What if I'm not picked?", "You're first on the list for the next round, and we'll tell you as soon as it opens."],
+  ["Who can apply?", "Teams of 2 to 15 whose clients ask for proof."],
+  ["What happens after I apply?", `We call you between 20 and 22 October and confirm your place by ${founding.tellsBy}. Then we set everything up for you.`],
 ];
 
 const button =
@@ -124,7 +124,7 @@ export default function FoundingPage() {
               Become one of our Founding {founding.spots}.
             </h1>
             <p className="max-w-xl text-lg leading-relaxed text-pretty text-ink sm:text-xl">
-              We&apos;re picking {founding.spots} businesses to run {site.name} free for {founding.days} days. We set it all up. You get
+              We&apos;re taking on our first founding businesses to run {site.name} free for {founding.days} days. We set it all up. You get
               proof of every job. We get your story.
             </p>
             <div className="grid justify-items-start gap-2">

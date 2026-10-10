@@ -189,7 +189,7 @@ export default async function FoundingApplicationsPage({
                 {a.email ? (
                   <label className="flex items-center gap-2">
                     <input type="checkbox" name="sendEmail" />
-                    Email them the answer (Accepted or Not this time)
+                    Email them &ldquo;You are in&rdquo; (when the answer is Accepted)
                   </label>
                 ) : (
                   <span className="text-muted-foreground">No email address, so call or WhatsApp them.</span>
@@ -199,7 +199,7 @@ export default async function FoundingApplicationsPage({
                 </Button>
                 {emailed.has(a.id) && (
                   <span className="text-muted-foreground">
-                    {emailed.get(a.id)!.template === "founding_accepted" ? "Accepted" : "Not this time"} email{" "}
+                    &ldquo;You are in&rdquo; email{" "}
                     {emailed.get(a.id)!.status === "sent" ? "sent" : emailed.get(a.id)!.status} {dateTime.format(new Date(emailed.get(a.id)!.at))}
                   </span>
                 )}

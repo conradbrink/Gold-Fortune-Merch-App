@@ -370,8 +370,8 @@ export async function linkFoundingApplication(formData: FormData): Promise<void>
 
 /**
  * Founding applications: set an application's status (new, contacted, accepted,
- * declined, waiting list) and, when the operator ticks "Email them", send the
- * applicant the answer for accepted or declined through the outbox. Audit-logged
+ * declined, waiting list) and, when the operator ticks "Email them" on Accepted,
+ * send the applicant the "you are in" email through the outbox. Audit-logged
  * first, like linking. The same answer is never emailed twice (the outbox is
  * looked at first), and an applicant with no email address is simply not emailed.
  */

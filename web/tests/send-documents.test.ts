@@ -587,6 +587,9 @@ test("an application received says what happens next, in the applicant's words, 
   assert.match(e.html, /Hello Thandi,/);
   assert.match(e.html, /Shine Cleaning/);
   assert.ok(e.html.includes(FOUNDING_OFFER.closes) && e.html.includes(FOUNDING_OFFER.tellsBy));
+  assert.match(e.html, /We confirm your place by/);
+  assert.match(e.html, /call you between 20 and 22 October/);
+  assert.ok(!e.html.includes("If you are picked") && !e.html.includes("next round"));
   assert.match(e.html, /\+27821234567/);
   assert.match(e.html, /free for 60 days/);
   assert.match(e.html, /Sent by Tickd\./);
@@ -635,23 +638,21 @@ test("the offer to sign up fully says how many free days are left and where to c
 });
 
 test("emails from Tickd itself are their own set, and none of them is a client email", () => {
-  assert.deepEqual([...TICKD_TEMPLATES].sort(), ["application_received", "founding_accepted", "founding_declined", "trial_offer", "welcome"]);
+  assert.deepEqual([...TICKD_TEMPLATES].sort(), ["application_received", "founding_accepted", "trial_offer", "welcome"]);
   for (const t of TICKD_TEMPLATES) assert.ok(!CLIENT_TEMPLATES.has(t) && !DOCUMENT_TEMPLATES.has(t), t);
 });
 
-test("the founding answers: the accepted one gives the dates and price, the other keeps them on the list", () => {
+test("the founding answer: the accepted one gives the dates and price, and welcomes them", () => {
   const yes = renderEmail("founding_accepted", { first_name: "Thandi", business_name: "Shine Cleaning", whatsapp: "27821234567" }, tickd)!;
   assert.equal(yes.subject, "You are in, Thandi: one of Tickd's first 10");
   assert.ok(yes.html.includes(FOUNDING_OFFER.setupFrom) && yes.html.includes(FOUNDING_OFFER.startsOn));
   assert.match(yes.html, /R749 a month for 12 months/);
   assert.match(yes.html, /\+27821234567/);
-  assert.match(yes.html, /Shine Cleaning/);
+  assert.match(yes.html, /Welcome\. Shine Cleaning is one of/);
+  assert.ok(!yes.html.includes("Good news"));
   assert.match(yes.text, /Welcome aboard,\nThe Tickd team/);
-  const no = renderEmail("founding_declined", { first_name: "Thandi", business_name: "Shine Cleaning" }, tickd)!;
-  assert.equal(no.subject, "About your Tickd application");
-  assert.match(no.html, /first on the list for the next round/);
-  assert.ok(!no.html.includes(FOUNDING_OFFER.startsOn) && !no.html.includes("R749"));
   const bare = renderEmail("founding_accepted", {}, tickd)!;
   assert.match(bare.html, /Hello,/);
   assert.match(bare.html, /Your business is one of/);
+  assert.equal(renderEmail("founding_declined", {}, tickd), null);
 });
