@@ -107,11 +107,21 @@ export async function POST(request: Request) {
   if (left === null) return json(request, { error: "Applying is not available just now. Please try again in a moment." }, 503);
   const waitlist = left <= 0;
 
-  const { data: saved, error } = await admin
-    .from("founding_applications")
-    .insert({ ...application, status: waitlist ? "waitlist" : "new" })
-    .select("id")
-    .single();
+  const status = waitlist ? "waitlist" : "new";
+  const insert = (row: Record<string, unknown>) =>
+    admin
+      .from("founding_applications")
+      .insert(row as typeof application & { status: string })
+      .select("id")
+      .single();
+  let { data: saved, error } = await insert({ ...application, status });
+  // The attribution column comes with its own migration. If this code is live
+  // before it, PostgREST refuses the unknown column (PGRST204): save the
+  // application without it rather than lose it.
+  if (error?.code === "PGRST204" && application.attribution) {
+    console.error("founding: attribution column missing, saved without it");
+    ({ data: saved, error } = await insert({ ...application, attribution: undefined, status }));
+  }
   if (error || !saved) {
     console.error("founding: could not save an application", error?.message);
     return json(request, { error: "Your application could not be saved just now. Please try again." }, 500);

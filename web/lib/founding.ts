@@ -40,6 +40,8 @@ export type FoundingInput = {
   videoReview: string;
   marketingOk: boolean;
   source: string;
+  /** Where the visitor first came from, as the site recorded it (see checkAttribution). */
+  attribution?: unknown;
 };
 
 /** A checked application, ready to insert. */
@@ -56,7 +58,65 @@ export type FoundingApplication = {
   video_review: boolean;
   marketing_ok: true;
   source: string | null;
+  attribution: Attribution | null;
 };
+
+/**
+ * Where an applicant first came from: the advert or site that sent them and
+ * the first page they saw. The site keeps this in the visitor's browser from
+ * their first visit (no cookie, nothing that names them) and sends it only
+ * with an application, which is the point where an anonymous visitor becomes
+ * someone we know. It is what later answers "where did our customers come from".
+ */
+export type Attribution = {
+  utm_source?: string;
+  utm_medium?: string;
+  utm_campaign?: string;
+  utm_content?: string;
+  utm_term?: string;
+  /** The other site's host name only, never its full address. */
+  referrer?: string;
+  /** The path of the first page, without its query. */
+  landing_page?: string;
+  /** Which kind of ad click brought them ("gclid" is Google Ads, "fbclid" Meta). Never the click's ID. */
+  click_id?: "gclid" | "fbclid" | "msclkid" | "ttclid";
+  first_seen_at?: string;
+};
+
+const UTM_KEYS = ["utm_source", "utm_medium", "utm_campaign", "utm_content", "utm_term"] as const;
+const CLICK_IDS = ["gclid", "fbclid", "msclkid", "ttclid"] as const;
+
+/**
+ * The attribution the site sent, checked field by field. Anything odd is
+ * dropped, never an error: the visitor did nothing wrong, the link just
+ * carried something strange. Null when nothing usable is left.
+ */
+export function checkAttribution(raw: unknown, now: Date = new Date()): Attribution | null {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
+  const o = raw as Record<string, unknown>;
+  const text = (v: unknown, max: number) => {
+    if (typeof v !== "string") return undefined;
+    const t = v.trim();
+    return t && t.length <= max && !/[\u0000-\u001f\u007f]/.test(t) ? t : undefined;
+  };
+  const a: Attribution = {};
+  for (const key of UTM_KEYS) {
+    const v = text(o[key], 100);
+    if (v) a[key] = v;
+  }
+  const referrer = text(o.referrer, 253)?.toLowerCase();
+  if (referrer && /^[a-z0-9-]+(\.[a-z0-9-]+)+$/.test(referrer)) a.referrer = referrer;
+  const landing = text(o.landing_page, 200);
+  if (landing && /^\/[^\s?#]*$/.test(landing)) a.landing_page = landing;
+  if ((CLICK_IDS as readonly unknown[]).includes(o.click_id)) a.click_id = o.click_id as Attribution["click_id"];
+  const seen = text(o.first_seen_at, 40);
+  const seenAt = seen ? Date.parse(seen) : NaN;
+  const dayMs = 24 * 60 * 60 * 1000;
+  if (!Number.isNaN(seenAt) && seenAt <= now.getTime() + dayMs && seenAt >= now.getTime() - 400 * dayMs) {
+    a.first_seen_at = new Date(seenAt).toISOString();
+  }
+  return Object.keys(a).length > 0 ? a : null;
+}
 
 export type FoundingIssue = { field: keyof FoundingInput; message: string };
 
@@ -135,8 +195,31 @@ export function checkApplication(
       // A source the table would refuse is dropped, not an error: the visitor
       // did nothing wrong, the link just carried something odd.
       source: /^[a-z0-9_-]{1,40}$/.test(source) ? source : null,
+      attribution: checkAttribution(input.attribution),
     },
   };
+}
+
+const CLICK_LABEL: Record<NonNullable<Attribution["click_id"]>, string> = {
+  gclid: "a Google ad",
+  fbclid: "Facebook or Instagram",
+  msclkid: "a Microsoft ad",
+  ttclid: "a TikTok ad",
+};
+
+/** One plain line about where an applicant first came from, or null when nothing is known. */
+export function describeAttribution(a: Attribution | null | undefined): string | null {
+  if (!a) return null;
+  const parts: string[] = [];
+  const via = [a.utm_source, a.utm_medium].filter(Boolean).join(" / ");
+  if (via) parts.push(via);
+  if (a.utm_campaign) parts.push(`campaign ${a.utm_campaign}`);
+  if (a.click_id) parts.push(`clicked from ${CLICK_LABEL[a.click_id]}`);
+  if (a.referrer) parts.push(`sent by ${a.referrer}`);
+  if (!via && !a.click_id && !a.referrer) parts.push("came straight to the site");
+  if (a.landing_page) parts.push(`first page ${a.landing_page}`);
+  if (a.first_seen_at) parts.push(`first seen ${a.first_seen_at.slice(0, 10)}`);
+  return parts.join(", ");
 }
 
 /** The fields of an untrusted JSON body, as the right types (anything else becomes "" or false). */
@@ -156,6 +239,7 @@ export function inputFromBody(body: unknown): FoundingInput {
     videoReview: s("videoReview"),
     marketingOk: o.marketingOk === true,
     source: s("source"),
+    attribution: o.attribution,
   };
 }
 
@@ -192,6 +276,7 @@ export function applicationEmail(
     ["60-second video and Google review", yn(a.video_review)],
     ["Agreed to marketing use", yn(a.marketing_ok)],
     ["Came from", a.source ?? "(not known)"],
+    ["How they found us", describeAttribution(a.attribution) ?? "(not known)"],
   ];
   const html = `<!doctype html><html><body style="margin:0;background:#f7f7f2;font-family:Arial,Helvetica,sans-serif;color:#14211e">
 <div style="max-width:560px;margin:0 auto;padding:24px 16px">

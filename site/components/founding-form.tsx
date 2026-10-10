@@ -1,8 +1,10 @@
 "use client";
 
-import { useId, useState, type ReactNode } from "react";
+import { useId, useRef, useState, type ReactNode } from "react";
 import { founding, site } from "@/lib/site";
 import { trackLead } from "@/components/meta-pixel";
+import { track } from "@/components/analytics";
+import { firstVisit } from "@/lib/first-visit";
 
 // The Founding 10 application on /founding. It is posted to the app
 // (`founding.apiUrl`), which saves it, emails the owner and lists it under
@@ -157,6 +159,15 @@ export function FoundingForm() {
   const issues = state.kind === "error" ? state.issues : [];
   const problem = (f: Field) => missing[f] ?? issues.find((i) => i.field === f)?.message;
 
+  // The funnel's "started applying" step: the first time anything in the form
+  // takes focus, once per page load.
+  const startedRef = useRef(false);
+  function started() {
+    if (startedRef.current) return;
+    startedRef.current = true;
+    track("signup_started");
+  }
+
   async function submit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     if (state.kind === "sending") return;
@@ -198,11 +209,13 @@ export function FoundingForm() {
           marketingOk: agreed,
           website: text("website"),
           source: src,
+          attribution: firstVisit(),
         }),
       });
       const body = (await res.json().catch(() => null)) as { ok?: boolean; waitlist?: boolean; error?: string; issues?: Issue[] } | null;
       if (res.ok && body?.ok) {
         trackLead();
+        track("signup_completed", { waitlist: body.waitlist === true, trade: choice.trade });
         setState({ kind: "done", waitlist: body.waitlist === true });
         return;
       }
@@ -231,7 +244,7 @@ export function FoundingForm() {
 
   const sending = state.kind === "sending";
   return (
-    <form onSubmit={submit} className="grid gap-5">
+    <form onSubmit={submit} onFocusCapture={started} className="grid gap-5">
       <div className="grid gap-5 sm:grid-cols-2">
         <Labelled label="Your name" htmlFor={`${id}-name`} error={problem("name")}>
           <input id={`${id}-name`} name="name" required maxLength={80} autoComplete="name" className={input} />
