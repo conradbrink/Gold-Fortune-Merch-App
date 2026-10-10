@@ -1,6 +1,6 @@
 import { ProofSlides } from "@/components/proof-slides";
 
-// "Real results": what Gold Fortune, one of our clients, got from Tickd, on the main page just under the hero
+// "Real results": what Gold Fortune, one of our clients, got from Tickd, on the main page under "What do you need to start?"
 // and on /founding. The numbers are real, from Tickd's own data (see `proof`
 // in lib/site.ts for exactly what is compared). There is no "before Tickd"
 // data, so the first two weeks of use are the "before". The owner asked for

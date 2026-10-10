@@ -380,9 +380,6 @@ export default function Home() {
           </figure>
         </section>
 
-        {/* The result at one of our clients, straight under the hero. */}
-        <ProofSection applyHref="/founding" />
-
         {/* 2. Easy to say yes: the effort it doesn't take. */}
         <section aria-labelledby="start-title" className="border-y border-line bg-white">
           {/* Heading, photo, list on a phone; from lg the photo sits on the left
@@ -425,6 +422,9 @@ export default function Home() {
             </ul>
           </div>
         </section>
+
+        {/* The result at one of our clients, just under what you need to start. */}
+        <ProofSection applyHref="/founding" />
 
         {/* 3. The calls that eat the owner's day, and the answer with Tickd. */}
         <section aria-labelledby="day-title">
