@@ -22,6 +22,7 @@ import { Logo } from "@/components/logo";
 import { TradeTabs } from "@/components/trade-tabs";
 import { FoundingStart } from "@/components/founding-start";
 import { Peek, PhonePeek } from "@/components/phone-shot";
+import { PopIn } from "@/components/pop-in";
 import { PricingSection } from "@/components/pricing-section";
 import { ProofSection } from "@/components/proof-section";
 import { SectionViews } from "@/components/analytics";
@@ -400,15 +401,16 @@ export default function Home() {
                 width={900}
                 height={965}
                 unoptimized
-                className="aspect-[4/3] w-full rounded-2xl object-cover object-[50%_35%] lg:aspect-[9/10]"
+                className="aspect-square w-full rounded-2xl object-cover object-[50%_70%] sm:aspect-[4/3] sm:object-[50%_75%] lg:aspect-[9/10]"
               />
-              <AppMoment
-                icon={Sun}
-                who="Kagiso · Electrical"
-                title="Good morning, Kagiso!"
-                body="You have 3 jobs today. Here's the plan."
-                className="absolute inset-x-3 -bottom-8 sm:inset-x-auto sm:left-4 sm:w-80"
-              />
+              <PopIn className="absolute inset-x-3 -bottom-8 sm:inset-x-auto sm:left-4 sm:w-80">
+                <AppMoment
+                  icon={Sun}
+                  who="Kagiso · Electrical"
+                  title="Good morning, Kagiso!"
+                  body="You have 3 jobs today. Here's the plan."
+                />
+              </PopIn>
             </div>
             <ul className="grid content-start gap-5 lg:col-start-2">
               {easy.map(({ icon: Icon, title, body }) => (
