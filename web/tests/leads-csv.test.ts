@@ -51,3 +51,7 @@ test("the file has the header, a line per lead, and the trade's name", () => {
   assert.equal(lines[1], "Thandi Nkosi,thandi@example.com,27820000000,Nkosi Cleaning,Cleaning,Pretoria,new,,2026-10-10 08:15");
   assert.ok(lines[2].startsWith("Old One,,27821111111,B,x,T,waitlist,facebook"));
 });
+
+test("a lone carriage return does not hide a formula", () => {
+  assert.equal(csvCell("\r=1+1"), " =1+1");
+});

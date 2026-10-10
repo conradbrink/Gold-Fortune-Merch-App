@@ -22,7 +22,7 @@ const HEADERS = ["Name", "Email", "WhatsApp (with country code)", "Business", "T
  * Excel as a formula, so it gets a leading apostrophe; quotes are doubled.
  */
 export function csvCell(value: string | null | undefined): string {
-  let v = (value ?? "").replace(/\r?\n/g, " ");
+  let v = (value ?? "").replace(/[\r\n]+/g, " ");
   if (/^[=+\-@\t]/.test(v)) v = `'${v}`;
   return /[",]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v;
 }
