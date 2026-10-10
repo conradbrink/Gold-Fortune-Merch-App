@@ -20,7 +20,8 @@ import { Logo } from "@/components/logo";
 import { TradeTabs } from "@/components/trade-tabs";
 import { StartTrial } from "@/components/start-trial";
 import { PricingSection } from "@/components/pricing-section";
-import { confirmed, pricing, rand, site, weeklyCeiling } from "@/lib/site";
+import { ProofSection } from "@/components/proof-section";
+import { confirmed, founding, pricing, rand, site } from "@/lib/site";
 
 // Copy: ~/Downloads/site-copy-final-v7.md, reworked on 8 Oct 2026 with the
 // Hormozi offer skills (audit in the site-offer worktree's OFFER-AUDIT.md),
@@ -69,7 +70,7 @@ const teamSteps = [
 const ownerSteps = [
   ["Set it up.", "We help you add your team and your clients."],
   ["Plan the day.", "Give each person their jobs."],
-  ["Watch it happen.", "See everyone on a map, and photos as they come in."],
+  ["See it happen.", "See everyone on a map, and photos as they come in."],
   ["Get paid.", "Send quotes and invoices, and see who still owes you."],
 ];
 
@@ -125,7 +126,7 @@ const faqs = [
   { q: "Do they need new phones?", a: "No. Tickd runs on the Android phones your team already has." },
   {
     q: "What if there's no signal, or load-shedding?",
-    a: "It keeps working, and catches up when the signal comes back.",
+    a: "It keeps working, and sends everything once the signal is back.",
   },
   {
     q: "Can clients trust the photos?",
@@ -158,22 +159,27 @@ const lead = "max-w-2xl text-lg leading-relaxed text-pretty text-ink";
  */
 const OWNER_GETS = [
   "Know where your staff are and what they’re doing.",
-  "Track mileage and keep an eye on fuel costs.",
+  "Log every km for fuel claims.",
   "Get proof of every task with photos and reports.",
   "Know about missed tasks before your client does.",
   "Quote, invoice and get paid from one app.",
   "See who owes you and send payment reminders.",
-  "Track staff performance automatically.",
+  "See your team's good work, proven.",
 ];
 
-function TrialButton({ className = "" }: { className?: string }) {
+// The Founding card's way in: it goes to /founding, where the offer and the
+// application are. The ordinary free trial stays on the buttons further down.
+function FoundingButton() {
   return (
-    <a
-      href={site.signupUrl}
-      className={`flex w-full items-center justify-center rounded-full bg-amber-500 px-6 py-4 text-lg font-semibold text-teal-950 transition-[background-color,transform] duration-150 ease-out hover:bg-amber-400 active:scale-[0.97] sm:inline-flex sm:w-auto sm:py-3.5 sm:text-base ${className}`}
-    >
-      Get {site.name} free for {site.trialDays} days
-    </a>
+    <div className="grid gap-2 sm:justify-items-center">
+      <a
+        href="/founding"
+        className="flex w-full items-center justify-center rounded-full bg-amber-500 px-6 py-4 text-lg font-semibold text-teal-950 transition-[background-color,transform] duration-150 ease-out hover:bg-amber-400 active:scale-[0.97] sm:inline-flex sm:w-auto sm:py-3.5 sm:text-base"
+      >
+        Become a founding member
+      </a>
+      <p className="text-center text-sm font-semibold text-teal-700">Applications close {founding.closes}.</p>
+    </div>
   );
 }
 
@@ -259,6 +265,12 @@ export default function Home() {
   return (
     <>
       <header className="sticky top-0 z-40 border-b border-line/70 bg-mint/90 backdrop-blur">
+        <div className="bg-teal-900 px-4 py-2 text-center text-sm text-sand">
+          Founding 10 is open. {founding.days} days free, set up for you.{" "}
+          <a href="/founding" className="whitespace-nowrap font-semibold text-amber-500 underline underline-offset-4 hover:text-amber-400">
+            Become a founding member
+          </a>
+        </div>
         <div className="mx-auto flex h-14 max-w-6xl items-center justify-between px-4 sm:h-16 sm:px-6">
           <a href="#top" aria-label={`${site.name} home`}>
             <Logo />
@@ -318,17 +330,17 @@ export default function Home() {
               ))}
             </ul>
             <div className="grid max-w-xl gap-3 rounded-2xl bg-white p-5 ring-1 ring-teal-900/10 sm:grid-cols-[1fr_auto] sm:items-center">
-              <div>
-                <p className="font-display text-2xl font-bold leading-tight text-teal-900">
-                  {rand(weeklyCeiling())}
-                  <span className="text-base font-semibold text-muted"> a week</span>
+              <div className="grid gap-1.5">
+                <p className="w-fit rounded-full bg-amber-100 px-3 py-0.5 text-xs font-bold uppercase tracking-wide text-teal-900">
+                  The Founding 10
                 </p>
-                <p className="text-sm text-muted">
-                  {rand(pricing.monthly.base)} a month for a team of {pricing.includedUsers} users. {site.trialDays} days free, no card
-                  needed.
+                <p className="font-display text-3xl font-extrabold leading-tight text-teal-900">Free for {founding.days} days</p>
+                <p className="text-sm leading-relaxed text-ink">
+                  We set it all up for you. No card. Founding businesses pay {rand(founding.price)} a month for their first{" "}
+                  {founding.priceMonths} months.
                 </p>
               </div>
-              <TrialButton />
+              <FoundingButton />
             </div>
           </div>
           <figure className="tk-hero-demo grid gap-3">
@@ -338,6 +350,9 @@ export default function Home() {
             </figcaption>
           </figure>
         </section>
+
+        {/* The result at one of our clients, straight under the hero. */}
+        <ProofSection applyHref="/founding" />
 
         {/* 2. Easy to say yes: the effort it doesn't take. */}
         <section aria-labelledby="start-title" className="border-y border-line bg-white">

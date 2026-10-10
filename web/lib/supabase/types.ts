@@ -1153,6 +1153,66 @@ export type Database = {
         }
         Relationships: []
       }
+      founding_applications: {
+        Row: {
+          biggest_cost: string
+          business_name: string
+          created_at: string
+          how_run: string
+          id: string
+          marketing_ok: boolean
+          name: string
+          notified_at: string | null
+          source: string | null
+          status: string
+          status_changed_at: string | null
+          team_size: string
+          town: string
+          trade: string
+          video_review: boolean
+          whatsapp: string
+          whole_team: boolean
+        }
+        Insert: {
+          biggest_cost: string
+          business_name: string
+          created_at?: string
+          how_run: string
+          id?: string
+          marketing_ok: boolean
+          name: string
+          notified_at?: string | null
+          source?: string | null
+          status?: string
+          status_changed_at?: string | null
+          team_size: string
+          town: string
+          trade: string
+          video_review: boolean
+          whatsapp: string
+          whole_team: boolean
+        }
+        Update: {
+          biggest_cost?: string
+          business_name?: string
+          created_at?: string
+          how_run?: string
+          id?: string
+          marketing_ok?: boolean
+          name?: string
+          notified_at?: string | null
+          source?: string | null
+          status?: string
+          status_changed_at?: string | null
+          team_size?: string
+          town?: string
+          trade?: string
+          video_review?: boolean
+          whatsapp?: string
+          whole_team?: boolean
+        }
+        Relationships: []
+      }
       industry_templates: {
         Row: {
           code: string
@@ -8214,6 +8274,10 @@ export type Database = {
       consume_anonymous_rate_limit: {
         Args: { p_bucket: string; p_subject: string; p_limit: number; p_window_seconds: number }
         Returns: Json
+      }
+      founding_spots_left: {
+        Args: Record<string, never>
+        Returns: number
       }
       start_trial_company: {
         Args: { p_company: Json; p_templates: string[]; p_owner: string }

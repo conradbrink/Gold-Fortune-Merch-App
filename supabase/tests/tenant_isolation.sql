@@ -91,7 +91,10 @@ declare
                                      -- the price list and invoice numbering (Stage 6)
                                      'price_list','billing_counters',
                                      -- each trade's usual services (Stage 7)
-                                     'template_service_items'];
+                                     'template_service_items',
+                                     -- the Founding 10 applications from the sales site: the operator's own
+                                     -- list, service role only (supabase/tests/founding.sql F3 checks the grants)
+                                     'founding_applications'];
   c_children constant text[] := array['form_fields','form_responses','promotion_products',
                                        'promotion_stores','file_groups','file_reps',
                                        'hr_review_ratings','job_role_permissions',
