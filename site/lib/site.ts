@@ -48,7 +48,8 @@ export const confirmed = {
 // monthly; "Done for you" is the anchor plan.
 export const pricing = {
   currency: "R",
-  includedUsers: 3,
+  // 5 users for the base price (owner, 10 Oct 2026; was 3).
+  includedUsers: 5,
   monthly: { base: 1499, perExtra: 349 },
   yearly: { base: 14990, perExtra: 3490 },
   setupValue: 2500,
@@ -90,6 +91,16 @@ export function planPrice(users: number, billing: Billing): number {
  *  the hero's "R350/week" (R1,499 × 12 ÷ 52 = R345.92). */
 export function weeklyCeiling(): number {
   return Math.ceil((pricing.monthly.base * 12) / 52 / 10) * 10;
+}
+
+/** A yearly price as a month, rounded to the rand, for "R1,249 a month, paid yearly". */
+export function perMonth(yearly: number): number {
+  return Math.round(yearly / 12);
+}
+
+/** The base price per person per day (calendar days), for "about R10 a person a day". */
+export function perPersonPerDay(): number {
+  return Math.round(pricing.monthly.base / pricing.includedUsers / 30);
 }
 
 export function rand(amount: number): string {
