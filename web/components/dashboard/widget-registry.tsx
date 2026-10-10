@@ -534,25 +534,27 @@ export const WIDGETS: WidgetDefinition[] = [
     },
   },
   {
+    // From the plan, as the "Missed" number and the reports count it: planned
+    // work on days gone by that nobody did. It used to count visit rows with
+    // status 'missed', which nothing ever writes, so it always read 0.
     id: "missed_visits",
     title: (t) => `Missed ${lower(t.job.many)}`,
-    description: () => "Scheduled calls that were not made.",
+    description: (t) => `Planned ${lower(t.job.many)} on days gone by that nobody did.`,
     span: 1,
-    source: "summary",
-    render: ({ summary, days, terms: t }) => {
-      if (!summary) return null;
+    source: "numbers",
+    render: ({ numbers, days, terms: t, range }) => {
+      const missed = numbers?.kpis.missed;
+      if (!missed) return null;
       return (
         <StatTile
           label={`Missed ${title(t.job.many)}`}
-          value={summary.current.visits_missed}
-          deltaPct={deltaPct(
-            summary.current.visits_missed,
-            summary.previous.visits_missed
-          )}
+          value={missed.value ?? 0}
+          deltaPct={deltaPct(missed.value ?? 0, missed.previous ?? 0)}
           deltaLabel={`vs previous ${days} days`}
           invertDelta
           icon={<XCircle className="h-5 w-5 opacity-80" />}
           tone="outline"
+          href={reportHref("adherence", range)}
         />
       );
     },
@@ -761,6 +763,7 @@ export function numberCodesFor(layout: string[], cardCodes: string[]): string[] 
   if (layout.includes("money")) {
     for (const c of ["unbilled_jobs", "owed", "invoiced", "received"]) out.add(c);
   }
+  if (layout.includes("missed_visits")) out.add("missed");
   if (layout.includes("quotes")) {
     for (const c of ["quotes_waiting_value", "quote_win_rate", "quote_win_value", "accepted_not_invoiced"]) out.add(c);
   }
