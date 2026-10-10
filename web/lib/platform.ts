@@ -1,6 +1,7 @@
 import "server-only";
 import { createClient as createAdminClient } from "@supabase/supabase-js";
 import type { Database, Json } from "@/lib/supabase/types";
+import { toPlatformUsers, type LoginRow, type PlatformUser } from "@/lib/platform-users";
 
 /**
  * The platform operator's view: every company on the service.
@@ -333,4 +334,52 @@ export async function companyTrialEnd(orgId: string): Promise<string | null> {
     .maybeSingle();
   if (error) throw error;
   return data?.trial_ends_at ?? null;
+}
+
+/**
+ * Every login on the platform, with its company and role (`/platform/users`).
+ *
+ * Read in pages of 1000: PostgREST and the Auth admin API both cap a single
+ * read, and a list cut off at the cap would look complete.
+ */
+export async function listPlatformUsers(): Promise<PlatformUser[]> {
+  const admin = platformAdminClient();
+  const pageSize = 1000;
+
+  async function allRows<T>(
+    read: (from: number, to: number) => PromiseLike<{ data: T[] | null; error: unknown }>
+  ): Promise<T[]> {
+    const rows: T[] = [];
+    for (let from = 0; ; from += pageSize) {
+      const { data, error } = await read(from, from + pageSize - 1);
+      if (error) throw error;
+      rows.push(...(data ?? []));
+      if ((data ?? []).length < pageSize) return rows;
+    }
+  }
+
+  async function allLogins(): Promise<LoginRow[]> {
+    const logins: LoginRow[] = [];
+    for (let page = 1; ; page++) {
+      const { data, error } = await admin.auth.admin.listUsers({ page, perPage: pageSize });
+      if (error) throw error;
+      logins.push(...data.users);
+      if (data.users.length < pageSize) return logins;
+    }
+  }
+
+  const [logins, profiles, companies, jobRoles] = await Promise.all([
+    allLogins(),
+    allRows((from, to) =>
+      admin
+        .from("profiles")
+        .select("id, org_id, full_name, email, phone, job_title, job_role_id, role, is_active, created_at")
+        .order("id")
+        .range(from, to)
+    ),
+    allRows((from, to) => admin.from("organizations").select("id, name").order("id").range(from, to)),
+    allRows((from, to) => admin.from("job_roles").select("id, name").order("id").range(from, to)),
+  ]);
+
+  return toPlatformUsers(logins, profiles, companies, jobRoles);
 }
