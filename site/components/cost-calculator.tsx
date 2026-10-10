@@ -24,9 +24,9 @@ export function CostCalculator() {
   const monthly = hours * num(rate);
   // The anchor: Tickd's monthly price for the same team, from the same
   // numbers as the pricing section. Prices are in rand, so only beside rand.
-  // Every active login is a paid seat (billing_seats_used), the owner's too,
-  // so the price is for the staff on site plus you.
-  const tickd = people > 0 ? planPrice(people + 1, "monthly") : 0;
+  // The team counted here includes the owner (owner, 10 Oct 2026), so the
+  // price is for exactly this many users.
+  const tickd = people > 0 ? planPrice(people, "monthly") : 0;
   // What is left over if that time is won back, after paying for Tickd. Said
   // as an "if": Tickd shows where the time goes; the team still has to win it
   // back. Only shown when it is a gain.
@@ -39,7 +39,7 @@ export function CostCalculator() {
     <div className="grid gap-8 rounded-2xl bg-white p-5 ring-1 ring-line sm:p-8 md:grid-cols-2">
       <div className="grid content-start gap-4">
         <label className="grid gap-1.5 text-sm font-medium">
-          Staff who work out on site
+          People in your team, you included
           <input className={field} type="number" min={1} max={500} inputMode="numeric" value={staff} onChange={(e) => setStaff(e.target.value)} />
         </label>
         <label className="grid gap-1.5 text-sm font-medium">
@@ -98,7 +98,7 @@ export function CostCalculator() {
         {currency === "R" && tickd > 0 && (
           <p className="flex flex-wrap items-baseline gap-x-2 border-t border-line pt-5 text-lg leading-snug">
             <span>
-              {site.name} for {people} {people === 1 ? "person" : "people"} and you:
+              {site.name} for {people} {people === 1 ? "person" : "people"}:
             </span>
             <strong className="font-display text-2xl font-extrabold tabular-nums text-teal-900">{rand(tickd)} a month</strong>
           </p>
