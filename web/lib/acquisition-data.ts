@@ -4,7 +4,7 @@ import { platformAdminClient } from "@/lib/platform";
 import { runReport, type GaResult } from "@/lib/ga4";
 import { loadActivation } from "@/lib/activation-data";
 import { isActivated } from "@/lib/activation";
-import { byNameAndPeriod, type ApplicationRow, type CompanyFacts, type Period } from "@/lib/acquisition";
+import { byNameAndPeriod, parseOwnStats, type ApplicationRow, type CompanyFacts, type OwnStats, type Period } from "@/lib/acquisition";
 
 /**
  * What the Acquisition pages read. Server-only, and only called by pages that
@@ -188,39 +188,6 @@ export async function websiteTotals(p: TwoPeriods, filter?: unknown): Promise<Ga
   };
 }
 
-/** People (GA users) who did each funnel event, in both periods. */
-export async function funnelEvents(p: TwoPeriods): Promise<Ga<Map<string, Pair>>> {
-  const r = await runReport({
-    dateRanges: ranges(p),
-    dimensions: ["eventName"],
-    metrics: ["totalUsers"],
-    dimensionFilter: {
-      filter: {
-        fieldName: "eventName",
-        inListFilter: { values: ["page_view", "pricing_view", "feature_view", "signup_started", "signup_completed"] },
-      },
-    },
-  });
-  return r.ok ? { ok: true, value: byNameAndPeriod(r.rows) } : r;
-}
-
-/** Visitors per day in the current period. */
-export async function dailyVisitors(p: TwoPeriods, filter?: unknown): Promise<Ga<{ date: string; visitors: number }[]>> {
-  const r = await runReport({
-    dateRanges: [{ startDate: p.current.startDate, endDate: p.current.endDate }],
-    dimensions: ["date"],
-    metrics: ["totalUsers"],
-    dimensionFilter: filter,
-    orderBys: [{ dimension: { dimensionName: "date" } }],
-    limit: 400,
-  });
-  if (!r.ok) return r;
-  // GA has no row for a day nobody came, so every day of the period is laid
-  // out and the missing ones are 0: the chart is spaced by day, not by row.
-  const seen = new Map(r.rows.map((row) => [row.dimensions[0], row.metrics[0]]));
-  return { ok: true, value: everyDay(p.current).map((date) => ({ date, visitors: seen.get(date.replaceAll("-", "")) ?? 0 })) };
-}
-
 /** Every date of a period, oldest first, as YYYY-MM-DD. */
 export function everyDay(period: Period): string[] {
   const out: string[] = [];
@@ -228,97 +195,6 @@ export function everyDay(period: Period): string[] {
     out.push(new Date(t).toISOString().slice(0, 10));
   }
   return out;
-}
-
-export type PageRow = {
-  path: string;
-  visitors: number;
-  views: number;
-  engagementRate: number;
-  bounceRate: number;
-  startedApplying: number;
-};
-
-export async function pages(p: TwoPeriods, filter?: unknown): Promise<Ga<PageRow[]>> {
-  const signupFilter = {
-    andGroup: {
-      expressions: [
-        { filter: { fieldName: "eventName", stringFilter: { value: "signup_started" } } },
-        ...(filter ? [filter] : []),
-      ],
-    },
-  };
-  const range = [{ startDate: p.current.startDate, endDate: p.current.endDate }];
-  const [all, started] = await Promise.all([
-    runReport({
-      dateRanges: range,
-      dimensions: ["pagePath"],
-      metrics: ["totalUsers", "screenPageViews", "engagementRate", "bounceRate"],
-      dimensionFilter: filter,
-      orderBys: [{ metric: { metricName: "totalUsers" }, desc: true }],
-      limit: 100,
-    }),
-    runReport({ dateRanges: range, dimensions: ["pagePath"], metrics: ["totalUsers"], dimensionFilter: signupFilter, limit: 100 }),
-  ]);
-  if (!all.ok) return all;
-  if (!started.ok) return started;
-  const startedBy = new Map(started.rows.map((r) => [r.dimensions[0], r.metrics[0]]));
-  return {
-    ok: true,
-    value: all.rows.map((r) => ({
-      path: r.dimensions[0],
-      visitors: r.metrics[0],
-      views: r.metrics[1],
-      engagementRate: r.metrics[2],
-      bounceRate: r.metrics[3],
-      startedApplying: startedBy.get(r.dimensions[0]) ?? 0,
-    })),
-  };
-}
-
-export type ByGroup = Map<string, { visitors: number; startedApplying: number; applied: number }>;
-
-/** Per channel or campaign: visitors, people who started applying, and GA's count of sent applications. */
-export async function byGroup(p: TwoPeriods, dimension: "sessionDefaultChannelGroup" | "sessionCampaignName"): Promise<Ga<ByGroup>> {
-  const r = await runReport({
-    dateRanges: [{ startDate: p.current.startDate, endDate: p.current.endDate }],
-    dimensions: [dimension, "eventName"],
-    metrics: ["totalUsers"],
-    dimensionFilter: {
-      filter: { fieldName: "eventName", inListFilter: { values: ["page_view", "signup_started", "signup_completed"] } },
-    },
-    limit: 500,
-  });
-  if (!r.ok) return r;
-  const out: ByGroup = new Map();
-  for (const row of r.rows) {
-    const [group, event] = row.dimensions;
-    const entry = out.get(group) ?? { visitors: 0, startedApplying: 0, applied: 0 };
-    if (event === "page_view") entry.visitors += row.metrics[0];
-    if (event === "signup_started") entry.startedApplying += row.metrics[0];
-    if (event === "signup_completed") entry.applied += row.metrics[0];
-    out.set(group, entry);
-  }
-  return { ok: true, value: out };
-}
-
-/** The devices and countries seen, for the Website page's filters. */
-export async function filterChoices(p: TwoPeriods): Promise<{ devices: string[]; countries: string[] }> {
-  const range = [{ startDate: p.current.startDate, endDate: p.current.endDate }];
-  const [d, c] = await Promise.all([
-    runReport({ dateRanges: range, dimensions: ["deviceCategory"], metrics: ["totalUsers"], limit: 10 }),
-    runReport({
-      dateRanges: range,
-      dimensions: ["country"],
-      metrics: ["totalUsers"],
-      orderBys: [{ metric: { metricName: "totalUsers" }, desc: true }],
-      limit: 30,
-    }),
-  ]);
-  return {
-    devices: d.ok ? d.rows.map((r) => r.dimensions[0]).filter(Boolean) : [],
-    countries: c.ok ? c.rows.map((r) => r.dimensions[0]).filter((x) => x && x !== "(not set)") : [],
-  };
 }
 
 /** A GA filter for the Website page's device and country choices, or undefined. */
@@ -329,4 +205,31 @@ export function websiteFilter(device: string, country: string): unknown {
   ].filter(Boolean);
   if (parts.length === 0) return undefined;
   return parts.length === 1 ? parts[0] : { andGroup: { expressions: parts } };
+}
+
+// ------------------------------------------------------------ Tickd's own count
+
+/**
+ * The website's numbers from Tickd's own count (web_events, through
+ * platform_web_stats()): instant, for any period. Until its migration is
+ * applied the call fails (PGRST202), and the pages say so instead of failing.
+ */
+export async function ownStats(
+  period: Period,
+  filter: { device?: string; country?: string } = {}
+): Promise<{ ok: true; value: OwnStats } | { ok: false; message: string }> {
+  const { data, error } = await platformAdminClient().rpc("platform_web_stats", {
+    p_from: period.from,
+    p_to: period.to,
+    p_tz: "Africa/Johannesburg",
+    ...(filter.device ? { p_device: filter.device } : {}),
+    ...(filter.country ? { p_country: filter.country } : {}),
+  });
+  if (error) {
+    if (error.code === "PGRST202" || error.code === "42883") {
+      return { ok: false, message: "Tickd's own count of the website needs a database update that hasn't been applied yet." };
+    }
+    throw error;
+  }
+  return { ok: true, value: parseOwnStats(data) };
 }

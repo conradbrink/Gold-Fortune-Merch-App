@@ -2,8 +2,10 @@
 
 import { useEffect } from "react";
 import Script from "next/script";
+import { usePathname } from "next/navigation";
 import { gaMeasurementId } from "@/lib/site";
 import { rememberFirstVisit } from "@/lib/first-visit";
+import { countEvent } from "@/lib/own-count";
 
 // Google Analytics 4 for the whole site. The Measurement ID lives in
 // lib/site.ts (`gaMeasurementId`); while it is empty nothing loads and nothing
@@ -12,7 +14,8 @@ import { rememberFirstVisit } from "@/lib/first-visit";
 // property's enhanced measurement). Ad features are switched off: Tickd uses it
 // to count visits, not to advertise to visitors.
 //
-// The events the funnel needs are sent with `track`. Names follow the owner's
+// The events the funnel needs are sent with `track`, which also gives them to
+// Tickd's own count (lib/own-count.ts) so the Control Centre is instant. Names follow the owner's
 // spec (pricing_view, feature_view, signup_started, signup_completed); a new
 // one is just a new name, nothing to register in code.
 
@@ -28,7 +31,10 @@ declare global {
 const measurementId = /^G-[A-Z0-9]{4,20}$/.test(gaMeasurementId) ? gaMeasurementId : "";
 
 export function Analytics() {
+  const path = usePathname();
   useEffect(() => rememberFirstVisit(), []);
+  // Tickd's own count: a page view for every page, moves between pages included.
+  useEffect(() => countEvent("page_view"), [path]);
   if (!measurementId) return null;
   return (
     <>
@@ -40,8 +46,9 @@ export function Analytics() {
   );
 }
 
-/** Sends one event to Google Analytics. Does nothing while GA is not set up. */
+/** Sends one event to Tickd's own count, and to Google Analytics when it is set up. */
 export function track(name: string, params: Record<string, string | number | boolean> = {}): void {
+  countEvent(name, typeof params.section === "string" ? params.section : undefined);
   if (!measurementId) return;
   try {
     window.gtag?.("event", name, params);
@@ -58,7 +65,7 @@ export function track(name: string, params: Record<string, string | number | boo
  */
 export function SectionViews({ sections }: { sections: Record<string, string> }) {
   useEffect(() => {
-    if (!measurementId || typeof IntersectionObserver === "undefined") return;
+    if (typeof IntersectionObserver === "undefined") return;
     const seen = new Set<string>();
     const observer = new IntersectionObserver(
       (entries) => {
