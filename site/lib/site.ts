@@ -97,15 +97,14 @@ export const metaPixelId: string = "";
 // The Gold Fortune result for the proof section: real numbers from Tickd's own
 // data (read-only, 10 Oct 2026), the first two weeks of use against the two
 // most recent full weeks without a public holiday, same 3 reps both times.
-// Tickd has no "before Tickd" data, so this is early use against later use,
-// and the page says so. The *N numbers only set the bar heights.
+// Tickd has no "before Tickd" data, so this is early use against later use;
+// the bars say "First 2 weeks" and "Mid September". The *N numbers only set
+// the bar heights.
 //   early  = 3 to 16 Aug 2026:  175 visits, 32 rep-days, 99 stores, 65.2% within 200 m
 //   recent = 14 to 27 Sep 2026: 200 visits, 26 rep-days, 144 stores, 84.7% within 200 m
 export const proof = {
   reps: 3,
   stores: 265,
-  early: "3 to 16 August 2026",
-  recent: "14 to 27 September 2026",
   // One retailer's monthly sales in rand, as Gold Fortune reports them (the
   // owner, 10 Oct 2026: R184,000 to R340,000, 340 / 184 = up 85%). This is NOT
   // from the Tickd app, so the page credits Gold Fortune. The period it covers

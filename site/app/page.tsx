@@ -391,7 +391,7 @@ export default function Home() {
             >
               What do you need to start?
             </h2>
-            <div className="tk-reveal relative mb-8 lg:col-start-1 lg:row-span-2 lg:row-start-1 lg:mb-8">
+            <div className="tk-reveal relative mb-8 lg:col-start-1 lg:row-span-2 lg:row-start-1">
               <Image
                 src="/people/worker-phone.webp"
                 alt="A worker in a hard hat checking his phone on site."
