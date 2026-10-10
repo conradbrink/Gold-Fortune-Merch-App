@@ -36,7 +36,7 @@ function RepScoreBadge({
   return (
     <span
       className={`inline-block rounded-md px-2 py-0.5 text-sm font-semibold tabular-nums ${tone}`}
-      title={`Completion, form compliance and location verification averaged. Location verified: ${formatRate(
+      title={`Planned work done, form compliance and location verification, averaged. Location verified: ${formatRate(
         verified
       )}`}
     >
@@ -69,7 +69,9 @@ export function RepScorecardTable({ rows }: { rows: RepScore[] }) {
         <TableRow>
           <TableHead>{t.staff.one}</TableHead>
           <TableHead className="text-right">Completed</TableHead>
-          <TableHead className="hidden sm:table-cell text-right">Completion</TableHead>
+          <TableHead className="hidden sm:table-cell text-right" title="Planned work on days gone by that was done, a later catch-up counting">
+            Done as planned
+          </TableHead>
           <TableHead className="hidden md:table-cell text-right">Avg time</TableHead>
           <TableHead className="hidden lg:table-cell text-right">{t.site.many}</TableHead>
           <TableHead className="hidden md:table-cell text-right">Forms</TableHead>
@@ -82,7 +84,7 @@ export function RepScorecardTable({ rows }: { rows: RepScore[] }) {
             <TableCell className="font-medium">
               {r.rep_name ?? `Unknown ${lower(t.staff.one)}`}
               <span className="block text-xs text-muted-foreground sm:hidden">
-                {formatRate(r.completion_rate)} completion
+                {formatRate(r.completion_rate)} done as planned
               </span>
             </TableCell>
             <TableCell className="text-right tabular-nums">
