@@ -7,6 +7,14 @@
  * checks exist so a person hears about a mistake before a login is made.
  */
 
+/**
+ * Whether anyone can start a free trial on their own. Closed on 10 Oct 2026
+ * (owner): the way in is the Founding offer on the sales site, and the 14-day
+ * trial is gone. The form, its action and the database function are all still
+ * here: set this to true to open it again.
+ */
+export const SELF_SERVE_SIGNUP_OPEN = false;
+
 export type SignupInput = {
   fullName: string;
   email: string;

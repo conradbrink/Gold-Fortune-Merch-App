@@ -76,7 +76,7 @@ const faqs = [
     `Stay at ${rand(founding.price)} a month for ${founding.priceMonths} months. Or walk away. No card, no strings.`,
   ],
   ["Who gets picked?", "Teams of 2 to 15 whose clients ask for proof."],
-  ["What if I'm not picked?", "You're first on the list for the next round. You can still try Tickd free for 14 days."],
+  ["What if I'm not picked?", "You're first on the list for the next round, and we'll tell you as soon as it opens."],
 ];
 
 const button =

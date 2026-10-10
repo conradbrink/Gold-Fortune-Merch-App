@@ -18,7 +18,7 @@ import { CostCalculator } from "@/components/cost-calculator";
 import { ProductDemo } from "@/components/demo/product-demo";
 import { Logo } from "@/components/logo";
 import { TradeTabs } from "@/components/trade-tabs";
-import { StartTrial } from "@/components/start-trial";
+import { FoundingStart } from "@/components/founding-start";
 import { PricingSection } from "@/components/pricing-section";
 import { ProofSection } from "@/components/proof-section";
 import { confirmed, founding, pricing, rand, site } from "@/lib/site";
@@ -120,8 +120,8 @@ const faqs = [
     a: "Today. Sign up, and your team can put the app on their phones and clock in.",
   },
   {
-    q: `What happens after ${site.trialDays} days?`,
-    a: "If you want to keep going, you choose a plan. We don't take your card for the trial, so you're never charged by surprise.",
+    q: `What happens after the ${founding.days} free days?`,
+    a: `If you want to keep going, you stay at ${rand(founding.price)} a month for ${founding.priceMonths} months. We don't take your card up front, so you're never charged by surprise.`,
   },
   { q: "Do they need new phones?", a: "No. Tickd runs on the Android phones your team already has." },
   {
@@ -168,7 +168,7 @@ const OWNER_GETS = [
 ];
 
 // The Founding card's way in: it goes to /founding, where the offer and the
-// application are. The ordinary free trial stays on the buttons further down.
+// application are. Every other "try it" button on the page goes there too.
 function FoundingButton() {
   return (
     <div className="grid gap-2 sm:justify-items-center">
@@ -287,10 +287,10 @@ export default function Home() {
               Sign in
             </a>
             <a
-              href={site.signupUrl}
+              href={site.foundingPath}
               className="rounded-full bg-teal-900 px-4 py-2 text-sm font-semibold text-sand transition-[background-color,transform] duration-150 ease-out hover:bg-teal-800 active:scale-[0.97]"
             >
-              Free trial
+              Founding member
             </a>
           </div>
         </div>
@@ -575,12 +575,13 @@ export default function Home() {
         <section id="start" className="px-4 pb-14 pt-10 sm:px-6 sm:pb-16 sm:pt-16">
           <div className="tk-reveal mx-auto grid max-w-6xl gap-5 rounded-2xl bg-teal-900 p-6 text-sand sm:gap-6 sm:p-10">
             <h2 className="font-display text-3xl font-extrabold leading-[1.1] tracking-tight text-balance sm:text-5xl">
-              Try {site.name} free for {site.trialDays} days.
+              Become a founding member.
             </h2>
             <p className="max-w-2xl leading-relaxed text-pretty text-teal-100 sm:text-lg">
-              See your team&apos;s whole day, and show clients proof of every job. You don&apos;t need a card.
+              We&apos;re picking {founding.spots} businesses to run {site.name} free for {founding.days} days, and we set it all up for you.
+              You see your team&apos;s whole day and show clients proof of every job. You don&apos;t need a card.
             </p>
-            <StartTrial />
+            <FoundingStart />
           </div>
         </section>
       </main>

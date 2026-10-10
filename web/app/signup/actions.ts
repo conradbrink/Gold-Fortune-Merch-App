@@ -4,7 +4,8 @@ import { headers } from "next/headers";
 import { createClient } from "@/lib/supabase/server";
 import { platformAdminClient, templateDefaults } from "@/lib/platform";
 import { parseTemplateDefaults } from "@/lib/add-company";
-import { clientAddress, signupCompanyPayload, signupProblems, type SignupInput } from "@/lib/signup";
+import { SELF_SERVE_SIGNUP_OPEN, clientAddress, signupCompanyPayload, signupProblems, type SignupInput } from "@/lib/signup";
+import { FOUNDING_OFFER } from "@/lib/founding-offer";
 
 /**
  * The public free-trial sign-up (Stage 5). No session: anyone can post here,
@@ -65,6 +66,9 @@ export async function previewIndustries(
 export async function signupAction(
   input: SignupInput
 ): Promise<{ ok: true; signedIn: boolean } | { ok: false; error: string }> {
+  if (!SELF_SERVE_SIGNUP_OPEN) {
+    return { ok: false, error: `Sign-up is closed for now. Apply to be a founding member at ${FOUNDING_OFFER.applyUrl}.` };
+  }
   const problems = signupProblems(input);
   if (problems.length > 0) return { ok: false, error: problems.join(" ") };
 
