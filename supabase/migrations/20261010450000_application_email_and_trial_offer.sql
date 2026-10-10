@@ -9,8 +9,11 @@
 --    so the owner can change it. queue_trial_offers() runs daily, picks every
 --    company still on its trial that is at least that old, and queues one
 --    email to its administrator through the outbox; trial_offers remembers
---    that it did, so it is once. Gold Fortune (exempt), paid companies, and
---    companies whose trial is over (read only) are never asked.
+--    that it did, so it is once. A company the operator created has no account
+--    row at all (it is on its free days by arrangement: this is a founding
+--    member), so it counts too, from the day its company was made; Gold
+--    Fortune (exempt), paid companies, and companies whose trial is over
+--    (read only) are never asked.
 --
 -- The welcome email (sent when a company is created) needs nothing here: it
 -- goes through queue_email like the others.
@@ -44,19 +47,21 @@ security definer
 set search_path to 'public', 'pg_temp'
 as $function$
 declare
-  v_day integer := coalesce(nullif((select value #>> '{}' from public.platform_settings where key = 'trial_offer_day'), '')::integer, 45);
+  v_raw text := (select value #>> '{}' from public.platform_settings where key = 'trial_offer_day');
+  -- A setting that is not a whole number of days is 45, not an error that stops the daily job.
+  v_day integer := case when v_raw ~ '^[0-9]{1,4}$' then v_raw::integer else 45 end;
   a record;
   v_to record;
   n integer := 0;
 begin
   for a in
-    select ca.org_id, ca.trial_ends_at, o.name
-      from public.company_account ca
-      join public.organizations o on o.id = ca.org_id
-     where ca.status = 'trial'
-       and ca.created_at <= now() - make_interval(days => v_day)
+    select o.id as org_id, ca.trial_ends_at, o.name
+      from public.organizations o
+      left join public.company_account ca on ca.org_id = o.id
+     where (ca.org_id is null or ca.status = 'trial')
+       and coalesce(ca.created_at, o.created_at) <= now() - make_interval(days => v_day)
        and (ca.trial_ends_at is null or ca.trial_ends_at > now())
-       and not exists (select 1 from public.trial_offers t where t.org_id = ca.org_id)
+       and not exists (select 1 from public.trial_offers t where t.org_id = o.id)
   loop
     -- The administrator who set the company up: the oldest active login holding
     -- the admin permission, with a real email (not a phone login).

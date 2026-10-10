@@ -29,6 +29,8 @@ export const runtime = "nodejs";
 
 const PER_ADDRESS = { limit: 6, windowSeconds: 60 * 60 };
 const PER_NUMBER = { limit: 3, windowSeconds: 24 * 60 * 60 };
+/** Nobody can make us email an address they do not own, however many numbers or networks they use. */
+const PER_EMAIL = { limit: 2, windowSeconds: 24 * 60 * 60 };
 
 const NOTIFY_TO = process.env.FOUNDING_NOTIFY_EMAIL || "hello@tickd.co.za";
 const SENDER = { email: "applications@tickd.co.za", name: "Tickd applications" };
@@ -90,6 +92,7 @@ export async function POST(request: Request) {
   for (const [bucket, subject, rule] of [
     ["founding_address", `ip:${address}`, PER_ADDRESS],
     ["founding_number", `wa:${application.whatsapp}`, PER_NUMBER],
+    ["founding_email", `email:${application.email}`, PER_EMAIL],
   ] as const) {
     const { data, error } = await admin.rpc("consume_anonymous_rate_limit", {
       p_bucket: bucket,

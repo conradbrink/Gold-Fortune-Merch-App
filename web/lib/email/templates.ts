@@ -549,7 +549,9 @@ const TEMPLATES: Record<string, Renderer> = {
       para(`Hello${first ? ` ${first}` : ""},`, true),
       para(`You have been running Tickd${company ? ` for ${company}` : ""} for a while now, and we hope it is making your days easier. This is the time to sign up fully.`),
       factsBlock(facts),
-      para("Choose your plan before your free days end and everything carries on exactly as it is: your team, your places, your history and your reports. It takes about two minutes, and you pay nothing until you choose."),
+      para(
+        `Choose your plan${left !== null || ends ? " before your free days end" : ""} and everything carries on exactly as it is: your team, your places, your history and your reports. It takes about two minutes, and you pay nothing until you choose.`
+      ),
       para("Not sure which plan fits? Just reply to this email and we will help you pick."),
     ]);
     const { html, text } = layout(ctx, {
