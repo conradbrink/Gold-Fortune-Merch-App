@@ -168,7 +168,10 @@ export async function POST(request: Request) {
     const live = await requireFeature(supabase, "geocoding", "Address lookup");
     if (!live.ok) return live.response;
 
-    const gate = await enforceRateLimit(supabase, LIMITS.geocode, storeIds.length);
+    // Fails closed: every unit is a paid Google lookup (see enforceRateLimit).
+    const gate = await enforceRateLimit(supabase, LIMITS.geocode, storeIds.length, {
+      failClosed: true,
+    });
     if (!gate.ok) return gate.response;
 
     // RLS scopes this to the caller's org, so a store id from elsewhere simply

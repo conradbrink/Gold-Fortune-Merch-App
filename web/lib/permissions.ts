@@ -54,6 +54,21 @@ export function can(permissions: PermissionSet, code: PermissionCode): boolean {
 }
 
 /**
+ * The permissions another account holds that the caller does not.
+ *
+ * Setting someone's password or moving their sign-in address hands over
+ * everything that account can reach, so `/api/reps/[id]` refuses whenever this
+ * is not empty. `admin` holds everything, so nothing is beyond it.
+ */
+export function accessBeyond(
+  mine: PermissionSet,
+  theirs: readonly string[]
+): string[] {
+  if (mine.has("admin")) return [];
+  return theirs.filter((code) => !mine.has(code));
+}
+
+/**
  * Destinations that need no permission at all.
  *
  * `/hr/me` is a person's own record — their leave, their attendance, their
@@ -182,6 +197,10 @@ export function homeFor(
     ["sales_coverage", ["/stores"]],
     ["team", ["/representatives"]],
     ["resources", ["/products", "/files"]],
+    // The CFO and the warehouse clerk hold `invoicing`. At a company without
+    // the warehouse or distribution modules this is the only page they have,
+    // and without it they were sent to /rep-notice, which has no menu.
+    ["invoicing", ["/invoices"]],
     // Last, and only because `permissionForPath` lets these two open a page on
     // their own. Somebody holding nothing but `hr_settings` was sent to
     // /rep-notice from the site root while /hr/settings would have loaded for

@@ -20,6 +20,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { createClient } from "@/lib/supabase/client";
 import { getCompanyConfig, useCompanyConfig, useTerms } from "@/lib/use-company-config";
+import { moduleEnabled } from "@/lib/modules";
 import { rangeDays, rangeForPreset, type DateRange } from "@/lib/date-range";
 import { fetchLiveReps, type LiveReps } from "@/lib/live-reps";
 import { fetchTargetProgress, monthStart } from "@/lib/targets";
@@ -166,9 +167,18 @@ export default function InsightsDashboardPage() {
         // target is set per month, and progress against it is only meaningful
         // over that month. A failed targets read must not take the business
         // cards with it, so it falls back to no targets.
+        // Targets belong to the distribution module: for any other trade the
+        // database refuses the call, so it is not made (it cost a 403 and a
+        // console error on every dashboard load).
         Promise.all([
           fetchBusinessSummary(supabase, range),
-          fetchTargetProgress(supabase, monthStart()).catch(() => []),
+          getCompanyConfig()
+            .catch(() => null)
+            .then((c) =>
+              c && moduleEnabled(c.modules, "distribution")
+                ? fetchTargetProgress(supabase, monthStart()).catch(() => [])
+                : []
+            ),
         ]).then(([s, targets]): BusinessData => ({ summary: s, targets })),
       ]);
 

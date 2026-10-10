@@ -15,8 +15,15 @@ import { hexToRgb, mix, onWhite, readableOn, tint, type PdfLook, type Rgb } from
  * what it has; empty fields are left out rather than printed blank.
  */
 
+/**
+ * Amounts in one fixed form, "1,500.00". With the viewer's locale the same
+ * invoice printed "1 500,00" from a South African browser (a no-break space
+ * the PDF font may not draw), "1,500.00" from a US one, and the emailed copy,
+ * drawn on the server, differed again. Matches `amountText` on the client's
+ * page and in the emails.
+ */
 export const money = (n: number) =>
-  Number(n).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  Number(n).toLocaleString("en-GB", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 export type PdfSeller = {
   name: string;

@@ -56,6 +56,16 @@ class WorkdayRepository {
 
       if (row != null) {
         final server = WorkdaySession.fromMap(row);
+        // Ended on this phone with the end still queued: the server row stays
+        // open until the outbox drains, but the day is over. Trusting the row
+        // re-opened the day on the next launch and restarted GPS tracking
+        // after clock-out, and a second End queued a second, later end.
+        if (await hasPendingEnd(server.clientGeneratedId)) {
+          if (local?.clientGeneratedId == server.clientGeneratedId) {
+            await clearActiveSession(repId);
+          }
+          return null;
+        }
         // Locally accrued mileage is ahead of the server until the pings
         // drain, so keep whichever is greater.
         final merged = local != null &&
@@ -83,6 +93,15 @@ class WorkdayRepository {
     final raw = await _db.getValue(_activeKey(repId));
     if (raw == null) return null;
     return WorkdaySession.fromMap(jsonDecode(raw) as Map<String, dynamic>);
+  }
+
+  /// Whether this phone has the end of [clientGeneratedId] queued. Read from
+  /// every queued key, not a window: a day's pings can outnumber any window.
+  Future<bool> hasPendingEnd(String clientGeneratedId) async {
+    final queued = await _db.queuedEntryKeys();
+    return queued.contains(
+      outboxEntryKey(OutboxType.workdayEnd, clientGeneratedId),
+    );
   }
 
   Future<bool> _hasPendingStart(String clientGeneratedId) async {
@@ -122,20 +141,23 @@ class WorkdayRepository {
     if (await _db.getValue(_closedKey(repId)) == today) return true;
 
     try {
+      // Keyed on the day the closed workday *started*: a night shift from
+      // Monday 22:00 to Tuesday 06:00 is Monday's, so Tuesday's 22:00 start
+      // is still allowed. Keyed on the end, it locked the rep out.
       final row = await _client
           .from('workday_sessions')
-          .select('ended_at')
+          .select('started_at')
           .eq('rep_id', repId)
           .not('ended_at', 'is', null)
-          .order('ended_at', ascending: false)
+          .order('started_at', ascending: false)
           .limit(1)
           .maybeSingle();
 
-      final endedAt = row?['ended_at'] as String?;
-      if (endedAt == null) return false;
+      final startedAt = row?['started_at'] as String?;
+      if (startedAt == null) return false;
 
       // `.toLocal()` before formatting, for the same UTC+2 reason as above.
-      final closedOn = localDate(DateTime.parse(endedAt).toLocal());
+      final closedOn = localDate(DateTime.parse(startedAt).toLocal());
       if (closedOn == today) {
         // Cache it so the answer survives losing signal later in the day.
         await _db.setValue(_closedKey(repId), closedOn);
@@ -147,8 +169,9 @@ class WorkdayRepository {
     }
   }
 
-  Future<void> _recordWorkdayClosed(String repId, DateTime endedAt) =>
-      _db.setValue(_closedKey(repId), localDate(endedAt));
+  /// Records the day the closed workday started (see [hasClosedWorkdayToday]).
+  Future<void> _recordWorkdayClosed(String repId, DateTime startedAt) =>
+      _db.setValue(_closedKey(repId), localDate(startedAt.toLocal()));
 
   Future<WorkdaySession> startWorkday({
     required String orgId,
@@ -231,6 +254,8 @@ class WorkdayRepository {
       clientGeneratedId: session.clientGeneratedId,
       payload: jsonEncode({
         'client_generated_id': session.clientGeneratedId,
+        // Whose work this is, so the drain holds it for them (`ownerOf`).
+        'rep_id': repId,
         'changes': {
           'ended_at': endedAt.toUtc().toIso8601String(),
           'end_lat': position?.latitude,
@@ -248,7 +273,7 @@ class WorkdayRepository {
     // Recorded here, not when the outbox drains: the rep may be closing their
     // day with no signal, and the "one workday per day" rule has to hold from
     // the moment they tap the button.
-    await _recordWorkdayClosed(repId, endedAt);
+    await _recordWorkdayClosed(repId, session.startedAt);
 
     unawaited(_sync.sync());
   }

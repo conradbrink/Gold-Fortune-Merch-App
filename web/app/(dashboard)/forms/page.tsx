@@ -1,5 +1,6 @@
 "use client";
 
+import { allPages } from "@/lib/all-pages";
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { Plus, FileText, Trash2, AlertTriangle } from "lucide-react";
@@ -38,6 +39,7 @@ export default function FormsPage() {
   const terms = useTerms();
   const [forms, setForms] = useState<FormTemplate[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [name, setName] = useState("");
@@ -53,24 +55,34 @@ export default function FormsPage() {
 
   async function loadForms() {
     setLoading(true);
-    const { data: templateRows } = await supabase
-      .from("form_templates")
-      .select("*")
-      .order("updated_at", { ascending: false });
+    setLoadError(null);
+    try {
+      const { data: templateRows, error: templatesError } = await supabase
+        .from("form_templates")
+        .select("*")
+        .order("updated_at", { ascending: false });
+      if (templatesError) throw templatesError;
 
-    const { data: submissionRows } = await supabase
-      .from("form_submissions")
-      .select("form_template_id");
+      // Paged: past 1,000 submissions the counts were cut short, and a form
+      // whose submissions all fell past the cut showed 0 and offered Delete
+      // instead of Archive.
+      const submissionRows = await allPages((from, to) =>
+        supabase.from("form_submissions").select("id, form_template_id").order("id").range(from, to)
+      );
 
-    const counts: Record<string, number> = {};
-    for (const s of submissionRows ?? []) {
-      counts[s.form_template_id] = (counts[s.form_template_id] ?? 0) + 1;
+      const counts: Record<string, number> = {};
+      for (const s of submissionRows) {
+        counts[s.form_template_id] = (counts[s.form_template_id] ?? 0) + 1;
+      }
+
+      setForms(
+        (templateRows ?? []).map((t) => ({ ...t, submissions: counts[t.id] ?? 0 }))
+      );
+    } catch (e) {
+      setLoadError(e instanceof Error ? e.message : "Could not load the forms.");
+    } finally {
+      setLoading(false);
     }
-
-    setForms(
-      (templateRows ?? []).map((t) => ({ ...t, submissions: counts[t.id] ?? 0 }))
-    );
-    setLoading(false);
   }
 
   useEffect(() => {
@@ -351,6 +363,12 @@ export default function FormsPage() {
               <TableRow>
                 <TableCell colSpan={4} className="py-10 text-center text-sm text-muted-foreground">
                   Loading forms…
+                </TableCell>
+              </TableRow>
+            ) : loadError ? (
+              <TableRow>
+                <TableCell colSpan={4} className="py-10 text-center text-sm text-destructive">
+                  {loadError}
                 </TableCell>
               </TableRow>
             ) : forms.length === 0 ? (

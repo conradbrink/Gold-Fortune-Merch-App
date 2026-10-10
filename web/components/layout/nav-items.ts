@@ -46,7 +46,7 @@ import {
   type PermissionCode,
   type PermissionSet,
 } from "@/lib/permissions";
-import { canReachPath, type ModuleSet } from "@/lib/modules";
+import { canReachPath, moduleEnabled, type ModuleSet } from "@/lib/modules";
 import { DEFAULT_TERMS, type Terms } from "@/lib/terms";
 import type { CompanySettings } from "@/lib/company-config";
 import { switchesOf, usesPriceList } from "@/lib/money-workflow";
@@ -83,7 +83,11 @@ type NavItemDef = Omit<NavItem, "label"> & {
 };
 
 type NavGroupDef = {
-  label: string | null;
+  /**
+   * A heading, or one built from the company's words and modules, so a
+   * cleaning company is not shown a distributor's "Sales" headings.
+   */
+  label: string | null | ((t: Terms, modules: ModuleSet) => string);
   items: NavItemDef[];
 };
 
@@ -152,7 +156,11 @@ export const navGroups: NavGroupDef[] = [
     ],
   },
   {
-    label: "Sales & Coverage",
+    // A distributor sells into its stores; every other trade keeps a list of
+    // the places it works and the areas they fall in, in its own words
+    // ("Sites & Areas", "Clients & Areas", "Stops & Areas").
+    label: (t, modules) =>
+      moduleEnabled(modules, "distribution") ? "Sales & Coverage" : `${t.site.many} & ${t.territory.many}`,
     items: [
       { href: "/leads", label: (t) => t.prospect.many, icon: Target, permission: "sales_coverage" },
       { href: "/stores", label: (t) => t.site.many, icon: Store, permission: "sales_coverage" },
@@ -272,7 +280,12 @@ export const navGroups: NavGroupDef[] = [
     // and when they were last out. Neither set of columns appears on the other
     // page, which is why folding one into the other would lose something rather
     // than tidy something.
-    label: "Sales Team",
+    //
+    // Only a distributor's people are a sales team. Everyone else's heading is
+    // their own word for them, still saying "the field side" so it is not
+    // mistaken for the HR group's Employees ("Cleaners in the field").
+    label: (t, modules) =>
+      moduleEnabled(modules, "distribution") ? "Sales Team" : `${t.staff.many} in the field`,
     items: [
       // The company's word for its people. Gold Fortune's is "Reps", which
       // replaced the longer "Representatives" here on purpose (Stage 3).
@@ -400,7 +413,7 @@ export function visibleNavGroups(
 ): NavGroup[] {
   return navGroups
     .map((group) => ({
-      label: group.label,
+      label: typeof group.label === "function" ? group.label(terms, modules) : group.label,
       items: group.items
         .filter(
           (item) =>

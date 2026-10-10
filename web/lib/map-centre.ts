@@ -38,6 +38,11 @@ export function viewFor(points: Point[]): MapView {
 
 let cached: Promise<MapView> | null = null;
 
+/** Drop the cached view at sign-out: it is one company's sites. */
+export function forgetSitesView(): void {
+  cached = null;
+}
+
 /**
  * The company's opening view, read once per page load from its own sites (RLS
  * scopes the read to the caller's company). Coordinates only, no Google call.

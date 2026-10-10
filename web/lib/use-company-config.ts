@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { createContext, createElement, useContext, useEffect, useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { DEFAULT_TERMS, type Terms } from "@/lib/terms";
 import type { Branding } from "@/lib/branding";
@@ -86,11 +86,49 @@ export function getCompanyConfig(): Promise<CompanyConfig | null> {
  * does not parse leaves the cache alone, so the client fetches as before.
  */
 export function seedCompanyConfig(raw: unknown): void {
-  if (resolved !== undefined) return;
+  // Never on the server. Module state there lives as long as the process, and
+  // one process renders every company's pages: the first company seeded was
+  // rendered for everyone after it, its name in their sidebar (found in the
+  // 10 Oct 2026 audit). The server renders from `CompanyConfigProvider`'s
+  // context instead, which belongs to the one request.
+  if (typeof window === "undefined") return;
   const parsed = parseCompanyConfig(raw);
   if (parsed === null) return;
+  // Already known for this company: kept, as it may be newer than the
+  // server's copy after a settings save. A different company means someone
+  // else signed in in this tab, and theirs replaces it.
+  if (resolved && resolved.orgId === parsed.orgId) return;
+  generation++;
   resolved = parsed;
   pending = Promise.resolve(parsed);
+}
+
+/** The server's answer for this request, for the first render. */
+const SeededConfig = createContext<CompanyConfig | null>(null);
+
+/**
+ * Hands the configuration the server layout fetched to every component below,
+ * for this request only, and seeds the browser's cache with it.
+ */
+export function CompanyConfigProvider({
+  initialConfig,
+  children,
+}: Readonly<{ initialConfig: unknown; children?: React.ReactNode }>) {
+  const parsed = useMemo(() => parseCompanyConfig(initialConfig), [initialConfig]);
+  // Before any child renders, so the sidebar and every page read the
+  // company's words and name on their first render. Idempotent.
+  seedCompanyConfig(initialConfig);
+  return createElement(SeededConfig.Provider, { value: parsed }, children);
+}
+
+/**
+ * Drop the cached configuration without asking anyone to fetch it again: for
+ * sign-out, where there is no session left to fetch with.
+ */
+export function forgetCompanyConfig(): void {
+  generation++;
+  pending = null;
+  resolved = undefined;
 }
 
 /** Forget the cached configuration, so the next reader fetches it again. */
@@ -102,7 +140,10 @@ export function refreshCompanyConfig(): void {
 }
 
 export function useCompanyConfig(): CompanyConfig | null {
-  const [config, setConfig] = useState<CompanyConfig | null>(resolved ?? null);
+  const seeded = useContext(SeededConfig);
+  const [config, setConfig] = useState<CompanyConfig | null>(() =>
+    typeof window === "undefined" ? seeded : (resolved ?? seeded)
+  );
 
   useEffect(() => {
     let cancelled = false;

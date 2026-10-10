@@ -443,7 +443,7 @@ export function CycleGrid({
                   {formatDayMonth(week.weekStart)}
                   <span className="text-muted-foreground/70">
                     {" · "}
-                    {week.isoWeek % 2 === 1 ? "A" : "B"}
+                    {week.fortnightWeek}
                   </span>
                 </p>
               </div>

@@ -224,7 +224,8 @@ export async function POST(request: Request) {
     const live = await requireFeature(supabase, "insights", "AI insights");
     if (!live.ok) return live.response;
 
-    const gate = await enforceRateLimit(supabase, LIMITS.insights);
+    // Fails closed: every unit is a paid OpenAI call (see enforceRateLimit).
+    const gate = await enforceRateLimit(supabase, LIMITS.insights, 1, { failClosed: true });
     if (!gate.ok) return gate.response;
 
     // The company's words and name, so a cleaning company is briefed about

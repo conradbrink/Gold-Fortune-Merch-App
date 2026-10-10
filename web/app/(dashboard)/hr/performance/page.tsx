@@ -264,7 +264,7 @@ export default function HrPerformancePage() {
       </div>
 
       <Tabs defaultValue="due">
-        <TabsList className="flex-wrap">
+        <TabsList className="max-w-full justify-start overflow-x-auto px-1 [&::-webkit-scrollbar]:hidden [&>*]:shrink-0 [&>*]:px-2.5">
           <TabsTrigger value="due">Due</TabsTrigger>
           <TabsTrigger value="outstanding">Outstanding by manager</TabsTrigger>
           <TabsTrigger value="below">Below expectations</TabsTrigger>

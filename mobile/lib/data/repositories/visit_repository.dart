@@ -133,7 +133,9 @@ class VisitRepository {
       throw StateError('Cannot check out before checking in.');
     }
 
-    final position = await LocationService.getCurrentPosition();
+    // Fresh or none, as at check-in: after a 20-second timeout the fallback
+    // could be a fix from hours ago, recorded as where the rep checked out.
+    final position = await LocationService.getCheckInPosition();
     final checkoutAt = DateTime.now();
     final durationSeconds = routeVisit.checkinAt != null
         ? checkoutAt.difference(routeVisit.checkinAt!).inSeconds
@@ -144,11 +146,13 @@ class VisitRepository {
       clientGeneratedId: clientId,
       payload: jsonEncode({
         'client_generated_id': clientId,
+        // Whose work this is, so the drain holds it for them (`ownerOf`).
+        'rep_id': repId,
         'changes': {
           'status': 'checked_out',
           'checkout_at': checkoutAt.toUtc().toIso8601String(),
-          'checkout_lat': position.latitude,
-          'checkout_lng': position.longitude,
+          'checkout_lat': position?.latitude,
+          'checkout_lng': position?.longitude,
           'duration_seconds': durationSeconds,
         },
       }),
@@ -158,7 +162,7 @@ class VisitRepository {
     // and their position is not recorded. The visit row keeps its own
     // coordinates either way — that is the visit's evidence, not a trail.
     final session = workdaySessionClientId;
-    if (session != null) {
+    if (session != null && position != null) {
       await _workdayRepo.queuePing(
         orgId: orgId,
         repId: repId,

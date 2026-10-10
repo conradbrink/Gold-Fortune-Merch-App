@@ -63,4 +63,26 @@ void main() {
       DateTime(2026, 9, 17, 19, 30),
     );
   });
+
+  test('a day started after the cut-off runs to the next day\'s cut-off', () {
+    // A 20:10 call-out with the 19:30 rule ended "at 19:30", before it began,
+    // and closed the day for the rest of the evening.
+    final late = DateTime(2026, 9, 17, 20, 10);
+    expect(autoEndCutoffFor(late), DateTime(2026, 9, 18, 19, 30));
+    expect(
+      isPastAutoEnd(now: DateTime(2026, 9, 17, 23, 0), startedAt: late),
+      isFalse,
+    );
+    expect(
+      untilAutoEnd(now: late, startedAt: late),
+      const Duration(hours: 23, minutes: 20),
+    );
+  });
+
+  test('a start at the cut-off minute is not ended at once', () {
+    expect(
+      autoEndCutoffFor(DateTime(2026, 9, 17, 19, 30)),
+      DateTime(2026, 9, 18, 19, 30),
+    );
+  });
 }

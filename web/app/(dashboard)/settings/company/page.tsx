@@ -243,7 +243,9 @@ export default function CompanyProfilePage() {
       </div>
 
       <Tabs defaultValue="details">
-        <TabsList>
+        {/* Scrolls on its own on a phone, as on Reports: nine tabs are wider
+            than the screen and pushed the whole page sideways. */}
+        <TabsList className="max-w-full justify-start overflow-x-auto px-1 [&::-webkit-scrollbar]:hidden [&>*]:shrink-0 [&>*]:px-2.5">
           <TabsTrigger value="details">Company Details</TabsTrigger>
           <TabsTrigger value="team">Team Members</TabsTrigger>
           <TabsTrigger value="field">Field settings</TabsTrigger>
