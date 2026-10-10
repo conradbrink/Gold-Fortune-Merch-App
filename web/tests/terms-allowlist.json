@@ -138,5 +138,25 @@
     "file": "components/layout/nav-items.ts",
     "text": "Customers",
     "reason": "A menu heading naming the area of the business (who the company works for), not the client term: it stays \"Customers\" whether the company calls them sites, properties, clients or stops, and the items under it carry the company's own word."
+  },
+  {
+    "file": "app/platform/acquisition/campaigns/page.tsx",
+    "text": "Cost per customer needs what each campaign cost",
+    "reason": "Operator (Control Centre) page about Tickd's own customers, the businesses that buy Tickd, never a company's clients; the company's client term would be wrong here."
+  },
+  {
+    "file": "app/platform/acquisition/sources/page.tsx",
+    "text": "Paying customers and the money they bring",
+    "reason": "Operator (Control Centre) page about Tickd's own customers, the businesses that buy Tickd, never a company's clients; the company's client term would be wrong here."
+  },
+  {
+    "file": "components/platform/acquisition-frame.tsx",
+    "text": "How people find Tickd, and how many become customers",
+    "reason": "Operator (Control Centre) page about Tickd's own customers, the businesses that buy Tickd, never a company's clients; the company's client term would be wrong here."
+  },
+  {
+    "file": "components/platform/visitors-chart.tsx",
+    "text": "No visits recorded in this period yet.",
+    "reason": "Operator (Control Centre) chart of visits to Tickd's website, not a company's site visits; the job term would be wrong here."
   }
 ]

@@ -11,6 +11,9 @@ register(
       import { pathToFileURL, fileURLToPath } from "node:url";
       const root = ${JSON.stringify(new URL("..", import.meta.url).href)};
       export async function resolve(specifier, context, next) {
+        // Next.js supplies "server-only" itself (it throws if a client bundle
+        // imports a server file); under node --test it is an empty module.
+        if (specifier === "server-only") return { url: "data:text/javascript,", shortCircuit: true };
         if (specifier.startsWith("@/")) {
           const base = fileURLToPath(new URL(specifier.slice(2), root));
           for (const candidate of [base + ".ts", base + ".tsx", base + "/index.ts", base]) {

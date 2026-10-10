@@ -72,9 +72,6 @@ export default async function PlatformUsersPage({
   return (
     <main className="mx-auto max-w-6xl space-y-6 p-4 sm:p-8">
       <header className="space-y-1">
-        <Link href="/platform" className="text-sm text-muted-foreground hover:underline">
-          ← Companies
-        </Link>
         <h1 className="text-2xl font-bold text-foreground">Users</h1>
         <p className="text-sm text-muted-foreground">
           {plural(totals.people, "person", "people")} in {plural(companies.length, "company", "companies")}.{" "}

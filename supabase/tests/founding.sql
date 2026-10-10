@@ -9,6 +9,8 @@
 --       anonymous callers; the service role can call the function.
 --   F4  attribution: an object saves; a string, an array or an oversized
 --       object is refused; null is the default.
+--   F5  organization_id: null by default; links to a company; one application
+--       per company; deleting the company clears the link, not the application.
 --
 -- HOW TO RUN: paste into execute_sql (or psql -f). One DO block that always
 -- ends in `raise exception`, so nothing survives.
@@ -16,7 +18,7 @@
 do $$
 declare
   v_fail text := '';
-  v_left int; v_id uuid; v_status text; v_bad text;
+  v_left int; v_id uuid; v_status text; v_bad text; v_org uuid; v_id2 uuid;
 begin
   select (value #>> '{}')::int into v_left from public.platform_settings where key = 'founding_spots_left';
   if v_left is null then v_fail := v_fail || 'F2 platform_settings.founding_spots_left is not set' || E'\n'; end if;
@@ -95,6 +97,26 @@ begin
     exception when check_violation then null;
     end;
   end loop;
+
+  ------------------------------------------------------------ F5 the company link
+  if (select organization_id from public.founding_applications where id = v_id) is not null then
+    v_fail := v_fail || 'F5 organization_id is not null by default' || E'\n';
+  end if;
+  insert into public.organizations (name) values ('F5 Test Company') returning id into v_org;
+  update public.founding_applications set organization_id = v_org where id = v_id;
+  insert into public.founding_applications
+    (name, business_name, whatsapp, trade, team_size, town, how_run, biggest_cost, whole_team, video_review, marketing_ok)
+  values ('Second Owner', 'Second Co', '27821234568', 'cleaning', '5-10', 'Gaborone', 'whatsapp', 'x', true, true, true)
+  returning id into v_id2;
+  begin
+    update public.founding_applications set organization_id = v_org where id = v_id2;
+    v_fail := v_fail || 'F5 two applications linked to one company' || E'\n';
+  exception when unique_violation then null;
+  end;
+  delete from public.organizations where id = v_org;
+  if not exists (select 1 from public.founding_applications where id = v_id and organization_id is null) then
+    v_fail := v_fail || 'F5 deleting the company did not leave the application with no link' || E'\n';
+  end if;
 
   if v_fail <> '' then
     raise exception E'FOUNDING FAILURES (rolled back):\n%', v_fail;
