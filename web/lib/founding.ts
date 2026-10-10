@@ -29,6 +29,7 @@ export type FoundingInput = {
   name: string;
   businessName: string;
   whatsapp: string;
+  email: string;
   trade: string;
   teamSize: string;
   town: string;
@@ -49,6 +50,8 @@ export type FoundingApplication = {
   name: string;
   business_name: string;
   whatsapp: string;
+  /** Where we confirm the application; lower case; null when none was given. */
+  email: string | null;
   trade: string;
   team_size: TeamSize;
   town: string;
@@ -141,6 +144,12 @@ export function normaliseWhatsapp(raw: string): string | null {
 /** The first address in `x-forwarded-for`, else the platform's own header. Only ever a rate-limit key. */
 export { clientAddress } from "@/lib/signup";
 
+/** An email address the database takes too (`founding_applications.email`). */
+export function validEmail(raw: string): boolean {
+  const e = raw.trim();
+  return e.length <= 254 && /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(e);
+}
+
 const yesNo = (v: string): boolean | null => (v === "yes" ? true : v === "no" ? false : null);
 
 /** Every problem, with the field it belongs to, in the order the form shows the fields. */
@@ -156,6 +165,9 @@ export function foundingIssues(input: FoundingInput): FoundingIssue[] {
   if (normaliseWhatsapp(input.whatsapp) === null) {
     add("whatsapp", "Please enter the WhatsApp number we can reach you on, for example 082 123 4567.");
   }
+  // Required on the form; here only checked when given, so a visitor on the old form,
+  // or a deploy that is half done, is never turned away (the application is what matters).
+  if (input.email.trim() && !validEmail(input.email)) add("email", "That email address does not look right. Please check it, so we can confirm your application.");
   if (!/^[a-z][a-z_]{0,39}$/.test(input.trade)) add("trade", "Choose what your team does.");
   if (!(TEAM_SIZES as readonly string[]).includes(input.teamSize)) add("teamSize", "Choose how many people work in the field.");
   const town = input.town.trim();
@@ -184,6 +196,7 @@ export function checkApplication(
       name: input.name.trim(),
       business_name: input.businessName.trim(),
       whatsapp: normaliseWhatsapp(input.whatsapp)!,
+      email: input.email.trim() ? input.email.trim().toLowerCase() : null,
       trade: input.trade,
       team_size: input.teamSize as TeamSize,
       town: input.town.trim(),
@@ -230,6 +243,7 @@ export function inputFromBody(body: unknown): FoundingInput {
     name: s("name"),
     businessName: s("businessName"),
     whatsapp: s("whatsapp"),
+    email: s("email"),
     trade: s("trade"),
     teamSize: s("teamSize"),
     town: s("town"),
@@ -267,6 +281,7 @@ export function applicationEmail(
     ["Name", a.name],
     ["Business", a.business_name],
     ["WhatsApp", `+${a.whatsapp}`],
+    ["Email", a.email ?? "(none given)"],
     ["Type of work", tradeLabel],
     ["People in the field", a.team_size],
     ["Town or city", a.town],

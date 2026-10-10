@@ -29,6 +29,8 @@ export const runtime = "nodejs";
 
 const PER_ADDRESS = { limit: 6, windowSeconds: 60 * 60 };
 const PER_NUMBER = { limit: 3, windowSeconds: 24 * 60 * 60 };
+/** Nobody can make us email an address they do not own, however many numbers or networks they use. */
+const PER_EMAIL = { limit: 2, windowSeconds: 24 * 60 * 60 };
 
 const NOTIFY_TO = process.env.FOUNDING_NOTIFY_EMAIL || "hello@tickd.co.za";
 const SENDER = { email: "applications@tickd.co.za", name: "Tickd applications" };
@@ -90,6 +92,7 @@ export async function POST(request: Request) {
   for (const [bucket, subject, rule] of [
     ["founding_address", `ip:${address}`, PER_ADDRESS],
     ["founding_number", `wa:${application.whatsapp}`, PER_NUMBER],
+    ...(application.email ? ([["founding_email", `email:${application.email}`, PER_EMAIL]] as const) : []),
   ] as const) {
     const { data, error } = await admin.rpc("consume_anonymous_rate_limit", {
       p_bucket: bucket,
@@ -122,14 +125,46 @@ export async function POST(request: Request) {
     console.error("founding: attribution column missing, saved without it");
     ({ data: saved, error } = await insert({ ...application, attribution: undefined, status }));
   }
+  // Likewise the email column (it comes with its own migration): save the
+  // application without it, and without the confirmation, rather than lose it.
+  let emailSaved = true;
+  if (error?.code === "PGRST204") {
+    console.error("founding: email column missing, saved without it");
+    emailSaved = false;
+    ({ data: saved, error } = await insert({ ...application, email: undefined, attribution: undefined, status }));
+  }
   if (error || !saved) {
     console.error("founding: could not save an application", error?.message);
     return json(request, { error: "Your application could not be saved just now. Please try again." }, 500);
   }
 
   after(() => notifyOwner(saved.id, application, waitlist));
+  const toEmail = application.email;
+  if (emailSaved && toEmail) after(() => confirmToApplicant(saved.id, { ...application, email: toEmail }, waitlist));
 
   return json(request, { ok: true, waitlist });
+}
+
+/**
+ * Tells the applicant we have their application, through the outbox (so it is
+ * retried, kept in the list of what was sent, and never goes to a blocked
+ * address). Never throws: the application is already saved.
+ */
+async function confirmToApplicant(id: string, a: FoundingApplication & { email: string }, waitlist: boolean) {
+  try {
+    const { error } = await platformAdminClient().rpc("queue_email", {
+      p_org: null,
+      p_to: a.email,
+      p_to_name: a.name,
+      p_template: "application_received",
+      p_payload: { first_name: a.name.split(/\s+/)[0], business_name: a.business_name, whatsapp: a.whatsapp, waitlist },
+      p_related_kind: "founding",
+      p_related_id: id,
+    });
+    if (error) console.error("founding: the applicant's confirmation was not queued", id, error.message);
+  } catch (e) {
+    console.error("founding: the applicant's confirmation failed", id, e instanceof Error ? e.message : e);
+  }
 }
 
 /** Emails the owner, then marks the row. Never throws: the application is already saved. */

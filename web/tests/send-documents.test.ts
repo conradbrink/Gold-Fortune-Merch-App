@@ -573,3 +573,68 @@ test("a company's own logo is the picture at the top of its emails, and its name
   const own = renderEmail("test", {}, { companyName: "A & <B>", unsubscribeUrl: null, companyLogoUrl: logo })!;
   assert.match(own.html, /alt="A &amp; &lt;B&gt;"/);
 });
+
+// Emails from Tickd itself: an application received, a welcome, the offer to sign up fully.
+
+import { TICKD_TEMPLATES } from "@/lib/email/templates";
+import { FOUNDING_OFFER } from "@/lib/founding-offer";
+
+const tickd = { companyName: "Tickd", unsubscribeUrl: null, fromTickd: true, canReply: true };
+
+test("an application received says what happens next, in the applicant's words, and is from Tickd", () => {
+  const e = renderEmail("application_received", { first_name: "Thandi", business_name: "Shine Cleaning", whatsapp: "27821234567", waitlist: false }, tickd)!;
+  assert.equal(e.subject, "We have your application, Thandi");
+  assert.match(e.html, /Hello Thandi,/);
+  assert.match(e.html, /Shine Cleaning/);
+  assert.ok(e.html.includes(FOUNDING_OFFER.closes) && e.html.includes(FOUNDING_OFFER.tellsBy));
+  assert.match(e.html, /\+27821234567/);
+  assert.match(e.html, /free for 60 days/);
+  assert.match(e.html, /Sent by Tickd\./);
+  assert.ok(!e.html.includes("Stop these emails") && !e.html.includes("Know what your team got done today"));
+  assert.match(e.html, /Questions\? Just reply to this email and it will reach Tickd\./);
+  assert.match(e.text, /Thank you,\nThe Tickd team/);
+  const wait = renderEmail("application_received", { first_name: "Thandi", business_name: "Shine Cleaning", waitlist: true }, tickd)!;
+  assert.equal(wait.subject, "You are on the Tickd waiting list");
+  assert.match(wait.html, /waiting list/);
+  assert.ok(!wait.html.includes("We tell everyone by"));
+});
+
+test("a welcome greets the owner, names the company, and gives three first steps in the company's words", () => {
+  const e = renderEmail("welcome", { first_name: "Sam", company_name: "Daniels Gardens", email: "sam@example.com", staff_word: "Gardeners", site_word: "Properties" }, tickd)!;
+  assert.equal(e.subject, "Welcome to Tickd, Sam");
+  assert.match(e.html, /Your Tickd account for Daniels Gardens is ready\./);
+  assert.match(e.html, /Add your gardeners\./);
+  assert.match(e.html, /Add your properties,/);
+  assert.match(e.html, /sam@example\.com/);
+  assert.match(e.html, /href="https:\/\/app\.tickd\.co\.za\/login"[^>]*>Sign in to Tickd</);
+  assert.match(e.text, /1\. Add your gardeners\./);
+  assert.doesNotMatch(e.html + e.text, /password:|your password is/i);
+  const plain = renderEmail("welcome", { company_name: "Acme" }, tickd)!;
+  assert.match(plain.html, /Add your team\./);
+  assert.match(plain.html, /Add your places,/);
+});
+
+test("the offer to sign up fully says how many free days are left and where to choose a plan", () => {
+  const e = renderEmail("trial_offer", { first_name: "Sam", company_name: "Daniels Gardens", trial_ends_at: "2026-10-22T21:08:11.557Z", days_left: 12 }, tickd)!;
+  assert.equal(e.subject, "Your free days end on 22 Oct 2026, Sam");
+  // The company's own calendar day wins over the UTC date.
+  const local = renderEmail("trial_offer", { company_name: "A", trial_ends_at: "2026-10-22T22:30:00Z", trial_ends_on: "2026-10-23", days_left: 1 }, tickd)!;
+  assert.equal(local.subject, "Your free days end on 23 Oct 2026");
+  assert.match(local.html, /1 free day left, until 23 Oct 2026/);
+  assert.doesNotMatch(local.html, /1 free days/);
+  assert.match(e.html, /12 days/);
+  assert.match(e.html, /22 Oct 2026/);
+  assert.match(e.html, /href="https:\/\/app\.tickd\.co\.za\/plans"[^>]*>Choose your plan</);
+  assert.match(e.html, /you pay nothing until you choose/);
+  const one = renderEmail("trial_offer", { company_name: "A", trial_ends_at: "2026-10-22T00:00:00Z", days_left: 1 }, tickd)!;
+  assert.match(one.html, />1 day</);
+  const none = renderEmail("trial_offer", { company_name: "A" }, tickd)!;
+  assert.equal(none.subject, "Ready to sign up fully?");
+  assert.doesNotMatch(none.html, /before your free days end/);
+  assert.match(none.html, /Now is a good time to sign up fully\./);
+});
+
+test("emails from Tickd itself are their own set, and none of them is a client email", () => {
+  assert.deepEqual([...TICKD_TEMPLATES].sort(), ["application_received", "trial_offer", "welcome"]);
+  for (const t of TICKD_TEMPLATES) assert.ok(!CLIENT_TEMPLATES.has(t) && !DOCUMENT_TEMPLATES.has(t), t);
+});

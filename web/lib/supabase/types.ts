@@ -1175,6 +1175,7 @@ export type Database = {
           trade: string
           video_review: boolean
           whatsapp: string
+          email: string | null
           whole_team: boolean
         }
         Insert: {
@@ -1198,6 +1199,7 @@ export type Database = {
           trade: string
           video_review: boolean
           whatsapp: string
+          email?: string | null
           whole_team: boolean
         }
         Update: {
@@ -1221,6 +1223,7 @@ export type Database = {
           trade?: string
           video_review?: boolean
           whatsapp?: string
+          email?: string | null
           whole_team?: boolean
         }
         Relationships: []
@@ -8278,7 +8281,7 @@ export type Database = {
       confirm_company_email: { Args: { p_org: string }; Returns: boolean }
       queue_email: {
         Args: {
-          p_org: string
+          p_org: string | null
           p_to: string
           p_to_name: string | null
           p_template: string

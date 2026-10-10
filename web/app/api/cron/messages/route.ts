@@ -2,7 +2,7 @@ import { timingSafeEqual } from "node:crypto";
 import { createClient as createAdminClient } from "@supabase/supabase-js";
 import type { Database } from "@/lib/supabase/types";
 import { brevoConfigured, sendViaBrevo } from "@/lib/email/brevo";
-import { ALERT_TEMPLATES, CLIENT_TEMPLATES, DOCUMENT_TEMPLATES, REPORT_TEMPLATES, renderEmail, type ReportLine } from "@/lib/email/templates";
+import { ALERT_TEMPLATES, CLIENT_TEMPLATES, DOCUMENT_TEMPLATES, REPORT_TEMPLATES, TICKD_TEMPLATES, renderEmail, type ReportLine } from "@/lib/email/templates";
 import { companyTime } from "@/lib/company-time";
 import { logoUrl } from "@/lib/branding";
 import { appUrl, signLink } from "@/lib/email/links";
@@ -31,6 +31,8 @@ export const runtime = "nodejs";
 export const maxDuration = 60;
 
 const SENDER_EMAIL = "reports@tickd.co.za";
+/** Where a reply to an email from Tickd itself goes (it forwards to the owner). */
+const TICKD_REPLY_TO = "hello@tickd.co.za";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
@@ -143,9 +145,13 @@ export async function GET(request: Request) {
     }
     const org = await orgOf(m.org_id);
     const companyLogo = process.env.NEXT_PUBLIC_SUPABASE_URL ? logoUrl(process.env.NEXT_PUBLIC_SUPABASE_URL, org?.logo_path ?? null) : null;
-    const companyName = org?.name?.trim() || "Tickd";
+    // An email from Tickd itself (a welcome, an application received, the offer to sign
+    // up fully) goes out as Tickd, whatever company it is about, and replies reach Tickd.
+    const fromTickd = TICKD_TEMPLATES.has(m.template);
+    const companyName = fromTickd ? "Tickd" : org?.name?.trim() || "Tickd";
     const unsubscribeUrl = CLIENT_TEMPLATES.has(m.template) ? `${appUrl()}/c/unsubscribe/${signLink("unsubscribe", m.id)}` : null;
     let payload = (m.payload ?? {}) as Record<string, unknown>;
+    if (fromTickd) payload = { ...payload, app_url: appUrl() };
     if (REPORT_TEMPLATES.has(m.template)) {
       try {
         payload = { ...payload, reports: await reportLines(payload.report_ids) };
@@ -198,7 +204,7 @@ export async function GET(request: Request) {
     let email: ReturnType<typeof renderEmail> = null;
     let renderError: string | null = null;
     try {
-      email = renderEmail(m.template, payload, { companyName, unsubscribeUrl, attached: attachment !== null, canReply: !!org?.support_email, companyLogoUrl: companyLogo });
+      email = renderEmail(m.template, payload, { companyName, unsubscribeUrl, attached: attachment !== null, canReply: fromTickd || !!org?.support_email, companyLogoUrl: companyLogo, fromTickd });
     } catch (e) {
       renderError = e instanceof Error ? e.message : String(e);
     }
@@ -222,7 +228,7 @@ export async function GET(request: Request) {
     const result = await sendViaBrevo({
       to: { email: m.to_address, name: m.to_name },
       sender: { email: SENDER_EMAIL, name: companyName.slice(0, 60) },
-      replyTo: org?.support_email ? { email: org.support_email, name: companyName } : null,
+      replyTo: fromTickd ? { email: TICKD_REPLY_TO, name: "Tickd" } : org?.support_email ? { email: org.support_email, name: companyName } : null,
       subject: email.subject,
       html: email.html,
       text: email.text,

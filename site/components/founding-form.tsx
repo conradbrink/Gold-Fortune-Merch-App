@@ -49,6 +49,7 @@ type Field =
   | "name"
   | "businessName"
   | "whatsapp"
+  | "email"
   | "trade"
   | "teamSize"
   | "town"
@@ -199,6 +200,7 @@ export function FoundingForm() {
           name: text("name"),
           businessName: text("businessName"),
           whatsapp: text("whatsapp"),
+          email: text("email"),
           trade: choice.trade,
           teamSize: choice.teamSize,
           town: text("town"),
@@ -263,6 +265,19 @@ export function FoundingForm() {
           maxLength={25}
           autoComplete="tel"
           placeholder="082 123 4567"
+          className={input}
+        />
+      </Labelled>
+      <Labelled label="Email" htmlFor={`${id}-email`} hint="We confirm your application here. We never share it." error={problem("email")}>
+        <input
+          id={`${id}-email`}
+          name="email"
+          type="email"
+          inputMode="email"
+          required
+          maxLength={254}
+          autoComplete="email"
+          placeholder="you@yourbusiness.co.za"
           className={input}
         />
       </Labelled>
