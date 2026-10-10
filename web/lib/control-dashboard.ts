@@ -22,6 +22,11 @@ export function isActive(c: CompanyActivation, now: Date): boolean {
   return recent(c.lastActivityAt) || recent(c.lastSignInAt);
 }
 
+/**
+ * A free period that hasn't ended. It may not have begun yet: Founding
+ * companies made before 2 November have free days that start then (#154), so
+ * the dashboard says "started or booked".
+ */
 export function inFreePeriod(c: CompanyActivation, now: Date): boolean {
   return c.trialEndsAt !== null && Date.parse(c.trialEndsAt) > now.getTime();
 }

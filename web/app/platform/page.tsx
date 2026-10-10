@@ -131,7 +131,7 @@ export default async function DashboardPage({
             missing="Couldn't be read just now."
             href="/platform/onboarding?view=all"
           />
-          <Stat label="In a free period" value={known ? count.format(free) : null} missing="Couldn't be read just now." href="/platform/onboarding?view=all" />
+          <Stat label="Free period (started or booked)" value={known ? count.format(free) : null} missing="Couldn't be read just now." href="/platform/onboarding?view=all" />
           <Stat
             label={`New, last ${rangeLabel}`}
             value={known ? count.format(newNow) : null}
