@@ -1,6 +1,7 @@
 import { timingSafeEqual } from "node:crypto";
 import { createClient as createAdminClient } from "@supabase/supabase-js";
 import type { Database } from "@/lib/supabase/types";
+import { brevoEvent } from "@/lib/email/brevo";
 
 /**
  * Delivery news from Brevo (Stage 8.1): a hard bounce, a spam complaint, a
@@ -10,8 +11,6 @@ import type { Database } from "@/lib/supabase/types";
  */
 
 export const runtime = "nodejs";
-
-const EVENTS = new Set(["hard_bounce", "spam", "complaint", "blocked", "unsubscribed"]);
 
 function matches(given: string, want: string): boolean {
   const a = Buffer.from(given);
@@ -32,9 +31,9 @@ export async function POST(request: Request) {
   });
   let recorded = 0;
   for (const e of events) {
-    const event = String(e.event ?? "");
+    const event = brevoEvent(e.event);
     const id = String(e["message-id"] ?? e.messageId ?? "");
-    if (!EVENTS.has(event) || !id) continue;
+    if (!event || !id) continue;
     const { error } = await admin.rpc("record_message_event", { p_provider_id: id, p_event: event });
     if (!error) recorded++;
   }
