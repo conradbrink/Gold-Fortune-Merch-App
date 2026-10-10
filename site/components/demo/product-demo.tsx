@@ -18,7 +18,7 @@ import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 
 import { LogoMark } from "@/components/logo";
 import { AndroidNav, at } from "@/components/demo/phone-screens";
 import { ShotScreen } from "@/components/demo/shot-screen";
-import { site } from "@/lib/site";
+import { founding } from "@/lib/site";
 
 // The hero demo: one working day, team and office, in about 45 seconds.
 // A clock moves through the day; each scene is one plain sentence. Team
@@ -544,11 +544,11 @@ export function ProductDemo() {
                 {END_LINE}
               </p>
               <a
-                href={site.signupUrl}
+                href="#start"
                 className="tk-in rounded-full bg-amber-500 px-5 py-3 font-semibold text-teal-950 transition-[background-color,transform] duration-150 ease-out hover:bg-amber-400 active:scale-[0.97]"
                 style={at(450)}
               >
-                Try it free for {site.trialDays} days
+                Free for {founding.days} days. Apply now
               </a>
             </div>
           </div>

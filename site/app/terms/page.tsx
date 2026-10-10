@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { LegalPage } from "@/components/legal-page";
-import { legal, pricing, rand, site } from "@/lib/site";
+import { founding, legal, pricing, rand, site } from "@/lib/site";
 
 // DRAFT for the owner's lawyer to check before launch (owner, 8 Oct 2026). It
 // describes how the product actually works; change the product, change this.
@@ -25,7 +25,10 @@ export default function TermsPage() {
 
       <h2>Your free trial</h2>
       <ul>
-        <li>The trial is free for {site.trialDays} days from the day you sign up. We don&apos;t ask for a card.</li>
+        <li>
+          A Founding business (one of the first {founding.spots} we accept) uses {site.name} free for {founding.days} days, from the
+          day we set it up. Any other trial is free for {site.trialDays} days from the day you sign up. We don&apos;t ask for a card.
+        </li>
         <li>During the trial you can have up to 10 users.</li>
         <li>
           If you don&apos;t choose a plan by the end of the trial, your account becomes read-only: you can still sign in and

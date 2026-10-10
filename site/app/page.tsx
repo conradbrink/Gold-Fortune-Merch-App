@@ -21,7 +21,7 @@ import { TradeTabs } from "@/components/trade-tabs";
 import { ApplyForm } from "@/components/apply-form";
 import { SpotsMeter, SpotsText } from "@/components/founding-spots";
 import { PricingSection } from "@/components/pricing-section";
-import { confirmed, pricing, rand, site, weeklyCeiling } from "@/lib/site";
+import { confirmed, founding, pricing, rand, site } from "@/lib/site";
 
 // Copy: ~/Downloads/site-copy-final-v7.md, reworked on 8 Oct 2026 with the
 // Hormozi offer skills (audit in the site-offer worktree's OFFER-AUDIT.md),
@@ -110,18 +110,38 @@ const team = [
   ["Their evenings are their own.", "Tickd only works during work hours."],
 ];
 
+// The Founding 10 offer (owner, 10 Oct 2026): what a Founding business gets,
+// each with what it is worth (the same figures the pricing card uses), and what
+// we ask in return.
+const foundingGets: [string, number][] = [
+  [`${founding.days} days of ${site.name}, free`, Math.round(pricing.monthly.base * (founding.days / 30))],
+  ["We set it up for you", pricing.setupValue],
+  ["A free day of hands-on training", pricing.trainingValue],
+  [`A check-in with us every week for ${founding.days} days`, pricing.supportValue],
+];
+const foundingWorth = foundingGets.reduce((sum, [, worth]) => sum + worth, 0);
+const foundingAsk = [
+  "Put your team on the app in the first week.",
+  "Tell us honestly what works and what doesn't.",
+  "If it works for you, tell other businesses in a short testimonial.",
+];
+
 const faqs = [
   {
     q: "What does it cost?",
-    a: `From ${rand(pricing.monthly.base)} a month for ${pricing.includedUsers} users, with everything included. Pay yearly and you get 2 months free.`,
+    a: `Nothing for ${founding.days} days if you are one of the first ${founding.spots}. After that it is ${rand(pricing.monthly.base)} a month for ${pricing.includedUsers} users, with everything included, and Founding businesses keep a lower price for life. Pay yearly and you get 2 months free.`,
   },
   {
     q: "How fast can we start?",
-    a: "Today. Sign up, and your team can put the app on their phones and clock in.",
+    a: `Once we say yes, your team is running in ${founding.runningIn}. We set it up for you.`,
   },
   {
-    q: `What happens after ${site.trialDays} days?`,
-    a: "If you want to keep going, you choose a plan. We don't take your card for the trial, so you're never charged by surprise.",
+    q: `What happens after ${founding.days} days?`,
+    a: "You choose to keep going at your Founding price, or you stop. We don't take your card, so you're never charged by surprise.",
+  },
+  {
+    q: "Why is it free?",
+    a: `We want our first ${founding.spots} businesses to use ${site.name} properly and tell us what to improve. In return, we set it up for you and give you a lower price for life.`,
   },
   { q: "Do they need new phones?", a: "No. Tickd runs on the Android phones your team already has." },
   {
@@ -324,14 +344,17 @@ export default function Home() {
               ))}
             </ul>
             <div className="grid max-w-xl gap-3 rounded-2xl bg-white p-5 ring-1 ring-teal-900/10 sm:grid-cols-[1fr_auto] sm:items-center">
-              <div>
-                <p className="font-display text-2xl font-bold leading-tight text-teal-900">
-                  {rand(weeklyCeiling())}
-                  <span className="text-base font-semibold text-muted"> a week</span>
+              <div className="grid gap-1.5">
+                <p className="w-fit rounded-full bg-amber-100 px-3 py-0.5 text-xs font-bold uppercase tracking-wide text-teal-900">
+                  The Founding 10
                 </p>
-                <p className="text-sm text-muted">
-                  {rand(pricing.monthly.base)} a month for a team of {pricing.includedUsers} users. {site.trialDays} days free, no card
-                  needed.
+                <p className="font-display text-3xl font-extrabold leading-tight text-teal-900">
+                  Free for {founding.days} days
+                </p>
+                <p className="text-sm leading-relaxed text-ink">
+                  We set it up for you, and your team is running in {founding.runningIn}. No card. After that, it&apos;s{" "}
+                  {rand(pricing.monthly.base)} a month for {pricing.includedUsers} users, and Founding businesses keep a lower price
+                  for life.
                 </p>
               </div>
               <TrialButton />
@@ -562,17 +585,50 @@ export default function Home() {
           </div>
         </section>
 
-        {/* 12. Sign up: the offer again, in plain words. */}
+        {/* 12. The Founding 10: what you get for nothing, what we ask, and the form. */}
         <section id="start" className="px-4 pb-14 pt-10 sm:px-6 sm:pb-16 sm:pt-16">
-          <div className="tk-reveal mx-auto grid max-w-6xl gap-5 rounded-2xl bg-teal-900 p-6 text-sand sm:gap-6 sm:p-10">
-            <h2 className="font-display text-3xl font-extrabold leading-[1.1] tracking-tight text-balance sm:text-5xl">
-              Try {site.name} free for {site.trialDays} days.
-            </h2>
-            <p className="max-w-2xl leading-relaxed text-pretty text-teal-100 sm:text-lg">
-              See your team&apos;s whole day, and show clients proof of every job. You don&apos;t need a card.
-            </p>
-            <SpotsMeter tone="light" />
-            <ApplyForm />
+          <div className="tk-reveal mx-auto grid max-w-6xl gap-8 rounded-2xl bg-teal-900 p-6 text-sand sm:p-10 lg:grid-cols-[1fr_1.1fr] lg:gap-12">
+            <div className="grid content-start gap-5 sm:gap-6">
+              <h2 className="font-display text-3xl font-extrabold leading-[1.1] tracking-tight text-balance sm:text-5xl">
+                Use {site.name} free for {founding.days} days.
+              </h2>
+              <p className="max-w-2xl leading-relaxed text-pretty text-teal-100 sm:text-lg">
+                We are looking for {founding.spots} businesses to be the first on {site.name}. We set it up for you, and show you
+                how to use it.
+              </p>
+              <ul className="grid gap-3" aria-label="What you get">
+                {foundingGets.map(([title, worth]) => (
+                  <li key={title} className="flex items-baseline justify-between gap-4 border-t border-white/15 pt-3">
+                    <span className="flex gap-2.5 font-medium leading-snug">
+                      <Check className="mt-0.5 size-5 shrink-0 text-amber-500" strokeWidth={3} aria-hidden="true" />
+                      {title}
+                    </span>
+                    <span className="shrink-0 text-teal-100">{rand(worth)}</span>
+                  </li>
+                ))}
+                <li className="flex items-baseline justify-between gap-4 border-t border-white/15 pt-3 font-display text-xl font-bold">
+                  <span>Worth</span>
+                  <span>{rand(foundingWorth)}</span>
+                </li>
+                <li className="flex items-baseline justify-between gap-4 font-display text-2xl font-extrabold text-amber-500">
+                  <span>You pay</span>
+                  <span>{rand(0)}</span>
+                </li>
+              </ul>
+              <div className="grid gap-2 rounded-xl bg-white/10 p-4 ring-1 ring-white/15">
+                <p className="font-display text-lg font-bold">What we ask in return</p>
+                <ul className="grid gap-1.5 leading-relaxed text-teal-100">
+                  {foundingAsk.map((a) => (
+                    <li key={a}>{a}</li>
+                  ))}
+                </ul>
+              </div>
+              <p className="font-medium text-teal-100">No card. No contract. Stop any time.</p>
+            </div>
+            <div className="grid content-start gap-5 sm:gap-6">
+              <SpotsMeter tone="light" />
+              <ApplyForm />
+            </div>
           </div>
         </section>
       </main>
