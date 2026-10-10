@@ -3,7 +3,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createVerify, generateKeyPairSync } from "node:crypto";
-import { gaConfig, resetGaCache, runReport, signedAssertion, TICKD_PROPERTY_ID } from "@/lib/ga4";
+import { gaConfig, gaSetup, resetGaCache, runReport, signedAssertion, TICKD_PROPERTY_ID } from "@/lib/ga4";
 
 const { privateKey, publicKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
 const pem = privateKey.export({ type: "pkcs8", format: "pem" }).toString();
@@ -70,4 +70,33 @@ test("failures are answers, never thrown", async () => {
       : Response.json({ error: { message: "User does not have sufficient permissions for this property." } }, { status: 403 })) as typeof fetch;
   const d = await runReport({ dateRanges: [], metrics: ["totalUsers"] }, { propertyId: "1", clientEmail: email, privateKey: pem }, denied);
   assert.deepEqual(d, { ok: false, reason: "error", message: "User does not have sufficient permissions for this property." });
+});
+
+test("the usual pasting slips are forgiven", () => {
+  const escaped = pem.trim().replace(/\n/g, "\\n");
+  // Quote marks and the trailing comma copied from the key file.
+  const quoted = gaConfig({ GA4_CLIENT_EMAIL: `"${email}",`, GA4_PRIVATE_KEY: `"${escaped}\\n",` });
+  assert.ok(quoted);
+  assert.equal(quoted.clientEmail, email);
+  assert.ok(quoted.privateKey.startsWith("-----BEGIN PRIVATE KEY-----\n"));
+  // The whole key file pasted into either variable.
+  const file = JSON.stringify({ type: "service_account", client_email: email, private_key: pem });
+  const whole = gaConfig({ GA4_CLIENT_EMAIL: file, GA4_PRIVATE_KEY: file });
+  assert.equal(whole?.clientEmail, email);
+});
+
+test("a setup that can't be used says which variable, never its value", () => {
+  const problem = (env: Record<string, string>) => {
+    const r = gaSetup(env);
+    return r.ok ? null : r.problem;
+  };
+  assert.match(problem({}) ?? "", /^GA4_CLIENT_EMAIL isn't set/);
+  assert.match(problem({ GA4_CLIENT_EMAIL: "someone@gmail.com" }) ?? "", /^GA4_CLIENT_EMAIL doesn't look like/);
+  assert.match(problem({ GA4_CLIENT_EMAIL: email }) ?? "", /^GA4_PRIVATE_KEY isn't set/);
+  assert.match(problem({ GA4_CLIENT_EMAIL: email, GA4_PRIVATE_KEY: "MIIEvQIBADAN" }) ?? "", /part of it is missing/);
+  const cut = pem.slice(0, 200) + "\n-----END PRIVATE KEY-----\n";
+  const cutProblem = problem({ GA4_CLIENT_EMAIL: email, GA4_PRIVATE_KEY: cut }) ?? "";
+  assert.match(cutProblem, /couldn't be read as a key/);
+  assert.ok(!cutProblem.includes("MII"), "the key itself is never shown");
+  assert.equal(problem({ GA4_CLIENT_EMAIL: email, GA4_PRIVATE_KEY: pem }), null);
 });
