@@ -7,12 +7,11 @@ export const site = {
   headline: "Every job Tickd off. Except you.",
   // The plain answer to "what is this?", for anyone landing cold.
   whatItIs: "The app for teams that work on site.",
-  trialDays: 14,
   url: "https://tickd.co.za",
   appUrl: "https://app.tickd.co.za",
-  // Every "try it" button goes straight to the app's sign-up (the trial
-  // onboarding); the trade picker at the bottom adds ?industry=<code>.
-  signupUrl: "https://app.tickd.co.za/signup",
+  // Every "try it" button goes to the Founding offer (/founding), the only way
+  // in for now: the self-serve free trial was taken off (owner, 10 Oct 2026).
+  foundingPath: "/founding",
   // Legal entity shown in the footer and named in the terms and privacy
   // pages (owner, 8 Oct 2026; CIPA extract BW00005187820).
   legalName: "Mobill Media (Pty) Ltd",

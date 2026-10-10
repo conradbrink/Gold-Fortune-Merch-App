@@ -2,7 +2,7 @@
 
 import { Check, ShieldCheck } from "lucide-react";
 import { useId, useState, type ReactNode } from "react";
-import { confirmed, contactHref, perMonth, perPersonPerDay, planPrice, pricing, rand, site, type Billing } from "@/lib/site";
+import { confirmed, contactHref, founding, perMonth, perPersonPerDay, planPrice, pricing, rand, site, type Billing } from "@/lib/site";
 
 // Copy: ~/Downloads/site-copy-final-v7.md, section 7, plus the day-one and
 // no-card lines from the 8 Oct offer audit. One Monthly | Yearly choice
@@ -203,12 +203,12 @@ export function PricingSection() {
           <Bonuses yearly={yearly} />
           <div className="mt-auto grid gap-2">
             <a
-              href={site.signupUrl}
+              href={site.foundingPath}
               className="flex min-h-12 items-center justify-center rounded-full bg-amber-500 px-5 py-3 text-lg font-semibold text-teal-950 transition-[background-color,transform] duration-150 ease-out hover:bg-amber-400 active:scale-[0.97] sm:text-base"
             >
-              Get {site.name} free for {site.trialDays} days
+              Become a founding member
             </a>
-            <p className="text-center text-sm text-muted">No card needed for the trial.</p>
+            <p className="text-center text-sm text-muted">Free for {founding.days} days, set up for you. No card needed.</p>
           </div>
         </div>
 

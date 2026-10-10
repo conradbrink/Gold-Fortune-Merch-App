@@ -544,11 +544,11 @@ export function ProductDemo() {
                 {END_LINE}
               </p>
               <a
-                href={site.signupUrl}
+                href={site.foundingPath}
                 className="tk-in rounded-full bg-amber-500 px-5 py-3 font-semibold text-teal-950 transition-[background-color,transform] duration-150 ease-out hover:bg-amber-400 active:scale-[0.97]"
                 style={at(450)}
               >
-                Try it free for {site.trialDays} days
+                Become a founding member
               </a>
             </div>
           </div>
