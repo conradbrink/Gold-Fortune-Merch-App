@@ -752,7 +752,7 @@ export default function ReportsPage() {
             { header: staff, key: "rep" },
             { header: "Completed", key: "completed", numeric: true },
             { header: "Total", key: "total", numeric: true },
-            { header: "Completion", key: "completion" },
+            { header: "Done as planned", key: "completion" },
             { header: `${terms.site.many} covered`, key: "stores", numeric: true },
             { header: "Forms", key: "forms" },
             { header: "Location verified", key: "verified" },

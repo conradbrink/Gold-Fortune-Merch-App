@@ -40,6 +40,11 @@ test("period labels", () => {
   assert.equal(periodLabel("2026-10-01", "2026-10-31"), "October 2026");
   assert.equal(periodLabel("2026-10-01", "2026-12-31"), "Oct–Dec 2026");
   assert.equal(periodLabel("2026-11-01", "2027-01-31"), "Nov 2026–Jan 2027");
+  // A last period cut short by the contract's end date names its days.
+  assert.equal(periodLabel("2026-03-01", "2026-03-15"), "1–15 March 2026");
+  assert.equal(periodLabel("2026-01-01", "2026-02-01"), "1 Jan–1 Feb 2026");
+  assert.equal(periodLabel("2026-12-01", "2027-01-10"), "1 Dec 2026–10 Jan 2027");
+  assert.equal(periodLabel("2028-02-01", "2028-02-29"), "February 2028");
 });
 
 // The Money menu follows the company's switches: Contracts only when it uses
