@@ -2,9 +2,9 @@ import Link from "next/link";
 import { requireOperator } from "@/lib/operator";
 import { loadActivation } from "@/lib/activation-data";
 import { attentionFor, whatsappNumber } from "@/lib/activation";
-import { change, formatChange, percent, periods, readRange, RANGES, type RangeKey } from "@/lib/acquisition";
+import { change, formatChange, periods, readRange, RANGES, type RangeKey } from "@/lib/acquisition";
 import { loadFirstParty, ownStats } from "@/lib/acquisition-data";
-import { healthProblems, inFreePeriod, isActive, madeIn, moduleAdoption, newPerMonth, ACTIVE_DAYS } from "@/lib/control-dashboard";
+import { funnelSentence, healthProblems, inFreePeriod, isActive, madeIn, moduleAdoption, newPerMonth, ACTIVE_DAYS } from "@/lib/control-dashboard";
 import { loadHealth, loadModuleUse } from "@/lib/control-dashboard-data";
 import { Stat, count } from "@/components/platform/acquisition-frame";
 
@@ -214,9 +214,7 @@ export default async function DashboardPage({
           <Stat label="First job finished" value={own ? count.format(firstJob) : null} missing="Couldn't be read just now." href="/platform/onboarding" />
         </div>
         <p className="text-sm text-muted-foreground">
-          {visitors
-            ? `${percent(applied, visitors)} of visitors applied, ${applied ? percent(linked.length, applied) : "none"} of applicants got a company, and ${linked.length ? percent(firstJob, linked.length) : "none"} of those finished a first job. Paying companies appear once billing is live.`
-            : "The funnel fills in as people come to the website and apply."}
+          {own ? funnelSentence(visitors, applied, linked.length, firstJob) : "The funnel couldn't be read just now."}
         </p>
       </Section>
 
@@ -243,7 +241,7 @@ export default async function DashboardPage({
           </div>
         </Section>
 
-        <Section title="Modules companies use">
+        <Section title="Modules companies use" href={`/platform/product?range=${range}`} link="How much each is used">
           <div className="space-y-2 rounded-lg border border-border bg-card p-4">
             {modules === null ? (
               <p className="text-sm text-muted-foreground">Modules couldn&apos;t be read just now.</p>

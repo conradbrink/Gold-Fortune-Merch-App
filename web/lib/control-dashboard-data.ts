@@ -22,15 +22,29 @@ export async function loadHealth(): Promise<{ ok: true; value: Health } | { ok: 
 
 /** The module catalogue and which companies have each switched on. */
 export async function loadModuleUse(): Promise<{
-  modules: { code: string; name: string; is_built: boolean }[];
+  modules: { code: string; name: string; is_built: boolean; plan_type: string }[];
   enabled: { org_id: string; module_code: string }[];
 }> {
   const admin = platformAdminClient();
   const [{ data: modules, error: moduleError }, { data: enabled, error: enabledError }] = await Promise.all([
-    admin.from("modules").select("code, name, is_built").order("sort_order"),
+    admin.from("modules").select("code, name, is_built, plan_type").order("sort_order"),
     admin.from("company_modules").select("org_id, module_code").eq("enabled", true).range(0, 9999),
   ]);
   if (moduleError) throw moduleError;
   if (enabledError) throw enabledError;
   return { modules: modules ?? [], enabled: enabled ?? [] };
+}
+
+/** How much each module was used per company in a period (platform_module_usage()). */
+export async function loadModuleUsage(
+  period: { from: string; to: string }
+): Promise<{ ok: true; rows: { module_code: string; org_id: string; n: number }[] } | { ok: false; message: string }> {
+  const { data, error } = await platformAdminClient().rpc("platform_module_usage", { p_from: period.from, p_to: period.to });
+  if (error) {
+    if (error.code === "PGRST202" || error.code === "42883") {
+      return { ok: false, message: "Module use needs a database update that hasn't been applied yet." };
+    }
+    throw error;
+  }
+  return { ok: true, rows: (data ?? []).map((r) => ({ module_code: r.module_code, org_id: r.org_id, n: Number(r.n) })) };
 }

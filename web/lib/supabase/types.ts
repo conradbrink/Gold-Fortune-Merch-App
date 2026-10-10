@@ -8364,6 +8364,10 @@ export type Database = {
         Args: Record<string, never>
         Returns: number
       }
+      platform_module_usage: {
+        Args: { p_from: string; p_to: string }
+        Returns: { module_code: string; org_id: string; n: number }[]
+      }
       platform_system_health: {
         Args: Record<string, never>
         Returns: Json
