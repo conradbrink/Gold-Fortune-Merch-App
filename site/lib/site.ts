@@ -61,21 +61,44 @@ export const pricing = {
   doneForYou: 14990,
 } as const;
 
-// The Founding 10 (owner, 10 Oct 2026): the first businesses get Tickd free
-// for 60 days, set up for them, and apply by form so each one can be phoned.
-// The spots left come from the app (GET {apiUrl}), the same table the form
-// posts to; `spots` is only what the page shows before that answer arrives or
-// when it cannot be had. The founding price is promised but its amount is not
-// on the site until the owner names it.
+// The Founding 10 (owner, 10 Oct 2026): the first businesses run Tickd free for
+// 60 days, set up for them, and apply on /founding so each one can be called.
+// The spots left are one setting in the database (platform_settings
+// founding_spots_left) that only the owner changes, when someone is picked;
+// the page reads it from the app (GET {apiUrl}). `spots` is the 10 the offer
+// is for, shown whenever that answer is not in.
 export const founding = {
   spots: 10,
   days: 60,
-  // How soon someone answers an application, in words.
-  replyWithin: "a few hours",
-  // How soon a business that says yes is running, in words.
-  runningIn: "48 hours",
+  // What a Founding business pays after the free 60 days, for 12 months
+  // (half the normal R1,499, so R9,000 saved over the year).
+  price: 749,
+  priceMonths: 12,
+  // Dates are in words, as the owner gave them.
+  closes: "Monday 19 October",
+  tellsBy: "Friday 23 October",
   // The app's endpoint. NEXT_PUBLIC_FOUNDING_API points a local site at a local app.
   apiUrl: process.env.NEXT_PUBLIC_FOUNDING_API || "https://app.tickd.co.za/api/founding",
+} as const;
+
+// The demo video at the top of /founding. Paste the address of the video file
+// (or leave it empty): until it is set the page shows a clearly marked space.
+export const foundingVideoUrl: string = "";
+
+// The Meta (Facebook) Pixel for /founding. Paste the Pixel ID between the
+// quotes; while it is empty, nothing loads and nothing is sent.
+export const metaPixelId: string = "";
+
+// The Gold Fortune result for the proof section. Anything in [brackets] is a
+// placeholder the owner has not confirmed yet and shows on the page as it is;
+// replace it with the real figure. The *N numbers only set the bar heights.
+export const proof = {
+  stores: "[about 250]",
+  months: "[months]",
+  reps: "[__]",
+  visits: { before: "[40]", after: "[78]", beforeN: 40, afterN: 78 },
+  // Monthly sales, as a multiple of before: the owner's "up 1.5x".
+  sales: { before: "1x", after: "1.5x", beforeN: 1, afterN: 1.5 },
 } as const;
 
 export type Billing = "monthly" | "yearly";

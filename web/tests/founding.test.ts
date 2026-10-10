@@ -15,12 +15,17 @@ import {
 
 const good: FoundingInput = {
   name: " Thandi ",
-  whatsapp: "082 123 4567",
   businessName: " Shine Cleaning ",
+  whatsapp: "082 123 4567",
   trade: "cleaning",
-  teamSize: "3-5",
-  headache: " Staff say they were there. ",
-  source: "WhatsApp",
+  teamSize: "5-10",
+  town: " Gaborone ",
+  howRun: "whatsapp",
+  biggestCost: " Staff say they were there. ",
+  wholeTeam: "yes",
+  videoReview: "no",
+  marketingOk: true,
+  source: "Facebook",
 };
 
 test("a South African number typed the way an owner types it becomes international digits", () => {
@@ -45,36 +50,61 @@ test("a good application is trimmed and ready to save", () => {
   assert.ok(r.ok);
   assert.deepEqual(r.application, {
     name: "Thandi",
-    whatsapp: "27821234567",
     business_name: "Shine Cleaning",
+    whatsapp: "27821234567",
     trade: "cleaning",
-    team_size: "3-5",
-    headache: "Staff say they were there.",
-    source: "whatsapp",
+    team_size: "5-10",
+    town: "Gaborone",
+    how_run: "whatsapp",
+    biggest_cost: "Staff say they were there.",
+    whole_team: true,
+    video_review: false,
+    marketing_ok: true,
+    source: "facebook",
   });
 });
 
-test("the headache is optional, and a strange source is dropped, not refused", () => {
-  const r = checkApplication({ ...good, headache: "  ", source: "a b!" });
+test("a strange source is dropped, not refused", () => {
+  const r = checkApplication({ ...good, source: "a b!" });
   assert.ok(r.ok);
-  assert.equal(r.application.headache, null);
   assert.equal(r.application.source, null);
 });
 
-test("every problem is named, in the order the form shows the fields", () => {
-  const issues = foundingIssues({ name: "", whatsapp: "x", businessName: "", trade: "Cleaning", teamSize: "9", headache: "", source: "" });
+test("every field is required, and the marketing box must be ticked", () => {
+  const empty: FoundingInput = {
+    name: "",
+    businessName: "",
+    whatsapp: "x",
+    trade: "Cleaning",
+    teamSize: "9",
+    town: "",
+    howRun: "post",
+    biggestCost: "",
+    wholeTeam: "",
+    videoReview: "maybe",
+    marketingOk: false,
+    source: "",
+  };
   assert.deepEqual(
-    issues.map((i) => i.field),
-    ["name", "whatsapp", "businessName", "trade", "teamSize"]
+    foundingIssues(empty).map((i) => i.field),
+    ["name", "businessName", "whatsapp", "trade", "teamSize", "town", "howRun", "biggestCost", "wholeTeam", "videoReview", "marketingOk"]
   );
   assert.deepEqual(foundingIssues(good), []);
-  assert.equal(foundingIssues({ ...good, headache: "x".repeat(1001) })[0]?.field, "headache");
+  assert.equal(foundingIssues({ ...good, biggestCost: "x".repeat(1001) })[0]?.field, "biggestCost");
+  assert.equal(foundingIssues({ ...good, marketingOk: false })[0]?.field, "marketingOk");
+});
+
+test("the team sizes and ways of running jobs are exactly the form's", () => {
+  for (const size of ["1-4", "5-10", "11-25", "26-50", "50+"]) assert.deepEqual(foundingIssues({ ...good, teamSize: size }), []);
+  for (const how of ["whatsapp", "paper", "app", "memory"]) assert.deepEqual(foundingIssues({ ...good, howRun: how }), []);
+  assert.equal(foundingIssues({ ...good, teamSize: "1-2" })[0]?.field, "teamSize");
 });
 
 test("a body that is not an object, or has the wrong types, never throws", () => {
-  for (const body of [null, undefined, "x", 5, [], { name: 5, trade: {} }]) {
+  for (const body of [null, undefined, "x", 5, [], { name: 5, trade: {}, marketingOk: "true" }]) {
     const input = inputFromBody(body);
     assert.equal(typeof input.name, "string");
+    assert.equal(input.marketingOk, false);
     assert.ok(foundingIssues(input).length > 0);
   }
 });
@@ -89,8 +119,8 @@ test("only the sales site may call from a browser; localhost only outside produc
   assert.equal(corsOrigin(null, true), null);
 });
 
-test("the owner's email escapes what the visitor typed and links to WhatsApp", () => {
-  const ok = checkApplication({ ...good, headache: `<script>alert("x")</script> & more`, businessName: `Tom's <b>Pools</b>` });
+test("the owner's email escapes what the visitor typed, lists every answer and links to WhatsApp", () => {
+  const ok = checkApplication({ ...good, biggestCost: `<script>alert("x")</script> & more`, businessName: `Tom's <b>Pools</b>` });
   assert.ok(ok.ok);
   const mail = applicationEmail(ok.application, "Pools", false);
   assert.ok(!mail.html.includes("<script>"));
@@ -98,6 +128,9 @@ test("the owner's email escapes what the visitor typed and links to WhatsApp", (
   assert.ok(mail.html.includes("&lt;script&gt;"));
   assert.ok(mail.html.includes("https://wa.me/27821234567"));
   assert.ok(mail.subject.startsWith("New Founding application: "));
-  assert.ok(mail.text.includes("+27821234567"));
+  assert.ok(mail.subject.includes("Gaborone"));
+  for (const bit of ["+27821234567", "WhatsApp", "5-10", "Whole team", "video and Google review", "marketing"]) {
+    assert.ok(mail.text.includes(bit), bit);
+  }
   assert.ok(applicationEmail(ok.application, "Pools", true).subject.startsWith("Waiting list: "));
 });

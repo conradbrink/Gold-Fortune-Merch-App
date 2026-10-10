@@ -203,10 +203,10 @@ export function PricingSection() {
           <Bonuses yearly={yearly} />
           <div className="mt-auto grid gap-2">
             <a
-              href="#start"
+              href={site.signupUrl}
               className="flex min-h-12 items-center justify-center rounded-full bg-amber-500 px-5 py-3 text-lg font-semibold text-teal-950 transition-[background-color,transform] duration-150 ease-out hover:bg-amber-400 active:scale-[0.97] sm:text-base"
             >
-              Apply for a Founding spot
+              Get {site.name} free for {site.trialDays} days
             </a>
             <p className="text-center text-sm text-muted">No card needed for the trial.</p>
           </div>

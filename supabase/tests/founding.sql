@@ -1,12 +1,12 @@
 -- Founding 10 suite.
 --
---   F1  An application saves with the defaults (status new, not notified);
---       a bad WhatsApp number, team size, trade or status is refused by the
---       table itself.
---   F2  founding_spots(): total from platform_settings, taken counts only the
---       accepted applications, left never goes below 0.
+--   F1  A full application saves with the defaults (status new, not notified);
+--       a bad WhatsApp number, team size, trade, "how I run jobs", status, or a
+--       missing marketing consent is refused by the table itself.
+--   F2  founding_spots_left() is the platform setting, never below 0, and does
+--       not move when applications arrive or are accepted.
 --   F3  Grants: the table and the function are out of reach of signed-in and
---       anonymous callers.
+--       anonymous callers; the service role can call the function.
 --
 -- HOW TO RUN: paste into execute_sql (or psql -f). One DO block that always
 -- ends in `raise exception`, so nothing survives.
@@ -14,56 +14,51 @@
 do $$
 declare
   v_fail text := '';
-  v_total int; v_before jsonb; v_after jsonb; v_id uuid; v_status text;
-  v_bad text;
+  v_left int; v_id uuid; v_status text; v_bad text;
 begin
-  select (value #>> '{}')::int into v_total from public.platform_settings where key = 'founding_spots';
-  if v_total is null then v_fail := v_fail || 'F2 platform_settings.founding_spots is not set' || E'\n'; end if;
-  v_before := public.founding_spots();
+  select (value #>> '{}')::int into v_left from public.platform_settings where key = 'founding_spots_left';
+  if v_left is null then v_fail := v_fail || 'F2 platform_settings.founding_spots_left is not set' || E'\n'; end if;
 
   ------------------------------------------------------------ F1 the table
-  insert into public.founding_applications (name, whatsapp, business_name, trade, team_size)
-  values ('Test Owner', '27821234567', 'Test Cleaning', 'cleaning', '3-5') returning id, status into v_id, v_status;
+  insert into public.founding_applications
+    (name, business_name, whatsapp, trade, team_size, town, how_run, biggest_cost, whole_team, video_review, marketing_ok)
+  values ('Test Owner', 'Test Cleaning', '27821234567', 'cleaning', '5-10', 'Gaborone', 'whatsapp', 'Staff say they were there.', true, true, true)
+  returning id, status into v_id, v_status;
   if v_status <> 'new' then v_fail := v_fail || 'F1 a new application did not start as new' || E'\n'; end if;
   if (select notified_at from public.founding_applications where id = v_id) is not null then
     v_fail := v_fail || 'F1 a new application was already marked notified' || E'\n';
   end if;
 
+  -- name, business, whatsapp, trade, team_size, town, how_run, biggest_cost, whole_team, video_review, marketing_ok, status
   foreach v_bad in array array[
-    $q$('A', '082 123 4567', 'B', 'cleaning', '3-5', 'new')$q$,
-    $q$('A', '27821234567', 'B', 'Cleaning', '3-5', 'new')$q$,
-    $q$('A', '27821234567', 'B', 'cleaning', '4', 'new')$q$,
-    $q$('A', '27821234567', 'B', 'cleaning', '3-5', 'done')$q$,
-    $q$('', '27821234567', 'B', 'cleaning', '3-5', 'new')$q$
+    $q$('A', 'B', '082 123 4567', 'cleaning', '5-10', 'T', 'paper', 'x', true, true, true, 'new')$q$,
+    $q$('A', 'B', '27821234567', 'Cleaning', '5-10', 'T', 'paper', 'x', true, true, true, 'new')$q$,
+    $q$('A', 'B', '27821234567', 'cleaning', '4', 'T', 'paper', 'x', true, true, true, 'new')$q$,
+    $q$('A', 'B', '27821234567', 'cleaning', '5-10', 'T', 'post', 'x', true, true, true, 'new')$q$,
+    $q$('A', 'B', '27821234567', 'cleaning', '5-10', 'T', 'paper', 'x', true, true, false, 'new')$q$,
+    $q$('A', 'B', '27821234567', 'cleaning', '5-10', 'T', 'paper', 'x', true, true, true, 'done')$q$,
+    $q$('', 'B', '27821234567', 'cleaning', '5-10', 'T', 'paper', 'x', true, true, true, 'new')$q$,
+    $q$('A', 'B', '27821234567', 'cleaning', '5-10', ' ', 'paper', 'x', true, true, true, 'new')$q$
   ] loop
     begin
-      execute 'insert into public.founding_applications (name, whatsapp, business_name, trade, team_size, status) values ' || v_bad;
+      execute 'insert into public.founding_applications (name, business_name, whatsapp, trade, team_size, town, how_run, biggest_cost, whole_team, video_review, marketing_ok, status) values ' || v_bad;
       v_fail := v_fail || 'F1 a bad row was accepted: ' || v_bad || E'\n';
     exception when check_violation then null;
     end;
   end loop;
 
   ------------------------------------------------------------ F2 spots left
-  v_after := public.founding_spots();
-  if (v_after->>'taken')::int <> (v_before->>'taken')::int then
-    v_fail := v_fail || 'F2 a new (not accepted) application took a spot' || E'\n';
-  end if;
-  update public.founding_applications set status = 'contacted' where id = v_id;
-  if (public.founding_spots()->>'taken')::int <> (v_before->>'taken')::int then
-    v_fail := v_fail || 'F2 a contacted application took a spot' || E'\n';
+  if public.founding_spots_left() <> greatest(v_left, 0) then
+    v_fail := v_fail || 'F2 founding_spots_left() is not the setting' || E'\n';
   end if;
   update public.founding_applications set status = 'accepted' where id = v_id;
-  v_after := public.founding_spots();
-  if (v_after->>'taken')::int <> (v_before->>'taken')::int + 1 then
-    v_fail := v_fail || 'F2 an accepted application did not take a spot' || E'\n';
+  if public.founding_spots_left() <> greatest(v_left, 0) then
+    v_fail := v_fail || 'F2 an accepted application moved the spots left' || E'\n';
   end if;
-  if (v_after->>'left')::int <> greatest(v_total - (v_after->>'taken')::int, 0) then
-    v_fail := v_fail || 'F2 left is not total minus taken' || E'\n';
-  end if;
-  update public.platform_settings set value = '0' where key = 'founding_spots';
-  if (public.founding_spots()->>'left')::int <> 0 then
-    v_fail := v_fail || 'F2 left went below zero or ignored the setting' || E'\n';
-  end if;
+  update public.platform_settings set value = '-3' where key = 'founding_spots_left';
+  if public.founding_spots_left() <> 0 then v_fail := v_fail || 'F2 spots left went below zero' || E'\n'; end if;
+  update public.platform_settings set value = '7' where key = 'founding_spots_left';
+  if public.founding_spots_left() <> 7 then v_fail := v_fail || 'F2 a changed setting was not read' || E'\n'; end if;
 
   ------------------------------------------------------------ F3 grants
   if has_table_privilege('authenticated', 'public.founding_applications', 'select')
@@ -72,12 +67,12 @@ begin
      or has_table_privilege('anon', 'public.founding_applications', 'insert') then
     v_fail := v_fail || 'F3 founding_applications is reachable through the API' || E'\n';
   end if;
-  if has_function_privilege('authenticated', 'public.founding_spots()', 'execute')
-     or has_function_privilege('anon', 'public.founding_spots()', 'execute') then
-    v_fail := v_fail || 'F3 founding_spots() is callable through the API' || E'\n';
+  if has_function_privilege('authenticated', 'public.founding_spots_left()', 'execute')
+     or has_function_privilege('anon', 'public.founding_spots_left()', 'execute') then
+    v_fail := v_fail || 'F3 founding_spots_left() is callable through the API' || E'\n';
   end if;
-  if not has_function_privilege('service_role', 'public.founding_spots()', 'execute') then
-    v_fail := v_fail || 'F3 the service role cannot call founding_spots()' || E'\n';
+  if not has_function_privilege('service_role', 'public.founding_spots_left()', 'execute') then
+    v_fail := v_fail || 'F3 the service role cannot call founding_spots_left()' || E'\n';
   end if;
 
   if v_fail <> '' then

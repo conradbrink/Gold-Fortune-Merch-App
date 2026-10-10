@@ -13,10 +13,11 @@ import { listTemplates, platformAdminClient } from "@/lib/platform";
 /**
  * The Founding 10 (sales site, tickd.co.za):
  *
- *   GET   how many spots are left, for the "X of 10 spots left" line.
+ *   GET   how many spots are left, for the "X of 10 spots left" line. That is
+ *         one setting the owner changes by hand; it is not a count.
  *   POST  an application. Saved first (founding_applications is the record),
  *         then the owner is emailed; a mail that cannot be sent never loses
- *         the application. After every spot is taken an application is still
+ *         the application. While no spot is left an application is still
  *         saved, as 'waitlist'.
  *
  * Public, so it is checked again here, limited per address and per number, and
@@ -54,19 +55,16 @@ export async function OPTIONS(request: Request) {
   });
 }
 
-type Spots = { total: number; taken: number; left: number };
-
-async function spots(): Promise<Spots | null> {
-  const { data, error } = await platformAdminClient().rpc("founding_spots");
-  const s = data as Partial<Spots> | null;
-  if (error || !s || typeof s.left !== "number" || typeof s.total !== "number" || typeof s.taken !== "number") return null;
-  return { total: s.total, taken: s.taken, left: s.left };
+/** The spots left: one setting only the owner changes (platform_settings founding_spots_left). */
+async function spotsLeft(): Promise<number | null> {
+  const { data, error } = await platformAdminClient().rpc("founding_spots_left");
+  return error || typeof data !== "number" ? null : data;
 }
 
 export async function GET(request: Request) {
-  const s = await spots();
-  if (!s) return json(request, { error: "Not available just now." }, 503);
-  return json(request, s, 200, { "Cache-Control": "public, s-maxage=30, stale-while-revalidate=120" });
+  const left = await spotsLeft();
+  if (left === null) return json(request, { error: "Not available just now." }, 503);
+  return json(request, { left }, 200, { "Cache-Control": "public, s-maxage=30, stale-while-revalidate=120" });
 }
 
 export async function POST(request: Request) {
@@ -105,9 +103,9 @@ export async function POST(request: Request) {
     }
   }
 
-  const before = await spots();
-  if (!before) return json(request, { error: "Applying is not available just now. Please try again in a moment." }, 503);
-  const waitlist = before.left <= 0;
+  const left = await spotsLeft();
+  if (left === null) return json(request, { error: "Applying is not available just now. Please try again in a moment." }, 503);
+  const waitlist = left <= 0;
 
   const { data: saved, error } = await admin
     .from("founding_applications")

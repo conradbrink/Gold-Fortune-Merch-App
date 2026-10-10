@@ -3,87 +3,48 @@
 import { useEffect, useState } from "react";
 import { founding } from "@/lib/site";
 
-// How many of the Founding spots are left, asked of the app once per visit
-// and shared by every counter on the page. Until the answer comes (or if it
-// never does) the page says how many spots there are, never a made-up number
-// left.
+// How many of the Founding spots are left. It is one number the owner sets by
+// hand in the database when they pick someone; the page asks the app for it
+// once per visit. Until the answer comes (or if it never does) the page says
+// how many spots there are, never a made-up number left.
 
-export type Spots = { total: number; taken: number; left: number };
+let pending: Promise<number | null> | null = null;
 
-let pending: Promise<Spots | null> | null = null;
-
-function loadSpots(): Promise<Spots | null> {
+function loadSpotsLeft(): Promise<number | null> {
   pending ??= fetch(founding.apiUrl, { headers: { accept: "application/json" } })
-    .then((r) => (r.ok ? (r.json() as Promise<Partial<Spots>>) : null))
-    .then((s) =>
-      s && typeof s.total === "number" && typeof s.taken === "number" && typeof s.left === "number"
-        ? { total: s.total, taken: s.taken, left: s.left }
-        : null,
-    )
+    .then((r) => (r.ok ? (r.json() as Promise<{ left?: unknown }>) : null))
+    .then((s) => (s && typeof s.left === "number" && Number.isFinite(s.left) ? Math.max(Math.floor(s.left), 0) : null))
     .catch(() => null);
   return pending;
 }
 
-/** The spots, or null while loading or when the app could not say. */
-export function useSpots(): Spots | null {
-  const [spots, setSpots] = useState<Spots | null>(null);
+/** The spots left, or null while loading or when the app could not say. */
+export function useSpotsLeft(): number | null {
+  const [left, setLeft] = useState<number | null>(null);
   useEffect(() => {
     let live = true;
-    void loadSpots().then((s) => {
-      if (live) setSpots(s);
+    void loadSpotsLeft().then((n) => {
+      if (live) setLeft(n);
     });
     return () => {
       live = false;
     };
   }, []);
-  return spots;
+  return left;
 }
 
-/** "7 of 10 spots left", or the plain count while the answer is not in, or "All 10 spots are taken". */
-export function spotsText(s: Spots | null): string {
-  if (!s) return `Only ${founding.spots} spots`;
-  if (s.left <= 0) return `All ${s.total} spots are taken`;
-  return `${s.left} of ${s.total} spots left`;
+/** "10 of 10 spots left", or "Only 10 spots" while the answer is not in, or "All 10 spots are taken". */
+export function spotsText(left: number | null): string {
+  if (left === null) return `Only ${founding.spots} spots`;
+  if (left <= 0) return `All ${founding.spots} spots are taken`;
+  return `${Math.min(left, founding.spots)} of ${founding.spots} spots left`;
 }
 
-/** The count as text. Its width changes little, so the page doesn't jump when it arrives. */
 export function SpotsText({ className = "" }: { className?: string }) {
-  const s = useSpots();
+  const left = useSpotsLeft();
   return (
     <span className={className} aria-live="polite">
-      {spotsText(s)}
+      {spotsText(left)}
     </span>
-  );
-}
-
-/** Ten dots, one for each spot: amber while it is free, hollow once it is taken. */
-export function SpotsMeter({ tone = "dark" }: { tone?: "dark" | "light" }) {
-  const s = useSpots();
-  const total = s?.total ?? founding.spots;
-  const left = s?.left ?? null;
-  const text = tone === "dark" ? "text-teal-900" : "text-sand";
-  const ring = tone === "dark" ? "ring-teal-900/30" : "ring-white/40";
-  // Before the app answers, the dots are neither free nor taken.
-  const unknown = tone === "dark" ? "bg-teal-900/15" : "bg-white/20";
-  return (
-    <div className="grid gap-2">
-      <div className="flex gap-1.5" aria-hidden="true">
-        {Array.from({ length: total }, (_, i) => (
-          <span
-            key={i}
-            className={`size-3.5 rounded-full ring-1 transition-colors duration-500 sm:size-4 ${
-              left === null
-                ? `${unknown} ring-transparent`
-                : i < total - left
-                  ? `bg-transparent ${ring}`
-                  : "bg-amber-500 ring-amber-500"
-            }`}
-          />
-        ))}
-      </div>
-      <p className={`font-display text-lg font-bold leading-tight ${text}`} aria-live="polite">
-        {spotsText(s)}
-      </p>
-    </div>
   );
 }
