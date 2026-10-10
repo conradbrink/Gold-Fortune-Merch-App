@@ -163,7 +163,8 @@ export function RightNow({
         ))}
       </div>
       <div className="mt-1 text-xs text-muted-foreground">
-        The numbers below come from Google&apos;s processed reports, which can take a few hours to catch up.
+        Google&apos;s numbers below come from its processed reports, which can take a few hours to catch up.
+        Tickd&apos;s own records (applications and companies) are up to the minute.
       </div>
     </div>
   );

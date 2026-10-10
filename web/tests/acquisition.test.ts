@@ -141,3 +141,11 @@ test("first job finished waits for the activation read, rather than guessing", (
   assert.equal(steps[6].count, null);
   assert.equal(steps[6].note, "Needs a database update that hasn't been applied yet.");
 });
+
+test("live page titles are short labels", async () => {
+  const { shortTitle } = await import("@/lib/acquisition-data");
+  assert.equal(shortTitle("Tickd | The app for teams that work on site."), "The app for teams that work on site.");
+  assert.equal(shortTitle("Become one of our Founding 10 | Tickd"), "Become one of our Founding 10");
+  assert.equal(shortTitle("(not set)"), "");
+  assert.equal(shortTitle("A".repeat(60)).length, 40);
+});

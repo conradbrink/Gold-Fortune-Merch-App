@@ -116,7 +116,7 @@ export function signedAssertion(config: GaConfig, nowSeconds: number): string {
 }
 
 let token: { value: string; expiresAt: number; email: string } | null = null;
-const cache = new Map<string, { at: number; result: GaResult }>();
+const cache = new Map<string, { at: number; keepMs: number; result: GaResult }>();
 
 async function accessToken(config: GaConfig, fetcher: typeof fetch): Promise<string> {
   const now = Date.now();
@@ -227,8 +227,8 @@ async function call(
   // Failures are not kept, so a fixed setting shows at once.
   if (result.ok) {
     const now = Date.now();
-    for (const [k, v] of cache) if (now - v.at >= CACHE_MS) cache.delete(k);
-    cache.set(key, { at: now, result });
+    for (const [k, v] of cache) if (now - v.at >= v.keepMs) cache.delete(k);
+    cache.set(key, { at: now, keepMs, result });
   }
   return result;
 }

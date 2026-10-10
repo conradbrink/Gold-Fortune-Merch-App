@@ -348,9 +348,21 @@ export async function visitorsNow(): Promise<Ga<{ total: number; pages: { title:
       total: total.rows[0]?.metrics[0] ?? 0,
       pages: pages.ok
         ? pages.rows
-            .map((r) => ({ title: r.dimensions[0], visitors: r.metrics[0] }))
+            .map((r) => ({ title: shortTitle(r.dimensions[0]), visitors: r.metrics[0] }))
+            .filter((p) => p.title !== "")
             .sort((a, b) => b.visitors - a.visitors)
         : [],
     },
   };
+}
+
+/**
+ * A page title as a short label: the realtime report names pages by their
+ * title ("Tickd | The app for teams…"), so the brand is dropped, long titles
+ * are cut, and GA's "(not set)" is left out.
+ */
+export function shortTitle(title: string): string {
+  const t = title.replace(/^Tickd\s*\|\s*/i, "").replace(/\s*\|\s*Tickd$/i, "").trim();
+  if (!t || t === "(not set)") return "";
+  return t.length > 40 ? `${t.slice(0, 39).trimEnd()}…` : t;
 }
