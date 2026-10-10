@@ -3,14 +3,26 @@
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { useEffect, useState } from "react";
 import { Smartphone, UserRound } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { createClient } from "@/lib/supabase/client";
 import { PRODUCT_MARK, PRODUCT_NAME } from "@/lib/product";
+import { moduleEnabled } from "@/lib/modules";
+import { getCompanyConfig } from "@/lib/use-company-config";
 
 export default function RepNoticePage() {
   const router = useRouter();
   const supabase = createClient();
+  // Whether the company has HR. No template switches it on, and offering
+  // "My HR" without it led to a "not enabled" page. Unknown until loaded;
+  // a failed lookup shows the link, as before.
+  const [hasHr, setHasHr] = useState<boolean | null>(null);
+  useEffect(() => {
+    getCompanyConfig()
+      .then((c) => setHasHr(c ? moduleEnabled(c.modules, "hr") : true))
+      .catch(() => setHasHr(true));
+  }, []);
 
   async function handleSignOut() {
     await supabase.auth.signOut();
@@ -37,16 +49,20 @@ export default function RepNoticePage() {
             reviews and the acknowledgements that go with them are not in the
             app, and this page used to be a dead end for field staff who needed
             them. */}
-        <p className="text-sm text-muted-foreground">
-          Your own HR record — leave, attendance, documents and reviews — is
-          here on the web.
-        </p>
+        {hasHr && (
+          <p className="text-sm text-muted-foreground">
+            Your own HR record — leave, attendance, documents and reviews — is
+            here on the web.
+          </p>
+        )}
       </div>
       <div className="flex flex-wrap items-center justify-center gap-2">
-        <Button nativeButton={false} render={<Link href="/hr/me" />}>
-          <UserRound className="mr-1.5 h-4 w-4" />
-          My HR
-        </Button>
+        {hasHr && (
+          <Button nativeButton={false} render={<Link href="/hr/me" />}>
+            <UserRound className="mr-1.5 h-4 w-4" />
+            My HR
+          </Button>
+        )}
         <Button variant="outline" onClick={handleSignOut}>
           Sign out
         </Button>

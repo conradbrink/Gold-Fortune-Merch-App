@@ -125,13 +125,23 @@ export async function proxy(request: NextRequest) {
     // Two questions, asked in parallel so the page waits for one round trip:
     // what may this person do, and what has their company got. Both come from
     // the database, so the proxy and RLS read the same answers.
-    const [
+    const ask = () =>
+      Promise.all([supabase.rpc("my_permissions"), supabase.rpc("my_company_config")]);
+    let [
       { data: granted, error: permissionError },
       { data: config, error: configError },
-    ] = await Promise.all([
-      supabase.rpc("my_permissions"),
-      supabase.rpc("my_company_config"),
-    ]);
+    ] = await ask();
+    // One retry before giving up. Straight after sign-in the new token can be
+    // refused for a moment as "JWT issued at future" (PGRST303, clock skew
+    // between the auth server and the API), which showed the person the
+    // "could not check your access" page on their very first screen.
+    if (permissionError || configError) {
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+      [
+        { data: granted, error: permissionError },
+        { data: config, error: configError },
+      ] = await ask();
+    }
 
     // A query that failed is not the same fact as a person with no
     // permissions. Falling through to "nothing" on a timeout would strand an
