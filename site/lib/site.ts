@@ -101,6 +101,10 @@ export const proof = {
   stores: 265,
   early: "3 to 16 August 2026",
   recent: "14 to 27 September 2026",
+  // One retailer's monthly sales, as Gold Fortune reports them (the owner, 10 Oct
+  // 2026). This is NOT from the Tickd app: no store in the order data matches
+  // it, and the unit is not named, so the page says "sales" and credits Gold Fortune.
+  retailer: { label: "Sales a month at one of their retailers", before: "160", after: "290", beforeN: 160, afterN: 290, up: "Up 81%." },
   perRepDay: { label: "Visits per rep per day", before: "5.5", after: "7.7", beforeN: 5.47, afterN: 7.69, up: "Up 41%." },
   stores2w: { label: "Different stores visited in two weeks", before: "99", after: "144", beforeN: 99, afterN: 144, up: "Up 45%." },
   atDoor: { label: "Check-ins within 200 m of the store", before: "65%", after: "85%", beforeN: 65.2, afterN: 84.7, up: "" },

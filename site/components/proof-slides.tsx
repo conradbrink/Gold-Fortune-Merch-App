@@ -6,13 +6,30 @@ import { useCallback, useEffect, useState } from "react";
 import { proof, site } from "@/lib/site";
 
 // A short slide of what happened at Gold Fortune, and what it could mean for
-// the visitor. Three real numbers (see `proof` in lib/site.ts), then one slide
-// about them. Moves by itself every 6 seconds until the visitor touches it,
+// the visitor. First the sales at one of their retailers (as Gold Fortune
+// reports it), then three numbers from the app (see `proof` in lib/site.ts),
+// then one slide about what it could mean. Moves by itself every 6 seconds until the visitor touches it,
 // and not at all for people who ask their device for less motion.
 
-type Fact = { label: string; before: string; after: string; beforeN: number; afterN: number; badge: string; line: string };
+type Fact = {
+  label: string;
+  before: string;
+  after: string;
+  beforeN: number;
+  afterN: number;
+  badge: string;
+  line: string;
+  /** What the two bars are, when it is not the first two weeks against mid September. */
+  when?: [string, string];
+};
 
 const facts: Fact[] = [
+  {
+    ...proof.retailer,
+    badge: proof.retailer.up.replace(/\.$/, ""),
+    line: "More sales from the same store, as Gold Fortune reports it.",
+    when: ["Before", "After"],
+  },
   {
     ...proof.perRepDay,
     badge: proof.perRepDay.up.replace(/\.$/, ""),
@@ -32,11 +49,12 @@ const facts: Fact[] = [
 
 const SLIDES = facts.length + 1;
 
-function Bars({ before, after, beforeN, afterN }: Pick<Fact, "before" | "after" | "beforeN" | "afterN">) {
+function Bars({ before, after, beforeN, afterN, when }: Pick<Fact, "before" | "after" | "beforeN" | "afterN" | "when">) {
   const top = Math.max(beforeN, afterN);
+  const [first, second] = when ?? ["First 2 weeks", "Mid September"];
   const bars = [
-    [before, beforeN, "First 2 weeks", "bg-white/30"],
-    [after, afterN, "Mid September", "bg-amber-500"],
+    [before, beforeN, first, "bg-white/30"],
+    [after, afterN, second, "bg-amber-500"],
   ] as const;
   return (
     <div className="grid gap-1.5">
@@ -161,8 +179,9 @@ export function ProofSlides({ applyHref }: { applyHref: string }) {
       </div>
 
       <p className="text-sm leading-relaxed text-teal-100/90">
-        Gold Fortune, the same {proof.reps} reps both times. First 2 weeks of use ({proof.early}) against the last 2 full weeks
-        without a public holiday ({proof.recent}). Your results depend on your team and how you use it.
+        Gold Fortune, the same {proof.reps} reps both times. Visits, stores and check-ins come from the {site.name} app: the first 2
+        weeks of use ({proof.early}) against the last 2 full weeks without a public holiday ({proof.recent}). The sales at one
+        retailer are as Gold Fortune reports them. Your results depend on your team and how you use it.
       </p>
     </section>
   );

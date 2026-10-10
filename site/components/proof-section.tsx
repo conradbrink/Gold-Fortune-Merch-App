@@ -21,7 +21,7 @@ export function ProofSection({ id, applyHref }: { id?: string; applyHref: string
           </h2>
           <p className="max-w-xl text-lg leading-relaxed text-pretty text-ink">
             Gold Fortune is one of our clients. Their {proof.reps} reps cover {proof.stores} stores. They put the whole sales team on{" "}
-            {site.name}, and these are the real numbers from the app.
+            {site.name}. Here is what changed.
           </p>
           <p className="max-w-xl text-lg leading-relaxed text-pretty text-ink">
             How? They planned routes the night before. Every visit gets a time, a GPS check-in and photos. No more guessing who went
