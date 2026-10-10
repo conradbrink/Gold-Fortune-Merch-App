@@ -589,7 +589,7 @@ export default function Home() {
               Become a founding member.
             </h2>
             <p className="max-w-2xl leading-relaxed text-pretty text-teal-100 sm:text-lg">
-              We&apos;re picking {founding.spots} businesses to run {site.name} free for {founding.days} days, and we set it all up for you.
+              We&apos;re taking on our first founding businesses to run {site.name} free for {founding.days} days, and we set it all up for you.
               You see your team&apos;s whole day and show clients proof of every job. You don&apos;t need a card.
             </p>
             <FoundingStart />

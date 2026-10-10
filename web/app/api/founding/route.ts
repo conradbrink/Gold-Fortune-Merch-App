@@ -32,6 +32,13 @@ const PER_NUMBER = { limit: 3, windowSeconds: 24 * 60 * 60 };
 /** Nobody can make us email an address they do not own, however many numbers or networks they use. */
 const PER_EMAIL = { limit: 2, windowSeconds: 24 * 60 * 60 };
 
+/**
+ * Every confirmation goes out through the outbox with no company, and the outbox's daily
+ * limit is per company, so this is the limit for all of them together: a flood of
+ * applications with made-up addresses cannot turn Tickd into a source of unwanted mail.
+ */
+const CONFIRMATIONS_PER_DAY = { limit: 300, windowSeconds: 24 * 60 * 60 };
+
 const NOTIFY_TO = process.env.FOUNDING_NOTIFY_EMAIL || "hello@tickd.co.za";
 const SENDER = { email: "applications@tickd.co.za", name: "Tickd applications" };
 
@@ -152,7 +159,18 @@ export async function POST(request: Request) {
  */
 async function confirmToApplicant(id: string, a: FoundingApplication & { email: string }, waitlist: boolean) {
   try {
-    const { error } = await platformAdminClient().rpc("queue_email", {
+    const admin = platformAdminClient();
+    const { data: room } = await admin.rpc("consume_anonymous_rate_limit", {
+      p_bucket: "founding_confirmation_all",
+      p_subject: "all",
+      p_limit: CONFIRMATIONS_PER_DAY.limit,
+      p_window_seconds: CONFIRMATIONS_PER_DAY.windowSeconds,
+    });
+    if ((room as { allowed?: boolean } | null)?.allowed !== true) {
+      console.error("founding: the day's limit of confirmations is used, none sent for", id);
+      return;
+    }
+    const { error } = await admin.rpc("queue_email", {
       p_org: null,
       p_to: a.email,
       p_to_name: a.name,

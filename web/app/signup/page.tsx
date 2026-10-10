@@ -113,7 +113,7 @@ export default async function SignupPage({
                   Become a founding member
                 </h1>
                 <p className="text-lg leading-relaxed text-[#2f4a47] text-pretty">
-                  We are picking {FOUNDING_OFFER.spots} businesses to run {PRODUCT_NAME} free for {FOUNDING_OFFER.days} days. We set it
+                  We are taking on our first founding businesses to run {PRODUCT_NAME} free for {FOUNDING_OFFER.days} days. We set it
                   all up for you, and you see your team&apos;s whole day with proof of every task.
                 </p>
               </div>

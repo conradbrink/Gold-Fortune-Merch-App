@@ -8,10 +8,9 @@ test("only the statuses the database allows are accepted", () => {
   assert.ok(!isFoundingStatus("approved") && !isFoundingStatus(""));
 });
 
-test("only accepted and declined have an email", () => {
+test("only accepted has an email: nobody is turned down", () => {
   assert.equal(outcomeTemplate("accepted"), "founding_accepted");
-  assert.equal(outcomeTemplate("declined"), "founding_declined");
-  for (const s of ["new", "contacted", "waitlist"] as const) assert.equal(outcomeTemplate(s), null);
+  for (const s of ["new", "contacted", "declined", "waitlist"] as const) assert.equal(outcomeTemplate(s), null);
 });
 
 test("the email is filled in with the first name, business and number", () => {
