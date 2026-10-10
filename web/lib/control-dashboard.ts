@@ -61,7 +61,7 @@ export type ModuleUse = { code: string; name: string; companies: number; share: 
 
 /** How many companies have each built module switched on, most used first. */
 export function moduleAdoption(
-  modules: { code: string; name: string; is_built: boolean }[],
+  modules: { code: string; name: string; is_built: boolean; plan_type?: string }[],
   enabled: { org_id: string; module_code: string }[],
   companyCount: number
 ): ModuleUse[] {
@@ -74,7 +74,8 @@ export function moduleAdoption(
   return modules
     .filter((m) => m.is_built)
     .map((m) => {
-      const n = per.get(m.code)?.size ?? 0;
+      // The core module is part of every company.
+      const n = m.plan_type === "core" ? companyCount : (per.get(m.code)?.size ?? 0);
       return { code: m.code, name: m.name, companies: n, share: companyCount > 0 ? n / companyCount : 0 };
     })
     .sort((a, b) => b.companies - a.companies || a.name.localeCompare(b.name));
@@ -171,7 +172,9 @@ export function funnelSentence(visitors: number | null, applied: number, compani
   if (visitors === null) return "The funnel fills in as people come to the website and apply.";
   if (visitors === 0 && applied === 0) return "Nobody has come to the website in this period yet.";
   if (applied === 0) return `${people(visitors)} so far, and no applications yet.${billing}`;
-  const appliedPart = visitors > 0 ? `${pct(applied, visitors)} of visitors applied (${applied})` : `${applied} applied`;
+  // The website count started on 10 October, so a period can hold more
+  // applications than counted visitors; then a percentage would mislead.
+  const appliedPart = visitors >= applied ? `${pct(applied, visitors)} of visitors applied (${applied})` : `${applied} applied`;
   if (companies === 0) return `${appliedPart}; none has a company set up yet.${billing}`;
   if (firstJob === 0) {
     return `${appliedPart}, and ${pct(companies, applied)} of applicants got a company; none has finished a first job yet.${billing}`;

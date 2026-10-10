@@ -32,23 +32,42 @@ export default async function ProductPage({
   const now = new Date();
   const p = periods(range, now);
 
-  const [use, usageNow, usageBefore, activation] = await Promise.all([
-    loadModuleUse(),
-    loadModuleUsage(p.current),
-    loadModuleUsage(p.previous),
-    loadActivation(),
+  // Each read stands alone, as on the dashboard: a failure says so, the rest still show.
+  const failed = { ok: false as const, message: "This couldn't be read just now. Reload in a moment." };
+  const safe = <T,>(read: Promise<T>, label: string) =>
+    read.catch((error: unknown) => {
+      console.error(`product: ${label} failed`, error instanceof Error ? error.message : error);
+      return null;
+    });
+  const [useRead, usageNowRead, usageBeforeRead, activationRead] = await Promise.all([
+    safe(loadModuleUse(), "modules"),
+    safe(loadModuleUsage(p.current), "usage"),
+    safe(loadModuleUsage(p.previous), "earlier usage"),
+    safe(loadActivation(), "companies"),
   ]);
+  const use = useRead ?? { modules: [], enabled: [] };
+  const usageNow = useRead ? (usageNowRead ?? failed) : failed;
+  const usageBefore = usageBeforeRead ?? failed;
+  const activation = activationRead ?? failed;
   const companies = activation.ok ? activation.companies : [];
   const activeOrgs = new Set(companies.filter((c) => isActive(c, now)).map((c) => c.orgId));
   const names = new Map(companies.map((c) => [c.orgId, c.name]));
   const rows = usageNow.ok
-    ? moduleRows({ modules: use.modules, enabled: use.enabled, now: usageNow.rows, before: usageBefore.ok ? usageBefore.rows : [], activeOrgs })
+    ? moduleRows({
+        modules: use.modules,
+        enabled: use.enabled,
+        now: usageNow.rows,
+        before: usageBefore.ok ? usageBefore.rows : [],
+        activeOrgs,
+        allOrgs: new Set(companies.map((c) => c.orgId)),
+      })
     : [];
   const chosen = selected ? rows.find((r) => r.code === selected) : undefined;
-  const behind = chosen && usageNow.ok ? moduleCompanies(chosen.code, use.enabled, usageNow.rows, names) : [];
+  const chosenInfo = chosen ? use.modules.find((m) => m.code === chosen.code) : undefined;
+  const behind = chosenInfo && usageNow.ok ? moduleCompanies(chosenInfo, use.enabled, usageNow.rows, names) : [];
   const rangeLabel = RANGES[range].label;
   const mostUsed = rows.find((r) => r.usedBy > 0);
-  const quiet = rows.filter((r) => r.switchedOn > 0 && r.idle === r.switchedOn);
+  const quiet = rows.filter((r) => r.idle !== null && r.switchedOn > 0 && r.idle === r.switchedOn);
 
   return (
     <main className="mx-auto max-w-6xl space-y-6 p-4 sm:p-8 [--series:#008f8c] dark:[--series:#1a9e9a]">
@@ -82,8 +101,8 @@ export default async function ProductPage({
             <p className="rounded-lg border border-border bg-card p-4 text-sm text-foreground">
               {mostUsed && (
                 <>
-                  {mostUsed.name} is the most used: {count.format(mostUsed.usedBy)} of {count.format(mostUsed.switchedOn || mostUsed.usedBy)}{" "}
-                  {mostUsed.switchedOn === 1 ? "company" : "companies"} with it on used it ({count.format(mostUsed.uses)} times).{" "}
+                  {mostUsed.name} is the most used: {count.format(mostUsed.usedBy)}{" "}
+                  {mostUsed.usedBy === 1 ? "company" : "companies"} used it, {count.format(mostUsed.uses)} times.{" "}
                 </>
               )}
               {quiet.length > 0 &&
@@ -110,18 +129,20 @@ export default async function ProductPage({
                       <Link href={`/platform/product?range=${range}&module=${r.code}`} className="font-medium text-foreground hover:underline">
                         {r.name}
                       </Link>
-                      {r.usedWhen && <div className="text-xs text-muted-foreground">Used when {r.usedWhen}</div>}
+                      <div className="text-xs text-muted-foreground">
+                        {r.usedWhen ? `Used when ${r.usedWhen}` : "Not measured: using it isn't recorded"}
+                      </div>
                     </td>
                     <td className="px-4 py-2 text-right tabular-nums">{count.format(r.switchedOn)}</td>
                     <td className="px-4 py-2 text-right tabular-nums">
-                      {count.format(r.usedBy)}
+                      {r.usedWhen === null ? <span className="text-muted-foreground">n/a</span> : count.format(r.usedBy)}
                       {formatChange(change(r.usedBy, r.usedByBefore)) && (
                         <span className="ml-1 text-xs text-muted-foreground">{formatChange(change(r.usedBy, r.usedByBefore))}</span>
                       )}
                     </td>
                     <td className="px-4 py-2">
                       {r.ofActive === null ? (
-                        <span className="text-muted-foreground">No active companies</span>
+                        <span className="text-muted-foreground">{r.usedWhen === null ? "n/a" : "No active companies"}</span>
                       ) : (
                         <div className="flex items-center gap-2">
                           <div className="h-1.5 w-28 rounded-full bg-muted" aria-hidden="true">
@@ -131,8 +152,12 @@ export default async function ProductPage({
                         </div>
                       )}
                     </td>
-                    <td className="px-4 py-2 text-right tabular-nums">{count.format(r.uses)}</td>
-                    <td className="px-4 py-2 text-right tabular-nums">{r.idle ? count.format(r.idle) : <span className="text-muted-foreground">0</span>}</td>
+                    <td className="px-4 py-2 text-right tabular-nums">
+                      {r.usedWhen === null ? <span className="text-muted-foreground">n/a</span> : count.format(r.uses)}
+                    </td>
+                    <td className="px-4 py-2 text-right tabular-nums">
+                      {r.idle === null ? <span className="text-muted-foreground">n/a</span> : r.idle ? count.format(r.idle) : <span className="text-muted-foreground">0</span>}
+                    </td>
                   </tr>
                 ))}
               </tbody>

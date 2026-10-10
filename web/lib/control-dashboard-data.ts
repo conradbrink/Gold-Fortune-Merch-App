@@ -22,12 +22,12 @@ export async function loadHealth(): Promise<{ ok: true; value: Health } | { ok: 
 
 /** The module catalogue and which companies have each switched on. */
 export async function loadModuleUse(): Promise<{
-  modules: { code: string; name: string; is_built: boolean }[];
+  modules: { code: string; name: string; is_built: boolean; plan_type: string }[];
   enabled: { org_id: string; module_code: string }[];
 }> {
   const admin = platformAdminClient();
   const [{ data: modules, error: moduleError }, { data: enabled, error: enabledError }] = await Promise.all([
-    admin.from("modules").select("code, name, is_built").order("sort_order"),
+    admin.from("modules").select("code, name, is_built, plan_type").order("sort_order"),
     admin.from("company_modules").select("org_id, module_code").eq("enabled", true).range(0, 9999),
   ]);
   if (moduleError) throw moduleError;

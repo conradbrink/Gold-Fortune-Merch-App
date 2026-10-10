@@ -3,7 +3,9 @@
  * module, how many companies have it switched on, how many actually used it
  * in the period, what share of active companies that is, and the trend
  * against the period before. "Used" is one plain signal per module, counted
- * by platform_module_usage(); USED_WHEN says what it is, in words.
+ * by platform_module_usage(); USED_WHEN says what it is, in words. A module
+ * with no signal (Reports: reading isn't recorded) shows as not measured. The
+ * core module is part of every company, so it is always on.
  * Pure, so the tests reach every rule.
  */
 
@@ -11,7 +13,6 @@ export const USED_WHEN: Record<string, string> = {
   core: "a job is checked into",
   recurring_jobs: "jobs are planned",
   checklists_forms: "a form is submitted",
-  reports: "a job report is made",
   owner_notifications: "an alert is raised",
   distribution: "an order is placed",
   warehouse: "stock moves",
@@ -22,9 +23,12 @@ export const USED_WHEN: Record<string, string> = {
 
 export type UsageRow = { module_code: string; org_id: string; n: number };
 
+export type ModuleInfo = { code: string; name: string; is_built: boolean; plan_type?: string };
+
 export type ModuleRow = {
   code: string;
   name: string;
+  /** What counts as use; null when the module isn't measured. */
   usedWhen: string | null;
   switchedOn: number;
   usedBy: number;
@@ -33,19 +37,24 @@ export type ModuleRow = {
   uses: number;
   /** Share of active companies that used it; null when there are none. */
   ofActive: number | null;
-  /** Companies with it on that didn't use it in the period. */
-  idle: number;
+  /** Companies with it on that didn't use it in the period; null when not measured. */
+  idle: number | null;
 };
 
+/** The companies a module is on for: every company for the core module. */
+export function switchedOnFor(m: ModuleInfo, enabled: { org_id: string; module_code: string }[], allOrgs: Set<string>): Set<string> {
+  if (m.plan_type === "core") return new Set(allOrgs);
+  return new Set(enabled.filter((e) => e.module_code === m.code).map((e) => e.org_id));
+}
+
 export function moduleRows(input: {
-  modules: { code: string; name: string; is_built: boolean }[];
+  modules: ModuleInfo[];
   enabled: { org_id: string; module_code: string }[];
   now: UsageRow[];
   before: UsageRow[];
   activeOrgs: Set<string>;
+  allOrgs: Set<string>;
 }): ModuleRow[] {
-  const on = new Map<string, Set<string>>();
-  for (const e of input.enabled) on.set(e.module_code, (on.get(e.module_code) ?? new Set()).add(e.org_id));
   const users = (rows: UsageRow[]) => {
     const m = new Map<string, Map<string, number>>();
     for (const r of rows) {
@@ -61,18 +70,19 @@ export function moduleRows(input: {
     .filter((m) => m.is_built)
     .map((m) => {
       const used = nowBy.get(m.code) ?? new Map<string, number>();
-      const switched = on.get(m.code) ?? new Set<string>();
+      const switched = switchedOnFor(m, input.enabled, input.allOrgs);
       const activeUsers = [...used.keys()].filter((o) => input.activeOrgs.has(o)).length;
+      const measured = m.code in USED_WHEN;
       return {
         code: m.code,
         name: m.name,
-        usedWhen: USED_WHEN[m.code] ?? null,
+        usedWhen: measured ? USED_WHEN[m.code] : null,
         switchedOn: switched.size,
         usedBy: used.size,
         usedByBefore: beforeBy.get(m.code)?.size ?? 0,
         uses: [...used.values()].reduce((a, b) => a + b, 0),
-        ofActive: input.activeOrgs.size > 0 ? activeUsers / input.activeOrgs.size : null,
-        idle: [...switched].filter((o) => !used.has(o)).length,
+        ofActive: measured && input.activeOrgs.size > 0 ? activeUsers / input.activeOrgs.size : null,
+        idle: measured ? [...switched].filter((o) => !used.has(o)).length : null,
       };
     })
     .sort((a, b) => b.usedBy - a.usedBy || b.uses - a.uses || a.name.localeCompare(b.name));
@@ -80,12 +90,13 @@ export function moduleRows(input: {
 
 /** The companies behind one module's numbers: each with it on or using it, and how much. */
 export function moduleCompanies(
-  code: string,
+  m: ModuleInfo,
   enabled: { org_id: string; module_code: string }[],
   now: UsageRow[],
   names: Map<string, string>
 ): { orgId: string; name: string; switchedOn: boolean; uses: number }[] {
-  const on = new Set(enabled.filter((e) => e.module_code === code).map((e) => e.org_id));
+  const code = m.code;
+  const on = switchedOnFor(m, enabled, new Set(names.keys()));
   const uses = new Map<string, number>();
   for (const r of now) if (r.module_code === code) uses.set(r.org_id, (uses.get(r.org_id) ?? 0) + Number(r.n));
   const orgs = new Set([...on, ...uses.keys()]);

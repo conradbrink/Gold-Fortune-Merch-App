@@ -8,7 +8,8 @@
 --   core                a job checked into        visits.checkin_at
 --   recurring_jobs      jobs planned              routes.created_at
 --   checklists_forms    a form submitted          form_submissions.submitted_at
---   reports             a job report made         job_reports.created_at
+--   (reports            not measured: reading reports and exports isn't
+--                       recorded, so it has no signal of its own)
 --   owner_notifications an alert raised           alerts.occurred_at
 --   distribution        an order placed           orders.created_at
 --   warehouse           stock moved               stock_movements.occurred_at
@@ -40,9 +41,6 @@ as $function$
     union all
     select 'checklists_forms', f.org_id, count(*) from public.form_submissions f
       where f.submitted_at >= p_from and f.submitted_at < p_to group by f.org_id
-    union all
-    select 'reports', j.org_id, count(*) from public.job_reports j
-      where j.created_at >= p_from and j.created_at < p_to group by j.org_id
     union all
     select 'owner_notifications', a.org_id, count(*) from public.alerts a
       where a.occurred_at >= p_from and a.occurred_at < p_to group by a.org_id
