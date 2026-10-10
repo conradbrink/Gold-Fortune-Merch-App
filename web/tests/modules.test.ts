@@ -79,6 +79,17 @@ test("a permission with a page in another module still has a home", () => {
   assert.equal(homeFor(clerk, (h) => canReachPath(distributionOnly, h)), "/orders");
 });
 
+test("the seeded CFO and clerk land on invoices at a company without the warehouse", () => {
+  // Every trade but distribution: invoicing, no warehouse, no distribution, no HR.
+  const cleaning = toModuleSet({ invoicing: true, reports: true, checklists_forms: true });
+  const clerk = toPermissionSet(["warehouse", "workday", "invoicing"]);
+  const cfo = toPermissionSet(["warehouse", "warehouse_approve", "hr", "workday", "invoicing"]);
+  assert.equal(homeFor(clerk, (h) => canReachPath(cleaning, h)), "/invoices");
+  assert.equal(homeFor(cfo, (h) => canReachPath(cleaning, h)), "/invoices");
+  // Gold Fortune's clerk still lands on the warehouse.
+  assert.equal(homeFor(clerk, (h) => canReachPath(everything, h)), "/warehouse");
+});
+
 test("the sidebar offers no page of a module the company lacks", () => {
   const admin = toPermissionSet(["admin"]);
   const hrefs = (modules: ReturnType<typeof toModuleSet>) =>

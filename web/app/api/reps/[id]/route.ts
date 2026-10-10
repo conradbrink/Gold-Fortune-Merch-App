@@ -5,6 +5,7 @@ import {
 import { createClient } from "@/lib/supabase/server";
 import { enforceRateLimit, LIMITS } from "@/lib/rate-limit";
 import { loginPhone, normalisePhone } from "@/lib/phone-login";
+import { accessBeyond, toPermissionSet } from "@/lib/permissions";
 
 /**
  * Permanently delete a rep.
@@ -100,6 +101,36 @@ async function authorise(id: string) {
     process.env.SUPABASE_SERVICE_ROLE_KEY,
     { auth: { autoRefreshToken: false, persistSession: false } }
   );
+
+  // The base role says nothing about what an account can reach: the seeded CFO
+  // is base `warehouse` and holds `hr` (salaries, disciplinary files). Setting
+  // its password or moving its email is a takeover of everything it holds, so
+  // a manager may only act on an account whose permissions they hold
+  // themselves. `admin` holds them all.
+  const [mine, theirs] = await Promise.all([
+    supabase.rpc("my_permissions"),
+    admin.from("profile_permissions").select("permission_code").eq("profile_id", id),
+  ]);
+  if (mine.error || theirs.error) {
+    return {
+      error: Response.json(
+        { error: "Could not check this account's access. Try again." },
+        { status: 500 }
+      ),
+    };
+  }
+  const beyond = accessBeyond(
+    toPermissionSet(mine.data as string[] | null),
+    ((theirs.data ?? []) as { permission_code: string }[]).map((row) => row.permission_code)
+  );
+  if (beyond.length > 0) {
+    return {
+      error: Response.json(
+        { error: "This person has access you do not have. Ask an administrator to change their account." },
+        { status: 403 }
+      ),
+    };
+  }
   return { admin, supabase };
 }
 
