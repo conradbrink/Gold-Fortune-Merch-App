@@ -113,7 +113,7 @@ const SeededConfig = createContext<CompanyConfig | null>(null);
 export function CompanyConfigProvider({
   initialConfig,
   children,
-}: Readonly<{ initialConfig: unknown; children: React.ReactNode }>) {
+}: Readonly<{ initialConfig: unknown; children?: React.ReactNode }>) {
   const parsed = useMemo(() => parseCompanyConfig(initialConfig), [initialConfig]);
   // Before any child renders, so the sidebar and every page read the
   // company's words and name on their first render. Idempotent.
