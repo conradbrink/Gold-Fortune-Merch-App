@@ -152,6 +152,33 @@ export default function RepPerformancePage() {
   const [error, setError] = useState<string | null>(null);
   /** Which Generate press this is; a slow earlier one must not win. */
   const runSeq = useRef(0);
+  /**
+   * Opened from a name on Reports → Team (`?rep=…&from=…&to=`): the person and
+   * the period are chosen already, and the report is made once the company's
+   * settings are in, without a press of Generate.
+   */
+  const [autoRun, setAutoRun] = useState(false);
+
+  /* eslint-disable react-hooks/set-state-in-effect */
+  useEffect(() => {
+    // After mount: the page is prerendered, and reading the address during
+    // render would differ between the server and the browser.
+    const q = new URLSearchParams(window.location.search);
+    const rep = q.get("rep");
+    if (!rep || !/^[0-9a-f-]{36}$/i.test(rep)) return;
+    setRepId(rep);
+    const from = q.get("from");
+    const to = q.get("to");
+    if (from && to) {
+      const parsed = { from: fromLocalDateInput(from), to: fromLocalDateInput(to) };
+      if (!Number.isNaN(+parsed.from) && !Number.isNaN(+parsed.to) && parsed.to > parsed.from) {
+        // Never past today: the report is capped there.
+        setRange({ from: parsed.from, to: parsed.to > endOfToday() ? endOfToday() : parsed.to });
+      }
+    }
+    setAutoRun(true);
+  }, []);
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   useEffect(() => {
     (async () => {
@@ -254,6 +281,15 @@ export default function RepPerformancePage() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [repId, range, territoryId, managerName, reps, territoryOptions, company]);
+
+  // The report a link asked for, once: after the person, the period and the
+  // company's settings (its currency and words) are all in.
+  useEffect(() => {
+    if (!autoRun || !repId || !company) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setAutoRun(false);
+    void generate();
+  }, [autoRun, repId, company, generate]);
 
   const exportVariants = useMemo(() => {
     if (!report || !meta) return [];

@@ -256,7 +256,7 @@ export function Headline({
       />
       )}
       <Tile
-        href="/reports"
+        href="/reports?tab=coverage"
         label={`${t.site.one} coverage, last ${days} days`}
         value={formatPct(coverage)}
         sub={

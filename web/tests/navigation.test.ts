@@ -88,6 +88,8 @@ const LINKED_FROM: Record<string, string> = {
   "/inventory/receive": "app/(dashboard)/inventory/page.tsx",
   "/hr/me": "components/layout/top-bar.tsx",
   "/plans": "components/dashboard/account-cards.tsx",
+  // One person's full report: their name on Reports → Team or the summary.
+  "/reports/rep-performance": "app/(dashboard)/reports/page.tsx",
 };
 
 test("every page in the app is in the menu or linked from a named page", () => {
@@ -102,7 +104,8 @@ test("every page in the app is in the menu or linked from a named page", () => {
     if (route.includes("[") || route.endsWith("/new") || route === "/not-enabled") continue;
     if (offered.has(route)) continue;
     const from = LINKED_FROM[route];
-    if (from && readFileSync(join(web, from), "utf8").includes(`"${route}`)) continue;
+    const source = from ? readFileSync(join(web, from), "utf8") : "";
+    if (from && (source.includes(`"${route}`) || source.includes(`\`${route}`))) continue;
     missing.push(route);
   }
   assert.deepEqual(missing, [], `pages nobody can reach: ${missing.join(", ")}`);
@@ -110,7 +113,7 @@ test("every page in the app is in the menu or linked from a named page", () => {
 
 test("everything the old menu offered is still offered, to an administrator", () => {
   const old = [
-    "/", "/sales", "/reports", "/reports/rep-performance", "/warehouse/insights", "/targets",
+    "/", "/sales", "/reports", "/warehouse/insights", "/targets",
     "/commissions", "/leads", "/stores", "/territories", "/schedule", "/tracking", "/logbook",
     "/activities", "/promotions", "/quotes", "/invoices", "/contracts", "/owed", "/statements",
     "/price-list", "/warehouse", "/orders", "/recurring-orders", "/inventory", "/products",
@@ -127,7 +130,7 @@ test("the service layout keeps every service page; the sales pages stay with dis
   for (const h of [
     "/stores", "/stores/review", "/territories", "/schedule", "/visits", "/activities", "/visits/off-site",
     "/tracking", "/logbook", "/representatives", "/quotes", "/invoices", "/contracts", "/statements",
-    "/price-list", "/owed", "/reports", "/reports/rep-performance", "/hr", "/hr/settings",
+    "/price-list", "/owed", "/reports", "/hr", "/hr/settings",
     "/settings/users", "/settings/company", "/forms", "/files",
   ]) {
     assert.ok(offered.has(h), `${h} missing from the service menu`);
@@ -183,7 +186,7 @@ test("the tab row is drawn on the pages it lists, not on a record", () => {
   assert.equal(tabsFor(groups, "/schedule"), null);
   assert.deepEqual(
     tabsFor(groups, "/reports")?.tabs.map((t) => t.href),
-    ["/reports", "/reports/rep-performance", "/sales", "/targets", "/warehouse/insights"]
+    ["/reports", "/sales", "/targets", "/warehouse/insights"]
   );
   assert.deepEqual(
     tabsFor(groups, "/hr/settings")?.tabs.map((t) => t.label),

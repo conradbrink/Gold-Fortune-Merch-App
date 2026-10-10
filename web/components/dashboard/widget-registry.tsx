@@ -31,6 +31,7 @@ import { CoverageDonut } from "@/components/dashboard/coverage-donut";
 import { RepMap } from "@/components/dashboard/rep-map";
 import type { LiveReps } from "@/lib/live-reps";
 import { toLocalDateInput, type DateRange } from "@/lib/date-range";
+import type { ReportId, ViewId } from "@/lib/report-catalogue";
 import type { ReportTab } from "@/lib/report-tabs";
 import { UnitsTrendChart } from "@/components/dashboard/units-trend-chart";
 import {
@@ -124,9 +125,12 @@ export type WidgetData = {
  * they were measured over; landing on the default 30 days would answer a
  * different question from the one that was clicked.
  */
-function reportHref(tab: ReportTab, range: DateRange): string {
+function reportHref(tab: ReportId | ReportTab, range: DateRange, view?: ViewId): string {
+  // A report and view, or an old tab name: Reports opens the nearest view the
+  // company has (`openReport`).
   const params = new URLSearchParams({
     tab,
+    ...(view ? { view } : {}),
     from: toLocalDateInput(range.from),
     to: toLocalDateInput(range.to),
   });
@@ -373,7 +377,7 @@ export const WIDGETS: WidgetDefinition[] = [
           invertDelta
           icon={<PackageX className="h-5 w-5 opacity-80" />}
           tone="outline"
-          href={reportHref("oos", range)}
+          href={reportHref("availability", range)}
         />
       );
     },
@@ -401,7 +405,7 @@ export const WIDGETS: WidgetDefinition[] = [
           tone="outline"
           // Trends rather than a planogram table: the rate is only readable
           // against its own history, and no per-store planogram table exists.
-          href={reportHref("trends", range)}
+          href={reportHref("perfect_store", range, "trends")}
         />
       );
     },
@@ -554,7 +558,7 @@ export const WIDGETS: WidgetDefinition[] = [
           invertDelta
           icon={<XCircle className="h-5 w-5 opacity-80" />}
           tone="outline"
-          href={reportHref("adherence", range)}
+          href={reportHref("service", range, "missed")}
         />
       );
     },

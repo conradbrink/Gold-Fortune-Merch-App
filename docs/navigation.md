@@ -25,7 +25,7 @@ company gets the service layout.
 | Finance    | Quotes                  | `/quotes`           |                                                                     |
 |            | Invoices                | `/invoices`         | Invoices · Contracts · Statements · Price list                      |
 |            | Who owes you            | `/owed`             |                                                                     |
-| Reports    | Reports                 | `/reports`          | Reports · {Staff} performance (`/reports/rep-performance`)          |
+| Reports    | Reports                 | `/reports`          | Performance · Service · Team · Compliance · Evidence (see `docs/reports.md`) |
 | People     | Employees               | `/hr/employees`     | Employees · Overview (`/hr`)                                        |
 | (HR only)  | Attendance              | `/hr/attendance`    |                                                                     |
 |            | Leave                   | `/hr/leave`         |                                                                     |
@@ -59,7 +59,7 @@ company gets the service layout.
 | Finance    | Invoices            | `/invoices`         | Invoices · Contracts · Statements · Price list                 |
 |            | Who owes you        | `/owed`             |                                                                |
 |            | Commissions         | `/commissions`      | (button) Commission rules                                      |
-| Reports    | Reports             | `/reports`          | Reports · {Rep} performance · Sales · Targets · Warehouse insights |
+| Reports    | Reports             | `/reports`          | Reports · Sales · Targets · Warehouse insights (see `docs/reports.md`) |
 | People, Admin and Resources are the same as for service trades.                                              |
 
 ## Old sidebar entry → new home
@@ -69,7 +69,7 @@ company gets the service layout.
 | Dashboard                                 | `/`                       | Dashboard                                      |
 | Sales (Insights)                          | `/sales`                  | Reports → Sales tab                            |
 | Reports (Insights)                        | `/reports`                | Reports                                        |
-| {Staff} performance (Insights)            | `/reports/rep-performance`| Reports → {Staff} performance tab              |
+| {Staff} performance (Insights)            | `/reports/rep-performance`| A name on Reports → Team or the Performance summary |
 | Warehouse insights (Insights)             | `/warehouse/insights`     | Reports → Warehouse insights tab               |
 | Targets (Insights)                        | `/targets`                | Reports → Targets tab                          |
 | Commissions (Insights)                    | `/commissions`            | Finance → Commissions                          |

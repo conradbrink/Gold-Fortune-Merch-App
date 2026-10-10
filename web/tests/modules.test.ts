@@ -135,7 +135,6 @@ test("the sidebar names things in the company's words", () => {
   assert.equal(gf.get("/representatives"), "Reps");
   assert.equal(gf.get("/visits"), "Visits");
   assert.equal(gf.get("/activities"), "Activity");
-  assert.equal(gf.get("/reports/rep-performance"), "Rep performance");
   assert.equal(gf.get("/leads"), "Leads");
   // Words that are not terms stay as written.
   assert.equal(gf.get("/orders"), "Orders");
