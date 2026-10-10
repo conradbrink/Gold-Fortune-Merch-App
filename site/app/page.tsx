@@ -21,6 +21,7 @@ import { TradeTabs } from "@/components/trade-tabs";
 import { FoundingStart } from "@/components/founding-start";
 import { PricingSection } from "@/components/pricing-section";
 import { ProofSection } from "@/components/proof-section";
+import { SectionViews } from "@/components/analytics";
 import { confirmed, founding, pricing, rand, site } from "@/lib/site";
 
 // Copy: ~/Downloads/site-copy-final-v7.md, reworked on 8 Oct 2026 with the
@@ -261,6 +262,15 @@ function Shot({ src, alt, width, height }: { src: string; alt: string; width: nu
   );
 }
 
+// The funnel's "viewed the prices" and "read what it does" steps (Google Analytics).
+const SECTION_EVENTS = {
+  pricing: "pricing_view",
+  how: "feature_view",
+  tracking: "feature_view",
+  money: "feature_view",
+  team: "feature_view",
+};
+
 export default function Home() {
   return (
     <>
@@ -296,6 +306,7 @@ export default function Home() {
         </div>
       </header>
 
+      <SectionViews sections={SECTION_EVENTS} />
       <main id="top">
         {/* 1. Hero: the outcome, the risk taken away, and the real app. */}
         <section className="mx-auto grid max-w-6xl items-center gap-10 px-4 pb-10 pt-8 sm:px-6 sm:pb-16 sm:pt-12 lg:grid-cols-[1.1fr_0.9fr] lg:gap-14 lg:pt-12">

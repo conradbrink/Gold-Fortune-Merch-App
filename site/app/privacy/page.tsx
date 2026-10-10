@@ -1,12 +1,18 @@
 import type { Metadata } from "next";
 import { LegalPage } from "@/components/legal-page";
-import { legal, site } from "@/lib/site";
+import { gaMeasurementId, legal, metaPixelId, site } from "@/lib/site";
 
 // DRAFT for the owner's lawyer to check before launch (owner, 8 Oct 2026),
 // written against POPIA. It lists the services the app actually uses; add one
 // to the app, add it here.
 
 export const metadata: Metadata = { title: `Privacy | ${site.name}` };
+
+// The website's tracking is described only while it is switched on in
+// lib/site.ts, so the page can never promise "no tracking" while there is
+// some, or describe a tool that isn't loaded.
+const usesAnalytics = gaMeasurementId !== "";
+const usesMetaPixel = metaPixelId !== "";
 
 export default function PrivacyPage() {
   return (
@@ -35,9 +41,35 @@ export default function PrivacyPage() {
       </ul>
 
       <h2>This website</h2>
+      {usesAnalytics ? (
+        <p>
+          We use Google Analytics to count how many people visit this website, which pages they look at and which
+          adverts or websites sent them. It sets cookies so it can tell a new visitor from one who comes back. It
+          doesn&apos;t tell us who you are, and we&apos;ve switched off its advertising features. You can block it in
+          your browser&apos;s settings or with Google&apos;s{" "}
+          <a href="https://tools.google.com/dlpage/gaoptout" rel="noopener noreferrer">
+            opt-out add-on
+          </a>
+          .
+        </p>
+      ) : (
+        <p>This website sets no cookies and doesn&apos;t use Google Analytics or any other tool to follow visits.</p>
+      )}
+      {usesMetaPixel && (
+        <p>
+          On the Founding page, the Meta Pixel tells Facebook when someone visits the page or applies, so we can see
+          which of our Facebook and Instagram adverts work.
+        </p>
+      )}
       <p>
-        This website sets no cookies and uses no tracking or advertising tools. If you email us, we keep your email to
-        answer you.
+        Your browser also keeps a note of how you first found us: the advert or website that sent you and the first
+        page you saw. The note stays on your device. If you apply for the Founding offer, it&apos;s sent with your
+        application, so we know which adverts bring us customers.
+      </p>
+      <p>
+        When you apply for the Founding offer, we keep what you put in the form: your name, your business&apos;s name,
+        your WhatsApp number, your town and your answers. We use it to choose the founding businesses and to contact
+        you about your application. If you email us, we keep your email to answer you.
       </p>
 
       <h2>What the app collects</h2>
@@ -67,6 +99,8 @@ export default function PrivacyPage() {
       <ul>
         <li>Supabase: the database and file storage.</li>
         <li>Vercel: hosts the website and the dashboard.</li>
+        {usesAnalytics && <li>Google Analytics: counts visits to this website.</li>}
+        {usesMetaPixel && <li>Meta: tells us which of our Facebook and Instagram adverts work.</li>}
         <li>Payfast: takes card payments.</li>
         <li>Google Maps: shows maps and turns addresses into map positions.</li>
         <li>Sentry: tells us about faults in the app. It is set up not to receive IP addresses, cookies, passwords or sign-in details.</li>

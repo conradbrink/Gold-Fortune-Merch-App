@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { listTemplates, platformAdminClient } from "@/lib/platform";
-import { HOW_RUN_LABEL, type HowRun } from "@/lib/founding";
+import { HOW_RUN_LABEL, checkAttribution, describeAttribution, type HowRun } from "@/lib/founding";
 
 /**
  * Platform operator: the Founding 10 applications, newest first, in one list.
@@ -105,6 +105,10 @@ export default async function FoundingApplicationsPage() {
                 <div>
                   <dt className="text-muted-foreground">Came from</dt>
                   <dd>{a.source ?? "not known"}</dd>
+                </div>
+                <div>
+                  <dt className="text-muted-foreground">How they found us</dt>
+                  <dd>{describeAttribution(checkAttribution(a.attribution)) ?? "not known"}</dd>
                 </div>
                 <div>
                   <dt className="text-muted-foreground">Whole team, every workday</dt>

@@ -5,6 +5,8 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   applicationEmail,
+  checkAttribution,
+  describeAttribution,
   checkApplication,
   corsOrigin,
   foundingIssues,
@@ -61,6 +63,7 @@ test("a good application is trimmed and ready to save", () => {
     video_review: false,
     marketing_ok: true,
     source: "facebook",
+    attribution: null,
   });
 });
 
@@ -133,4 +136,74 @@ test("the owner's email escapes what the visitor typed, lists every answer and l
     assert.ok(mail.text.includes(bit), bit);
   }
   assert.ok(applicationEmail(ok.application, "Pools", true).subject.startsWith("Waiting list: "));
+});
+
+test("attribution keeps what the site recorded, checked field by field", () => {
+  const now = new Date("2026-10-12T10:00:00Z");
+  assert.deepEqual(
+    checkAttribution(
+      {
+        utm_source: "facebook",
+        utm_medium: "paid_social",
+        utm_campaign: "Founding Oct",
+        referrer: "L.Facebook.com",
+        landing_page: "/founding",
+        click_id: "fbclid",
+        first_seen_at: "2026-10-11T08:30:00.000Z",
+      },
+      now
+    ),
+    {
+      utm_source: "facebook",
+      utm_medium: "paid_social",
+      utm_campaign: "Founding Oct",
+      referrer: "l.facebook.com",
+      landing_page: "/founding",
+      click_id: "fbclid",
+      first_seen_at: "2026-10-11T08:30:00.000Z",
+    }
+  );
+});
+
+test("odd attribution is dropped, never an error", () => {
+  const now = new Date("2026-10-12T10:00:00Z");
+  assert.equal(checkAttribution(null, now), null);
+  assert.equal(checkAttribution("facebook", now), null);
+  assert.equal(checkAttribution(["facebook"], now), null);
+  assert.equal(
+    checkAttribution(
+      {
+        utm_source: "x".repeat(101),
+        utm_term: "a\nb",
+        referrer: "https://evil.example/path",
+        landing_page: "/founding?name=Thabo",
+        click_id: "abc123",
+        first_seen_at: "2031-01-01T00:00:00Z",
+        name: "Thabo",
+      },
+      now
+    ),
+    null
+  );
+  assert.deepEqual(checkAttribution({ landing_page: "/", first_seen_at: "not a date" }, now), { landing_page: "/" });
+});
+
+test("an application carries its attribution, and works without one", () => {
+  const withIt = checkApplication({ ...good, attribution: { utm_source: "google", landing_page: "/" } });
+  assert.ok(withIt.ok);
+  assert.deepEqual(withIt.application.attribution, { utm_source: "google", landing_page: "/" });
+  const without = checkApplication(good);
+  assert.ok(without.ok);
+  assert.equal(without.application.attribution, null);
+  assert.deepEqual(inputFromBody({ attribution: { utm_source: "x" } }).attribution, { utm_source: "x" });
+});
+
+test("the owner reads where an applicant came from in one line", () => {
+  assert.equal(
+    describeAttribution({ utm_source: "facebook", utm_medium: "paid_social", utm_campaign: "founding-oct", click_id: "fbclid", landing_page: "/founding", first_seen_at: "2026-10-11T08:30:00.000Z" }),
+    "facebook / paid_social, campaign founding-oct, clicked from Facebook or Instagram, first page /founding, first seen 2026-10-11"
+  );
+  assert.equal(describeAttribution({ landing_page: "/" }), "came straight to the site, first page /");
+  assert.equal(describeAttribution({ referrer: "www.google.com", landing_page: "/" }), "sent by www.google.com, first page /");
+  assert.equal(describeAttribution(null), null);
 });

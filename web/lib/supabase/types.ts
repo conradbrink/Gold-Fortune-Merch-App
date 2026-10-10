@@ -1155,6 +1155,8 @@ export type Database = {
       }
       founding_applications: {
         Row: {
+          attribution: Json | null
+
           biggest_cost: string
           business_name: string
           created_at: string
@@ -1174,6 +1176,8 @@ export type Database = {
           whole_team: boolean
         }
         Insert: {
+          attribution?: Json | null
+
           biggest_cost: string
           business_name: string
           created_at?: string
@@ -1193,6 +1197,8 @@ export type Database = {
           whole_team: boolean
         }
         Update: {
+          attribution?: Json | null
+
           biggest_cost?: string
           business_name?: string
           created_at?: string

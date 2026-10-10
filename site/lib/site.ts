@@ -84,6 +84,12 @@ export const founding = {
 // (or leave it empty): until it is set the page shows a clearly marked space.
 export const foundingVideoUrl: string = "";
 
+// Google Analytics 4 for the whole site. Paste the Measurement ID ("G-" and
+// letters, from Admin > Data streams in Google Analytics) between the quotes;
+// while it is empty, nothing loads and nothing is sent. The privacy page says
+// so only while it is set.
+export const gaMeasurementId: string = "";
+
 // The Meta (Facebook) Pixel for /founding. Paste the Pixel ID between the
 // quotes; while it is empty, nothing loads and nothing is sent.
 export const metaPixelId: string = "";
