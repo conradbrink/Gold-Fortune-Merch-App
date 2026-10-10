@@ -61,7 +61,7 @@ begin
   insert into public.company_account (org_id, status, trial_ends_at, created_at) values (v_org, 'trial', now() + interval '14 days', now() - interval '46 days');
   v_n := public.queue_trial_offers();
   select payload into v_j from public.message_outbox where template = 'trial_offer' and org_id = v_org;
-  if v_n < 1 or (v_j ->> 'days_left')::int not between 13 and 14 or v_j ->> 'trial_ends_at' is null then
+  if v_n < 1 or (v_j ->> 'days_left')::int not between 13 and 14 or v_j ->> 'trial_ends_at' is null or v_j ->> 'trial_ends_on' is null then
     v_fail := v_fail || format('W2 the offer for a company on its trial is wrong (%s queued): %s', v_n, v_j::text) || E'\n';
   end if;
   -- Too young, paid, read only, past its trial: nobody.
@@ -85,6 +85,18 @@ begin
   v_n := public.queue_trial_offers();
   if v_n < 1 or not exists (select 1 from public.trial_offers where org_id = v_org) then
     v_fail := v_fail || format('W3 the setting did not change the day: queued %s', v_n) || E'\n';
+  end if;
+  -- An offer the outbox holds back (cancelled) is not remembered, so it is made again tomorrow.
+  delete from public.trial_offers; delete from public.message_outbox where template = 'trial_offer';
+  update public.platform_settings set value = '15' where key = 'trial_offer_day';
+  insert into public.message_suppressions (org_id, address, reason)
+  select null, to_address, 'hard_bounce' from (select lower(btrim(p.email)) as to_address from public.profiles p
+                                                 where p.org_id = v_org and p.email is not null limit 1) x
+  on conflict do nothing;
+  perform public.queue_trial_offers();
+  if exists (select 1 from public.message_outbox where template = 'trial_offer' and org_id = v_org and status = 'cancelled')
+     and exists (select 1 from public.trial_offers where org_id = v_org) then
+    v_fail := v_fail || 'W3 an offer the outbox cancelled was remembered as made' || E'\n';
   end if;
   -- A setting that is not a number is 45, and the job still runs.
   delete from public.trial_offers;

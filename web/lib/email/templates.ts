@@ -538,7 +538,9 @@ const TEMPLATES: Record<string, Renderer> = {
   trial_offer: (payload, ctx) => {
     const first = str(payload.first_name);
     const company = str(payload.company_name);
-    const ends = str(payload.trial_ends_at) ? dateText(str(payload.trial_ends_at).slice(0, 10)) : "";
+    // The company's own calendar day when the database gave it, else the UTC date.
+    const endsOn = str(payload.trial_ends_on) || str(payload.trial_ends_at).slice(0, 10);
+    const ends = endsOn ? dateText(endsOn) : "";
     const left = payload.days_left === null || payload.days_left === undefined ? null : num(payload.days_left);
     const appUrl = (str(payload.app_url) || "https://app.tickd.co.za").replace(/\/$/, "");
     const facts: Fact[] = [
@@ -547,7 +549,7 @@ const TEMPLATES: Record<string, Renderer> = {
     ];
     const body = stack([
       para(`Hello${first ? ` ${first}` : ""},`, true),
-      para(`You have been running Tickd${company ? ` for ${company}` : ""} for a while now, and we hope it is making your days easier. This is the time to sign up fully.`),
+      para(`You have been running Tickd${company ? ` for ${company}` : ""} for a while now, and we hope it is making your days easier. Now is a good time to sign up fully.`),
       factsBlock(facts),
       para(
         `Choose your plan${left !== null || ends ? " before your free days end" : ""} and everything carries on exactly as it is: your team, your places, your history and your reports. It takes about two minutes, and you pay nothing until you choose.`
@@ -556,7 +558,7 @@ const TEMPLATES: Record<string, Renderer> = {
     ]);
     const { html, text } = layout(ctx, {
       heading: "Ready to sign up fully?",
-      preheader: left !== null ? `${left} free days left${ends ? `, until ${ends}` : ""}.` : "Choose your plan to keep going.",
+      preheader: left !== null ? `${left === 1 ? "1 free day" : `${left} free days`} left${ends ? `, until ${ends}` : ""}.` : "Choose your plan to keep going.",
       bodyHtml: body.html,
       bodyText: body.text,
       closing: para("Thank you,\nThe Tickd team"),
@@ -590,8 +592,8 @@ export const REPORT_TEMPLATES = new Set<string>(["job_report", "job_reports_day"
 /** Alert emails: to the company's own people (no unsubscribe link); the sender adds the app's address. */
 export const ALERT_TEMPLATES = new Set<string>(["alert", "alerts_digest"]);
 
-/** Invoices, quotes, statements and reminders: their payload holds a link id the sender looks up before rendering, and turns into the page's address. */
 /** Emails from Tickd itself, to a company's owner or an applicant: sent as Tickd, replies go to the Tickd team, no advert and no stop link. */
 export const TICKD_TEMPLATES = new Set<string>(["application_received", "welcome", "trial_offer"]);
 
+/** Invoices, quotes, statements and reminders: their payload holds a link id the sender looks up before rendering, and turns into the page's address. */
 export const DOCUMENT_TEMPLATES = new Set<string>(["invoice", "quote", "statement", "payment_reminder"]);

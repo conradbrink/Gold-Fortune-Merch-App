@@ -213,10 +213,14 @@ test("the owner reads where an applicant came from in one line", () => {
 
 import { validEmail } from "@/lib/founding";
 
-test("an application needs an email address, kept in lower case", () => {
+test("an application's email is kept in lower case, checked when given, and never turns an applicant away when it is missing", () => {
   assert.equal(validEmail("a@b.co.za"), true);
   for (const bad of ["", "a", "a@b", "a b@c.de", "@b.co", "a@b."]) assert.equal(validEmail(bad), false, bad);
-  assert.ok(foundingIssues({ ...good, email: "" }).some((i) => i.field === "email"));
+  // Given but wrong: the visitor hears about it. Missing: the application still goes through.
+  assert.ok(foundingIssues({ ...good, email: "not an email" }).some((i) => i.field === "email"));
+  assert.ok(!foundingIssues({ ...good, email: "" }).some((i) => i.field === "email"));
   const checked = checkApplication({ ...good, email: " Owner@Example.COM " });
   assert.ok(checked.ok && checked.application.email === "owner@example.com");
+  const none = checkApplication({ ...good, email: "  " });
+  assert.ok(none.ok && none.application.email === null);
 });

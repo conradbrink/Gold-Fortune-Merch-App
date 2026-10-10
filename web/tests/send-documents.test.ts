@@ -617,6 +617,11 @@ test("a welcome greets the owner, names the company, and gives three first steps
 test("the offer to sign up fully says how many free days are left and where to choose a plan", () => {
   const e = renderEmail("trial_offer", { first_name: "Sam", company_name: "Daniels Gardens", trial_ends_at: "2026-10-22T21:08:11.557Z", days_left: 12 }, tickd)!;
   assert.equal(e.subject, "Your free days end on 22 Oct 2026, Sam");
+  // The company's own calendar day wins over the UTC date.
+  const local = renderEmail("trial_offer", { company_name: "A", trial_ends_at: "2026-10-22T22:30:00Z", trial_ends_on: "2026-10-23", days_left: 1 }, tickd)!;
+  assert.equal(local.subject, "Your free days end on 23 Oct 2026");
+  assert.match(local.html, /1 free day left, until 23 Oct 2026/);
+  assert.doesNotMatch(local.html, /1 free days/);
   assert.match(e.html, /12 days/);
   assert.match(e.html, /22 Oct 2026/);
   assert.match(e.html, /href="https:\/\/app\.tickd\.co\.za\/plans"[^>]*>Choose your plan</);
@@ -625,6 +630,8 @@ test("the offer to sign up fully says how many free days are left and where to c
   assert.match(one.html, />1 day</);
   const none = renderEmail("trial_offer", { company_name: "A" }, tickd)!;
   assert.equal(none.subject, "Ready to sign up fully?");
+  assert.doesNotMatch(none.html, /before your free days end/);
+  assert.match(none.html, /Now is a good time to sign up fully\./);
 });
 
 test("emails from Tickd itself are their own set, and none of them is a client email", () => {

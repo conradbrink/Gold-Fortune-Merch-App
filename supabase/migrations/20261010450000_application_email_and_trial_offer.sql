@@ -52,10 +52,12 @@ declare
   v_day integer := case when v_raw ~ '^[0-9]{1,4}$' then v_raw::integer else 45 end;
   a record;
   v_to record;
+  v_msg uuid;
+  v_status text;
   n integer := 0;
 begin
   for a in
-    select o.id as org_id, ca.trial_ends_at, o.name
+    select o.id as org_id, ca.trial_ends_at, o.name, coalesce(nullif(btrim(o.timezone), ''), 'UTC') as tz
       from public.organizations o
       left join public.company_account ca on ca.org_id = o.id
      where (ca.org_id is null or ca.status = 'trial')
@@ -63,33 +65,48 @@ begin
        and (ca.trial_ends_at is null or ca.trial_ends_at > now())
        and not exists (select 1 from public.trial_offers t where t.org_id = o.id)
   loop
-    -- The administrator who set the company up: the oldest active login holding
-    -- the admin permission, with a real email (not a phone login).
-    select lower(e.email) as email, p.full_name into v_to
-      from public.profiles p
-      left join auth.users u on u.id = p.id
-      cross join lateral (select coalesce(nullif(btrim(p.email), ''), u.email) as email) e
-     where p.org_id = a.org_id and p.is_active and e.email is not null
-       and e.email !~* '@staff\.tickd\.co\.za$'
-       and exists (select 1 from public.profile_permissions pp where pp.profile_id = p.id and pp.permission_code = 'admin')
-     order by p.created_at, p.id
-     limit 1;
-    if v_to.email is null then
-      continue;
-    end if;
-    insert into public.trial_offers (org_id, to_address) values (a.org_id, v_to.email) on conflict do nothing;
-    if not found then
-      continue;
-    end if;
-    perform public.queue_email(
-      a.org_id, v_to.email, v_to.full_name, 'trial_offer',
-      jsonb_build_object(
-        'first_name', split_part(btrim(coalesce(v_to.full_name, '')), ' ', 1),
-        'company_name', a.name,
-        'trial_ends_at', a.trial_ends_at,
-        'days_left', case when a.trial_ends_at is null then null else greatest(0, (a.trial_ends_at::date - current_date)) end),
-      'trial_offer', a.org_id);
-    n := n + 1;
+    -- One company's bad data (an odd address, say) must not stop everyone else's offer.
+    begin
+      -- The administrator who set the company up: the oldest active login holding
+      -- the admin permission, with a real email (not a phone login).
+      select lower(e.email) as email, p.full_name into v_to
+        from public.profiles p
+        left join auth.users u on u.id = p.id
+        cross join lateral (select coalesce(nullif(btrim(p.email), ''), u.email) as email) e
+       where p.org_id = a.org_id and p.is_active and e.email is not null
+         and e.email !~* '@staff\.tickd\.co\.za$'
+         and exists (select 1 from public.profile_permissions pp where pp.profile_id = p.id and pp.permission_code = 'admin')
+       order by p.created_at, p.id
+       limit 1;
+      if v_to.email is null then
+        continue;
+      end if;
+      insert into public.trial_offers (org_id, to_address) values (a.org_id, v_to.email) on conflict do nothing;
+      if not found then
+        continue;
+      end if;
+      v_msg := public.queue_email(
+        a.org_id, v_to.email, v_to.full_name, 'trial_offer',
+        jsonb_build_object(
+          'first_name', split_part(btrim(coalesce(v_to.full_name, '')), ' ', 1),
+          'company_name', a.name,
+          'trial_ends_at', a.trial_ends_at,
+          -- The company's own calendar days, so the date and the days left are the ones it sees.
+          'trial_ends_on', case when a.trial_ends_at is null then null else (a.trial_ends_at at time zone a.tz)::date end,
+          'days_left', case when a.trial_ends_at is null then null
+                            else greatest(0, (a.trial_ends_at at time zone a.tz)::date - (now() at time zone a.tz)::date) end),
+        'trial_offer', a.org_id);
+      select m.status into v_status from public.message_outbox m where m.id = v_msg;
+      if v_status = 'cancelled' then
+        -- Held back (the owner has not confirmed their email, or the day's limit): not asked yet, so asked tomorrow.
+        delete from public.trial_offers where org_id = a.org_id;
+      else
+        n := n + 1;
+      end if;
+    exception when others then
+      raise warning 'trial offer for % was not queued: %', a.org_id, sqlerrm;
+      delete from public.trial_offers where org_id = a.org_id;
+    end;
   end loop;
   return n;
 end;

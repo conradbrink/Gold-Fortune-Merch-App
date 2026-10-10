@@ -50,8 +50,8 @@ export type FoundingApplication = {
   name: string;
   business_name: string;
   whatsapp: string;
-  /** Where we confirm the application; lower case. */
-  email: string;
+  /** Where we confirm the application; lower case; null when none was given. */
+  email: string | null;
   trade: string;
   team_size: TeamSize;
   town: string;
@@ -165,7 +165,9 @@ export function foundingIssues(input: FoundingInput): FoundingIssue[] {
   if (normaliseWhatsapp(input.whatsapp) === null) {
     add("whatsapp", "Please enter the WhatsApp number we can reach you on, for example 082 123 4567.");
   }
-  if (!validEmail(input.email)) add("email", "Please enter your email address, so we can confirm your application.");
+  // Required on the form; here only checked when given, so a visitor on the old form,
+  // or a deploy that is half done, is never turned away (the application is what matters).
+  if (input.email.trim() && !validEmail(input.email)) add("email", "That email address does not look right. Please check it, so we can confirm your application.");
   if (!/^[a-z][a-z_]{0,39}$/.test(input.trade)) add("trade", "Choose what your team does.");
   if (!(TEAM_SIZES as readonly string[]).includes(input.teamSize)) add("teamSize", "Choose how many people work in the field.");
   const town = input.town.trim();
@@ -194,7 +196,7 @@ export function checkApplication(
       name: input.name.trim(),
       business_name: input.businessName.trim(),
       whatsapp: normaliseWhatsapp(input.whatsapp)!,
-      email: input.email.trim().toLowerCase(),
+      email: input.email.trim() ? input.email.trim().toLowerCase() : null,
       trade: input.trade,
       team_size: input.teamSize as TeamSize,
       town: input.town.trim(),
@@ -279,7 +281,7 @@ export function applicationEmail(
     ["Name", a.name],
     ["Business", a.business_name],
     ["WhatsApp", `+${a.whatsapp}`],
-    ["Email", a.email],
+    ["Email", a.email ?? "(none given)"],
     ["Type of work", tradeLabel],
     ["People in the field", a.team_size],
     ["Town or city", a.town],

@@ -92,7 +92,7 @@ export async function POST(request: Request) {
   for (const [bucket, subject, rule] of [
     ["founding_address", `ip:${address}`, PER_ADDRESS],
     ["founding_number", `wa:${application.whatsapp}`, PER_NUMBER],
-    ["founding_email", `email:${application.email}`, PER_EMAIL],
+    ...(application.email ? ([["founding_email", `email:${application.email}`, PER_EMAIL]] as const) : []),
   ] as const) {
     const { data, error } = await admin.rpc("consume_anonymous_rate_limit", {
       p_bucket: bucket,
@@ -139,7 +139,8 @@ export async function POST(request: Request) {
   }
 
   after(() => notifyOwner(saved.id, application, waitlist));
-  if (emailSaved) after(() => confirmToApplicant(saved.id, application, waitlist));
+  const toEmail = application.email;
+  if (emailSaved && toEmail) after(() => confirmToApplicant(saved.id, { ...application, email: toEmail }, waitlist));
 
   return json(request, { ok: true, waitlist });
 }
@@ -149,7 +150,7 @@ export async function POST(request: Request) {
  * retried, kept in the list of what was sent, and never goes to a blocked
  * address). Never throws: the application is already saved.
  */
-async function confirmToApplicant(id: string, a: FoundingApplication, waitlist: boolean) {
+async function confirmToApplicant(id: string, a: FoundingApplication & { email: string }, waitlist: boolean) {
   try {
     const { error } = await platformAdminClient().rpc("queue_email", {
       p_org: null,
