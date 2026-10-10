@@ -88,7 +88,7 @@ export const gaMeasurementId: string = "G-7Q710H1MSW";
 
 // The Meta (Facebook) Pixel for /founding. Paste the Pixel ID between the
 // quotes; while it is empty, nothing loads and nothing is sent.
-export const metaPixelId: string = "";
+export const metaPixelId: string = "1009164142204684";
 
 // The Gold Fortune result for the proof section: real numbers from Tickd's own
 // data (read-only, 10 Oct 2026), the first two weeks of use against the two
