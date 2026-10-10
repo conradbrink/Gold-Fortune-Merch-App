@@ -11,14 +11,18 @@ import {
   Receipt,
   Route,
   Smartphone,
+  Sun,
   Wallet,
 } from "lucide-react";
 import Image from "next/image";
+import { AppMoment } from "@/components/app-moment";
 import { CostCalculator } from "@/components/cost-calculator";
 import { ProductDemo } from "@/components/demo/product-demo";
 import { Logo } from "@/components/logo";
 import { TradeTabs } from "@/components/trade-tabs";
 import { FoundingStart } from "@/components/founding-start";
+import { Peek, PhonePeek } from "@/components/phone-shot";
+import { PopIn } from "@/components/pop-in";
 import { PricingSection } from "@/components/pricing-section";
 import { ProofSection } from "@/components/proof-section";
 import { SectionViews } from "@/components/analytics";
@@ -32,6 +36,9 @@ import { confirmed, founding, pricing, rand, site } from "@/lib/site";
 // print), and as few words as will do. Still no dashes, and only live features.
 // Lines v7 marks [CONFIRM] sit behind `confirmed` in lib/site.ts.
 // Mobile first: every style below is the phone's; sm:/md:/lg: only add room.
+// The photo of the worker on his phone (public/people) is free stock, not a
+// client, so no caption ever says he is: Unsplash xdS9XEoKBLY (Unsplash
+// License). The name on his app card is made up, like the app's example data.
 // Light only, on purpose: owners read this on a phone outdoors, between jobs,
 // and the brand is built on the sand ground.
 
@@ -191,6 +198,7 @@ function Lane({
   steps,
   className,
   badge,
+  picture,
 }: {
   icon: typeof Smartphone;
   who: string;
@@ -198,6 +206,7 @@ function Lane({
   steps: string[][];
   className: string;
   badge: string;
+  picture: React.ReactNode;
 }) {
   return (
     <div className={`tk-reveal grid content-start gap-5 rounded-2xl p-5 ring-1 sm:p-7 ${className}`}>
@@ -210,6 +219,7 @@ function Lane({
           <span className="text-sm font-medium text-muted">{where}</span>
         </span>
       </div>
+      {picture}
       <ol className="grid gap-4">
         {steps.map(([title, body], i) => (
           <li key={title} className="grid grid-cols-[2rem_1fr] gap-3">
@@ -245,9 +255,21 @@ function Points({ items, badge }: { items: { icon: typeof Smartphone; text: stri
 // A real dashboard screenshot (example data), cut to the page's own content
 // edges (public/demo/dash/site-*.webp, cropped from the full screens), so
 // nothing is sliced through and the whole thing shows at its own shape.
-function Shot({ src, alt, width, height }: { src: string; alt: string; width: number; height: number }) {
+function Shot({
+  src,
+  alt,
+  width,
+  height,
+  className = "",
+}: {
+  src: string;
+  alt: string;
+  width: number;
+  height: number;
+  className?: string;
+}) {
   return (
-    <figure className="tk-reveal grid gap-2">
+    <figure className={`tk-reveal grid gap-2 ${className}`}>
       <Image
         src={src}
         alt={alt}
@@ -257,7 +279,6 @@ function Shot({ src, alt, width, height }: { src: string; alt: string; width: nu
         sizes="(min-width: 1024px) 560px, 100vw"
         className="h-auto w-full rounded-2xl bg-white ring-1 ring-line"
       />
-      <figcaption className="text-sm text-muted">Real screen from the {site.name} dashboard, with example data.</figcaption>
     </figure>
   );
 }
@@ -356,24 +377,41 @@ export default function Home() {
           </div>
           <figure className="tk-hero-demo grid gap-3">
             <ProductDemo />
-            <figcaption className="text-center text-sm text-muted">
-              Real screens from the {site.name} app, with example data.
-            </figcaption>
           </figure>
         </section>
 
-        {/* The result at one of our clients, straight under the hero. */}
-        <ProofSection applyHref="/founding" />
-
         {/* 2. Easy to say yes: the effort it doesn't take. */}
         <section aria-labelledby="start-title" className="border-y border-line bg-white">
-          <div className={`${wrap} max-w-6xl`}>
-            <h2 id="start-title" className="tk-reveal font-display text-2xl font-bold leading-tight text-teal-900 sm:text-3xl">
+          {/* Heading, photo, list on a phone; from lg the photo sits on the left
+              and the heading and list stack beside it. */}
+          <div className={`${wrap} max-w-6xl lg:grid-cols-[0.85fr_1fr] lg:gap-x-14`}>
+            <h2
+              id="start-title"
+              className="tk-reveal font-display text-2xl font-bold leading-tight text-teal-900 sm:text-3xl lg:col-start-2 lg:self-end"
+            >
               What do you need to start?
             </h2>
-            <ul className="grid gap-5 md:grid-cols-3 md:gap-0 md:divide-x md:divide-line">
+            <div className="tk-reveal relative mb-8 lg:col-start-1 lg:row-span-2 lg:row-start-1">
+              <Image
+                src="/people/worker-phone.webp"
+                alt="A worker in a hard hat checking his phone on site."
+                width={900}
+                height={965}
+                unoptimized
+                className="aspect-square w-full rounded-2xl object-cover object-[50%_70%] sm:aspect-[4/3] sm:object-[50%_75%] lg:aspect-[9/10]"
+              />
+              <PopIn className="absolute inset-x-3 -bottom-8 sm:inset-x-auto sm:left-4 sm:w-80">
+                <AppMoment
+                  icon={Sun}
+                  who="Kagiso · Electrical"
+                  title="Good morning, Kagiso!"
+                  body="You have 3 jobs today. Here's the plan."
+                />
+              </PopIn>
+            </div>
+            <ul className="grid content-start gap-5 lg:col-start-2">
               {easy.map(({ icon: Icon, title, body }) => (
-                <li key={title} className="tk-reveal tk-timeline flex gap-3.5 md:px-8 md:first:pl-0 md:last:pr-0">
+                <li key={title} className="tk-reveal tk-timeline flex gap-3.5">
                   <Icon className="tk-draw mt-0.5 size-6 shrink-0 text-teal-700" strokeWidth={2} aria-hidden="true" />
                   <span className="grid gap-0.5">
                     <span className="font-display text-lg font-bold text-teal-900">{title}</span>
@@ -385,6 +423,9 @@ export default function Home() {
           </div>
         </section>
 
+        {/* The result at one of our clients, just under what you need to start. */}
+        <ProofSection applyHref="/founding" />
+
         {/* 3. The calls that eat the owner's day, and the answer with Tickd. */}
         <section aria-labelledby="day-title">
           <div className={`${wrap} max-w-6xl`}>
@@ -392,20 +433,38 @@ export default function Home() {
               <h2 id="day-title" className={h2}>Sound familiar?</h2>
               <p className={lead}>These are the calls that eat up your day. With {site.name}, each one takes a few seconds.</p>
             </div>
-            <ul className="grid gap-3 md:grid-cols-2 md:gap-4">
-              {day.map(([heard, answer]) => (
-                <li key={heard} className="tk-reveal tk-timeline grid gap-2 rounded-2xl bg-white p-5 ring-1 ring-line">
-                  <p className="font-display text-xl font-bold leading-snug text-teal-900">{heard}</p>
-                  <p className="tk-reveal-late flex gap-2 text-lg leading-snug text-ink">
-                    <Check className="tk-draw mt-1 size-5 shrink-0 text-teal-700" strokeWidth={3} aria-hidden="true" />
-                    <span>
-                      <span className="sr-only">With {site.name}: </span>
-                      {answer}
-                    </span>
-                  </p>
-                </li>
-              ))}
-            </ul>
+            <div className="grid gap-6 lg:grid-cols-[1.1fr_1fr] lg:items-center lg:gap-10">
+              <ul className="grid gap-3 md:grid-cols-2 md:gap-4">
+                {day.map(([heard, answer]) => (
+                  <li key={heard} className="tk-reveal tk-timeline grid content-start gap-2 rounded-2xl bg-white p-5 ring-1 ring-line lg:p-4">
+                    <p className="font-display text-xl font-bold leading-snug text-teal-900 lg:text-lg">{heard}</p>
+                    <p className="tk-reveal-late flex gap-2 text-lg leading-snug text-ink lg:text-base">
+                      <Check className="tk-draw mt-1 size-5 shrink-0 text-teal-700 lg:mt-0.5" strokeWidth={3} aria-hidden="true" />
+                      <span>
+                        <span className="sr-only">With {site.name}: </span>
+                        {answer}
+                      </span>
+                    </p>
+                  </li>
+                ))}
+              </ul>
+              {/* The whole live map is too small to read on a phone, so a phone
+                  gets the close-up of one person's day instead. */}
+              <Shot
+                src="/demo/dash/site-live-map-panel.webp"
+                alt="Thabo's day on the live map: 19.8 km driven, 3 check-ins, and every arrival and departure since 06:58."
+                width={634}
+                height={905}
+                className="mx-auto w-full max-w-xs sm:hidden"
+              />
+              <Shot
+                src="/demo/dash/site-live-map.webp"
+                alt="The live map: Naledi arrived at the clinic 8 minutes ago, and Thabo's day so far, from 06:58 to his arrival at Riverside complex at 11:05."
+                width={1984}
+                height={1139}
+                className="hidden sm:grid"
+              />
+            </div>
             <p className="font-display text-xl font-bold leading-snug text-balance text-teal-900 sm:text-2xl">
               You didn&apos;t start a business to spend your day chasing people for updates.
             </p>
@@ -429,6 +488,13 @@ export default function Home() {
                 steps={teamSteps}
                 className="bg-amber-100/60 ring-amber-500/40"
                 badge="bg-amber-500 text-teal-950"
+                picture={
+                  <PhonePeek
+                    src="/demo/phone/02-day-started.webp"
+                    alt="The staff app after clocking in: the workday is running, with today's jobs listed underneath."
+                    className="bg-amber-200/60"
+                  />
+                }
               />
               <Lane
                 icon={LayoutDashboard}
@@ -437,6 +503,18 @@ export default function Home() {
                 steps={ownerSteps}
                 className="bg-mint ring-teal-100"
                 badge="bg-teal-900 text-sand"
+                picture={
+                  <Peek className="bg-teal-100/70">
+                    <Image
+                      src="/demo/dash/site-dashboard.webp"
+                      alt="The owner's dashboard: money owed to you, sites visited in the last 30 days, and sales by month."
+                      width={2016}
+                      height={1180}
+                      unoptimized
+                      className="absolute left-5 top-6 w-[150%] max-w-none rounded-lg bg-white shadow-xl shadow-teal-950/15 ring-1 ring-black/5"
+                    />
+                  </Peek>
+                }
               />
             </div>
             <div className="tk-reveal grid gap-6 rounded-2xl bg-teal-950 p-6 text-sand sm:p-8 md:grid-cols-[0.8fr_1.2fr] md:items-center md:gap-10">

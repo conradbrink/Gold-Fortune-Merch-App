@@ -177,12 +177,6 @@ export function ProofSlides({ applyHref }: { applyHref: string }) {
           </button>
         </div>
       </div>
-
-      <p className="text-sm leading-relaxed text-teal-100/90">
-        Gold Fortune, the same {proof.reps} reps both times. Visits, stores and check-ins come from the {site.name} app: the first 2
-        weeks of use ({proof.early}) against the last 2 full weeks without a public holiday ({proof.recent}). The sales at one
-        retailer are as Gold Fortune reports them. Your results depend on your team and how you use it.
-      </p>
     </section>
   );
 }
