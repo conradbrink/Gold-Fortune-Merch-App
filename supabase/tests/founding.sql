@@ -7,6 +7,8 @@
 --       not move when applications arrive or are accepted.
 --   F3  Grants: the table and the function are out of reach of signed-in and
 --       anonymous callers; the service role can call the function.
+--   F4  attribution: an object saves; a string, an array or an oversized
+--       object is refused; null is the default.
 --
 -- HOW TO RUN: paste into execute_sql (or psql -f). One DO block that always
 -- ends in `raise exception`, so nothing survives.
@@ -74,6 +76,25 @@ begin
   if not has_function_privilege('service_role', 'public.founding_spots_left()', 'execute') then
     v_fail := v_fail || 'F3 the service role cannot call founding_spots_left()' || E'\n';
   end if;
+
+  ------------------------------------------------------------ F4 attribution
+  if (select attribution from public.founding_applications where id = v_id) is not null then
+    v_fail := v_fail || 'F4 attribution is not null by default' || E'\n';
+  end if;
+  update public.founding_applications
+     set attribution = '{"utm_source":"facebook","landing_page":"/founding","click_id":"fbclid"}'
+   where id = v_id;
+  foreach v_bad in array array[
+    $q$'"facebook"'::jsonb$q$,
+    $q$'["facebook"]'::jsonb$q$,
+    $q$jsonb_build_object('utm_term', repeat('x', 5000))$q$
+  ] loop
+    begin
+      execute format('update public.founding_applications set attribution = %s where id = %L', v_bad, v_id);
+      v_fail := v_fail || 'F4 attribution accepted ' || v_bad || E'\n';
+    exception when check_violation then null;
+    end;
+  end loop;
 
   if v_fail <> '' then
     raise exception E'FOUNDING FAILURES (rolled back):\n%', v_fail;

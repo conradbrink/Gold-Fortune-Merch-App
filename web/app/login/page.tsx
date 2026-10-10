@@ -9,6 +9,7 @@ import { Label } from "@/components/ui/label";
 import { createClient } from "@/lib/supabase/client";
 import { ProductBrand } from "@/components/product-brand";
 import { browserCountries, loginCandidates } from "@/lib/phone-login";
+import { returnPath } from "@/lib/return-path";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -50,7 +51,10 @@ export default function LoginPage() {
       return;
     }
 
-    router.push("/");
+    // Back to the page that sent them here (the proxy passes it as `?next=`).
+    // Read at submit time rather than with useSearchParams, which would need
+    // a Suspense boundary around the whole form.
+    router.push(returnPath(new URLSearchParams(window.location.search).get("next")));
     router.refresh();
   }
 

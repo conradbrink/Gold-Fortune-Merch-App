@@ -7,6 +7,7 @@ import {
   toPermissionSet,
 } from "@/lib/permissions";
 import { canReachPath, moduleForPath, toModuleSet } from "@/lib/modules";
+import { nextParam, returnPath } from "@/lib/return-path";
 
 export async function proxy(request: NextRequest) {
   let response = NextResponse.next({ request });
@@ -91,12 +92,16 @@ export async function proxy(request: NextRequest) {
   if (!user && !isLoginPage && !isDownloadPage && !isPasswordResetPage && !isSignupPage && !isClientPage) {
     const url = request.nextUrl.clone();
     url.pathname = "/login";
+    const next = nextParam(request.nextUrl.pathname, request.nextUrl.search);
+    url.search = next ? `?next=${encodeURIComponent(next)}` : "";
     return NextResponse.redirect(url);
   }
 
   if (user && (isLoginPage || isSignupPage)) {
-    const url = request.nextUrl.clone();
-    url.pathname = "/";
+    const url = new URL(
+      isLoginPage ? returnPath(request.nextUrl.searchParams.get("next")) : "/",
+      request.nextUrl.origin
+    );
     return NextResponse.redirect(url);
   }
 
