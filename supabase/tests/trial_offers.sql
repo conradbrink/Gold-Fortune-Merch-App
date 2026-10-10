@@ -9,6 +9,10 @@
 --   W3  The day is the owner's (platform_settings trial_offer_day), and a
 --       setting that is not a number is 45, not a stopped job.
 --   W4  Grants, the daily job and the table's registration.
+--   W6  The holiday pause (trial_pause_from to trial_pause_to) is not counted:
+--       a company whose 45 days run through it is asked 21 days later; one
+--       whose days are done before it, or after it, is not moved; no or bad
+--       pause dates mean no pause.
 --   W5  The days count from trial_offer_counts_from when a company was made
 --       before it (the Founding days begin on 2 November); a cleared or invalid
 --       date counts from the company's own start.
@@ -36,6 +40,8 @@ begin
 
   -- W2 and W3 are about the 45 days alone: the date the days count from is in the past here (W5 tests it).
   update public.platform_settings set value = '"2000-01-01"' where key = 'trial_offer_counts_from';
+  update public.platform_settings set value = '"2000-01-01"' where key = 'trial_pause_from';
+  update public.platform_settings set value = '"2000-01-22"' where key = 'trial_pause_to';
 
   ---------------------------------------------------------------- W2 the offer
   -- Gold Fortune stands in for a company: its administrator has an email, and
@@ -152,6 +158,44 @@ begin
   end;
   if not exists (select 1 from public.platform_settings where key = 'trial_offer_counts_from') then
     v_fail := v_fail || 'W5 the setting is missing' || E'\n';
+  end if;
+
+  ---------------------------------------------------------------- W6 the holiday pause
+  update public.platform_settings set value = '"2000-01-01"' where key = 'trial_offer_counts_from';
+  update public.company_account set status = 'trial', trial_ends_at = now() + interval '90 days' where org_id = v_org;
+  -- Made 46 days ago (due yesterday), the pause runs from 10 days ago to 11 days ahead: not due until 21 days later.
+  delete from public.trial_offers; delete from public.message_outbox where template = 'trial_offer';
+  update public.company_account set created_at = now() - interval '46 days' where org_id = v_org;
+  update public.organizations set created_at = now() - interval '46 days' where id = v_org;
+  update public.platform_settings set value = to_jsonb((current_date - 10)::text) where key = 'trial_pause_from';
+  update public.platform_settings set value = to_jsonb((current_date + 11)::text) where key = 'trial_pause_to';
+  if public.queue_trial_offers() <> 0 then v_fail := v_fail || 'W6 a company whose days run through the pause was asked' || E'\n'; end if;
+  -- Made 70 days ago, the pause ended 19 days ago: the 21 pause days are added and it is due 4 days ago.
+  update public.company_account set created_at = now() - interval '70 days' where org_id = v_org;
+  update public.organizations set created_at = now() - interval '70 days' where id = v_org;
+  update public.platform_settings set value = to_jsonb((current_date - 40)::text) where key = 'trial_pause_from';
+  update public.platform_settings set value = to_jsonb((current_date - 19)::text) where key = 'trial_pause_to';
+  if public.queue_trial_offers() < 1 then v_fail := v_fail || 'W6 a company past its days and the pause was not asked' || E'\n'; end if;
+  -- Made 60 days ago with the same pause: its days end 6 days from now.
+  delete from public.trial_offers; delete from public.message_outbox where template = 'trial_offer';
+  update public.company_account set created_at = now() - interval '60 days' where org_id = v_org;
+  update public.organizations set created_at = now() - interval '60 days' where id = v_org;
+  if public.queue_trial_offers() <> 0 then v_fail := v_fail || 'W6 the pause days were not added' || E'\n'; end if;
+  -- Made after the pause is over (20 days ago), nothing is added.
+  update public.company_account set created_at = now() - interval '20 days' where org_id = v_org;
+  update public.organizations set created_at = now() - interval '20 days' where id = v_org;
+  if public.queue_trial_offers() <> 0 then v_fail := v_fail || 'W6 a young company was asked' || E'\n'; end if;
+  -- No pause, or a pause that is not dates: the plain 45 days (46 days old: asked), and the job still runs.
+  update public.company_account set created_at = now() - interval '46 days' where org_id = v_org;
+  update public.organizations set created_at = now() - interval '46 days' where id = v_org;
+  update public.platform_settings set value = '"never"' where key = 'trial_pause_from';
+  begin
+    if public.queue_trial_offers() < 1 then v_fail := v_fail || 'W6 a pause that is not a date stopped the offers' || E'\n'; end if;
+  exception when others then
+    v_fail := v_fail || format('W6 a pause that is not a date stopped the job: %s', sqlerrm) || E'\n';
+  end;
+  if (select count(*) from public.platform_settings where key in ('trial_pause_from', 'trial_pause_to')) <> 2 then
+    v_fail := v_fail || 'W6 the pause settings are missing' || E'\n';
   end if;
 
   if v_fail <> '' then
