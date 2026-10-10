@@ -9,7 +9,8 @@ import { usePathname } from "next/navigation";
  * purpose (spec section 3): deeper pages are tabs inside each area.
  */
 const ITEMS = [
-  { href: "/platform", label: "Companies", exact: true },
+  { href: "/platform", label: "Dashboard", exact: true },
+  { href: "/platform/companies", label: "Companies" },
   { href: "/platform/users", label: "Users" },
   { href: "/platform/acquisition", label: "Acquisition" },
   { href: "/platform/onboarding", label: "Onboarding" },
@@ -18,8 +19,7 @@ const ITEMS = [
 
 export function PlatformNav() {
   const path = usePathname();
-  const active = (href: string, exact?: boolean) =>
-    exact ? path === href || path.startsWith("/platform/companies") : path === href || path.startsWith(href + "/");
+  const active = (href: string, exact?: boolean) => (exact ? path === href : path === href || path.startsWith(href + "/"));
   return (
     <nav aria-label="Tickd Control Centre" className="border-b border-border bg-card">
       <div className="mx-auto flex max-w-6xl items-center gap-1 overflow-x-auto px-4 sm:px-8">

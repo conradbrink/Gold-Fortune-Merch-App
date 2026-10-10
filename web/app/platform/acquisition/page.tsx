@@ -67,7 +67,7 @@ export default async function AcquisitionOverview({
             label="New companies"
             value={count.format(own.newCompanies.current)}
             change={formatChange(change(own.newCompanies.current, own.newCompanies.previous))}
-            href="/platform"
+            href="/platform/companies"
           />
           <Stat
             label="Free periods started"
