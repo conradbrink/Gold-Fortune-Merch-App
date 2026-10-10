@@ -191,7 +191,7 @@ export async function GET(request: Request) {
     let email: ReturnType<typeof renderEmail> = null;
     let renderError: string | null = null;
     try {
-      email = renderEmail(m.template, payload, { companyName, unsubscribeUrl, attached: attachment !== null });
+      email = renderEmail(m.template, payload, { companyName, unsubscribeUrl, attached: attachment !== null, canReply: !!org?.support_email });
     } catch (e) {
       renderError = e instanceof Error ? e.message : String(e);
     }
