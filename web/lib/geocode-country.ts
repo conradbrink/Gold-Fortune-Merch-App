@@ -27,12 +27,19 @@ export function countryName(code: string | null): string | null {
   }
 }
 
-/** The text query for a site: its name, address and town, then the country. */
+/**
+ * The text query for a site: its name (for a company that finds its places by
+ * name, see `sitesFoundByName`), address and town, then the country. Without
+ * the name it is the street address; a site with no address is looked up by
+ * its name.
+ */
 export function siteQuery(
   site: { name: string; address: string | null; city: string | null },
-  country: string | null
+  country: string | null,
+  byName = true
 ): string {
-  return [site.name, site.address, site.city, countryName(country)].filter(Boolean).join(", ");
+  const useName = byName || !site.address?.trim();
+  return [useName ? site.name : null, site.address, site.city, countryName(country)].filter(Boolean).join(", ");
 }
 
 /**

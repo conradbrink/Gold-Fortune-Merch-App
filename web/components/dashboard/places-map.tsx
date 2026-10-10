@@ -6,6 +6,7 @@ import { cn } from "@/lib/utils";
 import { googleMapsUrl, googleMapsEmbedUrl } from "@/lib/maps";
 import { lower } from "@/lib/terms";
 import { useTerms } from "@/lib/use-company-config";
+import { useSitesByName } from "@/lib/use-maps";
 
 export type MapPlace = {
   id: string;
@@ -22,6 +23,7 @@ export function PlacesMap({ places }: { places: MapPlace[] }) {
   const [selectedId, setSelectedId] = useState<string | undefined>(places[0]?.id);
   const selected = places.find((p) => p.id === selectedId) ?? places[0];
   const t = useTerms();
+  const byName = useSitesByName();
 
   if (!selected) {
     return (
@@ -62,14 +64,14 @@ export function PlacesMap({ places }: { places: MapPlace[] }) {
           <iframe
             key={selected.id}
             title={`Map for ${selected.name}`}
-            src={googleMapsEmbedUrl(selected)}
+            src={googleMapsEmbedUrl(selected, byName)}
             className="h-[360px] w-full lg:h-[520px]"
             loading="lazy"
             referrerPolicy="no-referrer-when-downgrade"
           />
         </div>
         <a
-          href={googleMapsUrl(selected)}
+          href={googleMapsUrl(selected, byName)}
           target="_blank"
           rel="noopener noreferrer"
           className="inline-flex items-center gap-1.5 text-sm text-primary hover:underline"

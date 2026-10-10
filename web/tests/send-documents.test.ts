@@ -65,7 +65,7 @@ test("an invoice email names the invoice, the amount and the dates, and links to
   assert.match(e.html, /PO 5521/);
   assert.match(e.html, /href="https:\/\/app\.test\/c\/doc\/abc\.def"[^>]*>View invoice</);
   assert.match(e.text, /View invoice: https:\/\/app\.test\/c\/doc\/abc\.def/);
-  assert.match(e.text, /Amount: R1,200\.00/);
+  assert.match(e.text, /Invoice total: R1,200\.00/);
   assert.match(e.html, /Stop these emails/);
   assert.match(e.text, /Stop these emails: https:\/\/app\.test\/c\/unsubscribe\/tok/);
   assert.doesNotMatch(e.html + e.text, /[–—]/);
@@ -73,11 +73,12 @@ test("an invoice email names the invoice, the amount and the dates, and links to
 
 test("the sender's note is a quoted line, escaped, with its line breaks kept", () => {
   const e = render("invoice", { ...invoicePayload, note: "Thanks for <b>Friday</b>.\nPay by the 8th & we're square." });
-  assert.match(e.html, /&ldquo;Thanks for &lt;b&gt;Friday&lt;\/b&gt;\.<br>Pay by the 8th &amp; we&#39;re square\.&rdquo;/);
+  assert.match(e.html, /A note from Acme Cleaning/);
+  assert.match(e.html, /Thanks for &lt;b&gt;Friday&lt;\/b&gt;\.<br>Pay by the 8th &amp; we&#39;re square\./);
   assert.doesNotMatch(e.html, /<b>Friday/);
   assert.match(e.text, /> Thanks for <b>Friday<\/b>\.\n> Pay by the 8th & we're square\./);
   const none = render("invoice", invoicePayload);
-  assert.doesNotMatch(none.html, /ldquo/);
+  assert.doesNotMatch(none.html, /A note from/);
   assert.doesNotMatch(none.text, /^> /m);
 });
 
@@ -93,7 +94,7 @@ test("a missing or odd currency never throws and never guesses a symbol", () => 
   assert.match(render("invoice", { ...invoicePayload, currency: null }).html, /1,200\.00/);
   assert.doesNotMatch(render("invoice", { ...invoicePayload, currency: null }).html, /null|undefined|NaN/);
   assert.match(render("invoice", { ...invoicePayload, currency: "bwp" }).html, /P1,200\.00/);
-  assert.match(render("invoice", { ...invoicePayload, currency: "not a code" }).html, /Amount<\/td><td[^>]*>1,200\.00</);
+  assert.match(render("invoice", { ...invoicePayload, currency: "not a code" }).html, /Invoice total<\/p><p[^>]*>1,200\.00</);
   assert.equal(amountText(-5, "ZAR"), "-R5.00");
   assert.equal(amountText("12.5", "ZAR"), "R12.50");
   assert.equal(amountText(undefined, "ZAR"), "R0.00");
@@ -120,7 +121,7 @@ test("a quote email shows the total and how long it holds", () => {
   assert.match(e.html, /R3,450\.50/);
   assert.match(e.html, /Valid until/);
   assert.match(e.html, /15 Nov 2026/);
-  assert.match(e.html, /&ldquo;Prices hold for the month\.&rdquo;/);
+  assert.match(e.html, /Prices hold for the month\./);
   assert.match(e.html, />View quote</);
   assert.match(e.text, /View quote: https:\/\/app\.test\/c\/doc\/abc\.def/);
 });
@@ -512,4 +513,51 @@ test("a PNG or a JPEG logo embeds in every look", async () => {
       assert.equal(doc.getNumberOfPages(), 1);
     }
   }
+});
+
+
+// The look and the advert.
+
+import { PROMO, TICKD_LOGO_FILE, emailAssetUrl } from "@/lib/email/brand";
+
+test("an email to a company's clients ends with Tickd's logo and a short advert; one to its own people does not", () => {
+  const toClient = render("invoice", invoicePayload);
+  assert.match(toClient.html, new RegExp(`<img src="https://app\\.tickd\\.co\\.za/${TICKD_LOGO_FILE.replace(".", "\\.")}"[^>]*alt="Tickd"`));
+  assert.ok(toClient.html.includes(PROMO.headline) && toClient.html.includes(PROMO.cta));
+  assert.ok(toClient.text.includes(PROMO.headline) && toClient.text.includes(PROMO.url));
+  const own = renderEmail("test", {}, { companyName: "Acme", unsubscribeUrl: null })!;
+  assert.ok(!own.html.includes("Tickd is the app") && !own.html.includes("<img"));
+  assert.ok(!own.text.includes(PROMO.headline));
+  assert.equal(emailAssetUrl("/x.png"), "https://app.tickd.co.za/x.png");
+});
+
+test("the advert makes no claim the product cannot keep and no clipped phrasing", () => {
+  const all = `${PROMO.headline} ${PROMO.body} ${PROMO.cta}`;
+  assert.doesNotMatch(all, /[–—]/);
+  assert.doesNotMatch(all, /\b(AI|revolution|seamless|leverage|synergy)\b/i);
+});
+
+test("the email can be read in its preview line, and says replies reach the company only when they do", () => {
+  const e = render("invoice", invoicePayload);
+  assert.match(e.html, /display:none[^>]*>R1,200\.00, due 8 Nov 2026/);
+  assert.doesNotMatch(e.html + e.text, /Questions\? Just reply/);
+  const canReply = renderEmail("invoice", { ...invoicePayload, url }, { ...ctx, canReply: true })!;
+  assert.match(canReply.html, /Questions\? Just reply to this email and it will reach/);
+  assert.match(canReply.text, /Questions\? Just reply to this email/);
+});
+
+test("the sign-off comes after the button, and the quote says what to do next", () => {
+  const e = render("invoice", invoicePayload);
+  assert.ok(e.text.indexOf("View invoice:") < e.text.indexOf("Thank you,"));
+  const q = renderEmail("quote", { link_id: invoicePayload.link_id, url, number: "QU-1", total: 100, currency: "ZAR", company_name: "Acme" }, { ...ctx, canReply: true })!;
+  assert.match(q.text, /just reply to this email and we will get things going/);
+  assert.ok(q.text.indexOf("View quote:") < q.text.indexOf("Kind regards,"));
+});
+
+import { existsSync, readFileSync } from "node:fs";
+
+test("the picture the emails point at is in the app's public folder and is a PNG", () => {
+  const file = `public/${TICKD_LOGO_FILE}`;
+  assert.ok(existsSync(file), file);
+  assert.equal(readFileSync(file).subarray(1, 4).toString("latin1"), "PNG");
 });

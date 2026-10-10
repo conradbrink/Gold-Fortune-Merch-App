@@ -2,6 +2,7 @@ import { createClient } from "@/lib/supabase/server";
 import { enforceRateLimit, requireFeature, LIMITS } from "@/lib/rate-limit";
 import { parseCompanyConfig } from "@/lib/company-config";
 import { countryName, inCountry, normaliseCountry, siteQuery } from "@/lib/geocode-country";
+import { sitesFoundByName } from "@/lib/maps";
 
 /**
  * Turns site addresses into coordinates, in the company's own country
@@ -181,7 +182,11 @@ export async function POST(request: Request) {
     // The company's country, from its settings: biases both services, filters
     // Geocoding, and is what a result is checked against.
     const { data: rawConfig } = await supabase.rpc("my_company_config");
-    const country = normaliseCountry(parseCompanyConfig(rawConfig)?.settings.country_code);
+    const config = parseCompanyConfig(rawConfig);
+    const country = normaliseCountry(config?.settings.country_code);
+    // A distributor's places are named outlets, so Places matches on the name;
+    // a service company's are properties, found by their street address.
+    const byName = config ? sitesFoundByName(config.modules) : true;
     const outside = `Result is outside ${countryName(country) ?? "your country"}`;
 
     const candidates: Candidate[] = [];
@@ -193,9 +198,10 @@ export async function POST(request: Request) {
       city: string | null;
       state: string | null;
     }[]) {
-      // Name first: these are named outlets, and the name is what Places
-      // matches on. The town disambiguates the many same-named branches.
-      const query = siteQuery(s, country);
+      // Name first for named outlets: the name is what Places matches on, and
+      // the town disambiguates the many same-named branches. A property is
+      // looked up by its street address alone.
+      const query = siteQuery(s, country, byName);
 
       let hit = placesKey ? await viaPlaces(placesKey, query, country) : null;
       let source: "places" | "geocoding" | null = hit ? "places" : null;

@@ -45,6 +45,7 @@ import { toLocalDate } from "@/lib/date-range";
 import { ExportMenu } from "@/components/export-menu";
 import type { ExportSheet } from "@/lib/export";
 import { useTerms } from "@/lib/use-company-config";
+import { useSitesByName } from "@/lib/use-maps";
 import { count, lower, noun, possessive, withArticle, type Terms } from "@/lib/terms";
 import {
   findSharedPoints,
@@ -212,6 +213,7 @@ function SortHeader({
 export default function StoresPage() {
   const supabase = createClient();
   const terms = useTerms();
+  const byName = useSitesByName();
   const [view, setView] = useState<"list" | "map">("list");
   const [stores, setStores] = useState<StoreRow[]>([]);
   const [groups, setGroups] = useState<StoreGroup[]>([]);
@@ -1485,7 +1487,7 @@ export default function StoresPage() {
             </div>
             {form.name && (
               <a
-                href={googleMapsUrl(form)}
+                href={googleMapsUrl(form, byName)}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="inline-flex items-center gap-1.5 text-sm text-primary hover:underline"
@@ -1677,7 +1679,7 @@ export default function StoresPage() {
                       </div>
                       <div className="min-w-0">
                         <a
-                          href={googleMapsUrl(store)}
+                          href={googleMapsUrl(store, byName)}
                           target="_blank"
                           rel="noopener noreferrer"
                           className="inline-flex items-center gap-1.5 font-medium text-primary hover:underline"
@@ -1974,7 +1976,7 @@ export default function StoresPage() {
                         </DropdownMenuItem>
                         <DropdownMenuItem
                           onClick={() =>
-                            window.open(googleMapsUrl(store), "_blank")
+                            window.open(googleMapsUrl(store, byName), "_blank")
                           }
                           className="gap-2"
                         >
