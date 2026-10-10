@@ -28,6 +28,9 @@
 --       limit: a Send is refused with the reason, automatic mail is held back
 --       as cancelled, and the sender takes companies in turn
 --       (20261010230000).
+--   A11 until a free trial confirms its email address, a Send to a client is
+--       refused and automatic client mail is held back; mail to its own people
+--       still goes; confirming lets client mail through (20261010250000).
 --
 -- The final message is the report: `AUDIT FIX FAILURES` or
 -- `ALL AUDIT FIX CHECKS PASSED`. Anything else is a fixture error.
@@ -191,6 +194,39 @@ begin
   if pg_get_functiondef('public.dashboard_business(timestamptz,timestamptz)'::regprocedure)
        like '%issue_date < (p_to at time zone v_tz)::date + 1%' then
     v_fail := v_fail || 'A9 dashboard_business still counts the day after the range' || E'\n';
+  end if;
+
+  -- A11 ------------------------------------------------------------------
+  -- Gold Fortune is put on an unconfirmed trial for the transaction.
+  perform set_config('request.jwt.claims', '', true);
+  update public.company_account set status = 'trial', email_confirmed_at = null where org_id = c_gf;
+  if not found then
+    insert into public.company_account (org_id, status) values (c_gf, 'trial');
+  end if;
+  delete from public.message_outbox where org_id = c_gf;
+  v_ok := false;
+  begin
+    perform public.queue_document_email(c_gf, 'zz-audit-c1@example.com', null, 'invoice', '{}'::jsonb,
+                                        'invoice', null, null, null, 'Audit');
+  exception when sqlstate '55000' then v_ok := sqlerrm like 'Confirm your email address first%';
+  end;
+  if not v_ok then
+    v_fail := v_fail || 'A11 an unconfirmed trial''s Send to a client was not refused with the reason' || E'\n';
+  end if;
+  v_msg := public.queue_email(c_gf, 'zz-audit-c2@example.com', null, 'job_report', '{}'::jsonb);
+  if (select status from public.message_outbox where id = v_msg) <> 'cancelled' then
+    v_fail := v_fail || 'A11 an unconfirmed trial''s job report to a client was queued' || E'\n';
+  end if;
+  v_msg := public.queue_email(c_gf, 'zz-audit-c3@example.com', null, 'alert', '{}'::jsonb);
+  if (select status from public.message_outbox where id = v_msg) <> 'queued' then
+    v_fail := v_fail || 'A11 an unconfirmed trial''s alert to its own people was held back' || E'\n';
+  end if;
+  if not public.confirm_company_email(c_gf) then
+    v_fail := v_fail || 'A11 confirming the company''s email did nothing' || E'\n';
+  end if;
+  v_msg := public.queue_email(c_gf, 'zz-audit-c4@example.com', null, 'job_report', '{}'::jsonb);
+  if (select status from public.message_outbox where id = v_msg) <> 'queued' then
+    v_fail := v_fail || 'A11 a confirmed trial''s job report was held back' || E'\n';
   end if;
 
   -- A10 ------------------------------------------------------------------
