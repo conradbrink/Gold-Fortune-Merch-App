@@ -159,3 +159,26 @@ test("money is the company's currency, written as the business writes it", () =>
   assert.equal(formatMoney(null, "BWP"), "—");
   assert.equal(formatMoney(5, "XYZ"), "XYZ5.00");
 });
+
+test("menu headings are the trade's own words; a distributor keeps its sales headings", () => {
+  const admin = toPermissionSet(["admin"]);
+  const headings = (modules: ReturnType<typeof toModuleSet>, terms: Terms) =>
+    visibleNavGroups(admin, modules, terms).map((g) => g.label);
+  const cleaning = parseTerms({
+    site: { one: "Site", many: "Sites" },
+    staff: { one: "Cleaner", many: "Cleaners" },
+    territory: { one: "Area", many: "Areas" },
+  });
+  const forCleaning = headings(toModuleSet({ invoicing: true, reports: true }), cleaning);
+  assert.ok(forCleaning.includes("Sites & Areas"));
+  assert.ok(forCleaning.includes("Cleaners in the field"));
+  assert.ok(!forCleaning.some((h) => h?.includes("Sales")));
+  const goldFortune = parseTerms({
+    site: { one: "Store", many: "Stores" },
+    staff: { one: "Rep", many: "Reps" },
+    territory: { one: "Territory", many: "Territories" },
+  });
+  const forGf = headings(toModuleSet({ distribution: true, warehouse: true, invoicing: true, reports: true }), goldFortune);
+  assert.ok(forGf.includes("Sales & Coverage"));
+  assert.ok(forGf.includes("Sales Team"));
+});
