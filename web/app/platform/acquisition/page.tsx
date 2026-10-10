@@ -1,8 +1,8 @@
 import Link from "next/link";
 import { requireOperator } from "@/lib/operator";
-import { acquisitionStages, buildFunnel, change, formatChange, percent, periods, readRange, RANGES } from "@/lib/acquisition";
-import { funnelEvents, loadFirstParty, websiteTotals } from "@/lib/acquisition-data";
-import { AcquisitionFrame, Stat, count, gaMissing } from "@/components/platform/acquisition-frame";
+import { acquisitionStages, buildFunnel, change, eventsMap, formatChange, percent, periods, readRange, RANGES } from "@/lib/acquisition";
+import { loadFirstParty, ownStats } from "@/lib/acquisition-data";
+import { AcquisitionFrame, Stat, count } from "@/components/platform/acquisition-frame";
 
 /**
  * Acquisition overview: the headline numbers for the period against the one
@@ -13,7 +13,6 @@ export const dynamic = "force-dynamic";
 export const metadata = { title: "Platform · Acquisition" };
 
 
-
 export default async function AcquisitionOverview({
   searchParams,
 }: {
@@ -22,38 +21,39 @@ export default async function AcquisitionOverview({
   const range = readRange((await searchParams).range);
   await requireOperator(`/platform/acquisition?range=${range}`);
   const p = periods(range, new Date());
-  const [totals, events, own] = await Promise.all([websiteTotals(p), funnelEvents(p), loadFirstParty(p)]);
+  const [now, before, own] = await Promise.all([ownStats(p.current), ownStats(p.previous), loadFirstParty(p)]);
 
-  const ga = totals.ok ? totals.value : null;
-  const GA_MISSING = gaMissing(totals.ok ? events : totals);
-  const pair = (v: { current: number; previous: number } | undefined) =>
-    v ? { value: count.format(v.current), change: formatChange(change(v.current, v.previous)) } : { value: null, change: null };
+  const web = now.ok ? now.value : null;
+  const prev = before.ok ? before.value : null;
+  const missing = now.ok ? "Not counted yet." : "Needs a database update.";
+  const pair = (pick: (s: NonNullable<typeof web>) => number) =>
+    web ? { value: count.format(pick(web)), change: formatChange(change(pick(web), prev ? pick(prev) : null)) } : { value: null, change: null };
   const applied = { current: own.applications.length, previous: own.previousApplications };
   const { steps, leak } = buildFunnel(
     acquisitionStages({
-      events: events.ok ? events.value : null,
-      gaMissing: GA_MISSING,
+      events: web ? eventsMap(web) : null,
+      gaMissing: missing,
       applications: own.applications,
       companies: own.companies,
       range,
     })
   );
-  const visitors = ga?.visitors.current ?? null;
+  const visitors = web?.visitors ?? null;
   const finishedStep = steps.find((s) => s.key === "activated");
   const firstJobFinished = finishedStep && finishedStep.count !== null ? count.format(finishedStep.count) : null;
 
   return (
-    <AcquisitionFrame tab="/platform/acquisition" range={range} ga={totals.ok ? { ok: true } : totals}>
+    <AcquisitionFrame tab="/platform/acquisition" range={range} notice={now.ok ? null : now.message}>
       <section className="space-y-3">
         <h2 className="text-sm font-semibold text-foreground">
           The website, last {RANGES[range].label}{" "}
-          <span className="font-normal text-muted-foreground">(Google Analytics, against the {RANGES[range].label} before)</span>
+          <span className="font-normal text-muted-foreground">(Tickd&apos;s own count, up to the minute, against the {RANGES[range].label} before)</span>
         </h2>
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          <Stat label="Visitors" {...pair(ga?.visitors)} missing={GA_MISSING} href={`/platform/acquisition/website?range=${range}`} />
-          <Stat label="New visitors" {...pair(ga?.newVisitors)} missing={GA_MISSING} />
-          <Stat label="Returning visitors" {...pair(ga?.returningVisitors)} missing={GA_MISSING} />
-          <Stat label="Sessions" {...pair(ga?.sessions)} missing={GA_MISSING} />
+          <Stat label="Visitors" {...pair((s) => s.visitors)} missing={missing} href={`/platform/acquisition/website?range=${range}`} />
+          <Stat label="New visitors" {...pair((s) => s.newVisitors)} missing={missing} />
+          <Stat label="Returning visitors" {...pair((s) => s.visitors - s.newVisitors)} missing={missing} />
+          <Stat label="Page views" {...pair((s) => s.pageViews)} missing={missing} />
         </div>
       </section>
 
@@ -85,7 +85,7 @@ export default async function AcquisitionOverview({
         <p className="text-sm text-muted-foreground">
           {visitors
             ? `${percent(applied.current, visitors)} of visitors applied (${count.format(applied.current)} of ${count.format(visitors)}).`
-            : "The share of visitors who apply appears once Google Analytics is connected."}
+            : "The share of visitors who apply appears once the website has visitors in this period."}
         </p>
       </section>
 

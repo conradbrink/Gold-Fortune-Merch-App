@@ -53,7 +53,7 @@ export default function PrivacyPage() {
           .
         </p>
       ) : (
-        <p>This website sets no cookies and doesn&apos;t use Google Analytics or any other tool to follow visits.</p>
+        <p>This website sets no cookies and doesn&apos;t use Google Analytics.</p>
       )}
       {usesMetaPixel && (
         <p>
@@ -61,6 +61,12 @@ export default function PrivacyPage() {
           which of our Facebook and Instagram adverts work.
         </p>
       )}
+      <p>
+        We also count visits ourselves, so we can see straight away how many people visit. For each page you open we
+        record a random number for your browser (kept in your browser, not a cookie), a random number for that visit,
+        the page, the website or advert that sent you, whether you&apos;re on a phone, tablet or computer, and your
+        country. We don&apos;t record your IP address or anything that says who you are.
+      </p>
       <p>
         Your browser also keeps a note of how you first found us: the advert or website that sent you and the first
         page you saw. The note stays on your device. If you apply for the Founding offer, it&apos;s sent with your

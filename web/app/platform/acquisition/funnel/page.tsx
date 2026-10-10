@@ -1,8 +1,8 @@
 import Link from "next/link";
 import { requireOperator } from "@/lib/operator";
-import { acquisitionStages, buildFunnel, percent, periods, readRange } from "@/lib/acquisition";
-import { funnelEvents, loadFirstParty } from "@/lib/acquisition-data";
-import { AcquisitionFrame, count, gaMissing } from "@/components/platform/acquisition-frame";
+import { acquisitionStages, buildFunnel, eventsMap, percent, periods, readRange } from "@/lib/acquisition";
+import { loadFirstParty, ownStats } from "@/lib/acquisition-data";
+import { AcquisitionFrame, count } from "@/components/platform/acquisition-frame";
 
 /**
  * The funnel, visitor to paying (spec sections 19, 20 and 29). Each step shows
@@ -22,11 +22,11 @@ export default async function FunnelPage({
   const range = readRange((await searchParams).range);
   await requireOperator(`/platform/acquisition/funnel?range=${range}`);
   const p = periods(range, new Date());
-  const [events, own] = await Promise.all([funnelEvents(p), loadFirstParty(p)]);
+  const [web, own] = await Promise.all([ownStats(p.current), loadFirstParty(p)]);
   const { steps, leak } = buildFunnel(
     acquisitionStages({
-      events: events.ok ? events.value : null,
-      gaMissing: gaMissing(events),
+      events: web.ok ? eventsMap(web.value) : null,
+      gaMissing: "Needs a database update.",
       applications: own.applications,
       companies: own.companies,
       range,
@@ -35,7 +35,7 @@ export default async function FunnelPage({
   const top = Math.max(1, ...steps.map((s) => s.count ?? 0));
 
   return (
-    <AcquisitionFrame tab="/platform/acquisition/funnel" range={range} ga={events.ok ? { ok: true } : events}>
+    <AcquisitionFrame tab="/platform/acquisition/funnel" range={range} notice={web.ok ? null : web.message}>
       {leak && (
         <p className="rounded-lg border border-border bg-card p-4 text-sm text-foreground">
           The biggest drop is between “{leak.from}” and “{leak.to}”: {count.format(leak.lost)} of {count.format(leak.of)} didn&apos;t
@@ -55,7 +55,7 @@ export default async function FunnelPage({
                 ) : (
                   <span className="font-medium text-foreground">{s.label}</span>
                 )}
-                <span className="ml-2 text-xs text-muted-foreground">{s.from === "website" ? "Google Analytics" : "Tickd"}</span>
+                <span className="ml-2 text-xs text-muted-foreground">{s.from === "website" ? "Website" : "Tickd"}</span>
               </div>
               <div className="text-sm tabular-nums">
                 {s.count === null ? (
@@ -81,8 +81,8 @@ export default async function FunnelPage({
         ))}
       </ol>
       <p className="text-sm text-muted-foreground">
-        Steps 1 to 3 count devices (Google Analytics); from step 4 they are Tickd&apos;s own records, so a person on two
-        devices counts twice above step 4 and once below it. A company counts once its application is linked to it on
+        Steps 1 to 3 count browsers (Tickd&apos;s own count of the website); from step 4 they are Tickd&apos;s records of
+        people, so someone on two devices counts twice above step 4 and once below it. A company counts once its application is linked to it on
         Founding applications.
       </p>
     </AcquisitionFrame>

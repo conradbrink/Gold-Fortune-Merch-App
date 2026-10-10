@@ -15,18 +15,17 @@ const TABS = [
   { href: "/platform/acquisition/campaigns", label: "Campaigns" },
 ];
 
-export type GaStatus = { ok: true } | { ok: false; reason: "not-connected" | "error"; message?: string };
-
 export function AcquisitionFrame({
   tab,
   range,
-  ga,
+  notice,
   keep = {},
   children,
 }: {
   tab: string;
   range: RangeKey;
-  ga: GaStatus;
+  /** Why some numbers are missing, when they are. */
+  notice?: string | null;
   keep?: Record<string, string>;
   children: React.ReactNode;
 }) {
@@ -41,8 +40,9 @@ export function AcquisitionFrame({
         <div className="space-y-1">
           <h1 className="text-2xl font-bold text-foreground">Acquisition</h1>
           <p className="text-sm text-muted-foreground">
-            How people find Tickd, and how many become customers. Website numbers come from Google Analytics and count
-            devices; from the Founding application on, they are Tickd&apos;s own records.
+            How people find Tickd, and how many become customers. Website numbers are Tickd&apos;s own count of visits to
+            tickd.co.za, up to the minute (a visitor is a browser: a phone and a laptop are two). From the Founding
+            application on, they are Tickd&apos;s records.
           </p>
         </div>
         <div className="flex flex-wrap items-end justify-between gap-3 border-b border-border">
@@ -80,13 +80,7 @@ export function AcquisitionFrame({
         </div>
       </header>
 
-      {!ga.ok && (
-        <p className="rounded-lg border border-border bg-muted/40 p-3 text-sm text-foreground">
-          {ga.reason === "not-connected"
-            ? `Google Analytics isn't connected yet, so the website numbers are missing. Tickd's own records (applications and companies) are below. ${ga.message ?? "To connect it, add GA4_CLIENT_EMAIL and GA4_PRIVATE_KEY in Vercel."}`
-            : `Google Analytics didn't answer: ${ga.message ?? "unknown error"}. Tickd's own records are below.`}
-        </p>
-      )}
+      {notice && <p className="rounded-lg border border-border bg-muted/40 p-3 text-sm text-foreground">{notice}</p>}
 
       {children}
     </main>
@@ -131,8 +125,3 @@ export function Stat({
 
 export const count = new Intl.NumberFormat("en-ZA");
 
-/** Why a website number is missing, in a few words: never "not connected" when it is connected but failed. */
-export function gaMissing(r: { ok: boolean; reason?: "not-connected" | "error" }): string {
-  if (r.ok) return "No answer from Google Analytics.";
-  return r.reason === "not-connected" ? "Google Analytics isn't connected yet." : "Google Analytics didn't answer (see above).";
-}
