@@ -1,5 +1,5 @@
 import "server-only";
-import { createSign } from "node:crypto";
+import { createPrivateKey, createSign } from "node:crypto";
 
 /**
  * Google Analytics 4, read on the server for the operator's Acquisition pages.
@@ -43,15 +43,62 @@ export type GaReport = {
   limit?: number;
 };
 
-/** The configuration, or null while any of the three variables is missing or malformed. */
-export function gaConfig(env: Record<string, string | undefined> = process.env): GaConfig | null {
+/**
+ * A value as pasted into Vercel, forgiving the usual slips: spaces, the quote
+ * marks and trailing comma copied from the JSON key file, and "\n" escapes in
+ * the key. A whole key file pasted into either variable is read too.
+ */
+function fromKeyFile(raw: string | undefined, field: "client_email" | "private_key"): string {
+  let v = (raw ?? "").trim();
+  if (v.startsWith("{")) {
+    try {
+      const parsed = JSON.parse(v) as Record<string, unknown>;
+      return typeof parsed[field] === "string" ? (parsed[field] as string).trim() : "";
+    } catch {
+      /* not the whole file after all: read it as a plain value */
+    }
+  }
+  // The whole line copied, label included: "private_key": "-----BEGIN…",
+  v = v.replace(new RegExp(`^"?${field}"?\\s*:\\s*`), "");
+  v = v.replace(/,$/, "").trim();
+  if (v.length >= 2 && v.startsWith('"') && v.endsWith('"')) v = v.slice(1, -1);
+  return v.replace(/\\n/g, "\n").trim();
+}
+
+/**
+ * The configuration, or the reason it can't be used, naming the variable and
+ * never its value (the operator reads this on the Acquisition pages).
+ */
+export function gaSetup(
+  env: Record<string, string | undefined> = process.env
+): { ok: true; config: GaConfig } | { ok: false; problem: string } {
+  const where = "Check it's in the Vercel project \"app\" for Production, then redeploy.";
   const propertyId = env.GA4_PROPERTY_ID?.trim() || TICKD_PROPERTY_ID;
-  const clientEmail = env.GA4_CLIENT_EMAIL?.trim() ?? "";
-  const privateKey = (env.GA4_PRIVATE_KEY ?? "").replace(/\\n/g, "\n").trim();
-  if (!/^\d{5,20}$/.test(propertyId)) return null;
-  if (!/^[^@\s]+@[^@\s]+\.iam\.gserviceaccount\.com$/.test(clientEmail)) return null;
-  if (!privateKey.includes("PRIVATE KEY")) return null;
-  return { propertyId, clientEmail, privateKey };
+  if (!/^\d{5,20}$/.test(propertyId)) {
+    return { ok: false, problem: "GA4_PROPERTY_ID isn't a property number (digits only, not the G- ID)." };
+  }
+  const clientEmail = fromKeyFile(env.GA4_CLIENT_EMAIL, "client_email");
+  if (!clientEmail) return { ok: false, problem: `GA4_CLIENT_EMAIL isn't set in this deployment. ${where}` };
+  if (!/^[^@\s]+@[^@\s]+\.iam\.gserviceaccount\.com$/.test(clientEmail)) {
+    return { ok: false, problem: "GA4_CLIENT_EMAIL doesn't look like a service account email (it should end in .iam.gserviceaccount.com)." };
+  }
+  const privateKey = fromKeyFile(env.GA4_PRIVATE_KEY, "private_key");
+  if (!privateKey) return { ok: false, problem: `GA4_PRIVATE_KEY isn't set in this deployment. ${where}` };
+  if (!privateKey.includes("BEGIN PRIVATE KEY") || !privateKey.includes("END PRIVATE KEY")) {
+    return { ok: false, problem: "GA4_PRIVATE_KEY should run from -----BEGIN PRIVATE KEY----- to -----END PRIVATE KEY-----; part of it is missing." };
+  }
+  try {
+    createPrivateKey(privateKey);
+  } catch {
+    return { ok: false, problem: "GA4_PRIVATE_KEY couldn't be read as a key; part of it may not have been copied." };
+  }
+  return { ok: true, config: { propertyId, clientEmail, privateKey } };
+}
+
+/** The configuration, or null while it is missing or unusable (see `gaSetup` for why). */
+export function gaConfig(env: Record<string, string | undefined> = process.env): GaConfig | null {
+  const setup = gaSetup(env);
+  return setup.ok ? setup.config : null;
 }
 
 const base64url = (input: string | Buffer) => Buffer.from(input).toString("base64url");
@@ -89,18 +136,28 @@ async function accessToken(config: GaConfig, fetcher: typeof fetch): Promise<str
   return token.value;
 }
 
-/** Forgets cached answers and the token (tests). */
+let setupOnce: ReturnType<typeof gaSetup> | null = null;
+
+/** Forgets cached answers, the token and the setup (tests). */
 export function resetGaCache() {
   token = null;
+  setupOnce = null;
   cache.clear();
 }
 
 /** One report. Never throws: a failure is an answer the page shows. */
 export async function runReport(
   report: GaReport,
-  config: GaConfig | null = gaConfig(),
+  config?: GaConfig | null,
   fetcher: typeof fetch = fetch
 ): Promise<GaResult> {
+  if (config === undefined) {
+    // Worked out once per server instance: the variables can't change within a deployment.
+    setupOnce ??= gaSetup();
+    const setup = setupOnce;
+    if (!setup.ok) return { ok: false, reason: "not-connected", message: setup.problem };
+    config = setup.config;
+  }
   if (!config) return { ok: false, reason: "not-connected" };
   const key = config.propertyId + JSON.stringify(report);
   const hit = cache.get(key);
