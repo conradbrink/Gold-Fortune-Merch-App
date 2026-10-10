@@ -2,15 +2,18 @@
 
 import { Check, ShieldCheck } from "lucide-react";
 import { useId, useState, type ReactNode } from "react";
-import { confirmed, contactHref, planPrice, pricing, rand, site, type Billing } from "@/lib/site";
+import { confirmed, contactHref, perMonth, perPersonPerDay, planPrice, pricing, rand, site, type Billing } from "@/lib/site";
 
 // Copy: ~/Downloads/site-copy-final-v7.md, section 7, plus the day-one and
 // no-card lines from the 8 Oct offer audit. One Monthly | Yearly choice
-// drives the plan card and the team-size calculator.
+// drives the plan card and the team-size calculator. Monthly is chosen to
+// start with, and yearly is shown as a price a month (paid yearly), the way
+// most software sites do it, so it doesn't look like one big number
+// (owner, 10 Oct 2026).
 // Done for you and the promise wait on `confirmed` in lib/site.ts.
 
 function Toggle({ billing, onChange }: { billing: Billing; onChange: (b: Billing) => void }) {
-  const opt = (b: Billing, label: string) => (
+  const opt = (b: Billing, label: ReactNode) => (
     <button
       type="button"
       role="radio"
@@ -28,7 +31,15 @@ function Toggle({ billing, onChange }: { billing: Billing; onChange: (b: Billing
   return (
     <div role="radiogroup" aria-label="Billing" className="flex w-full rounded-full bg-mint p-1 ring-1 ring-line sm:inline-flex sm:w-auto sm:justify-self-start">
       {opt("monthly", "Monthly")}
-      {opt("yearly", "Yearly (2 months free)")}
+      {opt(
+        "yearly",
+        <>
+          Yearly{" "}
+          <span className={`ml-1 rounded-full px-2 py-0.5 text-xs font-bold ${billing === "yearly" ? "bg-amber-500 text-teal-950" : "bg-amber-100 text-teal-950"}`}>
+            2 months free
+          </span>
+        </>,
+      )}
     </div>
   );
 }
@@ -108,12 +119,12 @@ function Calculator({ billing }: { billing: Billing }) {
       />
       <div className="border-t border-white/15 pt-4" aria-live="polite">
         <p className="font-display text-4xl font-extrabold tabular-nums">
-          {rand(total)}
-          <span className="text-base font-medium text-teal-100"> {billing === "yearly" ? "a year" : "a month"}</span>
+          {rand(billing === "yearly" ? perMonth(total) : total)}
+          <span className="text-base font-medium text-teal-100"> a month</span>
         </p>
         <p className="mt-1 text-sm text-teal-100">
           {billing === "yearly"
-            ? `${rand(Math.round(total / 12))} a month, paid yearly.`
+            ? `Paid yearly: ${rand(total)}.`
             : `${rand(pricing.monthly.base)} for the first ${pricing.includedUsers} users${
                 extra > 0 ? ` + ${extra} × ${rand(pricing.monthly.perExtra)}` : ""
               }.`}
@@ -124,7 +135,7 @@ function Calculator({ billing }: { billing: Billing }) {
 }
 
 export function PricingSection() {
-  const [billing, setBilling] = useState<Billing>("yearly");
+  const [billing, setBilling] = useState<Billing>("monthly");
   const yearly = billing === "yearly";
   const p = pricing[billing];
 
@@ -164,18 +175,18 @@ export function PricingSection() {
           <div className="grid gap-1">
             <p className="text-xl leading-snug">
               <strong className="font-display text-3xl font-extrabold text-teal-900">
-                {rand(p.base)} {yearly ? "a year" : "a month"}
+                {rand(yearly ? perMonth(p.base) : p.base)} a month
               </strong>{" "}
               for {pricing.includedUsers} users.
             </p>
             <p className="leading-snug">
-              <strong className="text-teal-900">
-                {rand(p.perExtra)} {yearly ? "a year" : "a month"}
-              </strong>{" "}
-              for each extra user.
+              <strong className="text-teal-900">{rand(yearly ? perMonth(p.perExtra) : p.perExtra)} a month</strong> for each
+              extra user.
             </p>
             <p className="text-sm font-semibold text-teal-700">
-              {yearly ? "That's 2 months free." : "No contract. Cancel any time."}
+              {yearly
+                ? `Paid yearly: ${rand(p.base)}. That's 2 months free.`
+                : `No contract. Cancel any time. Or ${rand(perMonth(pricing.yearly.base))} a month if you pay yearly.`}
             </p>
           </div>
           <ul className="grid gap-2">
@@ -216,7 +227,9 @@ export function PricingSection() {
         </div>
       </div>
 
-      <p className="text-center font-display text-xl font-bold text-teal-900">That&apos;s about R18 a person a day.</p>
+      <p className="text-center font-display text-xl font-bold text-teal-900">
+        That&apos;s about {rand(perPersonPerDay())} a person a day.
+      </p>
 
       <Calculator billing={billing} />
 
