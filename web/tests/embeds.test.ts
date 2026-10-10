@@ -26,7 +26,8 @@ test("a select on visits names the constraint when it embeds stores, and a selec
       const text = readFileSync(file, "utf8");
       for (const m of text.matchAll(/\.from\("(visits|stores)"\)\s*\.select\(\s*(["'`])([\s\S]*?)\2/g)) {
         const [, table, , select] = m;
-        const embedded = table === "visits" ? /(^|[\s,(])stores\(/ : /(^|[\s,(])visits\(/;
+        // An alias in front (`site:stores(name)`) is still a bare embed.
+        const embedded = table === "visits" ? /(^|[\s,(:])stores\(/ : /(^|[\s,(:])visits\(/;
         if (embedded.test(select)) bad.push(`${file}: ${table} select embeds ${table === "visits" ? "stores" : "visits"} without a constraint name`);
       }
     }
