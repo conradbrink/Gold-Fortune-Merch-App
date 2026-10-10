@@ -1165,6 +1165,8 @@ export type Database = {
           marketing_ok: boolean
           name: string
           notified_at: string | null
+          organization_id: string | null
+
           source: string | null
           status: string
           status_changed_at: string | null
@@ -1186,6 +1188,8 @@ export type Database = {
           marketing_ok: boolean
           name: string
           notified_at?: string | null
+          organization_id?: string | null
+
           source?: string | null
           status?: string
           status_changed_at?: string | null
@@ -1207,6 +1211,8 @@ export type Database = {
           marketing_ok?: boolean
           name?: string
           notified_at?: string | null
+          organization_id?: string | null
+
           source?: string | null
           status?: string
           status_changed_at?: string | null

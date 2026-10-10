@@ -293,3 +293,65 @@ export async function extendTrial(formData: FormData): Promise<void> {
   if (error) redirect(`${back}?error=${encodeURIComponent(error.message)}`);
   redirect(back);
 }
+
+/**
+ * Link a Founding application to the company made from it, or unlink it
+ * (an empty company). Platform operator only, checked here like every action
+ * in this file. The audit row is written first: if it cannot be, nothing
+ * changes. The database refuses a second application for the same company
+ * (a unique index), and that refusal is shown as written.
+ */
+export async function linkFoundingApplication(formData: FormData): Promise<void> {
+  const applicationId = String(formData.get("applicationId") ?? "");
+  const orgId = String(formData.get("orgId") ?? "");
+  const back = "/platform/founding";
+
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
+  const { data: isOperator, error: checkError } = await supabase.rpc("is_platform_admin");
+  if (checkError || !isOperator) redirect("/");
+  const uuid = /^[0-9a-f-]{36}$/i;
+  if (!uuid.test(applicationId) || (orgId !== "" && !uuid.test(orgId))) {
+    redirect(`${back}?error=${encodeURIComponent("That request was not understood.")}`);
+  }
+
+  const admin = platformAdminClient();
+  const { data: audit, error: auditError } = await admin
+    .from("platform_audit_log")
+    .insert({
+      actor_id: user.id,
+      action: orgId ? "founding.link" : "founding.unlink",
+      target_org_id: orgId || null,
+      detail: { application: applicationId, refused: null },
+    })
+    .select("id")
+    .single();
+  if (auditError) {
+    redirect(`${back}?error=${encodeURIComponent(`Not changed: the audit log could not be written (${auditError.message}).`)}`);
+  }
+
+  const { data: changed, error } = await admin
+    .from("founding_applications")
+    .update({ organization_id: orgId || null })
+    .eq("id", applicationId)
+    .select("id");
+  const refused = error
+    ? error.code === "23505"
+      ? "That company is already linked to another application."
+      : error.message
+    : (changed ?? []).length === 0
+      ? "That application no longer exists."
+      : null;
+  if (refused) {
+    // The attempt is already logged; record why it was refused, as for modules.
+    await admin
+      .from("platform_audit_log")
+      .update({ detail: { application: applicationId, refused } })
+      .eq("id", audit.id);
+    redirect(`${back}?error=${encodeURIComponent(`Not ${orgId ? "linked" : "unlinked"}: ${refused}`)}`);
+  }
+  redirect(`${back}#${applicationId}`);
+}

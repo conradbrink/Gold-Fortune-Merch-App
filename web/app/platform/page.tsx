@@ -1,6 +1,5 @@
 import Link from "next/link";
-import { notFound, redirect } from "next/navigation";
-import { createClient } from "@/lib/supabase/server";
+import { requireOperator } from "@/lib/operator";
 import { listCompanies } from "@/lib/platform";
 
 /**
@@ -33,15 +32,7 @@ const dateTime = new Intl.DateTimeFormat("en-GB", {
 });
 
 export default async function PlatformPage() {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) redirect("/login");
-
-  const { data: isOperator, error } = await supabase.rpc("is_platform_admin");
-  if (error) throw error;
-  if (!isOperator) notFound();
+  await requireOperator("/platform");
 
   const companies = await listCompanies();
 
@@ -55,12 +46,6 @@ export default async function PlatformPage() {
           </p>
         </div>
         <div className="flex items-center gap-4">
-          <Link href="/platform/users" className="text-sm text-muted-foreground hover:underline">
-            Users
-          </Link>
-          <Link href="/platform/founding" className="text-sm text-muted-foreground hover:underline">
-            Founding applications
-          </Link>
           <Link
             href="/platform/companies/new"
             className="inline-flex h-8 items-center rounded-md bg-primary px-3 text-sm text-primary-foreground hover:bg-primary/90"
