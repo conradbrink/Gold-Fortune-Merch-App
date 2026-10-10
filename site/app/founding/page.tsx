@@ -48,7 +48,7 @@ const worth = gets.reduce((sum, [, , w]) => sum + w, 0);
 
 const ask = [
   `Your whole team uses ${site.name} every workday for ${founding.days} days.`,
-  "Two 15-minute calls. One at the start, one at the end.",
+  "A 5-minute check-in call every week, so we can find out how to help.",
   "A 60-second phone video and a Google review.",
   "Two business owners you think it would help.",
 ];
