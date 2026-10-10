@@ -148,7 +148,7 @@ export default function HrDisciplinaryPage() {
       </div>
 
       <Tabs defaultValue="cases">
-        <TabsList className="flex-wrap">
+        <TabsList className="max-w-full justify-start overflow-x-auto px-1 [&::-webkit-scrollbar]:hidden [&>*]:shrink-0 [&>*]:px-2.5">
           <TabsTrigger value="cases">Cases</TabsTrigger>
           <TabsTrigger value="breakdown">Breakdown</TabsTrigger>
           <TabsTrigger value="warnings">Warnings</TabsTrigger>

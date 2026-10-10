@@ -23,7 +23,7 @@ function CompanyName() {
 }
 
 const page = (raw: unknown) =>
-  renderToString(createElement(CompanyConfigProvider, { initialConfig: raw }, createElement(CompanyName)));
+  renderToString(createElement(CompanyConfigProvider, { initialConfig: raw, children: createElement(CompanyName) }));
 
 test("each request renders its own company, not the first one seen", () => {
   const first = page(config("00000000-0000-0000-0000-00000000000a", "Sparkle Cleaning"));

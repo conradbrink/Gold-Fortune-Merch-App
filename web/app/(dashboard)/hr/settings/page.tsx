@@ -192,7 +192,7 @@ export default function HrSettingsPage() {
       )}
 
       <Tabs defaultValue="hours">
-        <TabsList className="flex-wrap">
+        <TabsList className="max-w-full justify-start overflow-x-auto px-1 [&::-webkit-scrollbar]:hidden [&>*]:shrink-0 [&>*]:px-2.5">
           <TabsTrigger value="hours">Working hours</TabsTrigger>
           <TabsTrigger value="leave">Leave types</TabsTrigger>
           <TabsTrigger value="departments">Departments</TabsTrigger>
