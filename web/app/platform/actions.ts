@@ -1,8 +1,10 @@
 "use server";
 
+import { after } from "next/server";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { moduleDependencies, platformAdminClient, templateDefaults } from "@/lib/platform";
+import { queueWelcomeEmail } from "@/lib/welcome-email";
 import {
   addCompanyProblems,
   choicesPayload,
@@ -243,6 +245,15 @@ export async function createCompanyAction(
     }
     return { ok: false, error: `Nothing was created: ${reason}` };
   }
+  after(() =>
+    queueWelcomeEmail(admin, {
+      orgId,
+      email: company.owner.email,
+      fullName: company.owner.full_name,
+      name: input.company.name.trim(),
+      templates: input.templates,
+    })
+  );
   return { ok: true, orgId };
 }
 

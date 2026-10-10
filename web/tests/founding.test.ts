@@ -19,6 +19,7 @@ const good: FoundingInput = {
   name: " Thandi ",
   businessName: " Shine Cleaning ",
   whatsapp: "082 123 4567",
+  email: "owner@example.com",
   trade: "cleaning",
   teamSize: "5-10",
   town: " Gaborone ",
@@ -54,6 +55,7 @@ test("a good application is trimmed and ready to save", () => {
     name: "Thandi",
     business_name: "Shine Cleaning",
     whatsapp: "27821234567",
+    email: "owner@example.com",
     trade: "cleaning",
     team_size: "5-10",
     town: "Gaborone",
@@ -78,6 +80,7 @@ test("every field is required, and the marketing box must be ticked", () => {
     name: "",
     businessName: "",
     whatsapp: "x",
+    email: "owner@example.com",
     trade: "Cleaning",
     teamSize: "9",
     town: "",
@@ -206,4 +209,14 @@ test("the owner reads where an applicant came from in one line", () => {
   assert.equal(describeAttribution({ landing_page: "/" }), "came straight to the site, first page /");
   assert.equal(describeAttribution({ referrer: "www.google.com", landing_page: "/" }), "sent by www.google.com, first page /");
   assert.equal(describeAttribution(null), null);
+});
+
+import { validEmail } from "@/lib/founding";
+
+test("an application needs an email address, kept in lower case", () => {
+  assert.equal(validEmail("a@b.co.za"), true);
+  for (const bad of ["", "a", "a@b", "a b@c.de", "@b.co", "a@b."]) assert.equal(validEmail(bad), false, bad);
+  assert.ok(foundingIssues({ ...good, email: "" }).some((i) => i.field === "email"));
+  const checked = checkApplication({ ...good, email: " Owner@Example.COM " });
+  assert.ok(checked.ok && checked.application.email === "owner@example.com");
 });

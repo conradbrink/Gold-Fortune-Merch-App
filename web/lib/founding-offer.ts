@@ -11,6 +11,8 @@ export const FOUNDING_OFFER = {
   price: 749,
   priceMonths: 12,
   closes: "Monday 19 October",
+  /** When every applicant hears back. */
+  tellsBy: "Friday 23 October",
   /** Where the application is. */
   applyUrl: "https://tickd.co.za/founding",
 } as const;

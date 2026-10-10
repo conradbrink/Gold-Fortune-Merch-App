@@ -11,6 +11,7 @@
 import { alertHref, alertText, dayText, type AlertItem } from "@/lib/alerts";
 import { parseTerms } from "@/lib/terms";
 import { PROMO, TICKD_LOGO_FILE, emailAssetUrl } from "@/lib/email/brand";
+import { FOUNDING_OFFER } from "@/lib/founding-offer";
 import { ageingParts, amountText, dayText as dateText, overdueText, periodText } from "@/lib/client-document";
 
 export type EmailContext = {
@@ -23,6 +24,8 @@ export type EmailContext = {
   canReply?: boolean;
   /** The company's own logo, a public address, shown at the top in place of its name. */
   companyLogoUrl?: string | null;
+  /** An email from Tickd itself (to a company's owner or an applicant): Tickd's logo and footer, no advert, no stop link. */
+  fromTickd?: boolean;
 };
 
 export type RenderedEmail = { subject: string; html: string; text: string };
@@ -48,18 +51,19 @@ export function layout(
   const company = escapeHtml(ctx.companyName);
   // An email to a company's clients carries Tickd's name and a short advert;
   // one to the company's own people (alerts, tests) does not.
-  const toClients = ctx.unsubscribeUrl !== null;
+  const toClients = ctx.unsubscribeUrl !== null && !ctx.fromTickd;
   const button = parts.button
     ? `<p style="margin:26px 0 0"><a href="${escapeHtml(parts.button.url)}" style="background:#0f5c4f;color:#ffffff;text-decoration:none;padding:13px 24px;border-radius:8px;display:inline-block;font-weight:700;font-size:15px">${escapeHtml(parts.button.label)}</a></p>`
     : "";
   // The company's own logo when it has one (its name is the picture's text for a
   // program that does not load pictures); otherwise its name.
-  const companyMark = ctx.companyLogoUrl
-    ? `<img src="${escapeHtml(ctx.companyLogoUrl)}" alt="${company}" style="display:block;border:0;width:auto;height:auto;max-width:200px;max-height:56px">`
+  const markUrl = ctx.fromTickd ? emailAssetUrl(TICKD_LOGO_FILE) : ctx.companyLogoUrl;
+  const companyMark = markUrl
+    ? `<img src="${escapeHtml(markUrl)}" alt="${company}" style="display:block;border:0;width:auto;height:auto;max-width:200px;max-height:56px">`
     : company;
   const small = (text: string) => `<p style="margin:14px 0 0;font-size:13px;line-height:1.5;color:#5b6b66">${text}</p>`;
   const attachedHtml = ctx.attached ? small("The PDF is attached to this email.") : "";
-  const replyHtml = toClients && ctx.canReply ? small(`Questions? Just reply to this email and it will reach ${company}.`) : "";
+  const replyHtml = (toClients || ctx.fromTickd) && ctx.canReply ? small(`Questions? Just reply to this email and it will reach ${company}.`) : "";
   const stop = ctx.unsubscribeUrl
     ? ` <a href="${escapeHtml(ctx.unsubscribeUrl)}" style="color:#5b6b66">Stop these emails</a>.`
     : "";
@@ -85,7 +89,7 @@ ${parts.bodyHtml}
 ${button}${parts.closing?.html ?? ""}${attachedHtml}${replyHtml}
 </td></tr>
 ${promoHtml}
-<tr><td style="padding:16px 4px 0;font-size:12px;color:#5b6b66;line-height:1.5">Sent for ${company} by Tickd.${stop}</td></tr>
+<tr><td style="padding:16px 4px 0;font-size:12px;color:#5b6b66;line-height:1.5">${ctx.fromTickd ? `Sent by Tickd. <a href="https://tickd.co.za" style="color:#5b6b66">tickd.co.za</a>` : `Sent for ${company} by Tickd.${stop}`}</td></tr>
 </table></td></tr></table></body></html>`;
   const text = [
     ctx.companyName,
@@ -96,10 +100,10 @@ ${promoHtml}
     parts.button ? `\n${parts.button.label}: ${parts.button.url}` : "",
     parts.closing ? `\n${parts.closing.text}` : "",
     ctx.attached ? "\nThe PDF is attached to this email." : "",
-    toClients && ctx.canReply ? `\nQuestions? Just reply to this email and it will reach ${ctx.companyName}.` : "",
+    (toClients || ctx.fromTickd) && ctx.canReply ? `\nQuestions? Just reply to this email and it will reach ${ctx.companyName}.` : "",
     toClients ? `\n---\n${PROMO.headline} ${PROMO.body}\n${PROMO.cta}: ${PROMO.url}\n---` : "",
     "",
-    `Sent for ${ctx.companyName} by Tickd.${ctx.unsubscribeUrl ? ` Stop these emails: ${ctx.unsubscribeUrl}` : ""}`,
+    ctx.fromTickd ? "Sent by Tickd. tickd.co.za" : `Sent for ${ctx.companyName} by Tickd.${ctx.unsubscribeUrl ? ` Stop these emails: ${ctx.unsubscribeUrl}` : ""}`,
   ]
     .filter((line, i, all) => !(line === "" && all[i - 1] === ""))
     .join("\n");
@@ -455,6 +459,109 @@ const TEMPLATES: Record<string, Renderer> = {
     });
     return { subject: "Confirm your email address for Tickd", html, text };
   },
+  // To someone who has just applied to be a founding member.
+  application_received: (payload, ctx) => {
+    const first = str(payload.first_name);
+    const business = str(payload.business_name);
+    const waitlist = payload.waitlist === true;
+    const whatsapp = str(payload.whatsapp);
+    const facts: Fact[] = [
+      { label: waitlist ? "Your place" : "Applications close", value: waitlist ? "On the waiting list" : FOUNDING_OFFER.closes },
+      ...(waitlist ? [] : [{ label: "We tell everyone by", value: FOUNDING_OFFER.tellsBy }]),
+      ...(whatsapp ? [{ label: "We will call you on", value: `+${whatsapp}` }] : []),
+    ];
+    const body = stack([
+      para(`Hello${first ? ` ${first}` : ""},`, true),
+      para(
+        waitlist
+          ? `Thank you for your interest in Tickd. The ${FOUNDING_OFFER.spots} founding places are taken, so ${business ? `${business} is` : "you are"} on the waiting list.`
+          : `Thank you for applying to be one of Tickd's first ${FOUNDING_OFFER.spots} founding businesses. We have your application${business ? ` for ${business}` : ""}.`
+      ),
+      factsBlock(facts),
+      para(
+        waitlist
+          ? "You are first in line if a place opens, and first for the next round. We will let you know as soon as it does."
+          : `If you are picked, we call you to set everything up for you, and you run Tickd free for ${FOUNDING_OFFER.days} days. If you are not, you are first on the list for the next round.`
+      ),
+      para("There is nothing to pay, and we do not need a card."),
+    ]);
+    const { html, text } = layout(ctx, {
+      heading: waitlist ? "You are on the waiting list" : "Thank you, we have your application",
+      preheader: waitlist ? "You are first in line if a place opens." : `We tell everyone by ${FOUNDING_OFFER.tellsBy}.`,
+      bodyHtml: body.html,
+      bodyText: body.text,
+      closing: para("Thank you,\nThe Tickd team"),
+      button: { label: "See what Tickd does", url: "https://tickd.co.za" },
+    });
+    return { subject: waitlist ? "You are on the Tickd waiting list" : `We have your application${first ? `, ${first}` : ""}`, html, text };
+  },
+  // To the owner of a company that has just been set up.
+  welcome: (payload, ctx) => {
+    const first = str(payload.first_name);
+    const company = str(payload.company_name);
+    const email = str(payload.email);
+    const staff = str(payload.staff_word) || "team";
+    const sites = str(payload.site_word) || "places";
+    const appUrl = (str(payload.app_url) || "https://app.tickd.co.za").replace(/\/$/, "");
+    const steps = [
+      `Add your ${staff.toLowerCase()}. They use Tickd on the Android phones they already have.`,
+      `Add your ${sites.toLowerCase()}, so every task has somewhere to happen.`,
+      "Start a first workday on a phone, and watch it appear on your dashboard.",
+    ];
+    const list = {
+      html: `<ol style="margin:12px 0 0;padding-left:20px">${steps.map((t) => `<li style="margin:0 0 8px">${escapeHtml(t)}</li>`).join("")}</ol>`,
+      text: steps.map((t, i) => `${i + 1}. ${t}`).join("\n"),
+    };
+    const facts: Fact[] = [
+      { label: "Sign in at", value: appUrl.replace(/^https?:\/\//, "") },
+      ...(email ? [{ label: "With this email", value: email }] : []),
+    ];
+    const body = stack([
+      para(`Hello${first ? ` ${first}` : ""},`, true),
+      para(`Your Tickd account${company ? ` for ${company}` : ""} is ready.`),
+      factsBlock(facts),
+      para("Three things to do first:"),
+      list,
+      para("We never send a password by email. If you have forgotten it, use \"Forgot your password\" on the sign-in page."),
+    ]);
+    const { html, text } = layout(ctx, {
+      heading: "Welcome to Tickd",
+      preheader: `Your account${company ? ` for ${company}` : ""} is ready.`,
+      bodyHtml: body.html,
+      bodyText: body.text,
+      closing: para("Thank you,\nThe Tickd team"),
+      button: { label: "Sign in to Tickd", url: `${appUrl}/login` },
+    });
+    return { subject: `Welcome to Tickd${first ? `, ${first}` : ""}`, html, text };
+  },
+  // To a company's owner part-way through the free days: the offer to sign up fully.
+  trial_offer: (payload, ctx) => {
+    const first = str(payload.first_name);
+    const company = str(payload.company_name);
+    const ends = str(payload.trial_ends_at) ? dateText(str(payload.trial_ends_at).slice(0, 10)) : "";
+    const left = payload.days_left === null || payload.days_left === undefined ? null : num(payload.days_left);
+    const appUrl = (str(payload.app_url) || "https://app.tickd.co.za").replace(/\/$/, "");
+    const facts: Fact[] = [
+      ...(left !== null ? [{ label: "Free days left", value: left === 1 ? "1 day" : `${left} days`, strong: true }] : []),
+      ...(ends ? [{ label: "Your free days end", value: ends }] : []),
+    ];
+    const body = stack([
+      para(`Hello${first ? ` ${first}` : ""},`, true),
+      para(`You have been running Tickd${company ? ` for ${company}` : ""} for a while now, and we hope it is making your days easier. This is the time to sign up fully.`),
+      factsBlock(facts),
+      para("Choose your plan before your free days end and everything carries on exactly as it is: your team, your places, your history and your reports. It takes about two minutes, and you pay nothing until you choose."),
+      para("Not sure which plan fits? Just reply to this email and we will help you pick."),
+    ]);
+    const { html, text } = layout(ctx, {
+      heading: "Ready to sign up fully?",
+      preheader: left !== null ? `${left} free days left${ends ? `, until ${ends}` : ""}.` : "Choose your plan to keep going.",
+      bodyHtml: body.html,
+      bodyText: body.text,
+      closing: para("Thank you,\nThe Tickd team"),
+      button: { label: "Choose your plan", url: `${appUrl}/plans` },
+    });
+    return { subject: ends ? `Your free days end on ${ends}${first ? `, ${first}` : ""}` : "Ready to sign up fully?", html, text };
+  },
   test: (_payload, ctx) => {
     const { html, text } = layout(ctx, {
       heading: "Your emails are working",
@@ -482,4 +589,7 @@ export const REPORT_TEMPLATES = new Set<string>(["job_report", "job_reports_day"
 export const ALERT_TEMPLATES = new Set<string>(["alert", "alerts_digest"]);
 
 /** Invoices, quotes, statements and reminders: their payload holds a link id the sender looks up before rendering, and turns into the page's address. */
+/** Emails from Tickd itself, to a company's owner or an applicant: sent as Tickd, replies go to the Tickd team, no advert and no stop link. */
+export const TICKD_TEMPLATES = new Set<string>(["application_received", "welcome", "trial_offer"]);
+
 export const DOCUMENT_TEMPLATES = new Set<string>(["invoice", "quote", "statement", "payment_reminder"]);
