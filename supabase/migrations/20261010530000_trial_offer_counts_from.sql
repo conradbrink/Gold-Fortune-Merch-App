@@ -6,7 +6,7 @@
 -- counts every company from its own start, as before). A company made on or
 -- after the date counts from its own start.
 --
--- Rollback: supabase/rollback/20261010530000_trial_offer_counts_from.down.sql.
+-- Rollback: supabase/rollback/20261010510000_trial_offer_counts_from.down.sql.
 
 insert into public.platform_settings (key, value, description)
 values ('trial_offer_counts_from', '"2026-11-02"', 'The day the free days begin. A company made before it is counted from it for the day-45 offer. Clear it to count every company from its own start.')

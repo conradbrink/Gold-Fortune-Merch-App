@@ -1,4 +1,4 @@
--- Rollback of 20261010530000_trial_offer_counts_from: the day-45 offer counts
+-- Rollback of 20261010510000_trial_offer_counts_from: the day-45 offer counts
 -- from each company's own start again.
 
 delete from public.platform_settings where key = 'trial_offer_counts_from';
