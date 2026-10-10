@@ -3,15 +3,15 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { FoundingForm } from "@/components/founding-form";
 import { SpotsText } from "@/components/founding-spots";
-import { ProductDemo } from "@/components/demo/product-demo";
 import { Logo } from "@/components/logo";
 import { MetaPixel } from "@/components/meta-pixel";
 import { ProofSection } from "@/components/proof-section";
 import { founding, foundingVideoUrl, pricing, rand, site } from "@/lib/site";
 
 // The Founding 10 page, for visitors who arrive from Facebook: it has to make
-// sense on its own. The words are the owner's, in the owner's order
-// (~/Downloads/founding-10-site-prompt.md). Same look as the main page.
+// sense on its own, and the offer has to be the first thing they see. So the
+// headline and the value stack share the top of the page, and everything under
+// them is kept short. The words are the owner's (~/Downloads/founding-10-site-prompt.md).
 //
 // Two lines differ from that file on purpose, because the owner's own rule
 // says never to use these words: "no catch" is "no strings", and the owner's
@@ -22,8 +22,7 @@ export const metadata: Metadata = {
   description: `We're picking ${founding.spots} businesses to run ${site.name} free for ${founding.days} days. We set it all up. You get proof of every job. We get your story.`,
 };
 
-const h2 = "font-display text-3xl font-bold leading-[1.1] tracking-tight text-balance text-teal-900 sm:text-[2.75rem]";
-const wrap = "mx-auto grid max-w-6xl gap-6 px-4 py-10 sm:gap-8 sm:px-6 sm:py-16";
+const h2 = "font-display text-2xl font-bold leading-[1.1] tracking-tight text-balance text-teal-900 sm:text-4xl";
 
 const does = [
   ["Every job, proven.", "Time on site, photos and a signed report."],
@@ -36,9 +35,10 @@ const does = [
 
 // What a founder gets, each with what it is worth. Half price for 12 months
 // is what they save against the normal price.
+const daysWorth = Math.round(pricing.monthly.base * (founding.days / 30));
 const halfPriceSaved = (pricing.monthly.base - founding.price) * founding.priceMonths;
 const gets: [label: string, value: string, worth: number][] = [
-  [`${founding.days} days of ${site.name}, free`, rand(Math.round(pricing.monthly.base * (founding.days / 30))), Math.round(pricing.monthly.base * (founding.days / 30))],
+  [`${founding.days} days of ${site.name}, free`, rand(daysWorth), daysWorth],
   ["We set it all up for you", rand(pricing.setupValue), pricing.setupValue],
   ["A training day with your team, on site", rand(pricing.trainingValue), pricing.trainingValue],
   [`A direct WhatsApp line and a weekly check-in, for ${founding.days} days`, rand(pricing.supportValue), pricing.supportValue],
@@ -59,13 +59,14 @@ const lookingFor = [
   "Cleaning, security, CCTV, maintenance, garden, pest, pool and sales teams. One per trade first.",
 ];
 
-const steps = [
-  `Apply by ${founding.closes}.`,
-  "We call our top picks from 20 to 22 October.",
-  `We tell the Founding ${founding.spots} on ${founding.tellsBy}.`,
-  "We set you up from 26 October.",
-  `Your ${founding.days} days start on Monday 2 November.`,
-  "We pause the clock from 15 December to 5 January, so the holidays don't count.",
+// How it works: a date and what happens on it.
+const steps: [when: string, what: string][] = [
+  [`Apply by ${founding.closes}`, `Apply by ${founding.closes}.`],
+  ["20 to 22 October", "We call our top picks from 20 to 22 October."],
+  [founding.tellsBy, `We tell the Founding ${founding.spots} on ${founding.tellsBy}.`],
+  ["From 26 October", "We set you up from 26 October."],
+  ["Monday 2 November", `Your ${founding.days} days start on Monday 2 November.`],
+  ["15 December to 5 January", "We pause the clock from 15 December to 5 January, so the holidays don't count."],
 ];
 
 const faqs = [
@@ -78,11 +79,14 @@ const faqs = [
   ["What if I'm not picked?", "You're first on the list for the next round. You can still try Tickd free for 14 days."],
 ];
 
-function Ticks({ items, tone = "dark" }: { items: string[]; tone?: "dark" | "light" }) {
+const button =
+  "flex w-full items-center justify-center rounded-full bg-amber-500 px-6 py-4 text-lg font-semibold text-teal-950 transition-[background-color,transform] duration-150 ease-out hover:bg-amber-400 active:scale-[0.97] sm:inline-flex sm:w-auto sm:py-3.5 sm:text-base";
+
+function Ticks({ items }: { items: string[] }) {
   return (
-    <ul className="grid gap-2.5">
+    <ul className="grid gap-2">
       {items.map((t) => (
-        <li key={t} className={`flex items-start gap-2.5 leading-snug ${tone === "light" ? "text-sand" : "text-ink"}`}>
+        <li key={t} className="flex items-start gap-2.5 leading-snug text-ink">
           <Check className="mt-0.5 size-5 shrink-0 text-teal-700" strokeWidth={3} aria-hidden="true" />
           <span>{t}</span>
         </li>
@@ -110,89 +114,32 @@ export default function FoundingPage() {
       </header>
 
       <main>
-        {/* The video goes here when it is ready. */}
-        <section aria-label="Video" className="mx-auto max-w-3xl px-4 pt-6 sm:px-6 sm:pt-10">
-          {foundingVideoUrl ? (
-            <video
-              src={foundingVideoUrl}
-              controls
-              playsInline
-              preload="metadata"
-              className="aspect-video w-full rounded-2xl bg-teal-950 ring-1 ring-line"
-            />
-          ) : (
-            <div className="grid aspect-video w-full place-items-center rounded-2xl border-2 border-dashed border-teal-700/40 bg-white p-6 text-center text-sm font-semibold text-teal-700">
-              [Video goes here]
+        {/* 1. The offer, first: the ask on the left, what you get on the right. */}
+        <section className="mx-auto grid max-w-6xl gap-6 px-4 pb-8 pt-6 sm:px-6 sm:pb-12 sm:pt-10 lg:grid-cols-2 lg:gap-x-12 lg:gap-y-6">
+          <div className="grid content-start gap-4 sm:gap-5 lg:col-start-1 lg:row-start-1">
+            <p className="text-sm font-bold uppercase tracking-wide text-teal-700">
+              Only {founding.spots} spots · Applications close {founding.closes}
+            </p>
+            <h1 className="font-display text-[2.4rem] font-extrabold leading-[1.02] tracking-tight text-balance text-teal-900 sm:text-6xl">
+              Become one of our Founding {founding.spots}.
+            </h1>
+            <p className="max-w-xl text-lg leading-relaxed text-pretty text-ink sm:text-xl">
+              We&apos;re picking {founding.spots} businesses to run {site.name} free for {founding.days} days. We set it all up. You get
+              proof of every job. We get your story.
+            </p>
+            <div className="grid justify-items-start gap-2">
+              <a href="#apply" className={button}>
+                Apply for a spot
+              </a>
+              <SpotsText className="text-sm font-semibold text-teal-700" />
             </div>
-          )}
-        </section>
-
-        {/* 1. The ask */}
-        <section className="mx-auto grid max-w-3xl gap-5 px-4 pb-10 pt-8 text-center sm:px-6 sm:pb-16 sm:pt-12">
-          <p className="text-sm font-bold uppercase tracking-wide text-teal-700">
-            Only {founding.spots} spots · Applications close {founding.closes}
-          </p>
-          <h1 className="font-display text-[2.6rem] font-extrabold leading-[1.02] tracking-tight text-balance text-teal-900 sm:text-6xl">
-            Become one of our Founding {founding.spots}.
-          </h1>
-          <p className="mx-auto max-w-xl text-lg leading-relaxed text-pretty text-ink sm:text-xl">
-            We&apos;re picking {founding.spots} businesses to run {site.name} free for {founding.days} days. We set it all up. You get
-            proof of every job. We get your story.
-          </p>
-          <div className="grid justify-items-center gap-2">
-            <a
-              href="#apply"
-              className="flex w-full items-center justify-center rounded-full bg-amber-500 px-6 py-4 text-lg font-semibold text-teal-950 transition-[background-color,transform] duration-150 ease-out hover:bg-amber-400 active:scale-[0.97] sm:inline-flex sm:w-auto sm:py-3.5 sm:text-base"
-            >
-              Apply for a spot
-            </a>
-            <SpotsText className="text-sm font-semibold text-teal-700" />
           </div>
-        </section>
 
-        {/* 2. What Tickd does for you, with the phone demo */}
-        <section className="border-y border-line bg-white">
-          <div className={`${wrap} lg:grid-cols-[1fr_0.9fr] lg:items-center lg:gap-14`}>
-            <div className="grid content-start gap-6">
-              <h2 className={h2}>What {site.name} does for you</h2>
-              <ul className="grid gap-4">
-                {does.map(([title, body]) => (
-                  <li key={title} className="flex items-start gap-3">
-                    <span
-                      aria-hidden="true"
-                      className="mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-md bg-teal-700 text-white"
-                    >
-                      <Check className="size-4" strokeWidth={3.5} />
-                    </span>
-                    <span className="text-lg leading-snug text-ink">
-                      <strong className="font-display font-bold text-teal-900">{title}</strong>
-                      {body ? ` ${body}` : ""}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-            <figure className="grid gap-3">
-              <ProductDemo />
-              <figcaption className="text-center text-sm text-muted">
-                <Link href="/" className="font-semibold text-teal-900 underline underline-offset-4 hover:text-teal-700">
-                  See everything {site.name} does
-                </Link>
-              </figcaption>
-            </figure>
-          </div>
-        </section>
-
-        {/* 3. Proof, straight under what Tickd does */}
-        <ProofSection />
-
-        {/* 4. What you get as a founder */}
-        <section>
-          <div className={`${wrap} max-w-3xl`}>
-            <h2 className={h2}>What you get as a founder</h2>
-            <ul className="grid gap-3 rounded-2xl bg-white p-5 ring-1 ring-line sm:p-7">
+          <div className="grid content-start gap-4 rounded-2xl bg-white p-5 shadow-sm ring-1 ring-teal-900/15 sm:p-7 lg:col-start-2 lg:row-span-2 lg:row-start-1">
+            <h2 className="font-display text-2xl font-extrabold leading-tight text-teal-900">What you get as a founder</h2>
+            <ul className="grid gap-2.5">
               {gets.map(([label, value]) => (
-                <li key={label} className="flex items-baseline justify-between gap-4 border-b border-line pb-3 last:border-0">
+                <li key={label} className="flex items-baseline justify-between gap-4 border-b border-line pb-2.5">
                   <span className="flex gap-2.5 font-medium leading-snug text-ink">
                     <Check className="mt-0.5 size-5 shrink-0 text-teal-700" strokeWidth={3} aria-hidden="true" />
                     {label}
@@ -204,52 +151,94 @@ export default function FoundingPage() {
                 <Check className="mt-0.5 size-5 shrink-0 text-teal-700" strokeWidth={3} aria-hidden="true" />
                 Your logo on our site as a founder, and a say in what we build next.
               </li>
-              <li className="flex items-baseline justify-between gap-4 border-t border-line pt-4 font-display text-xl font-extrabold text-teal-900 sm:text-2xl">
-                <span>Worth {rand(worth)}.</span>
-                <span className="text-amber-700">You pay {rand(0)}.</span>
-              </li>
             </ul>
+            <div className="grid gap-1 rounded-xl bg-teal-900 px-5 py-4 text-sand">
+              <p className="flex items-baseline justify-between gap-4 text-lg">
+                <span>Worth</span>
+                <span className="font-semibold line-through decoration-amber-500 decoration-2">{rand(worth)}</span>
+              </p>
+              <p className="flex items-baseline justify-between gap-4 font-display text-3xl font-extrabold text-amber-500">
+                <span>You pay</span>
+                <span>{rand(0)}</span>
+              </p>
+            </div>
+            <p className="text-sm font-medium text-muted">No card. No contract. If it&apos;s not for you after {founding.days} days, walk away.</p>
+            <a href="#apply" className={`${button} sm:w-full`}>
+              Apply for a spot
+            </a>
+          </div>
+
+          {/* The video goes here when it is ready. */}
+          <div className="lg:col-start-1 lg:row-start-2">
+            {foundingVideoUrl ? (
+              <video
+                src={foundingVideoUrl}
+                controls
+                playsInline
+                preload="metadata"
+                className="aspect-video w-full rounded-2xl bg-teal-950 ring-1 ring-line"
+              />
+            ) : (
+              <div className="grid aspect-video w-full place-items-center rounded-2xl border-2 border-dashed border-teal-700/40 bg-white p-6 text-center text-sm font-semibold text-teal-700">
+                [Video goes here]
+              </div>
+            )}
           </div>
         </section>
 
-        {/* 5. What we ask in return */}
-        <section className="border-y border-line bg-white">
-          <div className={`${wrap} max-w-3xl`}>
-            <h2 className={h2}>What we ask in return</h2>
-            <Ticks items={ask} />
-            <p className="font-display text-lg font-bold leading-snug text-teal-900">
-              No card. No contract. If it&apos;s not for you after {founding.days} days, walk away.
-            </p>
-          </div>
-        </section>
+        {/* 2. Proof, straight under the offer */}
+        <ProofSection applyHref="#apply" />
 
-        {/* 6. Who we're looking for */}
+        {/* 3. What it does, what we ask, who we want: side by side to keep the page short */}
         <section>
-          <div className={`${wrap} max-w-3xl`}>
-            <h2 className={h2}>Who we&apos;re looking for</h2>
-            <Ticks items={lookingFor} />
+          <div className="mx-auto grid max-w-6xl gap-4 px-4 py-8 sm:px-6 sm:py-12 lg:grid-cols-3 lg:gap-6">
+            <div className="grid content-start gap-4 rounded-2xl bg-white p-5 ring-1 ring-line sm:p-6">
+              <h2 className={h2}>What {site.name} does for you</h2>
+              <ul className="grid gap-3">
+                {does.map(([title, body]) => (
+                  <li key={title} className="flex items-start gap-2.5 leading-snug text-ink">
+                    <Check className="mt-0.5 size-5 shrink-0 text-teal-700" strokeWidth={3} aria-hidden="true" />
+                    <span>
+                      <strong className="font-display font-bold text-teal-900">{title}</strong>
+                      {body ? ` ${body}` : ""}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+              <Link href="/" className="text-sm font-semibold text-teal-900 underline underline-offset-4 hover:text-teal-700">
+                See everything {site.name} does
+              </Link>
+            </div>
+            <div className="grid content-start gap-4 rounded-2xl bg-white p-5 ring-1 ring-line sm:p-6">
+              <h2 className={h2}>What we ask in return</h2>
+              <Ticks items={ask} />
+            </div>
+            <div className="grid content-start gap-4 rounded-2xl bg-white p-5 ring-1 ring-line sm:p-6">
+              <h2 className={h2}>Who we&apos;re looking for</h2>
+              <Ticks items={lookingFor} />
+            </div>
           </div>
         </section>
 
-        {/* 7. How it works */}
+        {/* 4. How it works: six dates in a row */}
         <section className="border-y border-line bg-white">
-          <div className={`${wrap} max-w-3xl`}>
+          <div className="mx-auto grid max-w-6xl gap-5 px-4 py-8 sm:px-6 sm:py-12">
             <h2 className={h2}>How it works</h2>
-            <ol className="grid gap-4">
-              {steps.map((s, i) => (
-                <li key={s} className="grid grid-cols-[2rem_1fr] items-start gap-3">
+            <ol className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              {steps.map(([when, what], i) => (
+                <li key={when} className="grid grid-cols-[2rem_1fr] items-start gap-3 rounded-xl bg-mint p-4 ring-1 ring-line">
                   <span className="grid size-8 place-items-center rounded-full bg-amber-500 font-display font-extrabold text-teal-950">
                     {i + 1}
                   </span>
-                  <span className="pt-0.5 text-lg leading-snug text-ink">{s}</span>
+                  <span className="leading-snug text-ink">{what}</span>
                 </li>
               ))}
             </ol>
           </div>
         </section>
 
-        {/* 8. Apply */}
-        <section id="apply" className="scroll-mt-20 px-4 pb-14 pt-10 sm:px-6 sm:pb-16 sm:pt-16">
+        {/* 5. Apply */}
+        <section id="apply" className="scroll-mt-20 px-4 pb-10 pt-8 sm:px-6 sm:pb-14 sm:pt-12">
           <div className="mx-auto grid max-w-3xl gap-6 rounded-2xl bg-teal-900 p-6 text-sand sm:p-10">
             <div className="grid gap-2">
               <h2 className="font-display text-3xl font-extrabold leading-[1.1] tracking-tight text-balance sm:text-5xl">
@@ -262,9 +251,9 @@ export default function FoundingPage() {
           </div>
         </section>
 
-        {/* 9. Questions */}
+        {/* 6. Questions */}
         <section className="border-t border-line">
-          <div className={`${wrap} max-w-3xl`}>
+          <div className="mx-auto grid max-w-3xl gap-5 px-4 py-8 sm:px-6 sm:py-12">
             <h2 className={h2}>Questions</h2>
             <div className="divide-y divide-line border-y border-line">
               {faqs.map(([q, a]) => (
@@ -285,7 +274,7 @@ export default function FoundingPage() {
       </main>
 
       <footer className="bg-teal-950 text-teal-100">
-        <div className="mx-auto flex max-w-6xl flex-col gap-3 px-4 py-10 sm:px-6 md:flex-row md:items-center md:justify-between">
+        <div className="mx-auto flex max-w-6xl flex-col gap-3 px-4 py-8 sm:px-6 md:flex-row md:items-center md:justify-between">
           <p>
             {site.name} · {site.tagline}
           </p>

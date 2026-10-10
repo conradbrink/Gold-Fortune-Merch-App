@@ -352,7 +352,7 @@ export default function Home() {
         </section>
 
         {/* The result on our own team, straight under the hero. */}
-        <ProofSection />
+        <ProofSection applyHref="/founding" />
 
         {/* 2. Easy to say yes: the effort it doesn't take. */}
         <section aria-labelledby="start-title" className="border-y border-line bg-white">

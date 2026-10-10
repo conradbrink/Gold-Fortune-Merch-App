@@ -247,6 +247,8 @@ section[id] {
   }
   /* A trade picked with a click: its answer fades in (keys swap instantly). */
   .tk-swap { animation: tk-rise 0.22s var(--ease-out) both; }
+  /* The proof slide: each slide fades up as it arrives. */
+  .tk-slide { animation: tk-rise 0.35s var(--ease-out) both; }
   /* Open FAQ answers fade up rather than snap in. */
   details[open] > .tk-answer { animation: tk-rise 0.25s var(--ease-out) both; }
 

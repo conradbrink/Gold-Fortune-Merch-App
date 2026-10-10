@@ -89,16 +89,21 @@ export const foundingVideoUrl: string = "";
 // quotes; while it is empty, nothing loads and nothing is sent.
 export const metaPixelId: string = "";
 
-// The Gold Fortune result for the proof section. Anything in [brackets] is a
-// placeholder the owner has not confirmed yet and shows on the page as it is;
-// replace it with the real figure. The *N numbers only set the bar heights.
+// The Gold Fortune result for the proof section: real numbers from Tickd's own
+// data (read-only, 10 Oct 2026), the first two weeks of use against the two
+// most recent full weeks without a public holiday, same 3 reps both times.
+// Tickd has no "before Tickd" data, so this is early use against later use,
+// and the page says so. The *N numbers only set the bar heights.
+//   early  = 3 to 16 Aug 2026:  175 visits, 32 rep-days, 99 stores, 65.2% within 200 m
+//   recent = 14 to 27 Sep 2026: 200 visits, 26 rep-days, 144 stores, 84.7% within 200 m
 export const proof = {
-  stores: "[about 250]",
-  months: "[months]",
-  reps: "[__]",
-  visits: { before: "[40]", after: "[78]", beforeN: 40, afterN: 78 },
-  // Monthly sales, as a multiple of before: the owner's "up 1.5x".
-  sales: { before: "1x", after: "1.5x", beforeN: 1, afterN: 1.5 },
+  reps: 3,
+  stores: 265,
+  early: "3 to 16 August 2026",
+  recent: "14 to 27 September 2026",
+  perRepDay: { label: "Visits per rep per day", before: "5.5", after: "7.7", beforeN: 5.47, afterN: 7.69, up: "Up 41%." },
+  stores2w: { label: "Different stores visited in two weeks", before: "99", after: "144", beforeN: 99, afterN: 144, up: "Up 45%." },
+  atDoor: { label: "Check-ins within 200 m of the store", before: "65%", after: "85%", beforeN: 65.2, afterN: 84.7, up: "" },
 } as const;
 
 export type Billing = "monthly" | "yearly";
