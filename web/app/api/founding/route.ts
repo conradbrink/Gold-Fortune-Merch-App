@@ -27,7 +27,10 @@ import { listTemplates, platformAdminClient } from "@/lib/platform";
 
 export const runtime = "nodejs";
 
-const PER_ADDRESS = { limit: 6, windowSeconds: 60 * 60 };
+// Generous: South African mobile networks put many phones behind one address,
+// and the Founding ads send them here in bursts. The per-number and per-email
+// limits below are what stop one person from flooding the form.
+const PER_ADDRESS = { limit: 30, windowSeconds: 60 * 60 };
 const PER_NUMBER = { limit: 3, windowSeconds: 24 * 60 * 60 };
 /** Nobody can make us email an address they do not own, however many numbers or networks they use. */
 const PER_EMAIL = { limit: 2, windowSeconds: 24 * 60 * 60 };
