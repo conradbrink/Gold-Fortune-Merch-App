@@ -79,6 +79,17 @@ test("a permission with a page in another module still has a home", () => {
   assert.equal(homeFor(clerk, (h) => canReachPath(distributionOnly, h)), "/orders");
 });
 
+test("the seeded CFO and clerk land on invoices at a company without the warehouse", () => {
+  // Every trade but distribution: invoicing, no warehouse, no distribution, no HR.
+  const cleaning = toModuleSet({ invoicing: true, reports: true, checklists_forms: true });
+  const clerk = toPermissionSet(["warehouse", "workday", "invoicing"]);
+  const cfo = toPermissionSet(["warehouse", "warehouse_approve", "hr", "workday", "invoicing"]);
+  assert.equal(homeFor(clerk, (h) => canReachPath(cleaning, h)), "/invoices");
+  assert.equal(homeFor(cfo, (h) => canReachPath(cleaning, h)), "/invoices");
+  // Gold Fortune's clerk still lands on the warehouse.
+  assert.equal(homeFor(clerk, (h) => canReachPath(everything, h)), "/warehouse");
+});
+
 test("the sidebar offers no page of a module the company lacks", () => {
   const admin = toPermissionSet(["admin"]);
   const hrefs = (modules: ReturnType<typeof toModuleSet>) =>
@@ -147,4 +158,27 @@ test("money is the company's currency, written as the business writes it", () =>
   assert.equal(formatMoneyShort(101223.5, "BWP"), "P101,224");
   assert.equal(formatMoney(null, "BWP"), "—");
   assert.equal(formatMoney(5, "XYZ"), "XYZ5.00");
+});
+
+test("menu headings are the trade's own words; a distributor keeps its sales headings", () => {
+  const admin = toPermissionSet(["admin"]);
+  const headings = (modules: ReturnType<typeof toModuleSet>, terms: Terms) =>
+    visibleNavGroups(admin, modules, terms).map((g) => g.label);
+  const cleaning = parseTerms({
+    site: { one: "Site", many: "Sites" },
+    staff: { one: "Cleaner", many: "Cleaners" },
+    territory: { one: "Area", many: "Areas" },
+  });
+  const forCleaning = headings(toModuleSet({ invoicing: true, reports: true }), cleaning);
+  assert.ok(forCleaning.includes("Sites & Areas"));
+  assert.ok(forCleaning.includes("Cleaners in the field"));
+  assert.ok(!forCleaning.some((h) => h?.includes("Sales")));
+  const goldFortune = parseTerms({
+    site: { one: "Store", many: "Stores" },
+    staff: { one: "Rep", many: "Reps" },
+    territory: { one: "Territory", many: "Territories" },
+  });
+  const forGf = headings(toModuleSet({ distribution: true, warehouse: true, invoicing: true, reports: true }), goldFortune);
+  assert.ok(forGf.includes("Sales & Coverage"));
+  assert.ok(forGf.includes("Sales Team"));
 });

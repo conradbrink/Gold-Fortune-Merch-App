@@ -181,6 +181,8 @@ class LeadRepository {
         clientGeneratedId: completed.clientGeneratedId,
         payload: jsonEncode({
           'client_generated_id': completed.clientGeneratedId,
+          // Whose work this is, so the drain holds it for them (`ownerOf`).
+          'rep_id': completed.repId,
           'changes': {
             'outcome': completed.outcome,
             'notes': completed.notes,

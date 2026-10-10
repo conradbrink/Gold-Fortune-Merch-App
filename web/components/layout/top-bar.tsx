@@ -1,5 +1,7 @@
 "use client";
 
+import { forgetCompanyConfig } from "@/lib/use-company-config";
+import { forgetSitesView } from "@/lib/map-centre";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
@@ -80,6 +82,10 @@ export function TopBar({ onOpenNav }: { onOpenNav?: () => void }) {
 
   async function handleSignOut() {
     await supabase.auth.signOut();
+    // This tab's caches belong to the person leaving: whoever signs in next
+    // here must not be shown their company's configuration or map view.
+    forgetCompanyConfig();
+    forgetSitesView();
     router.push("/login");
     router.refresh();
   }

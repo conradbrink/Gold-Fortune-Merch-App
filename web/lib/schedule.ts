@@ -185,6 +185,18 @@ export function isoWeekNumber(d: Date): number {
   return Math.ceil(((t.getTime() - yearStart.getTime()) / 86_400_000 + 1) / 7);
 }
 
+/**
+ * Week A (1) or week B (0) of an every-two-weeks cycle, matching
+ * `generate_routes`: whole weeks counted from Monday 1 January 2001 (ISO week
+ * 1). ISO week parity broke at 53-week years: week 53 of 2026 and week 1 of
+ * 2027 are both odd, so week A came round twice running.
+ */
+export function fortnightParity(d: Date): number {
+  const day = Date.UTC(d.getFullYear(), d.getMonth(), d.getDate());
+  const weeks = Math.floor((day - Date.UTC(2001, 0, 1)) / (7 * 86_400_000));
+  return (((weeks + 1) % 2) + 2) % 2;
+}
+
 /** Which occurrence of its weekday this date is: the 2nd Tuesday returns 2. */
 export function nthWeekdayOfMonth(d: Date): number {
   return Math.floor((d.getDate() - 1) / 7) + 1;
@@ -206,8 +218,8 @@ export function occursOn(
     case "weekly":
       return true;
     case "biweekly":
-      // Week A / week B by ISO week parity: cycle 1 = odd weeks.
-      return isoWeekNumber(date) % 2 === week % 2;
+      // Week A / week B: cycle 1 = parity 1 (see fortnightParity).
+      return fortnightParity(date) === week % 2;
     case "monthly":
       return nthWeekdayOfMonth(date) === week;
     default:
@@ -384,6 +396,8 @@ export type CycleWeek = {
    * a manager looking at two adjacent rows needs to know which is week A.
    */
   isoWeek: number;
+  /** Week A or B of an every-two-weeks cycle, as `generate_routes` plans it. */
+  fortnightWeek: "A" | "B";
   /** One per column, in `columns` order. */
   days: CycleDay[];
 };
@@ -500,7 +514,7 @@ export function buildCycleCalendar(
       };
     });
 
-    weekRows.push({ weekStart: monday, isoWeek: isoWeekNumber(monday), days });
+    weekRows.push({ weekStart: monday, isoWeek: isoWeekNumber(monday), fortnightWeek: fortnightParity(monday) === 1 ? "A" : "B", days });
   }
 
   return { columns, weeks: weekRows, offDayColumns };

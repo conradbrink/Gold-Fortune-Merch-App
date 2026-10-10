@@ -193,7 +193,8 @@ export default function WarehouseSettingsPage() {
       )}
 
       <Tabs defaultValue="suppliers">
-        <TabsList>
+        {/* Scrolls on its own on a phone, as on Reports. */}
+        <TabsList className="max-w-full justify-start overflow-x-auto px-1 [&::-webkit-scrollbar]:hidden [&>*]:shrink-0 [&>*]:px-2.5">
           <TabsTrigger value="suppliers">Suppliers</TabsTrigger>
           <TabsTrigger value="drivers">Drivers</TabsTrigger>
           <TabsTrigger value="vehicles">Vehicles</TabsTrigger>

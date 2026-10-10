@@ -87,14 +87,19 @@ void main() {
     await db.close();
   });
 
-  SyncEngine engineOver(FakePostgrest server) {
+  SyncEngine engineOver(FakePostgrest server, {String? signedIn = 'rep-1'}) {
     client = SupabaseClient(
       'http://localhost:54321',
       'anon-key',
       httpClient: server.client,
       authOptions: const AuthClientOptions(autoRefreshToken: false),
     );
-    return SyncEngine(db, client, readBuild: () async => null);
+    return SyncEngine(
+      db,
+      client,
+      readBuild: () async => null,
+      signedInUser: () => signedIn,
+    );
   }
 
   Future<int> queueOrder() => db.enqueue(
@@ -215,5 +220,31 @@ void main() {
     final left = await pending();
     expect(left.single.id, id);
     expect(left.single.attempts, 1);
+  });
+
+  test('nothing is replayed, or charged, with nobody signed in', () async {
+    // A rep who signed out with work queued lost it: every replay was refused
+    // by RLS and spent an attempt until the entry was given up.
+    final server = FakePostgrest(existingOrder: null);
+    await queueOrder();
+
+    await engineOver(server, signedIn: null).sync();
+
+    final left = await pending();
+    expect(left, hasLength(1));
+    expect(left.single.attempts, 0);
+    expect(server.requests, isEmpty);
+  });
+
+  test("a colleague's queued work waits for them", () async {
+    final server = FakePostgrest(existingOrder: null);
+    await queueOrder();
+
+    await engineOver(server, signedIn: 'rep-2').sync();
+
+    final left = await pending();
+    expect(left, hasLength(1));
+    expect(left.single.attempts, 0);
+    expect(server.requests, isEmpty);
   });
 }

@@ -1,3 +1,4 @@
+import { allPages } from "@/lib/all-pages";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import {
   batchForRouting,
@@ -81,7 +82,9 @@ export async function settleRoadDistance({
     .not("ended_at", "is", null)
     .is("road_distance_at", null)
     .is("road_distance_error", null)
-    .order("ended_at", { ascending: false })
+    // Oldest first. Newest-first with a nightly cap left the oldest days
+    // unmeasured for good whenever more days finished than one run settles.
+    .order("ended_at", { ascending: true })
     .limit(maxSessions);
 
   if (sessionId) query = query.eq("id", sessionId);
@@ -187,11 +190,25 @@ export async function settleRoadDistance({
     // it belongs to, and a window can pick up a neighbouring session's pings
     // where two overlap — which on this route means billing Google to route a
     // day that includes somebody else's afternoon.
-    const { data: pingRows, error: pingError } = await admin
-      .from("location_pings")
-      .select("lat, lng, recorded_at")
-      .eq("workday_session_id", session.id)
-      .order("recorded_at", { ascending: true });
+    // Only up to the day's end (a late ping is not the day's driving, and
+    // Google bills for every point), and paged: a long day passes the API's
+    // 1,000-row cap and its last hours went unmeasured.
+    let pingRows: unknown[] | null = null;
+    let pingError: { message: string } | null = null;
+    try {
+      pingRows = await allPages((from, to) =>
+        admin
+          .from("location_pings")
+          .select("id, lat, lng, recorded_at")
+          .eq("workday_session_id", session.id)
+          .lte("recorded_at", session.ended_at)
+          .order("recorded_at", { ascending: true })
+          .order("id", { ascending: true })
+          .range(from, to)
+      );
+    } catch (e) {
+      pingError = { message: e instanceof Error ? e.message : String(e) };
+    }
 
     if (pingError) {
       const rel = await release(session.id, pingError.message);

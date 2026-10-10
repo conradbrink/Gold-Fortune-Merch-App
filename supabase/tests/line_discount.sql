@@ -131,7 +131,7 @@ begin
           or (qty_ordered = 10 and list_price = 159.50 and discount_pct = 10 and unit_price = 143.55));
   if v_n <> 2
      or (select prosrc from pg_proc where oid = 'public.quote_convert(uuid)'::regprocedure)
-          not like '%l.discount_pct, l.discount_amount, gen_random_uuid()%' then
+          not like '%l.discount_pct, x.discount_amount, gen_random_uuid()%' then
     v_fail := v_fail || format('D3 the order from the quote has %s of its 2 lines as quoted, or quote_convert drops the amount', v_n) || E'\n';
   end if;
 
