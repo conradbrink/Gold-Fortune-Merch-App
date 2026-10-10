@@ -1,5 +1,7 @@
 "use client";
 
+import { forgetCompanyConfig } from "@/lib/use-company-config";
+import { forgetSitesView } from "@/lib/map-centre";
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -26,6 +28,10 @@ export default function RepNoticePage() {
 
   async function handleSignOut() {
     await supabase.auth.signOut();
+    // This tab's caches belong to the person leaving: whoever signs in next
+    // here must not be shown their company's configuration or map view.
+    forgetCompanyConfig();
+    forgetSitesView();
     router.push("/login");
     router.refresh();
   }
