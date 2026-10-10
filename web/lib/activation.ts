@@ -85,7 +85,7 @@ export function median(values: number[]): number | null {
 
 export type Attention = { reason: string; action: string; urgency: number };
 
-const plural = (n: number, one: string, many = one + "s") => `${n} ${n === 1 ? one : many}`;
+export const plural = (n: number, one: string, many = one + "s") => `${n} ${n === 1 ? one : many}`;
 
 /**
  * Why a company needs the operator now, each with the next thing to do. Fixed

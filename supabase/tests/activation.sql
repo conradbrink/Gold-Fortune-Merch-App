@@ -6,6 +6,7 @@
 --       activated, with a team, clients and a recent sign-in.
 --   A3  A fresh company with one client and nothing else: first client set,
 --       everything after it empty, no people.
+--   A4  Asking for one company returns only that company.
 --
 -- HOW TO RUN: paste into execute_sql. One DO block that always ends in
 -- `raise exception`, so nothing survives.
@@ -17,11 +18,11 @@ declare
   r record;
 begin
   ------------------------------------------------------------ A1 grants
-  if has_function_privilege('anon', 'public.platform_company_activation()', 'execute')
-     or has_function_privilege('authenticated', 'public.platform_company_activation()', 'execute') then
+  if has_function_privilege('anon', 'public.platform_company_activation(uuid[])', 'execute')
+     or has_function_privilege('authenticated', 'public.platform_company_activation(uuid[])', 'execute') then
     v_fail := v_fail || 'A1 platform_company_activation() is callable through the API' || E'\n';
   end if;
-  if not has_function_privilege('service_role', 'public.platform_company_activation()', 'execute') then
+  if not has_function_privilege('service_role', 'public.platform_company_activation(uuid[])', 'execute') then
     v_fail := v_fail || 'A1 the service role cannot call platform_company_activation()' || E'\n';
   end if;
 
@@ -43,6 +44,12 @@ begin
   if r.people <> 0 or r.team_on_at is not null or r.first_workday_at is not null
      or r.first_job_started_at is not null or r.first_job_finished_at is not null or r.finished_days_14 <> 0 then
     v_fail := v_fail || 'A3 a fresh company shows milestones it has not reached' || E'\n';
+  end if;
+
+  ------------------------------------------------------------ A4 only the ones asked for
+  if (select count(*) from public.platform_company_activation(array[v_org])) <> 1
+     or (select a.org_id from public.platform_company_activation(array[v_org]) a) <> v_org then
+    v_fail := v_fail || 'A4 asking for one company did not return just that company' || E'\n';
   end if;
 
   if v_fail <> '' then

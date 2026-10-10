@@ -8314,7 +8314,7 @@ export type Database = {
         Returns: number
       }
       platform_company_activation: {
-        Args: Record<string, never>
+        Args: { p_org_ids?: string[] }
         Returns: {
           org_id: string
           name: string

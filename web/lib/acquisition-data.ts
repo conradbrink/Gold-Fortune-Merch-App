@@ -54,7 +54,7 @@ export async function loadFirstParty(p: TwoPeriods): Promise<FirstParty> {
     const [{ data: orgs, error: orgError }, { data: accounts, error: accountError }, activation] = await Promise.all([
       admin.from("organizations").select("id, name").in("id", orgIds),
       admin.from("company_account").select("org_id, trial_ends_at").in("org_id", orgIds),
-      loadActivation(),
+      loadActivation(orgIds),
     ]);
     if (orgError) throw orgError;
     if (accountError) throw accountError;

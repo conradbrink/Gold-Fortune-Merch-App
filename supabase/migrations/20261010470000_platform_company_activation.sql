@@ -16,8 +16,12 @@
 --     finished_days_14                days (company's own time zone) with a job
 --                                     finished in the last 14 days
 --     last_activity_at, last_sign_in_at, trial_ends_at
---     contact_name/email/phone        the company's first person (its administrator),
---                                     so the operator can reach them in one click
+--     contact_name/email/phone        the company's first active manager (else its first
+--                                     active person), so the operator can reach them
+--                                     in one click
+--
+-- p_org_ids: only these companies (the Acquisition funnel asks about the few
+-- linked to applications); null for every company (the Onboarding page).
 --
 -- One query over each table, grouped by company: one call for the whole page.
 -- SECURITY DEFINER because it reads auth.users (last sign-in) and every company;
@@ -26,7 +30,7 @@
 --
 -- Rollback: supabase/rollback/20261010470000_platform_company_activation.down.sql.
 
-create or replace function public.platform_company_activation()
+create or replace function public.platform_company_activation(p_org_ids uuid[] default null)
 returns table (
   org_id                uuid,
   name                  text,
@@ -55,20 +59,23 @@ set search_path to 'public'
 as $function$
   with p as (
     select pr.org_id,
-           count(*) filter (where pr.is_active)                              as people,
-           (array_agg(pr.created_at order by pr.created_at, pr.id))[2]       as team_on_at,
-           (array_agg(pr.id order by pr.created_at, pr.id))[1]               as first_person
+           count(*) filter (where pr.is_active)                                                   as people,
+           (array_agg(pr.created_at order by pr.created_at, pr.id) filter (where pr.is_active))[2] as team_on_at,
+           (array_agg(pr.id order by (pr.role = 'rep'), pr.created_at, pr.id) filter (where pr.is_active))[1] as first_person
     from public.profiles pr
+    where p_org_ids is null or pr.org_id = any(p_org_ids)
     group by pr.org_id
   ),
   s as (
     select st.org_id, min(st.created_at) as first_client_at
     from public.stores st
+    where p_org_ids is null or st.org_id = any(p_org_ids)
     group by st.org_id
   ),
   w as (
     select ws.org_id, min(ws.started_at) as first_workday_at, max(ws.started_at) as last_workday_at
     from public.workday_sessions ws
+    where p_org_ids is null or ws.org_id = any(p_org_ids)
     group by ws.org_id
   ),
   v as (
@@ -80,12 +87,14 @@ as $function$
              filter (where vi.checkout_at >= now() - interval '14 days') as finished_days_14
     from public.visits vi
     join public.organizations o2 on o2.id = vi.org_id
+    where p_org_ids is null or vi.org_id = any(p_org_ids)
     group by vi.org_id
   ),
   u as (
     select pr.org_id, max(au.last_sign_in_at) as last_sign_in_at
     from public.profiles pr
     join auth.users au on au.id = pr.id
+    where p_org_ids is null or pr.org_id = any(p_org_ids)
     group by pr.org_id
   )
   select o.id,
@@ -116,11 +125,12 @@ as $function$
   left join w on w.org_id = o.id
   left join v on v.org_id = o.id
   left join u on u.org_id = o.id
+  where p_org_ids is null or o.id = any(p_org_ids)
   order by o.created_at;
 $function$;
 
-revoke all on function public.platform_company_activation() from public, anon, authenticated;
-grant execute on function public.platform_company_activation() to service_role;
+revoke all on function public.platform_company_activation(uuid[]) from public, anon, authenticated;
+grant execute on function public.platform_company_activation(uuid[]) to service_role;
 
-comment on function public.platform_company_activation() is
+comment on function public.platform_company_activation(uuid[]) is
   'Control Centre: each company''s onboarding milestones (setup, team, first client or site, first workday, first job started and finished), activity, sign-in, free period and first administrator''s contact. Service role only.';

@@ -7,6 +7,7 @@ import {
   HABIT_DAYS,
   median,
   pipeline,
+  plural,
   stageOf,
   STAGES,
   whatsappNumber,
@@ -24,9 +25,9 @@ import {
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Platform · Onboarding" };
 
-const date = new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" });
+// Days as the operator lives them: South African time (no daylight saving).
+const date = new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "short", year: "numeric", timeZone: "Africa/Johannesburg" });
 const fmt = (iso: string | null) => (iso ? date.format(new Date(iso)) : null);
-const plural = (n: number, one: string, many = one + "s") => `${n} ${n === 1 ? one : many}`;
 
 export default async function OnboardingPage({
   searchParams,
@@ -51,7 +52,15 @@ export default async function OnboardingPage({
   const counts = pipeline(result.companies);
   const needing = rows.filter((r) => r.attention.length > 0);
   const stageParam = typeof params.stage === "string" && STAGES.some((s) => s.key === params.stage) ? (params.stage as StageKey) : null;
-  const view = params.view === "all" ? "all" : stageParam ? "stage" : needing.length > 0 ? "attention" : "all";
+  // An explicit choice wins; with none, open on who needs attention (or everyone, when nobody does).
+  const view =
+    params.view === "all" || params.view === "attention"
+      ? params.view
+      : stageParam
+        ? "stage"
+        : needing.length > 0
+          ? "attention"
+          : "all";
   const shown = (
     view === "attention" ? needing : view === "stage" ? rows.filter((r) => STAGES[r.stage].key === stageParam) : rows
   ).sort(
@@ -108,11 +117,11 @@ export default async function OnboardingPage({
       </ol>
       <p className="-mt-3 text-xs text-muted-foreground">
         Each company is counted at the furthest step it has reached. &ldquo;Using it every workday&rdquo; means jobs
-        finished on {HABIT_DAYS} or more different days in the last 14.
+        finished on {HABIT_DAYS} or more different days in the last 14. Dates are South African time.
       </p>
 
       <nav aria-label="Show" className="-mb-px flex gap-1 border-b border-border">
-        {tab("/platform/onboarding", `Needs attention (${needing.length})`, view === "attention")}
+        {tab("/platform/onboarding?view=attention", `Needs attention (${needing.length})`, view === "attention")}
         {tab("/platform/onboarding?view=all", `All companies (${rows.length})`, view === "all")}
         {stageParam && tab(`/platform/onboarding?stage=${stageParam}`, STAGES.find((s) => s.key === stageParam)!.label, true)}
       </nav>
