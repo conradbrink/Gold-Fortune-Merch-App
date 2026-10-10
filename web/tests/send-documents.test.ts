@@ -561,3 +561,15 @@ test("the picture the emails point at is in the app's public folder and is a PNG
   assert.ok(existsSync(file), file);
   assert.equal(readFileSync(file).subarray(1, 4).toString("latin1"), "PNG");
 });
+
+test("a company's own logo is the picture at the top of its emails, and its name when it has none", () => {
+  const payload = { link_id: "x", url, number: "INV-1", total: 100, currency: "ZAR", company_name: "Acme" };
+  const logo = "https://x.supabase.co/storage/v1/object/public/branding/o/logo-a1.png";
+  const withLogo = renderEmail("invoice", payload, { ...ctx, companyLogoUrl: logo })!;
+  assert.match(withLogo.html, new RegExp(`<td[^>]*><img src="${logo.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}" alt="Acme Cleaning"[^>]*max-height:56px`));
+  assert.ok(!withLogo.html.includes(">Acme Cleaning</td></tr>"));
+  const without = renderEmail("invoice", payload, ctx)!;
+  assert.ok(without.html.includes(">Acme Cleaning</td></tr>"));
+  const own = renderEmail("test", {}, { companyName: "A & <B>", unsubscribeUrl: null, companyLogoUrl: logo })!;
+  assert.match(own.html, /alt="A &amp; &lt;B&gt;"/);
+});
