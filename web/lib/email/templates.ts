@@ -481,7 +481,7 @@ const TEMPLATES: Record<string, Renderer> = {
       para(
         waitlist
           ? "You are first in line if a place opens, and first for the next round. We will let you know as soon as it does."
-          : `We will call you between 20 and 22 October, and confirm your place by ${FOUNDING_OFFER.tellsBy}. Then we set everything up for you, and you run Tickd free for ${FOUNDING_OFFER.days} days.`
+          : `We will call you between ${FOUNDING_OFFER.callsBetween}, and confirm your place by ${FOUNDING_OFFER.tellsBy}. Then we set everything up for you, and you run Tickd free for ${FOUNDING_OFFER.days} days.`
       ),
       para("There is nothing to pay, and we do not need a card."),
     ]);

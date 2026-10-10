@@ -41,19 +41,19 @@ export default async function FoundingApplicationsPage({
   await requireOperator("/platform/founding");
 
   const admin = platformAdminClient();
-  const [{ data: rows, error: listError }, { data: left }, templates, { data: orgs, error: orgError }] = await Promise.all([
+  const [{ data: rows, error: listError }, { data: left }, templates, { data: orgs, error: orgError }, { data: outcomes }] = await Promise.all([
     admin.from("founding_applications").select("*").order("created_at", { ascending: false }),
     admin.rpc("founding_spots_left"),
     listTemplates().catch(() => []),
     admin.from("organizations").select("id, name").order("name"),
+    admin
+      .from("message_outbox")
+      .select("related_id, template, status, sent_at, created_at")
+      .eq("related_kind", OUTCOME_RELATED_KIND)
+      .order("created_at", { ascending: false }),
   ]);
   if (listError) throw listError;
   if (orgError) throw orgError;
-  const { data: outcomes } = await admin
-    .from("message_outbox")
-    .select("related_id, template, status, sent_at, created_at")
-    .eq("related_kind", OUTCOME_RELATED_KIND)
-    .order("created_at", { ascending: false });
   /** The answer already emailed to each applicant: the newest one. */
   const emailed = new Map<string, { template: string; status: string; at: string }>();
   for (const o of outcomes ?? []) {
