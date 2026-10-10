@@ -33,6 +33,9 @@ import { confirmed, founding, pricing, rand, site } from "@/lib/site";
 // print), and as few words as will do. Still no dashes, and only live features.
 // Lines v7 marks [CONFIRM] sit behind `confirmed` in lib/site.ts.
 // Mobile first: every style below is the phone's; sm:/md:/lg: only add room.
+// The two photos of people (public/people) are Unsplash stock under the free
+// Unsplash License (photos AWxWjmNSoNU and xdS9XEoKBLY): not our clients, so
+// no caption ever says they are.
 // Light only, on purpose: owners read this on a phone outdoors, between jobs,
 // and the brand is built on the sand ground.
 
@@ -379,13 +382,26 @@ export default function Home() {
 
         {/* 2. Easy to say yes: the effort it doesn't take. */}
         <section aria-labelledby="start-title" className="border-y border-line bg-white">
-          <div className={`${wrap} max-w-6xl`}>
-            <h2 id="start-title" className="tk-reveal font-display text-2xl font-bold leading-tight text-teal-900 sm:text-3xl">
+          {/* Heading, photo, list on a phone; from lg the photo sits on the left
+              and the heading and list stack beside it. */}
+          <div className={`${wrap} max-w-6xl lg:grid-cols-[0.85fr_1fr] lg:gap-x-14`}>
+            <h2
+              id="start-title"
+              className="tk-reveal font-display text-2xl font-bold leading-tight text-teal-900 sm:text-3xl lg:col-start-2 lg:self-end"
+            >
               What do you need to start?
             </h2>
-            <ul className="grid gap-5 md:grid-cols-3 md:gap-0 md:divide-x md:divide-line">
+            <Image
+              src="/people/worker-phone.webp"
+              alt="A worker in a hard hat checking his phone on site."
+              width={900}
+              height={965}
+              unoptimized
+              className="tk-reveal aspect-[4/3] w-full rounded-2xl object-cover object-[50%_35%] lg:col-start-1 lg:row-span-2 lg:row-start-1 lg:aspect-[9/10]"
+            />
+            <ul className="grid content-start gap-5 lg:col-start-2">
               {easy.map(({ icon: Icon, title, body }) => (
-                <li key={title} className="tk-reveal tk-timeline flex gap-3.5 md:px-8 md:first:pl-0 md:last:pr-0">
+                <li key={title} className="tk-reveal tk-timeline flex gap-3.5">
                   <Icon className="tk-draw mt-0.5 size-6 shrink-0 text-teal-700" strokeWidth={2} aria-hidden="true" />
                   <span className="grid gap-0.5">
                     <span className="font-display text-lg font-bold text-teal-900">{title}</span>
@@ -572,10 +588,13 @@ export default function Home() {
             <div className="grid content-start gap-3">
               <h2 className={h2}>Your team will like it too.</h2>
               <p className={lead}>It proves the good work they already do.</p>
-              <PhonePeek
-                src="/demo/phone/02b-day-plan.webp"
-                alt="The staff app's morning screen: Good morning, Thabo! You have 3 stores to visit today, and the plan for the day."
-                className="tk-reveal mt-3 bg-amber-100/70"
+              <Image
+                src="/people/team.webp"
+                alt="A team of four in orange work clothes and hard hats, smiling."
+                width={1200}
+                height={801}
+                unoptimized
+                className="tk-reveal mt-3 h-auto w-full rounded-2xl"
               />
             </div>
             <ul className="grid content-center gap-x-8 gap-y-6 sm:grid-cols-2">
