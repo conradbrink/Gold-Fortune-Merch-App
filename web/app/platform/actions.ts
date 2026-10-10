@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { moduleDependencies, platformAdminClient, templateDefaults } from "@/lib/platform";
 import { queueWelcomeEmail } from "@/lib/welcome-email";
+import { OUTCOME_RELATED_KIND, isFoundingStatus, outcomePayload, outcomeTemplate } from "@/lib/founding-outcome";
 import {
   addCompanyProblems,
   choicesPayload,
@@ -363,6 +364,97 @@ export async function linkFoundingApplication(formData: FormData): Promise<void>
       .update({ detail: { application: applicationId, refused } })
       .eq("id", audit.id);
     redirect(`${back}?error=${encodeURIComponent(`Not ${orgId ? "linked" : "unlinked"}: ${refused}`)}`);
+  }
+  redirect(`${back}#${applicationId}`);
+}
+
+/**
+ * Founding applications: set an application's status (new, contacted, accepted,
+ * declined, waiting list) and, when the operator ticks "Email them", send the
+ * applicant the answer for accepted or declined through the outbox. Audit-logged
+ * first, like linking. The same answer is never emailed twice (the outbox is
+ * looked at first), and an applicant with no email address is simply not emailed.
+ */
+export async function setFoundingStatus(formData: FormData): Promise<void> {
+  const applicationId = String(formData.get("applicationId") ?? "");
+  const status = String(formData.get("status") ?? "");
+  const sendEmail = formData.get("sendEmail") === "on";
+  const back = "/platform/founding";
+
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
+  const { data: isOperator, error: checkError } = await supabase.rpc("is_platform_admin");
+  if (checkError || !isOperator) redirect("/");
+  if (!/^[0-9a-f-]{36}$/i.test(applicationId) || !isFoundingStatus(status)) {
+    redirect(`${back}?error=${encodeURIComponent("That request was not understood.")}`);
+  }
+
+  const admin = platformAdminClient();
+  const { data: app, error: readError } = await admin
+    .from("founding_applications")
+    .select("id, name, business_name, whatsapp, email, status")
+    .eq("id", applicationId)
+    .maybeSingle();
+  if (readError || !app) {
+    redirect(`${back}?error=${encodeURIComponent("That application no longer exists.")}`);
+  }
+
+  const template = sendEmail ? outcomeTemplate(status) : null;
+  const { data: audit, error: auditError } = await admin
+    .from("platform_audit_log")
+    .insert({
+      actor_id: user.id,
+      action: "founding.status",
+      target_org_id: null,
+      detail: { application: applicationId, from: app.status, to: status, emailed: template, refused: null },
+    })
+    .select("id")
+    .single();
+  if (auditError) {
+    redirect(`${back}?error=${encodeURIComponent(`Not changed: the audit log could not be written (${auditError.message}).`)}`);
+  }
+
+  const { error } = await admin
+    .from("founding_applications")
+    .update({ status, status_changed_at: new Date().toISOString() })
+    .eq("id", applicationId);
+  if (error) {
+    await admin.from("platform_audit_log").update({ detail: { application: applicationId, refused: error.message } }).eq("id", audit.id);
+    redirect(`${back}?error=${encodeURIComponent(`Not changed: ${error.message}`)}`);
+  }
+
+  if (template) {
+    if (!app.email) {
+      redirect(`${back}?error=${encodeURIComponent("Status saved. They left no email address, so nothing was sent: call or WhatsApp them.")}#${applicationId}`);
+    }
+    const { data: already } = await admin
+      .from("message_outbox")
+      .select("template")
+      .eq("related_kind", OUTCOME_RELATED_KIND)
+      .eq("related_id", applicationId)
+      .in("status", ["queued", "sending", "sent"]);
+    const told = (already ?? []).map((r) => r.template);
+    if (told.some((t) => t !== template)) {
+      // They were already given the other answer: a second, opposite email is never sent by a click.
+      redirect(`${back}?error=${encodeURIComponent("Status saved. They were already emailed the other answer, so nothing more was sent: write to them yourself.")}#${applicationId}`);
+    }
+    if (told.length === 0) {
+      const { error: queueError } = await admin.rpc("queue_email", {
+        p_org: null,
+        p_to: app.email,
+        p_to_name: app.name,
+        p_template: template,
+        p_payload: outcomePayload(app),
+        p_related_kind: OUTCOME_RELATED_KIND,
+        p_related_id: applicationId,
+      });
+      if (queueError) {
+        redirect(`${back}?error=${encodeURIComponent(`Status saved, but the email was not queued: ${queueError.message}`)}#${applicationId}`);
+      }
+    }
   }
   redirect(`${back}#${applicationId}`);
 }

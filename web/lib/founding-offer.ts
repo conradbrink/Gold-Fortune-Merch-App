@@ -13,6 +13,9 @@ export const FOUNDING_OFFER = {
   closes: "Monday 19 October",
   /** When every applicant hears back. */
   tellsBy: "Friday 23 October",
+  /** When the picked businesses are set up, and when their free days start. */
+  setupFrom: "26 October",
+  startsOn: "Monday 2 November",
   /** Where the application is. */
   applyUrl: "https://tickd.co.za/founding",
 } as const;
