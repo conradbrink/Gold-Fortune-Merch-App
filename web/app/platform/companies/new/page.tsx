@@ -49,7 +49,7 @@ export default async function AddCompanyPage() {
   return (
     <main className="mx-auto max-w-4xl space-y-6 p-4 sm:p-8">
       <header className="space-y-1">
-        <Link href="/platform" className="text-sm text-muted-foreground hover:underline">
+        <Link href="/platform/companies" className="text-sm text-muted-foreground hover:underline">
           ← Companies
         </Link>
         <h1 className="text-2xl font-bold text-foreground">Add company</h1>

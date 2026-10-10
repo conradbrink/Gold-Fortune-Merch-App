@@ -8364,6 +8364,10 @@ export type Database = {
         Args: Record<string, never>
         Returns: number
       }
+      platform_system_health: {
+        Args: Record<string, never>
+        Returns: Json
+      }
       platform_web_stats: {
         Args: { p_from: string; p_to: string; p_tz?: string; p_device?: string; p_country?: string }
         Returns: Json
