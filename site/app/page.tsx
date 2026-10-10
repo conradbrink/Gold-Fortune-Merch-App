@@ -1,19 +1,23 @@
 import {
   Check,
   ChevronDown,
+  Clock,
   ClipboardCheck,
   CloudOff,
   FileText,
   LayoutDashboard,
   MapPin,
   MapPinned,
+  Moon,
   Navigation,
   Receipt,
   Route,
   Smartphone,
+  Sun,
   Wallet,
 } from "lucide-react";
 import Image from "next/image";
+import { AppMoment } from "@/components/app-moment";
 import { CostCalculator } from "@/components/cost-calculator";
 import { ProductDemo } from "@/components/demo/product-demo";
 import { Logo } from "@/components/logo";
@@ -33,9 +37,11 @@ import { confirmed, founding, pricing, rand, site } from "@/lib/site";
 // print), and as few words as will do. Still no dashes, and only live features.
 // Lines v7 marks [CONFIRM] sit behind `confirmed` in lib/site.ts.
 // Mobile first: every style below is the phone's; sm:/md:/lg: only add room.
-// The two photos of people (public/people) are Unsplash stock under the free
-// Unsplash License (photos AWxWjmNSoNU and xdS9XEoKBLY): not our clients, so
-// no caption ever says they are.
+// The photos of people (public/people) are free stock, not our clients, so no
+// caption ever says they are: worker-phone is Unsplash xdS9XEoKBLY (Unsplash
+// License); sales-rep, maintenance, cleaner and gardener are Pexels 9363112,
+// 8487400, 6197124 and 7342650 (Pexels License). The names on their app
+// cards are made up, like the app's example data.
 // Light only, on purpose: owners read this on a phone outdoors, between jobs,
 // and the brand is built on the sand ground.
 
@@ -108,11 +114,40 @@ const money = [
   { icon: Wallet, text: "See who has paid, and who is 30, 60 or 90 days late." },
 ];
 
+// Each point beside someone from a different trade, with the moment in the
+// staff app that backs it up (the app's own words: "Checked in", "Time
+// worked", the checklist sent, and the end-of-day "See you tomorrow").
 const team = [
-  ["No more “he said, she said”.", "The photos and times speak for them."],
-  ["Overtime is on record.", "There's nothing to argue about on payday."],
-  ["Less reporting back.", "No more voice notes or calls at the end of the day."],
-  ["Their evenings are their own.", "Tickd only works during work hours."],
+  {
+    title: "No more “he said, she said”.",
+    body: "The photos and times speak for them.",
+    photo: "/people/sales-rep.webp",
+    alt: "A smiling sales rep in a suit, on his phone.",
+    moment: { icon: MapPin, who: "Thabo · Sales rep", title: "Checked in at Store 14", body: "7:31 AM, 18 m from the store." },
+  },
+  {
+    title: "Overtime is on record.",
+    body: "There's nothing to argue about on payday.",
+    photo: "/people/maintenance.webp",
+    alt: "A smiling maintenance worker in a hard hat, holding a drill.",
+    moment: { icon: Clock, who: "Naledi · Maintenance", title: "Time worked: 9h 40m", body: "It's on the timesheet." },
+  },
+  {
+    title: "Less reporting back.",
+    body: "No more voice notes or calls at the end of the day.",
+    photo: "/people/cleaner.webp",
+    alt: "A cleaner in overalls wiping a window.",
+    // Her face sits low in the frame, so the phone's wide crop keeps the bottom.
+    pos: "object-[50%_85%]",
+    moment: { icon: ClipboardCheck, who: "Lindiwe · Cleaning", title: "Daily cleaning checklist sent", body: "With 2 photos of the bathrooms." },
+  },
+  {
+    title: "Their evenings are their own.",
+    body: "Tickd only works during work hours.",
+    photo: "/people/gardener.webp",
+    alt: "A smiling gardener holding a large green plant.",
+    moment: { icon: Moon, who: "Sipho · Garden services", title: "Workday ended", body: "Your hours and mileage are saved. See you tomorrow.", night: true },
+  },
 ];
 
 const faqs = [
@@ -391,14 +426,23 @@ export default function Home() {
             >
               What do you need to start?
             </h2>
-            <Image
-              src="/people/worker-phone.webp"
-              alt="A worker in a hard hat checking his phone on site."
-              width={900}
-              height={965}
-              unoptimized
-              className="tk-reveal aspect-[4/3] w-full rounded-2xl object-cover object-[50%_35%] lg:col-start-1 lg:row-span-2 lg:row-start-1 lg:aspect-[9/10]"
-            />
+            <div className="tk-reveal relative mb-8 lg:col-start-1 lg:row-span-2 lg:row-start-1 lg:mb-8">
+              <Image
+                src="/people/worker-phone.webp"
+                alt="A worker in a hard hat checking his phone on site."
+                width={900}
+                height={965}
+                unoptimized
+                className="aspect-[4/3] w-full rounded-2xl object-cover object-[50%_35%] lg:aspect-[9/10]"
+              />
+              <AppMoment
+                icon={Sun}
+                who="Kagiso · Electrical"
+                title="Good morning, Kagiso!"
+                body="You have 3 jobs today. Here's the plan."
+                className="absolute inset-x-3 -bottom-8 sm:inset-x-auto sm:left-4 sm:w-80"
+              />
+            </div>
             <ul className="grid content-start gap-5 lg:col-start-2">
               {easy.map(({ icon: Icon, title, body }) => (
                 <li key={title} className="tk-reveal tk-timeline flex gap-3.5">
@@ -584,25 +628,29 @@ export default function Home() {
 
         {/* 8. Good for your team too */}
         <section id="team" className="border-t border-line bg-white">
-          <div className={`${wrap} max-w-6xl md:grid-cols-[0.8fr_1.2fr] md:gap-12`}>
-            <div className="grid content-start gap-3">
+          <div className={`${wrap} max-w-6xl`}>
+            <div className="grid gap-3">
               <h2 className={h2}>Your team will like it too.</h2>
               <p className={lead}>It proves the good work they already do.</p>
-              <Image
-                src="/people/team.webp"
-                alt="A team of four in orange work clothes and hard hats, smiling."
-                width={1200}
-                height={801}
-                unoptimized
-                className="tk-reveal mt-3 h-auto w-full rounded-2xl"
-              />
             </div>
-            <ul className="grid content-center gap-x-8 gap-y-6 sm:grid-cols-2">
-              {team.map(([title, body]) => (
-                <li key={title} className="tk-reveal relative grid gap-1.5 pt-4">
-                  <span aria-hidden="true" className="tk-rule absolute inset-x-0 top-0 h-0.5 bg-amber-500" />
-                  <span className="font-display text-lg font-bold text-teal-900">{title}</span>
-                  <span className="leading-relaxed text-ink">{body}</span>
+            <ul className="grid gap-x-5 gap-y-10 sm:grid-cols-2 lg:grid-cols-4">
+              {team.map(({ title, body, photo, alt, moment, pos = "object-[50%_30%]" }) => (
+                <li key={title} className="tk-reveal grid content-start gap-4">
+                  <div className="relative mb-8">
+                    <Image
+                      src={photo}
+                      alt={alt}
+                      width={800}
+                      height={1200}
+                      unoptimized
+                      className={`aspect-[4/3] w-full rounded-2xl object-cover sm:aspect-[4/5] ${pos}`}
+                    />
+                    <AppMoment {...moment} className="absolute inset-x-3 -bottom-8" />
+                  </div>
+                  <span className="grid gap-1">
+                    <span className="font-display text-lg font-bold text-teal-900">{title}</span>
+                    <span className="leading-relaxed text-ink">{body}</span>
+                  </span>
                 </li>
               ))}
             </ul>
