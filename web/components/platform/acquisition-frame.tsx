@@ -83,7 +83,7 @@ export function AcquisitionFrame({
       {!ga.ok && (
         <p className="rounded-lg border border-border bg-muted/40 p-3 text-sm text-foreground">
           {ga.reason === "not-connected"
-            ? "Google Analytics isn't connected yet, so the website numbers are missing. Tickd's own records (applications and companies) are below. To connect it, add GA4_CLIENT_EMAIL and GA4_PRIVATE_KEY in Vercel."
+            ? `Google Analytics isn't connected yet, so the website numbers are missing. Tickd's own records (applications and companies) are below. ${ga.message ?? "To connect it, add GA4_CLIENT_EMAIL and GA4_PRIVATE_KEY in Vercel."}`
             : `Google Analytics didn't answer: ${ga.message ?? "unknown error"}. Tickd's own records are below.`}
         </p>
       )}
