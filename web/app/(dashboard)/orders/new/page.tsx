@@ -732,7 +732,7 @@ export default function NewOrderPage() {
               </p>
               {vatRate === 0 && (
                 <p className="text-xs text-amber-600 dark:text-amber-500">
-                  No VAT rate is set. A manager can set it in Settings → Company.
+                  No VAT rate is set. A manager can set it in Company settings → Billing.
                 </p>
               )}
             </div>

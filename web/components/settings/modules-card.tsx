@@ -52,8 +52,7 @@ export function ModulesCard() {
       <CardHeader>
         <CardTitle className="text-base">Your plan</CardTitle>
         <CardDescription>
-          The modules switched on for your company. To add or remove one, contact
-          whoever manages your account.
+          What your plan includes. To add something or change your plan, contact Tickd.
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -63,7 +62,9 @@ export function ModulesCard() {
         )}
         {modules && company && (
           <ul className="divide-y divide-border">
-            {modules.map((m) => {
+            {/* What exists today: a feature still being built is not something
+                a customer can have, so it is not listed as if it were. */}
+            {modules.filter((m) => m.is_built).map((m) => {
               const on = moduleEnabled(company.modules, m.code as ModuleCode);
               return (
                 <li key={m.code} className="flex items-start justify-between gap-4 py-3">
@@ -71,9 +72,7 @@ export function ModulesCard() {
                     <p className="text-sm font-medium text-foreground">{m.name}</p>
                     <p className="text-xs text-muted-foreground">{m.description}</p>
                   </div>
-                  {!m.is_built ? (
-                    <Badge variant="outline">Coming</Badge>
-                  ) : on ? (
+                  {on ? (
                     <Badge className="bg-primary text-primary-foreground">On</Badge>
                   ) : (
                     <Badge variant="secondary">Not in your plan</Badge>

@@ -1036,7 +1036,7 @@ export default function ReportsPage() {
               <CardTitle className="text-base">{terms.staff.one} scorecard</CardTitle>
               {teamMode && (
                 <p className="text-xs text-pretty text-muted-foreground">
-                  Each {lower(terms.staff.one)}&apos;s score on your weights (Settings, Dashboard &amp; reports). A month reads
+                  Each {lower(terms.staff.one)}&apos;s score, weighted for your trade. A month reads
                   best: a part needs at least five events, speed is compared with the team&apos;s middle person, and planned
                   work on approved leave is left out.
                 </p>

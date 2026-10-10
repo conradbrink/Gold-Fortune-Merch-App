@@ -11,20 +11,20 @@ const goldFortune = parseTerms({
   prospect: { one: "Lead", many: "Leads" },
 });
 
-test("Gold Fortune's manager note reads as it always has", () => {
+test("Gold Fortune's manager note names its own things", () => {
   assert.equal(
     baseRoleNotes(goldFortune).manager,
-    "No Android app. In the modules not yet on permissions — sales, stores, visits, leads, forms, files — sees everything, whatever the tick boxes below say."
+    "Uses the website, not the phone app. Where the tick boxes below do not reach yet (sales, stores, visits, leads, forms, files), sees everything."
   );
 });
 
 test("the neutral words name sites, jobs and leads", () => {
   assert.equal(
     baseRoleNotes(DEFAULT_TERMS).manager,
-    "No Android app. In the modules not yet on permissions — sales, sites, jobs, leads, forms, files — sees everything, whatever the tick boxes below say."
+    "Uses the website, not the phone app. Where the tick boxes below do not reach yet (sales, sites, jobs, leads, forms, files), sees everything."
   );
   assert.equal(
     baseRoleNotes(DEFAULT_TERMS).rep,
-    "Signs in to the Android app. In the modules not yet on permissions, sees only their own records."
+    "Uses the phone app. Where the tick boxes below do not reach yet (sales, sites, jobs, leads, forms, files), sees only their own."
   );
 });
