@@ -1,7 +1,7 @@
 import { ProofSlides } from "@/components/proof-slides";
 import { proof, site } from "@/lib/site";
 
-// "Real results": the Gold Fortune test, on the main page just under the hero
+// "Real results": what Gold Fortune, one of our clients, got from Tickd, on the main page just under the hero
 // and on /founding. The numbers are real, from Tickd's own data (see `proof`
 // in lib/site.ts for exactly what is compared). There is no "before Tickd"
 // data, so the first two weeks of use are the "before", and the small print
@@ -17,14 +17,14 @@ export function ProofSection({ id, applyHref }: { id?: string; applyHref: string
             id="proof-title"
             className="font-display text-3xl font-bold leading-[1.1] tracking-tight text-balance text-teal-900 sm:text-4xl"
           >
-            We tested it on our own team first.
+            See what it did for one of our clients.
           </h2>
           <p className="max-w-xl text-lg leading-relaxed text-pretty text-ink">
-            Gold Fortune is our distribution company in Botswana. Our {proof.reps} reps cover {proof.stores} stores. We put the whole
-            sales team on {site.name}, and these are the real numbers from the app.
+            Gold Fortune is one of our clients. Their {proof.reps} reps cover {proof.stores} stores. They put the whole sales team on{" "}
+            {site.name}, and these are the real numbers from the app.
           </p>
           <p className="max-w-xl text-lg leading-relaxed text-pretty text-ink">
-            How? We planned routes the night before. Every visit gets a time, a GPS check-in and photos. No more guessing who went
+            How? They planned routes the night before. Every visit gets a time, a GPS check-in and photos. No more guessing who went
             where.
           </p>
         </div>

@@ -351,7 +351,7 @@ export default function Home() {
           </figure>
         </section>
 
-        {/* The result on our own team, straight under the hero. */}
+        {/* The result at one of our clients, straight under the hero. */}
         <ProofSection applyHref="/founding" />
 
         {/* 2. Easy to say yes: the effort it doesn't take. */}
