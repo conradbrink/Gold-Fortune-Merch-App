@@ -90,8 +90,8 @@ begin
     v_fail := v_fail || format('B1 yearly 3 users = %s, expected 1499000 (no setup)%s', v_q->>'total_cents', E'\n');
   end if;
   v_q := public.billing_quote('monthly', 10, '{"warehouse": 2, "hr": 1}');
-  -- base + 7 extra + 2 warehouses + HR up to 5 employees (none yet) + setup
-  if (v_q->>'total_cents')::bigint <> 149900 + 7 * 34900 + 2 * 49900 + 19900 + 250000 then
+  -- base (5 users) + 5 extra + 2 warehouses + HR up to 5 employees (none yet) + setup
+  if (v_q->>'total_cents')::bigint <> 149900 + 5 * 34900 + 2 * 49900 + 19900 + 250000 then
     v_fail := v_fail || format('B1 monthly 10 users + 2 warehouses + HR = %s%s', v_q->>'total_cents', E'\n');
   end if;
   if (v_q->'vat'->>'vat_cents')::bigint <> 0 or (v_q->'vat'->>'registered')::boolean then
@@ -258,16 +258,17 @@ begin
   end if;
 
   ---------------------------------------------------------- B5 change plan
-  v_j := public.billing_preview_change(5, '{}');
-  -- The period started a moment ago: two extra users for (almost) the whole month.
+  v_j := public.billing_preview_change(7, '{}');
+  -- The base plan has 5 users (20261010100000), so 3 -> 7 is two extra users,
+  -- for (almost) the whole month: the period started a moment ago.
   if (v_j->>'total_cents')::bigint not between 69790 and 69800 then
     v_fail := v_fail || format('B5 two more users today: %s, expected about 69800%s', v_j->>'total_cents', E'\n');
   end if;
-  v_c := public.billing_request_change(5, '{}');
+  v_c := public.billing_request_change(7, '{}');
   reset role;
   perform public.billing_record_payment((v_c->>'charge_id')::uuid, 'pf-test-2', (v_c->>'total_cents')::bigint,
                                         null, 'charge', '{}');
-  if (select (plan->>'seats')::int from public.company_account where org_id = v_org) <> 5 then
+  if (select (plan->>'seats')::int from public.company_account where org_id = v_org) <> 7 then
     v_fail := v_fail || 'B5 paid seats did not go up' || E'\n';
   end if;
   -- Nothing left to apply at renewal must be SQL NULL, not JSON null: a JSON
@@ -275,8 +276,8 @@ begin
   if (select plan_next from public.company_account where org_id = v_org) is not null then
     v_fail := v_fail || 'B5 a paid change left plan_next set (JSON null?)' || E'\n';
   end if;
-  if (select (coalesce(plan_next, plan)->>'seats')::int from public.company_account where org_id = v_org) is distinct from 5 then
-    v_fail := v_fail || 'B5 the next renewal would not charge the 5 paid seats' || E'\n';
+  if (select (coalesce(plan_next, plan)->>'seats')::int from public.company_account where org_id = v_org) is distinct from 7 then
+    v_fail := v_fail || 'B5 the next renewal would not charge the 7 paid seats' || E'\n';
   end if;
   set local role authenticated;
   if public.billing_request_change(4, '{}') is not null then
@@ -284,7 +285,7 @@ begin
   end if;
   reset role;
   if not exists (select 1 from public.company_account where org_id = v_org
-                  and (plan->>'seats')::int = 5 and (plan_next->>'seats')::int = 4) then
+                  and (plan->>'seats')::int = 7 and (plan_next->>'seats')::int = 4) then
     v_fail := v_fail || 'B5 fewer seats did not wait for the renewal' || E'\n';
   end if;
   -- The plan's seats limit logins.
@@ -295,7 +296,7 @@ begin
     v_fail := v_fail || 'B5 a login past the paid seats was activated' || E'\n';
   exception when raise_exception then null;
   end;
-  update public.company_account set plan = '{"seats": 5, "addons": {}}' where org_id = v_org;
+  update public.company_account set plan = '{"seats": 7, "addons": {}}' where org_id = v_org;
   update public.profiles set is_active = true where id = v_staff;
 
   --------------------------------------------------------------- B6 renewal
@@ -313,7 +314,7 @@ begin
     v_fail := v_fail || 'B6 the renewal was not handed out to charge' || E'\n';
   end if;
   if (select total_cents from public.billing_charges where id = v_charge) <> 149900 + 2 * 34900 then
-    v_fail := v_fail || 'B6 the renewal is not 5 users monthly' || E'\n';
+    v_fail := v_fail || 'B6 the renewal is not 7 users monthly (5 in the base + 2 extra)' || E'\n';
   end if;
   perform public.billing_record_failure(v_charge, 'failed', 'Declined', 'charge', '{}');
   if not exists (select 1 from public.company_account where org_id = v_org and status = 'past_due'
