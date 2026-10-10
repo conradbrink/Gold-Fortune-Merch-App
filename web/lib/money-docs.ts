@@ -52,6 +52,14 @@ export function documentTotals(
   return { subtotal: fromCents(sum), vat: fromCents(vat), total: fromCents(sum + vat) };
 }
 
+/**
+ * A price with the VAT added, to the cent: what a product's VAT-exclusive price
+ * is on a quote whose prices include VAT (R100.00 at 15% is R115.00).
+ */
+export function grossPrice(net: number, vatRate: number): number {
+  return fromCents(divRound(hundredths(net) * (BigInt(100000) + thousandths(vatRate)), BigInt(100000)));
+}
+
 /** A quantity as people write it: 2, 1.5, 0.25 — never 2.00. */
 export function formatQty(n: number): string {
   return Number(n).toLocaleString("en-GB", { maximumFractionDigits: 2 });
