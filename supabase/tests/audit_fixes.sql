@@ -24,6 +24,10 @@
 --   A8  attendance leaves out employees with no login (20261010214000).
 --   A9  the dashboard's Invoiced figure ends where the range ends
 --       (20261010215000).
+--   A10 a company on a free trial cannot queue more than its daily email
+--       limit: a Send is refused with the reason, automatic mail is held back
+--       as cancelled, and the sender takes companies in turn
+--       (20261010230000).
 --
 -- The final message is the report: `AUDIT FIX FAILURES` or
 -- `ALL AUDIT FIX CHECKS PASSED`. Anything else is a fixture error.
@@ -37,6 +41,7 @@ declare
   v_e1 uuid; v_e2 uuid; v_type uuid; v_req uuid; v_warn uuid; v_wtype text;
   v_tz text; v_start timestamptz; v_session uuid;
   v_order uuid; v_line uuid; v_emp uuid; v_n int; v_def text; v_ok boolean;
+  v_msg uuid; v_other uuid;
 begin
   select p.id into v_admin from public.profiles p
     join public.profile_permissions pp on pp.profile_id = p.id
@@ -188,7 +193,49 @@ begin
     v_fail := v_fail || 'A9 dashboard_business still counts the day after the range' || E'\n';
   end if;
 
+  -- A10 ------------------------------------------------------------------
+  -- Gold Fortune is put on a trial with a limit of 2 for the transaction,
+  -- and its own outbox emptied so earlier mail does not count.
   perform set_config('request.jwt.claims', '', true);
+  update public.company_account set status = 'trial' where org_id = c_gf;
+  if not found then
+    insert into public.company_account (org_id, status) values (c_gf, 'trial');
+  end if;
+  update public.platform_settings set value = '{"trial": 2, "other": 1000}' where key = 'email_daily_limits';
+  delete from public.message_outbox where org_id = c_gf;
+  if public.email_daily_limit(c_gf) <> 2 then
+    v_fail := v_fail || format('A10 a trial company''s limit is %s, not 2', public.email_daily_limit(c_gf)) || E'\n';
+  end if;
+  perform public.queue_email(c_gf, 'zz-audit-1@example.com', null, 'job_report', '{}'::jsonb);
+  perform public.queue_email(c_gf, 'zz-audit-2@example.com', null, 'job_report', '{}'::jsonb);
+  v_msg := public.queue_email(c_gf, 'zz-audit-3@example.com', null, 'job_report', '{}'::jsonb);
+  if (select status from public.message_outbox where id = v_msg) <> 'cancelled' then
+    v_fail := v_fail || 'A10 automatic mail over the limit was queued' || E'\n';
+  end if;
+  v_ok := false;
+  begin
+    perform public.queue_document_email(c_gf, 'zz-audit-4@example.com', null, 'invoice', '{}'::jsonb,
+                                        'invoice', null, null, null, 'Audit');
+  exception when sqlstate '54000' then v_ok := sqlerrm like '%free-trial limit%';
+  end;
+  if not v_ok then
+    v_fail := v_fail || 'A10 a Send over the limit was not refused with the reason' || E'\n';
+  end if;
+  -- Turns: 30 waiting for another company, 1 for Gold Fortune; a claim of 3
+  -- includes Gold Fortune's.
+  delete from public.message_outbox where org_id = c_gf;
+  select o.id into v_other from public.organizations o where o.id <> c_gf order by o.created_at limit 1;
+  if v_other is not null then
+    insert into public.message_outbox (org_id, to_address, template, payload, status, send_after)
+    select v_other, 'zz-audit-bulk' || g || '@example.com', 'invoice', '{}', 'queued', now() - interval '1 hour' - g * interval '1 second'
+      from generate_series(1, 30) g;
+    insert into public.message_outbox (org_id, to_address, template, payload, status, send_after)
+    values (c_gf, 'zz-audit-turn@example.com', 'invoice', '{}', 'queued', now() - interval '1 minute');
+    if not exists (select 1 from public.claim_messages(3) m where m.org_id = c_gf) then
+      v_fail := v_fail || 'A10 one company''s backlog held up another''s message' || E'\n';
+    end if;
+  end if;
+
   if v_fail <> '' then
     raise exception E'AUDIT FIX FAILURES (rolled back):\n%\n%', v_fail, v_note;
   end if;
