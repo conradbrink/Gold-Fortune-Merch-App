@@ -782,7 +782,6 @@ function EditableList({
           <TableHeader>
             <TableRow>
               <TableHead>Name</TableHead>
-              <TableHead className="hidden sm:table-cell">Code</TableHead>
               <TableHead className="hidden md:table-cell" />
               <TableHead className="text-right">In use</TableHead>
             </TableRow>
@@ -790,17 +789,16 @@ function EditableList({
           <TableBody>
             {rows.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={4} className="py-6 text-center text-sm text-muted-foreground">
+                <TableCell colSpan={3} className="py-6 text-center text-sm text-muted-foreground">
                   Nothing configured.
                 </TableCell>
               </TableRow>
             ) : (
               rows.map((r) => (
                 <TableRow key={r.id} className={r.active ? undefined : "opacity-60"}>
+                  {/* The stored code is made from the name and is what records are
+                      filed under; the owner never needs to see it. */}
                   <TableCell className="font-medium">{r.label}</TableCell>
-                  <TableCell className="hidden sm:table-cell font-mono text-xs text-muted-foreground">
-                    {r.code}
-                  </TableCell>
                   <TableCell className="hidden md:table-cell text-xs text-muted-foreground">
                     {r.extra}
                   </TableCell>

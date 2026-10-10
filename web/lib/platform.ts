@@ -229,6 +229,44 @@ export async function settingDefinitions(): Promise<SettingDefinition[]> {
   }));
 }
 
+/** One of Tickd's own settings, as it stands at one company. */
+export type InternalSetting = SettingDefinition & {
+  /** The company's value, or null when it uses the default. */
+  value: Json | null;
+  defaultValue: Json;
+};
+
+/**
+ * The settings Tickd keeps for itself (`setting_definitions.audience =
+ * 'internal'`): GPS timing, distance thresholds, report formulas. Customers
+ * never see these and the database refuses their writes; the operator
+ * changes them on the company's page.
+ */
+export async function companyInternalSettings(orgId: string): Promise<InternalSetting[]> {
+  const admin = platformAdminClient();
+  const [defs, values] = await Promise.all([
+    admin
+      .from("setting_definitions")
+      .select("key, label, description, value_type, min_value, max_value, default_value")
+      .eq("audience", "internal")
+      .order("sort_order"),
+    admin.from("company_settings").select("key, value").eq("org_id", orgId),
+  ]);
+  if (defs.error) throw defs.error;
+  if (values.error) throw values.error;
+  const mine = new Map((values.data ?? []).map((r) => [r.key, r.value]));
+  return (defs.data ?? []).map((d) => ({
+    key: d.key,
+    label: d.label,
+    description: d.description,
+    valueType: d.value_type,
+    min: d.min_value,
+    max: d.max_value,
+    defaultValue: d.default_value,
+    value: mine.has(d.key) ? (mine.get(d.key) as Json) : null,
+  }));
+}
+
 /** Every module a company can have (not `core`, which is always on). */
 export async function moduleCatalogue(): Promise<{ code: string; name: string; built: boolean; planType: string }[]> {
   const { data, error } = await platformAdminClient()

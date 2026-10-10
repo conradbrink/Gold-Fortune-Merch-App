@@ -325,8 +325,8 @@ export default function ReviewPage() {
             // them to the wrong screen.
             <p className="text-sm text-muted-foreground">
               {review.template_id
-                ? "This scorecard has no active categories. Add them in Settings → Performance."
-                : "This review has no scorecard. Assign one to the employee\u2019s department in Settings → Performance."}
+                ? "This scorecard has no active categories. Add them in Company settings → HR → Performance."
+                : "This review has no scorecard. Assign one to the employee\u2019s department in Company settings → HR → Performance."}
             </p>
           ) : (
             <ul className="space-y-3">

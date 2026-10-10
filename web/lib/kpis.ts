@@ -88,7 +88,7 @@ export const KPIS: KpiDef[] = [
   {
     code: "gps_verified_pct",
     label: () => "Checked in on site",
-    hint: (t) => `Check-ins inside the ${lower(t.site.one)}'s radius, of those with a GPS fix.`,
+    hint: (t) => `Check-ins made at the ${lower(t.site.one)}, of those where the phone knew where it was.`,
     format: "percent", better: "up", scope: "window", minEvents: 5, href: report("reps"),
   },
   {

@@ -1308,6 +1308,7 @@ export type Database = {
       }
       setting_definitions: {
         Row: {
+          audience: string
           default_value: Json
           description: string
           key: string
@@ -1319,6 +1320,7 @@ export type Database = {
           value_type: string
         }
         Insert: {
+          audience?: string
           default_value: Json
           description: string
           key: string
@@ -1330,6 +1332,7 @@ export type Database = {
           value_type: string
         }
         Update: {
+          audience?: string
           default_value?: Json
           description?: string
           key?: string

@@ -22,7 +22,8 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { createClient } from "@/lib/supabase/client";
-import { refreshCompanyConfig } from "@/lib/use-company-config";
+import { refreshCompanyConfig, useCompanyConfig } from "@/lib/use-company-config";
+import { termShown } from "@/lib/settings-tabs";
 import { TERM_KEYS, type TermKey } from "@/lib/terms";
 import {
   TERM_WORD_MAX,
@@ -56,6 +57,7 @@ function toArticle(v: string | null): "a" | "an" | null {
 export function TerminologyCard({ orgId, canEdit }: { orgId: string; canEdit: boolean }) {
   const supabase = createClient();
   const router = useRouter();
+  const modules = useCompanyConfig()?.modules ?? null;
   const [definitions, setDefinitions] = useState<Definition[] | null>(null);
   const [overrides, setOverrides] = useState<TermOverride[]>([]);
   const [drafts, setDrafts] = useState<Partial<Record<TermKey, TermDraft>>>({});
@@ -258,14 +260,16 @@ export function TerminologyCard({ orgId, canEdit }: { orgId: string; canEdit: bo
                   <TableHead className="min-w-48">Term</TableHead>
                   <TableHead className="min-w-36">Singular</TableHead>
                   <TableHead className="min-w-36">Plural</TableHead>
-                  <TableHead className="w-28">Article</TableHead>
+                  <TableHead className="w-28">&quot;a&quot; or &quot;an&quot;</TableHead>
                   {canEdit && <TableHead className="w-10" />}
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {definitions.map((d) => {
                   const draft = drafts[d.key];
-                  if (!draft) return null;
+                  // A word for something the company does not have (leads,
+                  // without Distribution) is not offered; its value is kept.
+                  if (!draft || !termShown(d.key, modules)) return null;
                   const error = fieldErrors[d.key];
                   return (
                     <TableRow key={d.key} className="align-top">

@@ -1,8 +1,8 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { companyTrialEnd, getCompany } from "@/lib/platform";
-import { extendTrial, setCompanyModule } from "@/app/platform/actions";
+import { companyInternalSettings, companyTrialEnd, getCompany } from "@/lib/platform";
+import { extendTrial, setCompanyModule, setCompanySetting } from "@/app/platform/actions";
 import { trialState } from "@/lib/onboarding";
 
 /**
@@ -46,7 +46,11 @@ export default async function PlatformCompanyPage({
   const { id } = await params;
   // Not a company id at all: a 404, not a database cast error and a 500.
   if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) notFound();
-  const [company, trialEndsAt] = await Promise.all([getCompany(id), companyTrialEnd(id)]);
+  const [company, trialEndsAt, internal] = await Promise.all([
+    getCompany(id),
+    companyTrialEnd(id),
+    companyInternalSettings(id),
+  ]);
   if (!company) notFound();
   const trial = trialState(trialEndsAt);
 
@@ -150,6 +154,56 @@ export default async function PlatformCompanyPage({
           </li>
         ))}
       </ul>
+
+      {/* Tickd's own settings for this company: how tracking and the reports
+          work. The company never sees these (its Company settings show only
+          business decisions) and the database refuses its writes to them;
+          `setCompanySetting` checks the operator again and logs the change. */}
+      <section className="space-y-3">
+        <div className="space-y-1">
+          <h2 className="text-sm font-semibold text-foreground">Tickd settings</h2>
+          <p className="text-sm text-muted-foreground">
+            How Tickd works for this company. Leave the defaults unless there is a reason; the company cannot see or
+            change these.
+          </p>
+        </div>
+        <ul className="divide-y divide-border rounded-lg border border-border bg-card">
+          {internal.map((s) => {
+            const current = s.value ?? s.defaultValue;
+            const shown = typeof current === "string" ? current : JSON.stringify(current);
+            return (
+              <li key={s.key} className="flex flex-wrap items-start justify-between gap-4 p-4">
+                <div className="min-w-0 flex-1 space-y-1">
+                  <p className="font-medium text-foreground">
+                    {s.label}{" "}
+                    <span className="text-xs font-normal text-muted-foreground">
+                      ({s.value === null ? "default" : "set for this company"})
+                    </span>
+                  </p>
+                  <p className="text-sm text-muted-foreground">{s.description}</p>
+                </div>
+                <form action={setCompanySetting} className="flex items-center gap-2">
+                  <input type="hidden" name="orgId" value={company.id} />
+                  <input type="hidden" name="key" value={s.key} />
+                  <input
+                    name="value"
+                    aria-label={s.label}
+                    defaultValue={shown}
+                    required
+                    className="h-8 w-56 rounded-md border border-border bg-transparent px-2 text-sm"
+                  />
+                  <button
+                    type="submit"
+                    className="inline-flex h-8 items-center rounded-md border border-border px-3 text-sm hover:bg-secondary"
+                  >
+                    Save
+                  </button>
+                </form>
+              </li>
+            );
+          })}
+        </ul>
+      </section>
 
       {company.recentChanges.length > 0 && (
         <section className="space-y-2">

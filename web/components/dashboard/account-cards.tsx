@@ -260,7 +260,7 @@ function AccountCardsFor() {
                 <p className="text-xs text-muted-foreground">
                   Someone lost their message? Set a new password in{" "}
                   <Link href="/settings/users" className="underline">
-                    Settings → Users
+                    People &amp; permissions
                   </Link>{" "}
                   and send it again.
                 </p>

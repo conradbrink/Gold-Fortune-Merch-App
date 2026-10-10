@@ -79,7 +79,7 @@ export function CompanyStep({ org, text, icon, ownerEmail, onBack, onNext, reloa
         </div>
         {where && (
           <p className="text-xs text-muted-foreground">
-            {where}, from your sign-up. Change them in Settings → Company.
+            {where}, from your sign-up. Change them in Company settings.
           </p>
         )}
       </div>

@@ -334,7 +334,7 @@ export default function HrPerformancePage() {
                             title={
                               templateId
                                 ? undefined
-                                : "Assign a scorecard to this employee’s department in Settings → Performance first."
+                                : "Assign a scorecard to this employee’s department in Company settings → HR → Performance first."
                             }
                             onClick={() => startReview(d.employee_id)}
                           >

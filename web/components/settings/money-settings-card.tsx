@@ -36,7 +36,9 @@ export function MoneySettingsCard({ orgId, canEdit }: { orgId: string; canEdit: 
   const config = useCompanyConfig();
 
   const [doc, setDoc] = useState({
-    registration_number: "",
+    vat_rate: "0",
+    invoice_terms_days: "30",
+    invoice_footer: "",
     bank_details: "",
     prices_include_vat: false,
     invoice_prefix: "INV",
@@ -61,7 +63,7 @@ export function MoneySettingsCard({ orgId, canEdit }: { orgId: string; canEdit: 
     void (async () => {
       const { data, error: e } = await supabase
         .from("organizations")
-        .select("registration_number, bank_details, prices_include_vat, invoice_prefix, quote_prefix, quote_validity_days")
+        .select("vat_rate, invoice_terms_days, invoice_footer, bank_details, prices_include_vat, invoice_prefix, quote_prefix, quote_validity_days")
         .eq("id", orgId)
         .single();
       if (cancelled) return;
@@ -70,7 +72,9 @@ export function MoneySettingsCard({ orgId, canEdit }: { orgId: string; canEdit: 
         return;
       }
       setDoc({
-        registration_number: data.registration_number ?? "",
+        vat_rate: String(data.vat_rate ?? 0),
+        invoice_terms_days: String(data.invoice_terms_days ?? 30),
+        invoice_footer: data.invoice_footer ?? "",
         bank_details: data.bank_details ?? "",
         prices_include_vat: data.prices_include_vat,
         invoice_prefix: data.invoice_prefix,
@@ -102,12 +106,22 @@ export function MoneySettingsCard({ orgId, canEdit }: { orgId: string; canEdit: 
     if (!Number.isInteger(days) || days < 0 || days > 365) {
       return setError("Quotes are valid for 0 to 365 days.");
     }
+    const vat = Number(doc.vat_rate);
+    if (doc.vat_rate.trim() === "" || !Number.isFinite(vat) || vat < 0 || vat > 100) {
+      return setError("The VAT rate is a percentage from 0 to 100. Use 0 if you are not registered for VAT.");
+    }
+    const terms = Number(doc.invoice_terms_days);
+    if (!Number.isInteger(terms) || terms < 0 || terms > 365) {
+      return setError("Invoices are due 0 to 365 days after they are issued.");
+    }
     setSaving(true);
     try {
       const org = await supabase
         .from("organizations")
         .update({
-          registration_number: doc.registration_number.trim() || null,
+          vat_rate: vat,
+          invoice_terms_days: terms,
+          invoice_footer: doc.invoice_footer.trim() || null,
           bank_details: doc.bank_details.trim() || null,
           prices_include_vat: doc.prices_include_vat,
           invoice_prefix: doc.invoice_prefix,
@@ -204,12 +218,29 @@ export function MoneySettingsCard({ orgId, canEdit }: { orgId: string; canEdit: 
             </span>
           </label>
           <div className="space-y-1.5">
-            <Label htmlFor="reg-number">Company registration number</Label>
+            <Label htmlFor="vat-rate">VAT rate (%)</Label>
             <Input
-              id="reg-number"
-              value={doc.registration_number}
+              id="vat-rate"
+              type="number"
+              min={0}
+              max={100}
+              step="0.01"
+              value={doc.vat_rate}
               disabled={!canEdit}
-              onChange={(e) => setDoc({ ...doc, registration_number: e.target.value })}
+              onChange={(e) => setDoc({ ...doc, vat_rate: e.target.value })}
+            />
+            <p className="text-xs text-muted-foreground">0 if you are not registered for VAT.</p>
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="invoice-terms">Invoices are due after (days)</Label>
+            <Input
+              id="invoice-terms"
+              type="number"
+              min={0}
+              max={365}
+              value={doc.invoice_terms_days}
+              disabled={!canEdit}
+              onChange={(e) => setDoc({ ...doc, invoice_terms_days: e.target.value })}
             />
           </div>
           <div className="space-y-1.5">
@@ -256,6 +287,17 @@ export function MoneySettingsCard({ orgId, canEdit }: { orgId: string; canEdit: 
               Printed under &quot;How to pay&quot; on every invoice, quote and statement. Numbers carry on from where
               they are when a prefix changes.
             </p>
+          </div>
+          <div className="space-y-1.5 sm:col-span-2">
+            <Label htmlFor="invoice-footer">Invoice footer</Label>
+            <Textarea
+              id="invoice-footer"
+              rows={2}
+              value={doc.invoice_footer}
+              disabled={!canEdit}
+              onChange={(e) => setDoc({ ...doc, invoice_footer: e.target.value })}
+              placeholder="For example: Thank you for your business."
+            />
           </div>
           {canEdit && (
             <div className="flex items-center justify-end gap-3 sm:col-span-2">
