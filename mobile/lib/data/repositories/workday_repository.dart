@@ -122,20 +122,23 @@ class WorkdayRepository {
     if (await _db.getValue(_closedKey(repId)) == today) return true;
 
     try {
+      // Keyed on the day the closed workday *started*: a night shift from
+      // Monday 22:00 to Tuesday 06:00 is Monday's, so Tuesday's 22:00 start
+      // is still allowed. Keyed on the end, it locked the rep out.
       final row = await _client
           .from('workday_sessions')
-          .select('ended_at')
+          .select('started_at')
           .eq('rep_id', repId)
           .not('ended_at', 'is', null)
-          .order('ended_at', ascending: false)
+          .order('started_at', ascending: false)
           .limit(1)
           .maybeSingle();
 
-      final endedAt = row?['ended_at'] as String?;
-      if (endedAt == null) return false;
+      final startedAt = row?['started_at'] as String?;
+      if (startedAt == null) return false;
 
       // `.toLocal()` before formatting, for the same UTC+2 reason as above.
-      final closedOn = localDate(DateTime.parse(endedAt).toLocal());
+      final closedOn = localDate(DateTime.parse(startedAt).toLocal());
       if (closedOn == today) {
         // Cache it so the answer survives losing signal later in the day.
         await _db.setValue(_closedKey(repId), closedOn);
@@ -147,8 +150,9 @@ class WorkdayRepository {
     }
   }
 
-  Future<void> _recordWorkdayClosed(String repId, DateTime endedAt) =>
-      _db.setValue(_closedKey(repId), localDate(endedAt));
+  /// Records the day the closed workday started (see [hasClosedWorkdayToday]).
+  Future<void> _recordWorkdayClosed(String repId, DateTime startedAt) =>
+      _db.setValue(_closedKey(repId), localDate(startedAt.toLocal()));
 
   Future<WorkdaySession> startWorkday({
     required String orgId,
@@ -248,7 +252,7 @@ class WorkdayRepository {
     // Recorded here, not when the outbox drains: the rep may be closing their
     // day with no signal, and the "one workday per day" rule has to hold from
     // the moment they tap the button.
-    await _recordWorkdayClosed(repId, endedAt);
+    await _recordWorkdayClosed(repId, session.startedAt);
 
     unawaited(_sync.sync());
   }

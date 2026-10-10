@@ -72,15 +72,22 @@ class AutoEndRule {
 /// The moment a day that started at [startedAt] ends by itself, in the
 /// phone's local time.
 ///
-/// On the *start* date, always: a day that began yesterday is over at
-/// yesterday's cut-off, not tonight's, and a cold start the next morning must
-/// close it as of then.
+/// The first cut-off after the start: a day that began yesterday morning is
+/// over at yesterday's cut-off, not tonight's, and a cold start the next
+/// morning must close it as of then. A day started at or after the cut-off
+/// (a 20:10 call-out with a 19:30 rule) runs to the next day's cut-off; on
+/// the start date it would end before it began. The server's
+/// `auto_end_overdue_workdays` uses the same rule.
 DateTime autoEndCutoffFor(
   DateTime startedAt, {
   AutoEndRule rule = AutoEndRule.fallback,
 }) {
   final local = startedAt.toLocal();
-  return DateTime(local.year, local.month, local.day, rule.hour, rule.minute);
+  final sameDay =
+      DateTime(local.year, local.month, local.day, rule.hour, rule.minute);
+  if (local.isBefore(sameDay)) return sameDay;
+  return DateTime(
+      local.year, local.month, local.day + 1, rule.hour, rule.minute);
 }
 
 /// Whether a day that started at [startedAt] should already have ended.
