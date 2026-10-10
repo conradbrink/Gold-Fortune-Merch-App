@@ -78,9 +78,12 @@ export async function fetchToday(supabase: Client, timeZone: string): Promise<To
       .select("id, rep_id, store_id, stores(name), profiles!routes_rep_id_fkey(full_name)")
       .eq("scheduled_date", day)
       .order("sequence_order", { nullsFirst: false }),
+    // `stores!visits_store_id_fkey`: a visit reaches a store directly and also
+    // through the job report (which holds both ids), so a bare `stores(...)` is
+    // ambiguous and the API refuses it (PGRST201).
     supabase
       .from("visits")
-      .select("id, route_id, rep_id, store_id, status, checkin_at, stores(name), profiles!visits_rep_id_fkey(full_name)")
+      .select("id, route_id, rep_id, store_id, status, checkin_at, stores!visits_store_id_fkey(name), profiles!visits_rep_id_fkey(full_name)")
       .gte("checkin_at", from)
       .lt("checkin_at", to),
   ]);
