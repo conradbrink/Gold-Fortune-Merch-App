@@ -8258,6 +8258,22 @@ export type Database = {
       my_onboarding: { Args: never; Returns: Json }
       dismiss_onboarding: { Args: never; Returns: undefined }
       my_setup: { Args: never; Returns: Json }
+      my_email_confirmation: { Args: never; Returns: Json }
+      request_email_confirmation: { Args: never; Returns: string | null }
+      confirm_company_email: { Args: { p_org: string }; Returns: boolean }
+      queue_email: {
+        Args: {
+          p_org: string
+          p_to: string
+          p_to_name: string | null
+          p_template: string
+          p_payload: Json
+          p_related_kind?: string | null
+          p_related_id?: string | null
+          p_send_after?: string
+        }
+        Returns: string
+      }
       dashboard_kpis: {
         Args: { p_from: string; p_to: string; p_codes?: string[] | null }
         Returns: Json

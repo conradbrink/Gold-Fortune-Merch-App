@@ -109,7 +109,7 @@ export async function signupAction(
     };
   }
 
-  const { error } = await admin.rpc("start_trial_company", {
+  const { data: orgId, error } = await admin.rpc("start_trial_company", {
     p_company: company,
     p_templates: input.templates,
     p_owner: created.user.id,
@@ -128,6 +128,21 @@ export async function signupAction(
   }
 
   // Signed in on this browser, so the next page is their own dashboard.
+  // The trial is instant, but the company cannot email clients until the
+  // owner opens this link (20261010250000). Sent by the outbox like any other
+  // email; a failure here only means they ask for it again from the
+  // dashboard, so it never stops the sign-up.
+  if (typeof orgId === "string") {
+    const { error: confirmError } = await admin.rpc("queue_email", {
+      p_org: orgId,
+      p_to: company.owner.email,
+      p_to_name: company.owner.full_name,
+      p_template: "confirm_email",
+      p_payload: {},
+    });
+    if (confirmError) console.error("signup: the confirmation email was not queued", orgId, confirmError.message);
+  }
+
   const supabase = await createClient();
   const { error: signInError } = await supabase.auth.signInWithPassword({
     email: company.owner.email,
