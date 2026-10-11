@@ -94,7 +94,10 @@ declare
                                      'template_service_items',
                                      -- the Founding 10 applications from the sales site: the operator's own
                                      -- list, service role only (supabase/tests/founding.sql F3 checks the grants)
-                                     'founding_applications'];
+                                     'founding_applications',
+                                     -- the sales site's own visit count: anonymous, service role only
+                                     -- (20261010490000_web_events revokes all from anon and authenticated)
+                                     'web_events'];
   c_children constant text[] := array['form_fields','form_responses','promotion_products',
                                        'promotion_stores','file_groups','file_reps',
                                        'hr_review_ratings','job_role_permissions',

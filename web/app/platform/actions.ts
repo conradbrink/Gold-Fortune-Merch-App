@@ -306,6 +306,64 @@ export async function extendTrial(formData: FormData): Promise<void> {
   redirect(back);
 }
 
+// ------------------------------------------------------------ Closing a company
+
+/**
+ * Close a company, or reopen it. Platform operator only, checked here like
+ * every action in this file. The database does the rest in one transaction
+ * with its audit row (`platform_set_company_closed`): while closed its people
+ * are refused everywhere, nothing is sent on its behalf, and every record is
+ * kept. Closing needs the box ticked; the operator's own company can't be
+ * closed from here, so nobody locks themselves out of their own dashboard.
+ */
+export async function setCompanyClosed(formData: FormData): Promise<void> {
+  const orgId = String(formData.get("orgId") ?? "");
+  const close = formData.get("close") === "true";
+  const reason = String(formData.get("reason") ?? "").trim();
+  const back = `/platform/companies/${encodeURIComponent(orgId)}`;
+  const fail = (message: string) => redirect(`${back}?error=${encodeURIComponent(message)}`);
+
+  const actor = await operatorId();
+  if (!actor) redirect("/");
+  if (!/^[0-9a-f-]{36}$/i.test(orgId)) fail("That request was not understood.");
+  if (close && formData.get("confirm") !== "on") {
+    fail("Tick the box to confirm that this company's people will lose access.");
+  }
+  if (reason.length > 500) fail("Keep the reason under 500 characters.");
+
+  const admin = platformAdminClient();
+  if (close) {
+    const { data: me, error: meError } = await admin.from("profiles").select("org_id").eq("id", actor).maybeSingle();
+    if (meError) fail(meError.message);
+    if (me?.org_id === orgId) fail("This is your own company. Closing it would lock you out of its dashboard.");
+  }
+
+  const { data, error } = await admin.rpc("platform_set_company_closed", {
+    p_org: orgId,
+    p_closed: close,
+    p_actor: actor,
+    p_reason: close && reason ? reason : undefined,
+  });
+  if (error) {
+    fail(
+      error.code === "PGRST202" || error.code === "42883"
+        ? "Closing companies needs a database update that hasn't been applied yet."
+        : error.message
+    );
+  }
+  const result = data as { changed?: boolean; reason?: string } | null;
+  if (result && result.changed === false) {
+    fail(
+      result.reason === "already_closed"
+        ? "This company is already closed."
+        : result.reason === "already_open"
+          ? "This company is already open."
+          : "There is no such company."
+    );
+  }
+  redirect(back);
+}
+
 /**
  * Link a Founding application to the company made from it, or unlink it
  * (an empty company). Platform operator only, checked here like every action
