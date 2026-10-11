@@ -1,4 +1,5 @@
 import "server-only";
+import { cache } from "react";
 import { createClient as createAdminClient } from "@supabase/supabase-js";
 import type { Database, Json } from "@/lib/supabase/types";
 import { toPlatformUsers, type LoginRow, type PlatformUser } from "@/lib/platform-users";
@@ -106,9 +107,10 @@ export async function listCompanies(): Promise<PlatformCompany[]> {
 /**
  * Closed companies, by id, with when each was closed. The Control Centre
  * leaves them out of its counts and lists (they are reopened from their own
- * page); the list of companies shows them apart.
+ * page); the list of companies shows them apart. Cached per request: the
+ * dashboard asks for it from several loaders.
  */
-export async function closedCompanies(): Promise<Map<string, string>> {
+export const closedCompanies = cache(async (): Promise<Map<string, string>> => {
   const { data, error } = await platformAdminClient()
     .from("company_account")
     .select("org_id, closed_at")
@@ -120,7 +122,7 @@ export async function closedCompanies(): Promise<Map<string, string>> {
     throw error;
   }
   return new Map((data ?? []).map((r) => [r.org_id, r.closed_at as string]));
-}
+});
 
 /** Whether one company is closed: when, and the reason given; null while open. */
 export async function companyClosure(orgId: string): Promise<{ closedAt: string; reason: string | null } | null> {

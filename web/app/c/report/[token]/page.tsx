@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { createClient as createAdminClient } from "@supabase/supabase-js";
 import type { Database } from "@/lib/supabase/types";
 import { verifyLink } from "@/lib/email/links";
+import { linkCompanyClosed } from "@/lib/company-closed";
 import { logoUrl } from "@/lib/branding";
 import { ClientReport, type View } from "@/components/client-report/client-report";
 
@@ -17,8 +18,8 @@ export const dynamic = "force-dynamic";
  * when, whether they checked in on site, every checklist answer and the
  * photos, then the client's signature. Public: the client has no login. The
  * link is the report's id signed by the server; it stops working when the
- * report expires or is withdrawn. Photos are shown through links that last an
- * hour.
+ * report expires or is withdrawn, or while the company is closed. Photos are
+ * shown through links that last an hour.
  */
 
 function admin() {
@@ -31,7 +32,8 @@ export default async function ClientReportPage({ params }: { params: Promise<{ t
   const { token } = await params;
   const id = verifyLink("report", token);
   const db = admin();
-  const { data } = id ? await db.rpc("job_report_view", { p_report_id: id }) : { data: null };
+  const usable = id && !(await linkCompanyClosed(db, "job_reports", id));
+  const { data } = usable ? await db.rpc("job_report_view", { p_report_id: id }) : { data: null };
   const v = data as View | null;
 
   if (!v) {

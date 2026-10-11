@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { createClient as createAdminClient } from "@supabase/supabase-js";
 import type { Database } from "@/lib/supabase/types";
 import { verifyLink } from "@/lib/email/links";
+import { linkCompanyClosed } from "@/lib/company-closed";
 import { logoUrl } from "@/lib/branding";
 import { sellerOf, todayIn, type DocumentView } from "@/lib/client-document";
 import { ClientDocument } from "@/components/client-document/client-document";
@@ -31,7 +32,9 @@ export default async function ClientDocumentPage({ params }: { params: Promise<{
   const { token } = await params;
   const id = verifyLink("doc", token);
   const db = admin();
-  const { data } = id ? await db.rpc("document_link_view", { p_link_id: id }) : { data: null };
+  // A closed company's links stop working like a withdrawn one (lib/company-closed.ts).
+  const usable = id && !(await linkCompanyClosed(db, "document_links", id));
+  const { data } = usable ? await db.rpc("document_link_view", { p_link_id: id }) : { data: null };
   const v = data as DocumentView | null;
 
   if (!v) {

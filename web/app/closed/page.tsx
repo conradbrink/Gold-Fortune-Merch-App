@@ -23,11 +23,16 @@ export default function ClosedPage() {
   useEffect(() => {
     createClient()
       .rpc("my_company_closed")
-      .then(({ data }) => {
+      .then(({ data, error }) => {
+        // Reopened since (or never closed): back to the dashboard.
+        if (!error && data === null) {
+          router.replace("/");
+          return;
+        }
         const n = (data as { name?: unknown } | null)?.name;
         if (typeof n === "string" && n) setName(n);
       });
-  }, []);
+  }, [router]);
 
   async function handleSignOut() {
     await supabase.auth.signOut();
