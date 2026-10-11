@@ -24,6 +24,27 @@ const sizes: Option[] = [
 ];
 
 type Field = "name" | "businessName" | "teamSize" | "whatsapp" | "email";
+
+// Where visitors stop (the owner's ask, 11 Oct 2026, after 3 started and none
+// sent): each box sends `signup_field` the first time it takes focus and
+// `signup_filled` the first time it is left with an answer; a press of Send
+// sends `signup_submitted`, and anything that stops it sends `signup_error`.
+// The section is the box's key below; the Control Centre's funnel page reads
+// them in this order (FORM_FIELDS in the app's lib/acquisition.ts).
+const boxKey: Record<string, string> = {
+  firstName: "first_name",
+  lastName: "last_name",
+  businessName: "business_name",
+  whatsapp: "whatsapp",
+  email: "email",
+};
+const issueKey: Record<Field, string> = {
+  name: "first_name",
+  businessName: "business_name",
+  teamSize: "team_size",
+  whatsapp: "whatsapp",
+  email: "email",
+};
 type Issue = { field: Field; message: string };
 type State =
   | { kind: "idle" }
@@ -113,6 +134,9 @@ export function FoundingForm() {
   const [missing, setMissing] = useState<Partial<Record<Field, string>>>({});
 
   const pickSize = (v: string) => {
+    started();
+    once("signup_field", "team_size");
+    once("signup_filled", "team_size");
     setTeamSize(v);
     setMissing((m) => ({ ...m, teamSize: undefined }));
   };
@@ -128,16 +152,45 @@ export function FoundingForm() {
     track("signup_started");
   }
 
+  // Each box's first focus and first answer, once per page load.
+  const sentRef = useRef(new Set<string>());
+  function once(event: "signup_field" | "signup_filled", key: string) {
+    const k = `${event}:${key}`;
+    if (sentRef.current.has(k)) return;
+    sentRef.current.add(k);
+    track(event, { section: key });
+  }
+  const keyOf = (t: EventTarget) => (t instanceof HTMLInputElement ? boxKey[t.name] : undefined);
+  function focused(e: React.FocusEvent<HTMLFormElement>) {
+    started();
+    const key = keyOf(e.target);
+    if (key) once("signup_field", key);
+  }
+  function left(e: React.FocusEvent<HTMLFormElement>) {
+    const key = keyOf(e.target);
+    if (key && e.target instanceof HTMLInputElement && e.target.value.trim()) once("signup_filled", key);
+  }
+  // The browser's own check (an empty or badly written box) stops Send before
+  // `submit` runs; this is the only sign of it.
+  function invalid(e: React.FormEvent<HTMLFormElement>) {
+    const key = keyOf(e.target);
+    if (key) track("signup_error", { section: key });
+  }
+
   async function submit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     if (state.kind === "sending") return;
     const form = new FormData(e.currentTarget);
     const text = (k: string) => String(form.get(k) ?? "");
 
+    track("signup_submitted");
     const gaps: Partial<Record<Field, string>> = {};
     if (!teamSize) gaps.teamSize = "Choose how many staff you have.";
     setMissing(gaps);
-    if (Object.keys(gaps).length > 0) return;
+    if (Object.keys(gaps).length > 0) {
+      track("signup_error", { section: "team_size" });
+      return;
+    }
 
     setState({ kind: "sending" });
     let src = "";
@@ -168,12 +221,16 @@ export function FoundingForm() {
         setState({ kind: "done", waitlist: body.waitlist === true });
         return;
       }
+      const turnedBack = body?.issues?.length ? body.issues.map((i) => issueKey[i.field]).filter(Boolean) : [];
+      for (const key of new Set(turnedBack)) track("signup_error", { section: key });
+      if (turnedBack.length === 0) track("signup_error", { section: `server-${res.status}` });
       setState({
         kind: "error",
         message: body?.issues?.length ? "Please check the details marked below." : (body?.error ?? "That did not go through. Please try again."),
         issues: body?.issues ?? [],
       });
     } catch {
+      track("signup_error", { section: "network" });
       setState({ kind: "error", message: "We could not reach the server. Please check your signal and try again.", issues: [] });
     }
   }
@@ -193,7 +250,7 @@ export function FoundingForm() {
 
   const sending = state.kind === "sending";
   return (
-    <form onSubmit={submit} onFocusCapture={started} className="grid gap-5">
+    <form onSubmit={submit} onFocusCapture={focused} onBlurCapture={left} onInvalidCapture={invalid} className="grid gap-5">
       <div className="grid gap-5 sm:grid-cols-2">
         <Labelled label="First name" htmlFor={`${id}-first`} error={problem("name")}>
           <input id={`${id}-first`} name="firstName" required maxLength={40} autoComplete="given-name" className={input} />

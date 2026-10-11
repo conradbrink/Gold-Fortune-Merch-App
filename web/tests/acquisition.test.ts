@@ -168,3 +168,51 @@ test("own-count stats are read defensively, and grouped like applications", asyn
   assert.equal(campaignSlug("Founding October: Cleaners & Gardeners!"), "founding-october-cleaners-gardeners");
   assert.equal(campaignSlug("Café Owners"), "cafe-owners");
 });
+
+test("the form report: boxes reached and answered, where people stopped, and what stopped a Send", async () => {
+  const { formReport } = await import("@/lib/acquisition");
+  const at = (m: number) => `2026-10-12T08:${String(m).padStart(2, "0")}:00Z`;
+  const r = formReport([
+    // a: answered first name, reached last name, left it empty.
+    { name: "signup_started", visitor_id: "a", section: null, at: at(0) },
+    { name: "signup_field", visitor_id: "a", section: "first_name", at: at(0) },
+    { name: "signup_filled", visitor_id: "a", section: "first_name", at: at(1) },
+    { name: "signup_field", visitor_id: "a", section: "last_name", at: at(1) },
+    // b: started before boxes were counted.
+    { name: "signup_started", visitor_id: "b", section: null, at: at(2) },
+    // c: pressed Send with a bad WhatsApp number, twice, and gave up after answering it.
+    { name: "signup_started", visitor_id: "c", section: null, at: at(3) },
+    { name: "signup_field", visitor_id: "c", section: "whatsapp", at: at(3) },
+    { name: "signup_filled", visitor_id: "c", section: "whatsapp", at: at(4) },
+    { name: "signup_error", visitor_id: "c", section: "whatsapp", at: at(5) },
+    { name: "signup_error", visitor_id: "c", section: "whatsapp", at: at(6) },
+    // d: sent it, after the signal dropped once.
+    { name: "signup_started", visitor_id: "d", section: null, at: at(7) },
+    { name: "signup_field", visitor_id: "d", section: "email", at: at(7) },
+    { name: "signup_submitted", visitor_id: "d", section: null, at: at(8) },
+    { name: "signup_error", visitor_id: "d", section: "network", at: at(8) },
+    { name: "signup_completed", visitor_id: "d", section: null, at: at(9) },
+    // A box the report doesn't know is ignored.
+    { name: "signup_field", visitor_id: "a", section: "website", at: at(9) },
+  ]);
+  assert.equal(r.started, 4);
+  assert.equal(r.sent, 1);
+  assert.equal(r.pressedSend, 2);
+  assert.deepEqual(r.fields.map((f) => [f.key, f.reached, f.filled]), [
+    ["first_name", 1, 1],
+    ["last_name", 1, 0],
+    ["business_name", 0, 0],
+    ["team_size", 0, 0],
+    ["whatsapp", 1, 1],
+    ["email", 1, 0],
+  ]);
+  assert.deepEqual(r.stopped, [
+    { label: "Answered: WhatsApp number", people: 1 },
+    { label: "Before boxes were counted", people: 1 },
+    { label: "Left empty: Last name", people: 1 },
+  ]);
+  assert.deepEqual(r.errors, [
+    { label: "No signal (the phone couldn't reach us)", people: 1 },
+    { label: "WhatsApp number", people: 1 },
+  ]);
+});

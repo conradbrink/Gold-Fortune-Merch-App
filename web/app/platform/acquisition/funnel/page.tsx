@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { requireOperator } from "@/lib/operator";
 import { acquisitionStages, buildFunnel, eventsMap, percent, periods, readRange } from "@/lib/acquisition";
-import { loadFirstParty, ownStats } from "@/lib/acquisition-data";
+import { formEvents, loadFirstParty, ownStats } from "@/lib/acquisition-data";
 import { AcquisitionFrame, count } from "@/components/platform/acquisition-frame";
 
 /**
@@ -9,6 +9,8 @@ import { AcquisitionFrame, count } from "@/components/platform/acquisition-frame
  * its number, the share of the step before that reached it, and the drop. The
  * bars are drawn against the first measured step, and the biggest drop is
  * named above them. Steps not measured yet say why instead of showing 0.
+ * Below it, the application form box by box: who reached and answered each,
+ * where people who never sent it stopped, and what stopped a Send.
  */
 
 export const dynamic = "force-dynamic";
@@ -22,7 +24,7 @@ export default async function FunnelPage({
   const range = readRange((await searchParams).range);
   await requireOperator(`/platform/acquisition/funnel?range=${range}`);
   const p = periods(range, new Date());
-  const [web, own] = await Promise.all([ownStats(p.current), loadFirstParty(p)]);
+  const [web, own, form] = await Promise.all([ownStats(p.current), loadFirstParty(p), formEvents(p.current)]);
   const { steps, leak } = buildFunnel(
     acquisitionStages({
       events: web.ok ? eventsMap(web.value) : null,
@@ -85,6 +87,82 @@ export default async function FunnelPage({
         people, so someone on two devices counts twice above step 4 and once below it. A company counts once its application is linked to it on
         Founding applications.
       </p>
+
+      <section aria-labelledby="form-heading" className="space-y-3">
+        <h2 id="form-heading" className="text-base font-semibold text-foreground">
+          The application form, box by box
+        </h2>
+        {form === null ? (
+          <p className="text-sm text-muted-foreground">The form&apos;s numbers couldn&apos;t be read just now. Try again in a moment.</p>
+        ) : (
+          <>
+            <p className="text-sm text-muted-foreground">
+              {count.format(form.started)} started it, {count.format(form.pressedSend)} pressed Send, {count.format(form.sent)} sent it.
+              Boxes have been counted since 11 Oct 2026.
+            </p>
+            <div className="overflow-x-auto rounded-lg border border-border bg-card">
+              <table className="w-full text-sm">
+                <thead className="text-left text-muted-foreground">
+                  <tr>
+                    <th scope="col" className="p-3 font-medium">
+                      Box
+                    </th>
+                    <th scope="col" className="p-3 text-right font-medium">
+                      Reached
+                    </th>
+                    <th scope="col" className="p-3 text-right font-medium">
+                      Answered
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="tabular-nums">
+                  {form.fields.map((f) => (
+                    <tr key={f.key} className="border-t border-border">
+                      <th scope="row" className="p-3 text-left font-normal text-foreground">
+                        {f.label}
+                      </th>
+                      <td className="p-3 text-right">{count.format(f.reached)}</td>
+                      <td className="p-3 text-right">{count.format(f.filled)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="rounded-lg border border-border bg-card p-3">
+                <h3 className="text-sm font-medium text-foreground">Where people who didn&apos;t send it stopped</h3>
+                {form.stopped.length === 0 ? (
+                  <p className="mt-2 text-sm text-muted-foreground">Nobody yet.</p>
+                ) : (
+                  <ul className="mt-2 space-y-1 text-sm">
+                    {form.stopped.map((s) => (
+                      <li key={s.label} className="flex justify-between gap-3">
+                        <span>{s.label}</span>
+                        <span className="tabular-nums">{count.format(s.people)}</span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+              <div className="rounded-lg border border-border bg-card p-3">
+                <h3 className="text-sm font-medium text-foreground">What stopped a Send</h3>
+                {form.errors.length === 0 ? (
+                  <p className="mt-2 text-sm text-muted-foreground">Nothing yet.</p>
+                ) : (
+                  <ul className="mt-2 space-y-1 text-sm">
+                    {form.errors.map((e) => (
+                      <li key={e.label} className="flex justify-between gap-3">
+                        <span>{e.label}</span>
+                        <span className="tabular-nums">{count.format(e.people)}</span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            </div>
+          </>
+        )}
+      </section>
     </AcquisitionFrame>
   );
 }

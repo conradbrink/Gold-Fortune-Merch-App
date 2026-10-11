@@ -379,3 +379,96 @@ export function campaignSlug(name: string): string {
     .replace(/^-+|-+$/g, "")
     .slice(0, 60);
 }
+
+// ------------------------------------------------------------ the application form, box by box
+
+/** The Founding form's boxes, top to bottom, as the site sends them (site/components/founding-form.tsx). */
+export const FORM_FIELDS = [
+  ["first_name", "First name"],
+  ["last_name", "Last name"],
+  ["business_name", "Business name"],
+  ["team_size", "How many staff"],
+  ["whatsapp", "WhatsApp number"],
+  ["email", "Email"],
+] as const;
+
+export type FormEventRow = { name: string; visitor_id: string; section: string | null; at: string };
+
+export type FormReport = {
+  started: number;
+  sent: number;
+  /** People who reached and who answered each box, in FORM_FIELDS order. */
+  fields: { key: string; label: string; reached: number; filled: number }[];
+  /** People who pressed Send at least once. */
+  pressedSend: number;
+  /** Where each person who started but never sent was last: most first. */
+  stopped: { label: string; people: number }[];
+  /** What stopped a Send, by box or cause: most first. */
+  errors: { label: string; people: number }[];
+};
+
+const fieldLabel = (key: string | null) => FORM_FIELDS.find(([k]) => k === key)?.[1] ?? null;
+
+function errorLabel(section: string | null): string {
+  if (section === "network") return "No signal (the phone couldn't reach us)";
+  if (section?.startsWith("server-")) return `Our server said no (${section.slice(7)})`;
+  return fieldLabel(section) ?? "Something else";
+}
+
+/**
+ * Where people stop on the application form, from the site's own events
+ * (signup_started, signup_field, signup_filled, signup_submitted,
+ * signup_error, signup_completed). People are browsers, as on the funnel.
+ * Someone who started before the boxes were counted (11 Oct 2026) shows as
+ * "Before boxes were counted".
+ */
+export function formReport(rows: FormEventRow[]): FormReport {
+  // Each person's events, in time order; and who did each event (per box).
+  const byVisitor = new Map<string, FormEventRow[]>();
+  const did = new Map<string, Set<string>>();
+  for (const r of [...rows].sort((a, b) => a.at.localeCompare(b.at))) {
+    byVisitor.set(r.visitor_id, [...(byVisitor.get(r.visitor_id) ?? []), r]);
+    for (const k of [r.name, `${r.name}:${r.section}`]) did.set(k, (did.get(k) ?? new Set()).add(r.visitor_id));
+  }
+  const people = (name: string, section?: string) => did.get(section === undefined ? name : `${name}:${section}`) ?? new Set<string>();
+  const started = people("signup_started");
+  const sent = people("signup_completed");
+
+  const tally = (counts: Map<string, number>) =>
+    [...counts].map(([label, n]) => ({ label, people: n })).sort((a, b) => b.people - a.people || a.label.localeCompare(b.label));
+
+  // Each person's last box: the latest focus or answer, and whether that box was answered.
+  const stoppedAt = new Map<string, number>();
+  for (const visitor of started) {
+    if (sent.has(visitor)) continue;
+    const own = (byVisitor.get(visitor) ?? []).filter((r) => (r.name === "signup_field" || r.name === "signup_filled") && fieldLabel(r.section));
+    const last = own.at(-1);
+    let label = "Before boxes were counted";
+    if (last) {
+      const answered = own.some((r) => r.name === "signup_filled" && r.section === last.section);
+      label = `${answered ? "Answered" : "Left empty"}: ${fieldLabel(last.section)}`;
+    }
+    stoppedAt.set(label, (stoppedAt.get(label) ?? 0) + 1);
+  }
+
+  const errorPeople = new Map<string, Set<string>>();
+  for (const r of rows) {
+    if (r.name !== "signup_error") continue;
+    const label = errorLabel(r.section);
+    errorPeople.set(label, (errorPeople.get(label) ?? new Set()).add(r.visitor_id));
+  }
+
+  return {
+    started: started.size,
+    sent: sent.size,
+    fields: FORM_FIELDS.map(([key, label]) => ({
+      key,
+      label,
+      reached: people("signup_field", key).size,
+      filled: people("signup_filled", key).size,
+    })),
+    pressedSend: new Set([...people("signup_submitted"), ...people("signup_error"), ...sent]).size,
+    stopped: tally(stoppedAt),
+    errors: tally(new Map([...errorPeople].map(([k, v]) => [k, v.size]))),
+  };
+}
