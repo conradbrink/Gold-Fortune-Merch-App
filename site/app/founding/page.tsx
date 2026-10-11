@@ -44,10 +44,6 @@ const gets: [label: string, value: string, worth: number][] = [
   [`Stay on? Half price for ${founding.priceMonths} months`, `${rand(halfPriceSaved)} saved`, halfPriceSaved],
 ];
 const worth = gets.reduce((sum, [, , w]) => sum + w, 0);
-// The owner's promise (11 Oct 2026): use it for the 60 days and, if it has not
-// been worth it, we pay you what those two months would have cost. The owner's
-// conditions (the team has set it up and used it actively) sit behind "T&Cs apply".
-const guarantee = 2998;
 
 const ask = [
   `Your whole team uses ${site.name} every workday for ${founding.days} days.`,
@@ -170,8 +166,8 @@ export default function FoundingPage() {
                 <p className="text-lg font-bold leading-snug">
                   Used {site.name} for {founding.days} days and not found value in it? We&apos;ll pay you
                 </p>
-                <p className="font-display text-5xl font-extrabold leading-none tracking-tight">{rand(guarantee)}</p>
-                <Link href="/terms" className="text-sm font-medium underline underline-offset-2">
+                <p className="font-display text-5xl font-extrabold leading-none tracking-tight">{rand(founding.guarantee)}</p>
+                <Link href="/terms#promise" className="text-sm font-medium underline underline-offset-2">
                   T&amp;Cs apply.
                 </Link>
               </div>

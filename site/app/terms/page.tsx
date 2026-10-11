@@ -33,6 +33,69 @@ export default function TermsPage() {
         </li>
       </ul>
 
+      <h2 id="promise">Our {rand(founding.guarantee)} promise to Founding members</h2>
+      <p>
+        If you use {site.name} properly for your {founding.days} free days and it hasn&apos;t helped your business, we
+        pay you {rand(founding.guarantee)}. &ldquo;Properly&rdquo; means you meet every one of these conditions. Our app
+        records (sign-ins, clock-ins and check-ins) show whether you did.
+      </p>
+      <ol>
+        <li>
+          <strong>You are a Founding member.</strong> We accepted your business into the Founding {founding.spots} and set
+          up your account. The promise is once per business.
+        </li>
+        <li>
+          <strong>You set it up in the first 7 days.</strong> Within 7 days of the day we set up your account, you give us
+          your list of sites or clients and the people who work for you, and every one of those people installs the app
+          and signs in.
+        </li>
+        <li>
+          <strong>Your whole team uses it every workday.</strong> For all {founding.days} days, every person who works
+          away from the office clocks in on {site.name} on every day they work, and checks in at every site or job they
+          go to. Missing a few days here and there is fine. But if your team clocked in on fewer than 90 out of every 100
+          days that they worked, this condition isn&apos;t met.
+        </li>
+        <li>
+          <strong>You use it too.</strong> You, or a manager you name, sign in to the {site.name} dashboard at least once
+          a week, every week.
+        </li>
+        <li>
+          <strong>You take part.</strong> You attend the training day, and you join at least 7 of the 8 weekly check-in
+          calls.
+        </li>
+        <li>
+          <strong>You give us a chance to fix it.</strong> If something isn&apos;t working for you, you tell us in
+          writing (WhatsApp or email) before day 45, so that we have time to put it right.
+        </li>
+        <li>
+          <strong>You claim in time.</strong> You email <a href={`mailto:${site.email}`}>{site.email}</a> within 7 days
+          after your {founding.days} days end, and tell us why {site.name} didn&apos;t help your business.
+        </li>
+      </ol>
+      <ul>
+        <li>
+          If you choose a paid plan at the end of the {founding.days} days, or carry on using {site.name}, you can&apos;t
+          also claim the promise.
+        </li>
+        <li>
+          The promise doesn&apos;t apply if your business improved while you used {site.name}. We compare your first
+          two weeks with your last two weeks. If your team&apos;s productivity went up (for example more jobs or visits
+          done per person per day, more time on site, or fewer missed tasks), you found value, and we don&apos;t pay.
+        </li>
+        <li>
+          The promise doesn&apos;t apply if we suspended your account for misusing {site.name}, or if you deleted your
+          records before claiming.
+        </li>
+        <li>
+          Days when the clock is paused (15 December to 5 January) don&apos;t count towards the {founding.days} days.
+        </li>
+        <li>
+          If you meet every condition, we pay {rand(founding.guarantee)} once, by EFT into your business&apos;s bank
+          account, within 14 days of your claim. If you don&apos;t meet them, we tell you which ones and show you the
+          records.
+        </li>
+      </ul>
+
       <h2>Plans and prices</h2>
       <ul>
         <li>
