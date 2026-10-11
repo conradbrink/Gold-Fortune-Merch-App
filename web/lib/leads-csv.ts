@@ -9,8 +9,8 @@ export type LeadRow = {
   email: string | null;
   whatsapp: string;
   business_name: string;
-  trade: string;
-  town: string;
+  trade: string | null;
+  town: string | null;
   status: string;
   source: string | null;
 };
@@ -35,7 +35,7 @@ export function leadsCsv(rows: LeadRow[], trade: (code: string) => string): stri
       r.email,
       r.whatsapp,
       r.business_name,
-      trade(r.trade),
+      r.trade ? trade(r.trade) : null,
       r.town,
       r.status,
       r.source,

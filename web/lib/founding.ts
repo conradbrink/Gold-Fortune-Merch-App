@@ -26,12 +26,16 @@ export const HOW_RUN_LABEL: Record<HowRun, string> = {
 
 /** What the form posts. Every field arrives as text or a yes/no; none is trusted. */
 export type FoundingInput = {
+  // Since 11 Oct 2026 the form asks only these: the applicant's first and last
+  // name (sent as one `name`), the business, how many staff, WhatsApp and email.
   name: string;
   businessName: string;
+  teamSize: string;
   whatsapp: string;
   email: string;
+  // Everything below was on the longer form until then. Each is optional:
+  // checked only when given, so a visitor still on the old form gets through.
   trade: string;
-  teamSize: string;
   town: string;
   howRun: string;
   biggestCost: string;
@@ -49,17 +53,19 @@ export type FoundingInput = {
 export type FoundingApplication = {
   name: string;
   business_name: string;
+  team_size: TeamSize;
   whatsapp: string;
   /** Where we confirm the application; lower case; null when none was given. */
   email: string | null;
-  trade: string;
-  team_size: TeamSize;
-  town: string;
-  how_run: HowRun;
-  biggest_cost: string;
-  whole_team: boolean;
-  video_review: boolean;
-  marketing_ok: true;
+  /** Null: not asked (the form stopped asking these on 11 Oct 2026). */
+  trade: string | null;
+  town: string | null;
+  how_run: HowRun | null;
+  biggest_cost: string | null;
+  whole_team: boolean | null;
+  video_review: boolean | null;
+  /** True when they ticked the consent on the old form; null means no consent yet. */
+  marketing_ok: true | null;
   source: string | null;
   attribution: Attribution | null;
 };
@@ -162,24 +168,19 @@ export function foundingIssues(input: FoundingInput): FoundingIssue[] {
   const business = input.businessName.trim();
   if (!business) add("businessName", "Please enter your business's name.");
   else if (business.length > 120) add("businessName", "Please use a shorter business name.");
+  if (!(TEAM_SIZES as readonly string[]).includes(input.teamSize)) add("teamSize", "Choose how many staff you have.");
   if (normaliseWhatsapp(input.whatsapp) === null) {
     add("whatsapp", "Please enter the WhatsApp number we can reach you on, for example 082 123 4567.");
   }
-  // Required on the form; here only checked when given, so a visitor on the old form,
-  // or a deploy that is half done, is never turned away (the application is what matters).
+  // Required on the form; here only checked when given, so an older form is never turned away.
   if (input.email.trim() && !validEmail(input.email)) add("email", "That email address does not look right. Please check it, so we can confirm your application.");
-  if (!/^[a-z][a-z_]{0,39}$/.test(input.trade)) add("trade", "Choose what your team does.");
-  if (!(TEAM_SIZES as readonly string[]).includes(input.teamSize)) add("teamSize", "Choose how many people work in the field.");
-  const town = input.town.trim();
-  if (!town) add("town", "Please enter your town or city.");
-  else if (town.length > 80) add("town", "Please use a shorter town or city name.");
-  if (!(HOW_RUN as readonly string[]).includes(input.howRun)) add("howRun", "Choose how you run jobs today.");
-  const cost = input.biggestCost.trim();
-  if (!cost) add("biggestCost", "Please tell us what costs you the most right now.");
-  else if (cost.length > 1000) add("biggestCost", "Please keep this to 1000 characters.");
-  if (yesNo(input.wholeTeam) === null) add("wholeTeam", "Please answer yes or no.");
-  if (yesNo(input.videoReview) === null) add("videoReview", "Please answer yes or no.");
-  if (input.marketingOk !== true) add("marketingOk", "Please tick the box to agree, or we can't take your application.");
+  // No longer on the form; only checked when the old form sends them.
+  if (input.trade && !/^[a-z][a-z_]{0,39}$/.test(input.trade)) add("trade", "Choose what your team does.");
+  if (input.town.trim().length > 80) add("town", "Please use a shorter town or city name.");
+  if (input.howRun && !(HOW_RUN as readonly string[]).includes(input.howRun)) add("howRun", "Choose how you run jobs today.");
+  if (input.biggestCost.trim().length > 1000) add("biggestCost", "Please keep this to 1000 characters.");
+  if (input.wholeTeam && yesNo(input.wholeTeam) === null) add("wholeTeam", "Please answer yes or no.");
+  if (input.videoReview && yesNo(input.videoReview) === null) add("videoReview", "Please answer yes or no.");
   return p;
 }
 
@@ -195,16 +196,16 @@ export function checkApplication(
     application: {
       name: input.name.trim(),
       business_name: input.businessName.trim(),
+      team_size: input.teamSize as TeamSize,
       whatsapp: normaliseWhatsapp(input.whatsapp)!,
       email: input.email.trim() ? input.email.trim().toLowerCase() : null,
-      trade: input.trade,
-      team_size: input.teamSize as TeamSize,
-      town: input.town.trim(),
-      how_run: input.howRun as HowRun,
-      biggest_cost: input.biggestCost.trim(),
-      whole_team: yesNo(input.wholeTeam)!,
-      video_review: yesNo(input.videoReview)!,
-      marketing_ok: true,
+      trade: input.trade || null,
+      town: input.town.trim() || null,
+      how_run: input.howRun ? (input.howRun as HowRun) : null,
+      biggest_cost: input.biggestCost.trim() || null,
+      whole_team: yesNo(input.wholeTeam),
+      video_review: yesNo(input.videoReview),
+      marketing_ok: input.marketingOk === true ? true : null,
       // A source the table would refuse is dropped, not an error: the visitor
       // did nothing wrong, the link just carried something odd.
       source: /^[a-z0-9_-]{1,40}$/.test(source) ? source : null,
@@ -271,25 +272,27 @@ export function corsOrigin(origin: string | null, production: boolean): string |
 /** The owner's email about a new application: everything they said, and a link to answer on WhatsApp. */
 export function applicationEmail(
   a: FoundingApplication,
-  tradeLabel: string,
+  tradeLabel: string | null,
   waitlist: boolean
 ): { subject: string; html: string; text: string } {
-  const subject = `${waitlist ? "Waiting list" : "New Founding application"}: ${a.business_name} (${tradeLabel}, ${a.town}, ${a.team_size} in the field)`;
+  const about = [tradeLabel, a.town, `${a.team_size} staff`].filter(Boolean).join(", ");
+  const subject = `${waitlist ? "Waiting list" : "New Founding application"}: ${a.business_name} (${about})`;
   const link = `https://wa.me/${a.whatsapp}`;
   const yn = (b: boolean) => (b ? "Yes" : "No");
+  const notAsked = "(not asked)";
   const rows: [string, string][] = [
     ["Name", a.name],
     ["Business", a.business_name],
+    ["Staff", a.team_size],
     ["WhatsApp", `+${a.whatsapp}`],
     ["Email", a.email ?? "(none given)"],
-    ["Type of work", tradeLabel],
-    ["People in the field", a.team_size],
-    ["Town or city", a.town],
-    ["Runs jobs on", HOW_RUN_LABEL[a.how_run]],
-    ["Costs them the most", a.biggest_cost],
-    ["Whole team, every workday, 60 days", yn(a.whole_team)],
-    ["60-second video and Google review", yn(a.video_review)],
-    ["Agreed to marketing use", yn(a.marketing_ok)],
+    ["Type of work", tradeLabel ?? notAsked],
+    ["Town or city", a.town ?? notAsked],
+    ["Runs jobs on", a.how_run ? HOW_RUN_LABEL[a.how_run] : notAsked],
+    ["Costs them the most", a.biggest_cost ?? notAsked],
+    ["Whole team, every workday, 60 days", a.whole_team === null ? notAsked : yn(a.whole_team)],
+    ["60-second video and Google review", a.video_review === null ? notAsked : yn(a.video_review)],
+    ["Agreed to marketing use", a.marketing_ok ? "Yes" : notAsked],
     ["Came from", a.source ?? "(not known)"],
     ["How they found us", describeAttribution(a.attribution) ?? "(not known)"],
   ];

@@ -192,7 +192,7 @@ async function confirmToApplicant(id: string, a: FoundingApplication & { email: 
 async function notifyOwner(id: string, a: FoundingApplication, waitlist: boolean) {
   try {
     const templates = await listTemplates().catch(() => []);
-    const label = templates.find((t) => t.code === a.trade)?.name ?? a.trade;
+    const label = a.trade ? (templates.find((t) => t.code === a.trade)?.name ?? a.trade) : null;
     const mail = applicationEmail(a, label, waitlist);
     const result = await sendViaBrevo({
       to: { email: NOTIFY_TO },

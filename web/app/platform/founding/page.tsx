@@ -32,6 +32,8 @@ const dateTime = new Intl.DateTimeFormat("en-GB", {
 });
 
 const yn = (b: boolean) => (b ? "Yes" : "No");
+// The answers the form stopped asking on 11 Oct 2026.
+const notAsked = "not asked";
 
 export default async function FoundingApplicationsPage({
   searchParams,
@@ -137,19 +139,19 @@ export default async function FoundingApplicationsPage({
                 </div>
                 <div>
                   <dt className="text-muted-foreground">Type of work</dt>
-                  <dd>{trade(a.trade)}</dd>
+                  <dd>{a.trade ? trade(a.trade) : notAsked}</dd>
                 </div>
                 <div>
-                  <dt className="text-muted-foreground">People in the field</dt>
+                  <dt className="text-muted-foreground">Staff</dt>
                   <dd>{a.team_size}</dd>
                 </div>
                 <div>
                   <dt className="text-muted-foreground">Town or city</dt>
-                  <dd>{a.town}</dd>
+                  <dd>{a.town ?? notAsked}</dd>
                 </div>
                 <div>
                   <dt className="text-muted-foreground">Runs jobs on</dt>
-                  <dd>{HOW_RUN_LABEL[a.how_run as HowRun] ?? a.how_run}</dd>
+                  <dd>{a.how_run ? (HOW_RUN_LABEL[a.how_run as HowRun] ?? a.how_run) : notAsked}</dd>
                 </div>
                 <div>
                   <dt className="text-muted-foreground">Came from</dt>
@@ -161,16 +163,16 @@ export default async function FoundingApplicationsPage({
                 </div>
                 <div>
                   <dt className="text-muted-foreground">Whole team, every workday</dt>
-                  <dd>{yn(a.whole_team)}</dd>
+                  <dd>{a.whole_team === null ? notAsked : yn(a.whole_team)}</dd>
                 </div>
                 <div>
                   <dt className="text-muted-foreground">Video and Google review</dt>
-                  <dd>{yn(a.video_review)}</dd>
+                  <dd>{a.video_review === null ? notAsked : yn(a.video_review)}</dd>
                 </div>
               </dl>
               <p>
                 <span className="text-muted-foreground">Costs them the most: </span>
-                <span className="whitespace-pre-wrap">{a.biggest_cost}</span>
+                <span className="whitespace-pre-wrap">{a.biggest_cost ?? notAsked}</span>
               </p>
               <form action={setFoundingStatus} className="flex flex-wrap items-center gap-2 border-t border-border pt-3">
                 <input type="hidden" name="applicationId" value={a.id} />

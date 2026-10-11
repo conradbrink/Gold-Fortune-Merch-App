@@ -1,4 +1,4 @@
-import { Check, ChevronDown } from "lucide-react";
+import { Check, ChevronDown, ShieldCheck } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { FoundingForm } from "@/components/founding-form";
@@ -44,6 +44,10 @@ const gets: [label: string, value: string, worth: number][] = [
   [`Stay on? Half price for ${founding.priceMonths} months`, `${rand(halfPriceSaved)} saved`, halfPriceSaved],
 ];
 const worth = gets.reduce((sum, [, , w]) => sum + w, 0);
+// The owner's promise (11 Oct 2026): use it for the 60 days and, if it has not
+// been worth it, we pay you what those two months would have cost. The owner's
+// conditions (the team has set it up and used it actively) sit behind "T&Cs apply".
+const guarantee = 2998;
 
 const ask = [
   `Your whole team uses ${site.name} every workday for ${founding.days} days.`,
@@ -159,6 +163,18 @@ export default function FoundingPage() {
                 <span>You pay</span>
                 <span>{rand(0)}</span>
               </p>
+            </div>
+            <div className="flex gap-3 rounded-xl bg-amber-500 px-5 py-4 text-teal-950 shadow-md ring-2 ring-amber-600">
+              <ShieldCheck className="mt-1 size-8 shrink-0" strokeWidth={2.5} aria-hidden="true" />
+              <div className="grid gap-1">
+                <p className="text-lg font-bold leading-snug">
+                  Used {site.name} for {founding.days} days and not found value in it? We&apos;ll pay you
+                </p>
+                <p className="font-display text-5xl font-extrabold leading-none tracking-tight">{rand(guarantee)}</p>
+                <Link href="/terms" className="text-sm font-medium underline underline-offset-2">
+                  T&amp;Cs apply.
+                </Link>
+              </div>
             </div>
             <p className="text-sm font-medium text-muted">No card. No contract. If it&apos;s not for you after {founding.days} days, walk away.</p>
             <a href="#apply" className={`${button} sm:w-full`}>

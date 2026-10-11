@@ -1169,12 +1169,12 @@ export type Database = {
         Row: {
           attribution: Json | null
 
-          biggest_cost: string
+          biggest_cost: string | null
           business_name: string
           created_at: string
-          how_run: string
+          how_run: string | null
           id: string
-          marketing_ok: boolean
+          marketing_ok: boolean | null
           name: string
           notified_at: string | null
           organization_id: string | null
@@ -1183,22 +1183,22 @@ export type Database = {
           status: string
           status_changed_at: string | null
           team_size: string
-          town: string
-          trade: string
-          video_review: boolean
+          town: string | null
+          trade: string | null
+          video_review: boolean | null
           whatsapp: string
           email: string | null
-          whole_team: boolean
+          whole_team: boolean | null
         }
         Insert: {
           attribution?: Json | null
 
-          biggest_cost: string
+          biggest_cost?: string | null
           business_name: string
           created_at?: string
-          how_run: string
+          how_run?: string | null
           id?: string
-          marketing_ok: boolean
+          marketing_ok?: boolean | null
           name: string
           notified_at?: string | null
           organization_id?: string | null
@@ -1207,22 +1207,22 @@ export type Database = {
           status?: string
           status_changed_at?: string | null
           team_size: string
-          town: string
-          trade: string
-          video_review: boolean
+          town?: string | null
+          trade?: string | null
+          video_review?: boolean | null
           whatsapp: string
           email?: string | null
-          whole_team: boolean
+          whole_team?: boolean | null
         }
         Update: {
           attribution?: Json | null
 
-          biggest_cost?: string
+          biggest_cost?: string | null
           business_name?: string
           created_at?: string
-          how_run?: string
+          how_run?: string | null
           id?: string
-          marketing_ok?: boolean
+          marketing_ok?: boolean | null
           name?: string
           notified_at?: string | null
           organization_id?: string | null
@@ -1231,12 +1231,12 @@ export type Database = {
           status?: string
           status_changed_at?: string | null
           team_size?: string
-          town?: string
-          trade?: string
-          video_review?: boolean
+          town?: string | null
+          trade?: string | null
+          video_review?: boolean | null
           whatsapp?: string
           email?: string | null
-          whole_team?: boolean
+          whole_team?: boolean | null
         }
         Relationships: []
       }
