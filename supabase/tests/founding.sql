@@ -2,7 +2,7 @@
 --
 --   F1  A full application saves with the defaults (status new, not notified);
 --       a bad WhatsApp number, team size, trade, "how I run jobs", status, or a
---       missing marketing consent is refused by the table itself.
+--       marketing consent of false is refused by the table itself.
 --   F2  founding_spots_left() is the platform setting, never below 0, and does
 --       not move when applications arrive or are accepted.
 --   F3  Grants: the table and the function are out of reach of signed-in and
@@ -11,6 +11,9 @@
 --       object is refused; null is the default.
 --   F5  organization_id: null by default; links to a company; one application
 --       per company; deleting the company clears the link, not the application.
+--   F6  The short form (11 Oct 2026): an application with only the name,
+--       business, team size and WhatsApp saves, with nulls for everything not
+--       asked; a blank town or biggest_cost is still refused.
 --
 -- HOW TO RUN: paste into execute_sql (or psql -f). One DO block that always
 -- ends in `raise exception`, so nothing survives.
@@ -50,6 +53,26 @@ begin
     exception when check_violation then null;
     end;
   end loop;
+
+  ------------------------------------------------------------ F6 the short form
+  insert into public.founding_applications (name, business_name, whatsapp, team_size)
+  values ('Short Owner', 'Short Pools', '27821234568', '1-4')
+  returning id into v_id2;
+  if exists (select 1 from public.founding_applications where id = v_id2
+             and (trade is not null or town is not null or how_run is not null or biggest_cost is not null or whole_team is not null
+                  or video_review is not null or marketing_ok is not null)) then
+    v_fail := v_fail || 'F6 a short-form application did not save its unasked answers as null' || E'\n';
+  end if;
+  foreach v_bad in array array['town', 'biggest_cost'] loop
+    begin
+      execute format('insert into public.founding_applications (name, business_name, whatsapp, team_size, %I) values (%L, %L, %L, %L, %L)',
+                     v_bad, 'A', 'B', '27821234567', '5-10', ' ');
+      v_fail := v_fail || 'F6 a blank ' || v_bad || ' was accepted' || E'\n';
+    exception when check_violation then null;
+    end;
+  end loop;
+  delete from public.founding_applications where id = v_id2;
+  v_id2 := null;
 
   ------------------------------------------------------------ F2 spots left
   if public.founding_spots_left() <> greatest(v_left, 0) then

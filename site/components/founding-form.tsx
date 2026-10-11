@@ -8,25 +8,13 @@ import { firstVisit } from "@/lib/first-visit";
 
 // The Founding 10 application on /founding. It is posted to the app
 // (`founding.apiUrl`), which saves it, emails the owner and lists it under
-// /platform/founding. Eleven answers, all required, in the owner's order
-// (~/Downloads/founding-10-site-prompt.md). The trade codes are the app's
-// `industry_templates`, the same list as the main sign-up form.
+// /platform/founding. All required: the applicant's first and last name (sent
+// as one `name`), the business's name, how many staff, WhatsApp and email. On
+// 11 Oct 2026 the owner cut it from eleven answers, after no ad visitor
+// finished the long form.
 
 type Option = [label: string, value: string];
 
-const trades: Option[] = [
-  ["Cleaning", "cleaning"],
-  ["CCTV and installation", "installation"],
-  ["Security and patrols", "security"],
-  ["Maintenance", "maintenance"],
-  ["Plumbing", "plumbing"],
-  ["Garden", "garden"],
-  ["Pest control", "pest_control"],
-  ["Pools", "pool"],
-  ["Sales and distribution", "distribution"],
-  ["Delivery", "delivery"],
-  ["Something else", "generic"],
-];
 const sizes: Option[] = [
   ["1 to 4", "1-4"],
   ["5 to 10", "5-10"],
@@ -34,30 +22,8 @@ const sizes: Option[] = [
   ["26 to 50", "26-50"],
   ["50+", "50+"],
 ];
-const ways: Option[] = [
-  ["WhatsApp", "whatsapp"],
-  ["Paper", "paper"],
-  ["Another app", "app"],
-  ["Mostly memory", "memory"],
-];
-const yesNo: Option[] = [
-  ["Yes", "yes"],
-  ["No", "no"],
-];
 
-type Field =
-  | "name"
-  | "businessName"
-  | "whatsapp"
-  | "email"
-  | "trade"
-  | "teamSize"
-  | "town"
-  | "howRun"
-  | "biggestCost"
-  | "wholeTeam"
-  | "videoReview"
-  | "marketingOk";
+type Field = "name" | "businessName" | "teamSize" | "whatsapp" | "email";
 type Issue = { field: Field; message: string };
 type State =
   | { kind: "idle" }
@@ -143,19 +109,12 @@ function Labelled({
 export function FoundingForm() {
   const id = useId();
   const [state, setState] = useState<State>({ kind: "idle" });
-  const [choice, setChoice] = useState<Record<"trade" | "teamSize" | "howRun" | "wholeTeam" | "videoReview", string>>({
-    trade: "",
-    teamSize: "",
-    howRun: "",
-    wholeTeam: "",
-    videoReview: "",
-  });
-  const [agreed, setAgreed] = useState(false);
+  const [teamSize, setTeamSize] = useState("");
   const [missing, setMissing] = useState<Partial<Record<Field, string>>>({});
 
-  const pick = (k: keyof typeof choice) => (v: string) => {
-    setChoice((c) => ({ ...c, [k]: v }));
-    setMissing((m) => ({ ...m, [k]: undefined }));
+  const pickSize = (v: string) => {
+    setTeamSize(v);
+    setMissing((m) => ({ ...m, teamSize: undefined }));
   };
   const issues = state.kind === "error" ? state.issues : [];
   const problem = (f: Field) => missing[f] ?? issues.find((i) => i.field === f)?.message;
@@ -176,12 +135,7 @@ export function FoundingForm() {
     const text = (k: string) => String(form.get(k) ?? "");
 
     const gaps: Partial<Record<Field, string>> = {};
-    if (!choice.trade) gaps.trade = "Choose what your team does.";
-    if (!choice.teamSize) gaps.teamSize = "Choose how many people work in the field.";
-    if (!choice.howRun) gaps.howRun = "Choose how you run jobs today.";
-    if (!choice.wholeTeam) gaps.wholeTeam = "Please answer yes or no.";
-    if (!choice.videoReview) gaps.videoReview = "Please answer yes or no.";
-    if (!agreed) gaps.marketingOk = "Please tick the box to agree.";
+    if (!teamSize) gaps.teamSize = "Choose how many staff you have.";
     setMissing(gaps);
     if (Object.keys(gaps).length > 0) return;
 
@@ -197,18 +151,11 @@ export function FoundingForm() {
         method: "POST",
         headers: { "content-type": "application/json", accept: "application/json" },
         body: JSON.stringify({
-          name: text("name"),
+          name: `${text("firstName").trim()} ${text("lastName").trim()}`.trim(),
           businessName: text("businessName"),
+          teamSize,
           whatsapp: text("whatsapp"),
           email: text("email"),
-          trade: choice.trade,
-          teamSize: choice.teamSize,
-          town: text("town"),
-          howRun: choice.howRun,
-          biggestCost: text("biggestCost"),
-          wholeTeam: choice.wholeTeam,
-          videoReview: choice.videoReview,
-          marketingOk: agreed,
           website: text("website"),
           source: src,
           attribution: firstVisit(),
@@ -217,7 +164,7 @@ export function FoundingForm() {
       const body = (await res.json().catch(() => null)) as { ok?: boolean; waitlist?: boolean; error?: string; issues?: Issue[] } | null;
       if (res.ok && body?.ok) {
         trackLead();
-        track("signup_completed", { waitlist: body.waitlist === true, trade: choice.trade });
+        track("signup_completed", { waitlist: body.waitlist === true });
         setState({ kind: "done", waitlist: body.waitlist === true });
         return;
       }
@@ -248,13 +195,17 @@ export function FoundingForm() {
   return (
     <form onSubmit={submit} onFocusCapture={started} className="grid gap-5">
       <div className="grid gap-5 sm:grid-cols-2">
-        <Labelled label="Your name" htmlFor={`${id}-name`} error={problem("name")}>
-          <input id={`${id}-name`} name="name" required maxLength={80} autoComplete="name" className={input} />
+        <Labelled label="First name" htmlFor={`${id}-first`} error={problem("name")}>
+          <input id={`${id}-first`} name="firstName" required maxLength={40} autoComplete="given-name" className={input} />
         </Labelled>
-        <Labelled label="Business name" htmlFor={`${id}-biz`} error={problem("businessName")}>
-          <input id={`${id}-biz`} name="businessName" required maxLength={120} autoComplete="organization" className={input} />
+        <Labelled label="Last name" htmlFor={`${id}-last`}>
+          <input id={`${id}-last`} name="lastName" required maxLength={39} autoComplete="family-name" className={input} />
         </Labelled>
       </div>
+      <Labelled label="Business name" htmlFor={`${id}-biz`} error={problem("businessName")}>
+        <input id={`${id}-biz`} name="businessName" required maxLength={120} autoComplete="organization" className={input} />
+      </Labelled>
+      <Chips label="How many staff do you have?" options={sizes} value={teamSize} onChange={pickSize} error={problem("teamSize")} />
       <Labelled label="WhatsApp number" htmlFor={`${id}-wa`} hint="We reply here. We never share it." error={problem("whatsapp")}>
         <input
           id={`${id}-wa`}
@@ -281,63 +232,6 @@ export function FoundingForm() {
           className={input}
         />
       </Labelled>
-      <Chips label="What does your team do?" options={trades} value={choice.trade} onChange={pick("trade")} error={problem("trade")} />
-      <Chips
-        label="How many people work in the field?"
-        options={sizes}
-        value={choice.teamSize}
-        onChange={pick("teamSize")}
-        error={problem("teamSize")}
-      />
-      <Labelled label="Which town or city?" htmlFor={`${id}-town`} error={problem("town")}>
-        <input id={`${id}-town`} name="town" required maxLength={80} autoComplete="address-level2" className={input} />
-      </Labelled>
-      <Chips label="How do you run jobs today?" options={ways} value={choice.howRun} onChange={pick("howRun")} error={problem("howRun")} />
-      <Labelled label="What costs you the most right now?" htmlFor={`${id}-cost`} error={problem("biggestCost")}>
-        <textarea
-          id={`${id}-cost`}
-          name="biggestCost"
-          rows={3}
-          required
-          maxLength={1000}
-          placeholder="For example: my staff say they were at the client, and I can't prove it."
-          className={`${input} resize-y`}
-        />
-      </Labelled>
-      <Chips
-        label={`Will your whole team use ${site.name} every workday for ${founding.days} days?`}
-        options={yesNo}
-        value={choice.wholeTeam}
-        onChange={pick("wholeTeam")}
-        error={problem("wholeTeam")}
-      />
-      <Chips
-        label="Are you happy to do a 60-second phone video and a Google review at the end?"
-        options={yesNo}
-        value={choice.videoReview}
-        onChange={pick("videoReview")}
-        error={problem("videoReview")}
-      />
-
-      <div className="grid gap-1.5">
-        <label className="flex items-start gap-3 text-sm leading-snug text-teal-100">
-          <input
-            type="checkbox"
-            checked={agreed}
-            onChange={(e) => {
-              setAgreed(e.target.checked);
-              setMissing((m) => ({ ...m, marketingOk: undefined }));
-            }}
-            className="mt-0.5 size-5 shrink-0 accent-amber-500"
-          />
-          <span>I agree that {site.name} may use my business name, logo, video and results in its marketing.</span>
-        </label>
-        {problem("marketingOk") && (
-          <p role="alert" className={errorText}>
-            {problem("marketingOk")}
-          </p>
-        )}
-      </div>
 
       {/* A trap for scripts: people never see or fill this in. */}
       <div aria-hidden="true" className="absolute -left-[9999px] h-0 w-0 overflow-hidden">

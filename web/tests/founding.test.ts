@@ -75,7 +75,7 @@ test("a strange source is dropped, not refused", () => {
   assert.equal(r.application.source, null);
 });
 
-test("every field is required, and the marketing box must be ticked", () => {
+test("the name, business, team size and WhatsApp are required; the rest is checked only when given", () => {
   const empty: FoundingInput = {
     name: "",
     businessName: "",
@@ -93,11 +93,44 @@ test("every field is required, and the marketing box must be ticked", () => {
   };
   assert.deepEqual(
     foundingIssues(empty).map((i) => i.field),
-    ["name", "businessName", "whatsapp", "trade", "teamSize", "town", "howRun", "biggestCost", "wholeTeam", "videoReview", "marketingOk"]
+    ["name", "businessName", "teamSize", "whatsapp", "trade", "howRun", "videoReview"]
   );
   assert.deepEqual(foundingIssues(good), []);
   assert.equal(foundingIssues({ ...good, biggestCost: "x".repeat(1001) })[0]?.field, "biggestCost");
-  assert.equal(foundingIssues({ ...good, marketingOk: false })[0]?.field, "marketingOk");
+  assert.deepEqual(foundingIssues({ ...good, marketingOk: false }), []);
+});
+
+test("an application from the short form saves the unasked answers as null", () => {
+  const r = checkApplication({
+    name: " Thandi Nkosi ",
+    businessName: "Shine Cleaning",
+    teamSize: "5-10",
+    whatsapp: "082 123 4567",
+    email: "owner@example.com",
+    trade: "",
+    town: " ",
+    howRun: "",
+    biggestCost: " ",
+    wholeTeam: "",
+    videoReview: "",
+    marketingOk: false,
+    source: "",
+  });
+  assert.ok(r.ok);
+  assert.equal(r.application.name, "Thandi Nkosi");
+  assert.equal(r.application.email, "owner@example.com");
+  assert.equal(r.application.trade, null);
+  assert.equal(r.application.town, null);
+  assert.equal(r.application.how_run, null);
+  assert.equal(r.application.biggest_cost, null);
+  assert.equal(r.application.whole_team, null);
+  assert.equal(r.application.video_review, null);
+  assert.equal(r.application.marketing_ok, null);
+  const mail = applicationEmail(r.application, null, false);
+  assert.equal(mail.subject, "New Founding application: Shine Cleaning (5-10 staff)");
+  assert.ok(mail.text.includes("Agreed to marketing use: (not asked)"));
+  assert.ok(mail.text.includes("Town or city: (not asked)"));
+  assert.ok(mail.text.includes("Runs jobs on: (not asked)"));
 });
 
 test("the team sizes and ways of running jobs are exactly the form's", () => {
