@@ -27,7 +27,7 @@ export function LegalPage({ title, children }: { title: string; children: React.
       <main className="mx-auto max-w-3xl px-4 py-10 sm:px-6 sm:py-14">
         <h1 className="font-display text-3xl font-bold tracking-tight text-teal-900 sm:text-4xl">{title}</h1>
         <p className="mt-2 text-sm text-muted">Last updated {legal.lastUpdated}</p>
-        <div className="legal mt-8 grid gap-4 leading-relaxed text-ink [&_h2]:mt-6 [&_h2]:font-display [&_h2]:text-xl [&_h2]:font-bold [&_h2]:text-teal-900 [&_li]:ml-5 [&_li]:list-disc [&_ul]:grid [&_ul]:gap-1.5 [&_a]:font-semibold [&_a]:text-teal-900 [&_a]:underline">
+        <div className="legal mt-8 grid gap-4 leading-relaxed text-ink [&_h2]:mt-6 [&_h2]:font-display [&_h2]:text-xl [&_h2]:font-bold [&_h2]:text-teal-900 [&_li]:ml-5 [&_li]:list-disc [&_ul]:grid [&_ul]:gap-1.5 [&_ol]:grid [&_ol]:gap-2 [&_ol>li]:list-decimal [&_h2]:scroll-mt-24 [&_a]:font-semibold [&_a]:text-teal-900 [&_a]:underline">
           {children}
         </div>
         <footer className="mt-12 border-t border-line pt-6 text-sm text-muted">

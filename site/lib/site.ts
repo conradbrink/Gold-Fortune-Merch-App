@@ -73,6 +73,9 @@ export const founding = {
   // (half the normal R1,499, so R9,000 saved over the year).
   price: 749,
   priceMonths: 12,
+  // The promise on /founding (owner, 11 Oct 2026): used it for the 60 days and
+  // found no value, we pay this. Its conditions are on /terms#promise.
+  guarantee: 2998,
   // Dates are in words, as the owner gave them.
   closes: "Monday 19 October",
   tellsBy: "Friday 23 October",
@@ -135,7 +138,7 @@ export const legal = {
   informationOfficer: "Conrad Brink",
   // Where the app's data is hosted (Supabase, AWS eu-west-3).
   dataLocation: "Paris, France",
-  lastUpdated: "8 October 2026",
+  lastUpdated: "11 October 2026",
 } as const;
 
 /** What a team of `users` pays per period on the given billing. */
