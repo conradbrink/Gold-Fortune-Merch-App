@@ -78,6 +78,11 @@ export default function TermsPage() {
           also claim the promise.
         </li>
         <li>
+          The promise doesn&apos;t apply if your business improved while you used {site.name}. We compare your first
+          two weeks with your last two weeks. If your team&apos;s productivity went up (for example more jobs or visits
+          done per person per day, more time on site, or fewer missed tasks), you found value, and we don&apos;t pay.
+        </li>
+        <li>
           The promise doesn&apos;t apply if we suspended your account for misusing {site.name}, or if you deleted your
           records before claiming.
         </li>
