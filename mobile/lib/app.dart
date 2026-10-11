@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import 'core/company_closed.dart';
 import 'core/company_config.dart';
 import 'core/interrupted_location.dart';
 import 'core/product.dart';
@@ -11,6 +12,7 @@ import 'core/providers.dart';
 import 'core/supabase_client.dart';
 import 'core/theme.dart';
 import 'data/local/app_database.dart';
+import 'features/auth/company_closed_screen.dart';
 import 'features/auth/login_screen.dart';
 import 'features/auth/manager_notice_screen.dart';
 import 'features/deliveries/deliveries_screen.dart';
@@ -87,6 +89,10 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/manager-notice',
         builder: (context, state) => const ManagerNoticeScreen(),
+      ),
+      GoRoute(
+        path: '/closed',
+        builder: (context, state) => const CompanyClosedScreen(),
       ),
       GoRoute(
         path: '/',
@@ -196,6 +202,13 @@ final routerProvider = Provider<GoRouter>((ref) {
       // A live session anywhere but the login screen means no sign-out is in
       // progress, whatever was expected. See InterruptedLocation.
       InterruptedLocation.noteSessionAlive();
+
+      // A company closed from the Control Centre: nothing else works for its
+      // people, so they are told rather than shown empty screens. Cached and
+      // refreshed in the background like the role (core/company_closed.dart).
+      final onClosed = state.matchedLocation == '/closed';
+      if (await companyClosed(db, session.user.id)) return onClosed ? null : '/closed';
+      if (onClosed) return '/';
 
       final role = await resolveRole(session.user.id);
       final onManagerNotice = state.matchedLocation == '/manager-notice';

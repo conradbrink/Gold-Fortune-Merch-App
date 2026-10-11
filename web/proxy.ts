@@ -82,6 +82,10 @@ export async function proxy(request: NextRequest) {
   // checks below for the reason /rep-notice is: it is where they send people.
   const isNotEnabledPage = matchesPrefix(request.nextUrl.pathname, "/not-enabled");
 
+  // The explanation for a company that has been closed from the Control
+  // Centre. Exempt for the same reason: it is where they are sent.
+  const isClosedPage = matchesPrefix(request.nextUrl.pathname, "/closed");
+
   // Pages for a company's own clients (Stage 8): the link in an email, to stop
   // those emails or to see and sign a job's report. The person opening them
   // has no Tickd login, and someone who has one is not asked for it either.
@@ -125,6 +129,7 @@ export async function proxy(request: NextRequest) {
     !isPasswordResetPage &&
     !isPlatformPage &&
     !isNotEnabledPage &&
+    !isClosedPage &&
     !isClientPage
   ) {
     // Two questions, asked in parallel so the page waits for one round trip:
@@ -163,6 +168,20 @@ export async function proxy(request: NextRequest) {
     // provisioned. They get the notice page, which is a dead end rather than a
     // redirect loop.
     const permissions = toPermissionSet(granted as string[] | null);
+
+    // No permissions can also mean the company was closed: the database stops
+    // recognising its people (20261011090000_close_company), so the answer
+    // above is empty. Asked only then, so an ordinary request costs nothing
+    // more. Checked before the modules, which are empty for them too.
+    if (permissions.size === 0) {
+      const { data: closed } = await supabase.rpc("my_company_closed");
+      if (closed) {
+        const url = request.nextUrl.clone();
+        url.pathname = "/closed";
+        url.search = "";
+        return NextResponse.redirect(url);
+      }
+    }
     const modules = toModuleSet(
       (config as { modules?: Record<string, unknown> } | null)?.modules
     );

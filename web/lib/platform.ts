@@ -1,4 +1,5 @@
 import "server-only";
+import { cache } from "react";
 import { createClient as createAdminClient } from "@supabase/supabase-js";
 import type { Database, Json } from "@/lib/supabase/types";
 import { toPlatformUsers, type LoginRow, type PlatformUser } from "@/lib/platform-users";
@@ -24,6 +25,8 @@ export type PlatformCompany = {
   activeUsers: number;
   inactiveUsers: number;
   lastWorkdayAt: string | null;
+  /** When it was closed from the Control Centre; null while open. */
+  closedAt: string | null;
 };
 
 /** The service-role client. Server-only; see the header. */
@@ -38,9 +41,10 @@ export function platformAdminClient() {
 export async function listCompanies(): Promise<PlatformCompany[]> {
   const admin = platformAdminClient();
 
-  const [{ data: orgs, error: orgError }, { data: templates, error: templateError }] = await Promise.all([
+  const [{ data: orgs, error: orgError }, { data: templates, error: templateError }, closed] = await Promise.all([
     admin.from("organizations").select("id, name, industry, industries, timezone, created_at").order("created_at"),
     admin.from("industry_templates").select("code, name"),
+    closedCompanies(),
   ]);
   if (orgError) throw orgError;
   if (templateError) throw templateError;
@@ -95,8 +99,43 @@ export async function listCompanies(): Promise<PlatformCompany[]> {
       activeUsers: counts[i].active,
       inactiveUsers: counts[i].inactive,
       lastWorkdayAt: last[i],
+      closedAt: closed.get(org.id) ?? null,
     };
   });
+}
+
+/**
+ * Closed companies, by id, with when each was closed. The Control Centre
+ * leaves them out of its counts and lists (they are reopened from their own
+ * page); the list of companies shows them apart. Cached per request: the
+ * dashboard asks for it from several loaders.
+ */
+export const closedCompanies = cache(async (): Promise<Map<string, string>> => {
+  const { data, error } = await platformAdminClient()
+    .from("company_account")
+    .select("org_id, closed_at")
+    .not("closed_at", "is", null)
+    .range(0, 9999);
+  if (error) {
+    // Before the migration that adds the column, nothing is closed.
+    if (error.code === "42703") return new Map();
+    throw error;
+  }
+  return new Map((data ?? []).map((r) => [r.org_id, r.closed_at as string]));
+});
+
+/** Whether one company is closed: when, and the reason given; null while open. */
+export async function companyClosure(orgId: string): Promise<{ closedAt: string; reason: string | null } | null> {
+  const { data, error } = await platformAdminClient()
+    .from("company_account")
+    .select("closed_at, closed_reason")
+    .eq("org_id", orgId)
+    .maybeSingle();
+  if (error) {
+    if (error.code === "42703") return null;
+    throw error;
+  }
+  return data?.closed_at ? { closedAt: data.closed_at, reason: data.closed_reason } : null;
 }
 
 export type PlatformModule = {

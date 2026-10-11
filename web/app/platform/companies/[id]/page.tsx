@@ -1,8 +1,9 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { companyInternalSettings, companyTrialEnd, getCompany } from "@/lib/platform";
+import { companyClosure, companyInternalSettings, companyTrialEnd, getCompany } from "@/lib/platform";
 import { extendTrial, setCompanyModule, setCompanySetting } from "@/app/platform/actions";
+import { ClosePanel } from "./close-panel";
 import { trialState } from "@/lib/onboarding";
 
 /**
@@ -11,7 +12,8 @@ import { trialState } from "@/lib/onboarding";
  * Gated like `/platform`: a session is required by the proxy, and
  * `is_platform_admin()` is asked here before anything is read; everyone else
  * gets a 404. The switches post to `setCompanyModule`, which checks again —
- * this page hiding them is not what protects them.
+ * this page hiding them is not what protects them. At the foot, closing the
+ * company (or reopening a closed one), through `setCompanyClosed`.
  */
 
 export const dynamic = "force-dynamic";
@@ -46,10 +48,11 @@ export default async function PlatformCompanyPage({
   const { id } = await params;
   // Not a company id at all: a 404, not a database cast error and a 500.
   if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) notFound();
-  const [company, trialEndsAt, internal] = await Promise.all([
+  const [company, trialEndsAt, internal, closure] = await Promise.all([
     getCompany(id),
     companyTrialEnd(id),
     companyInternalSettings(id),
+    companyClosure(id),
   ]);
   if (!company) notFound();
   const trial = trialState(trialEndsAt);
@@ -76,6 +79,14 @@ export default async function PlatformCompanyPage({
           and on phones at their next refresh. Every change is logged.
         </p>
       </header>
+
+      {closure && (
+        <p className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+          Closed {dateTime.format(new Date(closure.closedAt))} UTC
+          {closure.reason ? ` · ${closure.reason}` : ""}. Its people can&apos;t sign in and nothing is sent for it.
+          Reopen it at the foot of this page.
+        </p>
+      )}
 
       <section className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border bg-card p-4">
         <p className="text-sm text-foreground">
@@ -204,6 +215,8 @@ export default async function PlatformCompanyPage({
           })}
         </ul>
       </section>
+
+      <ClosePanel orgId={company.id} name={company.name} closed={closure !== null} />
 
       {company.recentChanges.length > 0 && (
         <section className="space-y-2">

@@ -1059,30 +1059,42 @@ export type Database = {
       }
       company_account: {
         Row: {
+          closed_at: string | null
+          closed_by: string | null
+          closed_reason: string | null
           created_at: string
           onboarding_dismissed_at: string | null
           onboarding_dismissed_by: string | null
           org_id: string
+          status_before_close: string | null
           trial_ends_at: string | null
           updated_at: string
           wizard_finished_at: string | null
           wizard_step: string | null
         }
         Insert: {
+          closed_at?: string | null
+          closed_by?: string | null
+          closed_reason?: string | null
           created_at?: string
           onboarding_dismissed_at?: string | null
           onboarding_dismissed_by?: string | null
           org_id: string
+          status_before_close?: string | null
           trial_ends_at?: string | null
           updated_at?: string
           wizard_finished_at?: string | null
           wizard_step?: string | null
         }
         Update: {
+          closed_at?: string | null
+          closed_by?: string | null
+          closed_reason?: string | null
           created_at?: string
           onboarding_dismissed_at?: string | null
           onboarding_dismissed_by?: string | null
           org_id?: string
+          status_before_close?: string | null
           trial_ends_at?: string | null
           updated_at?: string
           wizard_finished_at?: string | null
@@ -8323,6 +8335,7 @@ export type Database = {
       company_setting: { Args: { p_key: string }; Returns: Json }
       org_setting: { Args: { p_key: string; p_org: string }; Returns: Json }
       my_company_config: { Args: never; Returns: Json }
+      my_company_closed: { Args: never; Returns: Json }
       template_defaults: { Args: { p_templates: string[] }; Returns: Json }
       my_onboarding: { Args: never; Returns: Json }
       dismiss_onboarding: { Args: never; Returns: undefined }
@@ -8363,6 +8376,10 @@ export type Database = {
       founding_spots_left: {
         Args: Record<string, never>
         Returns: number
+      }
+      platform_set_company_closed: {
+        Args: { p_org: string; p_closed: boolean; p_actor: string; p_reason?: string }
+        Returns: Json
       }
       platform_module_usage: {
         Args: { p_from: string; p_to: string }

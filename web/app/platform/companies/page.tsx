@@ -1,13 +1,15 @@
 import Link from "next/link";
 import { requireOperator } from "@/lib/operator";
-import { listCompanies } from "@/lib/platform";
+import { listCompanies, type PlatformCompany } from "@/lib/platform";
 
 /**
  * Platform operator: every company on the service.
  *
  * Lists every company; each links to its page, where the operator switches
  * modules (`setCompanyModule`, audit-logged); "Add company" creates one from
- * industry templates (`companies/new`). Plans and impersonation come later.
+ * industry templates (`companies/new`). Closed companies are listed apart,
+ * below the open ones; each is reopened from its own page. Plans and
+ * impersonation come later.
  *
  * The gate is here, on the server, not in `proxy.ts`. The proxy's permission
  * map is about what a person may do *inside their own company*, and an
@@ -55,42 +57,63 @@ export default async function PlatformPage() {
         </div>
       </header>
 
-      <div className="overflow-x-auto rounded-lg border border-border bg-card">
-        <table className="w-full text-sm">
-          <thead className="border-b border-border text-left text-muted-foreground">
-            <tr>
-              <th className="px-4 py-2 font-medium">Company</th>
-              <th className="px-4 py-2 font-medium">Industry</th>
-              <th className="px-4 py-2 text-right font-medium">Active users</th>
-              <th className="px-4 py-2 text-right font-medium">Inactive</th>
-              <th className="px-4 py-2 font-medium">Last workday started</th>
-              <th className="px-4 py-2 font-medium">Created</th>
-            </tr>
-          </thead>
-          <tbody>
-            {companies.map((c) => (
-              <tr key={c.id} className="border-b border-border last:border-0">
-                <td className="px-4 py-2">
-                  <Link
-                    href={`/platform/companies/${c.id}`}
-                    className="font-medium text-foreground hover:underline"
-                  >
-                    {c.name}
-                  </Link>
-                  <div className="font-mono text-xs text-muted-foreground">{c.id}</div>
-                </td>
-                <td className="px-4 py-2">{c.industry ?? "—"}</td>
-                <td className="px-4 py-2 text-right tabular-nums">{c.activeUsers}</td>
-                <td className="px-4 py-2 text-right tabular-nums">{c.inactiveUsers}</td>
-                <td className="px-4 py-2">
-                  {c.lastWorkdayAt ? dateTime.format(new Date(c.lastWorkdayAt)) : "Never"}
-                </td>
-                <td className="px-4 py-2">{dateTime.format(new Date(c.createdAt))}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+      <CompanyTable companies={companies.filter((c) => !c.closedAt)} />
+
+      {companies.some((c) => c.closedAt) && (
+        <section className="space-y-2">
+          <div className="space-y-1">
+            <h2 className="text-sm font-semibold text-foreground">Closed companies</h2>
+            <p className="text-sm text-muted-foreground">
+              Their people can&apos;t sign in and nothing is sent for them. Their records are kept: open one to
+              reopen it.
+            </p>
+          </div>
+          <CompanyTable companies={companies.filter((c) => c.closedAt)} closed />
+        </section>
+      )}
     </main>
+  );
+}
+
+function CompanyTable({ companies, closed = false }: { companies: PlatformCompany[]; closed?: boolean }) {
+  return (
+    <div className="overflow-x-auto rounded-lg border border-border bg-card">
+      <table className="w-full text-sm">
+        <thead className="border-b border-border text-left text-muted-foreground">
+          <tr>
+            <th className="px-4 py-2 font-medium">Company</th>
+            <th className="px-4 py-2 font-medium">Industry</th>
+            <th className="px-4 py-2 text-right font-medium">Active users</th>
+            <th className="px-4 py-2 text-right font-medium">Inactive</th>
+            <th className="px-4 py-2 font-medium">Last workday started</th>
+            <th className="px-4 py-2 font-medium">{closed ? "Closed" : "Created"}</th>
+          </tr>
+        </thead>
+        <tbody>
+          {companies.map((c) => (
+            <tr key={c.id} className="border-b border-border last:border-0">
+              <td className="px-4 py-2">
+                <Link href={`/platform/companies/${c.id}`} className="font-medium text-foreground hover:underline">
+                  {c.name}
+                </Link>
+                <div className="font-mono text-xs text-muted-foreground">{c.id}</div>
+              </td>
+              <td className="px-4 py-2">{c.industry ?? "—"}</td>
+              <td className="px-4 py-2 text-right tabular-nums">{c.activeUsers}</td>
+              <td className="px-4 py-2 text-right tabular-nums">{c.inactiveUsers}</td>
+              <td className="px-4 py-2">{c.lastWorkdayAt ? dateTime.format(new Date(c.lastWorkdayAt)) : "Never"}</td>
+              <td className="px-4 py-2">{dateTime.format(new Date(closed && c.closedAt ? c.closedAt : c.createdAt))}</td>
+            </tr>
+          ))}
+          {companies.length === 0 && (
+            <tr>
+              <td colSpan={6} className="px-4 py-6 text-center text-muted-foreground">
+                No open companies.
+              </td>
+            </tr>
+          )}
+        </tbody>
+      </table>
+    </div>
   );
 }

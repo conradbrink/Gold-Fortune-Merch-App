@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 import { createClient as createAdminClient } from "@supabase/supabase-js";
 import type { Database } from "@/lib/supabase/types";
 import { verifyLink } from "@/lib/email/links";
+import { linkCompanyClosed } from "@/lib/company-closed";
 
 /**
  * The client signs a job's report (Stage 8.3). The link's signature is checked
@@ -25,6 +26,9 @@ export async function signReport(
   const admin = createAdminClient<Database>(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!, {
     auth: { autoRefreshToken: false, persistSession: false },
   });
+  if (await linkCompanyClosed(admin, "job_reports", id)) {
+    return { ok: false, error: "This link does not work any more. Ask for a new one." };
+  }
   const { data, error } = await admin.rpc("job_report_sign", {
     p_report_id: id,
     p_name: name.trim().slice(0, 120),
