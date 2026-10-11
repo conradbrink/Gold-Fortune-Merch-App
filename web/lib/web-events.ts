@@ -71,7 +71,63 @@ export function checkWebEvent(body: unknown, device: WebEventRow["device"], coun
  */
 export function isRobot(userAgent: string | null): boolean {
   if (!userAgent) return true;
-  return /bot\b|crawl|spider|slurp|headlesschrome|lighthouse|pingdom|uptime|curl\/|wget\/|python|axios|node-fetch|undici/i.test(userAgent);
+  return /bot\b|crawl|spider|slurp|facebookexternalhit|meta-external|headlesschrome|lighthouse|pingdom|uptime|curl\/|wget\/|python|axios|node-fetch|undici/i.test(userAgent);
+}
+
+/**
+ * Meta's own network (AS32934, from its published routes, collapsed). When an
+ * advert is published, Meta's review opens every link many times over, in an
+ * ordinary-looking phone or tablet browser that carries the advert's tags, an
+ * fbclid and a facebook.com referrer: on 11 Oct 2026, 810 of the first 842
+ * events. Only the address gives it away. People on Facebook or Instagram open
+ * links from their own phone's address, never from these. To refresh:
+ * `whois -h whois.radb.net -- '-i origin AS32934'`, then collapse the routes.
+ */
+const META_NETWORKS = [
+  "31.13.24.0/21", "31.13.64.0/18", "45.64.40.0/22", "57.141.0.0/20", "57.141.16.0/21", "57.141.24.0/22",
+  "57.141.28.0/23", "57.144.0.0/14", "66.220.144.0/20", "69.63.176.0/20", "69.171.224.0/19", "74.119.76.0/22",
+  "102.132.96.0/20", "103.4.96.0/22", "129.134.0.0/16", "147.75.208.0/20", "157.240.0.0/16", "163.70.128.0/17",
+  "163.77.128.0/17", "173.252.64.0/18", "179.60.192.0/22", "185.60.216.0/22", "185.89.216.0/22", "204.15.20.0/22",
+  "2401:db00::/32", "2620:0:1c00::/40", "2803:6080::/29", "2a03:2880::/31", "2a03:2887:ff2c::/47", "2a03:83e0::/32",
+  "2a10:f781:10:cee0::/64",
+];
+
+/** An address as a number and its width in bits; null when it isn't one. */
+function addressBits(address: string): { value: bigint; bits: 32 | 128 } | null {
+  // Tolerate "[v6]:port", "v4:port" and a zone id; then unwrap ::ffff:v4.
+  const a = address
+    .trim()
+    .replace(/^\[([^\]]+)\](:\d+)?$/, "$1")
+    .replace(/^(\d{1,3}(?:\.\d{1,3}){3}):\d+$/, "$1")
+    .replace(/%.*$/, "")
+    .replace(/^::ffff:(?=\d+\.)/i, "");
+  if (/^\d{1,3}(\.\d{1,3}){3}$/.test(a)) {
+    const parts = a.split(".").map(Number);
+    if (parts.some((p) => p > 255)) return null;
+    return { value: parts.reduce((n, p) => (n << BigInt(8)) | BigInt(p), BigInt(0)), bits: 32 };
+  }
+  if (!/^[0-9a-f:]+$/i.test(a) || (a.match(/::/g) ?? []).length > 1) return null;
+  const [head, tail] = a.includes("::") ? a.split("::") : [a, null];
+  const left = head ? head.split(":") : [];
+  const right = tail ? tail.split(":") : [];
+  const missing = 8 - left.length - right.length;
+  if (tail === null ? missing !== 0 : missing < 1) return null;
+  const groups = [...left, ...Array(tail === null ? 0 : missing).fill("0"), ...right];
+  if (groups.some((g) => !/^[0-9a-f]{1,4}$/i.test(g))) return null;
+  return { value: groups.reduce((n, g) => (n << BigInt(16)) | BigInt(parseInt(g, 16)), BigInt(0)), bits: 128 };
+}
+
+const META = META_NETWORKS.map((cidr) => {
+  const [base, len] = cidr.split("/");
+  const b = addressBits(base)!;
+  const shift = BigInt(b.bits - Number(len));
+  return { bits: b.bits, shift, prefix: b.value >> shift };
+});
+
+/** Whether the address belongs to Meta's network (its advert review, not a person). */
+export function isMetaAddress(address: string | null): boolean {
+  const b = address ? addressBits(address) : null;
+  return !!b && META.some((m) => m.bits === b.bits && b.value >> m.shift === m.prefix);
 }
 
 /** The kind of device, from the user agent (which is not kept). */

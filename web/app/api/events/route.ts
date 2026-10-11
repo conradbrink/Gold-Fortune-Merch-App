@@ -1,6 +1,6 @@
 import { clientAddress, corsOrigin } from "@/lib/founding";
 import { platformAdminClient } from "@/lib/platform";
-import { checkWebEvent, deviceOf, isRobot } from "@/lib/web-events";
+import { checkWebEvent, deviceOf, isMetaAddress, isRobot } from "@/lib/web-events";
 
 /**
  * Website events from the sales site (tickd.co.za): a page view or a funnel
@@ -10,8 +10,9 @@ import { checkWebEvent, deviceOf, isRobot } from "@/lib/web-events";
  * The site sends with navigator.sendBeacon as text/plain, a "simple" request,
  * so there is no preflight; only the sales site's own origins are answered in
  * a browser, and a request without an Origin (a script) isn't counted. Robots
- * are ignored, each address is limited, and the answer is
- * always 204: counting must never break the site or tell a caller anything.
+ * and Meta's advert review (by its network's addresses) are ignored, each
+ * address is limited, and the answer is always 204: counting must never break
+ * the site or tell a caller anything.
  * `/api` is outside the sign-in proxy on purpose (see proxy.ts).
  */
 
@@ -43,6 +44,8 @@ export async function POST(request: Request) {
   if (!corsOrigin(request.headers.get("origin"), isProduction())) return done(request);
   const userAgent = request.headers.get("user-agent");
   if (isRobot(userAgent)) return done(request);
+  const address = clientAddress(request.headers.get("x-forwarded-for"), request.headers.get("x-real-ip"));
+  if (isMetaAddress(address)) return done(request);
 
   // A real event is a few hundred bytes; refuse a big one before reading it.
   if (Number(request.headers.get("content-length") ?? 0) > 4000) return done(request);
@@ -58,10 +61,9 @@ export async function POST(request: Request) {
   if (!row) return done(request);
 
   const admin = platformAdminClient();
-  const address = clientAddress(request.headers.get("x-forwarded-for"), request.headers.get("x-real-ip")) ?? "unknown";
   const { data: limited } = await admin.rpc("consume_anonymous_rate_limit", {
     p_bucket: "web_events",
-    p_subject: `ip:${address}`,
+    p_subject: `ip:${address ?? "unknown"}`,
     p_limit: PER_ADDRESS.limit,
     p_window_seconds: PER_ADDRESS.windowSeconds,
   });

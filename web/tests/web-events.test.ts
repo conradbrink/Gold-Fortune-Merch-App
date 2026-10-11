@@ -2,7 +2,7 @@
 // robots and devices, and (from the site's own code) how a visit is grouped.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { checkWebEvent, deviceOf, isRobot } from "@/lib/web-events";
+import { checkWebEvent, deviceOf, isMetaAddress, isRobot } from "@/lib/web-events";
 // The site's own code (its project has no test runner): loaded by address so
 // this project's type checker doesn't reach into the other project.
 const site = new URL("../../site/lib/own-count.ts", import.meta.url).href;
@@ -66,6 +66,22 @@ test("robots and scripts aren't visitors; people in WhatsApp's browser are", () 
   assert.equal(isRobot(null), true);
   assert.equal(isRobot("Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 Chrome/120 Mobile Safari/537.36 WhatsApp/2.24"), false);
   assert.equal(isRobot("Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 Version/17.0 Mobile/15E148 Safari/604.1"), false);
+});
+
+test("Meta's advert review isn't a visitor: its crawlers by name, its browsers by address", () => {
+  assert.equal(isRobot("facebookexternalhit/1.1 (+http://www.facebook.com/externalhit_uatext.php)"), true);
+  assert.equal(isRobot("meta-externalagent/1.1 (+https://developers.facebook.com/docs/sharing/webmasters/crawler)"), true);
+  // The addresses that sent 810 of the first 842 events on 11 Oct 2026.
+  for (const a of ["31.13.115.7", "173.252.107.12", "66.220.149.40", "2a03:2880:f800:10::face:b00c", "::ffff:157.240.1.35", "31.13.115.7:443", "[2a03:2880::1]:443"]) {
+    assert.equal(isMetaAddress(a), true, a);
+  }
+  // People, wherever they are (South African networks, Botswana, a phone on IPv6).
+  for (const a of ["41.13.115.7", "102.130.1.1", "105.224.3.9", "168.167.12.1", "2c0f:f4c0::1", "31.13.32.1", "173.252.128.1"]) {
+    assert.equal(isMetaAddress(a), false, a);
+  }
+  for (const odd of [null, "", "unknown", "999.1.1.1", "1.2.3", "2a03:2880::1::2", "2a03:2880:1:2:3:4:5:6:7"]) {
+    assert.equal(isMetaAddress(odd), false, String(odd));
+  }
 });
 
 test("the kind of device", () => {
