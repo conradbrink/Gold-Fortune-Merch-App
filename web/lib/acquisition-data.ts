@@ -4,7 +4,17 @@ import { platformAdminClient } from "@/lib/platform";
 import { runReport, type GaResult } from "@/lib/ga4";
 import { loadActivation } from "@/lib/activation-data";
 import { isActivated } from "@/lib/activation";
-import { byNameAndPeriod, parseOwnStats, type ApplicationRow, type CompanyFacts, type OwnStats, type Period } from "@/lib/acquisition";
+import {
+  byNameAndPeriod,
+  formReport,
+  parseOwnStats,
+  type ApplicationRow,
+  type CompanyFacts,
+  type FormEventRow,
+  type FormReport,
+  type OwnStats,
+  type Period,
+} from "@/lib/acquisition";
 
 /**
  * What the Acquisition pages read. Server-only, and only called by pages that
@@ -236,4 +246,27 @@ export async function ownStats(
     throw error;
   }
   return { ok: true, value: parseOwnStats(data) };
+}
+
+/**
+ * Where people stop on the application form, from web_events: only the form's
+ * own events, read a page at a time so a long range isn't cut at PostgREST's
+ * row limit. A failed read is null, and the page says so instead of failing.
+ */
+export async function formEvents(period: Period): Promise<FormReport | null> {
+  const rows: FormEventRow[] = [];
+  for (let from = 0; ; from += PAGE) {
+    const { data, error } = await platformAdminClient()
+      .from("web_events")
+      .select("name, visitor_id, section, at")
+      .in("name", ["signup_started", "signup_field", "signup_filled", "signup_submitted", "signup_error", "signup_completed"])
+      .gte("at", period.from)
+      .lt("at", period.to)
+      .order("at")
+      .order("id")
+      .range(from, from + PAGE - 1);
+    if (error) return null;
+    rows.push(...((data ?? []) as FormEventRow[]));
+    if ((data ?? []).length < PAGE) return formReport(rows);
+  }
 }
