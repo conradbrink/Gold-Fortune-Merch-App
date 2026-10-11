@@ -11,7 +11,8 @@ import { checkWebEvent, deviceOf, isMetaAddress, isRobot } from "@/lib/web-event
  * so there is no preflight; only the sales site's own origins are answered in
  * a browser, and a request without an Origin (a script) isn't counted. Robots
  * and Meta's advert review (by its network's addresses) are ignored, each
- * address is limited, and the answer is always 204: counting must never break the site or tell a caller anything.
+ * address is limited, and the answer is always 204: counting must never break
+ * the site or tell a caller anything.
  * `/api` is outside the sign-in proxy on purpose (see proxy.ts).
  */
 

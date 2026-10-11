@@ -80,7 +80,8 @@ export function isRobot(userAgent: string | null): boolean {
  * ordinary-looking phone or tablet browser that carries the advert's tags, an
  * fbclid and a facebook.com referrer: on 11 Oct 2026, 810 of the first 842
  * events. Only the address gives it away. People on Facebook or Instagram open
- * links from their own phone's address, never from these.
+ * links from their own phone's address, never from these. To refresh:
+ * `whois -h whois.radb.net -- '-i origin AS32934'`, then collapse the routes.
  */
 const META_NETWORKS = [
   "31.13.24.0/21", "31.13.64.0/18", "45.64.40.0/22", "57.141.0.0/20", "57.141.16.0/21", "57.141.24.0/22",
@@ -93,7 +94,13 @@ const META_NETWORKS = [
 
 /** An address as a number and its width in bits; null when it isn't one. */
 function addressBits(address: string): { value: bigint; bits: 32 | 128 } | null {
-  const a = address.trim().replace(/^::ffff:(?=\d+\.)/i, "");
+  // Tolerate "[v6]:port", "v4:port" and a zone id; then unwrap ::ffff:v4.
+  const a = address
+    .trim()
+    .replace(/^\[([^\]]+)\](:\d+)?$/, "$1")
+    .replace(/^(\d{1,3}(?:\.\d{1,3}){3}):\d+$/, "$1")
+    .replace(/%.*$/, "")
+    .replace(/^::ffff:(?=\d+\.)/i, "");
   if (/^\d{1,3}(\.\d{1,3}){3}$/.test(a)) {
     const parts = a.split(".").map(Number);
     if (parts.some((p) => p > 255)) return null;

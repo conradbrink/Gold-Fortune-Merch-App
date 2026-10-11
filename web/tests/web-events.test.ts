@@ -72,7 +72,7 @@ test("Meta's advert review isn't a visitor: its crawlers by name, its browsers b
   assert.equal(isRobot("facebookexternalhit/1.1 (+http://www.facebook.com/externalhit_uatext.php)"), true);
   assert.equal(isRobot("meta-externalagent/1.1 (+https://developers.facebook.com/docs/sharing/webmasters/crawler)"), true);
   // The addresses that sent 810 of the first 842 events on 11 Oct 2026.
-  for (const a of ["31.13.115.7", "173.252.107.12", "66.220.149.40", "2a03:2880:f800:10::face:b00c", "::ffff:157.240.1.35"]) {
+  for (const a of ["31.13.115.7", "173.252.107.12", "66.220.149.40", "2a03:2880:f800:10::face:b00c", "::ffff:157.240.1.35", "31.13.115.7:443", "[2a03:2880::1]:443"]) {
     assert.equal(isMetaAddress(a), true, a);
   }
   // People, wherever they are (South African networks, Botswana, a phone on IPv6).
