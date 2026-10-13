@@ -150,3 +150,14 @@ test("a Store health link's window is read only when the page offers it", () => 
   assert.equal(lookBackFromQuery(new URLSearchParams("since=yesterday"), days, today), null);
   assert.equal(lookBackFromQuery(new URLSearchParams(""), days, today), null);
 });
+
+test("'This week' runs from Monday to today, whatever day it is", () => {
+  // Thursday 15 October 2026, mid-afternoon.
+  const r = rangeForPreset("week", new Date(2026, 9, 15, 15, 0));
+  assert.equal(rangeQuery(r).from, "2026-10-12");
+  assert.equal(rangeQuery(r).to, "2026-10-16");
+  // On a Sunday the week is still the one that began on Monday.
+  assert.equal(rangeQuery(rangeForPreset("week", new Date(2026, 9, 18, 9, 0))).from, "2026-10-12");
+  // On a Monday it is just today.
+  assert.equal(rangeQuery(rangeForPreset("week", new Date(2026, 9, 12, 9, 0))).from, "2026-10-12");
+});

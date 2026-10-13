@@ -25,6 +25,7 @@ import {
 } from "@/components/ui/table";
 import { healthGroupFromQuery, lookBackFromQuery, storeHref, type HealthGroup, type LookBack } from "@/lib/dashboard-links";
 import { localDay } from "@/lib/dashboard-numbers";
+import { shiftDay } from "@/lib/dashboard";
 import { toLocalDate } from "@/lib/date-range";
 import type { ExportSheet } from "@/lib/export";
 import { moduleEnabled } from "@/lib/modules";
@@ -37,6 +38,7 @@ import {
   fetchStoreHealth,
   groupLabel,
   groupMeaning,
+  windowSpan,
   windowStart,
   groupsFor,
   inGroup,
@@ -94,6 +96,10 @@ export default function StoreHealthPage() {
   const zone = config?.timezone ?? Intl.DateTimeFormat().resolvedOptions().timeZone;
   const today = localDay(zone);
   const winKey = "days" in win ? `d${win.days}` : `s${win.since}`;
+  // Only a "since" date needs the company's timezone (its midnight); a number
+  // of days does not, and refetching when the config arrives would read the
+  // stores twice on every load.
+  const sinceZone = "since" in win ? zone : "";
 
   /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
@@ -101,7 +107,9 @@ export default function StoreHealthPage() {
     // group and the window from here.
     const q = new URLSearchParams(window.location.search);
     setAsked(healthGroupFromQuery(q));
-    const w = lookBackFromQuery(q, WINDOW_DAYS, localDay(Intl.DateTimeFormat().resolvedOptions().timeZone));
+    // A day of slack: the company's today can be the browser's tomorrow, and a
+    // start in the future is treated as now by store_health anyway.
+    const w = lookBackFromQuery(q, WINDOW_DAYS, shiftDay(localDay(Intl.DateTimeFormat().resolvedOptions().timeZone), 1));
     if (w) setWin(w);
     setUrlRead(true);
   }, []);
@@ -149,9 +157,11 @@ export default function StoreHealthPage() {
     };
     // `win` is read through `winKey`, which changes exactly when it does.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [urlRead, winKey, zone, attempt]);
+  }, [urlRead, winKey, sinceZone, attempt]);
 
   function chooseWindow(next: LookBack) {
+    // The window that is already on: nothing to read again.
+    if (("days" in next ? `d${next.days}` : `s${next.since}`) === winKey) return;
     setLoading(true);
     setWin(next);
     setPerson("");
@@ -526,7 +536,7 @@ export default function StoreHealthPage() {
 function emptyGroup(group: HealthGroup, t: Terms, w: LookBack): string {
   const site = lower(t.site.one);
   const job = lower(t.job.one);
-  const span = "days" in w ? `in the last ${w.days} days` : `since ${w.since}`;
+  const span = windowSpan(w);
   switch (group) {
     case "not_visited":
       return `Every ${site} had a ${job} ${span}.`;

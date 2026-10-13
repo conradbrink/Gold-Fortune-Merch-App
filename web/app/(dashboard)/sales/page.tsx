@@ -74,6 +74,7 @@ type SortKey = "delivered" | "net" | "order";
 
 /** The picker's presets as a period is named on this page. */
 const PRESET_NAMES: [RangePreset, string][] = [
+  ["week", "This week"],
   ["7d", "Last 7 days"],
   ["30d", "Last 30 days"],
   ["90d", "Last 90 days"],
@@ -247,16 +248,15 @@ export default function SalesPage() {
   }, [supabase, rep]);
 
   /** Whether the picker's dates are exactly one of its presets, by name. */
-  const presetName = useCallback(
-    (r: DateRange): string | null => {
-      for (const [p, name] of PRESET_NAMES) {
-        const x = rangeForPreset(p, now);
-        if (+x.from === +r.from && +x.to === +r.to) return name;
-      }
-      return null;
-    },
-    [now]
-  );
+  // Against the presets as they are now, the same way the picker lights its
+  // buttons, so the name and the lit button never disagree after midnight.
+  const presetName = useCallback((r: DateRange): string | null => {
+    for (const [p, name] of PRESET_NAMES) {
+      const x = rangeForPreset(p);
+      if (+x.from === +r.from && +x.to === +r.to) return name;
+    }
+    return null;
+  }, []);
   const period = useMemo<Period | undefined>(
     () =>
       allTime
@@ -287,14 +287,20 @@ export default function SalesPage() {
             return { period: { ...p, to: new Date(Math.min(+p.from + elapsed, +period.from - 1)) }, label: "this point last month" };
           })()
         : { period: monthPeriod(monthDay(compareMonth, -1)), label: "the month before" }
-      : (() => {
-          const len = +range.to - +range.from;
-          const days = Math.round(len / 86_400_000);
-          return {
-            period: { from: new Date(+range.from - len), to: new Date(+range.from - 1), label: "" },
-            label: `the ${days === 1 ? "day" : `${days} days`} before`,
-          };
-        })();
+      : presetName(range) === "This week"
+        ? (() => {
+            // This week so far against the same point last week, as the old tile did.
+            const from = new Date(+range.from - 7 * 86_400_000);
+            return { period: { from, to: new Date(+from + (+now - +range.from)), label: "" }, label: "this point last week" };
+          })()
+        : (() => {
+            const len = +range.to - +range.from;
+            const days = Math.round(len / 86_400_000);
+            return {
+              period: { from: new Date(+range.from - len), to: new Date(+range.from - 1), label: "" },
+              label: `the ${days === 1 ? "day" : `${days} days`} before`,
+            };
+          })();
 
   /** The months the card shows, in the company's time: from the first with a sale, at most six. */
   const months = useMemo(() => {
@@ -459,7 +465,13 @@ export default function SalesPage() {
         </div>
       )}
 
-      <DateRangePicker value={range} onChange={chooseRange} allTime={allTime} onAllTime={chooseAllTime} />
+      <DateRangePicker
+        value={range}
+        onChange={chooseRange}
+        allTime={allTime}
+        onAllTime={chooseAllTime}
+        presets={["week", "month", "7d", "30d", "90d"]}
+      />
 
       <TopCard>
         <StatTiles tiles={stats} loading={loading} />

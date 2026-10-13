@@ -60,7 +60,7 @@ export function windowPhrase(w: LookBack): string {
 }
 
 /** "in the last 30 days" or "since 1 Sep", for running text. */
-function windowSpan(w: LookBack): string {
+export function windowSpan(w: LookBack): string {
   return "days" in w ? `in the last ${w.days} days` : `since ${shortDay(w.since)}`;
 }
 
