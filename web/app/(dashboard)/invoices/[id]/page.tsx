@@ -223,7 +223,8 @@ export default function InvoiceDetailPage() {
               Credit note
             </Button>
           )}
-          {live && detail.payments.length === 0 && detail.credits.length === 0 && (
+          {/* An invoice brought over from QuickBooks is QuickBooks' record: not voided here. */}
+          {live && inv.source !== "quickbooks" && detail.payments.length === 0 && detail.credits.length === 0 && (
             <Button variant="ghost" onClick={() => setPanel("void")}>
               Void
             </Button>
