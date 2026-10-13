@@ -9,6 +9,7 @@ import {
   FilterChip,
   InsightPanel,
   ListTools,
+  LookBackPicker,
   SortHead,
   TilePicker,
   TopCard,
@@ -22,7 +23,8 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { healthGroupFromQuery, storeHref, type HealthGroup } from "@/lib/dashboard-links";
+import { healthGroupFromQuery, lookBackFromQuery, storeHref, type HealthGroup, type LookBack } from "@/lib/dashboard-links";
+import { localDay } from "@/lib/dashboard-numbers";
 import { toLocalDate } from "@/lib/date-range";
 import type { ExportSheet } from "@/lib/export";
 import { moduleEnabled } from "@/lib/modules";
@@ -30,9 +32,12 @@ import { fetchAssignments, type Assignment } from "@/lib/representatives";
 import {
   defaultSort,
   describeDays,
+  CARD_WINDOW,
+  WINDOW_DAYS,
   fetchStoreHealth,
   groupLabel,
   groupMeaning,
+  windowStart,
   groupsFor,
   inGroup,
   sortRows,
@@ -80,34 +85,57 @@ export default function StoreHealthPage() {
   /** Null until a heading is clicked: each group then opens in its own order. */
   const [chosenSort, setChosenSort] = useState<Sort | null>(null);
   const [attempt, setAttempt] = useState(0);
+  /**
+   * How far back the page looks. The card's 30 days unless a link or the
+   * picker says otherwise; the dashboard card itself always counts 30.
+   */
+  const [win, setWin] = useState<LookBack>(CARD_WINDOW);
+  const [urlRead, setUrlRead] = useState(false);
+  const zone = config?.timezone ?? Intl.DateTimeFormat().resolvedOptions().timeZone;
+  const today = localDay(zone);
+  const winKey = "days" in win ? `d${win.days}` : `s${win.since}`;
 
   /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
-    // Mount only, as on the off-site list: the tabs own the group from here.
-    setAsked(healthGroupFromQuery(new URLSearchParams(window.location.search)));
+    // Mount only, as on the off-site list: the tiles and the picker own the
+    // group and the window from here.
+    const q = new URLSearchParams(window.location.search);
+    setAsked(healthGroupFromQuery(q));
+    const w = lookBackFromQuery(q, WINDOW_DAYS, localDay(Intl.DateTimeFormat().resolvedOptions().timeZone));
+    if (w) setWin(w);
+    setUrlRead(true);
   }, []);
   /* eslint-enable react-hooks/set-state-in-effect */
 
+  // Who covers each store, then just those people's names. Read once: the
+  // window does not change who is assigned where. A store with nobody on it is
+  // the first thing a manager fixes, so a failure here costs the column, not
+  // the list.
   useEffect(() => {
     let stale = false;
     const supabase = createClient();
-    // Who covers each store, then just those people's names. A store with
-    // nobody on it is the first thing a manager fixes, so a failure here costs
-    // the column, not the list.
-    const people = fetchAssignments(supabase)
+    fetchAssignments(supabase)
       .catch(() => [] as Assignment[])
       .then(async (assigned) => {
         const ids = [...new Set(assigned.map((a) => a.rep_id))];
-        if (ids.length === 0) return { assigned, people: [] as { id: string; full_name: string | null }[] };
-        const { data } = await supabase.from("profiles").select("id, full_name").in("id", ids);
-        return { assigned, people: (data ?? []) as { id: string; full_name: string | null }[] };
+        const { data } = ids.length === 0 ? { data: [] } : await supabase.from("profiles").select("id, full_name").in("id", ids);
+        if (stale) return;
+        setAssignments(assigned);
+        setNames(Object.fromEntries(((data ?? []) as { id: string; full_name: string | null }[]).map((p) => [p.id, p.full_name ?? ""])));
       });
-    Promise.all([fetchStoreHealth(supabase), people.then((p) => p.assigned), people.then((p) => p.people)])
-      .then(([health, assigned, people]) => {
+    return () => {
+      stale = true;
+    };
+  }, [attempt]);
+
+  // The stores and their groups, again whenever the window changes.
+  useEffect(() => {
+    if (!urlRead) return;
+    let stale = false;
+    fetchStoreHealth(createClient(), windowStart(win, zone))
+      .then((health) => {
         if (stale) return;
         setRows(health);
-        setAssignments(assigned);
-        setNames(Object.fromEntries(people.map((p) => [p.id, p.full_name ?? ""])));
         setError(null);
       })
       .catch((e: unknown) => {
@@ -119,7 +147,23 @@ export default function StoreHealthPage() {
     return () => {
       stale = true;
     };
-  }, [attempt]);
+    // `win` is read through `winKey`, which changes exactly when it does.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [urlRead, winKey, zone, attempt]);
+
+  function chooseWindow(next: LookBack) {
+    setLoading(true);
+    setWin(next);
+    setPerson("");
+    setTown("");
+    // In the address, so a reload, a shared link or Back opens the same view.
+    const url = new URL(window.location.href);
+    url.searchParams.delete("days");
+    url.searchParams.delete("since");
+    if ("since" in next) url.searchParams.set("since", next.since);
+    else if (next.days !== 30) url.searchParams.set("days", String(next.days));
+    window.history.replaceState(null, "", url);
+  }
 
   /** A group this company is shown, falling back to the one the headline opens. */
   const group: HealthGroup = asked !== null && groups.includes(asked) ? asked : "not_visited";
@@ -225,9 +269,9 @@ export default function StoreHealthPage() {
           ? `${t.staff.one}: ${nameOf(activePerson)}`
           : `All ${lower(t.staff.many)}`;
     return {
-      title: `${t.site.one} health: ${groupLabel(group)}`,
+      title: `${t.site.one} health: ${groupLabel(group, win)}`,
       context: [
-        groupMeaning(group, t),
+        groupMeaning(group, t, win, today),
         who,
         ...(activeTown ? [`Town: ${activeTown}`] : []),
         ...(search.trim() ? [`Matching "${search.trim()}"`] : []),
@@ -273,7 +317,7 @@ export default function StoreHealthPage() {
 
   const tiles: Tile[] = groups.map((g) => ({
     id: g,
-    label: groupLabel(g),
+    label: groupLabel(g, win),
     value: counts[g] ?? 0,
     tone: g === "ordering" ? "good" : g === "not_visited" && (counts[g] ?? 0) > 0 ? "bad" : undefined,
   }));
@@ -284,11 +328,13 @@ export default function StoreHealthPage() {
         title={`${t.site.one} health`}
         subtitle={
           sells
-            ? "Who is ordering, who is visited without ordering, and where nobody has been. The last 30 days, counted the same way as the dashboard."
-            : `Which ${lower(t.site.many)} had a ${lower(t.job.one)} in the last 30 days, and where nobody has been.`
+            ? "Who is ordering, who is visited without ordering, and where nobody has been, over the time you choose. 30 days is how the dashboard card counts."
+            : `Which ${lower(t.site.many)} had a ${lower(t.job.one)} over the time you choose, and where nobody has been.`
         }
         action={<ExportMenu build={buildSheet} disabled={loading || shown.length === 0} />}
       />
+
+      <LookBackPicker value={win} onChange={chooseWindow} presets={WINDOW_DAYS} today={today} />
 
       <TopCard>
         {sells && total > 0 && (
@@ -305,7 +351,7 @@ export default function StoreHealthPage() {
           label={`Which ${lower(t.site.many)}`}
           loading={loading}
         />
-        <p className="text-sm text-foreground">{groupMeaning(group, t)}</p>
+        <p className="text-sm text-foreground">{groupMeaning(group, t, win, today)}</p>
       </TopCard>
 
       {/* The insights: whose stores, and where. Each line narrows the list below. */}
@@ -313,7 +359,7 @@ export default function StoreHealthPage() {
         <div className="grid gap-4 lg:grid-cols-2">
           <InsightPanel
             title={`By ${lower(t.staff.one)}`}
-            caption={groupLabel(group)}
+            caption={groupLabel(group, win)}
             lines={byPerson.map((p) => ({
               id: p.id,
               label: p.name,
@@ -334,12 +380,12 @@ export default function StoreHealthPage() {
             active={activePerson}
             onToggle={(id) => setPerson(activePerson === id ? "" : id)}
             limit={12}
-            empty={emptyGroup(group, t)}
+            empty={emptyGroup(group, t, win)}
             footnote={`The bar is all of their ${lower(t.site.many)}. The number is how many are in this group. Tap a name to see only theirs.`}
           />
           <InsightPanel
             title="By town"
-            caption={groupLabel(group)}
+            caption={groupLabel(group, win)}
             lines={byTown.map(([c, n]) => ({
               id: c,
               label: c,
@@ -349,7 +395,7 @@ export default function StoreHealthPage() {
             }))}
             active={activeTown}
             onToggle={(id) => setTown(activeTown === id ? "" : id)}
-            empty={emptyGroup(group, t)}
+            empty={emptyGroup(group, t, win)}
             moreHint="Search the list below to find one."
           />
         </div>
@@ -404,7 +450,7 @@ export default function StoreHealthPage() {
               <TableRow>
                 <TableCell colSpan={colSpan} className="py-10 text-center text-sm text-muted-foreground">
                   {inThisGroup.length === 0 ? (
-                    emptyGroup(group, t)
+                    emptyGroup(group, t, win)
                   ) : (
                     <>
                       No {lower(t.site.many)} match.{" "}
@@ -477,20 +523,21 @@ export default function StoreHealthPage() {
 }
 
 /** What an empty group means, said as good news where it is. */
-function emptyGroup(group: HealthGroup, t: Terms): string {
+function emptyGroup(group: HealthGroup, t: Terms, w: LookBack): string {
   const site = lower(t.site.one);
   const job = lower(t.job.one);
+  const span = "days" in w ? `in the last ${w.days} days` : `since ${w.since}`;
   switch (group) {
     case "not_visited":
-      return `Every ${site} had a ${job} in the last 30 days.`;
+      return `Every ${site} had a ${job} ${span}.`;
     case "no_order":
-      return `Every ${site} that had a ${job} in the last 30 days also placed an order.`;
+      return `Every ${site} that had a ${job} ${span} also placed an order.`;
     case "ordering":
-      return `No ${site} had a ${job} and placed an order in the last 30 days.`;
+      return `No ${site} had a ${job} and placed an order ${span}.`;
     case "lapsed":
       return `No ${site} has stopped ordering.`;
     case "visited":
-      return `No ${site} had a ${job} in the last 30 days.`;
+      return `No ${site} had a ${job} ${span}.`;
   }
 }
 

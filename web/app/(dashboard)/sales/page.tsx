@@ -19,16 +19,15 @@ import {
   InsightPanel,
   ListTools,
   SortHead,
-  TilePicker,
+  StatTiles,
   TopCard,
   type SortState,
-  type Tile,
 } from "@/components/dashboard/detail-page";
-import { rangeForPreset, toLocalDate, toLocalDateInput } from "@/lib/date-range";
-import { lastDayOf, nextMonth, rangeFromQuery } from "@/lib/dashboard-links";
+import { DateRangePicker } from "@/components/dashboard/date-range-picker";
+import { fromLocalDateInput, rangeForPreset, toLocalDate, toLocalDateInput, type DateRange, type RangePreset } from "@/lib/date-range";
+import { lastDayOf, nextMonth, rangeFromQuery, rangeQuery } from "@/lib/dashboard-links";
 import { companyMidnight } from "@/lib/company-time";
 import { localDay } from "@/lib/dashboard-numbers";
-import { mondayOf, shiftDay } from "@/lib/dashboard";
 import type { ExportSheet } from "@/lib/export";
 import { formatMoney, formatMoneyShort } from "@/lib/money";
 import { lower } from "@/lib/terms";
@@ -71,8 +70,15 @@ function monthName(first: string, style: "short" | "long"): string {
   );
 }
 
-type PeriodId = "custom" | "week" | "month" | "30d" | "all";
 type SortKey = "delivered" | "net" | "order";
+
+/** The picker's presets as a period is named on this page. */
+const PRESET_NAMES: [RangePreset, string][] = [
+  ["7d", "Last 7 days"],
+  ["30d", "Last 30 days"],
+  ["90d", "Last 90 days"],
+  ["month", "This month"],
+];
 
 /** The "By rep" and "By store" key for a sale with nobody (or nowhere) on it. */
 const NONE = "none";
@@ -80,9 +86,10 @@ const NONE = "none";
 /**
  * Sales: the dashboard's Sales card, opened up.
  *
- * The card's months on top, each one a period to choose, beside the usual
- * periods; then who sold it and where it went; then every delivery behind the
- * figure. Counted on the day the goods were delivered and valued on what
+ * The dates are chosen in the dashboard's own picker (owner, 13 Oct 2026: "i'd
+ * like there to be a place where you can select the dates"), and the card's
+ * months sit under the totals, each one a period to choose; then who sold it
+ * and where it went; then every delivery behind the figure. Counted on the day the goods were delivered and valued on what
  * arrived, excluding VAT: the dashboard's revenue, the same rule.
  *
  * Opened from the dashboard with its dates (`?from=&to=`), a month bar, or a
@@ -106,11 +113,15 @@ export default function SalesPage() {
   const [targets, setTargets] = useState<TargetProgress[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [periodId, setPeriodId] = useState<PeriodId>("month");
-  /** Dates from a link or a month bar, held as a period of their own. */
-  const [custom, setCustom] = useState<Period | null>(null);
-  /** The link's own dates, read once; turned into a period once the company's time is known. */
-  const [link, setLink] = useState<{ from: string; to: string } | null>(null);
+  /** The dates chosen in the picker (or carried by a link): the viewer's days, end exclusive. */
+  const [range, setRange] = useState<DateRange>(() => rangeForPreset("month"));
+  /** "All time" in the picker: every delivery, whatever the dates say. */
+  const [allTime, setAllTime] = useState(false);
+  /**
+   * A month bar chosen: that month in the company's time, exactly as the card's
+   * bar counts it. Null when the picker's dates are the period.
+   */
+  const [monthKey, setMonthKey] = useState<string | null>(null);
   const [rep, setRep] = useState("");
   /**
    * The person's name from their profile: somebody who has sold nothing yet
@@ -124,37 +135,10 @@ export default function SalesPage() {
   // Fixed at first render, so every figure is measured against one instant: a
   // page open across midnight otherwise starts disagreeing with itself.
   const now = useMemo(() => new Date(), []);
+  /** The company's today and the first of its month: where the month bars end. */
   const periods = useMemo(() => {
-    const at = (day: string) => companyMidnight(day, zone);
     const today = localDay(zone, now);
-    const monthFirst = `${today.slice(0, 8)}01`;
-    const weekFirst = mondayOf(today);
-    const week: Period = { from: at(weekFirst), to: now, label: "This week" };
-    const lastWeekFirst = at(shiftDay(weekFirst, -7));
-    const weekBefore: Period = { from: lastWeekFirst, to: new Date(+lastWeekFirst + (+now - +week.from)), label: "Same point last week" };
-    const month: Period = { from: at(monthFirst), to: now, label: "This month" };
-    const lastMonthFirst = at(monthDay(monthFirst, -1));
-    // Clamped to the end of last month: a month's worth of elapsed time added
-    // to a shorter month would run into this one and flatter the comparison.
-    const monthBefore: Period = {
-      from: lastMonthFirst,
-      to: new Date(Math.min(+lastMonthFirst + (+now - +month.from), +month.from - 1)),
-      label: "Same point last month",
-    };
-    // The last 30 days are the dashboard's own range, the viewer's days, so
-    // the figure here is the "Revenue, last 30 days" tile's.
-    const last30 = rangeForPreset("30d", now);
-    const len = +last30.to - +last30.from;
-    return {
-      today,
-      monthFirst,
-      week,
-      weekBefore,
-      month,
-      monthBefore,
-      last30: { from: last30.from, to: new Date(+last30.to - 1), label: "Last 30 days" },
-      before30: { from: new Date(+last30.from - len), to: new Date(+last30.from - 1), label: "the 30 days before" },
-    };
+    return { today, monthFirst: `${today.slice(0, 8)}01` };
   }, [now, zone]);
 
   /** A whole company month as a period: this month runs to now. */
@@ -169,39 +153,49 @@ export default function SalesPage() {
 
   /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
-    // Mount only, as on Reports: the tiles own the period from here.
+    // Mount only, as on Reports: the picker owns the dates from here. A month
+    // bar on the dashboard's card sends a whole month, which opens as that
+    // month in the company's time; any other dates open as they are.
     const q = new URLSearchParams(window.location.search);
-    if (rangeFromQuery(q)) setLink({ from: q.get("from")!, to: q.get("to")! });
-    const r = q.get("rep");
-    if (r) setRep(r);
-  }, []);
-
-  useEffect(() => {
-    // Once, when the company's time is known: a link becomes the period it
-    // names. The dashboard sends three kinds, and each lands on its own tile.
-    if (!link || !config) return;
-    const range = rangeFromQuery(new URLSearchParams(link));
-    setLink(null);
-    if (!range) return;
-    const preset = rangeForPreset("30d", now);
-    if (link.from === periods.monthFirst && link.to > periods.today) {
-      // A person's line on the Sales card: this month so far.
-      setPeriodId("month");
-    } else if (link.from.endsWith("-01") && link.to === nextMonth(link.from)) {
-      // A month bar: the company's month, as the card counted it.
-      setCustom(monthPeriod(link.from));
-      setPeriodId("custom");
-    } else if (+range.from === +preset.from && +range.to === +preset.to) {
-      // The dashboard's own "last 30 days".
-      setPeriodId("30d");
-    } else {
-      // Any other dates the dashboard was set to. The end is the last instant
-      // before the link's exclusive end, because `within` includes its end.
-      setCustom({ from: range.from, to: new Date(+range.to - 1), label: periodLabel(toLocalDateInput(range.from), lastDayOf(range)) });
-      setPeriodId("custom");
+    const r = rangeFromQuery(q);
+    if (r) {
+      const from = q.get("from")!;
+      if (from.endsWith("-01") && q.get("to") === nextMonth(from)) setMonthKey(from);
+      setRange(r);
     }
-  }, [link, config, now, periods, monthPeriod]);
+    const who = q.get("rep");
+    if (who) setRep(who);
+  }, []);
   /* eslint-enable react-hooks/set-state-in-effect */
+
+  /** Keeps the address in step with the dates, so a reload or a shared link opens the same view. */
+  function remember(next: DateRange | null) {
+    const url = new URL(window.location.href);
+    if (next) {
+      const q = rangeQuery(next);
+      url.searchParams.set("from", q.from);
+      url.searchParams.set("to", q.to);
+    } else {
+      url.searchParams.delete("from");
+      url.searchParams.delete("to");
+    }
+    window.history.replaceState(null, "", url);
+  }
+
+  function chooseRange(next: DateRange) {
+    setRange(next);
+    setMonthKey(null);
+    setAllTime(false);
+    setStore("");
+    remember(next);
+  }
+
+  function chooseAllTime() {
+    setAllTime(true);
+    setMonthKey(null);
+    setStore("");
+    remember(null);
+  }
 
   // The company's words only name a delivery nobody took; they change identity
   // when the config arrives, and reading every sale again for that would page
@@ -252,17 +246,55 @@ export default function SalesPage() {
     };
   }, [supabase, rep]);
 
-  const period: Period | undefined =
-    periodId === "custom" && custom
-      ? custom
-      : periodId === "week"
-        ? periods.week
-        : periodId === "month"
-          ? periods.month
-          : periodId === "30d"
-            ? periods.last30
-            : undefined;
-  const periodName = periodId === "all" ? "All time" : (period?.label ?? "All time");
+  /** Whether the picker's dates are exactly one of its presets, by name. */
+  const presetName = useCallback(
+    (r: DateRange): string | null => {
+      for (const [p, name] of PRESET_NAMES) {
+        const x = rangeForPreset(p, now);
+        if (+x.from === +r.from && +x.to === +r.to) return name;
+      }
+      return null;
+    },
+    [now]
+  );
+  const period = useMemo<Period | undefined>(
+    () =>
+      allTime
+        ? undefined
+        : monthKey
+          ? monthPeriod(monthKey)
+          : { from: range.from, to: new Date(+range.to - 1), label: presetName(range) ?? periodLabel(toLocalDateInput(range.from), lastDayOf(range)) },
+    [allTime, monthKey, monthPeriod, range, presetName]
+  );
+  const periodName = period?.label ?? "All time";
+  /** This month so far, by the bar or the picker: the one period targets are set for. */
+  const isThisMonth =
+    !allTime && (monthKey === periods.monthFirst || (!monthKey && presetName(range) === "This month"));
+
+  /**
+   * The period before, for the comparison: the month before a chosen month
+   * (this month against the same point last month), or as many days again
+   * before the picker's dates. Nothing to compare "All time" with.
+   */
+  const compareMonth = monthKey ?? (isThisMonth ? periods.monthFirst : null);
+  const before: { period: Period; label: string } | null = allTime || !period
+    ? null
+    : compareMonth
+      ? compareMonth === periods.monthFirst
+        ? (() => {
+            const p = monthPeriod(monthDay(compareMonth, -1));
+            const elapsed = +now - +period.from;
+            return { period: { ...p, to: new Date(Math.min(+p.from + elapsed, +period.from - 1)) }, label: "this point last month" };
+          })()
+        : { period: monthPeriod(monthDay(compareMonth, -1)), label: "the month before" }
+      : (() => {
+          const len = +range.to - +range.from;
+          const days = Math.round(len / 86_400_000);
+          return {
+            period: { from: new Date(+range.from - len), to: new Date(+range.from - 1), label: "" },
+            label: `the ${days === 1 ? "day" : `${days} days`} before`,
+          };
+        })();
 
   /** The months the card shows, in the company's time: from the first with a sale, at most six. */
   const months = useMemo(() => {
@@ -276,14 +308,14 @@ export default function SalesPage() {
   }, [sales, periods.monthFirst, monthPeriod]);
   const monthScale = Math.max(1, ...months.map((m) => m.net));
 
+  /** A month bar: that month, as the card counts it. The picker shows its dates. */
   function chooseMonth(m: (typeof months)[number]) {
-    if (m.current) {
-      setPeriodId("month");
-    } else {
-      setCustom(m.period);
-      setPeriodId("custom");
-    }
+    const shown = m.current ? rangeForPreset("month", now) : { from: fromLocalDateInput(m.key), to: fromLocalDateInput(nextMonth(m.key)) };
+    setRange(shown);
+    setMonthKey(m.key);
+    setAllTime(false);
     setStore("");
+    remember(shown);
   }
 
   const inPeriod = useMemo(() => (period ? sales.filter((s) => within(s, period)) : sales), [sales, period]);
@@ -321,7 +353,7 @@ export default function SalesPage() {
   /** This month's target for each person, when the period is this month and one is set. */
   const targetFor = useMemo(() => {
     const m = new Map<string, number>();
-    if (periodId !== "month") return m;
+    if (!isThisMonth) return m;
     for (const tg of targets) {
       const target = Number(tg.target ?? 0);
       if (target <= 0) continue;
@@ -329,7 +361,7 @@ export default function SalesPage() {
       m.set(tg.rep_id, achievedFor(tg, measure) / target);
     }
     return m;
-  }, [targets, periodId]);
+  }, [targets, isThisMonth]);
 
   // A person or store picked under another period may have nothing in this one.
   const repName = rep ? (sales.find((s) => (s.repId ?? NONE) === rep)?.repName ?? profileName) : null;
@@ -358,22 +390,15 @@ export default function SalesPage() {
     setSort((s) => (s.key === key ? { key, dir: s.dir === "asc" ? "desc" : "asc" } : { key, dir: key === "order" ? "asc" : "desc" }));
   }
 
-  const tile = (id: PeriodId, label: string, p: Period | undefined, sub: string): Tile => ({
-    id,
-    label,
-    value: moneyShort(totalsFor(sales, p).net),
-    sub,
-  });
-  const deliveries = (p?: Period) => {
-    const n = totalsFor(sales, p).orders;
-    return `${n} ${n === 1 ? "delivery" : "deliveries"}`;
-  };
-  const tiles: Tile[] = [
-    ...(custom ? [tile("custom", custom.label, custom, deliveries(custom))] : []),
-    tile("week", "This week", periods.week, comparison(totalsFor(sales, periods.week).net, totalsFor(sales, periods.weekBefore).net, "this point last week")),
-    tile("month", "This month", periods.month, comparison(totalsFor(sales, periods.month).net, totalsFor(sales, periods.monthBefore).net, "this point last month")),
-    tile("30d", "Last 30 days", periods.last30, comparison(totalsFor(sales, periods.last30).net, totalsFor(sales, periods.before30).net, "the 30 days before")),
-    tile("all", "All time", undefined, deliveries()),
+  const totals = totalsFor(inPeriod);
+  const stats = [
+    {
+      label: "Sales, excluding VAT",
+      value: moneyShort(totals.net),
+      sub: before ? comparison(totals.net, totalsFor(sales, before.period).net, before.label) : periodName,
+    },
+    { label: "Deliveries", value: totals.orders, sub: `${totals.units} units` },
+    { label: "Including VAT", value: moneyShort(totals.gross), sub: "At each order's own rate" },
   ];
 
   const filteredBy = [repName, storeName].filter(Boolean).join(", ");
@@ -418,7 +443,7 @@ export default function SalesPage() {
 
   /** At most this many rows on screen; the export has them all. */
   const SHOW = 200;
-  const selectedMonth = periodId === "month" ? months.find((m) => m.current)?.key : periodId === "custom" ? months.find((m) => +m.period.from === +(custom?.from ?? 0))?.key : undefined;
+  const selectedMonth = allTime ? undefined : monthKey ?? (isThisMonth ? periods.monthFirst : undefined);
 
   return (
     <div className="space-y-4">
@@ -434,18 +459,10 @@ export default function SalesPage() {
         </div>
       )}
 
+      <DateRangePicker value={range} onChange={chooseRange} allTime={allTime} onAllTime={chooseAllTime} />
+
       <TopCard>
-        <TilePicker
-          tiles={tiles}
-          active={periodId}
-          onChoose={(id) => {
-            if (!id) return;
-            setPeriodId(id as PeriodId);
-            setStore("");
-          }}
-          label="Which period"
-          loading={loading}
-        />
+        <StatTiles tiles={stats} loading={loading} />
         {!loading && months.length > 0 && (
           <div className="flex flex-col gap-1 border-t pt-4">
             <span className="pb-1 text-xs text-muted-foreground">Delivered sales by month, excluding VAT. Tap a month to open it.</span>

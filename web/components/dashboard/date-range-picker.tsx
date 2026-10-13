@@ -25,10 +25,16 @@ export function DateRangePicker({
   value,
   onChange,
   className,
+  allTime = false,
+  onAllTime,
 }: {
   value: DateRange;
   onChange: (range: DateRange) => void;
   className?: string;
+  /** Whether "All time" is the choice; the dates then stand by, dimmed. */
+  allTime?: boolean;
+  /** Offer "All time" after the presets, for a page that can show every date. */
+  onAllTime?: () => void;
 }) {
   // `to` is exclusive (start of the day after), so display one day earlier.
   const displayTo = new Date(value.to);
@@ -47,7 +53,7 @@ export function DateRangePicker({
     return null;
   }
 
-  const active = activePreset();
+  const active = allTime ? null : activePreset();
 
   return (
     <div className={cn("flex flex-wrap items-center gap-2", className)}>
@@ -62,9 +68,14 @@ export function DateRangePicker({
             {PRESET_LABELS[p]}
           </Button>
         ))}
+        {onAllTime && (
+          <Button size="sm" variant={allTime ? "default" : "outline"} onClick={onAllTime}>
+            All time
+          </Button>
+        )}
       </div>
 
-      <div className="flex items-center gap-1.5">
+      <div className={cn("flex items-center gap-1.5", allTime && "opacity-60")}>
         <Input
           type="date"
           aria-label="From date"

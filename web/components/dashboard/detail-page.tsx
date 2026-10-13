@@ -4,8 +4,10 @@ import Link from "next/link";
 import { ArrowDown, ArrowLeft, ArrowUp, ArrowUpDown, Search } from "lucide-react";
 import type { ReactNode } from "react";
 import { Card } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { TableHead } from "@/components/ui/table";
+import type { LookBack } from "@/lib/dashboard-links";
 
 /**
  * The pieces every dashboard card's own page is built from (owner, 13 Oct
@@ -346,6 +348,77 @@ export function FigureStrip({ figures }: { figures: Figure[] }) {
           </div>
         );
       })}
+    </div>
+  );
+}
+
+/** A figure that is not a choice: the same look as a tile, without the button. */
+export function StatTiles({ tiles, loading = false }: { tiles: Omit<Tile, "id">[]; loading?: boolean }) {
+  const cols = tiles.length >= 4 ? "lg:grid-cols-4" : tiles.length === 3 ? "sm:grid-cols-3" : "sm:grid-cols-2";
+  return (
+    <div className={`grid grid-cols-2 gap-2 ${cols}`}>
+      {tiles.map((tile, i) => (
+        <div
+          key={tile.label}
+          className={`flex flex-col items-start gap-1 rounded-xl bg-card p-3 ring-1 ring-foreground/10 ${
+            tiles.length % 2 === 1 && i === 0 ? "col-span-2 sm:col-span-1" : ""
+          }`}
+        >
+          <span className="text-xs font-medium text-muted-foreground">{tile.label}</span>
+          <span
+            className={`text-[28px] font-semibold leading-none tracking-tight tabular-nums ${tile.tone ? TONE_TEXT[tile.tone] : "text-foreground"}`}
+          >
+            {loading ? "\u00a0" : tile.value}
+          </span>
+          {tile.sub && !loading && <span className="text-xs text-muted-foreground">{tile.sub}</span>}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+
+/**
+ * "In the last 7, 14, 30, 60 or 90 days", or "since" a date: for a page whose
+ * question always ends today, like Store health. The dates live in the same
+ * spot as the dashboard's own picker.
+ */
+export function LookBackPicker({
+  value,
+  onChange,
+  presets,
+  today,
+}: {
+  value: LookBack;
+  onChange: (next: LookBack) => void;
+  presets: readonly number[];
+  /** The latest date "since" may take (YYYY-MM-DD). */
+  today: string;
+}) {
+  const since = "since" in value ? value.since : "";
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      <span className="text-sm text-muted-foreground">In the last</span>
+      <div className="flex flex-wrap gap-1.5">
+        {presets.map((d) => (
+          <Button key={d} size="sm" variant={"days" in value && value.days === d ? "default" : "outline"} onClick={() => onChange({ days: d })}>
+            {d} days
+          </Button>
+        ))}
+      </div>
+      <label className="flex items-center gap-1.5 text-sm text-muted-foreground">
+        or since
+        <Input
+          type="date"
+          aria-label="Since date"
+          className={`w-[9.5rem] ${since ? "ring-2 ring-primary" : ""}`}
+          value={since}
+          max={today}
+          onChange={(e) => {
+            if (e.target.value) onChange({ since: e.target.value > today ? today : e.target.value });
+          }}
+        />
+      </label>
     </div>
   );
 }
