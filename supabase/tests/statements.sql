@@ -45,7 +45,9 @@ begin
     v_fail := v_fail || 'S1 document_style is missing or does not default to classic' || E'\n';
   end if;
   begin
-    insert into public.company_settings (org_id, key, value) values (c_gf, 'document_style', '"bold"');
+    -- An upsert: the company may already have chosen a style of its own.
+    insert into public.company_settings (org_id, key, value) values (c_gf, 'document_style', '"bold"')
+    on conflict (org_id, key) do update set value = excluded.value;
     update public.company_settings set value = '"clean"' where org_id = c_gf and key = 'document_style';
   exception when others then
     v_fail := v_fail || format('S1 a real style was refused: %s', sqlerrm) || E'\n';

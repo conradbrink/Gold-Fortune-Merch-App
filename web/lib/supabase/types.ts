@@ -7758,6 +7758,10 @@ export type Database = {
         Args: { p_payment_id: string }
         Returns: undefined
       }
+      invoice_rebate: {
+        Args: { p_invoice_id: string; p_amount: number; p_on?: string; p_reason?: string }
+        Returns: string
+      }
       recurring_orders_run_due: {
         Args: Record<PropertyKey, never>
         Returns: { placed_recurring_order: string; placed_order: string }[]

@@ -304,6 +304,23 @@ export async function recordPayment(
   fail(error);
 }
 
+/**
+ * A rebate the customer kept: a retail group pays the invoice short and the
+ * rest is recorded as a rebate (a credit note for an amount, no lines).
+ */
+export async function recordRebate(
+  supabase: Client,
+  input: { invoiceId: string; amount: number; on: string; reason: string }
+) {
+  const { error } = await supabase.rpc("invoice_rebate", {
+    p_invoice_id: input.invoiceId,
+    p_amount: input.amount,
+    p_on: input.on,
+    p_reason: input.reason,
+  });
+  fail(error);
+}
+
 export async function deletePayment(supabase: Client, paymentId: string) {
   const { error } = await supabase.rpc("invoice_payment_delete", { p_payment_id: paymentId });
   fail(error);

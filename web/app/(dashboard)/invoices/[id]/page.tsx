@@ -39,6 +39,7 @@ import {
   PAYMENT_STATUS_LABELS,
   paymentStatus,
   recordPayment,
+  recordRebate,
   voidInvoice,
   type InvoiceDetail,
   type ProofRow,
@@ -64,7 +65,7 @@ export default function InvoiceDetailPage() {
   const { id } = useParams<{ id: string }>();
   const [detail, setDetail] = useState<InvoiceDetail | null>(null);
   const [proof, setProof] = useState<ProofRow[] | null>(null);
-  const [panel, setPanel] = useState<"pay" | "credit" | "void" | null>(null);
+  const [panel, setPanel] = useState<"pay" | "rebate" | "credit" | "void" | null>(null);
   const [sending, setSending] = useState(false);
   const [sends, setSends] = useState<SendRow[]>([]);
   const [busy, setBusy] = useState(false);
@@ -74,6 +75,11 @@ export default function InvoiceDetailPage() {
   const [payDate, setPayDate] = useState(today);
   const [payMethod, setPayMethod] = useState("eft");
   const [payRef, setPayRef] = useState("");
+  /** The payment came in short because the customer kept a rebate. */
+  const [restIsRebate, setRestIsRebate] = useState(false);
+  const [rebateAmount, setRebateAmount] = useState("");
+  const [rebateDate, setRebateDate] = useState(today);
+  const [rebateReason, setRebateReason] = useState("");
   const [creditReason, setCreditReason] = useState("");
   const [creditQty, setCreditQty] = useState<Record<string, string>>({});
   const [voidReason, setVoidReason] = useState("");
@@ -135,6 +141,8 @@ export default function InvoiceDetailPage() {
   const inv = detail.invoice;
   const st = paymentStatus(inv, detail.balance);
   const outstanding = Number(detail.balance?.outstanding ?? 0);
+  // What a payment being typed leaves owing, to the cent; what may be kept as a rebate.
+  const payRest = Math.max(0, Math.round((outstanding - (Number(payAmount) || 0)) * 100) / 100);
   const live = inv.status === "issued";
   const creditedQty = new Map<string, number>();
   for (const c of detail.credits)
@@ -201,8 +209,13 @@ export default function InvoiceDetailPage() {
             <Download className="mr-1.5 h-4 w-4" /> PDF
           </Button>
           {live && outstanding > 0 && (
-            <Button variant="outline" onClick={() => { setPayAmount(outstanding.toFixed(2)); setPanel("pay"); }}>
+            <Button variant="outline" onClick={() => { setPayAmount(outstanding.toFixed(2)); setRestIsRebate(false); setPanel("pay"); }}>
               Record payment
+            </Button>
+          )}
+          {live && outstanding > 0 && (
+            <Button variant="outline" onClick={() => { setRebateAmount(outstanding.toFixed(2)); setRebateReason(""); setPanel("rebate"); }}>
+              Rebate
             </Button>
           )}
           {live && (
@@ -265,12 +278,61 @@ export default function InvoiceDetailPage() {
               <Label htmlFor="pref">Reference</Label>
               <Input id="pref" value={payRef} onChange={(e) => setPayRef(e.target.value)} placeholder="Bank reference" />
             </div>
+            {/* A retail group pays short and keeps its rebate: the rest is
+                recorded with the payment, so the invoice closes in one go. */}
+            {payRest > 0 && (
+              <label className="flex items-start gap-2 text-sm sm:col-span-4">
+                <input type="checkbox" className="mt-0.5" checked={restIsRebate} onChange={(e) => setRestIsRebate(e.target.checked)} />
+                <span>The rest ({money(payRest)}) was kept as a rebate</span>
+              </label>
+            )}
             <div className="flex justify-end gap-2 sm:col-span-4">
               <Button variant="outline" onClick={() => setPanel(null)}>Cancel</Button>
-              <Button disabled={busy} onClick={() => run(() => recordPayment(supabase, {
-                invoiceId: inv.id, amount: Number(payAmount), paidOn: payDate, method: payMethod, reference: payRef,
-              }))}>
+              <Button disabled={busy} onClick={() => run(async () => {
+                await recordPayment(supabase, {
+                  invoiceId: inv.id, amount: Number(payAmount), paidOn: payDate, method: payMethod, reference: payRef,
+                });
+                if (restIsRebate && payRest > 0) {
+                  try {
+                    await recordRebate(supabase, { invoiceId: inv.id, amount: payRest, on: payDate, reason: "" });
+                  } catch (e) {
+                    throw new Error(`The payment was saved, but the rebate was not: ${e instanceof Error ? e.message : String(e)}`);
+                  }
+                }
+              })}>
                 Save payment
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {panel === "rebate" && (
+        <Card>
+          <CardHeader><CardTitle className="text-base">Rebate</CardTitle></CardHeader>
+          <CardContent className="grid gap-3 sm:grid-cols-3">
+            <p className="text-sm text-muted-foreground sm:col-span-3">
+              What the customer kept off this invoice as a rebate. It comes off what they owe and shows on their
+              statement as a rebate, not as money received.
+            </p>
+            <div>
+              <Label htmlFor="ramt">Amount</Label>
+              <Input id="ramt" type="number" min={0} step="0.01" value={rebateAmount} onChange={(e) => setRebateAmount(e.target.value)} />
+            </div>
+            <div>
+              <Label htmlFor="rdate">Date</Label>
+              <Input id="rdate" type="date" value={rebateDate} onChange={(e) => setRebateDate(e.target.value)} />
+            </div>
+            <div>
+              <Label htmlFor="rreason">Note (optional)</Label>
+              <Input id="rreason" value={rebateReason} onChange={(e) => setRebateReason(e.target.value)} placeholder="For example: quarterly rebate" />
+            </div>
+            <div className="flex justify-end gap-2 sm:col-span-3">
+              <Button variant="outline" onClick={() => setPanel(null)}>Cancel</Button>
+              <Button disabled={busy} onClick={() => run(() => recordRebate(supabase, {
+                invoiceId: inv.id, amount: Number(rebateAmount), on: rebateDate, reason: rebateReason,
+              }))}>
+                Save rebate
               </Button>
             </div>
           </CardContent>

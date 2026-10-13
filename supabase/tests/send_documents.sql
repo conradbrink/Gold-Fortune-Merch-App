@@ -274,7 +274,8 @@ begin
   if v_j ->> 'kind' <> 'invoice' or v_j -> 'invoice' ->> 'invoice_number' <> 'ZZ-T-1'
      or (v_j ->> 'outstanding')::numeric <> 600 or (v_j ->> 'paid')::numeric <> 300 or (v_j ->> 'credited')::numeric <> 100
      or jsonb_array_length(v_j -> 'payments') <> 1 or jsonb_array_length(v_j -> 'credit_notes') <> 1
-     or v_j -> 'company' ->> 'name' is null or v_j -> 'look' ->> 'style' <> 'classic' or v_j -> 'look' ->> 'primary' !~ '^#[0-9A-Fa-f]{6}$'
+     or v_j -> 'company' ->> 'name' is null or v_j -> 'look' ->> 'style' <> coalesce((select cs.value #>> '{}' from public.company_settings cs
+                                                where cs.org_id = c_gf and cs.key = 'document_style'), 'classic') or v_j -> 'look' ->> 'primary' !~ '^#[0-9A-Fa-f]{6}$'
      or v_j ? 'created_by' or v_j -> 'invoice' ? 'created_by' then
     v_fail := v_fail || format('T6 the invoice page data is wrong: %s', left(v_j::text, 400)) || E'\n';
   end if;
