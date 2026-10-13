@@ -35,6 +35,7 @@ export type Sale = {
   deliveredAt: string;
   repId: string | null;
   repName: string;
+  storeId: string | null;
   storeName: string;
   units: number;
   /** Excluding VAT — the revenue figure. */
@@ -163,6 +164,7 @@ export async function fetchSales(supabase: Client, t: Terms): Promise<Sale[]> {
     order_number: string;
     delivered_at: string;
     rep_id: string | null;
+    store_id: string | null;
     vat_rate: number | null;
     stores: { name: string } | { name: string }[] | null;
     profiles: { full_name: string } | { full_name: string }[] | null;
@@ -185,7 +187,7 @@ export async function fetchSales(supabase: Client, t: Terms): Promise<Sale[]> {
     const { data, error } = await supabase
       .from("orders")
       .select(
-        `id, order_number, delivered_at, rep_id, vat_rate,
+        `id, order_number, delivered_at, rep_id, store_id, vat_rate,
          stores(name), profiles!orders_rep_id_fkey(full_name),
          order_lines(qty_delivered, qty_returned, unit_price)`
       )
@@ -223,6 +225,7 @@ export async function fetchSales(supabase: Client, t: Terms): Promise<Sale[]> {
       // An order nobody was responsible for still has to land in a row of the
       // per-person table; it reads "No rep" in the company's own word.
       repName: one(r.profiles)?.full_name ?? `No ${lower(t.staff.one)}`,
+      storeId: r.store_id,
       storeName: one(r.stores)?.name ?? "—",
       units,
       net,
