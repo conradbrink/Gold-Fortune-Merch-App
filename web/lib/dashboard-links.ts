@@ -86,6 +86,21 @@ export function storeHealthHref(show: HealthGroup): string {
   return href("/stores/health", { show });
 }
 
+/** How far back a page looks: a number of days ending now, or since a date (YYYY-MM-DD). */
+export type LookBack = { days: number } | { since: string };
+
+/**
+ * The look-back a Store health link carried (`?days=14` or `?since=2026-09-01`),
+ * if it is one the page offers and not in the future; null for the card's own.
+ */
+export function lookBackFromQuery(q: URLSearchParams, allowedDays: readonly number[], today: string): LookBack | null {
+  const days = q.get("days");
+  if (days !== null && allowedDays.includes(Number(days))) return { days: Number(days) };
+  const since = q.get("since");
+  if (since !== null && DAY.test(since) && since <= today && !Number.isNaN(Date.parse(`${since}T00:00:00Z`))) return { since };
+  return null;
+}
+
 export function healthGroupFromQuery(q: URLSearchParams): HealthGroup | null {
   const v = q.get("show");
   return v !== null && (HEALTH_GROUPS as readonly string[]).includes(v) ? (v as HealthGroup) : null;

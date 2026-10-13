@@ -10,6 +10,10 @@
 --       order that does not count, lapsed after 60 days but not at exactly 60,
 --       and an inactive store left out.
 --   H4  Grants, security invoker and the module registration.
+--   H5  The window (20261013130000): no argument is exactly the card's 30
+--       days; a 14-day window regroups the fixtures as it should, with
+--       "stopped ordering" at twice the window; a start in the future counts
+--       as now.
 --
 -- HOW TO RUN: one DO block that always ends in `raise exception`, so nothing
 -- survives. The last line of the message is the verdict.
@@ -22,6 +26,7 @@ declare
   v_j jsonb;
   v_all int; v_ordering int; v_no_order int; v_not_visited int; v_lapsed int; v_ordered_30 int;
   v_card text; v_list text;
+  v_same int; v_w record;
   v_a uuid; v_b uuid; v_c uuid; v_d uuid; v_e uuid; v_f uuid; v_g uuid; v_h uuid; v_i uuid; v_k uuid;
   r record;
 begin
@@ -85,6 +90,29 @@ begin
     from (select store_id, row_number() over (order by last_visit_at nulls first, store_name, store_id) as n
             from public.store_health() where status = 'not_visited') t
    where n <= 5;
+
+  -- H5, while still the manager.
+  select count(*) into v_same
+    from public.store_health() a
+    full join public.store_health(now() - interval '30 days') b using (store_id)
+   where a.status is distinct from b.status or a.lapsed is distinct from b.lapsed;
+  if v_same <> 0 then
+    v_fail := v_fail || format('H5 no argument differs from the last 30 days for %s stores', v_same) || E'\n';
+  end if;
+  for v_w in select * from public.store_health(now() - interval '14 days') where store_name like 'ZZ health %' loop
+    if (v_w.store_id = v_c and v_w.status <> 'no_order')           -- visited 5 days ago, no order
+       or (v_w.store_id = v_d and v_w.status <> 'ordering')        -- ordered 3 days ago
+       or (v_w.store_id = v_i and v_w.status <> 'not_visited')     -- visited 30 days ago: outside 14
+       or (v_w.store_id = v_h and (v_w.status <> 'not_visited' or v_w.lapsed))  -- ordered 10 days ago, never seen
+       or (v_w.store_id = v_k and not v_w.lapsed)                  -- last order 60 days ago: over 28
+       or (v_w.store_id = v_e and not v_w.lapsed) then             -- last order 90 days ago
+      v_fail := v_fail || format('H5 14-day window: %s', row_to_json(v_w)) || E'\n';
+    end if;
+  end loop;
+  -- A start in the future is now: nothing has been visited "since tomorrow".
+  if (select count(*) from public.store_health(now() + interval '5 days') where status <> 'not_visited') <> 0 then
+    v_fail := v_fail || 'H5 a future start found stores visited after it' || E'\n';
+  end if;
 
   -- H3 rows, while still the manager.
   for r in select * from public.store_health() where store_name like 'ZZ health %' loop
@@ -151,13 +179,13 @@ begin
   end if;
 
   ---------------------------------------------------------------- H4 grants
-  if (select prosecdef from pg_proc where oid = 'public.store_health()'::regprocedure) then
+  if (select prosecdef from pg_proc where oid = 'public.store_health(timestamptz)'::regprocedure) then
     v_fail := v_fail || 'H4 store_health is security definer' || E'\n';
   end if;
-  if has_function_privilege('anon', 'public.store_health()', 'execute') then
+  if has_function_privilege('anon', 'public.store_health(timestamptz)', 'execute') then
     v_fail := v_fail || 'H4 anon can call store_health' || E'\n';
   end if;
-  if not has_function_privilege('authenticated', 'public.store_health()', 'execute') then
+  if not has_function_privilege('authenticated', 'public.store_health(timestamptz)', 'execute') then
     v_fail := v_fail || 'H4 authenticated cannot call store_health' || E'\n';
   end if;
   if (select module_code from public.module_assignments where kind = 'function' and name = 'store_health')

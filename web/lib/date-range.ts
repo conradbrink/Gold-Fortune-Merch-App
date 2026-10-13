@@ -1,4 +1,4 @@
-export type RangePreset = "7d" | "30d" | "90d" | "month";
+export type RangePreset = "7d" | "30d" | "90d" | "month" | "week";
 
 export type DateRange = {
   /** Inclusive start. */
@@ -72,6 +72,9 @@ export function rangeForPreset(preset: RangePreset, now = new Date()): DateRange
       break;
     case "month":
       return { from: new Date(now.getFullYear(), now.getMonth(), 1), to };
+    case "week":
+      // Monday-first, because a working week starts on Monday (lib/sales).
+      return { from: new Date(now.getFullYear(), now.getMonth(), now.getDate() - ((now.getDay() + 6) % 7)), to };
   }
   return { from, to };
 }
@@ -81,6 +84,7 @@ export const PRESET_LABELS: Record<RangePreset, string> = {
   "30d": "30 days",
   "90d": "90 days",
   month: "This month",
+  week: "This week",
 };
 
 /** How many whole days the range covers — used to label deltas honestly. */

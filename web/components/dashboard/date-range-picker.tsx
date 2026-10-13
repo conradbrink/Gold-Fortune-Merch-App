@@ -25,17 +25,26 @@ export function DateRangePicker({
   value,
   onChange,
   className,
+  allTime = false,
+  onAllTime,
+  presets = PRESETS,
 }: {
   value: DateRange;
   onChange: (range: DateRange) => void;
   className?: string;
+  /** Whether "All time" is the choice; the dates then stand by, dimmed. */
+  allTime?: boolean;
+  /** Offer "All time" after the presets, for a page that can show every date. */
+  onAllTime?: () => void;
+  /** The quick choices, when a page wants other ones (Sales adds "This week"). */
+  presets?: RangePreset[];
 }) {
   // `to` is exclusive (start of the day after), so display one day earlier.
   const displayTo = new Date(value.to);
   displayTo.setDate(displayTo.getDate() - 1);
 
   function activePreset(): RangePreset | null {
-    for (const p of PRESETS) {
+    for (const p of presets) {
       const r = rangeForPreset(p);
       if (
         toLocalDateInput(r.from) === toLocalDateInput(value.from) &&
@@ -47,12 +56,12 @@ export function DateRangePicker({
     return null;
   }
 
-  const active = activePreset();
+  const active = allTime ? null : activePreset();
 
   return (
     <div className={cn("flex flex-wrap items-center gap-2", className)}>
       <div className="flex flex-wrap gap-1.5">
-        {PRESETS.map((p) => (
+        {presets.map((p) => (
           <Button
             key={p}
             size="sm"
@@ -62,9 +71,14 @@ export function DateRangePicker({
             {PRESET_LABELS[p]}
           </Button>
         ))}
+        {onAllTime && (
+          <Button size="sm" variant={allTime ? "default" : "outline"} onClick={onAllTime}>
+            All time
+          </Button>
+        )}
       </div>
 
-      <div className="flex items-center gap-1.5">
+      <div className={cn("flex items-center gap-1.5", allTime && "opacity-60")}>
         <Input
           type="date"
           aria-label="From date"

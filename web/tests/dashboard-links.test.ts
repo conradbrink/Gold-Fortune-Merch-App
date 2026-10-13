@@ -13,6 +13,7 @@ import {
   healthGroupFromQuery,
   invoicesHref,
   lastDayOf,
+  lookBackFromQuery,
   lowStockHref,
   nextMonth,
   orderStatusesFromQuery,
@@ -136,4 +137,27 @@ test("money links carry their dates or say every date", () => {
   assert.equal(commissionsHref("pending", range), "/commissions?status=pending&from=2026-09-13&to=2026-10-13");
   assert.equal(salesHref(range, "rep-1"), "/sales?from=2026-09-13&to=2026-10-13&rep=rep-1");
   assert.equal(trackingHref("rep-1"), "/tracking/rep-1");
+});
+
+test("a Store health link's window is read only when the page offers it", () => {
+  const days = [7, 14, 30, 60, 90] as const;
+  const today = "2026-10-13";
+  assert.deepEqual(lookBackFromQuery(new URLSearchParams("days=14"), days, today), { days: 14 });
+  assert.equal(lookBackFromQuery(new URLSearchParams("days=13"), days, today), null);
+  assert.deepEqual(lookBackFromQuery(new URLSearchParams("since=2026-09-01"), days, today), { since: "2026-09-01" });
+  // Nothing has happened "since tomorrow": a future date is not a window.
+  assert.equal(lookBackFromQuery(new URLSearchParams("since=2026-10-14"), days, today), null);
+  assert.equal(lookBackFromQuery(new URLSearchParams("since=yesterday"), days, today), null);
+  assert.equal(lookBackFromQuery(new URLSearchParams(""), days, today), null);
+});
+
+test("'This week' runs from Monday to today, whatever day it is", () => {
+  // Thursday 15 October 2026, mid-afternoon.
+  const r = rangeForPreset("week", new Date(2026, 9, 15, 15, 0));
+  assert.equal(rangeQuery(r).from, "2026-10-12");
+  assert.equal(rangeQuery(r).to, "2026-10-16");
+  // On a Sunday the week is still the one that began on Monday.
+  assert.equal(rangeQuery(rangeForPreset("week", new Date(2026, 9, 18, 9, 0))).from, "2026-10-12");
+  // On a Monday it is just today.
+  assert.equal(rangeQuery(rangeForPreset("week", new Date(2026, 9, 12, 9, 0))).from, "2026-10-12");
 });

@@ -12,6 +12,8 @@ import {
   groupsFor,
   inGroup,
   sortRows,
+  windowDays,
+  windowStart,
   type StoreHealthRow,
 } from "@/lib/store-health";
 import { DEFAULT_TERMS } from "@/lib/terms";
@@ -115,4 +117,28 @@ test("the list uses the card's words and the company's own", () => {
   for (const g of ["ordering", "no_order", "not_visited", "lapsed", "visited"] as const) {
     assert.doesNotMatch(groupMeaning(g, gf), /—/, "no em dashes in the copy");
   }
+});
+
+test("the window names itself the way the card does", () => {
+  assert.equal(groupLabel("not_visited", { days: 14 }), "Not visited in 14 days");
+  assert.equal(groupLabel("no_order", { days: 90 }), "Visited, no order in 90 days");
+  assert.equal(groupLabel("not_visited", { since: "2026-09-01" }), "Not visited since 1 Sept");
+  assert.equal(groupLabel("visited", { days: 7 }), "Visited in the last 7 days");
+  // The card's own words are the default.
+  assert.equal(groupLabel("not_visited"), "Not visited in 30 days");
+});
+
+test("stopped ordering is twice the window, as store_health counts it", () => {
+  assert.match(groupMeaning("lapsed", DEFAULT_TERMS, { days: 14 }, "2026-10-13"), /nothing in 28 days/);
+  assert.match(groupMeaning("lapsed", DEFAULT_TERMS, { days: 30 }, "2026-10-13"), /nothing in 60 days/);
+  assert.match(groupMeaning("lapsed", DEFAULT_TERMS, { since: "2026-10-03" }, "2026-10-13"), /nothing in 20 days/);
+  assert.equal(windowDays({ since: "2026-09-13" }, "2026-10-13"), 30);
+});
+
+test("the card's 30 days asks the database for its own default; other windows say where they start", () => {
+  const now = Date.parse("2026-10-13T10:00:00Z");
+  assert.equal(windowStart({ days: 30 }, "Africa/Gaborone", now), null);
+  assert.equal(windowStart({ days: 14 }, "Africa/Gaborone", now)?.toISOString(), "2026-09-29T10:00:00.000Z");
+  // A date starts at the company's midnight: Gaborone is two hours ahead of UTC.
+  assert.equal(windowStart({ since: "2026-09-01" }, "Africa/Gaborone", now)?.toISOString(), "2026-08-31T22:00:00.000Z");
 });
