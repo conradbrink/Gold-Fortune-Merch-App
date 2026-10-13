@@ -43,8 +43,10 @@
 --
 -- ------------------------------------------------------------- numbers
 --
--- Gold Fortune's QuickBooks invoices end at 1823, so its tax-invoice counter
--- starts at 1824 (INV-001824). Only when it has never issued one.
+-- Tickd's numbers carry on after QuickBooks': the counter starts one past the
+-- highest plain number among Gold Fortune's invoices (the history brought over
+-- from QuickBooks, imported before this runs) and the QuickBooks numbers typed
+-- on its orders. Only when it has never issued one of its own.
 --
 -- An invoice line now remembers the order line it came from
 -- (`tax_invoice_lines.order_line_id`), which is how a credit finds its line.
@@ -103,10 +105,15 @@ $$;
 ----------------------------------------------------------------- the numbers
 
 insert into public.document_counters (org_id, doc_type, next_value)
-select o.id, 'tax_invoice', 1824
+select o.id, 'tax_invoice', 1 + greatest(
+         1823,
+         coalesce((select max(t.invoice_number::bigint) from public.tax_invoices t
+                    where t.org_id = o.id and t.invoice_number ~ '^[0-9]{1,12}$'), 0),
+         coalesce((select max(x.invoice_number::bigint) from public.orders x
+                    where x.org_id = o.id and x.invoice_number ~ '^[0-9]{1,12}$'), 0))
   from public.organizations o
  where o.id = '71170c8a-d53c-4a07-bdd4-97704a3cf4bc'
-   and not exists (select 1 from public.tax_invoices t where t.org_id = o.id)
+   and not exists (select 1 from public.tax_invoices t where t.org_id = o.id and t.source <> 'quickbooks')
 on conflict (org_id, doc_type) do nothing;
 
 --------------------------------------------------------------- the functions
@@ -116,7 +123,6 @@ create function public.order_invoices_on(p_org uuid)
 returns boolean
 language sql
 stable
-security definer
 set search_path to 'public', 'pg_temp'
 as $function$
   select coalesce((select (cs.value)::boolean from public.company_settings cs
@@ -277,7 +283,10 @@ begin
     perform public.order_invoice_write(o.id);
   end if;
 
-  select * into i from public.tax_invoices t where t.order_id = o.id and t.status = 'issued';
+  -- Only an invoice Tickd made from this order. One brought over from
+  -- QuickBooks is a record of what QuickBooks issued: never credited or
+  -- voided here.
+  select * into i from public.tax_invoices t where t.order_id = o.id and t.status = 'issued' and t.source = 'order';
   if not found or o.status = 'new' then
     return null;
   end if;

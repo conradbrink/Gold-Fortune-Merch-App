@@ -1,8 +1,8 @@
 -- Every order is its own invoice suite (13 Oct 2026).
 --
 --   O1  The setting: on for Gold Fortune and the Distribution template, written
---       down for every company; Gold Fortune's invoice counter carries on from
---       QuickBooks (1824) until it issues its first.
+--       down for every company; Gold Fortune's invoice counter is past every
+--       QuickBooks number (on its imported invoices and its orders).
 --   O2  An order with an unpriced line cannot be confirmed.
 --   O3  Confirming issues the invoice: numbered from the counter, linked both
 --       ways, one line per order line at the ordered quantity and price
@@ -15,6 +15,9 @@
 --   O8  Cancelled after a payment: everything left is credited instead.
 --   O9  Setting off: confirming issues nothing.
 --   O10 No client can call the five functions.
+--   O11 An invoice brought over from QuickBooks may name its order, but a
+--       cancelled order never voids or credits it; any other source still
+--       cannot name an order.
 --
 -- HOW TO RUN: as dashboard.sql. One DO block that always ends in
 -- `raise exception`, so nothing survives. It writes Gold Fortune rows only
@@ -61,8 +64,12 @@ begin
     v_fail := v_fail || format('O1 %s companies have no money_invoice_orders row', v_n) || E'\n';
   end if;
   select next_value into v_next from public.document_counters where org_id = c_gf and doc_type = 'tax_invoice';
-  if not exists (select 1 from public.tax_invoices where org_id = c_gf) and v_next is distinct from 1824 then
-    v_fail := v_fail || format('O1 the counter is %s, not 1824', v_next) || E'\n';
+  if v_next is null or v_next <= greatest(
+       coalesce((select max(invoice_number::bigint) from public.tax_invoices
+                  where org_id = c_gf and invoice_number ~ '^[0-9]{1,12}$'), 0),
+       coalesce((select max(invoice_number::bigint) from public.orders
+                  where org_id = c_gf and invoice_number ~ '^[0-9]{1,12}$'), 0)) then
+    v_fail := v_fail || format('O1 the counter (%s) would reuse a QuickBooks number', v_next) || E'\n';
   end if;
   select vat_rate into v_rate from public.organizations where id = c_gf;
 
@@ -220,6 +227,30 @@ begin
       v_fail := v_fail || format('O10 a client can call %s', r.fn) || E'\n';
     end if;
   end loop;
+
+  ------------------------------------------------------------------ O11 QuickBooks invoices
+  update public.company_settings set value = 'true' where org_id = c_gf and key = 'money_invoice_orders';
+  insert into public.orders (org_id, order_number, store_id, source, received_via, invoice_number, client_generated_id)
+  values (c_gf, 'ZZ-OI-QBLINK', v_store, 'warehouse_manual', 'other', 'ZZ9001', gen_random_uuid()) returning id into v_qb;
+  insert into public.order_lines (org_id, order_id, product_id, qty_ordered, unit_price, client_generated_id)
+  values (c_gf, v_qb, v_p1, 1, 10, gen_random_uuid());
+  insert into public.tax_invoices (org_id, invoice_number, source, kind, order_id, order_number, store_id,
+                                   seller_name, customer_name, issue_date, due_date, vat_rate, subtotal, vat, total)
+  values (c_gf, 'ZZ9001', 'quickbooks', 'standard', v_qb, 'ZZ-OI-QBLINK', v_store,
+          'Gold Fortune', 'Test', current_date, current_date, 14, 10, 1.4, 11.4) returning * into v_inv;
+  update public.orders set status = 'cancelled', cancel_reason = 'test' where id = v_qb;
+  if (select status from public.tax_invoices where id = v_inv.id) <> 'issued'
+     or exists (select 1 from public.credit_notes where invoice_id = v_inv.id) then
+    v_fail := v_fail || 'O11 cancelling an order voided or credited its QuickBooks invoice' || E'\n';
+  end if;
+  begin
+    insert into public.tax_invoices (org_id, invoice_number, source, kind, order_id, order_number,
+                                     seller_name, customer_name, issue_date, due_date, vat_rate, subtotal, vat, total)
+    values (c_gf, 'ZZ9002', 'direct', 'standard', v_qb, 'ZZ-OI-QBLINK',
+            'Gold Fortune', 'Test', current_date, current_date, 14, 10, 1.4, 11.4);
+    v_fail := v_fail || 'O11 a direct invoice was allowed to name an order' || E'\n';
+  exception when check_violation then null;
+  end;
 
   if v_fail <> '' then
     raise exception E'order_invoices FAILED:\n%', v_fail;

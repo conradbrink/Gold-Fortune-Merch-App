@@ -30,8 +30,12 @@ begin
    where p.org_id = c_gf and p.role <> 'manager' and p.id <> v_admin
      and not exists (select 1 from public.profile_permissions pp where pp.profile_id = p.id and pp.permission_code in ('admin', 'invoicing'))
    limit 1;
-  select s.id into v_s1 from public.stores s where s.org_id = c_gf order by s.created_at limit 1;
-  select s.id into v_s2 from public.stores s where s.org_id = c_gf and s.id <> v_s1 order by s.created_at limit 1;
+  -- Two places with no invoices of their own, so the statements below hold
+  -- only what this suite issues (Gold Fortune's stores carry real history).
+  select s.id into v_s1 from public.stores s where s.org_id = c_gf
+     and not exists (select 1 from public.tax_invoices t where t.store_id = s.id) order by s.created_at, s.id limit 1;
+  select s.id into v_s2 from public.stores s where s.org_id = c_gf and s.id <> v_s1
+     and not exists (select 1 from public.tax_invoices t where t.store_id = s.id) order by s.created_at, s.id limit 1;
   if v_admin is null or v_s2 is null then
     raise exception 'Fixtures missing: admin %, stores %, %', v_admin, v_s1, v_s2;
   end if;

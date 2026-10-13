@@ -45,6 +45,7 @@ export const INVOICE_SOURCE_LABELS: Record<string, string> = {
   jobs: "Completed work",
   direct: "Direct",
   contract: "Contract",
+  quickbooks: "From QuickBooks",
 };
 
 /** A quote's invoices: in full, a deposit, or the final balance (`tax_invoices.kind`). */

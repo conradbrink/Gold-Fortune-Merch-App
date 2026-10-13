@@ -159,6 +159,7 @@ export default function InvoiceDetailPage() {
           <p className="text-sm text-muted-foreground">
             {invoiceHeading(inv) === "TAX INVOICE" ? "Tax invoice" : "Invoice"} for {inv.customer_name} · issued{" "}
             {inv.issue_date} · due {inv.due_date}
+            {inv.source === "quickbooks" && " · from QuickBooks"}
             {inv.order_id && (
               <>
                 {" "}· order{" "}
