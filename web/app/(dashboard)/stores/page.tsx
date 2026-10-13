@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import {
+  Activity,
   Map,
   List,
   Upload,
@@ -1201,6 +1202,20 @@ export default function StoresPage() {
             over. The file says which filters produced it, so a colleague
             receiving it can tell a Gaborone-only list from the whole book. */}
         <ExportMenu build={buildStoreSheet} disabled={loading} label="Export" />
+        {/* The dashboard's Store health card as a list: who is ordering, who is
+            visited without ordering, and who nobody has been to. */}
+        <Button
+          variant="outline"
+          size="sm"
+          className="gap-1.5"
+          nativeButton={false}
+          render={
+            <Link href="/stores/health">
+              <Activity className="h-4 w-4" />
+              {terms.site.one} health
+            </Link>
+          }
+        />
         <Button
           variant="outline"
           size="sm"

@@ -7,6 +7,7 @@ import { useCompanyConfig, useTerms } from "@/lib/use-company-config";
 import { lower, type Terms } from "@/lib/terms";
 import { formatMoneyShort } from "@/lib/money";
 import type { DateRange } from "@/lib/date-range";
+import { invoicesHref, quotesHref, rangeQuery } from "@/lib/dashboard-links";
 import {
   findKpi,
   formatKpi,
@@ -308,7 +309,18 @@ function Row({
 }
 
 /** Money: what to invoice, what is owed, what came in, what goes out next. */
-export function MoneyCard({ numbers, contractsDue, days }: { numbers: Numbers; contractsDue: ContractsDue | null; days: number }) {
+export function MoneyCard({
+  numbers,
+  contractsDue,
+  days,
+  range,
+}: {
+  numbers: Numbers;
+  contractsDue: ContractsDue | null;
+  days: number;
+  /** The dashboard's dates, so "Invoiced" opens the invoices it added up. */
+  range: DateRange;
+}) {
   const t = useTerms();
   const money = useMoney();
   const config = useCompanyConfig();
@@ -338,7 +350,7 @@ export function MoneyCard({ numbers, contractsDue, days }: { numbers: Numbers; c
           sub={overdue > 0 ? `${money(overdue)} overdue` : "Nothing overdue"}
           tone={overdue > 0 ? "bad" : undefined}
         />
-        <Row label={`Invoiced, last ${days} days`} value={money(k.invoiced?.value ?? 0)} href="/invoices" />
+        <Row label={`Invoiced, last ${days} days`} value={money(k.invoiced?.value ?? 0)} href={invoicesHref(rangeQuery(range))} />
         <Row label={`Paid to you, last ${days} days`} value={money(k.received?.value ?? 0)} href="/invoices" />
         {config?.settings.money_contracts && contractsDue && (
           <Row
@@ -371,7 +383,7 @@ export function QuotesCard({ numbers, days }: { numbers: Numbers; days: number }
         <Row
           label="Waiting for an answer"
           value={money(k.quotes_waiting_value?.value ?? 0)}
-          href="/quotes"
+          href={quotesHref("sent")}
           sub={
             (k.quotes_waiting_value?.events ?? 0) > 0
               ? `${k.quotes_waiting_value!.events} waiting, oldest ${k.quotes_waiting_value!.extra ?? 0} days`
@@ -391,7 +403,7 @@ export function QuotesCard({ numbers, days }: { numbers: Numbers; days: number }
         <Row
           label="Accepted, not yet invoiced"
           value={money(k.accepted_not_invoiced?.value ?? 0)}
-          href="/quotes"
+          href={quotesHref("accepted")}
           sub={`${k.accepted_not_invoiced?.events ?? 0} ${(k.accepted_not_invoiced?.events ?? 0) === 1 ? "quote" : "quotes"}`}
           tone={(k.accepted_not_invoiced?.events ?? 0) > 0 ? "act" : undefined}
         />

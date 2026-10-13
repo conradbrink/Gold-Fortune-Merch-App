@@ -34,6 +34,7 @@ import {
 } from "@/lib/invoices";
 import { invoiceSources, switchesOf } from "@/lib/money-workflow";
 import { moduleEnabled } from "@/lib/modules";
+import { lastDayOf, rangeFromQuery } from "@/lib/dashboard-links";
 
 function ymd(d: Date) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -74,6 +75,19 @@ export default function InvoicesPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [sent, setSent] = useState<SendSummaries | null>(null);
+
+  // Seeded from the link, so the dashboard's "Invoiced" lands on the same days
+  // it added up. The link's `to` is the day after the last (as everywhere the
+  // dashboard links), and the boxes here show the last day itself.
+  useEffect(() => {
+    const q = new URLSearchParams(window.location.search);
+    const r = rangeFromQuery(q);
+    // Browser-only state, read once on mount as on Orders.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (r) setRange({ from: ymd(r.from), to: lastDayOf(r) });
+    const p = q.get("pay");
+    if (p && (p === "outstanding" || p in PAYMENT_STATUS_LABELS)) setPay(p);
+  }, []);
 
   // When each invoice was last sent. A column of notes: if it cannot be read, it stays blank.
   useEffect(() => {

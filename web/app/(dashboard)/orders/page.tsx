@@ -20,6 +20,7 @@ import {
 import { ErrorBanner, EmptyRow } from "@/components/warehouse/stat-tile";
 import { fetchOrders, type OrderListRow } from "@/lib/orders";
 import { ORDER_STATUSES, STATUS_LABELS } from "@/lib/warehouse";
+import { orderStatusesFromQuery } from "@/lib/dashboard-links";
 import { useTerms } from "@/lib/use-company-config";
 import { lower, withArticle, type Terms } from "@/lib/terms";
 
@@ -125,12 +126,13 @@ export default function OrdersPage() {
     const s = params.get("status");
     // eslint-disable-next-line react-hooks/set-state-in-effect
     if (q) setSearch(q);
-    // Only a status this page actually offers. An unknown one from a stale or
+    // Only statuses this page actually offers. An unknown one from a stale or
     // hand-edited link would leave the select showing nothing and the table
-    // empty, with no clue that the filter was the reason.
-    if (s && (s === "all" || (ORDER_STATUSES as readonly string[]).includes(s))) {
-      setStatus(s);
-    }
+    // empty, with no clue that the filter was the reason. The dashboard sends
+    // "open" (everything not yet delivered) and lists like "new,confirmed".
+    const asked = orderStatusesFromQuery(s, ORDER_STATUSES);
+    if (s === "open") setStatus("open");
+    else if (asked) setStatus(asked.join(","));
     // The Outstanding PODs tile on the warehouse dashboard links here. Without
     // it that queue is a number with nowhere to go.
     if (params.get("pod") === "outstanding") setPodOnly(true);
@@ -150,7 +152,11 @@ export default function OrdersPage() {
     let cancelled = false;
     (async () => {
       try {
-        const rows = await fetchOrders(supabase, { status, search: queryTerm });
+        const rows = await fetchOrders(supabase, {
+          status,
+          search: queryTerm,
+          pod: podOnly ? "outstanding" : undefined,
+        });
         if (cancelled) return;
         setOrders(rows);
         setError(null);
@@ -163,7 +169,7 @@ export default function OrdersPage() {
     return () => {
       cancelled = true;
     };
-  }, [supabase, status, queryTerm]);
+  }, [supabase, status, queryTerm, podOnly]);
 
   // Kept over the rows already fetched, so the table narrows on the keystroke
   // rather than waiting on the debounce. The query above is what decides which
@@ -215,6 +221,17 @@ export default function OrdersPage() {
           aria-label="Status"
         >
           <option value="all">All statuses</option>
+          <option value="open">Not yet delivered</option>
+          {/* A set of statuses from a dashboard link ("To confirm" is new and
+              confirmed together) has no option of its own, so it gets one. */}
+          {status.includes(",") && (
+            <option value={status}>
+              {status
+                .split(",")
+                .map((s) => STATUS_LABELS[s] ?? s)
+                .join(" or ")}
+            </option>
+          )}
           {ORDER_STATUSES.map((s) => (
             <option key={s} value={s}>
               {STATUS_LABELS[s]}
@@ -257,8 +274,10 @@ export default function OrdersPage() {
           const rows = visible.filter((o) => stageOf(o) === stage.key);
           // An empty stage still says its name — "nothing waiting on a POD" is
           // information. Cancelled is the exception: it is not work, so it
-          // appears only when there is something in it.
-          if (rows.length === 0 && stage.key === "cancelled") return null;
+          // appears only when there is something in it. So is any stage the
+          // filter rules out: opened from "Packed, to dispatch", three empty
+          // sections above the packed orders would only be in the way.
+          if (rows.length === 0 && (stage.key === "cancelled" || status !== "all" || podOnly)) return null;
 
           return (
             <section key={stage.key} className="space-y-2">

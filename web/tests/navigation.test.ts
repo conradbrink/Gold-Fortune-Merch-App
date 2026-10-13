@@ -90,6 +90,8 @@ const LINKED_FROM: Record<string, string> = {
   "/plans": "components/dashboard/account-cards.tsx",
   // One person's full report: their name on Reports → Team or the summary.
   "/reports/rep-performance": "app/(dashboard)/reports/page.tsx",
+  // The dashboard's Store health card as a list; its numbers open it too.
+  "/stores/health": "app/(dashboard)/stores/page.tsx",
 };
 
 test("every page in the app is in the menu or linked from a named page", () => {

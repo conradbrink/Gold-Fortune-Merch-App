@@ -1,6 +1,7 @@
 import { lower, type Terms } from "@/lib/terms";
 import { toLocalDateInput, type DateRange } from "@/lib/date-range";
 import type { ReportId, ViewId } from "@/lib/report-catalogue";
+import { invoicesHref, quotesHref, rangeQuery } from "@/lib/dashboard-links";
 
 /**
  * The numbers a dashboard can show (Stage 7 Part 3): the catalogue in code,
@@ -57,6 +58,8 @@ function report(tab: ReportId, view?: ViewId) {
     }).toString()}`;
 }
 const page = (path: string) => () => path;
+/** The invoices issued over the tile's own dates. */
+const invoicesOver = (range: DateRange) => invoicesHref(rangeQuery(range));
 
 export const KPIS: KpiDef[] = [
   {
@@ -201,13 +204,13 @@ export const KPIS: KpiDef[] = [
     code: "invoiced",
     label: () => "Invoiced",
     hint: () => "Invoices issued, VAT included.",
-    format: "money", better: "up", scope: "window", money: true, minEvents: 0, href: page("/invoices"),
+    format: "money", better: "up", scope: "window", money: true, minEvents: 0, href: invoicesOver,
   },
   {
     code: "avg_invoice",
     label: () => "Average invoice",
     hint: () => "Invoiced, divided by the number of invoices.",
-    format: "money", better: "up", scope: "window", money: true, minEvents: 3, href: page("/invoices"),
+    format: "money", better: "up", scope: "window", money: true, minEvents: 3, href: invoicesOver,
   },
   {
     code: "received",
@@ -231,13 +234,13 @@ export const KPIS: KpiDef[] = [
     code: "quotes_waiting_value",
     label: () => "Quotes waiting",
     hint: () => "Sent and not yet decided, and the oldest one's age.",
-    format: "money", better: "none", scope: "now", money: true, minEvents: 0, href: page("/quotes"),
+    format: "money", better: "none", scope: "now", money: true, minEvents: 0, href: () => quotesHref("sent"),
   },
   {
     code: "accepted_not_invoiced",
     label: () => "Accepted, not yet invoiced",
     hint: () => "Accepted quotes with no invoice yet.",
-    format: "money", better: "down", scope: "now", money: true, minEvents: 0, href: page("/quotes"),
+    format: "money", better: "down", scope: "now", money: true, minEvents: 0, href: () => quotesHref("accepted"),
   },
 ];
 

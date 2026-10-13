@@ -1,6 +1,8 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/lib/supabase/types";
 import { lower, withArticle, type Terms } from "@/lib/terms";
+import { ORDER_STATUSES } from "@/lib/warehouse";
+import { orderStatusesFromQuery } from "@/lib/dashboard-links";
 
 /**
  * Everything the order screens read and do.
@@ -105,7 +107,13 @@ function fail(error: { message: string } | null) {
 
 export async function fetchOrders(
   supabase: Client,
-  opts: { status?: string; search?: string } = {}
+  opts: {
+    /** One status, several joined by commas, "open" for everything not yet delivered, or "all". */
+    status?: string;
+    search?: string;
+    /** Delivered with no signed proof on file: the pipeline's "proof of delivery missing". */
+    pod?: "outstanding";
+  } = {}
 ): Promise<OrderListRow[]> {
   let q = supabase
     .from("orders")
@@ -113,7 +121,11 @@ export async function fetchOrders(
     .order("created_at", { ascending: false })
     .limit(200);
 
-  if (opts.status && opts.status !== "all") q = q.eq("status", opts.status);
+  // In the query, before the limit, for the same reason as the search below: a
+  // filter applied to the newest 200 can miss the very orders it was asked for.
+  const statuses = orderStatusesFromQuery(opts.status ?? null, ORDER_STATUSES);
+  if (statuses) q = statuses.length === 1 ? q.eq("status", statuses[0]) : q.in("status", statuses);
+  if (opts.pod === "outstanding") q = q.eq("status", "delivered").eq("pod_status", "outstanding");
 
   // The search has to happen in the database, before the limit. Filtering the
   // 200 rows that came back means an order older than the newest 200 can never
