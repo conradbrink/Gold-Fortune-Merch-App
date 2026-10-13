@@ -1,12 +1,14 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
 import { MapPinOff, RefreshCw } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { loadMaps, MAPS_KEY, mapTypeSwitch, rememberMapType } from "@/lib/google-maps";
 import { useCompanyConfig, useTerms } from "@/lib/use-company-config";
 import { lower, withArticle } from "@/lib/terms";
+import { trackingHref } from "@/lib/dashboard-links";
 import {
   describeAge,
   describeSource,
@@ -308,13 +310,19 @@ export function RepMap({ data }: { data: LiveReps }) {
           <div className="grid grid-cols-1 gap-3 lg:grid-cols-[280px_1fr]">
             <div className="max-h-[320px] overflow-y-auto rounded-lg border border-border">
               {chosen && (
-                <button
-                  type="button"
-                  onClick={() => setSelected(null)}
-                  className="w-full border-b border-border bg-muted/40 px-3 py-1.5 text-left text-xs text-muted-foreground hover:text-foreground"
-                >
-                  ← Show everyone
-                </button>
+                <div className="flex items-center justify-between gap-2 border-b border-border bg-muted/40 px-3 py-1.5 text-xs">
+                  <button
+                    type="button"
+                    onClick={() => setSelected(null)}
+                    className="text-left text-muted-foreground hover:text-foreground"
+                  >
+                    ← Show everyone
+                  </button>
+                  {/* From where they are to what they did: the day behind the dot. */}
+                  <Link href={trackingHref(chosen.repId)} className="font-medium text-primary hover:underline">
+                    Their day →
+                  </Link>
+                </div>
               )}
               {positions.map((p) => (
                 <RepRow

@@ -31,6 +31,14 @@ import {
   STATUS_LABELS,
   type CommissionRow,
 } from "@/lib/commissions";
+import { lastDayOf, rangeFromQuery } from "@/lib/dashboard-links";
+
+/**
+ * "Every date" for a link that asks for it (the dashboard's "Commission to
+ * approve" adds up every pending commission, whenever it was earned). Well
+ * before anything this app could have recorded.
+ */
+const EARLIEST = "2020-01-01";
 
 const money = (n: number) =>
   n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -67,6 +75,26 @@ export default function CommissionsPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  /**
+   * Whether the link has been read. The first load waits for it: `load` has no
+   * guard against an older answer landing last, so loading this month and then
+   * the link's dates could leave this month's rows under the link's dates.
+   */
+  const [urlRead, setUrlRead] = useState(false);
+
+  // Seeded from the link: a status, and the dates (`from` and the day after the
+  // last, as every dashboard link sends them) or `period=all`.
+  useEffect(() => {
+    const q = new URLSearchParams(window.location.search);
+    const r = rangeFromQuery(q);
+    // Browser-only state, read once on mount as on Orders.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (q.get("period") === "all") setRange({ from: EARLIEST, to: ymd(new Date()) });
+    else if (r) setRange({ from: ymd(r.from), to: lastDayOf(r) });
+    const st = q.get("status");
+    if (st && st in STATUS_LABELS) setStatusFilter(st);
+    setUrlRead(true);
+  }, []);
 
   // `to` is the last day shown, inclusive; the query wants the moment after it.
   const range = useMemo(() => {
@@ -89,9 +117,10 @@ export default function CommissionsPage() {
   }, [supabase, range]);
 
   useEffect(() => {
+    if (!urlRead) return;
     // eslint-disable-next-line react-hooks/set-state-in-effect
     load();
-  }, [load]);
+  }, [load, urlRead]);
 
   const reps = useMemo(
     () => [...new Map(rows.map((r) => [r.rep_id, r.rep_name])).entries()].sort((a, b) => a[1].localeCompare(b[1])),
@@ -199,7 +228,11 @@ export default function CommissionsPage() {
         <div className="flex flex-wrap gap-2">
           <Button
             variant="outline"
-            disabled={busy}
+            // Not over "every date" (the dashboard's commission link): a
+            // recalculation is meant for a period, and one click should not
+            // rework every delivery the company has had.
+            disabled={busy || from === EARLIEST}
+            title={from === EARLIEST ? "Choose a period to recalculate" : undefined}
             onClick={() =>
               act(async () => {
                 const n = await recalculate(supabase, range);

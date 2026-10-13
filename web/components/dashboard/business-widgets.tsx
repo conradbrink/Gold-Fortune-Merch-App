@@ -23,7 +23,23 @@ import { formatMoneyShort as moneyShortIn } from "@/lib/money";
 import { moduleEnabled } from "@/lib/modules";
 import { can } from "@/lib/permissions";
 import { usePermissions } from "@/lib/use-permissions";
-import { toLocalDateInput, type DateRange } from "@/lib/date-range";
+import type { DateRange } from "@/lib/date-range";
+import {
+  commissionsHref,
+  dayAfter,
+  invoicesHref,
+  lowStockHref,
+  nextMonth,
+  ordersHref,
+  quotesHref,
+  rangeQuery,
+  recurringDueHref,
+  reportHref,
+  salesHref,
+  storeHealthHref,
+  storeHref,
+  trackingHref,
+} from "@/lib/dashboard-links";
 
 /**
  * The redesigned dashboard's cards: the headline row, sales, the orders
@@ -33,6 +49,11 @@ import { toLocalDateInput, type DateRange } from "@/lib/date-range";
  * link to where it can be taken apart. Explanations belong on the pages these
  * link to; the dashboard used to carry them inline and that was most of what
  * made it feel cluttered.
+ *
+ * Every number opens the list it counted, already filtered and over the same
+ * dates (owner, 13 Oct 2026: "i want to be able to go into this and see what
+ * stores havent ordered etc. same with all the other dashboard items"). The
+ * links and the parsers that read them are in lib/dashboard-links.ts.
  */
 
 const MONTH = new Intl.DateTimeFormat("en-GB", { month: "short" });
@@ -121,9 +142,22 @@ function SectionCard({
   );
 }
 
-function MiniStat({ label, value, tone }: { label: string; value: ReactNode; tone?: "bad" | "good" }) {
-  return (
-    <div className="flex flex-col gap-0.5">
+/** A small figure. With `href` the whole figure opens the list behind it. */
+function MiniStat({
+  label,
+  value,
+  tone,
+  href,
+  title,
+}: {
+  label: string;
+  value: ReactNode;
+  tone?: "bad" | "good";
+  href?: string;
+  title?: string;
+}) {
+  const body = (
+    <>
       <span className="text-xs text-muted-foreground">{label}</span>
       <span
         className={
@@ -136,9 +170,30 @@ function MiniStat({ label, value, tone }: { label: string; value: ReactNode; ton
       >
         {value}
       </span>
-    </div>
+    </>
+  );
+  if (!href) return <div className="flex flex-col gap-0.5">{body}</div>;
+  return (
+    <Link
+      href={href}
+      title={title}
+      // Pulled out by its own padding so the figure stays where it was, and the
+      // whole figure, not just the digits, is the thing to tap.
+      className="-m-1.5 flex flex-col gap-0.5 rounded-lg p-1.5 transition-colors hover:bg-muted/60 focus-visible:outline-2 focus-visible:outline-ring"
+    >
+      {body}
+    </Link>
   );
 }
+
+/**
+ * A grid row that opens a list. It spans the parent's three columns and keeps
+ * them (subgrid), so bars and figures still line up across rows, and the whole
+ * row is the thing to tap, not just its number. The padding is pulled back out
+ * by the margin so nothing moves.
+ */
+const ROW_LINK =
+  "col-span-3 -mx-1.5 grid grid-cols-subgrid items-center rounded-md px-1.5 py-1 transition-colors hover:bg-muted/60 focus-visible:outline-2 focus-visible:outline-ring";
 
 // ------------------------------------------------------------ headline row
 
@@ -187,10 +242,13 @@ export function Headline({
   business,
   summary,
   days,
+  range,
 }: {
   business: BusinessSummary;
   summary: DashboardSummary | null;
   days: number;
+  /** The dashboard's dates, carried into the lists the tiles open. */
+  range: DateRange;
 }) {
   const t = useTerms();
   const { money } = useMoney();
@@ -222,7 +280,8 @@ export function Headline({
       {sells && (
       <Tile
         primary
-        href="/sales"
+        // The deliveries behind the figure, over the same days.
+        href={salesHref(rangeQuery(range))}
         label={`Revenue, last ${days} days`}
         value={money(r.current)}
         sub={
@@ -240,7 +299,7 @@ export function Headline({
       )}
       {sells && (
       <Tile
-        href="/orders"
+        href={ordersHref({ status: "open" })}
         label="Orders needing action"
         value={action}
         sub={`${p.new + p.confirmed} to confirm · ${p.picking + p.packed} to pick or dispatch · ${p.dispatched} out`}
@@ -248,7 +307,9 @@ export function Headline({
       )}
       {owed && (
       <Tile
-        href={sells ? "/invoices" : "/owed"}
+        // Who owes it and how overdue, for every company: the invoice list is
+        // only the period's, and the money owed is all of it.
+        href="/owed"
         label="Owed to us"
         value={money(business.money.outstanding)}
         sub={business.money.overdue > 0 ? `${money(business.money.overdue)} overdue` : "Nothing overdue"}
@@ -256,7 +317,7 @@ export function Headline({
       />
       )}
       <Tile
-        href="/reports?tab=coverage"
+        href={reportHref("coverage", range)}
         label={`${t.site.one} coverage, last ${days} days`}
         value={formatPct(coverage)}
         sub={
@@ -271,7 +332,7 @@ export function Headline({
         }
       />
       <Tile
-        href="/stores"
+        href={storeHealthHref("not_visited")}
         label={`${t.site.many} needing attention`}
         value={h.not_visited_30d}
         tone={h.not_visited_30d > 0 ? "bad" : undefined}
@@ -313,11 +374,16 @@ export function SalesCard({
     <SectionCard title="Sales" href="/sales" linkLabel="Sales">
       <div className="flex flex-col gap-2.5">
         <span className="text-xs text-muted-foreground">Delivered revenue by month, excluding VAT</span>
-        <div className="grid grid-cols-[2.5rem_1fr_6rem] items-center gap-x-3 gap-y-2 text-sm">
+        <div className="grid grid-cols-[2.5rem_1fr_6rem] gap-x-3 gap-y-0.5 text-sm">
           {months.map((m) => {
             const isCurrent = m.month === r.month_start;
             return (
-              <div key={m.month} className="contents">
+              // Each month opens its deliveries; this month's run to today.
+              <Link
+                key={m.month}
+                href={salesHref({ from: m.month, to: isCurrent ? dayAfter(r.today) : nextMonth(m.month) })}
+                className={ROW_LINK}
+              >
                 <span className={isCurrent ? "font-semibold" : "text-muted-foreground"}>{monthLabel(m.month)}</span>
                 <div className="relative h-[22px] overflow-hidden rounded-md bg-muted">
                   {isCurrent && pace !== null && (
@@ -335,7 +401,7 @@ export function SalesCard({
                 <span className={isCurrent ? "text-right font-semibold tabular-nums" : "text-right tabular-nums"}>
                   {fmtMoney(m.net)}
                 </span>
-              </div>
+              </Link>
             );
           })}
         </div>
@@ -358,7 +424,7 @@ export function SalesCard({
         {reps.length === 0 ? (
           <p className="text-sm text-muted-foreground">No active {lower(t.staff.many)}.</p>
         ) : (
-          <div className="grid grid-cols-[minmax(6rem,9rem)_1fr_auto] items-center gap-x-3 gap-y-2.5 text-sm">
+          <div className="grid grid-cols-[minmax(6rem,9rem)_1fr_auto] gap-x-3 gap-y-0.5 text-sm">
             {reps.map((t) => {
               const measure = (t.measure as Measure) ?? "revenue";
               const hasTarget = t.target != null && Number(t.target) > 0;
@@ -366,7 +432,12 @@ export function SalesCard({
               const pct = hasTarget ? achieved / Number(t.target) : achieved / leader;
               const money = MEASURES.find((m) => m.value === measure)?.money ?? true;
               return (
-                <div key={t.rep_id} className="contents">
+                // Each person opens their own deliveries this month.
+                <Link
+                  key={t.rep_id}
+                  href={salesHref({ from: r.month_start, to: dayAfter(r.today) }, t.rep_id)}
+                  className={ROW_LINK}
+                >
                   <span className="truncate">{t.rep_name}</span>
                   <div className="h-2.5 overflow-hidden rounded-full bg-muted">
                     <div className="h-full rounded-full bg-gold" style={{ width: `${Math.min(pct, 1) * 100}%` }} />
@@ -375,7 +446,7 @@ export function SalesCard({
                     {money ? fmtMoney(achieved) : achieved.toLocaleString("en-GB")}
                     {hasTarget && <span className="ml-1.5 text-xs text-muted-foreground">{Math.round(pct * 100)}%</span>}
                   </span>
-                </div>
+                </Link>
               );
             })}
           </div>
@@ -394,11 +465,11 @@ function Stage({ count, label, href, urgent }: { count: number; label: string; h
   return (
     <Link
       href={href}
-      className={
+      className={`flex flex-col gap-1 rounded-lg p-3 transition-[background-color,transform] duration-150 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring active:scale-[0.98] motion-reduce:transition-none ${
         urgent && count > 0
-          ? "flex flex-col gap-1 rounded-lg bg-amber-50 p-3 transition-colors hover:bg-amber-100 dark:bg-amber-500/10 dark:hover:bg-amber-500/20"
-          : "flex flex-col gap-1 rounded-lg bg-muted/60 p-3 transition-colors hover:bg-muted"
-      }
+          ? "bg-amber-50 hover:bg-amber-100 dark:bg-amber-500/10 dark:hover:bg-amber-500/20"
+          : "bg-muted/60 hover:bg-muted"
+      }`}
     >
       <span className="text-2xl font-semibold tabular-nums">{count}</span>
       <span className={urgent && count > 0 ? "text-xs text-amber-900 dark:text-amber-300" : "text-xs text-muted-foreground"}>{label}</span>
@@ -406,22 +477,29 @@ function Stage({ count, label, href, urgent }: { count: number; label: string; h
   );
 }
 
+/** A line of the pipeline. With anything in it, the whole line opens the list. */
 function Row({ label, value, href }: { label: string; value: number; href: string }) {
   return (
-    <li className="flex items-center justify-between gap-3 border-b py-2.5 text-sm last:border-b-0">
-      <span>{label}</span>
+    <li className="border-b text-sm last:border-b-0">
       {value > 0 ? (
-        <Link href={href} className="font-semibold tabular-nums text-primary hover:underline">
-          {value}
+        <Link
+          href={href}
+          className="-mx-1.5 flex items-center justify-between gap-3 rounded-md px-1.5 py-2.5 transition-colors hover:bg-muted/60 focus-visible:outline-2 focus-visible:outline-ring"
+        >
+          <span>{label}</span>
+          <span className="font-semibold tabular-nums text-primary">{value}</span>
         </Link>
       ) : (
-        <span className="tabular-nums text-muted-foreground">0</span>
+        <div className="flex items-center justify-between gap-3 py-2.5">
+          <span>{label}</span>
+          <span className="tabular-nums text-muted-foreground">0</span>
+        </div>
       )}
     </li>
   );
 }
 
-export function PipelineCard({ business }: { business: BusinessSummary }) {
+export function PipelineCard({ business, range }: { business: BusinessSummary; range: DateRange }) {
   const t = useTerms();
   const { money: fmtMoney } = useMoney();
   const p = business.pipeline;
@@ -429,21 +507,27 @@ export function PipelineCard({ business }: { business: BusinessSummary }) {
   return (
     <SectionCard title="Orders pipeline" href="/orders" linkLabel="All orders">
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-        <Stage count={p.new + p.confirmed} label="To confirm" href="/orders" urgent />
-        <Stage count={p.picking} label="Being picked" href="/warehouse" />
-        <Stage count={p.packed} label="Packed, to dispatch" href="/orders" urgent />
-        <Stage count={p.dispatched} label="Out for delivery" href="/orders" />
+        <Stage count={p.new + p.confirmed} label="To confirm" href={ordersHref({ status: ["new", "confirmed"] })} urgent />
+        <Stage count={p.picking} label="Being picked" href={ordersHref({ status: ["picking"] })} />
+        <Stage count={p.packed} label="Packed, to dispatch" href={ordersHref({ status: ["packed"] })} urgent />
+        <Stage count={p.dispatched} label="Out for delivery" href={ordersHref({ status: ["dispatched"] })} />
       </div>
       <ul className="flex flex-col border-t">
-        <Row label="Delivered, proof of delivery missing" value={p.pod_missing} href="/orders" />
-        <Row label={`Quotes waiting on the ${lower(t.client.one)}`} value={p.quotes_waiting} href="/quotes" />
-        <Row label="Recurring orders placing this week" value={p.recurring_due_7d} href="/recurring-orders" />
-        <Row label="Products below reorder point" value={p.low_stock} href="/inventory" />
+        <Row label="Delivered, proof of delivery missing" value={p.pod_missing} href={ordersHref({ pod: "outstanding" })} />
+        <Row label={`Quotes waiting on the ${lower(t.client.one)}`} value={p.quotes_waiting} href={quotesHref("sent")} />
+        <Row label="Recurring orders placing this week" value={p.recurring_due_7d} href={recurringDueHref()} />
+        <Row label="Products below reorder point" value={p.low_stock} href={lowStockHref()} />
       </ul>
       <div className="grid grid-cols-3 gap-3 border-t pt-4">
-        <MiniStat label="Invoiced" value={fmtMoney(m.invoiced)} />
-        <MiniStat label="Overdue" value={fmtMoney(m.overdue)} tone={m.overdue > 0 ? "bad" : undefined} />
-        <MiniStat label="Commission to approve" value={fmtMoney(m.commission_pending)} />
+        <MiniStat label="Invoiced" value={fmtMoney(m.invoiced)} href={invoicesHref(rangeQuery(range))} />
+        <MiniStat
+          label="Overdue"
+          value={fmtMoney(m.overdue)}
+          tone={m.overdue > 0 ? "bad" : undefined}
+          href="/owed"
+          title={`Who owes it, and how long past due`}
+        />
+        <MiniStat label="Commission to approve" value={fmtMoney(m.commission_pending)} href={commissionsHref("pending", "all")} />
       </div>
     </SectionCard>
   );
@@ -457,6 +541,10 @@ const DOT: Record<ReturnType<typeof freshnessOf>, string> = {
   stale: "bg-muted-foreground/50",
   unknown: "bg-slate-300 dark:bg-slate-600",
 };
+
+/** A person's line, the whole of it opening their day. */
+const PERSON_ROW =
+  "-mx-1.5 grid grid-cols-[10px_1fr_auto] items-center gap-2.5 rounded-md px-1.5 py-2.5 transition-colors hover:bg-muted/60 focus-visible:outline-2 focus-visible:outline-ring";
 
 export function FieldTeamCard({
   liveReps,
@@ -492,32 +580,35 @@ export function FieldTeamCard({
   return (
     <SectionCard title="Field team" href="/tracking" linkLabel="Tracking">
       <ul className="flex flex-col">
+        {/* Each person opens their day: the route, the stops and the times. */}
         {liveReps.positions.map((p) => {
           const mins = minutesSince(p.recordedAt, now);
           return (
-            <li key={p.repId} className="grid grid-cols-[10px_1fr_auto] items-center gap-2.5 border-b py-2.5 text-sm last:border-b-0">
-              <span className={`h-2 w-2 rounded-full ${DOT[freshnessOf(mins, interval)]}`} aria-hidden />
-              <span className="min-w-0 truncate">
-                <span className="font-medium">{p.repName}</span>
-                <span className="text-muted-foreground">
-                  {" · "}
-                  {describeSource(p.source, p.storeName)}
-                  {!p.dayOpen && " · day ended"}
+            <li key={p.repId} className="border-b text-sm last:border-b-0">
+              <Link href={trackingHref(p.repId)} className={PERSON_ROW}>
+                <span className={`h-2 w-2 rounded-full ${DOT[freshnessOf(mins, interval)]}`} aria-hidden />
+                <span className="min-w-0 truncate">
+                  <span className="font-medium">{p.repName}</span>
+                  <span className="text-muted-foreground">
+                    {" · "}
+                    {describeSource(p.source, p.storeName)}
+                    {!p.dayOpen && " · day ended"}
+                  </span>
                 </span>
-              </span>
-              <span className="text-xs tabular-nums text-muted-foreground">{describeAge(mins)}</span>
+                <span className="text-xs tabular-nums text-muted-foreground">{describeAge(mins)}</span>
+              </Link>
             </li>
           );
         })}
         {liveReps.missing.map((m) => (
-          <li key={m.repId} className="grid grid-cols-[10px_1fr_auto] items-center gap-2.5 border-b py-2.5 text-sm last:border-b-0">
-            <span className="h-2 w-2 rounded-full border-[1.5px] border-red-600" aria-hidden />
-            <span className="min-w-0 truncate">
-              <span className="font-medium">{m.repName}</span>
-              <span className="text-red-700 dark:text-red-400"> · no position in 24 hours</span>
-            </span>
-            <Link href={`/tracking/${m.repId}`} className="text-xs text-primary hover:underline">
-              Check
+          <li key={m.repId} className="border-b text-sm last:border-b-0">
+            <Link href={trackingHref(m.repId)} className={PERSON_ROW}>
+              <span className="h-2 w-2 rounded-full border-[1.5px] border-red-600" aria-hidden />
+              <span className="min-w-0 truncate">
+                <span className="font-medium">{m.repName}</span>
+                <span className="text-red-700 dark:text-red-400"> · no position in 24 hours</span>
+              </span>
+              <span className="text-xs text-primary">Check</span>
             </Link>
           </li>
         ))}
@@ -534,6 +625,8 @@ export function FieldTeamCard({
               {formatPct(summary?.current.oos_rate ?? null)} <span className="text-xs"><Delta pct={oosDelta} invert /></span>
             </>
           }
+          // Which stores and products, over the same days.
+          href={reportHref("availability", range)}
         />
         )}
         {sells && (
@@ -544,26 +637,20 @@ export function FieldTeamCard({
               {formatPct(summary?.current.planogram_rate ?? null)} <span className="text-xs"><Delta pct={planoDelta} /></span>
             </>
           }
+          // Trends: the rate only reads against its own history, and there is
+          // no per-store planogram table (as the Planogram tile has always said).
+          href={reportHref("perfect_store", range, "trends")}
         />
         )}
         <MiniStat
           label={`Check-ins over ${business?.field.off_site_m ?? 500} m from ${lower(t.site.one)}`}
-          value={
-            business ? (
-              <Link
-                href={`/visits/off-site?${new URLSearchParams({
-                  from: toLocalDateInput(range.from),
-                  to: toLocalDateInput(range.to),
-                }).toString()}`}
-                className="hover:underline"
-                title={`See which ${lower(t.staff.many)}, ${lower(t.site.many)} and how far`}
-              >
-                {business.field.flagged_checkins}
-              </Link>
-            ) : (
-              "—"
-            )
+          value={business ? business.field.flagged_checkins : "—"}
+          href={
+            business
+              ? `/visits/off-site?${new URLSearchParams(rangeQuery(range)).toString()}`
+              : undefined
           }
+          title={`See which ${lower(t.staff.many)}, ${lower(t.site.many)} and how far`}
           tone={business && business.field.flagged_checkins > 0 ? "bad" : undefined}
         />
       </div>
@@ -582,37 +669,58 @@ export function StoreHealthCard({ business }: { business: BusinessSummary }) {
   // ordered — a store that orders but is never seen still needs a visit).
   const orderedSeen = Math.max(0, h.stores_active - h.visited_no_order_30d - h.not_visited_30d);
   return (
-    <SectionCard title={`${t.site.one} health`} href="/stores" linkLabel={`All ${lower(t.site.many)}`}>
+    // The card opens up into its own list (store_health, the same rules), one
+    // group per number; the header opens the most urgent one.
+    <SectionCard title={`${t.site.one} health`} href={storeHealthHref("not_visited")} linkLabel="See the list">
       <div className="flex h-3.5 gap-0.5 overflow-hidden rounded-full" aria-hidden>
         <div className="bg-emerald-600" style={{ flex: orderedSeen / total }} />
         <div className="bg-muted-foreground/25" style={{ flex: h.visited_no_order_30d / total }} />
         <div className="bg-red-600" style={{ flex: h.not_visited_30d / total }} />
       </div>
       <div className="grid grid-cols-3 gap-3">
-        <MiniStat label="Visited and ordering" value={orderedSeen} tone="good" />
-        <MiniStat label="Visited, no order in 30 days" value={h.visited_no_order_30d} />
-        <MiniStat label="Not visited in 30 days" value={h.not_visited_30d} tone={h.not_visited_30d > 0 ? "bad" : undefined} />
+        <MiniStat label="Visited and ordering" value={orderedSeen} tone="good" href={storeHealthHref("ordering")} />
+        <MiniStat label="Visited, no order in 30 days" value={h.visited_no_order_30d} href={storeHealthHref("no_order")} />
+        <MiniStat
+          label="Not visited in 30 days"
+          value={h.not_visited_30d}
+          tone={h.not_visited_30d > 0 ? "bad" : undefined}
+          href={storeHealthHref("not_visited")}
+        />
       </div>
       <div className="flex flex-col border-t">
-        <span className="pb-1.5 pt-3 text-xs text-muted-foreground">Go to these first</span>
+        <div className="flex items-baseline justify-between gap-3 pb-1.5 pt-3">
+          <span className="text-xs text-muted-foreground">Go to these first</span>
+          {h.not_visited_30d > h.longest_unvisited.length && (
+            <Link href={storeHealthHref("not_visited")} className="text-xs text-primary hover:underline">
+              See all {h.not_visited_30d}
+            </Link>
+          )}
+        </div>
         {h.longest_unvisited.length === 0 ? (
           <p className="py-2 text-sm text-muted-foreground">Every active {lower(t.site.one)} was visited in the last 30 days.</p>
         ) : (
           h.longest_unvisited.map((s) => (
-            <div key={s.id} className="flex items-center justify-between gap-3 border-b py-2 text-sm last:border-b-0">
-              <span className="min-w-0 truncate">
-                {s.name}
-                {s.city && <span className="text-muted-foreground"> · {s.city}</span>}
-              </span>
-              <span className="shrink-0 text-xs text-muted-foreground">{s.days == null ? "Never visited" : `${s.days} days`}</span>
+            <div key={s.id} className="border-b text-sm last:border-b-0">
+              {/* The store itself, on the stores list, where it can be given to someone. */}
+              <Link
+                href={storeHref(s.id)}
+                className="-mx-1.5 flex items-center justify-between gap-3 rounded-md px-1.5 py-2 transition-colors hover:bg-muted/60 focus-visible:outline-2 focus-visible:outline-ring"
+              >
+                <span className="min-w-0 truncate">
+                  {s.name}
+                  {s.city && <span className="text-muted-foreground"> · {s.city}</span>}
+                </span>
+                <span className="shrink-0 text-xs text-muted-foreground">{s.days == null ? "Never visited" : `${s.days} days`}</span>
+              </Link>
             </div>
           ))
         )}
       </div>
       {h.lapsed_60d > 0 && (
-        <span className="text-xs text-muted-foreground">
-          {h.lapsed_60d} {h.lapsed_60d === 1 ? `${lower(t.site.one)} that used to order has` : `${lower(t.site.many)} that used to order have`} placed nothing in 60 days.
-        </span>
+        <Link href={storeHealthHref("lapsed")} className="group text-xs text-muted-foreground hover:text-foreground">
+          {h.lapsed_60d} {h.lapsed_60d === 1 ? `${lower(t.site.one)} that used to order has` : `${lower(t.site.many)} that used to order have`} placed nothing in 60 days.{" "}
+          <span className="font-medium text-primary group-hover:underline">See which</span>
+        </Link>
       )}
     </SectionCard>
   );

@@ -30,9 +30,8 @@ import { StatTile } from "@/components/dashboard/stat-tile";
 import { CoverageDonut } from "@/components/dashboard/coverage-donut";
 import { RepMap } from "@/components/dashboard/rep-map";
 import type { LiveReps } from "@/lib/live-reps";
-import { toLocalDateInput, type DateRange } from "@/lib/date-range";
-import type { ReportId, ViewId } from "@/lib/report-catalogue";
-import type { ReportTab } from "@/lib/report-tabs";
+import type { DateRange } from "@/lib/date-range";
+import { reportHref } from "@/lib/dashboard-links";
 import { UnitsTrendChart } from "@/components/dashboard/units-trend-chart";
 import {
   FieldTeamCard,
@@ -116,26 +115,12 @@ export type WidgetData = {
   contractsDue: ContractsDue | null;
 };
 
-/**
- * Where a tile's number can be taken apart.
- *
- * A rate on a dashboard is the start of a question, not the end of one — "out
- * of stock is 6.2%" is only useful next to *which stores*. Reports already has
- * those tables, so the tiles link into the right tab carrying the same days
- * they were measured over; landing on the default 30 days would answer a
- * different question from the one that was clicked.
- */
-function reportHref(tab: ReportId | ReportTab, range: DateRange, view?: ViewId): string {
-  // A report and view, or an old tab name: Reports opens the nearest view the
-  // company has (`openReport`).
-  const params = new URLSearchParams({
-    tab,
-    ...(view ? { view } : {}),
-    from: toLocalDateInput(range.from),
-    to: toLocalDateInput(range.to),
-  });
-  return `/reports?${params.toString()}`;
-}
+// Where a tile's number can be taken apart: `reportHref` and the other links
+// in lib/dashboard-links.ts. A rate on a dashboard is the start of a question,
+// not the end of one: "out of stock is 6.2%" is only useful next to *which
+// stores*. So the tiles link into the right list carrying the same days they
+// were measured over; landing on the default 30 days would answer a different
+// question from the one that was clicked.
 
 export type WidgetDefinition = {
   /** Stored in `dashboard_layouts.widget_ids`. Never change one in place. */
@@ -246,7 +231,7 @@ export const WIDGETS: WidgetDefinition[] = [
     source: "numbers",
     module: "invoicing",
     permission: "invoicing",
-    render: (d) => <MoneyCard numbers={d.numbers!} contractsDue={d.contractsDue} days={d.days} />,
+    render: (d) => <MoneyCard numbers={d.numbers!} contractsDue={d.contractsDue} days={d.days} range={d.range} />,
   },
   {
     id: "quotes",
@@ -269,7 +254,7 @@ export const WIDGETS: WidgetDefinition[] = [
     span: 4,
     source: "business",
     render: (d) =>
-      d.business && <Headline business={d.business.summary} summary={d.summary} days={d.days} />,
+      d.business && <Headline business={d.business.summary} summary={d.summary} days={d.days} range={d.range} />,
   },
   {
     id: "sales",
@@ -289,7 +274,7 @@ export const WIDGETS: WidgetDefinition[] = [
     span: 2,
     source: "business",
     module: "distribution",
-    render: (d) => d.business && <PipelineCard business={d.business.summary} />,
+    render: (d) => d.business && <PipelineCard business={d.business.summary} range={d.range} />,
   },
   {
     id: "field_team",

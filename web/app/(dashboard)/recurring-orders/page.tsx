@@ -23,7 +23,9 @@ import {
   RECURRING_STATUS,
   type RecurringListRow,
 } from "@/lib/recurring";
-import { useTerms } from "@/lib/use-company-config";
+import { useCompanyConfig, useTerms } from "@/lib/use-company-config";
+import { dueDaysFromQuery, recurringDueWithin } from "@/lib/dashboard-links";
+import { localDay } from "@/lib/dashboard-numbers";
 
 /** Every standing order, the next due first. */
 export default function RecurringOrdersPage() {
@@ -34,6 +36,20 @@ export default function RecurringOrdersPage() {
   const [status, setStatus] = useState("active");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const timeZone = useCompanyConfig()?.timezone ?? null;
+  /**
+   * "Placing in the next N days", from the dashboard's "Recurring orders placing
+   * this week" (`?due=7`). Counted from the company's today, as the dashboard
+   * counts it, not the browser's.
+   */
+  const [dueDays, setDueDays] = useState<number | null>(null);
+
+  useEffect(() => {
+    const d = dueDaysFromQuery(new URLSearchParams(window.location.search));
+    // Browser-only state, read once on mount as on Orders.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (d !== null) setDueDays(d);
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -46,7 +62,15 @@ export default function RecurringOrdersPage() {
     };
   }, [supabase]);
 
-  const visible = rows.filter((r) => status === "all" || r.status === status);
+  // The company's today, not the browser's or UTC's: until it is known the
+  // "placing soon" list waits rather than counting from the wrong day.
+  const today = timeZone ? localDay(timeZone) : null;
+  const waiting = dueDays !== null && today === null;
+  const visible = rows.filter(
+    (r) =>
+      (status === "all" || r.status === status) &&
+      (dueDays === null || (today !== null && recurringDueWithin(r, today, dueDays)))
+  );
 
   return (
     <div className="space-y-6">
@@ -64,14 +88,25 @@ export default function RecurringOrdersPage() {
 
       <ErrorBanner message={error} />
 
-      <NativeSelect value={status} onChange={(e) => setStatus(e.target.value)} className="w-44" aria-label="Status">
-        <option value="all">All</option>
-        {Object.entries(RECURRING_STATUS).map(([k, v]) => (
-          <option key={k} value={k}>
-            {v}
-          </option>
-        ))}
-      </NativeSelect>
+      <div className="flex flex-wrap items-center gap-3">
+        <NativeSelect value={status} onChange={(e) => setStatus(e.target.value)} className="w-44" aria-label="Status">
+          <option value="all">All</option>
+          {Object.entries(RECURRING_STATUS).map(([k, v]) => (
+            <option key={k} value={k}>
+              {v}
+            </option>
+          ))}
+        </NativeSelect>
+        {dueDays !== null && (
+          <button
+            type="button"
+            onClick={() => setDueDays(null)}
+            className="rounded-full border border-primary/40 px-3 py-1 text-xs text-primary hover:bg-primary/5"
+          >
+            Placing in the next {dueDays} days · show all
+          </button>
+        )}
+      </div>
 
       <div className="overflow-x-auto rounded-xl ring-1 ring-foreground/10">
         <Table>
@@ -87,9 +122,15 @@ export default function RecurringOrdersPage() {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {loading && <EmptyRow colSpan={7}>Loading…</EmptyRow>}
-            {!loading && visible.length === 0 && (
-              <EmptyRow colSpan={7}>{rows.length === 0 ? "No recurring orders yet." : "None with this status."}</EmptyRow>
+            {(loading || waiting) && <EmptyRow colSpan={7}>Loading…</EmptyRow>}
+            {!loading && !waiting && visible.length === 0 && (
+              <EmptyRow colSpan={7}>
+                {rows.length === 0
+                  ? "No recurring orders yet."
+                  : dueDays !== null
+                    ? `Nothing is placing in the next ${dueDays} days.`
+                    : "None with this status."}
+              </EmptyRow>
             )}
             {visible.map((r) => (
               <TableRow key={r.id} className="cursor-pointer" onClick={() => router.push(`/recurring-orders/${r.id}`)}>

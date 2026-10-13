@@ -27,6 +27,7 @@ import {
 import { useCompanyConfig, useTerms } from "@/lib/use-company-config";
 import { lower } from "@/lib/terms";
 import { formatMoney } from "@/lib/money";
+import { quoteStatusFromQuery } from "@/lib/dashboard-links";
 
 /**
  * Every quote, newest first.
@@ -45,6 +46,19 @@ export default function QuotesPage() {
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  // Seeded from `?status=`, so "Quotes waiting on the client" on the dashboard
+  // lands on the sent ones. From `window` in a mount effect, as on Orders: the
+  // query string is browser-only, and `useSearchParams` would force a Suspense
+  // boundary on the whole page.
+  useEffect(() => {
+    const asked = quoteStatusFromQuery(
+      new URLSearchParams(window.location.search).get("status"),
+      Object.keys(QUOTE_STATUS_LABELS)
+    );
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (asked) setStatus(asked);
+  }, []);
 
   useEffect(() => {
     let cancelled = false;

@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import {
+  Activity,
   Map,
   List,
   Upload,
@@ -91,6 +92,7 @@ import {
   type VisitFrequency,
 } from "@/lib/schedule";
 import { googleMapsUrl } from "@/lib/maps";
+import { storeIdFromQuery } from "@/lib/dashboard-links";
 import type { Tables } from "@/lib/supabase/types";
 
 type StoreRow = Tables<"stores">;
@@ -272,6 +274,8 @@ export default function StoresPage() {
   /** Which column the table is ordered by. Name ascending, matching the order
       the rows are fetched in, so the page opens looking as it always has. */
   const [sort, setSort] = useState<SortState>({ key: "name", dir: "asc" });
+  /** One store, from a dashboard or Store health link (`?id=`). */
+  const [onlyId, setOnlyId] = useState<string | null>(null);
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -382,6 +386,7 @@ export default function StoresPage() {
     // disagree.
     // eslint-disable-next-line react-hooks/set-state-in-effect
     if (q) setSearch(q);
+    setOnlyId(storeIdFromQuery(new URLSearchParams(window.location.search)));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -920,6 +925,7 @@ export default function StoresPage() {
   }
 
   const filtered = stores
+    .filter((s) => onlyId === null || s.id === onlyId)
     .filter((s) =>
       groupFilter === "all" ? true : (s.store_group_id ?? "none") === groupFilter
     )
@@ -1109,6 +1115,16 @@ export default function StoresPage() {
         </div>
       )}
 
+      {onlyId !== null && (
+        <button
+          type="button"
+          onClick={() => setOnlyId(null)}
+          className="rounded-full border border-primary/40 px-3 py-1 text-xs text-primary hover:bg-primary/5"
+        >
+          One {lower(terms.site.one)} only · show all
+        </button>
+      )}
+
       <div className="flex flex-wrap items-center gap-2 sm:gap-3">
         <div className="w-full min-w-0 sm:w-auto sm:flex-1">
           <Input
@@ -1201,6 +1217,20 @@ export default function StoresPage() {
             over. The file says which filters produced it, so a colleague
             receiving it can tell a Gaborone-only list from the whole book. */}
         <ExportMenu build={buildStoreSheet} disabled={loading} label="Export" />
+        {/* The dashboard's Store health card as a list: who is ordering, who is
+            visited without ordering, and who nobody has been to. */}
+        <Button
+          variant="outline"
+          size="sm"
+          className="gap-1.5"
+          nativeButton={false}
+          render={
+            <Link href="/stores/health">
+              <Activity className="h-4 w-4" />
+              {terms.site.one} health
+            </Link>
+          }
+        />
         <Button
           variant="outline"
           size="sm"

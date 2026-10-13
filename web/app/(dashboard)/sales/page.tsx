@@ -5,7 +5,8 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { NativeSelect } from "@/components/ui/native-select";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { toLocalDate } from "@/lib/date-range";
+import { toLocalDate, toLocalDateInput } from "@/lib/date-range";
+import { lastDayOf, rangeFromQuery } from "@/lib/dashboard-links";
 import { ExportMenu } from "@/components/export-menu";
 import type { ExportSheet } from "@/lib/export";
 import { useTerms } from "@/lib/use-company-config";
@@ -19,6 +20,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { StatTile, ErrorBanner, EmptyRow } from "@/components/warehouse/stat-tile";
+import { Button } from "@/components/ui/button";
 import {
   fetchSales,
   periodsFor,
@@ -49,13 +51,71 @@ function comparison(now: number, before: number, label: string): string {
   return `${pct > 0 ? "Up" : "Down"} ${Math.abs(pct)}% on ${label}`;
 }
 
+/** 2026-10-01 to 2026-10-13 as "1 Oct to 13 Oct", and one day as just the day. */
+function periodLabel(from: string, last: string): string {
+  const fmt = (day: string) =>
+    new Date(`${day}T00:00:00`).toLocaleDateString("en-GB", { day: "numeric", month: "short" });
+  return from === last ? fmt(from) : `${fmt(from)} to ${fmt(last)}`;
+}
+
+type Scope = "week" | "month" | "all" | "range";
+
 export default function SalesPage() {
   const supabase = createClient();
   const terms = useTerms();
   const [sales, setSales] = useState<Sale[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [scope, setScope] = useState<"week" | "month" | "all">("month");
+  const [scope, setScope] = useState<Scope>("month");
+  /**
+   * The dates a dashboard link carried ("Revenue, last 30 days", one month's
+   * bar, one person's month). Held as a period of its own, so the figure on
+   * this page is the figure that was clicked. The end is the last instant
+   * before the link's exclusive end, because `within` includes its end.
+   */
+  const [custom, setCustom] = useState<Period | null>(null);
+  /** One person's sales only, from a person's line on the dashboard. */
+  const [repId, setRepId] = useState<string | null>(null);
+  /**
+   * Their name from their profile: somebody who has sold nothing yet this
+   * month has no delivery to take it from, and the page should still say
+   * whose month it is.
+   */
+  const [profileName, setProfileName] = useState<string | null>(null);
+
+  /* eslint-disable react-hooks/set-state-in-effect */
+  useEffect(() => {
+    // Mount only, as on Reports: the period box owns the scope from here.
+    const q = new URLSearchParams(window.location.search);
+    const range = rangeFromQuery(q);
+    if (range) {
+      setCustom({
+        from: range.from,
+        to: new Date(+range.to - 1),
+        label: periodLabel(toLocalDateInput(range.from), lastDayOf(range)),
+      });
+      setScope("range");
+    }
+    const rep = q.get("rep");
+    if (rep) setRepId(rep);
+  }, []);
+  /* eslint-enable react-hooks/set-state-in-effect */
+
+  useEffect(() => {
+    if (!repId) return;
+    let cancelled = false;
+    supabase
+      .from("profiles")
+      .select("full_name")
+      .eq("id", repId)
+      .maybeSingle()
+      .then(({ data }) => {
+        if (!cancelled) setProfileName((data as { full_name: string | null } | null)?.full_name ?? null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [supabase, repId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -82,44 +142,55 @@ export default function SalesPage() {
   const now = useMemo(() => new Date(), []);
   const periods = useMemo(() => periodsFor(now), [now]);
 
-  const week = totalsFor(sales, periods.week);
-  const weekBefore = totalsFor(sales, periods.weekBefore);
-  const month = totalsFor(sales, periods.month);
-  const monthBefore = totalsFor(sales, periods.monthBefore);
-  const all = totalsFor(sales);
+  // One person's, when a link asked for it: every figure on the page follows,
+  // so nothing here disagrees with the line that was clicked.
+  const pool = useMemo(() => (repId ? sales.filter((s) => s.repId === repId) : sales), [sales, repId]);
+  const repName = repId ? (profileName ?? sales.find((s) => s.repId === repId)?.repName ?? null) : null;
+
+  const week = totalsFor(pool, periods.week);
+  const weekBefore = totalsFor(pool, periods.weekBefore);
+  const month = totalsFor(pool, periods.month);
+  const monthBefore = totalsFor(pool, periods.monthBefore);
+  const all = totalsFor(pool);
 
   const scopePeriod: Period | undefined =
-    scope === "week" ? periods.week : scope === "month" ? periods.month : undefined;
-  const reps = byRep(sales, scopePeriod);
-  const scopeTotals = totalsFor(sales, scopePeriod);
-  const recent = useMemo(
+    scope === "range" && custom
+      ? custom
+      : scope === "week"
+        ? periods.week
+        : scope === "month"
+          ? periods.month
+          : undefined;
+  const reps = byRep(pool, scopePeriod);
+  const scopeTotals = totalsFor(pool, scopePeriod);
+  /**
+   * Every delivery when the page was opened on a question (dates or a person):
+   * the list is the answer, so it is not cut. Otherwise the newest 25.
+   */
+  const drilled = (scope === "range" && custom !== null) || repId !== null;
+  const inScope = useMemo(
     () =>
-      (scopePeriod
-        ? sales.filter((s) => {
+      scopePeriod
+        ? pool.filter((s) => {
             const t = new Date(s.deliveredAt).getTime();
             // Half-open, matching the export below and `within()` in lib/sales.
             // An inclusive end put a delivery exactly on the boundary on screen
             // and left it out of the file.
             return t >= scopePeriod.from.getTime() && t < scopePeriod.to.getTime();
           })
-        : sales
-      ).slice(0, 25),
-    [sales, scopePeriod]
+        : pool,
+    [pool, scopePeriod]
   );
+  const recent = drilled ? inScope : inScope.slice(0, 25);
 
   /** Every delivery in the chosen period, valued — the working behind the totals. */
   function buildSalesSheet(): ExportSheet {
-    const rows = scopePeriod
-      ? sales.filter(
-          (s) =>
-            new Date(s.deliveredAt) >= scopePeriod.from &&
-            new Date(s.deliveredAt) < scopePeriod.to
-        )
-      : sales;
+    const rows = inScope;
     return {
       title: "Sales by delivery",
       context: [
         scopePeriod ? scopePeriod.label : "All time",
+        ...(repName ? [`${terms.staff.one}: ${repName}`] : []),
         `${rows.length} deliveries`,
         "Counted on the day the goods were delivered, valued on what actually arrived.",
       ],
@@ -161,10 +232,11 @@ export default function SalesPage() {
         <div className="flex flex-wrap items-center gap-2">
           <NativeSelect
             value={scope}
-            onChange={(e) => setScope(e.target.value as "week" | "month" | "all")}
+            onChange={(e) => setScope(e.target.value as Scope)}
             className="w-44"
             aria-label="Period"
           >
+            {custom && <option value="range">{custom.label}</option>}
             <option value="week">This week</option>
             <option value="month">This month</option>
             <option value="all">All time</option>
@@ -177,6 +249,24 @@ export default function SalesPage() {
       </div>
 
       <ErrorBanner message={error} />
+
+      {/* The figure that was clicked, said back in full, with the way out. */}
+      {!loading && drilled && (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg bg-muted/50 px-4 py-3 text-sm">
+          <p>
+            <span className="font-medium">
+              {[scopePeriod ? scopePeriod.label : "All time", repName].filter(Boolean).join(", ")}:
+            </span>{" "}
+            {money(scopeTotals.net)} excluding VAT, from {scopeTotals.orders}{" "}
+            {scopeTotals.orders === 1 ? "delivery" : "deliveries"}.
+          </p>
+          {repId && (
+            <Button size="sm" variant="outline" onClick={() => setRepId(null)}>
+              Show everyone
+            </Button>
+          )}
+        </div>
+      )}
 
       {loading ? (
         <p className="text-sm text-muted-foreground">Loading…</p>
@@ -204,7 +294,9 @@ export default function SalesPage() {
                   ? "Invoiced, all time"
                   : scope === "week"
                     ? "Invoiced this week"
-                    : "Invoiced this month"
+                    : scope === "range" && custom
+                      ? `Invoiced, ${custom.label}`
+                      : "Invoiced this month"
               }
               value={money(scopeTotals.gross)}
               sub="Including VAT, at each order's own rate"
@@ -261,6 +353,11 @@ export default function SalesPage() {
           <Card>
             <CardHeader>
               <CardTitle className="text-base">The deliveries behind it</CardTitle>
+              {inScope.length > recent.length && (
+                <p className="text-xs text-muted-foreground">
+                  The newest {recent.length} of {inScope.length}. Export for all of them.
+                </p>
+              )}
             </CardHeader>
             <CardContent>
               <Table>
