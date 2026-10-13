@@ -350,6 +350,7 @@ export default function StoreHealthPage() {
             active={activeTown}
             onToggle={(id) => setTown(activeTown === id ? "" : id)}
             empty={emptyGroup(group, t)}
+            moreHint="Search the list below to find one."
           />
         </div>
       )}

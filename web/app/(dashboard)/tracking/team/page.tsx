@@ -95,7 +95,7 @@ export default function FieldTeamPage() {
   const [offsite, setOffsite] = useState<OffsiteCheckin[]>([]);
   const [summary, setSummary] = useState<DashboardSummary | null>(null);
   /** The period figures that could not be read: shown as unknown, never as nought. */
-  const [missingFigures, setMissingFigures] = useState<string[]>([]);
+  const [failed, setFailed] = useState({ scores: false, days: false, offsite: false });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [group, setGroup] = useState<NowGroup | null>(null);
@@ -138,11 +138,7 @@ export default function FieldTeamPage() {
       setDays(dy.status === "fulfilled" ? dy.value : []);
       setOffsite(off.status === "fulfilled" ? off.value : []);
       setSummary(sum.status === "fulfilled" ? sum.value : null);
-      setMissingFigures([
-        ...(sc.status === "rejected" ? [`${lower(t.job.many)} done`] : []),
-        ...(dy.status === "rejected" ? ["days worked"] : []),
-        ...(off.status === "rejected" ? ["far check-ins"] : []),
-      ]);
+      setFailed({ scores: sc.status === "rejected", days: dy.status === "rejected", offsite: off.status === "rejected" });
       setNow(Date.now());
       setLoading(false);
     });
@@ -325,9 +321,14 @@ export default function FieldTeamPage() {
     };
   }
 
-  const noScores = missingFigures.includes(`${lower(t.job.many)} done`);
-  const noDays = missingFigures.includes("days worked");
-  const noOffsite = missingFigures.includes("far check-ins");
+  const noScores = failed.scores;
+  const noDays = failed.days;
+  const noOffsite = failed.offsite;
+  const missingFigures = [
+    ...(noScores ? [`${lower(t.job.many)} done`] : []),
+    ...(noDays ? ["days worked"] : []),
+    ...(noOffsite ? ["far check-ins"] : []),
+  ];
   const maxVisits = Math.max(1, ...inView.map((p) => p.visitsDone));
   const maxDays = Math.max(1, ...inView.map((p) => p.daysWorked));
 
@@ -368,6 +369,7 @@ export default function FieldTeamPage() {
             active={activePerson}
             onToggle={(id) => setPerson(activePerson === id ? "" : id)}
             limit={10}
+            moreHint="Search the list below to find one."
             empty={`No ${lower(t.job.many)} in this period.`}
             footnote={`Completed ${lower(t.job.many)}, and how many there were in all when not every one was done.`}
           />
@@ -385,6 +387,7 @@ export default function FieldTeamPage() {
             active={activePerson}
             onToggle={(id) => setPerson(activePerson === id ? "" : id)}
             limit={10}
+            moreHint="Search the list below to find one."
             empty="Nobody worked in this period."
             footnote="Days with any work recorded, and the average time the day started."
           />

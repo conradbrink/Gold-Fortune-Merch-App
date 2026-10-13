@@ -132,10 +132,18 @@ export type InsightLine = {
   disabled?: boolean;
   /** Set apart: "Unassigned", "No town recorded". */
   aside?: "warn" | "muted";
+  /** A smaller line under the name: "3 deliveries, 30 units". */
+  sub?: string;
 };
 
+/**
+ * One line of a panel. It spans the panel's three columns and keeps them
+ * (subgrid), so every bar is measured on the same track whatever the width of
+ * its figure, and the whole line is the thing to tap. The padding is pulled
+ * back out by the margin so nothing moves.
+ */
 const INSIGHT_ROW =
-  "-mx-1.5 grid w-[calc(100%+0.75rem)] grid-cols-[minmax(6rem,9rem)_1fr_auto] items-center gap-3 rounded-md px-1.5 py-2 text-left text-sm transition-colors focus-visible:outline-2 focus-visible:outline-ring disabled:cursor-default";
+  "col-span-3 -mx-1.5 grid grid-cols-subgrid items-center rounded-md px-1.5 py-2 text-left text-sm transition-colors focus-visible:outline-2 focus-visible:outline-ring disabled:cursor-default";
 
 /**
  * "By rep", "By town", "Waiting": a short ranked list whose lines narrow the
@@ -150,6 +158,7 @@ export function InsightPanel({
   footnote,
   empty,
   limit = 6,
+  moreHint,
 }: {
   title: string;
   /** What the figures count, on the right of the title: the chosen group. */
@@ -160,6 +169,8 @@ export function InsightPanel({
   footnote?: string;
   empty: string;
   limit?: number;
+  /** How to reach the lines past `limit`, when the list's search can: "Search the list below to find one." */
+  moreHint?: string;
 }) {
   const shown = lines.slice(0, limit);
   return (
@@ -171,11 +182,11 @@ export function InsightPanel({
       {shown.length === 0 ? (
         <p className="text-sm text-muted-foreground">{empty}</p>
       ) : (
-        <ul className="flex flex-col">
+        <ul className="grid grid-cols-[minmax(6rem,9rem)_1fr_auto] gap-x-3">
           {shown.map((l) => {
             const on = active === l.id;
             return (
-              <li key={l.id} className="border-b last:border-b-0">
+              <li key={l.id} className="col-span-3 grid grid-cols-subgrid border-b last:border-b-0">
                 <button
                   type="button"
                   aria-pressed={on}
@@ -183,12 +194,15 @@ export function InsightPanel({
                   onClick={() => onToggle(l.id)}
                   className={`${INSIGHT_ROW} ${on ? "bg-primary/10" : "enabled:hover:bg-muted/60"}`}
                 >
-                  <span
-                    className={`truncate ${
-                      l.aside === "warn" ? "italic text-amber-700 dark:text-amber-400" : l.aside === "muted" ? "italic text-muted-foreground" : ""
-                    }`}
-                  >
-                    {l.label}
+                  <span className="min-w-0">
+                    <span
+                      className={`block truncate ${
+                        l.aside === "warn" ? "italic text-amber-700 dark:text-amber-400" : l.aside === "muted" ? "italic text-muted-foreground" : ""
+                      }`}
+                    >
+                      {l.label}
+                    </span>
+                    {l.sub && <span className="block text-xs leading-snug text-muted-foreground">{l.sub}</span>}
                   </span>
                   {typeof l.bar === "number" ? (
                     <span className="h-2.5 overflow-hidden rounded-full bg-muted" aria-hidden>
@@ -212,7 +226,7 @@ export function InsightPanel({
       )}
       {lines.length > limit && (
         <p className="text-xs text-muted-foreground">
-          And {lines.length - limit} more. Search the list below to find one.
+          And {lines.length - limit} more.{moreHint ? ` ${moreHint}` : ""}
         </p>
       )}
       {footnote && <p className="text-xs text-muted-foreground">{footnote}</p>}

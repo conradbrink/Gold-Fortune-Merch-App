@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
@@ -25,22 +25,16 @@ import {
   type Tile,
 } from "@/components/dashboard/detail-page";
 import { rangeForPreset, toLocalDate, toLocalDateInput } from "@/lib/date-range";
-import { lastDayOf, rangeFromQuery } from "@/lib/dashboard-links";
+import { lastDayOf, nextMonth, rangeFromQuery } from "@/lib/dashboard-links";
+import { companyMidnight } from "@/lib/company-time";
+import { localDay } from "@/lib/dashboard-numbers";
+import { mondayOf, shiftDay } from "@/lib/dashboard";
 import type { ExportSheet } from "@/lib/export";
 import { formatMoney, formatMoneyShort } from "@/lib/money";
 import { lower } from "@/lib/terms";
 import { useCompanyConfig, useTerms } from "@/lib/use-company-config";
-import { achievedFor, fetchTargetProgress, monthStart, type Measure, type TargetProgress } from "@/lib/targets";
-import {
-  addMonths,
-  fetchSales,
-  periodsFor,
-  startOfMonth,
-  totalsFor,
-  within,
-  type Period,
-  type Sale,
-} from "@/lib/sales";
+import { achievedFor, fetchTargetProgress, type Measure, type TargetProgress } from "@/lib/targets";
+import { fetchSales, totalsFor, within, type Period, type Sale } from "@/lib/sales";
 
 /**
  * How a period compares with the one before it, as a sentence rather than a
@@ -63,8 +57,19 @@ function periodLabel(from: string, last: string): string {
   return from === last ? fmt(from) : `${fmt(from)} to ${fmt(last)}`;
 }
 
-const MONTH = new Intl.DateTimeFormat("en-GB", { month: "short" });
-const MONTH_LONG = new Intl.DateTimeFormat("en-GB", { month: "long", year: "numeric" });
+/** "2026-10-01" shifted by `n` months, as the first of that month. */
+function monthDay(first: string, n: number): string {
+  const [y, m] = first.split("-").map(Number);
+  return new Date(Date.UTC(y, m - 1 + n, 1)).toISOString().slice(0, 10);
+}
+
+/** "2026-10-01" as "Oct" or "October 2026": a calendar month, so read without a timezone. */
+function monthName(first: string, style: "short" | "long"): string {
+  const [y, m] = first.split("-").map(Number);
+  return new Intl.DateTimeFormat("en-GB", style === "short" ? { month: "short", timeZone: "UTC" } : { month: "long", year: "numeric", timeZone: "UTC" }).format(
+    new Date(Date.UTC(y, m - 1, 1))
+  );
+}
 
 type PeriodId = "custom" | "week" | "month" | "30d" | "all";
 type SortKey = "delivered" | "net" | "order";
@@ -86,9 +91,16 @@ const NONE = "none";
 export default function SalesPage() {
   const supabase = createClient();
   const t = useTerms();
-  const currency = useCompanyConfig()?.settings.currency_code ?? "";
+  const config = useCompanyConfig();
+  const currency = config?.settings.currency_code ?? "";
   const money = (n: number) => formatMoney(n, currency);
   const moneyShort = (n: number) => formatMoneyShort(n, currency);
+  /**
+   * Weeks and months are the company's, as on the dashboard's Sales card (its
+   * month bars are counted in the company's timezone): a delivery just after
+   * midnight belongs to the company's day, wherever the page is opened.
+   */
+  const zone = config?.timezone ?? Intl.DateTimeFormat().resolvedOptions().timeZone;
 
   const [sales, setSales] = useState<Sale[]>([]);
   const [targets, setTargets] = useState<TargetProgress[]>([]);
@@ -97,6 +109,8 @@ export default function SalesPage() {
   const [periodId, setPeriodId] = useState<PeriodId>("month");
   /** Dates from a link or a month bar, held as a period of their own. */
   const [custom, setCustom] = useState<Period | null>(null);
+  /** The link's own dates, read once; turned into a period once the company's time is known. */
+  const [link, setLink] = useState<{ from: string; to: string } | null>(null);
   const [rep, setRep] = useState("");
   /**
    * The person's name from their profile: somebody who has sold nothing yet
@@ -111,38 +125,91 @@ export default function SalesPage() {
   // page open across midnight otherwise starts disagreeing with itself.
   const now = useMemo(() => new Date(), []);
   const periods = useMemo(() => {
-    const p = periodsFor(now);
+    const at = (day: string) => companyMidnight(day, zone);
+    const today = localDay(zone, now);
+    const monthFirst = `${today.slice(0, 8)}01`;
+    const weekFirst = mondayOf(today);
+    const week: Period = { from: at(weekFirst), to: now, label: "This week" };
+    const lastWeekFirst = at(shiftDay(weekFirst, -7));
+    const weekBefore: Period = { from: lastWeekFirst, to: new Date(+lastWeekFirst + (+now - +week.from)), label: "Same point last week" };
+    const month: Period = { from: at(monthFirst), to: now, label: "This month" };
+    const lastMonthFirst = at(monthDay(monthFirst, -1));
+    // Clamped to the end of last month: a month's worth of elapsed time added
+    // to a shorter month would run into this one and flatter the comparison.
+    const monthBefore: Period = {
+      from: lastMonthFirst,
+      to: new Date(Math.min(+lastMonthFirst + (+now - +month.from), +month.from - 1)),
+      label: "Same point last month",
+    };
+    // The last 30 days are the dashboard's own range, the viewer's days, so
+    // the figure here is the "Revenue, last 30 days" tile's.
     const last30 = rangeForPreset("30d", now);
     const len = +last30.to - +last30.from;
     return {
-      ...p,
+      today,
+      monthFirst,
+      week,
+      weekBefore,
+      month,
+      monthBefore,
       last30: { from: last30.from, to: new Date(+last30.to - 1), label: "Last 30 days" },
       before30: { from: new Date(+last30.from - len), to: new Date(+last30.from - 1), label: "the 30 days before" },
     };
-  }, [now]);
+  }, [now, zone]);
+
+  /** A whole company month as a period: this month runs to now. */
+  const monthPeriod = useCallback(
+    (first: string): Period => {
+      const from = companyMidnight(first, zone);
+      const end = new Date(+companyMidnight(monthDay(first, 1), zone) - 1);
+      return { from, to: end > now ? now : end, label: monthName(first, "long") };
+    },
+    [zone, now]
+  );
 
   /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
     // Mount only, as on Reports: the tiles own the period from here.
     const q = new URLSearchParams(window.location.search);
-    const range = rangeFromQuery(q);
-    if (range) {
-      // The dashboard's own "last 30 days" is a tile already; anything else is a
-      // period of its own. The end is the last instant before the link's
-      // exclusive end, because `within` includes its end.
-      const preset = rangeForPreset("30d", now);
-      if (+range.from === +preset.from && +range.to === +preset.to) setPeriodId("30d");
-      else {
-        setCustom({ from: range.from, to: new Date(+range.to - 1), label: periodLabel(toLocalDateInput(range.from), lastDayOf(range)) });
-        setPeriodId("custom");
-      }
-    }
+    if (rangeFromQuery(q)) setLink({ from: q.get("from")!, to: q.get("to")! });
     const r = q.get("rep");
     if (r) setRep(r);
-  }, [now]);
-  /* eslint-enable react-hooks/set-state-in-effect */
+  }, []);
 
   useEffect(() => {
+    // Once, when the company's time is known: a link becomes the period it
+    // names. The dashboard sends three kinds, and each lands on its own tile.
+    if (!link || !config) return;
+    const range = rangeFromQuery(new URLSearchParams(link));
+    setLink(null);
+    if (!range) return;
+    const preset = rangeForPreset("30d", now);
+    if (link.from === periods.monthFirst && link.to > periods.today) {
+      // A person's line on the Sales card: this month so far.
+      setPeriodId("month");
+    } else if (link.from.endsWith("-01") && link.to === nextMonth(link.from)) {
+      // A month bar: the company's month, as the card counted it.
+      setCustom(monthPeriod(link.from));
+      setPeriodId("custom");
+    } else if (+range.from === +preset.from && +range.to === +preset.to) {
+      // The dashboard's own "last 30 days".
+      setPeriodId("30d");
+    } else {
+      // Any other dates the dashboard was set to. The end is the last instant
+      // before the link's exclusive end, because `within` includes its end.
+      setCustom({ from: range.from, to: new Date(+range.to - 1), label: periodLabel(toLocalDateInput(range.from), lastDayOf(range)) });
+      setPeriodId("custom");
+    }
+  }, [link, config, now, periods, monthPeriod]);
+  /* eslint-enable react-hooks/set-state-in-effect */
+
+  // The company's words only name a delivery nobody took; they change identity
+  // when the config arrives, and reading every sale again for that would page
+  // the whole table twice. So the read waits for the config and keys on the
+  // words themselves.
+  const staffOne = config ? t.staff.one : null;
+  useEffect(() => {
+    if (staffOne === null) return;
     let cancelled = false;
     (async () => {
       try {
@@ -150,7 +217,7 @@ export default function SalesPage() {
           fetchSales(supabase, t),
           // Against target, this month only. Without targets the panel still
           // ranks people by what they sold.
-          fetchTargetProgress(supabase, monthStart(now)).catch(() => [] as TargetProgress[]),
+          fetchTargetProgress(supabase, periods.monthFirst).catch(() => [] as TargetProgress[]),
         ]);
         if (cancelled) return;
         setSales(rows);
@@ -165,7 +232,9 @@ export default function SalesPage() {
     return () => {
       cancelled = true;
     };
-  }, [supabase, t, now]);
+    // `t` is read for the one word keyed above; `periods.monthFirst` is fixed.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [supabase, staffOne]);
 
   useEffect(() => {
     if (!rep || rep === NONE) return;
@@ -195,18 +264,16 @@ export default function SalesPage() {
             : undefined;
   const periodName = periodId === "all" ? "All time" : (period?.label ?? "All time");
 
-  /** The months the card shows: from the first with a sale, at most six. */
+  /** The months the card shows, in the company's time: from the first with a sale, at most six. */
   const months = useMemo(() => {
-    const first = startOfMonth(now);
     const list = [5, 4, 3, 2, 1, 0].map((back) => {
-      const from = addMonths(first, -back);
-      const to = back === 0 ? now : new Date(+addMonths(first, -back + 1) - 1);
-      const p: Period = { from, to, label: MONTH_LONG.format(from) };
-      return { key: toLocalDateInput(from), short: MONTH.format(from), period: p, net: totalsFor(sales, p).net, current: back === 0 };
+      const first = monthDay(periods.monthFirst, -back);
+      const p = monthPeriod(first);
+      return { key: first, short: monthName(first, "short"), period: p, net: totalsFor(sales, p).net, current: back === 0 };
     });
     const firstWithSales = list.findIndex((m) => m.net > 0);
     return firstWithSales === -1 ? list.slice(-1) : list.slice(firstWithSales);
-  }, [sales, now]);
+  }, [sales, periods.monthFirst, monthPeriod]);
   const monthScale = Math.max(1, ...months.map((m) => m.net));
 
   function chooseMonth(m: (typeof months)[number]) {
@@ -223,12 +290,14 @@ export default function SalesPage() {
 
   /** "By rep", over the period and the chosen store, so picking a store shows who sold there. */
   const byRep = useMemo(() => {
-    const m = new Map<string, { name: string; net: number; n: number }>();
+    const m = new Map<string, { name: string; net: number; gross: number; units: number; n: number }>();
     for (const s of inPeriod) {
       if (store && (s.storeId ?? NONE) !== store) continue;
       const id = s.repId ?? NONE;
-      const cur = m.get(id) ?? { name: s.repName, net: 0, n: 0 };
+      const cur = m.get(id) ?? { name: s.repName, net: 0, gross: 0, units: 0, n: 0 };
       cur.net += s.net;
+      cur.gross += s.gross;
+      cur.units += s.units;
       cur.n += 1;
       m.set(id, cur);
     }
@@ -420,6 +489,9 @@ export default function SalesPage() {
               return {
                 id,
                 label: r.name,
+                // What the old By rep table showed, so nothing is lost: deliveries,
+                // units and the figure with VAT.
+                sub: `${r.n} ${r.n === 1 ? "delivery" : "deliveries"} · ${r.units} units · ${moneyShort(r.gross)} with VAT`,
                 value: pct === undefined ? moneyShort(r.net) : `${moneyShort(r.net)} · ${Math.round(pct * 100)}%`,
                 bar: pct === undefined ? r.net / Math.max(1, ...byRep.map(([, y]) => y.net)) : pct,
                 aside: id === NONE ? "muted" : undefined,
@@ -429,6 +501,7 @@ export default function SalesPage() {
             onToggle={(id) => setRep(rep === id ? "" : id)}
             limit={8}
             empty="Nothing was delivered in this period."
+            moreHint="Search the list below to find one."
             footnote={
               targetFor.size > 0
                 ? "The bar is how far each one is towards this month's target. Tap a name to see only their deliveries."
@@ -441,12 +514,14 @@ export default function SalesPage() {
             lines={byStore.map(([id, s]) => ({
               id,
               label: s.name,
+              sub: `${s.n} ${s.n === 1 ? "delivery" : "deliveries"}`,
               value: moneyShort(s.net),
               bar: s.net / Math.max(1, ...byStore.map(([, y]) => y.net)),
             }))}
             active={store}
             onToggle={(id) => setStore(store === id ? "" : id)}
             empty="Nothing was delivered in this period."
+            moreHint="Search the list below to find one."
             footnote={`Who bought the most. Tap one to see its deliveries and who sold them.`}
           />
         </div>
