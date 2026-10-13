@@ -299,7 +299,7 @@ export default function OrdersPipelinePage() {
 
       <TopCard>
         <TilePicker tiles={tiles} active={stage} onChoose={(id) => chooseStage(id as PipelineStage | null)} label="Which stage" allowNone loading={loading} />
-        <p className="text-sm text-foreground">{loading ? " " : meaning}</p>
+        <p className="text-sm text-foreground">{loading ? "\u00a0" : meaning}</p>
         {figures.length > 0 && <FigureStrip figures={figures} />}
       </TopCard>
 

@@ -40,7 +40,7 @@ import {
 import { rangeForPreset, toLocalDateInput, type DateRange } from "@/lib/date-range";
 import type { ExportSheet } from "@/lib/export";
 import { NOW_GROUPS, NOW_LABELS, nowGroups, type NowGroup } from "@/lib/field-team";
-import { describeAge, describeSource, fetchLiveReps, freshnessOf, minutesSince, type LiveReps } from "@/lib/live-reps";
+import { FRESH_INTERVALS, describeAge, describeSource, fetchLiveReps, freshnessOf, minutesSince, type LiveReps } from "@/lib/live-reps";
 import { fetchRepScorecard, type RepScore } from "@/lib/reports";
 import { createClient } from "@/lib/supabase/client";
 import { lower } from "@/lib/terms";
@@ -84,7 +84,8 @@ type Person = {
 export default function FieldTeamPage() {
   const t = useTerms();
   const router = useRouter();
-  const interval = useCompanyConfig()?.settings.gps_ping_interval_minutes ?? null;
+  const config = useCompanyConfig();
+  const interval = config?.settings.gps_ping_interval_minutes ?? null;
 
   const [range, setRange] = useState<DateRange>(() => rangeForPreset("30d"));
   const [urlRead, setUrlRead] = useState(false);
@@ -93,6 +94,8 @@ export default function FieldTeamPage() {
   const [days, setDays] = useState<RepDayTimes[]>([]);
   const [offsite, setOffsite] = useState<OffsiteCheckin[]>([]);
   const [summary, setSummary] = useState<DashboardSummary | null>(null);
+  /** The period figures that could not be read: shown as unknown, never as nought. */
+  const [missingFigures, setMissingFigures] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [group, setGroup] = useState<NowGroup | null>(null);
@@ -135,6 +138,11 @@ export default function FieldTeamPage() {
       setDays(dy.status === "fulfilled" ? dy.value : []);
       setOffsite(off.status === "fulfilled" ? off.value : []);
       setSummary(sum.status === "fulfilled" ? sum.value : null);
+      setMissingFigures([
+        ...(sc.status === "rejected" ? [`${lower(t.job.many)} done`] : []),
+        ...(dy.status === "rejected" ? ["days worked"] : []),
+        ...(off.status === "rejected" ? ["far check-ins"] : []),
+      ]);
       setNow(Date.now());
       setLoading(false);
     });
@@ -161,7 +169,12 @@ export default function FieldTeamPage() {
     setAttempt((n) => n + 1);
   }
 
-  const groupOf = useMemo(() => (live ? nowGroups(live, interval, now) : new Map<string, NowGroup>()), [live, interval, now]);
+  // Not until the company's GPS interval is known: without it every position
+  // would read as quiet for a moment.
+  const groupOf = useMemo(
+    () => (live && config ? nowGroups(live, interval, now) : new Map<string, NowGroup>()),
+    [live, config, interval, now]
+  );
 
   /** Everybody on the team: the card's list, plus anybody with work in the period. */
   const people = useMemo(() => {
@@ -259,9 +272,9 @@ export default function FieldTeamPage() {
   const staffWord = (n: number) => lower(n === 1 ? t.staff.one : t.staff.many);
   const meaning =
     group === null
-      ? `${people.length} ${staffWord(people.length)}. ${counts.live} sending positions now, ${counts.quiet} gone quiet, ${counts.silent} with nothing in 24 hours.`
+      ? `${groupOf.size} ${staffWord(groupOf.size)} on the team. ${counts.live} sending positions now, ${counts.quiet} gone quiet, ${counts.silent} with nothing in 24 hours.`
       : group === "live"
-        ? `Their phones sent a position in the last ${interval ? interval * 4 : "few"} minutes.`
+        ? `Their phones sent a position in the last ${interval ? interval * FRESH_INTERVALS : "few"} minutes.`
         : group === "quiet"
           ? "They sent positions today, but not recently. A day that has ended shows as quiet too."
           : `Nothing from their phones in 24 hours. Call them, or check the phone is signed in to the app.`;
@@ -312,6 +325,9 @@ export default function FieldTeamPage() {
     };
   }
 
+  const noScores = missingFigures.includes(`${lower(t.job.many)} done`);
+  const noDays = missingFigures.includes("days worked");
+  const noOffsite = missingFigures.includes("far check-ins");
   const maxVisits = Math.max(1, ...inView.map((p) => p.visitsDone));
   const maxDays = Math.max(1, ...inView.map((p) => p.daysWorked));
 
@@ -326,8 +342,13 @@ export default function FieldTeamPage() {
       <DateRangePicker value={range} onChange={changeRange} />
 
       <TopCard>
-        <TilePicker tiles={tiles} active={group} onChoose={(id) => chooseGroup(id as NowGroup | null)} label="Who" allowNone loading={loading} />
-        <p className="text-sm text-foreground">{loading ? " " : meaning}</p>
+        <TilePicker tiles={tiles} active={group} onChoose={(id) => chooseGroup(id as NowGroup | null)} label="Who" allowNone loading={loading || !config} />
+        <p className="text-sm text-foreground">{loading || !config ? "\u00a0" : meaning}</p>
+        {!loading && missingFigures.length > 0 && (
+          <p className="text-sm text-amber-700 dark:text-amber-400">
+            Could not load {missingFigures.join(", ")} for this period, so those columns show a dash, not a nought.
+          </p>
+        )}
         <FigureStrip figures={figures} />
       </TopCard>
 
@@ -432,16 +453,16 @@ export default function FieldTeamPage() {
                     {p.where}
                   </TableCell>
                   <TableCell className="text-right text-sm font-medium tabular-nums">
-                    {p.visitsDone}
-                    {p.visitsPlanned > p.visitsDone && <span className="font-normal text-muted-foreground"> of {p.visitsPlanned}</span>}
+                    {noScores ? "-" : p.visitsDone}
+                    {!noScores && p.visitsPlanned > p.visitsDone && <span className="font-normal text-muted-foreground"> of {p.visitsPlanned}</span>}
                   </TableCell>
-                  <TableCell className="hidden text-right text-sm tabular-nums text-muted-foreground lg:table-cell">{p.storesVisited}</TableCell>
-                  <TableCell className="hidden text-right text-sm tabular-nums sm:table-cell">{p.daysWorked}</TableCell>
+                  <TableCell className="hidden text-right text-sm tabular-nums text-muted-foreground lg:table-cell">{noScores ? "-" : p.storesVisited}</TableCell>
+                  <TableCell className="hidden text-right text-sm tabular-nums sm:table-cell">{noDays ? "-" : p.daysWorked}</TableCell>
                   <TableCell className="hidden text-right text-sm tabular-nums text-muted-foreground lg:table-cell">{formatTimeOfDay(p.avgStart)}</TableCell>
                   <TableCell
                     className={`hidden text-right text-sm tabular-nums sm:table-cell ${p.offsite > 0 ? "font-medium text-red-700 dark:text-red-400" : "text-muted-foreground"}`}
                   >
-                    {p.offsite}
+                    {noOffsite ? "-" : p.offsite}
                   </TableCell>
                 </TableRow>
               ))

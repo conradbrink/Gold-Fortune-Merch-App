@@ -98,6 +98,11 @@ export default function SalesPage() {
   /** Dates from a link or a month bar, held as a period of their own. */
   const [custom, setCustom] = useState<Period | null>(null);
   const [rep, setRep] = useState("");
+  /**
+   * The person's name from their profile: somebody who has sold nothing yet
+   * has no delivery to take it from, and the page should still say whose it is.
+   */
+  const [profileName, setProfileName] = useState<string | null>(null);
   const [store, setStore] = useState("");
   const [search, setSearch] = useState("");
   const [sort, setSort] = useState<SortState<SortKey>>({ key: "delivered", dir: "desc" });
@@ -161,6 +166,22 @@ export default function SalesPage() {
       cancelled = true;
     };
   }, [supabase, t, now]);
+
+  useEffect(() => {
+    if (!rep || rep === NONE) return;
+    let cancelled = false;
+    supabase
+      .from("profiles")
+      .select("full_name")
+      .eq("id", rep)
+      .maybeSingle()
+      .then(({ data }) => {
+        if (!cancelled) setProfileName((data as { full_name: string | null } | null)?.full_name ?? null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [supabase, rep]);
 
   const period: Period | undefined =
     periodId === "custom" && custom
@@ -242,7 +263,7 @@ export default function SalesPage() {
   }, [targets, periodId]);
 
   // A person or store picked under another period may have nothing in this one.
-  const repName = rep ? (sales.find((s) => (s.repId ?? NONE) === rep)?.repName ?? null) : null;
+  const repName = rep ? (sales.find((s) => (s.repId ?? NONE) === rep)?.repName ?? profileName) : null;
   const storeName = store ? (sales.find((s) => (s.storeId ?? NONE) === store)?.storeName ?? null) : null;
 
   const shown = useMemo(() => {
@@ -386,7 +407,7 @@ export default function SalesPage() {
             </div>
           </div>
         )}
-        <p className="text-sm text-foreground">{loading ? " " : meaning}</p>
+        <p className="text-sm text-foreground">{loading ? "\u00a0" : meaning}</p>
       </TopCard>
 
       {!loading && !error && sales.length > 0 && (

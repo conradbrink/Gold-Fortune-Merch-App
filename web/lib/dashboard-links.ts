@@ -116,9 +116,12 @@ export function ordersHref(opts: { status?: "open" | readonly string[]; pod?: "o
   return href("/orders", { status, pod: opts.pod });
 }
 
-/** The Orders pipeline card's own page, on one stage or (none) everything not yet delivered. */
-export function pipelineHref(stage?: string): string {
-  return href("/orders/pipeline", { stage });
+/**
+ * The Orders pipeline card's own page, on one stage or (none) everything not
+ * yet delivered, over the dashboard's dates (its "Invoiced" is for a period).
+ */
+export function pipelineHref(stage?: string, range?: DayRange): string {
+  return href("/orders/pipeline", { stage, from: range?.from, to: range?.to });
 }
 
 /**

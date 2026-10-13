@@ -96,13 +96,13 @@ export function TilePicker({
             onClick={() => onChoose(on && allowNone ? null : tile.id)}
             className={`flex min-h-11 flex-col items-start gap-1 rounded-xl p-3 text-left transition-[background-color,box-shadow,transform] duration-150 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring active:scale-[0.98] motion-reduce:transition-none ${
               on ? "bg-primary/5 ring-2 ring-primary" : "bg-card ring-1 ring-foreground/10 hover:bg-muted/40"
-            } ${tiles.length % 2 === 1 && i === tiles.length - 1 ? "col-span-2 sm:col-span-1" : ""}`}
+            } ${tiles.length % 2 === 1 && i === tiles.length - 1 ? (tiles.length >= 4 ? "col-span-2 lg:col-span-1" : "col-span-2 sm:col-span-1") : ""}`}
           >
             <span className="text-xs font-medium text-muted-foreground">{tile.label}</span>
             <span
               className={`text-[28px] font-semibold leading-none tracking-tight tabular-nums ${tile.tone ? TONE_TEXT[tile.tone] : "text-foreground"}`}
             >
-              {loading ? " " : tile.value}
+              {loading ? "\u00a0" : tile.value}
             </span>
             {tile.sub && !loading && <span className="text-xs text-muted-foreground">{tile.sub}</span>}
           </button>
