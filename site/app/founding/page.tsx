@@ -3,6 +3,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { FoundingForm } from "@/components/founding-form";
 import { SpotsText } from "@/components/founding-spots";
+import { FoundingVideo } from "@/components/founding-video";
 import { Logo } from "@/components/logo";
 import { ProofSection } from "@/components/proof-section";
 import { founding, pricing, rand, site } from "@/lib/site";
@@ -10,7 +11,8 @@ import { founding, pricing, rand, site } from "@/lib/site";
 // The Founding 10 page, for visitors who arrive from Facebook: it has to make
 // sense on its own, and the offer has to be the first thing they see. So the
 // headline and the value stack share the top of the page, and everything under
-// them is kept short. The words are the owner's (~/Downloads/founding-10-site-prompt.md).
+// them is kept short. The video sits right under the headline and plays by
+// itself (components/founding-video.tsx). The words are the owner's (~/Downloads/founding-10-site-prompt.md).
 //
 // Two lines differ from that file on purpose, because the owner's own rule
 // says never to use these words: "no catch" is "no strings", and the owner's
@@ -121,6 +123,7 @@ export default function FoundingPage() {
             <h1 className="font-display text-[2.4rem] font-extrabold leading-[1.02] tracking-tight text-balance text-teal-900 sm:text-6xl">
               Become one of our Founding {founding.spots}.
             </h1>
+            <FoundingVideo />
             <p className="max-w-xl text-lg leading-relaxed text-pretty text-ink sm:text-xl">
               We&apos;re taking on our first founding businesses to run {site.name} free for {founding.days} days. We set it all up. You get
               proof of every job. We get your story.
