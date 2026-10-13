@@ -168,6 +168,10 @@ export default function TrackingPage() {
           <Button size="sm" variant="ghost" onClick={() => { setSelected(null); setFitKey((k) => k + 1); }}>
             <Maximize2 className="mr-1 h-3.5 w-3.5" /> Fit all
           </Button>
+          {/* The dashboard's Field team card as a page: who is live, and each one's period. */}
+          <Button size="sm" variant="ghost" nativeButton={false} render={<Link href="/tracking/team" />}>
+            Field team
+          </Button>
         </div>
       </div>
 

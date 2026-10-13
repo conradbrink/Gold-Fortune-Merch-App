@@ -117,6 +117,14 @@ export function ordersHref(opts: { status?: "open" | readonly string[]; pod?: "o
 }
 
 /**
+ * The Orders pipeline card's own page, on one stage or (none) everything not
+ * yet delivered, over the dashboard's dates (its "Invoiced" is for a period).
+ */
+export function pipelineHref(stage?: string, range?: DayRange): string {
+  return href("/orders/pipeline", { stage, from: range?.from, to: range?.to });
+}
+
+/**
  * The statuses an orders link asked for, in the lifecycle's own order, or null
  * for every status. Unknown names are dropped rather than trusted: a stale or
  * hand-edited link must not leave the list empty with no clue why.
@@ -191,6 +199,11 @@ export function commissionsHref(status: string, range: DayRange | "all"): string
 }
 
 // ------------------------------------------------------------------- people
+
+/** The Field team card's own page, over the dashboard's dates. */
+export function fieldTeamHref(range?: DayRange): string {
+  return href("/tracking/team", { from: range?.from, to: range?.to });
+}
 
 /** One person's day: where they were and what they did. */
 export function trackingHref(repId: string): string {

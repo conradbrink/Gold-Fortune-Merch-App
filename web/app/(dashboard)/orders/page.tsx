@@ -197,9 +197,15 @@ export default function OrdersPage() {
             Everything captured by {withArticle(terms, "staff")} or keyed here.
           </p>
         </div>
-        <Button nativeButton={false} render={<Link href="/orders/new" />}>
-          <Plus className="mr-1.5 h-4 w-4" /> Capture an order
-        </Button>
+        <div className="flex flex-wrap gap-2">
+          {/* The dashboard's Orders pipeline card as a page: how long each order has waited where it is. */}
+          <Button variant="outline" nativeButton={false} render={<Link href="/orders/pipeline" />}>
+            Pipeline
+          </Button>
+          <Button nativeButton={false} render={<Link href="/orders/new" />}>
+            <Plus className="mr-1.5 h-4 w-4" /> Capture an order
+          </Button>
+        </div>
       </div>
 
       <ErrorBanner message={error} />

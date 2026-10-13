@@ -30,7 +30,8 @@ import {
   invoicesHref,
   lowStockHref,
   nextMonth,
-  ordersHref,
+  fieldTeamHref,
+  pipelineHref,
   quotesHref,
   rangeQuery,
   recurringDueHref,
@@ -299,7 +300,7 @@ export function Headline({
       )}
       {sells && (
       <Tile
-        href={ordersHref({ status: "open" })}
+        href={pipelineHref(undefined, rangeQuery(range))}
         label="Orders needing action"
         value={action}
         sub={`${p.new + p.confirmed} to confirm · ${p.picking + p.packed} to pick or dispatch · ${p.dispatched} out`}
@@ -505,15 +506,17 @@ export function PipelineCard({ business, range }: { business: BusinessSummary; r
   const p = business.pipeline;
   const m = business.money;
   return (
-    <SectionCard title="Orders pipeline" href="/orders" linkLabel="All orders">
+    // The card opens up into its own page (lib/order-pipeline.ts, the same
+    // statuses), on the stage that was clicked.
+    <SectionCard title="Orders pipeline" href={pipelineHref(undefined, rangeQuery(range))} linkLabel="See the pipeline">
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-        <Stage count={p.new + p.confirmed} label="To confirm" href={ordersHref({ status: ["new", "confirmed"] })} urgent />
-        <Stage count={p.picking} label="Being picked" href={ordersHref({ status: ["picking"] })} />
-        <Stage count={p.packed} label="Packed, to dispatch" href={ordersHref({ status: ["packed"] })} urgent />
-        <Stage count={p.dispatched} label="Out for delivery" href={ordersHref({ status: ["dispatched"] })} />
+        <Stage count={p.new + p.confirmed} label="To confirm" href={pipelineHref("to_confirm", rangeQuery(range))} urgent />
+        <Stage count={p.picking} label="Being picked" href={pipelineHref("picking", rangeQuery(range))} />
+        <Stage count={p.packed} label="Packed, to dispatch" href={pipelineHref("packed", rangeQuery(range))} urgent />
+        <Stage count={p.dispatched} label="Out for delivery" href={pipelineHref("dispatched", rangeQuery(range))} />
       </div>
       <ul className="flex flex-col border-t">
-        <Row label="Delivered, proof of delivery missing" value={p.pod_missing} href={ordersHref({ pod: "outstanding" })} />
+        <Row label="Delivered, proof of delivery missing" value={p.pod_missing} href={pipelineHref("no_pod", rangeQuery(range))} />
         <Row label={`Quotes waiting on the ${lower(t.client.one)}`} value={p.quotes_waiting} href={quotesHref("sent")} />
         <Row label="Recurring orders placing this week" value={p.recurring_due_7d} href={recurringDueHref()} />
         <Row label="Products below reorder point" value={p.low_stock} href={lowStockHref()} />
@@ -578,7 +581,9 @@ export function FieldTeamCard({
       ? deltaPct(summary.current.planogram_rate * 1000, summary.previous.planogram_rate * 1000)
       : null;
   return (
-    <SectionCard title="Field team" href="/tracking" linkLabel="Tracking">
+    // The card opens up into its own page over the same dates; the live map is
+    // one click on from there.
+    <SectionCard title="Field team" href={fieldTeamHref(rangeQuery(range))} linkLabel="See the team">
       <ul className="flex flex-col">
         {/* Each person opens their day: the route, the stops and the times. */}
         {liveReps.positions.map((p) => {

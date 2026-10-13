@@ -2,11 +2,18 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { ArrowDown, ArrowLeft, ArrowUp, ArrowUpDown, Search } from "lucide-react";
 import { ExportMenu } from "@/components/export-menu";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Card } from "@/components/ui/card";
+import {
+  DetailHeader,
+  FilterChip,
+  InsightPanel,
+  ListTools,
+  SortHead,
+  TilePicker,
+  TopCard,
+  type Tile,
+} from "@/components/dashboard/detail-page";
 import {
   Table,
   TableBody,
@@ -39,11 +46,6 @@ import { useCompanyConfig, useTerms } from "@/lib/use-company-config";
 
 /** "" is everyone; this is the chip for stores nobody is assigned to. */
 const UNASSIGNED = "unassigned";
-/** A line of the "By rep" and "By town" panels: name, bar, figure. */
-const INSIGHT_ROW =
-  "-mx-1.5 grid w-[calc(100%+0.75rem)] grid-cols-[minmax(6rem,9rem)_1fr_2.5rem] items-center gap-3 rounded-md px-1.5 py-2 text-left text-sm transition-colors focus-visible:outline-2 focus-visible:outline-ring";
-/** A filter that is on, said in words, and the way to take it off. */
-const FILTER_CHIP = "rounded-full border border-primary/40 px-3 py-1 text-xs text-primary hover:bg-primary/5";
 /** The "By town" line for stores with no town recorded. */
 const NO_TOWN = "No town recorded";
 
@@ -269,165 +271,98 @@ export default function StoreHealthPage() {
   const onPhone = (col: "visit" | "order") => (sells && col !== dayKey ? "hidden sm:table-cell" : "");
   const total = rows.length;
 
+  const tiles: Tile[] = groups.map((g) => ({
+    id: g,
+    label: groupLabel(g),
+    value: counts[g] ?? 0,
+    tone: g === "ordering" ? "good" : g === "not_visited" && (counts[g] ?? 0) > 0 ? "bad" : undefined,
+  }));
+
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <Link href="/" className="mb-1 inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground">
-            <ArrowLeft className="h-3.5 w-3.5" /> Dashboard
-          </Link>
-          <h1 className="text-xl font-semibold tracking-tight text-foreground">{t.site.one} health</h1>
-          <p className="max-w-2xl text-sm text-muted-foreground">
-            {sells
-              ? `Who is ordering, who is visited without ordering, and where nobody has been. The last 30 days, counted the same way as the dashboard.`
-              : `Which ${lower(t.site.many)} had a ${lower(t.job.one)} in the last 30 days, and where nobody has been.`}
-          </p>
-        </div>
-        <ExportMenu build={buildSheet} disabled={loading || shown.length === 0} />
-      </div>
+      <DetailHeader
+        title={`${t.site.one} health`}
+        subtitle={
+          sells
+            ? "Who is ordering, who is visited without ordering, and where nobody has been. The last 30 days, counted the same way as the dashboard."
+            : `Which ${lower(t.site.many)} had a ${lower(t.job.one)} in the last 30 days, and where nobody has been.`
+        }
+        action={<ExportMenu build={buildSheet} disabled={loading || shown.length === 0} />}
+      />
 
-      <Card className="flex flex-col gap-4 p-5">
-      {sells && total > 0 && (
-        <div className="flex h-3.5 gap-0.5 overflow-hidden rounded-full" aria-hidden>
-          <div className="bg-emerald-600" style={{ flex: counts.ordering / total }} />
-          <div className="bg-muted-foreground/25" style={{ flex: counts.no_order / total }} />
-          <div className="bg-red-600" style={{ flex: counts.not_visited / total }} />
-        </div>
-      )}
-
-      <div role="group" aria-label={`Which ${lower(t.site.many)}`} className={`grid grid-cols-2 gap-2 ${groups.length === 4 ? "lg:grid-cols-4" : ""}`}>
-        {groups.map((g) => {
-          const active = g === group;
-          const n = counts[g] ?? 0;
-          const tone =
-            g === "ordering"
-              ? "text-emerald-700 dark:text-emerald-400"
-              : g === "not_visited" && n > 0
-                ? "text-red-700 dark:text-red-400"
-                : "text-foreground";
-          return (
-            <button
-              key={g}
-              type="button"
-              aria-pressed={active}
-              onClick={() => chooseGroup(g)}
-              className={`flex min-h-11 flex-col items-start gap-1 rounded-xl p-3 text-left transition-[background-color,box-shadow,transform] duration-150 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring active:scale-[0.98] motion-reduce:transition-none ${
-                active ? "bg-primary/5 ring-2 ring-primary" : "bg-card ring-1 ring-foreground/10 hover:bg-muted/40"
-              }`}
-            >
-              <span className="text-xs font-medium text-muted-foreground">{groupLabel(g)}</span>
-              <span className={`text-[28px] font-semibold leading-none tracking-tight tabular-nums ${tone}`}>{loading ? "\u00a0" : n}</span>
-            </button>
-          );
-        })}
-      </div>
-      <p className="text-sm text-foreground">{groupMeaning(group, t)}</p>
-      </Card>
+      <TopCard>
+        {sells && total > 0 && (
+          <div className="flex h-3.5 gap-0.5 overflow-hidden rounded-full" aria-hidden>
+            <div className="bg-emerald-600" style={{ flex: counts.ordering / total }} />
+            <div className="bg-muted-foreground/25" style={{ flex: counts.no_order / total }} />
+            <div className="bg-red-600" style={{ flex: counts.not_visited / total }} />
+          </div>
+        )}
+        <TilePicker
+          tiles={tiles}
+          active={group}
+          onChoose={(id) => id && chooseGroup(id as HealthGroup)}
+          label={`Which ${lower(t.site.many)}`}
+          loading={loading}
+        />
+        <p className="text-sm text-foreground">{groupMeaning(group, t)}</p>
+      </TopCard>
 
       {/* The insights: whose stores, and where. Each line narrows the list below. */}
       {!loading && !error && rows.length > 0 && (
         <div className="grid gap-4 lg:grid-cols-2">
-          <Card className="flex flex-col gap-3 p-5">
-            <div className="flex items-baseline justify-between gap-3">
-              <h2 className="text-[15px] font-semibold">By {lower(t.staff.one)}</h2>
-              <span className="text-xs text-muted-foreground">{groupLabel(group)}</span>
-            </div>
-            <ul className="flex flex-col">
-              {byPerson.map((p) => {
-                const active = activePerson === p.id;
-                return (
-                  <li key={p.id} className="border-b last:border-b-0">
-                    <button
-                      type="button"
-                      aria-pressed={active}
-                      disabled={p.inGroup === 0}
-                      onClick={() => setPerson(active ? "" : p.id)}
-                      className={`${INSIGHT_ROW} disabled:cursor-default ${active ? "bg-primary/10" : "enabled:hover:bg-muted/60"}`}
-                    >
-                      <span className={`truncate ${p.id === UNASSIGNED ? "italic text-amber-700 dark:text-amber-400" : ""}`}>{p.name}</span>
-                      <span className="flex h-2.5 gap-px overflow-hidden rounded-full bg-muted" aria-hidden>
-                        {sells ? (
-                          <>
-                            <span className="bg-emerald-600" style={{ flex: p.ordering }} />
-                            <span className="bg-muted-foreground/25" style={{ flex: p.no_order }} />
-                          </>
-                        ) : (
-                          <span className="bg-emerald-600" style={{ flex: p.ordering + p.no_order }} />
-                        )}
-                        <span className="bg-red-600" style={{ flex: p.not_visited }} />
-                      </span>
-                      <span className={`text-right font-semibold tabular-nums ${p.inGroup === 0 ? "text-muted-foreground" : ""}`}>{p.inGroup}</span>
-                    </button>
-                  </li>
-                );
-              })}
-            </ul>
-            <p className="text-xs text-muted-foreground">
-              The bar is all of their {lower(t.site.many)}. The number is how many are in this group. Tap a name to see only theirs.
-            </p>
-          </Card>
-
-          <Card className="flex flex-col gap-3 p-5">
-            <div className="flex items-baseline justify-between gap-3">
-              <h2 className="text-[15px] font-semibold">By town</h2>
-              <span className="text-xs text-muted-foreground">{groupLabel(group)}</span>
-            </div>
-            {byTown.length === 0 ? (
-              <p className="text-sm text-muted-foreground">{emptyGroup(group, t)}</p>
-            ) : (
-              <ul className="flex flex-col">
-                {byTown.slice(0, 6).map(([c, n]) => {
-                  const active = activeTown === c;
-                  return (
-                    <li key={c} className="border-b last:border-b-0">
-                      <button
-                        type="button"
-                        aria-pressed={active}
-                        onClick={() => setTown(active ? "" : c)}
-                        className={`${INSIGHT_ROW} ${active ? "bg-primary/10" : "hover:bg-muted/60"}`}
-                      >
-                        <span className={`truncate ${c === NO_TOWN ? "italic text-muted-foreground" : ""}`}>{c}</span>
-                        <span className="h-2.5 overflow-hidden rounded-full bg-muted" aria-hidden>
-                          <span className="block h-full rounded-full bg-primary/60" style={{ width: `${(n / byTown[0][1]) * 100}%` }} />
-                        </span>
-                        <span className="text-right font-semibold tabular-nums">{n}</span>
-                      </button>
-                    </li>
-                  );
-                })}
-              </ul>
-            )}
-            {byTown.length > 6 && (
-              <p className="text-xs text-muted-foreground">
-                And {byTown.length - 6} more {byTown.length - 6 === 1 ? "town" : "towns"}. Search the list below to find one.
-              </p>
-            )}
-          </Card>
+          <InsightPanel
+            title={`By ${lower(t.staff.one)}`}
+            caption={groupLabel(group)}
+            lines={byPerson.map((p) => ({
+              id: p.id,
+              label: p.name,
+              value: p.inGroup,
+              disabled: p.inGroup === 0,
+              aside: p.id === UNASSIGNED ? "warn" : undefined,
+              bar: sells
+                ? [
+                    { flex: p.ordering, className: "bg-emerald-600" },
+                    { flex: p.no_order, className: "bg-muted-foreground/25" },
+                    { flex: p.not_visited, className: "bg-red-600" },
+                  ]
+                : [
+                    { flex: p.ordering + p.no_order, className: "bg-emerald-600" },
+                    { flex: p.not_visited, className: "bg-red-600" },
+                  ],
+            }))}
+            active={activePerson}
+            onToggle={(id) => setPerson(activePerson === id ? "" : id)}
+            limit={12}
+            empty={emptyGroup(group, t)}
+            footnote={`The bar is all of their ${lower(t.site.many)}. The number is how many are in this group. Tap a name to see only theirs.`}
+          />
+          <InsightPanel
+            title="By town"
+            caption={groupLabel(group)}
+            lines={byTown.map(([c, n]) => ({
+              id: c,
+              label: c,
+              value: n,
+              bar: n / (byTown[0]?.[1] ?? 1),
+              aside: c === NO_TOWN ? "muted" : undefined,
+            }))}
+            active={activeTown}
+            onToggle={(id) => setTown(activeTown === id ? "" : id)}
+            empty={emptyGroup(group, t)}
+            moreHint="Search the list below to find one."
+          />
         </div>
       )}
 
-      <div className="flex flex-wrap items-center gap-2">
-        <div className="relative w-full sm:w-64">
-          <Search className="absolute top-1/2 left-2.5 h-4 w-4 -translate-y-1/2 text-muted-foreground" aria-hidden />
-          <Input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder={`Find a ${lower(t.site.one)} or town`}
-            aria-label={`Find a ${lower(t.site.one)} or town`}
-            className="pl-8"
-          />
-        </div>
+      <ListTools search={search} onSearch={setSearch} placeholder={`Find a ${lower(t.site.one)} or town`}>
         {activePerson !== "" && (
-          <button type="button" onClick={() => setPerson("")} className={FILTER_CHIP}>
+          <FilterChip onClear={() => setPerson("")}>
             {activePerson === UNASSIGNED ? "Unassigned only" : `${nameOf(activePerson)} only`} · show everyone
-          </button>
+          </FilterChip>
         )}
-        {activeTown !== "" && (
-          <button type="button" onClick={() => setTown("")} className={FILTER_CHIP}>
-            {activeTown} only · every town
-          </button>
-        )}
-      </div>
+        {activeTown !== "" && <FilterChip onClear={() => setTown("")}>{activeTown} only · every town</FilterChip>}
+      </ListTools>
 
       <div className="overflow-x-auto rounded-lg border border-border bg-card">
         <Table>
@@ -578,35 +513,5 @@ function DaysCell({
     >
       {describeDays(days)}
     </TableCell>
-  );
-}
-
-/** A heading that orders the list; the arrow says which way. */
-function SortHead({
-  label,
-  sortKey,
-  sort,
-  onSort,
-  className,
-}: {
-  label: string;
-  sortKey: SortKey;
-  sort: Sort;
-  onSort: (key: SortKey) => void;
-  className?: string;
-}) {
-  const active = sort.key === sortKey;
-  const Icon = !active ? ArrowUpDown : sort.dir === "asc" ? ArrowUp : ArrowDown;
-  return (
-    <TableHead className={className} aria-sort={active ? (sort.dir === "asc" ? "ascending" : "descending") : "none"}>
-      <button
-        type="button"
-        onClick={() => onSort(sortKey)}
-        className="-mx-1 inline-flex items-center gap-1 rounded px-1 py-0.5 font-medium hover:bg-muted focus-visible:outline-2 focus-visible:outline-ring"
-      >
-        {label}
-        <Icon className={`h-3.5 w-3.5 ${active ? "opacity-100" : "opacity-40"}`} aria-hidden />
-      </button>
-    </TableHead>
   );
 }
