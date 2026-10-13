@@ -51,6 +51,8 @@ function ymd(d: Date) {
 
 /** What an invoice was made from, for the second line under its number. */
 function sourceNote(r: InvoiceListRow): string {
+  // Brought over from QuickBooks: say so, with the order it was for if known.
+  if (r.source === "quickbooks") return [INVOICE_SOURCE_LABELS.quickbooks, r.order_number].filter(Boolean).join(" · ");
   if (r.order_number) return r.order_number;
   const kind = INVOICE_KIND_LABELS[r.kind] ?? "";
   const from = r.source === "quote" && r.reference ? r.reference : (INVOICE_SOURCE_LABELS[r.source] ?? "");

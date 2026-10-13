@@ -45,6 +45,7 @@ export const INVOICE_SOURCE_LABELS: Record<string, string> = {
   jobs: "Completed work",
   direct: "Direct",
   contract: "Contract",
+  quickbooks: "From QuickBooks",
 };
 
 /** A quote's invoices: in full, a deposit, or the final balance (`tax_invoices.kind`). */
@@ -77,7 +78,8 @@ export function paymentStatus(inv: Pick<Invoice, "status" | "total">, bal: Balan
   if (inv.status === "void") return "void";
   if (!bal) return "unpaid";
   if (Number(bal.outstanding) <= 0) return Number(bal.paid) > 0 ? "paid" : "credited";
-  if (Number(bal.paid) > 0 || Number(bal.credited) > 0) return "part_paid";
+  // Credited in part and nothing paid is still unpaid: it owes less, that is all.
+  if (Number(bal.paid) > 0) return "part_paid";
   return "unpaid";
 }
 
@@ -188,16 +190,18 @@ export async function fetchInvoice(supabase: Client, id: string): Promise<Invoic
   };
 }
 
-/** The live (not void) invoice for an order, if there is one. */
+/** The live (not void) invoice for an order, if there is one, with what is credited, paid and owed. */
 export async function fetchInvoiceForOrder(supabase: Client, orderId: string) {
   const { data, error } = await supabase
     .from("tax_invoices")
-    .select("id, invoice_number")
+    .select("id, invoice_number, status, total")
     .eq("order_id", orderId)
     .eq("status", "issued")
     .maybeSingle();
   fail(error);
-  return data as { id: string; invoice_number: string } | null;
+  if (!data) return null;
+  const balances = await fetchBalances(supabase, [data.id]);
+  return { ...data, balance: balances.get(data.id) };
 }
 
 export async function issueInvoice(supabase: Client, orderId: string): Promise<string> {
@@ -296,6 +300,23 @@ export async function recordPayment(
     p_paid_on: input.paidOn,
     p_method: input.method,
     p_reference: input.reference,
+  });
+  fail(error);
+}
+
+/**
+ * A rebate the customer kept: a retail group pays the invoice short and the
+ * rest is recorded as a rebate (a credit note for an amount, no lines).
+ */
+export async function recordRebate(
+  supabase: Client,
+  input: { invoiceId: string; amount: number; on: string; reason: string }
+) {
+  const { error } = await supabase.rpc("invoice_rebate", {
+    p_invoice_id: input.invoiceId,
+    p_amount: input.amount,
+    p_on: input.on,
+    p_reason: input.reason,
   });
   fail(error);
 }

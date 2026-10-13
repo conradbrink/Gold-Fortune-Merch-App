@@ -30,8 +30,12 @@ begin
    where p.org_id = c_gf and p.role <> 'manager' and p.id <> v_admin
      and not exists (select 1 from public.profile_permissions pp where pp.profile_id = p.id and pp.permission_code in ('admin', 'invoicing'))
    limit 1;
-  select s.id into v_s1 from public.stores s where s.org_id = c_gf order by s.created_at limit 1;
-  select s.id into v_s2 from public.stores s where s.org_id = c_gf and s.id <> v_s1 order by s.created_at limit 1;
+  -- Two places with no invoices of their own, so the statements below hold
+  -- only what this suite issues (Gold Fortune's stores carry real history).
+  select s.id into v_s1 from public.stores s where s.org_id = c_gf
+     and not exists (select 1 from public.tax_invoices t where t.store_id = s.id) order by s.created_at, s.id limit 1;
+  select s.id into v_s2 from public.stores s where s.org_id = c_gf and s.id <> v_s1
+     and not exists (select 1 from public.tax_invoices t where t.store_id = s.id) order by s.created_at, s.id limit 1;
   if v_admin is null or v_s2 is null then
     raise exception 'Fixtures missing: admin %, stores %, %', v_admin, v_s1, v_s2;
   end if;
@@ -41,7 +45,9 @@ begin
     v_fail := v_fail || 'S1 document_style is missing or does not default to classic' || E'\n';
   end if;
   begin
-    insert into public.company_settings (org_id, key, value) values (c_gf, 'document_style', '"bold"');
+    -- An upsert: the company may already have chosen a style of its own.
+    insert into public.company_settings (org_id, key, value) values (c_gf, 'document_style', '"bold"')
+    on conflict (org_id, key) do update set value = excluded.value;
     update public.company_settings set value = '"clean"' where org_id = c_gf and key = 'document_style';
   exception when others then
     v_fail := v_fail || format('S1 a real style was refused: %s', sqlerrm) || E'\n';

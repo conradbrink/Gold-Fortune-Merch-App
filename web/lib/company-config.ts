@@ -33,6 +33,8 @@ export type CompanySettings = {
   money_invoice_from_jobs: boolean;
   money_invoice_direct: boolean;
   money_contracts: boolean;
+  /** Each order is invoiced when it is confirmed, and credited as it shrinks (Distribution). */
+  money_invoice_orders: boolean;
   /** The numbers "Your numbers" shows, comma-separated codes (lib/kpis.ts). */
   dashboard_cards: string;
   /** The cards a new user's dashboard starts with, comma-separated widget ids. */
@@ -98,6 +100,7 @@ const SETTING_FALLBACK: CompanySettings = {
   money_invoice_from_jobs: true,
   money_invoice_direct: true,
   money_contracts: false,
+  money_invoice_orders: false,
   dashboard_cards: "jobs_done_pct,missed,gps_verified_pct,owed",
   dashboard_layout: "headline,sales,pipeline,field_team,store_health,live_reps",
   report_tabs: "score,oos,coverage,adherence,reps,trends,form,photos",
@@ -171,6 +174,7 @@ export function parseCompanyConfig(raw: unknown): CompanyConfig | null {
       money_invoice_from_jobs: bool(s.money_invoice_from_jobs, f.money_invoice_from_jobs),
       money_invoice_direct: bool(s.money_invoice_direct, f.money_invoice_direct),
       money_contracts: bool(s.money_contracts, f.money_contracts),
+      money_invoice_orders: bool(s.money_invoice_orders, f.money_invoice_orders),
       dashboard_cards: list(s.dashboard_cards, f.dashboard_cards),
       dashboard_layout: list(s.dashboard_layout, f.dashboard_layout),
       report_tabs: list(s.report_tabs, f.report_tabs),

@@ -2892,6 +2892,7 @@ export type Database = {
           line_total: number
           unit: string | null
           service_item_id: string | null
+          order_line_id: string | null
         }
         Insert: {
           id?: string
@@ -2905,6 +2906,7 @@ export type Database = {
           line_total: number
           unit?: string | null
           service_item_id?: string | null
+          order_line_id?: string | null
         }
         Update: {
           id?: string
@@ -2918,6 +2920,7 @@ export type Database = {
           line_total?: number
           unit?: string | null
           service_item_id?: string | null
+          order_line_id?: string | null
         }
         Relationships: []
       }
@@ -7754,6 +7757,10 @@ export type Database = {
       invoice_payment_delete: {
         Args: { p_payment_id: string }
         Returns: undefined
+      }
+      invoice_rebate: {
+        Args: { p_invoice_id: string; p_amount: number; p_on?: string; p_reason?: string }
+        Returns: string
       }
       recurring_orders_run_due: {
         Args: Record<PropertyKey, never>

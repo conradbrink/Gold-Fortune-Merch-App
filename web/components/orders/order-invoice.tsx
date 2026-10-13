@@ -5,12 +5,23 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
-import { fetchInvoiceForOrder, issueInvoice } from "@/lib/invoices";
+import {
+  fetchInvoiceForOrder,
+  issueInvoice,
+  money,
+  PAYMENT_STATUS_LABELS,
+  paymentStatus,
+} from "@/lib/invoices";
+import { useCompanyConfig } from "@/lib/use-company-config";
 
 /**
- * The order's invoice row: a link to the app's tax invoice, the QuickBooks
- * number it was invoiced under before the app issued invoices, or — once the
- * order has gone out and has neither — the button that issues one.
+ * The order's invoice row: a link to the app's tax invoice, with whether it is
+ * paid and what has been credited; the QuickBooks number it was invoiced under
+ * before the app issued invoices; or — once the order has gone out and has
+ * neither — the button that issues one.
+ *
+ * A company that invoices every order (`money_invoice_orders`) gets the
+ * invoice when the order is confirmed, so a new order says so instead.
  *
  * The database refuses an order that already carries a QuickBooks number, so
  * the button is not offered for one; the refusal would only repeat this row.
@@ -26,7 +37,9 @@ export function OrderInvoice({
 }) {
   const supabase = createClient();
   const router = useRouter();
-  const [invoice, setInvoice] = useState<{ id: string; invoice_number: string } | null>(null);
+  const config = useCompanyConfig();
+  const automatic = config?.settings.money_invoice_orders ?? false;
+  const [invoice, setInvoice] = useState<Awaited<ReturnType<typeof fetchInvoiceForOrder>>>(null);
   const [checked, setChecked] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -45,7 +58,9 @@ export function OrderInvoice({
     return () => {
       cancelled = true;
     };
-  }, [supabase, orderId]);
+    // Again when the status moves: confirming makes the invoice, and
+    // dispatching, delivering or cancelling can credit or void it.
+  }, [supabase, orderId, status]);
 
   const canIssue = checked && !invoice && !invoiceNumber && (status === "dispatched" || status === "delivered");
 
@@ -54,9 +69,15 @@ export function OrderInvoice({
       <span className="text-muted-foreground">Invoice</span>
       <span className="text-right">
         {invoice ? (
-          <Link href={`/invoices/${invoice.id}`} className="font-medium text-primary hover:underline">
-            {invoice.invoice_number}
-          </Link>
+          <>
+            <Link href={`/invoices/${invoice.id}`} className="font-medium text-primary hover:underline">
+              {invoice.invoice_number}
+            </Link>
+            <span className="block text-xs text-muted-foreground">
+              {PAYMENT_STATUS_LABELS[paymentStatus(invoice, invoice.balance)]}
+              {Number(invoice.balance?.credited ?? 0) > 0 && ` · ${money(Number(invoice.balance?.credited))} credited`}
+            </span>
+          </>
         ) : invoiceNumber ? (
           <>
             {invoiceNumber}
@@ -82,6 +103,10 @@ export function OrderInvoice({
           >
             {busy ? "Issuing…" : "Issue tax invoice"}
           </Button>
+        ) : status === "cancelled" ? (
+          "None"
+        ) : automatic && status === "new" ? (
+          <span className="text-muted-foreground">Made when the order is confirmed</span>
         ) : (
           "Not yet raised"
         )}

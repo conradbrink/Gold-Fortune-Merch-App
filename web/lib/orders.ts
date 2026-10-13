@@ -132,7 +132,7 @@ export async function fetchOrders(
   // be found by its own order number — the screen says "no orders" about an
   // order that exists, which is worse than saying nothing.
   //
-  // `order_number` and `contact_name` are columns here, so they go straight
+  // `order_number`, `invoice_number` and `contact_name` are columns here, so they go straight
   // into an `.or()`. The store name lives on an embedded table and cannot, so
   // the matching store ids are looked up first and folded into the same filter
   // rather than dropped from the search.
@@ -152,6 +152,7 @@ export async function fetchOrders(
 
       const clauses = [
         `order_number.ilike.%${safe}%`,
+        `invoice_number.ilike.%${safe}%`,
         `contact_name.ilike.%${safe}%`,
       ];
       const storeIds = (storeHits ?? []).map((s) => s.id);
