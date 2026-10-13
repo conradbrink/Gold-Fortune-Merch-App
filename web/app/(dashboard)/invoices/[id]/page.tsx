@@ -312,8 +312,7 @@ export default function InvoiceDetailPage() {
           <CardHeader><CardTitle className="text-base">Rebate</CardTitle></CardHeader>
           <CardContent className="grid gap-3 sm:grid-cols-3">
             <p className="text-sm text-muted-foreground sm:col-span-3">
-              What the customer kept off this invoice as a rebate. It comes off what they owe and shows on their
-              statement as a rebate, not as money received.
+              {`What the ${lower(t.client.one)} kept off this invoice as a rebate. It comes off what they owe and shows on their statement as a rebate, not as money received.`}
             </p>
             <div>
               <Label htmlFor="ramt">Amount</Label>
