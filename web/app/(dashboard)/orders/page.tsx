@@ -183,6 +183,7 @@ export default function OrdersPage() {
     return base.filter(
       (o) =>
         o.order_number.toLowerCase().includes(q) ||
+        (o.invoice_number ?? "").toLowerCase().includes(q) ||
         (o.store_name ?? "").toLowerCase().includes(q) ||
         (o.contact_name ?? "").toLowerCase().includes(q)
     );
@@ -216,7 +217,7 @@ export default function OrdersPage() {
           <Input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder={`Search order number, ${lower(terms.site.one)} or contact`}
+            placeholder={`Search order or invoice number, ${lower(terms.site.one)} or contact`}
             className="pl-8"
           />
         </div>
@@ -334,6 +335,11 @@ export default function OrdersPage() {
                       <Badge variant="outline" className="ml-2 border-amber-500/50 text-amber-600">
                         on hold
                       </Badge>
+                    )}
+                    {/* The order and its invoice are one sale: the invoice
+                        number sits under the order's. */}
+                    {o.invoice_number && (
+                      <div className="text-xs text-muted-foreground">Invoice {o.invoice_number}</div>
                     )}
                   </TableCell>
                   <TableCell className="whitespace-nowrap text-muted-foreground">

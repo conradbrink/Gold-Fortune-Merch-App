@@ -60,7 +60,7 @@ import {
   type AvailabilityRow,
   type ShortfallAction,
 } from "@/lib/orders";
-import { useTerms } from "@/lib/use-company-config";
+import { useCompanyConfig, useTerms } from "@/lib/use-company-config";
 import { capital, lower, possessive, withArticle } from "@/lib/terms";
 
 /**
@@ -188,6 +188,9 @@ export default function OrderDetailPage() {
    * moment the clerk is looking for confirmation that the right thing happened.
    */
   const [confirmKind, setConfirmKind] = useState<"cancel" | "hold">("cancel");
+
+  /** Confirming issues the order's invoice (`money_invoice_orders`). */
+  const automaticInvoice = useCompanyConfig()?.settings.money_invoice_orders ?? false;
 
   /** Opens the shared dialog, latching which of the two it is. */
   function openConfirm(kind: "cancel" | "hold") {
@@ -1392,6 +1395,15 @@ export default function OrderDetailPage() {
                 <option value="hold">Reserve what there is and put the order on hold</option>
               </NativeSelect>
             </div>
+            {/* An order with no invoice number of its own gets Tickd's. A
+                QuickBooks number already on it means it was invoiced there. */}
+            {automaticInvoice && !o.invoice_number && (
+              <p className={`text-sm ${unpricedLines > 0 ? "text-destructive" : "text-muted-foreground"}`}>
+                {unpricedLines > 0
+                  ? `Confirming issues the invoice, so ${unpricedLines === 1 ? "the line with no price needs one" : `the ${unpricedLines} lines with no price need one`} first.`
+                  : "Confirming also issues the invoice for this order. Anything not sent, returned or cancelled later is credited for you."}
+              </p>
+            )}
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setDialog(null)} disabled={busy}>
@@ -1406,9 +1418,11 @@ export default function OrderDetailPage() {
                   // would be. Empty only when there is no location at all, in
                   // which case `order_confirm` says so plainly.
                   () => confirmOrder(supabase, orderId, shortfall, fulfilFrom || null),
-                  fulfilName
-                    ? `Order confirmed and stock reserved at ${fulfilName}.`
-                    : "Order confirmed and stock reserved."
+                  automaticInvoice && !o.invoice_number
+                    ? `Order confirmed, stock reserved${fulfilName ? ` at ${fulfilName}` : ""} and its invoice issued.`
+                    : fulfilName
+                      ? `Order confirmed and stock reserved at ${fulfilName}.`
+                      : "Order confirmed and stock reserved."
                 )
               }
               disabled={busy}

@@ -19,6 +19,7 @@ import {
   type MoneyWorkflow,
 } from "@/lib/money-workflow";
 import { saveMoneyWorkflow } from "@/lib/money-settings";
+import { moduleEnabled } from "@/lib/modules";
 
 /**
  * Quotes and invoices: the details printed on them, and how the company gets
@@ -53,6 +54,7 @@ export function MoneySettingsCard({ orgId, canEdit }: { orgId: string; canEdit: 
     direct: true,
     contracts: false,
   });
+  const [invoiceOrders, setInvoiceOrders] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -94,7 +96,9 @@ export function MoneySettingsCard({ orgId, canEdit }: { orgId: string; canEdit: 
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setWorkflow(config.settings.money_workflow);
     setSw(switchesOf(config.settings));
+    setInvoiceOrders(config.settings.money_invoice_orders);
   }, [config]);
+  const sells = config ? moduleEnabled(config.modules, "distribution") : false;
 
   async function save() {
     setError(null);
@@ -132,6 +136,12 @@ export function MoneySettingsCard({ orgId, canEdit }: { orgId: string; canEdit: 
       if (org.error) throw new Error(`Nothing was saved: ${org.error.message}`);
       try {
         await saveMoneyWorkflow(supabase, orgId, workflow, sw);
+        if (sells) {
+          const { error: e } = await supabase
+            .from("company_settings")
+            .upsert({ org_id: orgId, key: "money_invoice_orders", value: invoiceOrders }, { onConflict: "org_id,key" });
+          if (e) throw new Error(e.message);
+        }
       } catch (e) {
         throw new Error(
           `The details on your quotes and invoices were saved, but how you get paid was not: ${e instanceof Error ? e.message : String(e)}`
@@ -192,6 +202,24 @@ export function MoneySettingsCard({ orgId, canEdit }: { orgId: string; canEdit: 
                 </span>
               </label>
             ))}
+            {sells && (
+              <label className="flex items-start gap-2 rounded-lg border border-border p-3 text-sm">
+                <input
+                  type="checkbox"
+                  className="mt-0.5"
+                  checked={invoiceOrders}
+                  disabled={!canEdit}
+                  onChange={(e) => setInvoiceOrders(e.target.checked)}
+                />
+                <span>
+                  <span className="font-medium">Invoice every order</span>
+                  <span className="block text-xs text-muted-foreground">
+                    The invoice is made when the order is confirmed. Anything not sent, returned or cancelled is
+                    credited for you.
+                  </span>
+                </span>
+              </label>
+            )}
           </div>
         </CardContent>
       </Card>

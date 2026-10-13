@@ -2892,6 +2892,7 @@ export type Database = {
           line_total: number
           unit: string | null
           service_item_id: string | null
+          order_line_id: string | null
         }
         Insert: {
           id?: string
@@ -2905,6 +2906,7 @@ export type Database = {
           line_total: number
           unit?: string | null
           service_item_id?: string | null
+          order_line_id?: string | null
         }
         Update: {
           id?: string
@@ -2918,6 +2920,7 @@ export type Database = {
           line_total?: number
           unit?: string | null
           service_item_id?: string | null
+          order_line_id?: string | null
         }
         Relationships: []
       }

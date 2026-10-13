@@ -77,7 +77,8 @@ export function paymentStatus(inv: Pick<Invoice, "status" | "total">, bal: Balan
   if (inv.status === "void") return "void";
   if (!bal) return "unpaid";
   if (Number(bal.outstanding) <= 0) return Number(bal.paid) > 0 ? "paid" : "credited";
-  if (Number(bal.paid) > 0 || Number(bal.credited) > 0) return "part_paid";
+  // Credited in part and nothing paid is still unpaid: it owes less, that is all.
+  if (Number(bal.paid) > 0) return "part_paid";
   return "unpaid";
 }
 
@@ -188,16 +189,18 @@ export async function fetchInvoice(supabase: Client, id: string): Promise<Invoic
   };
 }
 
-/** The live (not void) invoice for an order, if there is one. */
+/** The live (not void) invoice for an order, if there is one, with what is credited, paid and owed. */
 export async function fetchInvoiceForOrder(supabase: Client, orderId: string) {
   const { data, error } = await supabase
     .from("tax_invoices")
-    .select("id, invoice_number")
+    .select("id, invoice_number, status, total")
     .eq("order_id", orderId)
     .eq("status", "issued")
     .maybeSingle();
   fail(error);
-  return data as { id: string; invoice_number: string } | null;
+  if (!data) return null;
+  const balances = await fetchBalances(supabase, [data.id]);
+  return { ...data, balance: balances.get(data.id) };
 }
 
 export async function issueInvoice(supabase: Client, orderId: string): Promise<string> {

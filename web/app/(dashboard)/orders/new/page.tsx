@@ -64,7 +64,11 @@ const blankLine = (): Draft => ({
 export default function NewOrderPage() {
   const supabase = createClient();
   const t = useTerms();
-  const currency = useCompanyConfig()?.settings.currency_code ?? "";
+  const config = useCompanyConfig();
+  const currency = config?.settings.currency_code ?? "";
+  // A company that invoices every order gets the invoice from Tickd when the
+  // order is confirmed, so there is no outside number to type in.
+  const automaticInvoice = config?.settings.money_invoice_orders ?? false;
   const router = useRouter();
 
   const [orgId, setOrgId] = useState<string | null>(null);
@@ -313,7 +317,7 @@ export default function NewOrderPage() {
         notes,
         deliveryAddress: deliveryAddress.trim() || null,
         repId: repId || null,
-        invoiceNumber: invoiceNumber.trim() || null,
+        invoiceNumber: automaticInvoice ? null : invoiceNumber.trim() || null,
         lines: filled.map((l) => ({
           productId: l.productId,
           qty: Number(l.qty),
@@ -507,15 +511,17 @@ export default function NewOrderPage() {
               ))}
             </NativeSelect>
           </div>
-          <div>
-            <Label htmlFor="invoice">Invoice number</Label>
-            <Input
-              id="invoice"
-              value={invoiceNumber}
-              onChange={(e) => setInvoiceNumber(e.target.value)}
-              placeholder="As on QuickBooks — can be added later"
-            />
-          </div>
+          {!automaticInvoice && (
+            <div>
+              <Label htmlFor="invoice">Invoice number</Label>
+              <Input
+                id="invoice"
+                value={invoiceNumber}
+                onChange={(e) => setInvoiceNumber(e.target.value)}
+                placeholder="As on QuickBooks — can be added later"
+              />
+            </div>
+          )}
           <div className="sm:col-span-2">
             <Label htmlFor="delivery">Delivery address</Label>
             <Input
