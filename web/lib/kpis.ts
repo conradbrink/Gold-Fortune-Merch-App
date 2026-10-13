@@ -1,7 +1,7 @@
 import { lower, type Terms } from "@/lib/terms";
-import { toLocalDateInput, type DateRange } from "@/lib/date-range";
+import type { DateRange } from "@/lib/date-range";
 import type { ReportId, ViewId } from "@/lib/report-catalogue";
-import { invoicesHref, quotesHref, rangeQuery } from "@/lib/dashboard-links";
+import { invoicesHref, quotesHref, rangeQuery, reportHref } from "@/lib/dashboard-links";
 
 /**
  * The numbers a dashboard can show (Stage 7 Part 3): the catalogue in code,
@@ -49,13 +49,7 @@ export type KpiDef = {
  * view a company has when it lacks this one.
  */
 function report(tab: ReportId, view?: ViewId) {
-  return (range: DateRange) =>
-    `/reports?${new URLSearchParams({
-      tab,
-      ...(view ? { view } : {}),
-      from: toLocalDateInput(range.from),
-      to: toLocalDateInput(range.to),
-    }).toString()}`;
+  return (range: DateRange) => reportHref(tab, range, view);
 }
 const page = (path: string) => () => path;
 /** The invoices issued over the tile's own dates. */

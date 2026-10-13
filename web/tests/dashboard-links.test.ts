@@ -12,7 +12,6 @@ import {
   dueDaysFromQuery,
   healthGroupFromQuery,
   invoicesHref,
-  isLowStock,
   lastDayOf,
   lowStockHref,
   nextMonth,
@@ -28,6 +27,7 @@ import {
   salesHref,
   storeHealthHref,
   storeHref,
+  storeIdFromQuery,
   trackingHref,
 } from "@/lib/dashboard-links";
 import { ORDER_STATUSES } from "@/lib/warehouse";
@@ -80,7 +80,9 @@ test("every Store health group opens itself", () => {
   }
   assert.equal(healthGroupFromQuery(new URLSearchParams("show=everything")), null);
   assert.equal(healthGroupFromQuery(new URLSearchParams("")), null);
-  assert.equal(storeHref("Choppies Super Store & Co"), "/stores?q=Choppies+Super+Store+%26+Co");
+  const id = "17e43ac9-4492-4bf6-be2a-470ba6dece7a";
+  assert.equal(storeIdFromQuery(query(storeHref(id))), id);
+  assert.equal(storeIdFromQuery(new URLSearchParams("id=Choppies")), null);
 });
 
 test("the pipeline's stages open exactly their statuses", () => {
@@ -123,13 +125,8 @@ test("recurring orders placing this week match the pipeline's count", () => {
   assert.equal(dueDaysFromQuery(new URLSearchParams("due=soon")), null);
 });
 
-test("low stock is low_stock_alerts' rule: none left, below minimum, or at the reorder point", () => {
+test("the low-stock list opens on its own filter", () => {
   assert.equal(lowStockHref(), "/inventory?low=1");
-  assert.equal(isLowStock({ qty_available: 0, is_below_min: false, reorder_point: null }), true);
-  assert.equal(isLowStock({ qty_available: 4, is_below_min: true, reorder_point: null }), true);
-  assert.equal(isLowStock({ qty_available: 10, is_below_min: false, reorder_point: 10 }), true);
-  assert.equal(isLowStock({ qty_available: 11, is_below_min: false, reorder_point: 10 }), false);
-  assert.equal(isLowStock({ qty_available: 11, is_below_min: false, reorder_point: null }), false);
 });
 
 test("money links carry their dates or say every date", () => {

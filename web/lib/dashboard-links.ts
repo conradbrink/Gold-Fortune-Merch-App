@@ -91,9 +91,15 @@ export function healthGroupFromQuery(q: URLSearchParams): HealthGroup | null {
   return v !== null && (HEALTH_GROUPS as readonly string[]).includes(v) ? (v as HealthGroup) : null;
 }
 
-/** One store on the stores list, found by name the way the header search finds it. */
-export function storeHref(name: string): string {
-  return href("/stores", { q: name });
+/** One store on the stores list, by its id: a name search could also match its neighbours. */
+export function storeHref(storeId: string): string {
+  return href("/stores", { id: storeId });
+}
+
+/** The store a link asked for, if it carried one. */
+export function storeIdFromQuery(q: URLSearchParams): string | null {
+  const v = q.get("id");
+  return v && /^[0-9a-f-]{36}$/i.test(v) ? v : null;
 }
 
 // ------------------------------------------------------------------- orders
@@ -168,14 +174,6 @@ export function recurringDueWithin(r: { status: string; next_run: string | null 
 
 export function lowStockHref(): string {
   return href("/inventory", { low: "1" });
-}
-
-/**
- * A stock line the dashboard counts as low, by the rule in `low_stock_alerts`:
- * none left, below its minimum, or at or below its reorder point.
- */
-export function isLowStock(l: { qty_available: number; is_below_min: boolean; reorder_point: number | null }): boolean {
-  return l.qty_available === 0 || l.is_below_min || (l.reorder_point !== null && l.qty_available <= l.reorder_point);
 }
 
 // ------------------------------------------------------------------- money

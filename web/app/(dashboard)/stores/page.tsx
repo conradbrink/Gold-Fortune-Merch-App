@@ -92,6 +92,7 @@ import {
   type VisitFrequency,
 } from "@/lib/schedule";
 import { googleMapsUrl } from "@/lib/maps";
+import { storeIdFromQuery } from "@/lib/dashboard-links";
 import type { Tables } from "@/lib/supabase/types";
 
 type StoreRow = Tables<"stores">;
@@ -273,6 +274,8 @@ export default function StoresPage() {
   /** Which column the table is ordered by. Name ascending, matching the order
       the rows are fetched in, so the page opens looking as it always has. */
   const [sort, setSort] = useState<SortState>({ key: "name", dir: "asc" });
+  /** One store, from a dashboard or Store health link (`?id=`). */
+  const [onlyId, setOnlyId] = useState<string | null>(null);
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -383,6 +386,7 @@ export default function StoresPage() {
     // disagree.
     // eslint-disable-next-line react-hooks/set-state-in-effect
     if (q) setSearch(q);
+    setOnlyId(storeIdFromQuery(new URLSearchParams(window.location.search)));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -921,6 +925,7 @@ export default function StoresPage() {
   }
 
   const filtered = stores
+    .filter((s) => onlyId === null || s.id === onlyId)
     .filter((s) =>
       groupFilter === "all" ? true : (s.store_group_id ?? "none") === groupFilter
     )
@@ -1108,6 +1113,16 @@ export default function StoresPage() {
             render={<Link href="/stores/review">Exceptions</Link>}
           />
         </div>
+      )}
+
+      {onlyId !== null && (
+        <button
+          type="button"
+          onClick={() => setOnlyId(null)}
+          className="rounded-full border border-primary/40 px-3 py-1 text-xs text-primary hover:bg-primary/5"
+        >
+          One {lower(terms.site.one)} only · show all
+        </button>
       )}
 
       <div className="flex flex-wrap items-center gap-2 sm:gap-3">

@@ -228,7 +228,11 @@ export default function CommissionsPage() {
         <div className="flex flex-wrap gap-2">
           <Button
             variant="outline"
-            disabled={busy}
+            // Not over "every date" (the dashboard's commission link): a
+            // recalculation is meant for a period, and one click should not
+            // rework every delivery the company has had.
+            disabled={busy || from === EARLIEST}
+            title={from === EARLIEST ? "Choose a period to recalculate" : undefined}
             onClick={() =>
               act(async () => {
                 const n = await recalculate(supabase, range);

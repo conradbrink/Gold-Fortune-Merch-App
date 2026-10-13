@@ -23,7 +23,7 @@ import { formatMoneyShort as moneyShortIn } from "@/lib/money";
 import { moduleEnabled } from "@/lib/modules";
 import { can } from "@/lib/permissions";
 import { usePermissions } from "@/lib/use-permissions";
-import { toLocalDateInput, type DateRange } from "@/lib/date-range";
+import type { DateRange } from "@/lib/date-range";
 import {
   commissionsHref,
   dayAfter,
@@ -647,10 +647,7 @@ export function FieldTeamCard({
           value={business ? business.field.flagged_checkins : "—"}
           href={
             business
-              ? `/visits/off-site?${new URLSearchParams({
-                  from: toLocalDateInput(range.from),
-                  to: toLocalDateInput(range.to),
-                }).toString()}`
+              ? `/visits/off-site?${new URLSearchParams(rangeQuery(range)).toString()}`
               : undefined
           }
           title={`See which ${lower(t.staff.many)}, ${lower(t.site.many)} and how far`}
@@ -706,7 +703,7 @@ export function StoreHealthCard({ business }: { business: BusinessSummary }) {
             <div key={s.id} className="border-b text-sm last:border-b-0">
               {/* The store itself, on the stores list, where it can be given to someone. */}
               <Link
-                href={storeHref(s.name)}
+                href={storeHref(s.id)}
                 className="-mx-1.5 flex items-center justify-between gap-3 rounded-md px-1.5 py-2 transition-colors hover:bg-muted/60 focus-visible:outline-2 focus-visible:outline-ring"
               >
                 <span className="min-w-0 truncate">

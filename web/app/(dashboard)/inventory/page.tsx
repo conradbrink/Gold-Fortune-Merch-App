@@ -26,9 +26,9 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { StatTile, ErrorBanner, EmptyRow } from "@/components/warehouse/stat-tile";
-import { isLowStock } from "@/lib/dashboard-links";
 import {
   fetchLocations,
+  fetchLowStock,
   fetchStockOnHand,
   fetchStockPosition,
   fetchValuation,
@@ -64,12 +64,15 @@ export default function InventoryPage() {
   const [search, setSearch] = useState("");
   const [onlyBelowMin, setOnlyBelowMin] = useState(false);
   /**
-   * The dashboard's "Products below reorder point" (`?low=1`): none left, below
-   * the minimum, or at or below the reorder point, by the same rule as
-   * `low_stock_alerts`. Wider than "Only below minimum", which leaves out the
-   * reorder point, so it is its own filter rather than that box ticked.
+   * The dashboard's "Products below reorder point" (`?low=1`). Read from
+   * `low_stock_alerts`, the function the dashboard counts, rather than a copy
+   * of its rule: none left, below the minimum, or at or below the reorder
+   * point. Wider than "Only below minimum", which leaves out the reorder point,
+   * so it is its own filter rather than that box ticked.
    */
   const [lowOnly, setLowOnly] = useState(false);
+  /** The product and location of each alert; null until read. */
+  const [lowKeys, setLowKeys] = useState<Set<string> | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -112,13 +115,34 @@ export default function InventoryPage() {
     if (new URLSearchParams(window.location.search).get("low") === "1") setLowOnly(true);
   }, []);
 
+  useEffect(() => {
+    if (!lowOnly) return;
+    let cancelled = false;
+    fetchLowStock(supabase, locationId || null)
+      .then((alerts) => {
+        if (!cancelled) setLowKeys(new Set(alerts.map((a) => `${a.product_id}|${a.location_id}`)));
+      })
+      .catch((e) => {
+        if (!cancelled) setError(e instanceof Error ? e.message : String(e));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [supabase, lowOnly, locationId]);
+
+  /** How many products the alerts name, the figure the dashboard shows. */
+  const lowProducts = useMemo(
+    () => (lowKeys ? new Set([...lowKeys].map((k) => k.split("|")[0])).size : null),
+    [lowKeys]
+  );
+
   const stockValue = useMemo(() => totalValuation(valuation), [valuation]);
 
   // Filtered in the browser rather than re-querying on every keystroke. The
   // RPC takes a search term too, and the page uses it on reload; this keeps
   // typing instant on a list this size.
   const visible = useMemo(() => {
-    const base = lowOnly ? lines.filter(isLowStock) : lines;
+    const base = lowOnly ? lines.filter((l) => lowKeys?.has(`${l.product_id}|${l.location_id}`) ?? false) : lines;
     const q = search.trim().toLowerCase();
     if (!q) return base;
     return base.filter(
@@ -127,7 +151,7 @@ export default function InventoryPage() {
         (l.brand ?? "").toLowerCase().includes(q) ||
         (l.sku_code ?? "").toLowerCase().includes(q)
     );
-  }, [lines, search, lowOnly]);
+  }, [lines, search, lowOnly, lowKeys]);
 
   const expiringSoon = expiring.filter((e) => Number(e.days_until_expiry) <= 30);
 
@@ -300,7 +324,10 @@ export default function InventoryPage() {
             onClick={() => setLowOnly(false)}
             className="rounded-full border border-primary/40 px-3 py-1 text-xs text-primary hover:bg-primary/5"
           >
-            At or below the reorder point · show all
+            {lowProducts === null
+              ? "At or below the reorder point"
+              : `${lowProducts} ${lowProducts === 1 ? "product" : "products"} at or below the reorder point`}{" "}
+            · show all
           </button>
         )}
       </div>

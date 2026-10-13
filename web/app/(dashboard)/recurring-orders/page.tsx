@@ -36,7 +36,7 @@ export default function RecurringOrdersPage() {
   const [status, setStatus] = useState("active");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const timeZone = useCompanyConfig()?.timezone ?? "UTC";
+  const timeZone = useCompanyConfig()?.timezone ?? null;
   /**
    * "Placing in the next N days", from the dashboard's "Recurring orders placing
    * this week" (`?due=7`). Counted from the company's today, as the dashboard
@@ -62,11 +62,14 @@ export default function RecurringOrdersPage() {
     };
   }, [supabase]);
 
-  const today = localDay(timeZone);
+  // The company's today, not the browser's or UTC's: until it is known the
+  // "placing soon" list waits rather than counting from the wrong day.
+  const today = timeZone ? localDay(timeZone) : null;
+  const waiting = dueDays !== null && today === null;
   const visible = rows.filter(
     (r) =>
       (status === "all" || r.status === status) &&
-      (dueDays === null || recurringDueWithin(r, today, dueDays))
+      (dueDays === null || (today !== null && recurringDueWithin(r, today, dueDays)))
   );
 
   return (
@@ -119,8 +122,8 @@ export default function RecurringOrdersPage() {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {loading && <EmptyRow colSpan={7}>Loading…</EmptyRow>}
-            {!loading && visible.length === 0 && (
+            {(loading || waiting) && <EmptyRow colSpan={7}>Loading…</EmptyRow>}
+            {!loading && !waiting && visible.length === 0 && (
               <EmptyRow colSpan={7}>
                 {rows.length === 0
                   ? "No recurring orders yet."

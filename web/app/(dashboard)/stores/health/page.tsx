@@ -6,6 +6,7 @@ import { ArrowDown, ArrowLeft, ArrowUp, ArrowUpDown, Search } from "lucide-react
 import { ExportMenu } from "@/components/export-menu";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Card } from "@/components/ui/card";
 import {
   Table,
   TableBody,
@@ -38,6 +39,13 @@ import { useCompanyConfig, useTerms } from "@/lib/use-company-config";
 
 /** "" is everyone; this is the chip for stores nobody is assigned to. */
 const UNASSIGNED = "unassigned";
+/** A line of the "By rep" and "By town" panels: name, bar, figure. */
+const INSIGHT_ROW =
+  "-mx-1.5 grid w-[calc(100%+0.75rem)] grid-cols-[minmax(6rem,9rem)_1fr_2.5rem] items-center gap-3 rounded-md px-1.5 py-2 text-left text-sm transition-colors focus-visible:outline-2 focus-visible:outline-ring";
+/** A filter that is on, said in words, and the way to take it off. */
+const FILTER_CHIP = "rounded-full border border-primary/40 px-3 py-1 text-xs text-primary hover:bg-primary/5";
+/** The "By town" line for stores with no town recorded. */
+const NO_TOWN = "No town recorded";
 
 /**
  * The Store health card, opened up: the stores behind each of its numbers.
@@ -64,6 +72,8 @@ export default function StoreHealthPage() {
   const [error, setError] = useState<string | null>(null);
   const [asked, setAsked] = useState<HealthGroup | null>(null);
   const [person, setPerson] = useState("");
+  /** One town, from the "By town" panel; "" for every town. */
+  const [town, setTown] = useState("");
   const [search, setSearch] = useState("");
   /** Null until a heading is clicked: each group then opens in its own order. */
   const [chosenSort, setChosenSort] = useState<Sort | null>(null);
@@ -79,16 +89,18 @@ export default function StoreHealthPage() {
   useEffect(() => {
     let stale = false;
     const supabase = createClient();
-    Promise.all([
-      fetchStoreHealth(supabase),
-      // Who covers each store. A store with nobody on it is the first thing a
-      // manager fixes, so a failure here costs the column, not the list.
-      fetchAssignments(supabase).catch(() => [] as Assignment[]),
-      supabase
-        .from("profiles")
-        .select("id, full_name")
-        .then(({ data }) => (data ?? []) as { id: string; full_name: string | null }[]),
-    ])
+    // Who covers each store, then just those people's names. A store with
+    // nobody on it is the first thing a manager fixes, so a failure here costs
+    // the column, not the list.
+    const people = fetchAssignments(supabase)
+      .catch(() => [] as Assignment[])
+      .then(async (assigned) => {
+        const ids = [...new Set(assigned.map((a) => a.rep_id))];
+        if (ids.length === 0) return { assigned, people: [] as { id: string; full_name: string | null }[] };
+        const { data } = await supabase.from("profiles").select("id, full_name").in("id", ids);
+        return { assigned, people: (data ?? []) as { id: string; full_name: string | null }[] };
+      });
+    Promise.all([fetchStoreHealth(supabase), people.then((p) => p.assigned), people.then((p) => p.people)])
       .then(([health, assigned, people]) => {
         if (stale) return;
         setRows(health);
@@ -115,6 +127,7 @@ export default function StoreHealthPage() {
     setAsked(next);
     setChosenSort(null);
     setPerson("");
+    setTown("");
     // In the address, so a reload, a shared link or Back opens the same list.
     const url = new URL(window.location.href);
     url.searchParams.set("show", next);
@@ -145,24 +158,44 @@ export default function StoreHealthPage() {
   );
   const inThisGroup = useMemo(() => rows.filter((r) => inGroup(r, group)), [rows, group]);
 
-  /** Chips: everyone, then each person by how many of this group's stores they cover. */
-  const chips = useMemo(() => {
-    const byPerson = new Map<string, number>();
-    let none = 0;
-    for (const r of inThisGroup) {
+  /**
+   * "By rep": each person's stores split the way the card splits the estate,
+   * so the owner sees at a glance whose stores are going quiet. Counted over
+   * every store they cover; the figure beside the bar is this group's.
+   */
+  const byPerson = useMemo(() => {
+    type Split = { id: string; name: string; ordering: number; no_order: number; not_visited: number; total: number; inGroup: number };
+    const m = new Map<string, Split>();
+    const add = (id: string, name: string, r: StoreHealthRow) => {
+      const cur = m.get(id) ?? { id, name, ordering: 0, no_order: 0, not_visited: 0, total: 0, inGroup: 0 };
+      cur[r.status] += 1;
+      cur.total += 1;
+      if (inGroup(r, group)) cur.inGroup += 1;
+      m.set(id, cur);
+    };
+    for (const r of rows) {
       const ids = peopleOf.get(r.store_id) ?? [];
-      if (ids.length === 0) none += 1;
-      for (const id of ids) byPerson.set(id, (byPerson.get(id) ?? 0) + 1);
+      if (ids.length === 0) add(UNASSIGNED, "Unassigned", r);
+      for (const id of ids) add(id, names[id] || `Unnamed ${lower(t.staff.one)}`, r);
     }
-    const people = [...byPerson.entries()]
-      .map(([id, n]) => ({ id, name: names[id] || `Unnamed ${lower(t.staff.one)}`, n }))
-      .sort((a, b) => b.n - a.n || a.name.localeCompare(b.name));
-    return { people, none };
-  }, [inThisGroup, peopleOf, names, t.staff.one]);
+    return [...m.values()].sort(
+      (a, b) => Number(a.id === UNASSIGNED) - Number(b.id === UNASSIGNED) || b.inGroup - a.inGroup || a.name.localeCompare(b.name)
+    );
+  }, [rows, peopleOf, names, group, t.staff.one]);
 
-  // A person picked under another group may cover nothing in this one.
-  const activePerson =
-    person === UNASSIGNED ? (chips.none > 0 ? UNASSIGNED : "") : chips.people.some((p) => p.id === person) ? person : "";
+  /** "By town": where this group's stores are, the most first. */
+  const byTown = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const r of inThisGroup) {
+      const c = r.city?.trim() || NO_TOWN;
+      m.set(c, (m.get(c) ?? 0) + 1);
+    }
+    return [...m.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+  }, [inThisGroup]);
+
+  // A person or town picked under another group may have nothing in this one.
+  const activePerson = byPerson.some((p) => p.id === person && p.inGroup > 0) ? person : "";
+  const activeTown = byTown.some(([c]) => c === town) ? town : "";
 
   const shown = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -170,11 +203,12 @@ export default function StoreHealthPage() {
       const ids = peopleOf.get(r.store_id) ?? [];
       if (activePerson === UNASSIGNED && ids.length > 0) return false;
       if (activePerson !== "" && activePerson !== UNASSIGNED && !ids.includes(activePerson)) return false;
+      if (activeTown !== "" && (r.city?.trim() || NO_TOWN) !== activeTown) return false;
       if (!q) return true;
       return r.store_name.toLowerCase().includes(q) || (r.city ?? "").toLowerCase().includes(q);
     });
     return sortRows(filtered, sort);
-  }, [inThisGroup, peopleOf, activePerson, search, sort]);
+  }, [inThisGroup, peopleOf, activePerson, activeTown, search, sort]);
 
   function responsible(r: StoreHealthRow): string {
     const ids = peopleOf.get(r.store_id) ?? [];
@@ -190,7 +224,12 @@ export default function StoreHealthPage() {
           : `All ${lower(t.staff.many)}`;
     return {
       title: `${t.site.one} health: ${groupLabel(group)}`,
-      context: [groupMeaning(group, t), who, ...(search.trim() ? [`Matching "${search.trim()}"`] : [])],
+      context: [
+        groupMeaning(group, t),
+        who,
+        ...(activeTown ? [`Town: ${activeTown}`] : []),
+        ...(search.trim() ? [`Matching "${search.trim()}"`] : []),
+      ],
       filename: "store-health",
       columns: [
         { header: t.site.one, key: "site" },
@@ -240,15 +279,16 @@ export default function StoreHealthPage() {
           <h1 className="text-xl font-semibold tracking-tight text-foreground">{t.site.one} health</h1>
           <p className="max-w-2xl text-sm text-muted-foreground">
             {sells
-              ? `Which ${lower(t.site.many)} are ordering, which are visited without ordering, and which nobody has been to. Counted over the last 30 days, the same way as the dashboard.`
-              : `Which ${lower(t.site.many)} had a ${lower(t.job.one)} in the last 30 days, and which nobody has been to.`}
+              ? `Who is ordering, who is visited without ordering, and where nobody has been. The last 30 days, counted the same way as the dashboard.`
+              : `Which ${lower(t.site.many)} had a ${lower(t.job.one)} in the last 30 days, and where nobody has been.`}
           </p>
         </div>
         <ExportMenu build={buildSheet} disabled={loading || shown.length === 0} />
       </div>
 
+      <Card className="flex flex-col gap-4 p-5">
       {sells && total > 0 && (
-        <div className="flex h-2.5 gap-0.5 overflow-hidden rounded-full" aria-hidden>
+        <div className="flex h-3.5 gap-0.5 overflow-hidden rounded-full" aria-hidden>
           <div className="bg-emerald-600" style={{ flex: counts.ordering / total }} />
           <div className="bg-muted-foreground/25" style={{ flex: counts.no_order / total }} />
           <div className="bg-red-600" style={{ flex: counts.not_visited / total }} />
@@ -276,13 +316,95 @@ export default function StoreHealthPage() {
               }`}
             >
               <span className="text-xs font-medium text-muted-foreground">{groupLabel(g)}</span>
-              <span className={`text-2xl font-semibold leading-none tabular-nums ${tone}`}>{loading ? " " : n}</span>
+              <span className={`text-[28px] font-semibold leading-none tracking-tight tabular-nums ${tone}`}>{loading ? "\u00a0" : n}</span>
             </button>
           );
         })}
       </div>
-
       <p className="text-sm text-foreground">{groupMeaning(group, t)}</p>
+      </Card>
+
+      {/* The insights: whose stores, and where. Each line narrows the list below. */}
+      {!loading && !error && rows.length > 0 && (
+        <div className="grid gap-4 lg:grid-cols-2">
+          <Card className="flex flex-col gap-3 p-5">
+            <div className="flex items-baseline justify-between gap-3">
+              <h2 className="text-[15px] font-semibold">By {lower(t.staff.one)}</h2>
+              <span className="text-xs text-muted-foreground">{groupLabel(group)}</span>
+            </div>
+            <ul className="flex flex-col">
+              {byPerson.map((p) => {
+                const active = activePerson === p.id;
+                return (
+                  <li key={p.id} className="border-b last:border-b-0">
+                    <button
+                      type="button"
+                      aria-pressed={active}
+                      disabled={p.inGroup === 0}
+                      onClick={() => setPerson(active ? "" : p.id)}
+                      className={`${INSIGHT_ROW} disabled:cursor-default ${active ? "bg-primary/10" : "enabled:hover:bg-muted/60"}`}
+                    >
+                      <span className={`truncate ${p.id === UNASSIGNED ? "italic text-amber-700 dark:text-amber-400" : ""}`}>{p.name}</span>
+                      <span className="flex h-2.5 gap-px overflow-hidden rounded-full bg-muted" aria-hidden>
+                        {sells ? (
+                          <>
+                            <span className="bg-emerald-600" style={{ flex: p.ordering }} />
+                            <span className="bg-muted-foreground/25" style={{ flex: p.no_order }} />
+                          </>
+                        ) : (
+                          <span className="bg-emerald-600" style={{ flex: p.ordering + p.no_order }} />
+                        )}
+                        <span className="bg-red-600" style={{ flex: p.not_visited }} />
+                      </span>
+                      <span className={`text-right font-semibold tabular-nums ${p.inGroup === 0 ? "text-muted-foreground" : ""}`}>{p.inGroup}</span>
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+            <p className="text-xs text-muted-foreground">
+              The bar is all of their {lower(t.site.many)}. The number is how many are in this group. Tap a name to see only theirs.
+            </p>
+          </Card>
+
+          <Card className="flex flex-col gap-3 p-5">
+            <div className="flex items-baseline justify-between gap-3">
+              <h2 className="text-[15px] font-semibold">By town</h2>
+              <span className="text-xs text-muted-foreground">{groupLabel(group)}</span>
+            </div>
+            {byTown.length === 0 ? (
+              <p className="text-sm text-muted-foreground">{emptyGroup(group, t)}</p>
+            ) : (
+              <ul className="flex flex-col">
+                {byTown.slice(0, 6).map(([c, n]) => {
+                  const active = activeTown === c;
+                  return (
+                    <li key={c} className="border-b last:border-b-0">
+                      <button
+                        type="button"
+                        aria-pressed={active}
+                        onClick={() => setTown(active ? "" : c)}
+                        className={`${INSIGHT_ROW} ${active ? "bg-primary/10" : "hover:bg-muted/60"}`}
+                      >
+                        <span className={`truncate ${c === NO_TOWN ? "italic text-muted-foreground" : ""}`}>{c}</span>
+                        <span className="h-2.5 overflow-hidden rounded-full bg-muted" aria-hidden>
+                          <span className="block h-full rounded-full bg-primary/60" style={{ width: `${(n / byTown[0][1]) * 100}%` }} />
+                        </span>
+                        <span className="text-right font-semibold tabular-nums">{n}</span>
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+            {byTown.length > 6 && (
+              <p className="text-xs text-muted-foreground">
+                And {byTown.length - 6} more {byTown.length - 6 === 1 ? "town" : "towns"}. Search the list below to find one.
+              </p>
+            )}
+          </Card>
+        </div>
+      )}
 
       <div className="flex flex-wrap items-center gap-2">
         <div className="relative w-full sm:w-64">
@@ -295,22 +417,15 @@ export default function StoreHealthPage() {
             className="pl-8"
           />
         </div>
-        {(chips.people.length > 0 || chips.none > 0) && (
-          <div className="flex flex-wrap gap-1.5">
-            <Button size="sm" variant={activePerson === "" ? "default" : "outline"} onClick={() => setPerson("")}>
-              Everyone · {inThisGroup.length}
-            </Button>
-            {chips.people.map((p) => (
-              <Button key={p.id} size="sm" variant={activePerson === p.id ? "default" : "outline"} onClick={() => setPerson(p.id)}>
-                {p.name} · {p.n}
-              </Button>
-            ))}
-            {chips.none > 0 && (
-              <Button size="sm" variant={activePerson === UNASSIGNED ? "default" : "outline"} onClick={() => setPerson(UNASSIGNED)}>
-                Unassigned · {chips.none}
-              </Button>
-            )}
-          </div>
+        {activePerson !== "" && (
+          <button type="button" onClick={() => setPerson("")} className={FILTER_CHIP}>
+            {activePerson === UNASSIGNED ? "Unassigned only" : `${nameOf(activePerson)} only`} · show everyone
+          </button>
+        )}
+        {activeTown !== "" && (
+          <button type="button" onClick={() => setTown("")} className={FILTER_CHIP}>
+            {activeTown} only · every town
+          </button>
         )}
       </div>
 
@@ -364,6 +479,7 @@ export default function StoreHealthPage() {
                         onClick={() => {
                           setSearch("");
                           setPerson("");
+                          setTown("");
                         }}
                       >
                         Show them all
@@ -378,7 +494,7 @@ export default function StoreHealthPage() {
                 return (
                   <TableRow key={r.store_id}>
                     <TableCell className="min-w-[120px] whitespace-normal text-sm sm:min-w-[180px]">
-                      <Link href={storeHref(r.store_name)} className="font-medium text-primary hover:underline">
+                      <Link href={storeHref(r.store_id)} className="font-medium text-primary hover:underline">
                         {r.store_name}
                       </Link>
                       {r.city && <span className="block text-xs text-muted-foreground">{r.city}</span>}
