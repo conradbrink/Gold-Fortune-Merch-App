@@ -31,9 +31,9 @@ class OrderDraftLine {
 
   /// Trade price for one shrink, excluding VAT.
   ///
-  /// **No longer set by this app, and deliberately still here.** Customers sit
-  /// on different pricing tiers, so a rep must not quote one — the warehouse
-  /// prices the order when it confirms, where the tier is known.
+  /// **No longer set by this app, and deliberately still here.** A rep must not
+  /// quote a price: the database prices each line as the order arrives, from
+  /// the store's price list (`order_lines_price_from_list`).
   ///
   /// The field survives because drafts written by the previous build are on
   /// handsets right now and are decoded by `fromMap` below. Dropping it would

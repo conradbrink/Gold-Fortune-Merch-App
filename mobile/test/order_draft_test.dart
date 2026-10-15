@@ -314,7 +314,7 @@ void main() {
     // The quantity still converts; the price does not travel.
     expect(line['qty_ordered'], 30);
     expect(line['unit_price'], isNull,
-        reason: 'the warehouse prices the order, not the rep');
+        reason: "the store's price list prices the order, not the rep");
     expect(payload['contact_name'], 'Mma Dintwe');
     expect(payload['contact_phone'], '71234567');
   });

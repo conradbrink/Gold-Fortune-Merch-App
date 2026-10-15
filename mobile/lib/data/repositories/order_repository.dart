@@ -138,11 +138,10 @@ class OrderRepository {
       // meet: everything above it is what the rep typed, everything below is
       // what `order_confirm` will draw out of `stock_balances`.
       //
-      // `unit_price` is sent as null on purpose. Customers sit on different
-      // pricing tiers, so the rep is not the one who knows the price — the
-      // warehouse sets it when it confirms, where the tier is known. A price
-      // quoted in the shop and then corrected on the invoice is worse than no
-      // price at all, because the shop believed the first one.
+      // `unit_price` is sent as null on purpose. The database prices each
+      // line as it arrives, from the store's group price list or else the
+      // product's own price (`order_lines_price_from_list`, 20261015210000),
+      // so the phone never quotes a figure the invoice then contradicts.
       'lines': lines
           .map((l) => {
                 'product_id': l.productId,
