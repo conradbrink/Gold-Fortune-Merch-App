@@ -10,6 +10,7 @@ import '../../core/theme.dart';
 import '../../data/models/form_template.dart';
 import '../../data/models/promotion.dart';
 import '../../data/models/route_visit.dart';
+import '../../data/models/store_reorder.dart';
 import '../../data/repositories/promotion_repository.dart';
 import '../../data/repositories/route_repository.dart';
 import '../../shared/widgets/status_badge.dart';
@@ -624,6 +625,18 @@ class _StoreDetailScreenState extends ConsumerState<StoreDetailScreen> {
                 ),
               ),
               const SizedBox(height: 16),
+              // When this store last ordered and whether it is time to ask for
+              // another (owner, 15 Oct 2026), straight under the store so the
+              // rep reads it walking in. The way into order capture lives
+              // inside it.
+              if (hasDistribution)
+                _ReorderSection(
+                  storeId: rv.storeId,
+                  visitKey: widget.visitKey,
+                  visitClientId: rv.visitClientGeneratedId,
+                  isCheckedIn: rv.isCheckedIn,
+                  isCheckedOut: rv.isCheckedOut,
+                ),
               if (blockedReason != null && !rv.isCheckedOut) ...[
                 Container(
                   padding: const EdgeInsets.all(12),
@@ -685,22 +698,6 @@ class _StoreDetailScreenState extends ConsumerState<StoreDetailScreen> {
                   readOnly: rv.isCheckedOut,
                 ),
               ],
-              // Taking an order is offered while the rep is on site and not
-              // after check-out, for the same reason a form is: it is a record
-              // of what happened during the call, and the call is over.
-              //
-              // It does not block check-out. Most visits produce no order, and
-              // a gate that fires on every stop to ask about something that
-              // usually is not there teaches people to dismiss gates.
-              if (hasDistribution &&
-                  rv.visitClientGeneratedId != null &&
-                  rv.isCheckedIn) ...[
-                _OrderButton(
-                  visitKey: widget.visitKey,
-                  visitClientId: rv.visitClientGeneratedId!,
-                ),
-                const SizedBox(height: 16),
-              ],
               // Forms become available once the rep is on site.
               if (hasForms &&
                   rv.visitClientGeneratedId != null &&
@@ -760,6 +757,221 @@ class _StoreDetailScreenState extends ConsumerState<StoreDetailScreen> {
   }
 }
 
+/// When the store last ordered, how often it usually orders, and, when it is
+/// time, a plain prompt to ask for an order, with the button to take it.
+///
+/// Prompt only, never a gate (owner, 15 Oct 2026: "Prompt only"). Most stops
+/// end without an order, and a check-out that asks about something that usually
+/// is not there teaches people to dismiss it.
+///
+/// Taking an order is offered while the rep is checked in and not after
+/// check-out, for the same reason a form is: it is a record of what happened
+/// during the call, and the call is over. Before check-in the facts are shown
+/// anyway, because the rep should know them walking in.
+///
+/// With nothing known about the store (the list never reached this phone) it is
+/// the plain order button, exactly as before. Never a spinner: the rep is
+/// standing at a counter.
+class _ReorderSection extends ConsumerWidget {
+  const _ReorderSection({
+    required this.storeId,
+    required this.visitKey,
+    required this.visitClientId,
+    required this.isCheckedIn,
+    required this.isCheckedOut,
+  });
+
+  final String storeId;
+  final String visitKey;
+  final String? visitClientId;
+  final bool isCheckedIn;
+  final bool isCheckedOut;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final terms = ref.watch(termsProvider);
+    final site = terms.site.oneLower;
+    final reorder = ref
+        .watch(storeReorderProvider)
+        .maybeWhen(data: (all) => all[storeId], orElse: () => null);
+    final clientId = visitClientId;
+    final taken = clientId != null &&
+        ref
+            .watch(orderTakenOnVisitProvider(clientId))
+            .maybeWhen(data: (v) => v, orElse: () => false);
+    final onSite = isCheckedIn && clientId != null;
+
+    if (reorder == null) {
+      if (!onSite) return const SizedBox.shrink();
+      return Padding(
+        padding: const EdgeInsets.only(bottom: 16),
+        child: _OrderButton(visitKey: visitKey, visitClientId: clientId, taken: taken),
+      );
+    }
+
+    final status = reorderStateOn(reorder, DateTime.now());
+    final since = status.daysSince;
+    final until = status.daysUntilDue;
+    final last = reorder.lastOrderOn;
+
+    final Color tone;
+    final IconData icon;
+    final String headline;
+    if (taken) {
+      tone = AppColors.success;
+      icon = Icons.check_circle;
+      headline = 'Order taken on this ${terms.job.oneLower}';
+    } else {
+      switch (status.state) {
+        case ReorderState.never:
+          tone = context.brand.primary;
+          icon = Icons.storefront_outlined;
+          headline = 'No orders from this $site yet';
+        case ReorderState.stopped:
+          tone = AppColors.danger;
+          icon = Icons.trending_down;
+          headline = 'No order for $since days';
+        case ReorderState.due:
+          tone = AppColors.warning;
+          icon = Icons.notifications_active_outlined;
+          headline = 'Due for an order';
+        case ReorderState.dueSoon:
+          tone = AppColors.warning;
+          icon = Icons.schedule;
+          headline = until == 1
+              ? 'Due for an order tomorrow'
+              : 'Due for an order in $until days';
+        case ReorderState.notDue:
+          tone = context.brand.primary;
+          icon = Icons.event_available_outlined;
+          headline = 'Next order due around '
+              '${_dayMonth(last!.add(Duration(days: reorder.dueAfterDays)))}';
+      }
+    }
+
+    // The facts, in full sentences.
+    final facts = <String>[];
+    if (last != null) {
+      final progress = lastOrderProgress(reorder);
+      final number = reorder.lastOrderRef;
+      final which = number == null
+          ? ''
+          : reorder.isFromQuickBooks
+              ? ' (invoice $number)'
+              : ' ($number${progress == null ? '' : ', $progress'})';
+      // Until the order just taken comes back from the server, the list's
+      // last order is the one before it, and saying "Last order 16 days ago"
+      // under "Order taken" reads as a contradiction.
+      facts.add(taken && since! > 0
+          ? 'Their order before this one was ${daysAgo(since)}, on '
+              '${_dayMonth(last)}$which.'
+          : 'Last order ${daysAgo(since!)}, on ${_dayMonth(last)}$which.');
+    }
+    final usual = reorder.usualDays;
+    if (usual != null) {
+      facts.add(status.state == ReorderState.stopped
+          ? 'They used to order ${orderRhythm(usual)}.'
+          : 'They usually order ${orderRhythm(usual)}.');
+    }
+
+    // What to do about it. Nothing once the order is taken or the call is over.
+    String? prompt;
+    // True while the last order may still be on its way: the button then stays
+    // the plain one, so a second order is not the thing the screen pushes.
+    var checkFirst = false;
+    if (!taken && !isCheckedOut) {
+      if (reorder.lastOrderOpen &&
+          (status.state == ReorderState.due || status.state == ReorderState.stopped)) {
+        checkFirst = true;
+        // An order that never got marked delivered: worth checking before a
+        // second one goes in on top of it.
+        prompt = 'Their last order is still marked ${lastOrderProgress(reorder)}. '
+            'Check that it arrived, then ask for a new order.';
+      } else {
+        prompt = switch (status.state) {
+          ReorderState.never => 'Ask if they would like to place their first order.',
+          ReorderState.stopped => 'Ask why they stopped, and ask for an order.',
+          ReorderState.due => 'Ask the buyer for an order.',
+          ReorderState.dueSoon => 'Ask if they need anything before then.',
+          ReorderState.notDue => null,
+        };
+      }
+    }
+    final wantsOrder =
+        prompt != null && !checkFirst && status.state != ReorderState.notDue;
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 16),
+      child: Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: tone.withValues(alpha: 0.1),
+          borderRadius: BorderRadius.circular(10),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                Icon(icon, size: 20, color: tone),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    headline,
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w700,
+                      fontSize: 15,
+                      color: AppColors.textPrimary,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            for (final line in facts) ...[
+              const SizedBox(height: 6),
+              Text(
+                line,
+                style: const TextStyle(fontSize: 13, color: AppColors.textPrimary),
+              ),
+            ],
+            if (prompt != null) ...[
+              const SizedBox(height: 8),
+              Text(
+                prompt,
+                style: const TextStyle(
+                  fontSize: 13.5,
+                  fontWeight: FontWeight.w600,
+                  color: AppColors.textPrimary,
+                ),
+              ),
+            ],
+            if (onSite) ...[
+              const SizedBox(height: 12),
+              _OrderButton(
+                visitKey: visitKey,
+                visitClientId: clientId,
+                prominent: wantsOrder,
+                taken: taken,
+              ),
+            ] else if (wantsOrder && !isCheckedOut) ...[
+              const SizedBox(height: 8),
+              const Text(
+                'Check in first, then take the order here.',
+                style: TextStyle(fontSize: 12.5, color: AppColors.textMuted),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// "19 Sep", or "19 Sep 2025" for a date in another year.
+  static String _dayMonth(DateTime d) => d.year == DateTime.now().year
+      ? DateFormat('d MMM').format(d)
+      : DateFormat('d MMM y').format(d);
+}
+
 /// The way into order capture, and — when there is one — proof that the order
 /// the rep already started is still here.
 ///
@@ -768,10 +980,22 @@ class _StoreDetailScreenState extends ConsumerState<StoreDetailScreen> {
 /// survives, but nothing said so, so the rep believed the order was gone and
 /// asked the shopkeeper to list it again. A line of text is the whole fix.
 class _OrderButton extends ConsumerWidget {
-  const _OrderButton({required this.visitKey, required this.visitClientId});
+  const _OrderButton({
+    required this.visitKey,
+    required this.visitClientId,
+    this.prominent = false,
+    this.taken = false,
+  });
 
   final String visitKey;
   final String visitClientId;
+
+  /// A filled button when the store is due for an order, the outlined one
+  /// otherwise.
+  final bool prominent;
+
+  /// An order has already been sent from this visit.
+  final bool taken;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -814,13 +1038,27 @@ class _OrderButton extends ConsumerWidget {
         // returns them to the shop and the typing goes. `go` puts the order in
         // the location itself. The page stack is unchanged — `order` is a child
         // route of `visit/:key`, so back still lands on the shop.
-        OutlinedButton.icon(
-          onPressed: () => context.go('/visit/$visitKey/order'),
-          icon: Icon(lines > 0
-              ? Icons.edit_note_outlined
-              : Icons.receipt_long_outlined),
-          label: Text(lines > 0 ? 'Continue this order' : 'Take an order'),
-        ),
+        if (prominent && lines == 0)
+          SizedBox(
+            height: 48,
+            child: ElevatedButton.icon(
+              onPressed: () => context.go('/visit/$visitKey/order'),
+              icon: const Icon(Icons.receipt_long_outlined),
+              label: const Text('Take an order', style: TextStyle(fontSize: 15)),
+            ),
+          )
+        else
+          OutlinedButton.icon(
+            onPressed: () => context.go('/visit/$visitKey/order'),
+            icon: Icon(lines > 0
+                ? Icons.edit_note_outlined
+                : Icons.receipt_long_outlined),
+            label: Text(lines > 0
+                ? 'Continue this order'
+                : taken
+                    ? 'Take another order'
+                    : 'Take an order'),
+          ),
       ],
     );
   }

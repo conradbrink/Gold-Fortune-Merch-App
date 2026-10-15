@@ -39,7 +39,9 @@ import {
   PipelineCard,
   SalesCard,
   StoreHealthCard,
+  StoreReorderCard,
 } from "@/components/dashboard/business-widgets";
+import type { ReorderSummary } from "@/lib/store-reorder";
 import type { TargetProgress } from "@/lib/targets";
 import { SettleDriving } from "@/components/workday/settle-driving";
 import {
@@ -79,7 +81,7 @@ import {
  */
 
 /** The RPCs behind the catalogue. One fetch each, however many cards use them. */
-export type WidgetSource = "summary" | "dayTimes" | "operations" | "liveReps" | "business" | "numbers" | "today";
+export type WidgetSource = "summary" | "dayTimes" | "operations" | "liveReps" | "business" | "numbers" | "today" | "reorder";
 
 /** Sales, pipeline, money and store health, with this month's rep targets. */
 export type BusinessData = {
@@ -113,6 +115,8 @@ export type WidgetData = {
   today: Today | null;
   /** Contract invoices due in the next week, for the Money card. */
   contractsDue: ContractsDue | null;
+  /** Stores due for an order, fetched only when that card is on the layout. */
+  reorder: ReorderSummary | null;
 };
 
 // Where a tile's number can be taken apart: `reportHref` and the other links
@@ -297,6 +301,16 @@ export const WIDGETS: WidgetDefinition[] = [
     source: "business",
     module: "distribution",
     render: (d) => d.business && <StoreHealthCard business={d.business.summary} />,
+  },
+  {
+    id: "store_reorder",
+    title: (t) => `${t.site.many} due for an order`,
+    description: (t) =>
+      `${t.site.many} that have gone their usual time without an order, the ones that stopped ordering, and which to ask first.`,
+    span: 4,
+    source: "reorder",
+    module: "distribution",
+    render: (d) => d.reorder && <StoreReorderCard reorder={d.reorder} />,
   },
   {
     id: "visits_completed",
@@ -730,6 +744,7 @@ export const DEFAULT_LAYOUT: string[] = [
   "pipeline",
   "field_team",
   "store_health",
+  "store_reorder",
   "live_reps",
 ];
 

@@ -45,6 +45,7 @@ import {
   saveLayout,
 } from "@/lib/dashboard-layout";
 import { fetchOrgId } from "@/lib/representatives";
+import { fetchReorderSummary, type ReorderSummary } from "@/lib/store-reorder";
 import { AccountCards } from "@/components/dashboard/account-cards";
 import {
   fetchContractsDue,
@@ -101,6 +102,7 @@ export default function InsightsDashboardPage() {
   const [contractsDue, setContractsDue] = useState<ContractsDue | null>(null);
   /** The trade cards' sources that failed, apart from the page's own load. */
   const [tradeFailed, setTradeFailed] = useState<Set<WidgetSource>>(new Set());
+  const [reorder, setReorder] = useState<ReorderSummary | null>(null);
   /** Bumped by Retry, so the trade cards try again with the rest. */
   const [tradeTick, setTradeTick] = useState(0);
   const [orgId, setOrgId] = useState<string | null>(null);
@@ -421,16 +423,21 @@ export default function InsightsDashboardPage() {
   const codesKey = codes.join(",");
   const wantsToday = layout.includes("today");
   const wantsContracts = layout.includes("money") && !!company?.settings.money_contracts;
+  const wantsReorder = layout.includes("store_reorder") && !!company && moduleEnabled(company.modules, "distribution");
   useEffect(() => {
     if (!layoutLoaded || !company) return;
     let cancelled = false;
     void (async () => {
       const failed = new Set<WidgetSource>();
-      const [n, td, cd] = await Promise.allSettled([
+      const [n, td, cd, ro] = await Promise.allSettled([
         codes.length > 0 ? fetchNumbers(supabase, range, codes) : Promise.resolve(null),
         wantsToday ? fetchToday(supabase, company.timezone) : Promise.resolve(null),
         // From the company's today, like every other number here, not the browser's.
         wantsContracts ? fetchContractsDue(supabase, localDay(company.timezone)) : Promise.resolve(null),
+        // Not range-scoped: "due for an order" is about today.
+        wantsReorder
+          ? fetchReorderSummary(supabase, localDay(company.timezone), company.settings.reorder_after_days)
+          : Promise.resolve(null),
       ]);
       if (cancelled) return;
       if (n.status === "fulfilled") setNumbers(n.value);
@@ -445,13 +452,18 @@ export default function InsightsDashboardPage() {
       }
       // Contracts due are one line of the Money card, not the card.
       setContractsDue(cd.status === "fulfilled" ? cd.value : null);
+      if (ro.status === "fulfilled") setReorder(ro.value);
+      else {
+        setReorder(null);
+        failed.add("reorder");
+      }
       setTradeFailed(failed);
     })();
     return () => {
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [layoutLoaded, company, range.from, range.to, codesKey, wantsToday, wantsContracts, tradeTick]);
+  }, [layoutLoaded, company, range.from, range.to, codesKey, wantsToday, wantsContracts, wantsReorder, tradeTick]);
 
   const days = rangeDays(range);
   const widgetData: WidgetData = {
@@ -469,6 +481,7 @@ export default function InsightsDashboardPage() {
     cardCodes,
     today,
     contractsDue,
+    reorder,
   };
 
   /**
@@ -491,6 +504,7 @@ export default function InsightsDashboardPage() {
     business: business !== null,
     numbers: numbers !== null && !tradeFailed.has("numbers"),
     today: today !== null && !tradeFailed.has("today"),
+    reorder: reorder !== null && !tradeFailed.has("reorder"),
   };
 
   // Cards for modules the company does not have are left out, not shown empty.
@@ -583,7 +597,8 @@ export default function InsightsDashboardPage() {
             <div key={widget.id} className={SPAN_CLASS[widget.span]}>
               {sourceReady[widget.source] ? (
                 widget.render(widgetData)
-              ) : (widget.source === "numbers" || widget.source === "today") && !tradeFailed.has(widget.source) ? (
+              ) : (widget.source === "numbers" || widget.source === "today" || widget.source === "reorder") &&
+                !tradeFailed.has(widget.source) ? (
                 // Still on its way: the card's shape, not an error.
                 <div
                   className={`animate-pulse rounded-xl bg-secondary motion-reduce:animate-none ${widget.span === 4 ? "h-[112px]" : "h-[260px]"}`}
