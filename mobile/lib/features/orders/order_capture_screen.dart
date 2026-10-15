@@ -207,9 +207,9 @@ class _OrderCaptureScreenState extends ConsumerState<OrderCaptureScreen> {
         productId: entry.key,
         qty: entry.value,
         unitsPerShrink: p?.unitsPerShrink,
-        // No price from the phone. Customers sit on different pricing tiers,
-        // so the rep is not the one who knows it — the warehouse sets it when
-        // it confirms. See `OrderDraftLine.unitPrice` for why the field stays.
+        // No price from the phone. Each line is priced in the office as it
+        // arrives, from the store's price list (`order_lines_price_from_list`).
+        // See `OrderDraftLine.unitPrice` for why the field stays.
       ));
     }
     return out;
@@ -509,8 +509,12 @@ class _OrderCaptureScreenState extends ConsumerState<OrderCaptureScreen> {
                         ),
                         const SizedBox(height: 4),
                         Text(
-                          'Quantities are in shrinks. The warehouse prices the '
-                          'order and confirms what is in stock.',
+                          // Priced in the office as it arrives, from the
+                          // store's price list (20261015210000); the phone
+                          // still sends no price.
+                          'Quantities are in shrinks. Prices come from the '
+                          "${ref.watch(termsProvider).site.oneLower}'s price list, and the warehouse "
+                          'confirms what is in stock.',
                           style: Theme.of(context).textTheme.bodySmall?.copyWith(
                                 color: AppColors.textMuted,
                               ),
@@ -539,9 +543,10 @@ class _ProductRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // No price. Customers sit on different pricing tiers, so a figure shown
-    // here would be quoted to a shopkeeper and then corrected on the invoice —
-    // worse than showing nothing, because the shop believed the first one.
+    // No price. The office prices the order from the store's price list as
+    // it arrives; a figure shown here could be quoted to a shopkeeper and then
+    // differ on the invoice — worse than showing nothing, because the shop
+    // believed the first one.
     final subtitle = [
       if (product.brand != null) product.brand!,
       if (product.unitsPerShrink != null) '${product.unitsPerShrink} per shrink',
