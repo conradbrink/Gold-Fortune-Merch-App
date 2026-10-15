@@ -24,12 +24,14 @@ import {
   DECLINE_REASONS,
   DEFAULT_REORDER_DAYS,
   NEXT_VISIT_DAYS,
+  NO_STORE_GROUP,
   REORDER_TILES,
   defaultSort,
   describeDue,
   emptyGroup,
   fetchDeclines,
   fetchNextVisits,
+  fetchStoreGroups,
   fetchStorePhones,
   fetchStoreReorder,
   fetchYearSales,
@@ -42,16 +44,20 @@ import {
   orderRhythm,
   reorderStatus,
   sortRows,
+  storeGroupChoices,
+  storeGroupOf,
   type Decline,
   type DeclineReason,
   type NextVisit,
   type Sort,
   type SortKey,
+  type StoreGroups,
   type StoreReorderRow,
 } from "@/lib/store-reorder";
 import { describeDays } from "@/lib/store-health";
 import { formatMoneyShort } from "@/lib/money";
 import { formatPhone } from "@/lib/phone-login";
+import { NativeSelect } from "@/components/ui/native-select";
 import { useIsManager } from "@/lib/use-is-manager";
 import { PlanVisitsDialog } from "@/components/stores/plan-visits-dialog";
 import { createClient } from "@/lib/supabase/client";
@@ -110,12 +116,18 @@ export default function StoreReorderPage() {
   /** The stores the plan dialog is open for; empty when it is closed. */
   const [planning, setPlanning] = useState<{ id: string; name: string }[]>([]);
   const [planned, setPlanned] = useState<string | null>(null);
+  /** The store groups; null when they could not be read, which costs only the picker. */
+  const [storeGroups, setStoreGroups] = useState<StoreGroups | null>(null);
+  /** One store group (its id, or NO_STORE_GROUP) for the whole page; "" for every group. */
+  const [storeGroup, setStoreGroup] = useState("");
   const isManager = useIsManager();
 
   /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
-    // Mount only: the tiles own the group from here.
-    setAsked(reorderGroupFromQuery(new URLSearchParams(window.location.search)));
+    // Mount only: the tiles and the group picker own these from here.
+    const q = new URLSearchParams(window.location.search);
+    setAsked(reorderGroupFromQuery(q));
+    setStoreGroup(q.get("group") ?? "");
   }, []);
   /* eslint-enable react-hooks/set-state-in-effect */
 
@@ -134,8 +146,9 @@ export default function StoreReorderPage() {
       fetchDeclines(supabase, new Date(Date.now() - DECLINE_DAYS * 86_400_000)).catch(() => [] as Decline[]),
       fetchYearSales(supabase).catch(() => undefined),
       fetchStorePhones(supabase).catch(() => new Map<string, { name: string; phone: string }>()),
+      fetchStoreGroups(supabase).catch(() => null),
     ])
-      .then(async ([reorder, next, given, bought, numbers]) => {
+      .then(async ([reorder, next, given, bought, numbers, groups]) => {
         const ids = [
           ...new Set(
             [...[...(next?.values() ?? [])].map((v) => v.repId), ...given.map((d) => d.rep_id)].filter(
@@ -151,6 +164,7 @@ export default function StoreReorderPage() {
         setSales(bought ?? null);
         setSalesFailed(bought === undefined);
         setPhones(numbers);
+        setStoreGroups(groups);
         setVisits(next ?? new Map());
         setVisitsFailed(next === null);
         setNames(Object.fromEntries(((data ?? []) as { id: string; full_name: string | null }[]).map((p) => [p.id, p.full_name ?? ""])));
@@ -182,6 +196,14 @@ export default function StoreReorderPage() {
     window.history.replaceState(null, "", url);
   }
 
+  function chooseStoreGroup(next: string) {
+    setStoreGroup(next);
+    const url = new URL(window.location.href);
+    if (next) url.searchParams.set("group", next);
+    else url.searchParams.delete("group");
+    window.history.replaceState(null, "", url);
+  }
+
   function chooseSort(key: SortKey) {
     setChosenSort(
       sort.key === key
@@ -196,12 +218,37 @@ export default function StoreReorderPage() {
     setAttempt((n) => n + 1);
   }
 
+  const groupChoices = useMemo(() => (storeGroups ? storeGroupChoices(rows, storeGroups, t) : []), [rows, storeGroups, t]);
+  const activeStoreGroup = groupChoices.some((g) => g.id === storeGroup) ? storeGroup : "";
+  const storeGroupName = groupChoices.find((g) => g.id === activeStoreGroup)?.name ?? "";
+  /** The chosen store group's stores, or every store: what the tiles, panels and list count. */
+  const inStoreGroup = useMemo(
+    () =>
+      activeStoreGroup === "" || !storeGroups
+        ? rows
+        : rows.filter((r) => storeGroupOf(r.store_id, storeGroups.groupOf) === activeStoreGroup),
+    [rows, storeGroups, activeStoreGroup]
+  );
+
   const counts = useMemo(() => {
     const c = { due: 0, soon: 0, stopped: 0, never: 0, not_due: 0 } as Record<ReorderGroup, number>;
-    for (const r of rows) c[reorderStatus(r, today).state] += 1;
+    for (const r of inStoreGroup) c[reorderStatus(r, today).state] += 1;
     return c;
-  }, [rows, today]);
-  const inThisGroup = useMemo(() => rows.filter((r) => reorderStatus(r, today).state === group), [rows, today, group]);
+  }, [inStoreGroup, today]);
+  const inThisGroup = useMemo(
+    () => inStoreGroup.filter((r) => reorderStatus(r, today).state === group),
+    [inStoreGroup, today, group]
+  );
+
+  /** What an empty tile says, within the chosen store group when there is one. */
+  const emptyText = (() => {
+    const text = emptyGroup(group, t);
+    if (activeStoreGroup === "") return text;
+    const rest = text.charAt(0).toLowerCase() + text.slice(1);
+    return activeStoreGroup === NO_STORE_GROUP
+      ? `Of the ${lower(t.site.many)} in no ${lower(t.site_group.one)}, ${rest}`
+      : `In ${storeGroupName}, ${rest}`;
+  })();
 
   /** "Next visit": who is going to this group's stores in the next two weeks, and how many nobody is. */
   const byVisit = useMemo(() => {
@@ -298,12 +345,17 @@ export default function StoreReorderPage() {
         ? `No ${lower(t.job.one)} planned in the next two weeks`
         : activePerson
           ? `Next ${lower(t.job.one)} with ${nameOf(activePerson)}`
-          : `Every ${lower(t.site.one)} in this group`;
+          : `Every ${lower(t.site.one)} in "${groupLabel(group)}"`;
     return {
       title: `${t.site.many} due for an order: ${groupLabel(group)}`,
       context: [
         groupMeaning(group, t, rule),
         who,
+        ...(activeStoreGroup === NO_STORE_GROUP
+          ? [`Not in a ${lower(t.site_group.one)}`]
+          : activeStoreGroup
+            ? [`${t.site_group.one}: ${storeGroupName}`]
+            : []),
         ...(activeTown ? [`Town: ${activeTown}`] : []),
         ...(activeReason ? [`Last said: ${DECLINE_REASONS[activeReason as DeclineReason]}`] : []),
         ...(search.trim() ? [`Matching "${search.trim()}"`] : []),
@@ -365,7 +417,7 @@ export default function StoreReorderPage() {
     setVisitsFailed(false);
   }
 
-  const total = rows.length;
+  const total = inStoreGroup.length;
   const tiles: Tile[] = REORDER_TILES.map((g) => ({
     id: g,
     label: groupLabel(g),
@@ -383,6 +435,32 @@ export default function StoreReorderPage() {
         subtitle={`When each ${lower(t.site.one)} last ordered, how often it usually orders, and who is due. A ${lower(t.site.one)} is due after ${rule} days without an order, or sooner if it usually orders sooner. Your team sees the same on their phones.`}
         action={<ExportMenu build={buildSheet} disabled={loading || shown.length === 0} />}
       />
+
+      {/* The whole page, tiles and all, for one group's stores: one person may look after Choppies. */}
+      {groupChoices.some((g) => g.id !== NO_STORE_GROUP) && (
+        <div className="flex flex-wrap items-center gap-2">
+          <label htmlFor="store-group" className="text-sm text-muted-foreground">
+            {t.site_group.one}
+          </label>
+          <div className="w-full sm:w-72">
+            <NativeSelect id="store-group" value={activeStoreGroup} onChange={(e) => chooseStoreGroup(e.target.value)}>
+              <option value="">Every {lower(t.site_group.one)}</option>
+              {groupChoices.map((g) => (
+                <option key={g.id} value={g.id}>
+                  {g.name} ({g.n})
+                </option>
+              ))}
+            </NativeSelect>
+          </div>
+        </div>
+      )}
+
+      {/* Said, rather than quietly showing every group's figures under a link that names one. */}
+      {!loading && !error && storeGroup !== "" && storeGroups === null && (
+        <p role="status" className="text-sm text-amber-700 dark:text-amber-400">
+          The {lower(t.site_group.many)} could not be read, so these are the figures for every {lower(t.site_group.one)}.
+        </p>
+      )}
 
       <TopCard>
         {total > 0 && (
@@ -419,7 +497,7 @@ export default function StoreReorderPage() {
             active={activePerson}
             onToggle={(id) => setPerson(activePerson === id ? "" : id)}
             limit={12}
-            empty={emptyGroup(group, t)}
+            empty={emptyText}
             footnote={
               visitsFailed
                 ? `The planned ${lower(t.job.many)} could not be read, so every ${lower(t.site.one)} shows as not planned.`
@@ -438,7 +516,7 @@ export default function StoreReorderPage() {
             }))}
             active={activeTown}
             onToggle={(id) => setTown(activeTown === id ? "" : id)}
-            empty={emptyGroup(group, t)}
+            empty={emptyText}
             moreHint="Search the list below to find one."
           />
           <InsightPanel
@@ -461,6 +539,12 @@ export default function StoreReorderPage() {
         {activePerson !== "" && (
           <FilterChip onClear={() => setPerson("")}>
             {activePerson === NONE_PLANNED ? `No ${lower(t.job.one)} planned` : `${nameOf(activePerson)}'s next ${lower(t.job.many)}`} · show everyone
+          </FilterChip>
+        )}
+        {activeStoreGroup !== "" && (
+          <FilterChip onClear={() => chooseStoreGroup("")}>
+            {activeStoreGroup === NO_STORE_GROUP ? `Not in a ${lower(t.site_group.one)}` : `${storeGroupName} only`} · every{" "}
+            {lower(t.site_group.one)}
           </FilterChip>
         )}
         {activeTown !== "" && <FilterChip onClear={() => setTown("")}>{activeTown} only · every town</FilterChip>}
@@ -522,7 +606,7 @@ export default function StoreReorderPage() {
               <TableRow>
                 <TableCell colSpan={colSpan} className="py-10 text-center text-sm text-muted-foreground">
                   {inThisGroup.length === 0 ? (
-                    emptyGroup(group, t)
+                    emptyText
                   ) : (
                     <>
                       No {lower(t.site.many)} match.{" "}
@@ -533,6 +617,7 @@ export default function StoreReorderPage() {
                           setSearch("");
                           setPerson("");
                           setTown("");
+                          setReasonFilter("");
                         }}
                       >
                         Show them all
