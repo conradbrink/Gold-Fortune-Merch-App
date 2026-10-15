@@ -29,6 +29,7 @@ import {
   type DiscountKind,
 } from "@/lib/orders";
 import { fetchStockOnHand, type StockLine } from "@/lib/warehouse";
+import { fetchPriceBook, listForGroup, type PriceBook } from "@/lib/price-lists";
 import { useCompanyConfig, useTerms } from "@/lib/use-company-config";
 import { lower } from "@/lib/terms";
 
@@ -72,7 +73,12 @@ export default function NewOrderPage() {
   const router = useRouter();
 
   const [orgId, setOrgId] = useState<string | null>(null);
-  const [stores, setStores] = useState<{ id: string; name: string; city: string | null }[]>([]);
+  const [stores, setStores] = useState<
+    { id: string; name: string; city: string | null; store_group_id: string | null }[]
+  >([]);
+  // Each store group's price list. A store's lines are prefilled from its
+  // group's list, as the database prices a line saved without one.
+  const [priceBook, setPriceBook] = useState<PriceBook>({});
   const [products, setProducts] = useState<
     {
       id: string;
@@ -121,17 +127,19 @@ export default function NewOrderPage() {
     let cancelled = false;
     (async () => {
       try {
-        const [org, s, p, st, r, vat] = await Promise.all([
+        const [org, s, p, st, r, vat, book] = await Promise.all([
           fetchOrgId(supabase),
           fetchStoresForOrder(supabase),
           fetchOrderableProducts(supabase),
           fetchStockOnHand(supabase, {}),
           fetchRepsForOrder(supabase),
           fetchVatRate(supabase),
+          fetchPriceBook(supabase),
         ]);
         if (cancelled) return;
         setOrgId(org);
         setStores(s);
+        setPriceBook(book);
         setProducts(p);
         setStock(st);
         setReps(r);
@@ -155,6 +163,32 @@ export default function NewOrderPage() {
     }
     return m;
   }, [stock]);
+
+  const listFor = (id: string) =>
+    listForGroup(priceBook, stores.find((s) => s.id === id)?.store_group_id);
+  const storeList = listFor(storeId);
+
+  /**
+   * Picks (or clears) the store, and moves the prefilled prices with it: a
+   * line still at the last store's price, or empty, takes this store's. A
+   * price the clerk typed is theirs and stays, as when the product changes.
+   */
+  function chooseStore(id: string) {
+    const before = listFor(storeId);
+    const after = listFor(id);
+    setStoreId(id);
+    if (before === after) return;
+    setLines((prev) =>
+      prev.map((l) => {
+        const p = products.find((x) => x.id === l.productId);
+        if (!p) return l;
+        const was = unitPriceFor(p, before);
+        if (l.unitPrice !== "" && l.unitPrice !== was) return l;
+        const now = unitPriceFor(p, after);
+        return { ...l, unitPrice: now ?? "" };
+      })
+    );
+  }
 
   function update(key: string, patch: Partial<Draft>) {
     setLines((prev) => prev.map((l) => (l.key === key ? { ...l, ...patch } : l)));
@@ -187,7 +221,7 @@ export default function NewOrderPage() {
    * the form starts with is used rather than left behind.
    */
   function addFromSearch(p: (typeof products)[number]) {
-    const price = unitPriceFor(p);
+    const price = unitPriceFor(p, storeList);
     setLines((prev) => {
       const existing = prev.find((l) => l.productId === p.id);
       if (existing) {
@@ -240,11 +274,11 @@ export default function NewOrderPage() {
       });
       // Into the local list too, so it is findable again without a reload.
       setStores((prev) =>
-        [...prev, { id: created.id, name: created.name, city: created.city }].sort((a, b) =>
-          a.name.localeCompare(b.name)
+        [...prev, { id: created.id, name: created.name, city: created.city, store_group_id: null }].sort(
+          (a, b) => a.name.localeCompare(b.name)
         )
       );
-      setStoreId(created.id);
+      chooseStore(created.id);
       setStoreQuery(created.name + (created.city ? ` — ${created.city}` : ""));
       setAddingStore(false);
       setNewStoreCity("");
@@ -366,12 +400,13 @@ export default function NewOrderPage() {
               onChange={(e) => {
                 setStoreQuery(e.target.value);
                 setStoreOpen(true);
-                if (storeId) setStoreId("");
+                if (storeId) chooseStore("");
               }}
             />
             {storeId && (
               <p className="mt-1 text-xs text-muted-foreground">
                 Selected — typing again will change it.
+                {storeList && ` Prices come from the ${storeList.name} price list.`}
               </p>
             )}
             {storeOpen && !storeId && (
@@ -385,7 +420,7 @@ export default function NewOrderPage() {
                       // mousedown, not click: the input's blur fires first
                       // otherwise and the list is gone before the click lands.
                       e.preventDefault();
-                      setStoreId(m.id);
+                      chooseStore(m.id);
                       setStoreQuery(m.name + (m.city ? ` — ${m.city}` : ""));
                       setStoreOpen(false);
                     }}
@@ -613,7 +648,7 @@ export default function NewOrderPage() {
                     value={l.productId}
                     onChange={(e) => {
                       const p = products.find((x) => x.id === e.target.value);
-                      const prefill = p ? unitPriceFor(p) : null;
+                      const prefill = p ? unitPriceFor(p, storeList) : null;
 
                       // Changing the product has to move the price with it.
                       // Only re-prefilling an empty box meant that picking A,
@@ -625,7 +660,7 @@ export default function NewOrderPage() {
                       // kept: a negotiated price is exactly what a phone order
                       // carries, and overwriting it would be worse.
                       const previous = products.find((x) => x.id === l.productId);
-                      const previousPrefill = previous ? unitPriceFor(previous) : null;
+                      const previousPrefill = previous ? unitPriceFor(previous, storeList) : null;
                       const untouched =
                         l.unitPrice === "" || l.unitPrice === previousPrefill;
 

@@ -26,6 +26,7 @@ import {
 } from "@/lib/recurring";
 import { useCompanyConfig, useTerms } from "@/lib/use-company-config";
 import { lower, withArticle } from "@/lib/terms";
+import { fetchPriceBook, listForGroup, type PriceBook } from "@/lib/price-lists";
 
 type Product = Awaited<ReturnType<typeof fetchOrderableProducts>>[number];
 type Line = {
@@ -45,9 +46,10 @@ function today() {
 /**
  * Creating or editing a recurring order.
  *
- * A blank price means "the catalogue price on the day it is placed", which is
- * what most standing orders want: when the price list changes, next month's
- * order follows it. Type a price only for an agreed one that should not move.
+ * A blank price means "the store's price on the day it is placed" (its group's
+ * price list, or the product's own price), which is what most standing orders
+ * want: when a price changes, next month's order follows it. Type a price only
+ * for an agreed one that should not move.
  */
 export function RecurringForm({
   existing,
@@ -63,7 +65,10 @@ export function RecurringForm({
   const currency = useCompanyConfig()?.settings.currency_code ?? "";
   const r = existing?.recurring;
   const [orgId, setOrgId] = useState<string | null>(null);
-  const [stores, setStores] = useState<{ id: string; name: string; city: string | null }[]>([]);
+  const [stores, setStores] = useState<
+    { id: string; name: string; city: string | null; store_group_id: string | null }[]
+  >([]);
+  const [priceBook, setPriceBook] = useState<PriceBook>({});
   const [products, setProducts] = useState<Product[]>([]);
   const [reps, setReps] = useState<{ id: string; full_name: string }[]>([]);
 
@@ -95,15 +100,17 @@ export function RecurringForm({
     let cancelled = false;
     (async () => {
       try {
-        const [org, s, p, rp] = await Promise.all([
+        const [org, s, p, rp, book] = await Promise.all([
           fetchOrgId(supabase),
           fetchStoresForOrder(supabase),
           fetchOrderableProducts(supabase),
           fetchRepsForOrder(supabase),
+          fetchPriceBook(supabase),
         ]);
         if (cancelled) return;
         setOrgId(org);
         setStores(s);
+        setPriceBook(book);
         setProducts(p);
         setReps(rp);
       } catch (e) {
@@ -116,6 +123,8 @@ export function RecurringForm({
   }, [supabase]);
 
   const byId = useMemo(() => new Map(products.map((p) => [p.id, p])), [products]);
+  // The store's price list: what a blank price becomes when an order is placed.
+  const storeList = listForGroup(priceBook, stores.find((s) => s.id === storeId)?.store_group_id);
   // Name or brand anywhere, SKU from the start. Kept local rather than shared
   // with the order form's search so this branch does not depend on that one;
   // the two can become one helper once both are merged.
@@ -160,10 +169,10 @@ export function RecurringForm({
     if (lines.some((l) => !Number.isInteger(Number(l.qty)) || Number(l.qty) <= 0))
       return setError("Quantities are whole units above zero.");
     for (const l of lines) {
-      // A blank price is the catalogue price on the day; today's is the best
+      // A blank price is the store's price on the day; today's is the best
       // guess at whether an amount off is more than the line is worth.
       const p = byId.get(l.productId);
-      const catalogue = p ? unitPriceFor(p) : null;
+      const catalogue = p ? unitPriceFor(p, storeList) : null;
       const price = l.price !== "" ? l.price : catalogue;
       const problem = discountProblem({
         qty: Number(l.qty),
@@ -311,7 +320,7 @@ export function RecurringForm({
           )}
           {lines.map((l) => {
             const p = byId.get(l.productId);
-            const catalogue = p ? unitPriceFor(p) : null;
+            const catalogue = p ? unitPriceFor(p, storeList) : null;
             return (
               <div key={l.productId} className="grid items-start gap-2 sm:grid-cols-[1fr_5rem_8rem_7rem_2.5rem]">
                 <span className="truncate py-1.5 text-sm">{p?.name ?? "…"}</span>
@@ -340,7 +349,8 @@ export function RecurringForm({
             );
           })}
           <p className="text-xs text-muted-foreground">
-            Leave the price blank to use the catalogue price on the day each order is placed.
+            Leave the price blank to charge the {lower(t.site.one)}&rsquo;s price on the day each order is placed
+            {storeList ? `, from the ${storeList.name} price list` : ", the product's own price"}.
           </p>
         </CardContent>
       </Card>

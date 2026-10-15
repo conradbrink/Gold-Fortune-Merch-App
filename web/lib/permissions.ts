@@ -119,6 +119,8 @@ const PATH_PERMISSIONS: { prefix: string; permission: PermissionCode }[] = [
   { prefix: "/promotions", permission: "field_ops" },
   { prefix: "/representatives", permission: "team" },
   { prefix: "/products", permission: "resources" },
+  // Price lists per group of stores: whoever invoices sets what is charged.
+  { prefix: "/products/price-lists", permission: "invoicing" },
   { prefix: "/forms", permission: "resources" },
   { prefix: "/files", permission: "resources" },
   { prefix: "/hr", permission: "hr" },

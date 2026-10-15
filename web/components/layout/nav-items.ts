@@ -264,6 +264,11 @@ const PRODUCTS: ItemDef = {
   label: "Products",
   icon: Package,
   permission: "resources",
+  tabs: [
+    { href: "/products", label: "Products", permission: "resources" },
+    // What each group of stores pays: written by whoever invoices.
+    { href: "/products/price-lists", label: "Price lists", permission: "invoicing" },
+  ],
 };
 
 const INVENTORY: ItemDef = {

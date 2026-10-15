@@ -28,7 +28,7 @@ do $$
 declare
   c_gf constant uuid := '71170c8a-d53c-4a07-bdd4-97704a3cf4bc';
   v_fail text := '';
-  v_admin uuid; v_store uuid; v_loc uuid; v_p1 uuid; v_p2 uuid; v_p3 uuid;
+  v_admin uuid; v_store uuid; v_loc uuid; v_p0 uuid; v_p1 uuid; v_p2 uuid; v_p3 uuid;
   v_order uuid; v_l1 uuid; v_l2 uuid; v_l3 uuid;
   v_qb uuid; v_cancel uuid; v_paid uuid; v_off uuid; v_unpriced uuid;
   v_inv public.tax_invoices; v_next bigint; v_n int; v_num numeric; v_rate numeric;
@@ -74,10 +74,18 @@ begin
   select vat_rate into v_rate from public.organizations where id = c_gf;
 
   ------------------------------------------------------------------ O2 unpriced
+  -- A product with no price anywhere: a line with no price is given the
+  -- store's price as it is saved (20261015210000), so only a product with
+  -- none leaves the line unpriced.
+  insert into public.products (org_id, name, units_per_shrink, shrink_price_excl_vat)
+  values (c_gf, 'ZZ-OI unpriced product', 10, null) returning id into v_p0;
   insert into public.orders (org_id, order_number, store_id, source, received_via, client_generated_id)
   values (c_gf, 'ZZ-OI-UNPRICED', v_store, 'rep_app', 'other', gen_random_uuid()) returning id into v_unpriced;
   insert into public.order_lines (org_id, order_id, product_id, qty_ordered, unit_price, client_generated_id)
-  values (c_gf, v_unpriced, v_p1, 2, null, gen_random_uuid());
+  values (c_gf, v_unpriced, v_p0, 2, null, gen_random_uuid());
+  if (select unit_price from public.order_lines where order_id = v_unpriced) is not null then
+    raise exception 'Fixtures broken: the unpriced line was given a price.';
+  end if;
   begin
     update public.orders set status = 'confirmed', fulfil_location_id = v_loc where id = v_unpriced;
     v_fail := v_fail || 'O2 an order with an unpriced line was confirmed' || E'\n';

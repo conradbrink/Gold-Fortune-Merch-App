@@ -3,6 +3,7 @@ import type { Database } from "@/lib/supabase/types";
 import { lower, withArticle, type Terms } from "@/lib/terms";
 import { ORDER_STATUSES } from "@/lib/warehouse";
 import { orderStatusesFromQuery } from "@/lib/dashboard-links";
+import type { StorePriceList } from "@/lib/price-lists";
 
 /**
  * Everything the order screens read and do.
@@ -36,6 +37,8 @@ export type OrderDetail = {
   order: OrderRow;
   storeName: string | null;
   storeAddress: string | null;
+  /** The store's group, for its price list. */
+  storeGroupId: string | null;
   repName: string | null;
   /**
    * The warehouse the stock is reserved at, named.
@@ -199,7 +202,7 @@ export async function fetchOrderDetail(
     supabase
       .from("orders")
       .select(
-        "*, stores(name, address), profiles!orders_rep_id_fkey(full_name), stock_locations(name)"
+        "*, stores(name, address, store_group_id), profiles!orders_rep_id_fkey(full_name), stock_locations(name)"
       )
       .eq("id", orderId)
       .single(),
@@ -235,8 +238,9 @@ export async function fetchOrderDetail(
   const one = <T>(v: T | T[] | null): T | null =>
     Array.isArray(v) ? (v[0] ?? null) : v;
 
+  type StoreBits = { name: string; address: string | null; store_group_id: string | null };
   const orderRaw = orderRes.data as unknown as OrderRow & {
-    stores: { name: string; address: string | null } | { name: string; address: string | null }[] | null;
+    stores: StoreBits | StoreBits[] | null;
     profiles: { full_name: string } | { full_name: string }[] | null;
     stock_locations: { name: string } | { name: string }[] | null;
   };
@@ -247,6 +251,7 @@ export async function fetchOrderDetail(
     order: orderRaw,
     storeName: store?.name ?? null,
     storeAddress: store?.address ?? null,
+    storeGroupId: store?.store_group_id ?? null,
     repName: rep?.full_name ?? null,
     fulfilLocationName: one(orderRaw.stock_locations)?.name ?? null,
     lines: ((linesRes.data ?? []) as unknown as (OrderLineRow & {
@@ -429,14 +434,29 @@ export async function createStoreInline(
  *
  * Lives here rather than on the capture screen because two screens now need
  * it: capture, and the order detail where the warehouse prices a rep's order.
+ *
+ * Given the store's price list, the list's case price is used where it has
+ * one (20261015210000).
  */
-export function unitPriceFor(p: {
-  units_per_shrink: number | null;
-  shrink_price_excl_vat: number | null;
-}): string | null {
-  if (p.shrink_price_excl_vat == null) return null;
-  if (p.units_per_shrink == null || p.units_per_shrink <= 0) return null;
-  return (p.shrink_price_excl_vat / p.units_per_shrink).toFixed(2);
+export function unitPriceFor(
+  p: {
+    id?: string;
+    units_per_shrink: number | null;
+    shrink_price_excl_vat: number | null;
+  },
+  /** The store's price list: its price for the product wins over the
+      product's own, as `store_unit_price` decides in the database. */
+  list?: StorePriceList | null
+): string | null {
+  const listed = p.id != null ? list?.prices[p.id] : undefined;
+  const shrink = listed ?? p.shrink_price_excl_vat;
+  if (shrink == null) return null;
+  const units = p.units_per_shrink;
+  if (units == null || !Number.isInteger(units) || units <= 0) return null;
+  // In whole cents, half away from zero, as `round(price / units, 2)` in the
+  // database: a rep's line priced there and a clerk's prefilled here agree.
+  const cents = Math.round(Number(shrink) * 100);
+  return (Math.floor((cents * 2 + units) / (units * 2)) / 100).toFixed(2);
 }
 
 /**
@@ -716,7 +736,7 @@ export function orderTotals(
 export async function fetchStoresForOrder(supabase: Client) {
   const { data, error } = await supabase
     .from("stores")
-    .select("id, name, address, city")
+    .select("id, name, address, city, store_group_id")
     .eq("active", true)
     .order("name")
     .limit(1000);
@@ -726,6 +746,7 @@ export async function fetchStoresForOrder(supabase: Client) {
     name: string;
     address: string | null;
     city: string | null;
+    store_group_id: string | null;
   }[];
 }
 
