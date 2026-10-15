@@ -124,6 +124,18 @@ class AppDatabase extends _$AppDatabase {
   Future<void> deleteValue(String key) =>
       (delete(keyValueEntries)..where((t) => t.key.equals(key))).go();
 
+  /// Every entry whose key starts with [prefix] (matched exactly: `like`
+  /// alone would read `_` as any character).
+  Future<Map<String, String>> valuesWithPrefix(String prefix) async {
+    final rows = await (select(keyValueEntries)
+          ..where((t) => t.key.like('$prefix%')))
+        .get();
+    return {
+      for (final r in rows)
+        if (r.key.startsWith(prefix)) r.key: r.value,
+    };
+  }
+
   // --- Outbox ---------------------------------------------------------
 
   Future<int> enqueue({

@@ -46,6 +46,12 @@ class RouteTodayScreen extends ConsumerWidget {
               orElse: () => const <String, StoreReorder>{},
             )
         : const <String, StoreReorder>{};
+    // The phone's own record of the visits an order was taken on: right at
+    // once and offline, where the list fetched from the server is behind until
+    // the order syncs. Read once for the whole list.
+    final taken = company.has('distribution')
+        ? ref.watch(ordersTakenProvider).maybeWhen(data: (v) => v, orElse: () => const <String>{})
+        : const <String>{};
 
     return Scaffold(
       appBar: AppBar(
@@ -147,10 +153,14 @@ class RouteTodayScreen extends ConsumerWidget {
                   sliver: SliverList.separated(
                     itemCount: routes.length,
                     separatorBuilder: (_, _) => const SizedBox(height: 12),
-                    itemBuilder: (context, index) => _RouteCard(
-                      routeVisit: routes[index],
-                      reorder: reorder[routes[index].storeId],
-                    ),
+                    itemBuilder: (context, index) {
+                      final visitId = routes[index].visitClientGeneratedId;
+                      return _RouteCard(
+                        routeVisit: routes[index],
+                        reorder: reorder[routes[index].storeId],
+                        orderTaken: visitId != null && taken.contains(visitId),
+                      );
+                    },
                   ),
                 );
               },
@@ -217,8 +227,11 @@ class _EmptyState extends StatelessWidget {
 }
 
 class _RouteCard extends StatelessWidget {
-  const _RouteCard({required this.routeVisit, this.reorder});
+  const _RouteCard({required this.routeVisit, this.reorder, this.orderTaken = false});
   final RouteVisit routeVisit;
+
+  /// An order was taken on this stop's visit, by this phone.
+  final bool orderTaken;
 
   /// When this stop's store last ordered; null when the company does not sell
   /// or the list has not reached the phone, and the line is left out.
@@ -277,7 +290,7 @@ class _RouteCard extends StatelessWidget {
                     ],
                     if (reorder != null) ...[
                       const SizedBox(height: 6),
-                      _LastOrderLine(reorder: reorder!),
+                      _LastOrderLine(reorder: reorder!, orderTaken: orderTaken),
                     ],
                     const SizedBox(height: 10),
                     Row(
@@ -323,14 +336,17 @@ class _RouteCard extends StatelessWidget {
 /// due. On every stop rather than a badge on the due ones, because most stores
 /// are due at any time and a badge on nearly every card would say nothing.
 class _LastOrderLine extends StatelessWidget {
-  const _LastOrderLine({required this.reorder});
+  const _LastOrderLine({required this.reorder, this.orderTaken = false});
 
   final StoreReorder reorder;
+  final bool orderTaken;
 
   @override
   Widget build(BuildContext context) {
     final status = reorderStateOn(reorder, DateTime.now());
-    final (color, text) = switch (status.state) {
+    final (color, text) = orderTaken
+        ? (AppColors.success, 'Order taken today')
+        : switch (status.state) {
       ReorderState.never => (AppColors.textMuted, 'No orders yet'),
       ReorderState.stopped =>
         (AppColors.danger, 'Last order ${daysAgo(status.daysSince!)}'),
@@ -343,7 +359,7 @@ class _LastOrderLine extends StatelessWidget {
         ),
       ReorderState.notDue =>
         (AppColors.textMuted, 'Last order ${daysAgo(status.daysSince!)}'),
-    };
+          };
     return Row(
       children: [
         Icon(Icons.receipt_long_outlined, size: 14, color: color),

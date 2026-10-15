@@ -98,6 +98,7 @@ String? dependencyKeyOf(OutboxEntry entry) {
       parentType = OutboxType.workdayStart;
       payloadKey = 'workday_session_client_id';
     case OutboxType.formSubmission:
+    case OutboxType.damageReport:
       parentType = OutboxType.visitCheckIn;
       payloadKey = 'visit_client_generated_id';
     default:
@@ -653,6 +654,27 @@ class SyncEngine {
             );
         break;
 
+      case OutboxType.damageReport:
+        await _replayDamageReport(data);
+        break;
+
+      case OutboxType.orderDecline:
+        // Insert-only, like a promotion check: no UPDATE policy, so a retry
+        // that meets its own earlier row must not take the update path.
+        try {
+          await _client.from('order_declines').upsert(
+                data,
+                onConflict: 'client_generated_id',
+                ignoreDuplicates: true,
+              );
+        } on PostgrestException catch (e) {
+          // The visit already has a reason (one per visit, the first kept).
+          // There is nothing to retry: holding the queue for it would hold
+          // every entry behind it.
+          if (e.code != '23505') rethrow;
+        }
+        break;
+
       default:
         // Unknown type (e.g. written by a newer build). Drop rather than
         // block the queue forever.
@@ -875,6 +897,65 @@ class SyncEngine {
 
     if (responses.isNotEmpty) {
       await _client.from('form_responses').insert(responses);
+    }
+  }
+
+  /// Damaged stock: the visit resolved, the photo uploaded to `damage-photos`,
+  /// then the report. Insert-only, so a retry that meets its own row ends
+  /// quietly.
+  ///
+  /// The photo is deliberately not filed in `photos`: everything that reads
+  /// that table takes a photo on a visit as proof the work was done, and a
+  /// picture of a broken box is not that (see 20261015300000_damaged_stock).
+  Future<void> _replayDamageReport(Map<String, dynamic> data) async {
+    final orgId = data['org_id'] as String;
+    final repId = data['rep_id'] as String;
+    final clientId = data['client_generated_id'] as String;
+    final visitClientId = data['visit_client_generated_id'] as String;
+    final visit = await _client
+        .from('visits')
+        .select('id')
+        .eq('client_generated_id', visitClientId)
+        .maybeSingle();
+    if (visit == null) {
+      throw StateError('This check-in has not synced yet; will retry.');
+    }
+
+    final localPhotoPath = data.remove('local_photo_path') as String?;
+    String? photoPath;
+    if (localPhotoPath != null) {
+      final file = File(localPhotoPath);
+      // A photo the OS took back is a report without one, not a report that
+      // never lands.
+      if (file.existsSync()) {
+        photoPath = '$orgId/$repId/$clientId.jpg';
+        await _client.storage.from('damage-photos').upload(
+              photoPath,
+              file,
+              fileOptions: const FileOptions(upsert: true, contentType: 'image/jpeg'),
+            );
+      }
+    }
+
+    await _client.from('damage_reports').upsert(
+      {
+        ...data,
+        'visit_id': visit['id'],
+        'photo_path': photoPath,
+      },
+      onConflict: 'client_generated_id',
+      ignoreDuplicates: true,
+    );
+
+    // Landed, so the phone's copy is no longer needed (on a 1 GB handset it
+    // matters). A retry after this finds its row already there and changes
+    // nothing.
+    if (localPhotoPath != null) {
+      try {
+        await File(localPhotoPath).delete();
+      } catch (_) {
+        // Already gone.
+      }
     }
   }
 

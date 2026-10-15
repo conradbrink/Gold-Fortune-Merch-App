@@ -16,7 +16,8 @@ export const VISIT_PHOTOS_BUCKET = "visit-photos";
 export async function signPhotos(
   supabase: SupabaseClient,
   paths: (string | null | undefined)[],
-  expiresInSeconds = 3600
+  expiresInSeconds = 3600,
+  bucket = VISIT_PHOTOS_BUCKET
 ): Promise<Record<string, string>> {
   const unique = Array.from(
     new Set(paths.filter((p): p is string => Boolean(p)))
@@ -24,7 +25,7 @@ export async function signPhotos(
   if (unique.length === 0) return {};
 
   const { data, error } = await supabase.storage
-    .from(VISIT_PHOTOS_BUCKET)
+    .from(bucket)
     .createSignedUrls(unique, expiresInSeconds);
 
   if (error || !data) return {};

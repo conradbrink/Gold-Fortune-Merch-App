@@ -5,6 +5,7 @@ import Link from "next/link";
 import {
   Activity,
   BellRing,
+  PackageX,
   Map,
   List,
   Upload,
@@ -1235,6 +1236,21 @@ export default function StoresPage() {
             </Link>
           }
         />
+        {/* Damaged stock the reps found, with photos, to mark sorted. */}
+        {sells && (
+          <Button
+            variant="outline"
+            size="sm"
+            className="gap-1.5"
+            nativeButton={false}
+            render={
+              <Link href="/stores/damages">
+                <PackageX className="h-4 w-4" />
+                Damaged stock
+              </Link>
+            }
+          />
+        )}
         {/* The stores that have gone their usual time without an order. */}
         {sells && (
           <Button

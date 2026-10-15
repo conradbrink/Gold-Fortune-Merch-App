@@ -135,6 +135,7 @@ void main() {
       expect(moduleForLocation('/unscheduled/sales'), 'distribution');
       expect(moduleForLocation('/unscheduled/sales/abc'), 'distribution');
       expect(moduleForLocation('/visit/123/order'), 'distribution');
+      expect(moduleForLocation('/visit/123/damage'), 'distribution');
     });
 
     test('everything else is core', () {

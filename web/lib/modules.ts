@@ -69,6 +69,8 @@ const MODULE_PATHS: { prefix: string; module: ModuleCode }[] = [
   { prefix: "/sales", module: "distribution" },
   // Stores due for an order: orders are the whole question.
   { prefix: "/stores/reorder", module: "distribution" },
+  // Damaged stock of ours found at stores.
+  { prefix: "/stores/damages", module: "distribution" },
 
   { prefix: "/warehouse", module: "warehouse" },
   { prefix: "/inventory", module: "warehouse" },

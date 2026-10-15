@@ -127,5 +127,32 @@ void main() {
     });
     expect(never.lastOrderOn, isNull);
     expect(StoreReorder.fromMap(never.toMap()).toMap(), never.toMap());
+    // A row from before 20261015200000, or a 1.2.1 cache: no lines.
+    expect(never.lastLines, isEmpty);
+    expect(never.lastLinesMissing, 0);
+  });
+
+  test("the last order's products survive the cache", () {
+    final r = StoreReorder.fromMap({
+      'store_id': 's1',
+      'last_order_on': '2026-09-19',
+      'due_after_days': 30,
+      'last_lines': [
+        {'product_id': 'p1', 'shrinks': 3},
+        {'product_id': 'p2', 'shrinks': 1},
+        {'product_id': null, 'shrinks': 2}, // not a line the phone can use
+      ],
+      'last_lines_missing': 2,
+    });
+    expect(r.lastLines.map((l) => '${l.productId}:${l.shrinks}'), ['p1:3', 'p2:1']);
+    expect(r.lastLinesMissing, 2);
+    final back = StoreReorder.fromMap(r.toMap());
+    expect(back.lastLines.map((l) => '${l.productId}:${l.shrinks}'), ['p1:3', 'p2:1']);
+    expect(back.lastLinesMissing, 2);
+  });
+
+  test('every reason the database accepts has words, and only those', () {
+    expect(declineReasons.keys.toSet(),
+        {'has_stock', 'buyer_away', 'no_money', 'price', 'other_supplier', 'other'});
   });
 }
