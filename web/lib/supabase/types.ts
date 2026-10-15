@@ -655,6 +655,51 @@ export type Database = {
         }
         Relationships: []
       }
+      customer_price_lists: {
+        Row: {
+          id: string
+          org_id: string
+          name: string
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          org_id: string
+          name: string
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          org_id?: string
+          name?: string
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      customer_price_list_items: {
+        Row: {
+          price_list_id: string
+          org_id: string
+          product_id: string
+          shrink_price_excl_vat: number
+        }
+        Insert: {
+          price_list_id: string
+          org_id: string
+          product_id: string
+          shrink_price_excl_vat: number
+        }
+        Update: {
+          price_list_id?: string
+          org_id?: string
+          product_id?: string
+          shrink_price_excl_vat?: number
+        }
+        Relationships: []
+      }
       logbook_vehicles: {
         Row: {
           id: string
@@ -4951,18 +4996,21 @@ export type Database = {
           id: string
           name: string
           org_id: string
+          price_list_id: string | null
         }
         Insert: {
           created_at?: string
           id?: string
           name: string
           org_id: string
+          price_list_id?: string | null
         }
         Update: {
           created_at?: string
           id?: string
           name?: string
           org_id?: string
+          price_list_id?: string | null
         }
         Relationships: [
           {
@@ -7445,6 +7493,14 @@ export type Database = {
       tax_invoice_issue: {
         Args: { p_order_id: string; p_issue_date?: string }
         Returns: string
+      }
+      price_list_save: {
+        Args: { p_id: string | null; p_name: string; p_group_ids: string[]; p_prices: Json }
+        Returns: string
+      }
+      price_list_delete: {
+        Args: { p_id: string }
+        Returns: undefined
       }
       invoice_direct: {
         Args: { p_bill_to: Json; p_lines: Json; p_issue_date?: string; p_reference?: string }

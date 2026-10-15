@@ -62,6 +62,7 @@ import {
 } from "@/lib/orders";
 import { useCompanyConfig, useTerms } from "@/lib/use-company-config";
 import { capital, lower, possessive, withArticle } from "@/lib/terms";
+import { fetchPriceBook, listForGroup, type PriceBook } from "@/lib/price-lists";
 
 /**
  * What an availability check was a check of: this order, as these lines, at
@@ -145,10 +146,10 @@ export default function OrderDetailPage() {
   /**
    * Prices the warehouse is typing, keyed by line id.
    *
-   * A rep's order arrives unpriced — customers sit on different pricing tiers,
-   * so the phone is the wrong place to decide. This is where the tier is known,
-   * and `order_lines` only accepts the edit while the order is still `new`,
-   * which is the right window: confirming is the promise.
+   * A rep's order arrives priced from the store's price list (its group's
+   * list, or the product's own price); this is where the office changes a
+   * price, and `order_lines` only accepts the edit while the order is still
+   * `new`, which is the right window: confirming is the promise.
    */
   const [priceDraft, setPriceDraft] = useState<Record<string, string>>({});
   const [pricing, setPricing] = useState(false);
@@ -162,6 +163,8 @@ export default function OrderDetailPage() {
       shrink_price_excl_vat: number | null;
     }[]
   >([]);
+  // Each store group's price list, for this order's store.
+  const [priceBook, setPriceBook] = useState<PriceBook>({});
 
   /**
    * Field reps, for handing a delivery to one.
@@ -245,7 +248,7 @@ export default function OrderDetailPage() {
     let cancelled = false;
     (async () => {
       try {
-        const [c, cat, locs, repRows] = await Promise.all([
+        const [c, cat, locs, repRows, book] = await Promise.all([
           fetchCarriers(supabase),
           fetchOrderableProducts(supabase),
           fetchLocations(supabase),
@@ -255,11 +258,13 @@ export default function OrderDetailPage() {
             .eq("role", "rep")
             .eq("is_active", true)
             .order("full_name"),
+          fetchPriceBook(supabase),
         ]);
         const d = await reload();
         if (cancelled) return;
         setCarriers(c);
         setCatalogue(cat);
+        setPriceBook(book);
         setLocations(locs);
         // Fails loudly. A discarded error here empties the assignment dropdown,
         // which reads as "there are no reps" — and the next thing somebody does
@@ -410,10 +415,27 @@ export default function OrderDetailPage() {
   const canPrice = o.status === "new";
   const unpricedLines = detail.lines.filter((l) => l.unit_price == null).length;
 
-  /** The catalogue's per-unit price for a line, as a prefill. */
+  // The store's price list, if its group has one: what a line saved without a
+  // price is given by the database, so the same figure is suggested here.
+  const storeList = listForGroup(priceBook, detail.storeGroupId);
+
+  /** The store's per-unit price for a product, as a prefill. */
   function suggested(productId: string): string {
     const p = catalogue.find((c) => c.id === productId);
-    return p ? (unitPriceFor(p) ?? "") : "";
+    return p ? (unitPriceFor(p, storeList) ?? "") : "";
+  }
+
+  // Lines with no price that the list (or the product's own price) can fill:
+  // an order taken before price lists, or a product with no price then.
+  const fillable = canPrice
+    ? detail.lines.filter((l) => l.unit_price == null && !priceDraft[l.id] && suggested(l.product_id) !== "")
+    : [];
+
+  function fillPrices() {
+    setPriceDraft((prev) => ({
+      ...prev,
+      ...Object.fromEntries(fillable.map((l) => [l.id, suggested(l.product_id)])),
+    }));
   }
 
   /** Saves every price typed, then reloads. */
@@ -535,9 +557,9 @@ export default function OrderDetailPage() {
         orderId,
         productId: addProductId,
         qty,
-        // Prefilled from the catalogue so the line is not born unpriced, and
+        // Prefilled from the store's price so the line is not born unpriced, and
         // still editable in the table above like every other price.
-        unitPrice: unitPriceFor(product) == null ? null : Number(unitPriceFor(product)),
+        unitPrice: unitPriceFor(product, storeList) == null ? null : Number(unitPriceFor(product, storeList)),
       });
       await reload();
       setAddProductId("");
@@ -877,17 +899,27 @@ export default function OrderDetailPage() {
                       <span className="font-medium text-foreground">
                         {unpricedLines} line{unpricedLines === 1 ? " has" : "s have"} no price.
                       </span>{" "}
-                      {/* A rep never sets one: customers sit on different
-                          pricing tiers and the phone does not know which. The
-                          placeholder shows the catalogue price as a starting
-                          point, not an answer. */}
-                      Set them before confirming — {withArticle(terms, "staff")}&rsquo;s order arrives
-                      unpriced.
+                      {/* Since 15 Oct 2026 a line saved without a price is
+                          given the store's price (its group's price list, or
+                          the product's own). One still unpriced is an older
+                          order, or a product with no price anywhere. */}
+                      Set them before confirming.
                     </>
                   ) : (
                     "Quantities and prices can be changed until this order is confirmed. After that, stock is reserved against it."
                   )}
+                  {storeList && (
+                    <span className="block text-xs">
+                      This {lower(terms.site.one)} is charged from the {storeList.name} price list.
+                    </span>
+                  )}
                 </p>
+                <div className="flex flex-wrap gap-2">
+                  {fillable.length > 0 && (
+                    <Button size="sm" variant="outline" onClick={fillPrices} disabled={pricing}>
+                      {storeList ? `Fill in the ${storeList.name} prices` : "Fill in the products' own prices"}
+                    </Button>
+                  )}
                 <Button
                   size="sm"
                   variant="outline"
@@ -900,6 +932,7 @@ export default function OrderDetailPage() {
                 >
                   {pricing ? "Saving…" : "Save changes"}
                 </Button>
+                </div>
               </div>
             )}
 
