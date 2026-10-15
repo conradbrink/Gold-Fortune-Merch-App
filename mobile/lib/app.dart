@@ -19,6 +19,7 @@ import 'features/deliveries/deliveries_screen.dart';
 import 'features/files/files_screen.dart';
 import 'features/hr/my_hr_screen.dart';
 import 'features/orders/order_capture_route.dart';
+import 'features/damages/damage_report_screen.dart';
 import 'features/route_today/route_today_screen.dart';
 import 'features/visit/store_detail_screen.dart';
 import 'features/visit/sales_visit_complete_screen.dart';
@@ -180,6 +181,20 @@ final routerProvider = Provider<GoRouter>((ref) {
                 path: 'order',
                 builder: (context, state) => OrderCaptureRoute(
                   visitKey: state.pathParameters['key']!,
+                ),
+              ),
+              GoRoute(
+                // Damaged stock, a route for the order screen's reasons, and
+                // resolved from the day the same way.
+                path: 'damage',
+                builder: (context, state) => OrderCaptureRoute(
+                  visitKey: state.pathParameters['key']!,
+                  builder: (visit, key) => DamageReportScreen(
+                    visitClientId: visit.visitClientGeneratedId!,
+                    storeId: visit.storeId,
+                    storeName: visit.storeName,
+                    visitKey: key,
+                  ),
                 ),
               ),
             ],

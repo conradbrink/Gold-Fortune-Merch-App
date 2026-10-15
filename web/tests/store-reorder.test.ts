@@ -4,7 +4,13 @@
 // (mobile/test/store_reorder_test.dart uses the same cases).
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import {
+  DECLINE_REASONS,
+  dayLabel,
+  standingDeclines,
+  type Decline,
   daysBetween,
   defaultSort,
   describeDue,
@@ -136,4 +142,74 @@ test("the sentences use the company's own words and the rule it chose", () => {
   assert.match(due, /21 days/);
   assert.match(groupMeaning("stopped", DEFAULT_TERMS, 21), /42 days/);
   assert.ok(!due.includes("—"), "no em dashes");
+});
+
+test("the reasons a rep can give are exactly the ones the database accepts", () => {
+  const sql = readFileSync(join(process.cwd(), "..", "supabase", "migrations", "20261015200000_order_followups.sql"), "utf8");
+  const check = sql.slice(sql.indexOf("reason                    text not null check"), sql.indexOf("note                      text"));
+  const allowed = [...check.matchAll(/'([a-z_]+)'/g)].map((m) => m[1]).sort();
+  assert.deepEqual(Object.keys(DECLINE_REASONS).sort(), allowed);
+  for (const words of Object.values(DECLINE_REASONS)) assert.ok(!words.includes("\u2014"), "no em dashes");
+});
+
+test("a reason stands only when it was given after the store's last order", () => {
+  const d = (store_id: string, reason: Decline["reason"], created_at: string): Decline => ({
+    store_id,
+    rep_id: null,
+    reason,
+    note: null,
+    created_at,
+  });
+  const rows = [
+    { store_id: "a", last_order_on: "2026-09-01" },
+    { store_id: "b", last_order_on: "2026-10-08" },
+    { store_id: "c", last_order_on: null },
+    { store_id: "d", last_order_on: "2026-10-14" },
+  ];
+  // Newest first, as fetchDeclines returns them.
+  const standing = standingDeclines(
+    [
+      d("a", "price", "2026-10-14T10:00:00Z"),
+      d("a", "has_stock", "2026-10-01T10:00:00Z"),
+      d("b", "buyer_away", "2026-10-02T10:00:00Z"), // before b ordered on 8 Oct
+      d("c", "no_money", "2026-10-03T10:00:00Z"),
+      d("d", "price", "2026-10-14T21:30:00Z"), // 23:30 in Gaborone, the day d ordered: overtaken
+    ],
+    rows,
+    "Africa/Gaborone"
+  );
+  assert.equal(standing.get("a")?.reason, "price");
+  assert.equal(standing.has("b"), false);
+  assert.equal(standing.get("c")?.reason, "no_money");
+  assert.equal(standing.has("d"), false);
+});
+
+test("a day label carries the year only when it is not this year", () => {
+  assert.equal(dayLabel("2026-09-19", "2026-10-15"), "19 Sept");
+  assert.equal(dayLabel("2025-09-19", "2026-10-15"), "19 Sept 2025");
+});
+
+test("the win-back list puts the biggest buyers first, with their number", () => {
+  const rows = [
+    row({ store_id: "small", store_name: "Small", last_order_on: "2026-06-01", order_days_year: 9 }),
+    row({ store_id: "big", store_name: "Big", last_order_on: "2026-07-01", order_days_year: 2 }),
+    row({ store_id: "none", store_name: "None", last_order_on: "2026-05-01", order_days_year: 1 }),
+  ];
+  const sales = new Map([
+    ["small", 1200],
+    ["big", 45000],
+  ]);
+  const phones = new Map([["big", { name: "Buyer", phone: "+2673912345" }]]);
+  const s = summarise(rows, TODAY, 30, 5, sales, phones);
+  assert.deepEqual(
+    s.winBack.map((w) => w.id),
+    ["big", "small", "none"]
+  );
+  assert.equal(s.winBack[0].phone?.phone, "+2673912345");
+  assert.equal(s.winBack[2].sales, null);
+  // Without money (a person who may not see it), most order days first instead.
+  assert.deepEqual(
+    summarise(rows, TODAY, 30, 5, null).winBack.map((w) => w.id),
+    ["small", "big", "none"]
+  );
 });

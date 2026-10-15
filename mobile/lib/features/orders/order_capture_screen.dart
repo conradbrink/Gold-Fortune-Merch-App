@@ -7,6 +7,7 @@ import '../../core/providers.dart';
 import '../../core/theme.dart';
 import '../../data/local/order_draft.dart';
 import '../../data/models/catalogue_product.dart';
+import '../../data/models/store_reorder.dart';
 
 /// Taking an order in the shop.
 ///
@@ -58,6 +59,10 @@ class _OrderCaptureScreenState extends ConsumerState<OrderCaptureScreen> {
   bool _loading = true;
   bool _saving = false;
   String? _error;
+
+  /// Set once "Same as last order" has filled the list: what was left out.
+  /// Null until then; the note under the search says what happened.
+  int? _leftOut;
   List<CatalogueProduct> _catalogue = const [];
 
   @override
@@ -210,6 +215,25 @@ class _OrderCaptureScreenState extends ConsumerState<OrderCaptureScreen> {
     return out;
   }
 
+  /// Fills the list with the store's last order, in shrinks, for the rep to
+  /// change. Products this phone cannot order are left out and counted, so the
+  /// rep can ask about them rather than lose them in silence.
+  void _fillFromLast(StoreReorder last) {
+    final orderable = {for (final p in _catalogue) p.id};
+    var leftOut = last.lastLinesMissing;
+    setState(() {
+      for (final l in last.lastLines) {
+        if (orderable.contains(l.productId) && l.shrinks > 0) {
+          _qty[l.productId] = l.shrinks;
+        } else {
+          leftOut += 1;
+        }
+      }
+      _leftOut = leftOut;
+    });
+    _persist();
+  }
+
   void _setQty(String productId, int qty) {
     setState(() {
       if (qty <= 0) {
@@ -282,7 +306,7 @@ class _OrderCaptureScreenState extends ConsumerState<OrderCaptureScreen> {
         ),
       );
       ref.invalidate(orderDraftProvider(widget.visitClientId));
-      ref.invalidate(orderTakenOnVisitProvider(widget.visitClientId));
+      ref.invalidate(ordersTakenProvider);
       ref.invalidate(storeReorderProvider);
       context.go('/visit/${widget.visitKey}');
     } catch (e) {
@@ -302,6 +326,20 @@ class _OrderCaptureScreenState extends ConsumerState<OrderCaptureScreen> {
         : _catalogue.where((p) => p.searchText.contains(term)).toList();
 
     final lineCount = _qty.values.where((q) => q > 0).length;
+    // The store's last order, from the list warmed with the day. Offered only
+    // on an empty order: on top of lines already typed it would be a guess at
+    // which of the two the rep meant.
+    final last = ref.watch(storeReorderProvider).maybeWhen(
+          data: (all) => all[widget.storeId],
+          orElse: () => null,
+        );
+    // Something the phone can actually put in: the products must be in this
+    // phone's list, or the button would do nothing.
+    final orderable = {for (final p in _catalogue) p.id};
+    final fillable = last == null
+        ? 0
+        : last.lastLines.where((l) => orderable.contains(l.productId)).length;
+    final canFill = fillable > 0 && lineCount == 0 && _leftOut == null;
 
     return Scaffold(
       appBar: AppBar(
@@ -356,6 +394,13 @@ class _OrderCaptureScreenState extends ConsumerState<OrderCaptureScreen> {
                     ),
                   ),
                 ),
+                if (canFill)
+                  _SameAgainBanner(
+                    last: last!,
+                    onFill: () => _fillFromLast(last),
+                  )
+                else if (_leftOut != null && lineCount > 0)
+                  _FilledNote(leftOut: _leftOut!),
                 Expanded(
                   child: ListView.builder(
                     itemCount: visible.length,
@@ -559,6 +604,67 @@ class _ProductRow extends StatelessWidget {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+/// "Same as last order": one tap fills the list with what the store ordered
+/// last time, for the rep to change.
+class _SameAgainBanner extends StatelessWidget {
+  const _SameAgainBanner({required this.last, required this.onFill});
+
+  final StoreReorder last;
+  final VoidCallback onFill;
+
+  @override
+  Widget build(BuildContext context) {
+    final n = last.lastLines.length;
+    final when = last.lastOrderOn == null ? '' : ' on ${dayMonth(last.lastOrderOn!)}';
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(12, 10, 8, 10),
+        decoration: BoxDecoration(
+          color: context.brand.accent.withValues(alpha: 0.12),
+          borderRadius: BorderRadius.circular(10),
+        ),
+        child: Row(
+          children: [
+            Expanded(
+              child: Text(
+                'Their last order$when had $n '
+                '${n == 1 ? 'product' : 'products'}.',
+                style: const TextStyle(fontSize: 13, color: AppColors.textPrimary),
+              ),
+            ),
+            const SizedBox(width: 8),
+            ElevatedButton.icon(
+              onPressed: onFill,
+              icon: const Icon(Icons.replay, size: 18),
+              label: const Text('Same again'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Said once the list was filled from the last order.
+class _FilledNote extends StatelessWidget {
+  const _FilledNote({required this.leftOut});
+
+  final int leftOut;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+      child: Text(
+        'Filled in from their last order. Change any number before you save.'
+        '${leftOut == 0 ? '' : leftOut == 1 ? ' One product from it can\'t be ordered from the phone and was left out.' : ' $leftOut products from it can\'t be ordered from the phone and were left out.'}',
+        style: const TextStyle(fontSize: 12.5, color: AppColors.textMuted),
       ),
     );
   }

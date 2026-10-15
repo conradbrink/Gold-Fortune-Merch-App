@@ -261,11 +261,30 @@ final storeReorderProvider =
   return ref.watch(orderRepositoryProvider).fetchReorder();
 });
 
+/// Every visit an order was taken on, from the phone's own record. Read once
+/// for the whole day's list rather than once per stop.
+final ordersTakenProvider = FutureProvider<Set<String>>((ref) async {
+  return ref.watch(orderRepositoryProvider).visitsWithOrderTaken();
+});
+
 /// Whether this visit already produced an order, so the store screen stops
-/// asking for one. See `OrderRepository.orderTakenOnVisit`.
+/// asking for one. Invalidate [ordersTakenProvider] to refresh it.
 final orderTakenOnVisitProvider =
     FutureProvider.family<bool, String>((ref, visitClientId) async {
-  return ref.watch(orderRepositoryProvider).orderTakenOnVisit(visitClientId);
+  return (await ref.watch(ordersTakenProvider.future)).contains(visitClientId);
+});
+
+/// The reason given on this visit for not ordering, or null. See
+/// `OrderRepository.recordDecline`.
+final orderDeclineOnVisitProvider =
+    FutureProvider.family<String?, String>((ref, visitClientId) async {
+  return ref.watch(orderRepositoryProvider).declineOnVisit(visitClientId);
+});
+
+/// Damaged stock reported on this visit. See `OrderRepository.reportDamage`.
+final damagesOnVisitProvider =
+    FutureProvider.family<List<({String name, int qty})>, String>((ref, visitClientId) async {
+  return ref.watch(orderRepositoryProvider).damagesOnVisit(visitClientId);
 });
 
 final promotionRepositoryProvider = Provider<PromotionRepository>((ref) {

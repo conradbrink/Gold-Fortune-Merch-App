@@ -18,6 +18,15 @@ import { toPermissionSet, type PermissionSet } from "@/lib/permissions";
  * answer here would gain a menu item that redirects and a query RLS refuses.
  */
 export function usePermissions(): PermissionSet | null {
+  return usePermissionsState().permissions;
+}
+
+/**
+ * The same, with whether the lookup failed: for a page that would otherwise
+ * wait on `null` for good (the dashboard's reorder card asks for money only
+ * when it knows the answer, and must still load when there is none).
+ */
+export function usePermissionsState(): { permissions: PermissionSet | null; failed: boolean } {
   const [permissions, setPermissions] = useState<PermissionSet | null>(null);
   const [failed, setFailed] = useState(false);
 
@@ -51,5 +60,5 @@ export function usePermissions(): PermissionSet | null {
     };
   }, []);
 
-  return permissions;
+  return { permissions, failed };
 }

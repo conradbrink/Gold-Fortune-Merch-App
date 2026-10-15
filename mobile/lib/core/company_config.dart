@@ -287,7 +287,8 @@ String moduleForLocation(String location) {
   if (under('/my-hr')) return 'hr';
   if (under('/deliveries')) return 'warehouse';
   if (under('/unscheduled/sales')) return 'distribution';
-  if (RegExp(r'^/visit/[^/]+/order(/|$)').hasMatch(location)) {
+  // Taking an order and reporting damaged stock are both distribution's.
+  if (RegExp(r'^/visit/[^/]+/(order|damage)(/|$)').hasMatch(location)) {
     return 'distribution';
   }
   return 'core';

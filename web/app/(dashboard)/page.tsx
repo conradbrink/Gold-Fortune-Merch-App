@@ -57,7 +57,8 @@ import {
   type Today,
 } from "@/lib/dashboard-numbers";
 import { codesFromSetting, findKpi } from "@/lib/kpis";
-import { usePermissions } from "@/lib/use-permissions";
+import { usePermissionsState } from "@/lib/use-permissions";
+import { can } from "@/lib/permissions";
 
 /**
  * The dashboard is composed, not fixed.
@@ -93,7 +94,7 @@ export default function InsightsDashboardPage() {
   const [layout, setLayout] = useState<string[]>(DEFAULT_LAYOUT);
   const company = useCompanyConfig();
   const terms = useTerms();
-  const permissions = usePermissions();
+  const { permissions, failed: permissionsFailed } = usePermissionsState();
   /** The trade's cards, for someone who has not arranged their own (the company setting). */
   const companyDefault = companyDefaultLayout(company?.settings.dashboard_layout);
   const cardCodes = codesFromSetting(company?.settings.dashboard_cards ?? "", (c) => !!findKpi(c));
@@ -103,6 +104,7 @@ export default function InsightsDashboardPage() {
   /** The trade cards' sources that failed, apart from the page's own load. */
   const [tradeFailed, setTradeFailed] = useState<Set<WidgetSource>>(new Set());
   const [reorder, setReorder] = useState<ReorderSummary | null>(null);
+  const [reorderFailed, setReorderFailed] = useState(false);
   /** Bumped by Retry, so the trade cards try again with the rest. */
   const [tradeTick, setTradeTick] = useState(0);
   const [orgId, setOrgId] = useState<string | null>(null);
@@ -429,15 +431,11 @@ export default function InsightsDashboardPage() {
     let cancelled = false;
     void (async () => {
       const failed = new Set<WidgetSource>();
-      const [n, td, cd, ro] = await Promise.allSettled([
+      const [n, td, cd] = await Promise.allSettled([
         codes.length > 0 ? fetchNumbers(supabase, range, codes) : Promise.resolve(null),
         wantsToday ? fetchToday(supabase, company.timezone) : Promise.resolve(null),
         // From the company's today, like every other number here, not the browser's.
         wantsContracts ? fetchContractsDue(supabase, localDay(company.timezone)) : Promise.resolve(null),
-        // Not range-scoped: "due for an order" is about today.
-        wantsReorder
-          ? fetchReorderSummary(supabase, localDay(company.timezone), company.settings.reorder_after_days)
-          : Promise.resolve(null),
       ]);
       if (cancelled) return;
       if (n.status === "fulfilled") setNumbers(n.value);
@@ -452,18 +450,42 @@ export default function InsightsDashboardPage() {
       }
       // Contracts due are one line of the Money card, not the card.
       setContractsDue(cd.status === "fulfilled" ? cd.value : null);
-      if (ro.status === "fulfilled") setReorder(ro.value);
-      else {
-        setReorder(null);
-        failed.add("reorder");
-      }
       setTradeFailed(failed);
     })();
     return () => {
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [layoutLoaded, company, range.from, range.to, codesKey, wantsToday, wantsContracts, wantsReorder, tradeTick]);
+  }, [layoutLoaded, company, range.from, range.to, codesKey, wantsToday, wantsContracts, tradeTick]);
+
+  /**
+   * "Stores due for an order": its own load, not range-scoped (it is about
+   * today), and only once the permissions are known, because whether to ask
+   * for money depends on them. Loaded with the other cards it ran twice
+   * whenever the permissions arrived last. A lookup that failed is an answer
+   * too (no money), or the card would wait for good.
+   */
+  const seesMoney = permissions !== null && can(permissions, "invoicing");
+  const permissionsKnown = permissions !== null || permissionsFailed;
+  useEffect(() => {
+    if (!layoutLoaded || !company || !wantsReorder || !permissionsKnown) return;
+    let cancelled = false;
+    fetchReorderSummary(supabase, localDay(company.timezone), company.settings.reorder_after_days, seesMoney)
+      .then((summary) => {
+        if (cancelled) return;
+        setReorder(summary);
+        setReorderFailed(false);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setReorder(null);
+        setReorderFailed(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [layoutLoaded, company, wantsReorder, permissionsKnown, seesMoney, tradeTick]);
 
   const days = rangeDays(range);
   const widgetData: WidgetData = {
@@ -504,7 +526,7 @@ export default function InsightsDashboardPage() {
     business: business !== null,
     numbers: numbers !== null && !tradeFailed.has("numbers"),
     today: today !== null && !tradeFailed.has("today"),
-    reorder: reorder !== null && !tradeFailed.has("reorder"),
+    reorder: reorder !== null && !reorderFailed,
   };
 
   // Cards for modules the company does not have are left out, not shown empty.
@@ -553,7 +575,7 @@ export default function InsightsDashboardPage() {
         </p>
       )}
 
-      {(error || tradeFailed.size > 0) && (
+      {(error || tradeFailed.size > 0 || reorderFailed) && (
         <Card>
           <CardContent className="py-8 text-center text-sm">
             {/* Cards whose own source arrived are still shown, so this must not
@@ -597,8 +619,8 @@ export default function InsightsDashboardPage() {
             <div key={widget.id} className={SPAN_CLASS[widget.span]}>
               {sourceReady[widget.source] ? (
                 widget.render(widgetData)
-              ) : (widget.source === "numbers" || widget.source === "today" || widget.source === "reorder") &&
-                !tradeFailed.has(widget.source) ? (
+              ) : ((widget.source === "numbers" || widget.source === "today") && !tradeFailed.has(widget.source)) ||
+                (widget.source === "reorder" && !reorderFailed) ? (
                 // Still on its way: the card's shape, not an error.
                 <div
                   className={`animate-pulse rounded-xl bg-secondary motion-reduce:animate-none ${widget.span === 4 ? "h-[112px]" : "h-[260px]"}`}

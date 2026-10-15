@@ -1,3 +1,5 @@
+import 'package:intl/intl.dart';
+
 /// When a store last ordered and when it is due to order again, from
 /// `store_reorder()`.
 ///
@@ -33,6 +35,15 @@ class StoreReorder {
   /// company's rule (30 days unless changed), whichever is sooner.
   final int dueAfterDays;
 
+  /// The last order's products and shrinks, for "Same as last order". Only
+  /// products the phone can order; the rest are counted in [lastLinesMissing].
+  final List<ReorderLine> lastLines;
+
+  /// Lines of the last order that cannot be filled in from the phone: a
+  /// QuickBooks line with no product in Tickd, or a product that cannot be
+  /// ordered here (no shrink size, not stock-tracked, no longer sold).
+  final int lastLinesMissing;
+
   const StoreReorder({
     required this.storeId,
     this.lastOrderOn,
@@ -41,6 +52,8 @@ class StoreReorder {
     this.orderDaysYear = 0,
     this.usualDays,
     required this.dueAfterDays,
+    this.lastLines = const [],
+    this.lastLinesMissing = 0,
   });
 
   bool get isFromQuickBooks => lastOrderStatus == 'invoiced';
@@ -64,6 +77,17 @@ class StoreReorder {
       orderDaysYear: (map['order_days_year'] as num?)?.toInt() ?? 0,
       usualDays: (map['usual_days'] as num?)?.toInt(),
       dueAfterDays: (map['due_after_days'] as num?)?.toInt() ?? 30,
+      // Absent from a server older than 20261015200000, and from a cache
+      // written by 1.2.1: no lines, not an error.
+      lastLines: [
+        for (final l in (map['last_lines'] as List?) ?? const [])
+          if (l is Map && l['product_id'] is String)
+            ReorderLine(
+              productId: l['product_id'] as String,
+              shrinks: (l['shrinks'] as num?)?.toInt() ?? 1,
+            ),
+      ],
+      lastLinesMissing: (map['last_lines_missing'] as num?)?.toInt() ?? 0,
     );
   }
 
@@ -76,8 +100,31 @@ class StoreReorder {
         'order_days_year': orderDaysYear,
         'usual_days': usualDays,
         'due_after_days': dueAfterDays,
+        'last_lines': [
+          for (final l in lastLines) {'product_id': l.productId, 'shrinks': l.shrinks},
+        ],
+        'last_lines_missing': lastLinesMissing,
       };
 }
+
+/// One product of a store's last order, in shrinks.
+class ReorderLine {
+  const ReorderLine({required this.productId, required this.shrinks});
+
+  final String productId;
+  final int shrinks;
+}
+
+/// Why a store did not order, as `order_declines.reason` stores it, with the
+/// words the rep picks from. In the order a rep hears them most.
+const declineReasons = <String, String>{
+  'has_stock': 'They still have stock',
+  'buyer_away': "The buyer wasn't there",
+  'no_money': 'No money right now',
+  'price': 'Our price is too high',
+  'other_supplier': 'They buy from someone else',
+  'other': 'Something else',
+};
 
 /// Where a store stands on ordering today.
 enum ReorderState {
@@ -136,6 +183,11 @@ ReorderStatus reorderStateOn(StoreReorder r, DateTime today) {
               : ReorderState.notDue;
   return ReorderStatus(state, daysSince: since, daysUntilDue: until);
 }
+
+/// "19 Sep", or "19 Sep 2025" for a date in another year: an old QuickBooks
+/// order must not read as last week's.
+String dayMonth(DateTime d, {DateTime? now}) =>
+    d.year == (now ?? DateTime.now()).year ? DateFormat('d MMM').format(d) : DateFormat('d MMM y').format(d);
 
 /// "today", "yesterday", "26 days ago".
 String daysAgo(int days) => switch (days) {

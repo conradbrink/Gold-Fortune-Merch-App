@@ -6,7 +6,10 @@ import '../../core/providers.dart';
 import '../../data/models/route_visit.dart';
 import 'order_capture_screen.dart';
 
-/// Resolves `/visit/:key/order` into the screen the rep actually types into.
+/// Resolves a screen under a checked-in visit (`/visit/:key/order`, and
+/// `/visit/:key/damage` through [builder]) into the screen the rep actually
+/// types into. Whatever this class requires of the visit (checked in, with a
+/// client id) applies to every screen it hosts.
 ///
 /// [OrderCaptureScreen] needs the store and the visit's client id, and this
 /// finds them in the day the app already has cached rather than accepting them
@@ -14,9 +17,13 @@ import 'order_capture_screen.dart';
 /// is the whole failure this route exists to fix — a screen that only works on
 /// the way in is the one that vanished.
 class OrderCaptureRoute extends ConsumerStatefulWidget {
-  const OrderCaptureRoute({super.key, required this.visitKey});
+  const OrderCaptureRoute({super.key, required this.visitKey, this.builder});
 
   final String visitKey;
+
+  /// The screen for the resolved visit; the order screen when not given. The
+  /// damaged-stock screen rides on the same resolution, for the same reasons.
+  final Widget Function(RouteVisit visit, String visitKey)? builder;
 
   @override
   ConsumerState<OrderCaptureRoute> createState() => _OrderCaptureRouteState();
@@ -77,7 +84,7 @@ class _OrderCaptureRouteState extends ConsumerState<OrderCaptureRoute> {
     );
   }
 
-  Widget _screenFor(RouteVisit visit) => OrderCaptureScreen(
+  Widget _screenFor(RouteVisit visit) => widget.builder?.call(visit, widget.visitKey) ?? OrderCaptureScreen(
         visitClientId: visit.visitClientGeneratedId!,
         storeId: visit.storeId,
         storeName: visit.storeName,

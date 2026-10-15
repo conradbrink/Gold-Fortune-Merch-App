@@ -20,14 +20,21 @@ import { localDay } from "@/lib/dashboard-numbers";
 import { shiftDay } from "@/lib/dashboard";
 import type { ExportSheet } from "@/lib/export";
 import {
+  DECLINE_DAYS,
+  DECLINE_REASONS,
   DEFAULT_REORDER_DAYS,
   NEXT_VISIT_DAYS,
   REORDER_TILES,
   defaultSort,
   describeDue,
   emptyGroup,
+  fetchDeclines,
   fetchNextVisits,
+  fetchStorePhones,
   fetchStoreReorder,
+  fetchYearSales,
+  dayLabel,
+  standingDeclines,
   groupLabel,
   groupMeaning,
   lastOrderProgress,
@@ -35,12 +42,18 @@ import {
   orderRhythm,
   reorderStatus,
   sortRows,
+  type Decline,
+  type DeclineReason,
   type NextVisit,
   type Sort,
   type SortKey,
   type StoreReorderRow,
 } from "@/lib/store-reorder";
 import { describeDays } from "@/lib/store-health";
+import { formatMoneyShort } from "@/lib/money";
+import { formatPhone } from "@/lib/phone-login";
+import { useIsManager } from "@/lib/use-is-manager";
+import { PlanVisitsDialog } from "@/components/stores/plan-visits-dialog";
 import { createClient } from "@/lib/supabase/client";
 import { count, lower } from "@/lib/terms";
 import { useCompanyConfig, useTerms } from "@/lib/use-company-config";
@@ -53,17 +66,6 @@ const NOBODY_YET = "nobody";
 /** Which "Next visit" line a store falls on. */
 function visitLine(v: NextVisit | undefined): string {
   return v ? (v.repId ?? NOBODY_YET) : NONE_PLANNED;
-}
-
-/** "2026-09-19" as "19 Sep", with the year when it is not this year's. */
-function shortDay(day: string, today: string): string {
-  const [y, m, d] = day.split("-").map(Number);
-  return new Intl.DateTimeFormat("en-GB", {
-    day: "numeric",
-    month: "short",
-    ...(day.slice(0, 4) === today.slice(0, 4) ? {} : { year: "numeric" }),
-    timeZone: "UTC",
-  }).format(new Date(Date.UTC(y, m - 1, d)));
 }
 
 /**
@@ -97,6 +99,18 @@ export default function StoreReorderPage() {
   const [search, setSearch] = useState("");
   const [chosenSort, setChosenSort] = useState<Sort | null>(null);
   const [attempt, setAttempt] = useState(0);
+  /** Every reason given in the last DECLINE_DAYS, newest first. */
+  const [declines, setDeclines] = useState<Decline[]>([]);
+  /** What each store bought in a year; null when this person may not see money. */
+  const [sales, setSales] = useState<Map<string, number> | null>(null);
+  const [salesFailed, setSalesFailed] = useState(false);
+  const [phones, setPhones] = useState<Map<string, { name: string; phone: string }>>(new Map());
+  /** One reason from the "Why no order" panel; "" for all. */
+  const [reasonFilter, setReasonFilter] = useState("");
+  /** The stores the plan dialog is open for; empty when it is closed. */
+  const [planning, setPlanning] = useState<{ id: string; name: string }[]>([]);
+  const [planned, setPlanned] = useState<string | null>(null);
+  const isManager = useIsManager();
 
   /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
@@ -112,15 +126,31 @@ export default function StoreReorderPage() {
     let stale = false;
     const supabase = createClient();
     const day = localDay(config.timezone);
+    // Only the stores are needed for the page to be useful; the rest add to it
+    // and each costs its own column or panel when it cannot be read.
     Promise.all([
       fetchStoreReorder(supabase),
       fetchNextVisits(supabase, day, shiftDay(day, NEXT_VISIT_DAYS - 1)).catch(() => null),
+      fetchDeclines(supabase, new Date(Date.now() - DECLINE_DAYS * 86_400_000)).catch(() => [] as Decline[]),
+      fetchYearSales(supabase).catch(() => undefined),
+      fetchStorePhones(supabase).catch(() => new Map<string, { name: string; phone: string }>()),
     ])
-      .then(async ([reorder, next]) => {
-        const ids = [...new Set([...(next?.values() ?? [])].map((v) => v.repId).filter((id): id is string => id !== null))];
+      .then(async ([reorder, next, given, bought, numbers]) => {
+        const ids = [
+          ...new Set(
+            [...[...(next?.values() ?? [])].map((v) => v.repId), ...given.map((d) => d.rep_id)].filter(
+              (id): id is string => id !== null
+            )
+          ),
+        ];
         const { data } = ids.length === 0 ? { data: [] } : await supabase.from("profiles").select("id, full_name").in("id", ids);
         if (stale) return;
         setRows(reorder);
+        setDeclines(given);
+        // undefined: it failed, which is said; null: no permission, which is not.
+        setSales(bought ?? null);
+        setSalesFailed(bought === undefined);
+        setPhones(numbers);
         setVisits(next ?? new Map());
         setVisitsFailed(next === null);
         setNames(Object.fromEntries(((data ?? []) as { id: string; full_name: string | null }[]).map((p) => [p.id, p.full_name ?? ""])));
@@ -138,13 +168,14 @@ export default function StoreReorderPage() {
   }, [config, attempt]);
 
   const group: ReorderGroup = asked ?? "due";
-  const sort = chosenSort ?? defaultSort(group);
+  const sort = chosenSort ?? defaultSort(group, sales !== null);
 
   function chooseGroup(next: ReorderGroup) {
     setAsked(next);
     setChosenSort(null);
     setPerson("");
     setTown("");
+    setReasonFilter("");
     // In the address, so a reload, a shared link or Back opens the same list.
     const url = new URL(window.location.href);
     url.searchParams.set("show", next);
@@ -200,8 +231,25 @@ export default function StoreReorderPage() {
     return [...m.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
   }, [inThisGroup]);
 
+  /** Each store's most recent reason for not ordering, from the last DECLINE_DAYS. */
+  const lastDecline = useMemo(() => standingDeclines(declines, rows, zone), [declines, rows, zone]);
+
+  /**
+   * "Why no order": the reasons this group's stores gave last, the most first.
+   * One store, one reason (its latest), so the bars add up to stores.
+   */
+  const byReason = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const r of inThisGroup) {
+      const d = lastDecline.get(r.store_id);
+      if (d) m.set(d.reason, (m.get(d.reason) ?? 0) + 1);
+    }
+    return [...m.entries()].sort((a, b) => b[1] - a[1]);
+  }, [inThisGroup, lastDecline]);
+
   const activePerson = byVisit.some((p) => p.id === person) ? person : "";
   const activeTown = byTown.some(([c]) => c === town) ? town : "";
+  const activeReason = byReason.some(([r]) => r === reasonFilter) ? reasonFilter : "";
   const noneMax = Math.max(1, ...byVisit.map((p) => p.n));
 
   const shown = useMemo(() => {
@@ -209,17 +257,38 @@ export default function StoreReorderPage() {
     const filtered = inThisGroup.filter((r) => {
       if (activePerson !== "" && visitLine(visits.get(r.store_id)) !== activePerson) return false;
       if (activeTown !== "" && (r.city?.trim() || "No town recorded") !== activeTown) return false;
+      if (activeReason !== "" && lastDecline.get(r.store_id)?.reason !== activeReason) return false;
       if (!q) return true;
       return r.store_name.toLowerCase().includes(q) || (r.city ?? "").toLowerCase().includes(q);
     });
-    return sortRows(filtered, sort, today, (id) => visits.get(id)?.day ?? null);
-  }, [inThisGroup, visits, activePerson, activeTown, search, sort, today]);
+    return sortRows(
+      filtered,
+      sort,
+      today,
+      (id) => visits.get(id)?.day ?? null,
+      (id) => sales?.get(id) ?? null
+    );
+  }, [inThisGroup, visits, activePerson, activeTown, activeReason, lastDecline, search, sort, today, sales]);
+
+  /** The rows on screen that nobody is going to: what "Plan these" plans. */
+  const unplannedShown = shown.filter((r) => !visits.has(r.store_id));
+
+  function declineText(d: Decline): string {
+    // The company's day it was said, not UTC's: late evening in Gaborone is
+    // already tomorrow in UTC terms the other way round.
+    const day = dayLabel(localDay(zone, new Date(d.created_at)), today);
+    return `No order on ${day}: ${DECLINE_REASONS[d.reason as DeclineReason] ?? d.reason}${d.note ? ` ("${d.note}")` : ""}`;
+  }
+
+  // Left off until the config has loaded, rather than guessed (as on the dashboard).
+  const currency = config?.settings.currency_code ?? "";
+  const money = (n: number) => formatMoneyShort(n, currency);
 
   /** "Tomorrow, Thabo Molefe"; null when nothing is planned (or the plan could not be read: ""). */
   function nextVisitText(r: StoreReorderRow): string | null {
     const v = visits.get(r.store_id);
     if (!v) return visitsFailed ? "" : null;
-    const when = v.day === today ? "Today" : v.day === shiftDay(today, 1) ? "Tomorrow" : shortDay(v.day, today);
+    const when = v.day === today ? "Today" : v.day === shiftDay(today, 1) ? "Tomorrow" : dayLabel(v.day, today);
     return v.repId ? `${when}, ${nameOf(v.repId)}` : when;
   }
 
@@ -236,6 +305,7 @@ export default function StoreReorderPage() {
         groupMeaning(group, t, rule),
         who,
         ...(activeTown ? [`Town: ${activeTown}`] : []),
+        ...(activeReason ? [`Last said: ${DECLINE_REASONS[activeReason as DeclineReason]}`] : []),
         ...(search.trim() ? [`Matching "${search.trim()}"`] : []),
       ],
       filename: "stores-due-for-an-order",
@@ -248,7 +318,10 @@ export default function StoreReorderPage() {
         { header: "Usually orders", key: "usual" },
         { header: "Due", key: "due" },
         { header: "Orders in the last year", key: "orders", numeric: true },
+        ...(sales ? [{ header: "Bought in the last year (excl. VAT)", key: "sales", numeric: true }] : []),
         { header: `Next ${lower(t.job.one)}`, key: "visit" },
+        { header: "Phone", key: "phone" },
+        { header: "Why no order (last time asked)", key: "why" },
       ],
       rows: shown.map((r) => {
         const s = reorderStatus(r, today);
@@ -261,10 +334,35 @@ export default function StoreReorderPage() {
           usual: r.usual_days === null ? "" : orderRhythm(r.usual_days),
           due: describeDue(s),
           orders: r.order_days_year,
+          sales: sales?.get(r.store_id) ?? 0,
           visit: nextVisitText(r) ?? "None planned",
+          phone: phones.get(r.store_id) ? formatPhone(phones.get(r.store_id)!.phone) : "",
+          why: lastDecline.get(r.store_id) ? declineText(lastDecline.get(r.store_id)!) : "",
         };
       }),
     };
+  }
+
+  /**
+   * The planned visits again, and only those: after planning, nothing else on
+   * the page has changed.
+   */
+  async function refreshVisits() {
+    if (!config) return;
+    const supabase = createClient();
+    const day = localDay(config.timezone);
+    const next = await fetchNextVisits(supabase, day, shiftDay(day, NEXT_VISIT_DAYS - 1)).catch(() => null);
+    if (!next) return;
+    const unknown = [
+      ...new Set([...next.values()].map((v) => v.repId).filter((id): id is string => id !== null && !(id in names))),
+    ];
+    if (unknown.length > 0) {
+      const { data } = await supabase.from("profiles").select("id, full_name").in("id", unknown);
+      const found = (data ?? []) as { id: string; full_name: string | null }[];
+      setNames((n) => ({ ...n, ...Object.fromEntries(found.map((p) => [p.id, p.full_name ?? ""])) }));
+    }
+    setVisits(next);
+    setVisitsFailed(false);
   }
 
   const total = rows.length;
@@ -274,7 +372,9 @@ export default function StoreReorderPage() {
     value: counts[g],
     tone: g === "stopped" && counts[g] > 0 ? "bad" : g === "due" && counts[g] > 0 ? "warn" : g === "not_due" ? "good" : undefined,
   }));
-  const colSpan = 5;
+  const colSpan = sales ? 6 : 5;
+  const canPlan = isManager === true && !!config?.orgId && !visitsFailed;
+  const tomorrow = shiftDay(today, 1);
 
   return (
     <div className="space-y-4">
@@ -305,7 +405,7 @@ export default function StoreReorderPage() {
       </TopCard>
 
       {!loading && !error && rows.length > 0 && (
-        <div className="grid gap-4 lg:grid-cols-2">
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
           <InsightPanel
             title={`Next ${lower(t.job.one)}`}
             caption={`${groupLabel(group)}, next ${NEXT_VISIT_DAYS} days`}
@@ -341,6 +441,19 @@ export default function StoreReorderPage() {
             empty={emptyGroup(group, t)}
             moreHint="Search the list below to find one."
           />
+          <InsightPanel
+            title="Why no order"
+            caption={`What they said last, ${DECLINE_DAYS} days`}
+            lines={byReason.map(([reason, n]) => ({
+              id: reason,
+              label: DECLINE_REASONS[reason as DeclineReason] ?? reason,
+              value: n,
+              bar: n / (byReason[0]?.[1] ?? 1),
+            }))}
+            active={activeReason}
+            onToggle={(id) => setReasonFilter(activeReason === id ? "" : id)}
+            empty={`No reasons yet. When a ${lower(t.site.one)} doesn't order, the ${lower(t.staff.one)} picks why on the phone, and it shows here.`}
+          />
         </div>
       )}
 
@@ -351,7 +464,28 @@ export default function StoreReorderPage() {
           </FilterChip>
         )}
         {activeTown !== "" && <FilterChip onClear={() => setTown("")}>{activeTown} only · every town</FilterChip>}
+        {activeReason !== "" && (
+          <FilterChip onClear={() => setReasonFilter("")}>
+            {DECLINE_REASONS[activeReason as DeclineReason]} · every reason
+          </FilterChip>
+        )}
+        {/* The ones on screen nobody is going to, onto one person's day in one go. */}
+        {canPlan && unplannedShown.length > 1 && (
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => setPlanning(unplannedShown.map((r) => ({ id: r.store_id, name: r.store_name })))}
+          >
+            Plan {lower(t.job.many)} to the {unplannedShown.length} not planned
+          </Button>
+        )}
       </ListTools>
+
+      {planned && (
+        <p role="status" className="text-sm text-emerald-700 dark:text-emerald-400">
+          {planned}
+        </p>
+      )}
 
       <div className="overflow-x-auto rounded-lg border border-border bg-card">
         <Table>
@@ -361,6 +495,9 @@ export default function StoreReorderPage() {
               <SortHead label="Last order" sortKey="last" sort={sort} onSort={chooseSort} />
               <SortHead label="Usually orders" sortKey="usual" sort={sort} onSort={chooseSort} className="hidden md:table-cell" />
               <SortHead label="Orders in a year" sortKey="orders" sort={sort} onSort={chooseSort} className="hidden text-right lg:table-cell" />
+              {sales && (
+                <SortHead label="Bought in a year" sortKey="sales" sort={sort} onSort={chooseSort} className="hidden text-right xl:table-cell" />
+              )}
               <SortHead label={`Next ${lower(t.job.one)}`} sortKey="visit" sort={sort} onSort={chooseSort} className="hidden sm:table-cell" />
             </TableRow>
           </TableHeader>
@@ -410,6 +547,8 @@ export default function StoreReorderPage() {
                 const due = describeDue(s);
                 const progress = lastOrderProgress(r.last_order_status);
                 const visit = nextVisitText(r);
+                const phone = phones.get(r.store_id);
+                const declined = lastDecline.get(r.store_id);
                 return (
                   <TableRow key={r.store_id}>
                     <TableCell className="min-w-[140px] whitespace-normal text-sm sm:min-w-[200px]">
@@ -417,6 +556,11 @@ export default function StoreReorderPage() {
                         {r.store_name}
                       </Link>
                       {r.city && <span className="block text-xs text-muted-foreground">{r.city}</span>}
+                      {phone && (
+                        <a href={`tel:${phone.phone}`} className="block text-xs text-primary hover:underline" title={phone.name}>
+                          {formatPhone(phone.phone)}
+                        </a>
+                      )}
                       {/* The next visit is its own column from sm up; below that it rides under the name. */}
                       {visit !== "" && (
                         <span
@@ -428,11 +572,11 @@ export default function StoreReorderPage() {
                         </span>
                       )}
                     </TableCell>
-                    <TableCell className="whitespace-nowrap text-sm" title={r.last_order_on ? shortDay(r.last_order_on, today) : undefined}>
+                    <TableCell className="whitespace-nowrap text-sm" title={r.last_order_on ? dayLabel(r.last_order_on, today) : undefined}>
                       <span className="font-medium tabular-nums text-foreground">{describeDays(s.daysSince)}</span>
                       {r.last_order_on && (
                         <span className="block text-xs text-muted-foreground">
-                          {shortDay(r.last_order_on, today)} · {orderLabel(r)}
+                          {dayLabel(r.last_order_on, today)} · {orderLabel(r)}
                           {progress ? `, ${progress}` : ""}
                         </span>
                       )}
@@ -449,6 +593,11 @@ export default function StoreReorderPage() {
                           {due}
                         </span>
                       )}
+                      {declined && (
+                        <span className="block max-w-[280px] whitespace-normal text-xs italic text-muted-foreground">
+                          {declineText(declined)}
+                        </span>
+                      )}
                     </TableCell>
                     <TableCell className="hidden text-sm text-muted-foreground md:table-cell">
                       {r.usual_days === null ? (
@@ -460,9 +609,25 @@ export default function StoreReorderPage() {
                     <TableCell className="hidden text-right text-sm tabular-nums text-muted-foreground lg:table-cell">
                       {r.order_days_year}
                     </TableCell>
+                    {sales && (
+                      <TableCell className="hidden text-right text-sm tabular-nums text-muted-foreground xl:table-cell">
+                        {sales.get(r.store_id) ? money(sales.get(r.store_id)!) : "Nothing"}
+                      </TableCell>
+                    )}
                     <TableCell className="hidden text-sm sm:table-cell">
                       {visit === null ? (
-                        <span className="italic text-amber-700 dark:text-amber-400">None planned</span>
+                        <span className="flex flex-wrap items-center gap-x-2">
+                          <span className="italic text-amber-700 dark:text-amber-400">None planned</span>
+                          {canPlan && (
+                            <button
+                              type="button"
+                              className="text-xs font-medium text-primary hover:underline"
+                              onClick={() => setPlanning([{ id: r.store_id, name: r.store_name }])}
+                            >
+                              Plan one
+                            </button>
+                          )}
+                        </span>
                       ) : (
                         <span className="text-muted-foreground">{visit}</span>
                       )}
@@ -482,8 +647,32 @@ export default function StoreReorderPage() {
             : `${shown.length.toLocaleString()} of ${count(t, "site", inThisGroup.length)}.`}{" "}
           An order is any order that was not cancelled, and the invoices brought over from QuickBooks. How often a{" "}
           {lower(t.site.one)} usually orders needs three orders in the last year. Next {lower(t.job.one)} looks{" "}
-          {NEXT_VISIT_DAYS} days ahead.
+          {NEXT_VISIT_DAYS} days ahead.{sales ? " Bought in a year is what was invoiced, excluding VAT." : ""}
+          {salesFailed
+            ? ` What each ${lower(t.site.one)} bought could not be read, so the ones that stopped ordering are in order of how often they ordered.`
+            : ""} Phone numbers come
+          from each {lower(t.site.one)}&apos;s contacts on the {t.site.many} page.
         </p>
+      )}
+
+      {config?.orgId && (
+        <PlanVisitsDialog
+          orgId={config.orgId}
+          stores={planning}
+          open={planning.length > 0}
+          onOpenChange={(open) => {
+            if (!open) setPlanning([]);
+          }}
+          tomorrow={tomorrow}
+          lastDay={shiftDay(today, NEXT_VISIT_DAYS - 1)}
+          onPlanned={(added, already, day, who) => {
+            setPlanned(
+              `${count(t, "job", added)} planned for ${who || "them"} on ${dayLabel(day, today)}.` +
+                (already > 0 ? ` ${count(t, "site", already)} ${already === 1 ? "was" : "were"} already on that day.` : "")
+            );
+            void refreshVisits();
+          }}
+        />
       )}
     </div>
   );

@@ -36,6 +36,19 @@ class OutboxType {
   /// number handed out on a phone that is offline for two days would arrive
   /// out of sequence — or twice, if two reps were offline at once.
   static const orderCreate = 'order_create';
+
+  /// Why a store did not order when the rep asked (`order_declines`).
+  ///
+  /// No parent to wait for: the row names its store, and the visit only by the
+  /// phone's own id for it, which needs no lookup. One per visit; the server
+  /// keeps the first.
+  static const orderDecline = 'order_decline';
+
+  /// Damaged stock found at a store (`damage_reports`), with its photo.
+  ///
+  /// Waits for its check-in, as a form does: the photo is filed against the
+  /// visit, and the visit's server id only exists once the check-in lands.
+  static const damageReport = 'damage_report';
 }
 
 /// One queued operation, named by what it is and what it is about.

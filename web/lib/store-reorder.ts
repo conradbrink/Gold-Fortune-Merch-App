@@ -1,5 +1,10 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { callRpc } from "@/lib/rpc";
+import { addStops } from "@/lib/schedule";
+import { fromLocalDateInput } from "@/lib/date-range";
+import { countOpenDamages } from "@/lib/damages";
+import { allPages } from "@/lib/all-pages";
+import { localDay } from "@/lib/dashboard-numbers";
 import { lower, type Terms } from "@/lib/terms";
 import type { ReorderGroup } from "@/lib/dashboard-links";
 
@@ -36,6 +41,161 @@ export type StoreReorderRow = {
 };
 
 export type ReorderState = "never" | "not_due" | "soon" | "due" | "stopped";
+
+// ---------------------------------------------------------- why no order
+
+/**
+ * Why a store did not order when a rep asked, as `order_declines.reason`
+ * stores it. The same words the rep picks from on the phone
+ * (`declineReasons` in mobile/lib/data/models/store_reorder.dart).
+ */
+export const DECLINE_REASONS = {
+  has_stock: "They still have stock",
+  buyer_away: "The buyer wasn't there",
+  no_money: "No money right now",
+  price: "Our price is too high",
+  other_supplier: "They buy from someone else",
+  other: "Something else",
+} as const;
+export type DeclineReason = keyof typeof DECLINE_REASONS;
+
+export type Decline = {
+  store_id: string;
+  rep_id: string | null;
+  reason: DeclineReason;
+  note: string | null;
+  created_at: string;
+};
+
+/** How far back the page reads reasons: older ones say little about today. */
+export const DECLINE_DAYS = 90;
+
+/** Every reason given since `since`, newest first. Paged, as next visits are. */
+export async function fetchDeclines(supabase: SupabaseClient, since: Date): Promise<Decline[]> {
+  return allPages<Decline>((from, to) =>
+    supabase
+      .from("order_declines")
+      .select("id, store_id, rep_id, reason, note, created_at")
+      .gte("created_at", since.toISOString())
+      .order("created_at", { ascending: false })
+      .order("id", { ascending: true })
+      .range(from, to) as unknown as PromiseLike<{ data: Decline[] | null; error: { message: string } | null }>
+  );
+}
+
+/**
+ * Each store's reason that still stands: its most recent one, and only when
+ * it was given after the store's last order (company days). A reason from
+ * before an order the store has since placed is history, not why it is due
+ * now; one given on the day it then ordered was overtaken by the order.
+ * `declines` must be newest first.
+ */
+export function standingDeclines(
+  declines: Decline[],
+  rows: Pick<StoreReorderRow, "store_id" | "last_order_on">[],
+  timeZone: string
+): Map<string, Decline> {
+  const lastOrder = new Map(rows.map((r) => [r.store_id, r.last_order_on]));
+  const out = new Map<string, Decline>();
+  for (const d of declines) {
+    if (out.has(d.store_id)) continue;
+    const said = localDay(timeZone, new Date(d.created_at));
+    const ordered = lastOrder.get(d.store_id) ?? null;
+    // Only the newest counts: an older reason never stands in for it.
+    out.set(d.store_id, d);
+    if (ordered !== null && said <= ordered) out.delete(d.store_id);
+  }
+  return out;
+}
+
+/** "2026-09-19" as "19 Sep", with the year when it is not `today`'s year. */
+export function dayLabel(day: string, today: string): string {
+  const [y, m, d] = day.split("-").map(Number);
+  return new Intl.DateTimeFormat("en-GB", {
+    day: "numeric",
+    month: "short",
+    ...(day.slice(0, 4) === today.slice(0, 4) ? {} : { year: "numeric" }),
+    timeZone: "UTC",
+  }).format(new Date(Date.UTC(y, m - 1, d)));
+}
+
+// ------------------------------------------------- what a store bought in a year
+
+/**
+ * What each store was invoiced in the last year, excluding VAT, by store id;
+ * null when this person may not see money (`store_year_sales` refuses).
+ */
+export async function fetchYearSales(supabase: SupabaseClient): Promise<Map<string, number> | null> {
+  const { data, error } = await callRpc(supabase, "store_year_sales", {});
+  // A refusal (no insights) is "may not see money"; anything else is a failure
+  // the caller should say, not a quiet change to the list's order.
+  if (error) {
+    if ((error as { code?: string }).code === "42501") return null;
+    throw new Error(error.message);
+  }
+  return new Map(
+    ((data ?? []) as { store_id: string; sales_excl_vat: number | string }[]).map((r) => [r.store_id, Number(r.sales_excl_vat)])
+  );
+}
+
+// ------------------------------------------------------------- phone numbers
+
+/**
+ * Each store's first contact with a phone number (`site_contacts`), oldest
+ * first: the person a manager rings. Stores keep no number of their own.
+ */
+export async function fetchStorePhones(
+  supabase: SupabaseClient,
+  storeIds?: string[]
+): Promise<Map<string, { name: string; phone: string }>> {
+  type Contact = { id: string; store_id: string; name: string; phone: string };
+  if (storeIds !== undefined && storeIds.length === 0) return new Map();
+  // Paged: a response stops at 1,000 rows without saying so, and the newest
+  // contacts would be the ones lost.
+  const rows = await allPages<Contact>((from, to) => {
+    let q = supabase.from("site_contacts").select("id, store_id, name, phone").not("phone", "is", null);
+    if (storeIds !== undefined) q = q.in("store_id", storeIds);
+    return q
+      .order("created_at", { ascending: true })
+      .order("id", { ascending: true })
+      .range(from, to) as unknown as PromiseLike<{ data: Contact[] | null; error: { message: string } | null }>;
+  });
+  const out = new Map<string, { name: string; phone: string }>();
+  for (const c of rows) {
+    if (!out.has(c.store_id)) out.set(c.store_id, { name: c.name, phone: c.phone });
+  }
+  return out;
+}
+
+// --------------------------------------------------------------- plan visits
+
+/**
+ * Puts stores on one person's day, after the stops already there. The same
+ * write the schedule's "Add stop" makes (`addStops`: manual stops, a store
+ * already on that day is left as it is).
+ */
+export async function planVisits(
+  supabase: SupabaseClient,
+  orgId: string,
+  repId: string,
+  storeIds: string[],
+  day: string
+): Promise<{ added: number; already: number }> {
+  const { data, error } = await supabase
+    .from("routes")
+    .select("store_id, sequence_order")
+    .eq("rep_id", repId)
+    .eq("scheduled_date", day);
+  if (error) throw new Error(error.message);
+  const there = (data ?? []) as { store_id: string; sequence_order: number | null }[];
+  const onTheDay = new Set(there.map((r) => r.store_id));
+  // What is new; a store already on that person's day is left as it is, and
+  // said so, rather than counted as planned.
+  const fresh = storeIds.filter((id) => !onTheDay.has(id));
+  const last = there.reduce((max, r) => Math.max(max, r.sequence_order ?? 0), 0);
+  await addStops(supabase, orgId, repId, fresh, fromLocalDateInput(day), last + 1);
+  return { added: fresh.length, already: storeIds.length - fresh.length };
+}
 
 /** How far ahead "due soon" looks, as on the phone. */
 export const DUE_SOON_DAYS = 7;
@@ -220,7 +380,7 @@ export const NEXT_VISIT_DAYS = 14;
 
 // ------------------------------------------------------------------ sorting
 
-export type SortKey = "name" | "last" | "due" | "usual" | "orders" | "visit";
+export type SortKey = "name" | "last" | "due" | "usual" | "orders" | "visit" | "sales";
 export type Sort = { key: SortKey; dir: "asc" | "desc" };
 
 /**
@@ -229,10 +389,13 @@ export type Sort = { key: SortKey; dir: "asc" | "desc" };
  * store that orders every month and has gone quiet is worth more than one that
  * ordered once. Due soon opens with the soonest; the rest by name or date.
  */
-export function defaultSort(g: ReorderGroup): Sort {
+export function defaultSort(g: ReorderGroup, haveSales = false): Sort {
   switch (g) {
-    case "due":
     case "stopped":
+      // The win-back list: the biggest buyers first, by what they bought in
+      // the last year, where this person may see money.
+      return haveSales ? { key: "sales", dir: "desc" } : { key: "orders", dir: "desc" };
+    case "due":
       return { key: "orders", dir: "desc" };
     case "soon":
     case "not_due":
@@ -247,7 +410,8 @@ export function sortRows(
   rows: StoreReorderRow[],
   sort: Sort,
   today: string,
-  nextVisit: (storeId: string) => string | null = () => null
+  nextVisit: (storeId: string) => string | null = () => null,
+  sales: (storeId: string) => number | null = () => null
 ): StoreReorderRow[] {
   const sign = sort.dir === "asc" ? 1 : -1;
   const far = Number.POSITIVE_INFINITY;
@@ -270,6 +434,9 @@ export function sortRows(
         const d = nextVisit(r.store_id);
         return d === null ? far : daysBetween(today, d);
       }
+      case "sales":
+        // Unknown counts as nothing bought, so it sorts with the smallest.
+        return sales(r.store_id) ?? 0;
     }
   };
   const tie = (a: StoreReorderRow, b: StoreReorderRow) => {
@@ -293,11 +460,29 @@ export type ReorderSummary = {
   counts: Record<ReorderGroup, number>;
   /** The card's "ask these first": due now, best customers first. */
   first: { id: string; name: string; city: string | null; status: ReorderStatus; usualDays: number | null }[];
+  /** The card's win-back list: stopped ordering, biggest buyers first, with a number to ring. */
+  winBack: {
+    id: string;
+    name: string;
+    city: string | null;
+    daysSince: number | null;
+    sales: number | null;
+    phone: { name: string; phone: string } | null;
+  }[];
   rule: number;
+  /** Damaged stock reports not sorted yet; null when this person may not read them. */
+  openDamages: number | null;
 };
 
 /** What the dashboard card shows, from the same rows and rules as the page. */
-export function summarise(rows: StoreReorderRow[], today: string, rule: number, take = 5): ReorderSummary {
+export function summarise(
+  rows: StoreReorderRow[],
+  today: string,
+  rule: number,
+  take = 5,
+  sales: Map<string, number> | null = null,
+  phones: Map<string, { name: string; phone: string }> = new Map()
+): ReorderSummary {
   const counts = { due: 0, soon: 0, stopped: 0, never: 0, not_due: 0 } as Record<ReorderGroup, number>;
   for (const r of rows) counts[reorderStatus(r, today).state] += 1;
   const due = sortRows(
@@ -305,8 +490,24 @@ export function summarise(rows: StoreReorderRow[], today: string, rule: number, 
     defaultSort("due"),
     today
   );
+  const stopped = sortRows(
+    rows.filter((r) => reorderStatus(r, today).state === "stopped"),
+    defaultSort("stopped", sales !== null),
+    today,
+    () => null,
+    (id) => sales?.get(id) ?? null
+  );
   return {
     counts,
+    openDamages: null,
+    winBack: stopped.slice(0, take).map((r) => ({
+      id: r.store_id,
+      name: r.store_name,
+      city: r.city,
+      daysSince: reorderStatus(r, today).daysSince,
+      sales: sales?.get(r.store_id) ?? null,
+      phone: phones.get(r.store_id) ?? null,
+    })),
     first: due.slice(0, take).map((r) => ({
       id: r.store_id,
       name: r.store_name,
@@ -318,6 +519,30 @@ export function summarise(rows: StoreReorderRow[], today: string, rule: number, 
   };
 }
 
-export async function fetchReorderSummary(supabase: SupabaseClient, today: string, rule: number): Promise<ReorderSummary> {
-  return summarise(await fetchStoreReorder(supabase), today, rule);
+export async function fetchReorderSummary(
+  supabase: SupabaseClient,
+  today: string,
+  rule: number,
+  /** May read invoices (the `invoicing` permission), which is what the sales figures are. */
+  seesMoney: boolean
+): Promise<ReorderSummary> {
+  // The money and the numbers make the win-back list better; without them it
+  // still lists the stores, so neither failing takes the card down. Money is
+  // asked for only by someone who may see it, and numbers only for the five
+  // stores the card shows.
+  const [rows, sales, openDamages] = await Promise.all([
+    fetchStoreReorder(supabase),
+    seesMoney ? fetchYearSales(supabase).catch(() => null) : Promise.resolve(null),
+    countOpenDamages(supabase),
+  ]);
+  const summary = summarise(rows, today, rule, 5, sales);
+  const phones = await fetchStorePhones(
+    supabase,
+    summary.winBack.map((w) => w.id)
+  ).catch(() => new Map<string, { name: string; phone: string }>());
+  return {
+    ...summary,
+    winBack: summary.winBack.map((w) => ({ ...w, phone: phones.get(w.id) ?? null })),
+    openDamages,
+  };
 }

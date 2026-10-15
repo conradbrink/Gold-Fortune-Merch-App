@@ -15,6 +15,15 @@
 --       included (they cannot read those orders themselves).
 --   R4  Live: one row per active store; due_on is always last order + due
 --       after; due after never exceeds the rule.
+--   R6  The last order's products (20261015200000): a Tickd order's lines in
+--       shrinks, rounded up; a QuickBooks invoice's lines in shrinks, or
+--       converted when priced per single item; each unmatched line counted
+--       as missing, a note with no price not; a store with no order has none.
+--   R7  order_declines: a rep records their own reason and reads it back;
+--       cannot record one as somebody else, read another rep's, record a
+--       second for the same visit, change or delete one. A manager reads all.
+--   R8  store_year_sales: someone with invoicing gets each store's invoices
+--       in the last year excluding VAT; a rep is refused.
 --   R5  Grants, security definer with a pinned search_path, the module
 --       registration, and the function refusing when distribution is off.
 --
@@ -28,7 +37,9 @@ declare
   v_mgr uuid; v_rep uuid; v_other uuid;
   v_tz text; v_today date;
   v_a uuid; v_b uuid; v_c uuid; v_d uuid; v_e uuid; v_f uuid; v_g uuid; v_h uuid; v_i uuid; v_k uuid; v_l uuid;
-  v_g_order uuid;
+  v_g_order uuid; v_c1_order uuid;
+  v_prod uuid; v_units int; v_price numeric;
+  v_lines jsonb; v_missing int; v_n int;
   v_mgr_rows text; v_rep_rows text;
   v_all int; v_active int; v_ever int; v_due int; v_rhythm int; v_bad int;
   r record;
@@ -205,6 +216,129 @@ begin
     v_fail := v_fail || 'R3 a rep sees different rows from a manager' || E'\n';
   end if;
 
+  ---------------------------------------------------------------- R6 the last order's products
+  select id, units_per_shrink, shrink_price_excl_vat into v_prod, v_units, v_price from public.products
+   where org_id = c_gf and active and is_stock_tracked and coalesce(units_per_shrink, 0) > 2
+     and coalesce(shrink_price_excl_vat, 0) > 0
+   order by name limit 1;
+  if v_prod is null then
+    v_fail := v_fail || 'R6 fixture missing: an orderable product with a shrink size' || E'\n';
+  else
+    select id into v_c1_order from public.orders where org_id = c_gf and order_number = 'ZZ-RO-C1';
+    -- One and a half shrinks and a bit: three shrinks, not two.
+    insert into public.order_lines (org_id, order_id, product_id, qty_ordered, line_status, client_generated_id)
+    values (c_gf, v_c1_order, v_prod, 2 * v_units + 1, 'open', gen_random_uuid());
+    -- Priced per shrink: 2 shrinks. Two lines with no product: counted. A note
+    -- with no price: not a product, not counted.
+    insert into public.tax_invoice_lines (invoice_id, position, product_id, description, qty, unit_price, line_total)
+    select t.id, x.pos, x.product, x.descr, x.qty, x.price, x.qty * x.price
+      from public.tax_invoices t,
+           (values (1, v_prod, 'Matched', 2::numeric, v_price),
+                   (2, null::uuid, 'Not in Tickd', 1, 100::numeric),
+                   (3, null, 'Also not in Tickd', 4, 100),
+                   (4, null, 'As invoiced in QuickBooks', 1, 0)) as x(pos, product, descr, qty, price)
+     where t.org_id = c_gf and t.invoice_number = 'ZZ9101';
+    -- The same product invoiced per single item, on the void-invoice store
+    -- (whose only other invoice is void, so this is its last order): two
+    -- shrinks and one item over is 3 shrinks.
+    insert into public.tax_invoices (org_id, invoice_number, source, kind, store_id, seller_name, customer_name,
+                                     issue_date, due_date, vat_rate, subtotal, vat, total)
+    values (c_gf, 'ZZ9104', 'quickbooks', 'standard', v_k, 'Gold Fortune', 'Test',
+            v_today - 2, v_today + 28, 14, 10, 1.4, 11.4);
+    insert into public.tax_invoice_lines (invoice_id, position, product_id, description, qty, unit_price, line_total)
+    select t.id, 1, v_prod, 'Per item', v_units * 2 + 1, round(v_price / v_units, 2), 1
+      from public.tax_invoices t where t.org_id = c_gf and t.invoice_number = 'ZZ9104';
+
+    perform set_config('request.jwt.claims',
+      json_build_object('sub', v_rep, 'role', 'authenticated')::text, true);
+    set local role authenticated;
+    select last_lines, last_lines_missing into v_lines, v_missing from public.store_reorder() where store_id = v_c;
+    if v_lines is distinct from jsonb_build_array(jsonb_build_object('product_id', v_prod, 'shrinks', 3)) or v_missing <> 0 then
+      v_fail := v_fail || format('R6 a Tickd order''s lines: %s, missing %s', v_lines, v_missing) || E'\n';
+    end if;
+    select last_lines, last_lines_missing into v_lines, v_missing from public.store_reorder() where store_id = v_e;
+    if v_lines is distinct from jsonb_build_array(jsonb_build_object('product_id', v_prod, 'shrinks', 2)) or v_missing <> 2 then
+      v_fail := v_fail || format('R6 a QuickBooks invoice''s lines: %s, missing %s', v_lines, v_missing) || E'\n';
+    end if;
+    select last_lines, last_lines_missing into v_lines, v_missing from public.store_reorder() where store_id = v_k;
+    if v_lines is distinct from jsonb_build_array(jsonb_build_object('product_id', v_prod, 'shrinks', 3)) or v_missing <> 0 then
+      v_fail := v_fail || format('R6 a QuickBooks line priced per item: %s, missing %s', v_lines, v_missing) || E'\n';
+    end if;
+    select last_lines, last_lines_missing into v_lines, v_missing from public.store_reorder() where store_id = v_a;
+    if v_lines <> '[]'::jsonb or v_missing <> 0 then
+      v_fail := v_fail || format('R6 a store that never ordered has lines: %s', v_lines) || E'\n';
+    end if;
+    reset role;
+  end if;
+
+  ---------------------------------------------------------------- R7 the reasons
+  -- Another rep's reason, written as the owner so the rep has something not to see.
+  insert into public.order_declines (org_id, store_id, rep_id, client_generated_id, reason)
+  values (c_gf, v_b, v_other, gen_random_uuid(), 'price');
+
+  perform set_config('request.jwt.claims',
+    json_build_object('sub', v_rep, 'role', 'authenticated')::text, true);
+  set local role authenticated;
+  begin
+    insert into public.order_declines (org_id, store_id, rep_id, visit_client_generated_id, client_generated_id, reason, note)
+    values (c_gf, v_b, v_rep, '00000000-0000-4000-8000-00000000ab01', gen_random_uuid(), 'has_stock', 'Suite');
+  exception when others then
+    v_fail := v_fail || 'R7 a rep could not record their own reason: ' || sqlerrm || E'\n';
+  end;
+  begin
+    insert into public.order_declines (org_id, store_id, rep_id, client_generated_id, reason)
+    values (c_gf, v_b, v_other, gen_random_uuid(), 'price');
+    v_fail := v_fail || 'R7 a rep recorded a reason as somebody else' || E'\n';
+  exception when insufficient_privilege then null;
+  end;
+  begin
+    insert into public.order_declines (org_id, store_id, rep_id, visit_client_generated_id, client_generated_id, reason)
+    values (c_gf, v_b, v_rep, '00000000-0000-4000-8000-00000000ab01', gen_random_uuid(), 'price');
+    v_fail := v_fail || 'R7 a second reason for one visit was kept' || E'\n';
+  exception when unique_violation then null;
+  end;
+  select count(*) into v_n from public.order_declines where store_id = v_b;
+  if v_n <> 1 then
+    v_fail := v_fail || format('R7 the rep sees %s reasons at the store, expected only their own 1', v_n) || E'\n';
+  end if;
+  begin
+    update public.order_declines set reason = 'other' where store_id = v_b;
+    get diagnostics v_n = row_count;
+    if v_n <> 0 then v_fail := v_fail || 'R7 a rep changed a reason' || E'\n'; end if;
+  exception when insufficient_privilege then null;
+  end;
+  begin
+    delete from public.order_declines where store_id = v_b;
+    get diagnostics v_n = row_count;
+    if v_n <> 0 then v_fail := v_fail || 'R7 a rep deleted a reason' || E'\n'; end if;
+  exception when insufficient_privilege then null;
+  end;
+  reset role;
+
+  perform set_config('request.jwt.claims',
+    json_build_object('sub', v_mgr, 'role', 'authenticated')::text, true);
+  set local role authenticated;
+  select count(*) into v_n from public.order_declines where store_id = v_b;
+  if v_n <> 2 then
+    v_fail := v_fail || format('R7 the manager sees %s reasons at the store, expected 2', v_n) || E'\n';
+  end if;
+
+  ---------------------------------------------------------------- R8 a year's sales
+  select coalesce(sum(sales_excl_vat), -1) into v_n from public.store_year_sales() where store_id = v_e;
+  if v_n <> 10 then
+    v_fail := v_fail || format('R8 the QuickBooks-only store bought %s in the year, expected 10', v_n) || E'\n';
+  end if;
+  reset role;
+  perform set_config('request.jwt.claims',
+    json_build_object('sub', v_rep, 'role', 'authenticated')::text, true);
+  set local role authenticated;
+  begin
+    perform count(*) from public.store_year_sales();
+    v_fail := v_fail || 'R8 a rep read what each store bought' || E'\n';
+  exception when insufficient_privilege then null;
+  end;
+  reset role;
+
   ---------------------------------------------------------------- R5 grants and the module
   if not (select prosecdef from pg_proc where oid = 'public.store_reorder()'::regprocedure) then
     v_fail := v_fail || 'R5 store_reorder is not security definer' || E'\n';
@@ -218,6 +352,16 @@ begin
   end if;
   if not has_function_privilege('authenticated', 'public.store_reorder()', 'execute') then
     v_fail := v_fail || 'R5 authenticated cannot call store_reorder' || E'\n';
+  end if;
+  if (select module_code from public.module_assignments where kind = 'table' and name = 'order_declines')
+       is distinct from 'distribution'
+     or not exists (select 1 from pg_policies where tablename = 'order_declines' and policyname = 'module_gate'
+                     and permissive = 'RESTRICTIVE') then
+    v_fail := v_fail || 'R5 order_declines is not gated on distribution' || E'\n';
+  end if;
+  if (select prosecdef from pg_proc where oid = 'public.store_year_sales()'::regprocedure)
+     or has_function_privilege('anon', 'public.store_year_sales()', 'execute') then
+    v_fail := v_fail || 'R5 store_year_sales is definer or open to anon' || E'\n';
   end if;
   if (select module_code from public.module_assignments where kind = 'function' and name = 'store_reorder')
        is distinct from 'distribution' then

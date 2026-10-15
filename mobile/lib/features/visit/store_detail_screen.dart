@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -16,6 +18,7 @@ import '../../data/repositories/route_repository.dart';
 import '../../shared/widgets/status_badge.dart';
 import '../../core/company_config.dart';
 import '../forms/form_fill_screen.dart';
+import '../orders/order_decline_sheet.dart';
 import '../workday/workday_auto_end.dart';
 import '../workday/workday_controller.dart';
 
@@ -239,6 +242,8 @@ class _StoreDetailScreenState extends ConsumerState<StoreDetailScreen> {
     // afterwards let two quick taps both reach the queue and enqueue the
     // check-out twice.
     setState(() => _busy = true);
+    var checkedOut = false;
+    final orders = ref.read(orderRepositoryProvider);
     try {
       final terms = ref.read(termsProvider);
       final concerns = <String>[];
@@ -289,6 +294,12 @@ class _StoreDetailScreenState extends ConsumerState<StoreDetailScreen> {
             workdaySessionClientId:
                 inWorkingHours ? session.clientGeneratedId : null,
           );
+      // A damage report left unfinished here can't be come back to now: the
+      // box is only on a visit in progress. It goes, with its photo, and so
+      // does any other left for more than a week.
+      if (rv.visitClientGeneratedId != null) {
+        unawaited(orders.dropDamageDrafts(visit: rv.visitClientGeneratedId));
+      }
       // Same reason as check-in: show the outcome of the tap straight away
       // rather than waiting on a refetch that may not land.
       if (mounted) {
@@ -308,6 +319,7 @@ class _StoreDetailScreenState extends ConsumerState<StoreDetailScreen> {
           content: Text('Checked out.'),
           backgroundColor: AppColors.success,
         ));
+      checkedOut = true;
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context)
@@ -316,6 +328,46 @@ class _StoreDetailScreenState extends ConsumerState<StoreDetailScreen> {
     } finally {
       if (mounted) setState(() => _busy = false);
     }
+
+    // After the check-out, and outside it: anything going wrong here is about
+    // the reason, never a check-out that failed.
+    if (checkedOut && mounted && ref.read(companyConfigValueProvider).has('distribution')) {
+      try {
+        await _askAfterCheckOut(rv);
+      } catch (_) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context)
+          ..hideCurrentSnackBar()
+          ..showSnackBar(const SnackBar(
+            content: Text("You're checked out, but the reason could not be saved."),
+            backgroundColor: AppColors.warning,
+          ));
+      }
+    }
+  }
+
+  /// A store that was due for an order, left without one and without a
+  /// reason: ask why, once, *after* the check-out has happened, so the question
+  /// never stands between the rep and the door. Skip records nothing.
+  Future<void> _askAfterCheckOut(RouteVisit rv) async {
+    final clientId = rv.visitClientGeneratedId;
+    if (clientId == null) return;
+    final reorder = (ref.read(storeReorderProvider).value ?? const {})[rv.storeId];
+    if (reorder == null || !reorderStateOn(reorder, DateTime.now()).asksForOrder) {
+      return;
+    }
+    final repo = ref.read(orderRepositoryProvider);
+    if (await repo.orderTakenOnVisit(clientId)) return;
+    if (await repo.declineOnVisit(clientId) != null) return;
+    if (!mounted) return;
+    await askWhyNoOrder(
+      context,
+      ref,
+      storeId: rv.storeId,
+      visitClientId: clientId,
+      title: 'No order today? Tell us why',
+      skipLabel: 'Skip',
+    );
   }
 
   /// Last stop before a coordinate becomes permanent. A rep gets one chance at
@@ -637,6 +689,14 @@ class _StoreDetailScreenState extends ConsumerState<StoreDetailScreen> {
                   isCheckedIn: rv.isCheckedIn,
                   isCheckedOut: rv.isCheckedOut,
                 ),
+              // Damaged stock of ours at the store (owner, 15 Oct 2026). Offered
+              // while on site, and listed afterwards when something was found.
+              if (hasDistribution && rv.visitClientGeneratedId != null)
+                _DamagesSection(
+                  visitKey: widget.visitKey,
+                  visitClientId: rv.visitClientGeneratedId!,
+                  onSite: rv.isCheckedIn,
+                ),
               if (blockedReason != null && !rv.isCheckedOut) ...[
                 Container(
                   padding: const EdgeInsets.all(12),
@@ -757,12 +817,131 @@ class _StoreDetailScreenState extends ConsumerState<StoreDetailScreen> {
   }
 }
 
+/// "Damaged stock": a way to report it while on site, and what was reported.
+/// Nothing to tap when there is no damage; never a gate.
+class _DamagesSection extends ConsumerWidget {
+  const _DamagesSection({
+    required this.visitKey,
+    required this.visitClientId,
+    required this.onSite,
+  });
+
+  final String visitKey;
+  final String visitClientId;
+  final bool onSite;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final terms = ref.watch(termsProvider);
+    final site = terms.site.oneLower;
+    final job = terms.job.oneLower;
+    final reported = ref
+        .watch(damagesOnVisitProvider(visitClientId))
+        .maybeWhen(data: (v) => v, orElse: () => const <({String name, int qty})>[]);
+    if (!onSite && reported.isEmpty) return const SizedBox.shrink();
+    final items = reported.fold<int>(0, (n, r) => n + r.qty);
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 16),
+      child: Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: AppColors.textMuted.withValues(alpha: 0.08),
+          borderRadius: BorderRadius.circular(10),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                Icon(
+                  reported.isEmpty ? Icons.report_problem_outlined : Icons.check_circle,
+                  size: 20,
+                  color: reported.isEmpty ? AppColors.textMuted : AppColors.success,
+                ),
+                const SizedBox(width: 8),
+                const Expanded(
+                  child: Text(
+                    'Damaged stock',
+                    style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15, color: AppColors.textPrimary),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 6),
+            if (reported.isEmpty)
+              Text(
+                'Does the $site have any damaged stock of ours?',
+                style: const TextStyle(fontSize: 13, color: AppColors.textPrimary),
+              )
+            else ...[
+              Text(
+                items == 1
+                    ? '1 damaged item reported on this $job:'
+                    : '$items damaged items reported on this $job:',
+                style: const TextStyle(fontSize: 13, color: AppColors.textPrimary),
+              ),
+              for (final r in reported)
+                Padding(
+                  padding: const EdgeInsets.only(top: 4),
+                  child: Text(
+                    '${r.qty} × ${r.name}',
+                    style: const TextStyle(fontSize: 13, color: AppColors.textMuted),
+                  ),
+                ),
+            ],
+            if (onSite) ...[
+              const SizedBox(height: 10),
+              OutlinedButton.icon(
+                onPressed: () => context.go('/visit/$visitKey/damage'),
+                icon: const Icon(Icons.add_a_photo_outlined),
+                label: Text(reported.isEmpty ? 'Report damaged stock' : 'Report more'),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Asks why the store is not ordering and records the answer against this
+/// visit. True when an answer was recorded; false when the rep skipped it.
+Future<bool> askWhyNoOrder(
+  BuildContext context,
+  WidgetRef ref, {
+  required String storeId,
+  required String visitClientId,
+  required String title,
+  String skipLabel = 'Cancel',
+}) async {
+  final profile = ref.read(profileProvider).value;
+  if (profile == null) return false;
+  // Taken before any await: the screen can be gone by the time the answer is
+  // saved (a router redirect while the sheet is open), and its ref with it.
+  final container = ProviderScope.containerOf(context, listen: false);
+  final answer = await showOrderDeclineSheet(context, title: title, skipLabel: skipLabel);
+  if (answer == null) return false;
+  await container.read(orderRepositoryProvider).recordDecline(
+        orgId: profile.orgId,
+        repId: profile.id,
+        storeId: storeId,
+        visitClientGeneratedId: visitClientId,
+        reason: answer.reason,
+        note: answer.note,
+      );
+  container.invalidate(orderDeclineOnVisitProvider(visitClientId));
+  return true;
+}
+
 /// When the store last ordered, how often it usually orders, and, when it is
 /// time, a plain prompt to ask for an order, with the button to take it.
 ///
 /// Prompt only, never a gate (owner, 15 Oct 2026: "Prompt only"). Most stops
-/// end without an order, and a check-out that asks about something that usually
-/// is not there teaches people to dismiss it.
+/// end without an order, so nothing here stands between the rep and the door.
+/// The one question asked unprompted, why a due store did not order, comes
+/// after the check-out has happened (`_askAfterCheckOut`), once per visit, and
+/// Skip records nothing.
 ///
 /// Taking an order is offered while the rep is checked in and not after
 /// check-out, for the same reason a form is: it is a record of what happened
@@ -799,13 +978,24 @@ class _ReorderSection extends ConsumerWidget {
         ref
             .watch(orderTakenOnVisitProvider(clientId))
             .maybeWhen(data: (v) => v, orElse: () => false);
+    final declined = clientId == null
+        ? null
+        : ref
+            .watch(orderDeclineOnVisitProvider(clientId))
+            .maybeWhen(data: (v) => v, orElse: () => null);
     final onSite = isCheckedIn && clientId != null;
 
     if (reorder == null) {
       if (!onSite) return const SizedBox.shrink();
       return Padding(
         padding: const EdgeInsets.only(bottom: 16),
-        child: _OrderButton(visitKey: visitKey, visitClientId: clientId, taken: taken),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            _OrderButton(visitKey: visitKey, visitClientId: clientId, taken: taken),
+            if (!taken && declined == null) _DeclineButton(storeId: storeId, visitClientId: clientId),
+          ],
+        ),
       );
     }
 
@@ -845,7 +1035,7 @@ class _ReorderSection extends ConsumerWidget {
           tone = context.brand.primary;
           icon = Icons.event_available_outlined;
           headline = 'Next order due around '
-              '${_dayMonth(last!.add(Duration(days: reorder.dueAfterDays)))}';
+              '${dayMonth(last!.add(Duration(days: reorder.dueAfterDays)))}';
       }
     }
 
@@ -864,8 +1054,8 @@ class _ReorderSection extends ConsumerWidget {
       // under "Order taken" reads as a contradiction.
       facts.add(taken && since! > 0
           ? 'Their order before this one was ${daysAgo(since)}, on '
-              '${_dayMonth(last)}$which.'
-          : 'Last order ${daysAgo(since!)}, on ${_dayMonth(last)}$which.');
+              '${dayMonth(last)}$which.'
+          : 'Last order ${daysAgo(since!)}, on ${dayMonth(last)}$which.');
     }
     final usual = reorder.usualDays;
     if (usual != null) {
@@ -879,7 +1069,10 @@ class _ReorderSection extends ConsumerWidget {
     // True while the last order may still be on its way: the button then stays
     // the plain one, so a second order is not the thing the screen pushes.
     var checkFirst = false;
-    if (!taken && !isCheckedOut) {
+    if (!taken && declined != null) {
+      // Asked, and the shop said no: say so instead of asking again.
+      prompt = 'Not ordering today: ${declineReasons[declined] ?? declined}.';
+    } else if (!taken && !isCheckedOut) {
       if (reorder.lastOrderOpen &&
           (status.state == ReorderState.due || status.state == ReorderState.stopped)) {
         checkFirst = true;
@@ -897,8 +1090,12 @@ class _ReorderSection extends ConsumerWidget {
         };
       }
     }
-    final wantsOrder =
-        prompt != null && !checkFirst && status.state != ReorderState.notDue;
+    // The filled button only when the screen is asking for an order: not once
+    // the shop has said no, and not while the last order may still be coming.
+    final wantsOrder = prompt != null &&
+        declined == null &&
+        !checkFirst &&
+        status.state != ReorderState.notDue;
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 16),
@@ -953,6 +1150,11 @@ class _ReorderSection extends ConsumerWidget {
                 prominent: wantsOrder,
                 taken: taken,
               ),
+              // The other answer to "ask for an order": what the shop said.
+              // Offered at every store, due or not: a shop that has switched
+              // supplier is worth knowing about whenever it says so.
+              if (!taken && declined == null)
+                _DeclineButton(storeId: storeId, visitClientId: clientId),
             ] else if (wantsOrder && !isCheckedOut) ...[
               const SizedBox(height: 8),
               const Text(
@@ -965,11 +1167,29 @@ class _ReorderSection extends ConsumerWidget {
       ),
     );
   }
+}
 
-  /// "19 Sep", or "19 Sep 2025" for a date in another year.
-  static String _dayMonth(DateTime d) => d.year == DateTime.now().year
-      ? DateFormat('d MMM').format(d)
-      : DateFormat('d MMM y').format(d);
+/// "They're not ordering today": what the shop said, as the other answer to
+/// asking for an order.
+class _DeclineButton extends ConsumerWidget {
+  const _DeclineButton({required this.storeId, required this.visitClientId});
+
+  final String storeId;
+  final String visitClientId;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return TextButton(
+      onPressed: () => askWhyNoOrder(
+        context,
+        ref,
+        storeId: storeId,
+        visitClientId: visitClientId,
+        title: 'Why are they not ordering today?',
+      ),
+      child: const Text("They're not ordering today"),
+    );
+  }
 }
 
 /// The way into order capture, and — when there is one — proof that the order
