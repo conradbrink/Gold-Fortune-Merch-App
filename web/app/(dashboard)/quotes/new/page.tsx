@@ -130,15 +130,33 @@ export default function NewQuotePage() {
   const vatRate = Number(doc?.vat_rate ?? 0);
   const inclusive = doc?.prices_include_vat ?? false;
 
-  const storeList =
-    billTo.mode === "store"
-      ? listForGroup(priceBook, stores.find((s) => s.id === billTo.storeId)?.store_group_id)
-      : null;
+  const listOf = (b: BillTo) =>
+    b.mode === "store" ? listForGroup(priceBook, stores.find((s) => s.id === b.storeId)?.store_group_id) : null;
+  const storeList = listOf(billTo);
 
   /** A product's price in the quote's own basis: the store's VAT-exclusive price (its price list, or the product's own), with the VAT added when the quote's prices include it. */
-  function productPrice(p: Product): string {
-    const net = unitPriceFor(p, storeList);
+  function productPrice(p: Product, list = storeList): string {
+    const net = unitPriceFor(p, list);
     return net !== null && inclusive ? grossPrice(Number(net), vatRate).toFixed(2) : (net ?? "");
+  }
+
+  /**
+   * Changes who the quote is for, and moves the prefilled prices with it: a
+   * line still at the last store's price, or empty, takes this one's. A price
+   * typed in stays, as on the order screen.
+   */
+  function changeBillTo(next: BillTo) {
+    const before = listOf(billTo);
+    const after = listOf(next);
+    setBillTo(next);
+    if (before === after) return;
+    setProductLines((prev) =>
+      prev.map((l) => {
+        const p = byId.get(l.productId);
+        if (!p || (l.price !== "" && l.price !== productPrice(p, before))) return l;
+        return { ...l, price: productPrice(p, after) };
+      })
+    );
   }
 
   const productTotalsLines = productLines.map((l) => ({
@@ -249,7 +267,7 @@ export default function NewQuotePage() {
         </CardHeader>
         <CardContent className="grid gap-4 sm:grid-cols-2">
           <div className="sm:col-span-2">
-            <BillToPicker value={billTo} onChange={setBillTo} stores={stores} disabled={loading} />
+            <BillToPicker value={billTo} onChange={changeBillTo} stores={stores} disabled={loading} />
           </div>
           <div>
             <Label htmlFor="contact">Contact name</Label>

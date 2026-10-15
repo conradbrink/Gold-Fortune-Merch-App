@@ -71,6 +71,7 @@ export default function PriceListsPage() {
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
@@ -184,6 +185,7 @@ export default function PriceListsPage() {
     )
       return;
     setBusy(true);
+    setDeleting(true);
     setError(null);
     try {
       await deletePriceList(supabase, draft.id);
@@ -194,6 +196,7 @@ export default function PriceListsPage() {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
       setBusy(false);
+      setDeleting(false);
     }
   }
 
@@ -430,7 +433,7 @@ export default function PriceListsPage() {
               <div>
                 {draft.id && (
                   <Button variant="ghost" className="text-destructive" disabled={busy} onClick={remove}>
-                    Delete price list
+                    {deleting ? "Deleting…" : "Delete price list"}
                   </Button>
                 )}
               </div>
@@ -439,7 +442,7 @@ export default function PriceListsPage() {
                   Cancel
                 </Button>
                 <Button disabled={busy} onClick={save}>
-                  {busy ? "Saving…" : "Save price list"}
+                  {busy && !deleting ? "Saving…" : "Save price list"}
                 </Button>
               </div>
             </div>
