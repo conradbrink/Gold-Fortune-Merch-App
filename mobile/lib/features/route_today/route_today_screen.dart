@@ -8,6 +8,7 @@ import '../../core/providers.dart';
 import '../../core/terms.dart';
 import '../../core/theme.dart';
 import '../../data/models/route_visit.dart';
+import '../../data/models/store_reorder.dart';
 import '../../shared/widgets/status_badge.dart';
 import '../auth/auth_controller.dart';
 import '../../shared/widgets/sync_banner.dart';
@@ -37,6 +38,14 @@ class RouteTodayScreen extends ConsumerWidget {
     // And the orderable catalogue. A rep taking an order at a shop door has a
     // customer waiting; the products have to already be on the phone.
     if (company.has('distribution')) ref.watch(catalogueProductsProvider);
+    // And when each store last ordered, which every stop below shows and the
+    // store screen turns into a prompt.
+    final reorder = company.has('distribution')
+        ? ref.watch(storeReorderProvider).maybeWhen(
+              data: (all) => all,
+              orElse: () => const <String, StoreReorder>{},
+            )
+        : const <String, StoreReorder>{};
 
     return Scaffold(
       appBar: AppBar(
@@ -75,6 +84,7 @@ class RouteTodayScreen extends ConsumerWidget {
       body: RefreshIndicator(
         onRefresh: () async {
           ref.invalidate(todayRoutesProvider);
+          ref.invalidate(storeReorderProvider);
           // The pull is also how a rep picks up a changed company setting
           // without restarting the app.
           ref.invalidate(companyConfigProvider);
@@ -137,8 +147,10 @@ class RouteTodayScreen extends ConsumerWidget {
                   sliver: SliverList.separated(
                     itemCount: routes.length,
                     separatorBuilder: (_, _) => const SizedBox(height: 12),
-                    itemBuilder: (context, index) =>
-                        _RouteCard(routeVisit: routes[index]),
+                    itemBuilder: (context, index) => _RouteCard(
+                      routeVisit: routes[index],
+                      reorder: reorder[routes[index].storeId],
+                    ),
                   ),
                 );
               },
@@ -205,8 +217,12 @@ class _EmptyState extends StatelessWidget {
 }
 
 class _RouteCard extends StatelessWidget {
-  const _RouteCard({required this.routeVisit});
+  const _RouteCard({required this.routeVisit, this.reorder});
   final RouteVisit routeVisit;
+
+  /// When this stop's store last ordered; null when the company does not sell
+  /// or the list has not reached the phone, and the line is left out.
+  final StoreReorder? reorder;
 
   @override
   Widget build(BuildContext context) {
@@ -259,6 +275,10 @@ class _RouteCard extends StatelessWidget {
                         overflow: TextOverflow.ellipsis,
                       ),
                     ],
+                    if (reorder != null) ...[
+                      const SizedBox(height: 6),
+                      _LastOrderLine(reorder: reorder!),
+                    ],
                     const SizedBox(height: 10),
                     Row(
                       children: [
@@ -295,6 +315,52 @@ class _RouteCard extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+/// One line on a stop: when the store last ordered, coloured by whether it is
+/// due. On every stop rather than a badge on the due ones, because most stores
+/// are due at any time and a badge on nearly every card would say nothing.
+class _LastOrderLine extends StatelessWidget {
+  const _LastOrderLine({required this.reorder});
+
+  final StoreReorder reorder;
+
+  @override
+  Widget build(BuildContext context) {
+    final status = reorderStateOn(reorder, DateTime.now());
+    final (color, text) = switch (status.state) {
+      ReorderState.never => (AppColors.textMuted, 'No orders yet'),
+      ReorderState.stopped =>
+        (AppColors.danger, 'Last order ${daysAgo(status.daysSince!)}'),
+      ReorderState.due =>
+        (AppColors.warning, 'Last order ${daysAgo(status.daysSince!)}, due now'),
+      ReorderState.dueSoon => (
+          AppColors.textMuted,
+          'Last order ${daysAgo(status.daysSince!)}, due in '
+              '${status.daysUntilDue} ${status.daysUntilDue == 1 ? 'day' : 'days'}'
+        ),
+      ReorderState.notDue =>
+        (AppColors.textMuted, 'Last order ${daysAgo(status.daysSince!)}'),
+    };
+    return Row(
+      children: [
+        Icon(Icons.receipt_long_outlined, size: 14, color: color),
+        const SizedBox(width: 4),
+        Expanded(
+          child: Text(
+            text,
+            style: TextStyle(
+              color: color == AppColors.textMuted ? AppColors.textMuted : AppColors.textPrimary,
+              fontSize: 12.5,
+              fontWeight: color == AppColors.textMuted ? FontWeight.w500 : FontWeight.w600,
+            ),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
+      ],
     );
   }
 }

@@ -19,6 +19,7 @@ import {
   type DashboardSummary,
 } from "@/lib/dashboard";
 import { achievedFor, MEASURES, type Measure, type TargetProgress } from "@/lib/targets";
+import { orderRhythm, type ReorderSummary } from "@/lib/store-reorder";
 import { formatMoneyShort as moneyShortIn } from "@/lib/money";
 import { moduleEnabled } from "@/lib/modules";
 import { can } from "@/lib/permissions";
@@ -38,6 +39,7 @@ import {
   reportHref,
   salesHref,
   storeHealthHref,
+  storeReorderHref,
   storeHref,
   trackingHref,
 } from "@/lib/dashboard-links";
@@ -727,6 +729,75 @@ export function StoreHealthCard({ business }: { business: BusinessSummary }) {
           <span className="font-medium text-primary group-hover:underline">See which</span>
         </Link>
       )}
+    </SectionCard>
+  );
+}
+
+// --------------------------------------------------- stores due for an order
+
+/**
+ * Stores due for an order (owner, 15 Oct 2026). The same rows and rules as the
+ * page it opens and the reps' phones (lib/store-reorder.ts); its "ask these
+ * first" five are the first five of that page's "Due now", best customers first.
+ */
+export function StoreReorderCard({ reorder }: { reorder: ReorderSummary }) {
+  const t = useTerms();
+  const c = reorder.counts;
+  const total = Math.max(1, c.due + c.soon + c.stopped + c.never + c.not_due);
+  return (
+    // Full width: the figures on the left, the stores to ask first on the right.
+    <SectionCard title={`${t.site.many} due for an order`} href={storeReorderHref("due")} linkLabel="See the list">
+      <div className="grid gap-x-8 gap-y-4 lg:grid-cols-2">
+        <div className="flex flex-col gap-4">
+          <div className="flex h-3.5 gap-0.5 overflow-hidden rounded-full" aria-hidden>
+            <div className="bg-emerald-600" style={{ flex: c.not_due / total }} />
+            <div className="bg-amber-300" style={{ flex: c.soon / total }} />
+            <div className="bg-amber-500" style={{ flex: c.due / total }} />
+            <div className="bg-red-600" style={{ flex: c.stopped / total }} />
+            <div className="bg-muted-foreground/25" style={{ flex: c.never / total }} />
+          </div>
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+            <MiniStat label="Due now" value={c.due} href={storeReorderHref("due")} />
+            <MiniStat label="Due within 7 days" value={c.soon} href={storeReorderHref("soon")} />
+            <MiniStat label="Stopped ordering" value={c.stopped} tone={c.stopped > 0 ? "bad" : undefined} href={storeReorderHref("stopped")} />
+            <MiniStat label="Never ordered" value={c.never} href={storeReorderHref("never")} />
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Due after {reorder.rule} days without an order, or sooner for a {lower(t.site.one)} that usually orders
+            sooner. Your team sees it on their phones at the {lower(t.site.one)}.
+          </p>
+        </div>
+        <div className="flex flex-col border-t lg:border-t-0">
+          <div className="flex items-baseline justify-between gap-3 pb-1.5 pt-3 lg:pt-0">
+            <span className="text-xs text-muted-foreground">Ask these first: due now, and the ones that order most often</span>
+            {c.due > reorder.first.length && (
+              <Link href={storeReorderHref("due")} className="text-xs text-primary hover:underline">
+                See all {c.due}
+              </Link>
+            )}
+          </div>
+          {reorder.first.length === 0 ? (
+            <p className="py-2 text-sm text-muted-foreground">No {lower(t.site.one)} is due for an order right now.</p>
+          ) : (
+            reorder.first.map((s) => (
+              <div key={s.id} className="border-b text-sm last:border-b-0">
+                <Link
+                  href={storeHref(s.id)}
+                  className="-mx-1.5 flex items-center justify-between gap-3 rounded-md px-1.5 py-2 transition-colors hover:bg-muted/60 focus-visible:outline-2 focus-visible:outline-ring"
+                >
+                  <span className="min-w-0 truncate">
+                    {s.name}
+                    {s.city && <span className="text-muted-foreground"> · {s.city}</span>}
+                  </span>
+                  <span className="shrink-0 text-xs text-muted-foreground">
+                    {s.status.daysSince} days{s.usualDays !== null ? `, usually ${orderRhythm(s.usualDays)}` : ""}
+                  </span>
+                </Link>
+              </div>
+            ))
+          )}
+        </div>
+      </div>
     </SectionCard>
   );
 }

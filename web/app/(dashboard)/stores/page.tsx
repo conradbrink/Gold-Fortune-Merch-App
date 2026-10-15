@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import {
   Activity,
+  BellRing,
   Map,
   List,
   Upload,
@@ -45,7 +46,8 @@ import { ImportStoresButton } from "@/components/stores/import-dialog";
 import { toLocalDate } from "@/lib/date-range";
 import { ExportMenu } from "@/components/export-menu";
 import type { ExportSheet } from "@/lib/export";
-import { useTerms } from "@/lib/use-company-config";
+import { useCompanyConfig, useTerms } from "@/lib/use-company-config";
+import { moduleEnabled } from "@/lib/modules";
 import { useSitesByName } from "@/lib/use-maps";
 import { count, lower, noun, possessive, withArticle, type Terms } from "@/lib/terms";
 import {
@@ -215,6 +217,8 @@ function SortHeader({
 export default function StoresPage() {
   const supabase = createClient();
   const terms = useTerms();
+  const companyConfig = useCompanyConfig();
+  const sells = !!companyConfig && moduleEnabled(companyConfig.modules, "distribution");
   const byName = useSitesByName();
   const [view, setView] = useState<"list" | "map">("list");
   const [stores, setStores] = useState<StoreRow[]>([]);
@@ -1231,6 +1235,21 @@ export default function StoresPage() {
             </Link>
           }
         />
+        {/* The stores that have gone their usual time without an order. */}
+        {sells && (
+          <Button
+            variant="outline"
+            size="sm"
+            className="gap-1.5"
+            nativeButton={false}
+            render={
+              <Link href="/stores/reorder">
+                <BellRing className="h-4 w-4" />
+                Due for an order
+              </Link>
+            }
+          />
+        )}
         <Button
           variant="outline"
           size="sm"

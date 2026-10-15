@@ -7,6 +7,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'supabase_client.dart';
 import '../data/models/profile.dart';
 import '../data/models/route_visit.dart';
+import '../data/models/store_reorder.dart';
 import '../data/models/store_summary.dart';
 import '../data/models/form_template.dart';
 import '../data/models/lead.dart';
@@ -249,6 +250,22 @@ final orderDraftProvider =
 final catalogueProductsProvider =
     FutureProvider<List<CatalogueProduct>>((ref) async {
   return ref.watch(orderRepositoryProvider).fetchCatalogue();
+});
+
+/// When each store last ordered and when it is due again, keyed by store id.
+/// Warmed with the day, like the catalogue, so the store screen can say it at
+/// the door without signal. See `OrderRepository.fetchReorder`.
+final storeReorderProvider =
+    FutureProvider<Map<String, StoreReorder>>((ref) async {
+  ref.watch(currentUserProvider);
+  return ref.watch(orderRepositoryProvider).fetchReorder();
+});
+
+/// Whether this visit already produced an order, so the store screen stops
+/// asking for one. See `OrderRepository.orderTakenOnVisit`.
+final orderTakenOnVisitProvider =
+    FutureProvider.family<bool, String>((ref, visitClientId) async {
+  return ref.watch(orderRepositoryProvider).orderTakenOnVisit(visitClientId);
 });
 
 final promotionRepositoryProvider = Provider<PromotionRepository>((ref) {

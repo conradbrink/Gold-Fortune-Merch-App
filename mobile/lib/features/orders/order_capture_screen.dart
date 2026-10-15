@@ -282,6 +282,8 @@ class _OrderCaptureScreenState extends ConsumerState<OrderCaptureScreen> {
         ),
       );
       ref.invalidate(orderDraftProvider(widget.visitClientId));
+      ref.invalidate(orderTakenOnVisitProvider(widget.visitClientId));
+      ref.invalidate(storeReorderProvider);
       context.go('/visit/${widget.visitKey}');
     } catch (e) {
       if (!mounted) return;

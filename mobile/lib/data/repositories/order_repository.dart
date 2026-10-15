@@ -8,6 +8,7 @@ import '../local/app_database.dart';
 import '../local/order_draft.dart';
 import '../local/outbox_types.dart';
 import '../models/catalogue_product.dart';
+import '../models/store_reorder.dart';
 import '../sync/sync_engine.dart';
 
 const _uuid = Uuid();
@@ -30,6 +31,8 @@ class OrderRepository {
   final SyncEngine _sync;
 
   static const _cacheKey = 'catalogue_products';
+  static const _reorderKey = 'store_reorder';
+  static const _takenKey = 'orders_taken_on_visits';
 
   late final drafts = OrderDraftStore(_db);
 
@@ -138,10 +141,77 @@ class OrderRepository {
         payload: jsonEncode(payload),
       );
       await drafts.clear(visitClientGeneratedId);
+      await _rememberOrderTaken(visitClientGeneratedId);
     });
 
     unawaited(_sync.sync());
     return clientId;
+  }
+
+  /// When every store last ordered and when it is due again, keyed by store.
+  ///
+  /// The whole company's list in one call (a few hundred short rows), fetched
+  /// with the day and kept, for the same reason as the catalogue: the rep reads
+  /// it at a shop door, often with no signal. Empty when it has never been
+  /// read, and the screens then simply say nothing about it.
+  Future<Map<String, StoreReorder>> fetchReorder() async {
+    try {
+      final rows = await _client.rpc('store_reorder');
+      final list = (rows as List)
+          .map((r) => StoreReorder.fromMap(r as Map<String, dynamic>))
+          .toList();
+      await _db.setValue(
+        _reorderKey,
+        jsonEncode(list.map((r) => r.toMap()).toList()),
+      );
+      return {for (final r in list) r.storeId: r};
+    } catch (_) {
+      return cachedReorder();
+    }
+  }
+
+  Future<Map<String, StoreReorder>> cachedReorder() async {
+    final raw = await _db.getValue(_reorderKey);
+    if (raw == null || raw.isEmpty) return const {};
+    try {
+      return {
+        for (final r in jsonDecode(raw) as List)
+          (r as Map)['store_id'] as String:
+              StoreReorder.fromMap(Map<String, dynamic>.from(r)),
+      };
+    } catch (_) {
+      return const {};
+    }
+  }
+
+  /// Whether an order was taken on this visit, from the phone's own record.
+  ///
+  /// The server's list cannot say so until the order has synced and the list
+  /// been fetched again, and a rep with no signal would otherwise be asked for
+  /// an order they have just taken.
+  Future<bool> orderTakenOnVisit(String visitClientGeneratedId) async {
+    return (await _ordersTaken()).containsKey(visitClientGeneratedId);
+  }
+
+  Future<Map<String, String>> _ordersTaken() async {
+    final raw = await _db.getValue(_takenKey);
+    if (raw == null || raw.isEmpty) return {};
+    try {
+      return Map<String, String>.from(jsonDecode(raw) as Map);
+    } catch (_) {
+      return {};
+    }
+  }
+
+  /// Records the visit, and forgets visits older than three days: the record
+  /// only has to outlive the visit.
+  Future<void> _rememberOrderTaken(String visitClientGeneratedId) async {
+    final now = DateTime.now();
+    final cutoff = now.subtract(const Duration(days: 3));
+    final taken = await _ordersTaken();
+    taken.removeWhere((_, at) => DateTime.tryParse(at)?.isBefore(cutoff) ?? true);
+    taken[visitClientGeneratedId] = now.toIso8601String();
+    await _db.setValue(_takenKey, jsonEncode(taken));
   }
 
   /// Orders this rep has taken at a store, newest first. Server-only: an order

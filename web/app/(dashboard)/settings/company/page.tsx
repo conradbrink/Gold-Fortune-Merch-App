@@ -22,6 +22,7 @@ import { WorkingHoursCard } from "@/components/settings/working-hours-card";
 import { MoneySettingsCard } from "@/components/settings/money-settings-card";
 import { DocumentStyleCard } from "@/components/settings/document-style-card";
 import { DashboardSettingsCard } from "@/components/settings/dashboard-settings-card";
+import { ReorderSettingsCard } from "@/components/settings/reorder-settings-card";
 import { EmailSettingsCard } from "@/components/settings/email-settings-card";
 import { AlertsSettingsCard } from "@/components/settings/alerts-settings-card";
 import { ModulesCard } from "@/components/settings/modules-card";
@@ -502,6 +503,7 @@ export default function CompanySettingsPage() {
           </Card>
           {org && <WorkdaySettingsCard orgId={org.id} canEdit={canEditCompany} />}
           {org && <WorkingHoursCard orgId={org.id} canEdit={canEditCompany} />}
+          {org && <ReorderSettingsCard orgId={org.id} canEdit={canEditCompany} />}
           {org && <DashboardSettingsCard orgId={org.id} canEdit={canEditCompany} />}
         </TabsContent>
 

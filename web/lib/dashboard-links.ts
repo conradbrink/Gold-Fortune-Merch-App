@@ -106,6 +106,25 @@ export function healthGroupFromQuery(q: URLSearchParams): HealthGroup | null {
   return v !== null && (HEALTH_GROUPS as readonly string[]).includes(v) ? (v as HealthGroup) : null;
 }
 
+// ------------------------------------------------------ stores due for an order
+
+/**
+ * The groups of "Stores due for an order". They split the active stores with
+ * nothing left over; the rules are in lib/store-reorder.ts (and the phone's
+ * store_reorder.dart), over the dates `store_reorder` returns.
+ */
+export const REORDER_GROUPS = ["due", "soon", "stopped", "never", "not_due"] as const;
+export type ReorderGroup = (typeof REORDER_GROUPS)[number];
+
+export function storeReorderHref(show?: ReorderGroup): string {
+  return href("/stores/reorder", { show });
+}
+
+export function reorderGroupFromQuery(q: URLSearchParams): ReorderGroup | null {
+  const v = q.get("show");
+  return v !== null && (REORDER_GROUPS as readonly string[]).includes(v) ? (v as ReorderGroup) : null;
+}
+
 /** One store on the stores list, by its id: a name search could also match its neighbours. */
 export function storeHref(storeId: string): string {
   return href("/stores", { id: storeId });
