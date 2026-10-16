@@ -28,6 +28,8 @@ export type StoreGroupState = StoreGroupWords & {
   choose: (next: string) => void;
   /** Reads the groups again, after `failed`. */
   retry: () => void;
+  /** Whether the picker says how many of the page's rows each group has. */
+  counted: boolean;
 };
 
 export type StoreGroupFilter<T> = StoreGroupState & {
@@ -40,7 +42,9 @@ export type StoreGroupFilter<T> = StoreGroupState & {
  * reload, a shared link or Back opens the same group. `key` names the field
  * that holds each row's store id. `onChoose` clears the page's own filters
  * (a person, a town) when the group changes, as choosing a tile does, so one
- * hidden under the old group does not come back under the next.
+ * hidden under the old group does not come back under the next. `counted:
+ * false` leaves the numbers off the picker, for a page whose rows are not what
+ * it shows (Sales reads every delivery, and shows a period of them).
  *
  * Groups that cannot be read cost only the filter: every row is shown, with
  * `failed` to say so and `retry` to read them again. A page counts `loading`
@@ -49,7 +53,7 @@ export type StoreGroupFilter<T> = StoreGroupState & {
 export function useStoreGroupFilter<K extends string, T extends { [P in K]: string | null }>(
   rows: T[],
   t: Terms,
-  { key, onChoose }: { key: K; onChoose?: () => void }
+  { key, onChoose, counted = true }: { key: K; onChoose?: () => void; counted?: boolean }
 ): StoreGroupFilter<T> {
   const [chosen, setChosen] = useState("");
   /** The groups; "failed" when they could not be read; null while reading. */
@@ -113,5 +117,6 @@ export function useStoreGroupFilter<K extends string, T extends { [P in K]: stri
     rows: inStoreGroup,
     choose,
     retry,
+    counted,
   };
 }

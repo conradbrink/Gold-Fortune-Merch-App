@@ -58,6 +58,8 @@ import { STATUS_LABELS } from "@/lib/warehouse";
 import { createClient } from "@/lib/supabase/client";
 import { lower } from "@/lib/terms";
 import { useCompanyConfig, useTerms } from "@/lib/use-company-config";
+import { useStoreGroupFilter } from "@/lib/use-store-group-filter";
+import { StoreGroupChip, StoreGroupPicker } from "@/components/dashboard/store-group-picker";
 
 /** The "By rep" line for orders nobody took (keyed in at the warehouse). */
 const NO_REP = "none";
@@ -84,7 +86,8 @@ export default function OrdersPipelinePage() {
   const [business, setBusiness] = useState<BusinessSummary | null>(null);
   const [range, setRange] = useState<DateRange>(() => rangeForPreset("30d"));
   const [urlRead, setUrlRead] = useState(false);
-  const [loading, setLoading] = useState(true);
+  /** The orders themselves; `loading` below also waits for a store group a link asked for. */
+  const [loadingRows, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [stage, setStage] = useState<PipelineStage | null>(null);
   const [band, setBand] = useState("");
@@ -152,25 +155,39 @@ export default function OrdersPipelinePage() {
 
   const waited = (o: PipelineOrder) => daysWaiting(o.enteredAt, now);
 
+  /**
+   * One store group's orders, or every order: what the tiles, panels and list
+   * count. An order keyed in without a store is in no group.
+   */
+  const storeGroup = useStoreGroupFilter(orders, t, {
+    key: "storeId",
+    onChoose: () => {
+      setBand("");
+      setRep("");
+    },
+  });
+  const inStoreGroup = storeGroup.rows;
+  const loading = loadingRows || storeGroup.loading;
+
   /** Each stage's count, value and oldest wait: the tiles. */
   const byStage = useMemo(() => {
     const m = Object.fromEntries(PIPELINE_STAGES.map((s) => [s, { n: 0, value: 0, oldest: 0 }])) as Record<
       PipelineStage,
       { n: number; value: number; oldest: number }
     >;
-    for (const o of orders) {
+    for (const o of inStoreGroup) {
       const cur = m[o.stage];
       cur.n += 1;
       cur.value += o.total;
       cur.oldest = Math.max(cur.oldest, daysWaiting(o.enteredAt, now));
     }
     return m;
-  }, [orders, now]);
+  }, [inStoreGroup, now]);
 
   const inView = useMemo(() => {
     const stages = stagesInView(stage);
-    return orders.filter((o) => stages.includes(o.stage));
-  }, [orders, stage]);
+    return inStoreGroup.filter((o) => stages.includes(o.stage));
+  }, [inStoreGroup, stage]);
 
   /** "How long they have waited", over the orders in view. */
   const bands = useMemo(() => {
@@ -222,10 +239,11 @@ export default function OrdersPipelinePage() {
   const today = toLocalDateInput(new Date(now));
   const viewTotal = inView.reduce((n, o) => n + o.total, 0);
   const plural = (n: number) => (n === 1 ? "order" : "orders");
-  const meaning =
+  const meaning = storeGroup.within(
     stage === null
       ? `${inView.length} ${plural(inView.length)} not yet delivered, worth ${money(viewTotal)} with VAT. Tap a stage to see only those.`
-      : `${inView.length} ${plural(inView.length)} in "${STAGE_LABELS[stage]}", worth ${money(viewTotal)} with VAT. What to do next: ${lower(STAGE_NEXT[stage])}.`;
+      : `${inView.length} ${plural(inView.length)} in "${STAGE_LABELS[stage]}", worth ${money(viewTotal)} with VAT. What to do next: ${lower(STAGE_NEXT[stage])}.`
+  );
 
   const tiles: Tile[] = PIPELINE_STAGES.map((s) => {
     const x = byStage[s];
@@ -242,6 +260,7 @@ export default function OrdersPipelinePage() {
     return {
       title: stage ? `Orders pipeline: ${STAGE_LABELS[stage]}` : "Orders not yet delivered",
       context: [
+        ...storeGroup.context,
         ...(activeBand ? [`Waiting: ${WAIT_LABELS[activeBand as keyof typeof WAIT_LABELS]}`] : []),
         ...(activeRep ? [`${t.staff.one}: ${reps.find(([id]) => id === activeRep)?.[1].name ?? ""}`] : []),
         ...(search.trim() ? [`Matching "${search.trim()}"`] : []),
@@ -297,10 +316,16 @@ export default function OrdersPipelinePage() {
         action={<ExportMenu build={buildSheet} disabled={loading || shown.length === 0} />}
       />
 
+      <StoreGroupPicker filter={storeGroup} t={t} ready={!loading && !error} />
+
       <TopCard>
         <TilePicker tiles={tiles} active={stage} onChoose={(id) => chooseStage(id as PipelineStage | null)} label="Which stage" allowNone loading={loading} />
         <p className="text-sm text-foreground">{loading ? "\u00a0" : meaning}</p>
         {figures.length > 0 && <FigureStrip figures={figures} />}
+        {/* Quotes, stock and money are not split by store group: said, so they are not read as the group's. */}
+        {figures.length > 0 && storeGroup.active && (
+          <p className="-mt-2 text-xs text-muted-foreground">These figures are for the whole company.</p>
+        )}
       </TopCard>
 
       {!loading && !error && orders.length > 0 && (
@@ -317,7 +342,7 @@ export default function OrdersPipelinePage() {
             }))}
             active={activeBand}
             onToggle={(id) => setBand(activeBand === id ? "" : id)}
-            empty="Nothing waiting."
+            empty={storeGroup.within("Nothing waiting.")}
             footnote="Counted from when each order reached the stage it is in now."
           />
           <InsightPanel
@@ -333,13 +358,14 @@ export default function OrdersPipelinePage() {
             active={activeRep}
             onToggle={(id) => setRep(activeRep === id ? "" : id)}
             limit={8}
-            empty="Nothing waiting."
+            empty={storeGroup.within("Nothing waiting.")}
             footnote={`Who took the order. Orders keyed in at the warehouse have no ${lower(t.staff.one)}.`}
           />
         </div>
       )}
 
       <ListTools search={search} onSearch={setSearch} placeholder={`Find an order or ${lower(t.site.one)}`}>
+        <StoreGroupChip filter={storeGroup} />
         {activeBand && (
           <FilterChip onClear={() => setBand("")}>
             Waiting {lower(WAIT_LABELS[activeBand as keyof typeof WAIT_LABELS])} · any time
@@ -385,12 +411,12 @@ export default function OrdersPipelinePage() {
               <TableRow>
                 <TableCell colSpan={colSpan} className="py-10 text-center text-sm text-muted-foreground">
                   {inView.length === 0 ? (
-                    stage === null ? (
-                      "Nothing is waiting to be delivered."
-                    ) : stage === "no_pod" ? (
-                      "Every delivery has its proof of delivery."
-                    ) : (
-                      `Nothing is in "${STAGE_LABELS[stage]}" right now.`
+                    storeGroup.within(
+                      stage === null
+                        ? "Nothing is waiting to be delivered."
+                        : stage === "no_pod"
+                          ? "Every delivery has its proof of delivery."
+                          : `Nothing is in "${STAGE_LABELS[stage]}" right now.`
                     )
                   ) : (
                     <>

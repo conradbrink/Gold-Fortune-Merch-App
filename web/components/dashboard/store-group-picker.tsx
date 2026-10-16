@@ -37,7 +37,7 @@ export function StoreGroupPicker({ filter, t, ready }: { filter: StoreGroupState
               <option value="">Every {group}</option>
               {filter.choices.map((g) => (
                 <option key={g.id} value={g.id}>
-                  {g.name} ({g.n})
+                  {filter.counted ? `${g.name} (${g.n})` : g.name}
                 </option>
               ))}
             </NativeSelect>

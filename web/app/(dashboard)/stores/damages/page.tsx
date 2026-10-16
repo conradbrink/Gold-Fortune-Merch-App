@@ -22,6 +22,8 @@ import { createClient } from "@/lib/supabase/client";
 import { count, lower } from "@/lib/terms";
 import { useCompanyConfig, useTerms } from "@/lib/use-company-config";
 import { usePermissions } from "@/lib/use-permissions";
+import { useStoreGroupFilter } from "@/lib/use-store-group-filter";
+import { StoreGroupChip, StoreGroupPicker } from "@/components/dashboard/store-group-picker";
 
 /**
  * "2026-10-15T09:12:00Z" as "15 Oct" in the company's time, with the year when
@@ -49,7 +51,8 @@ export default function DamagedStockPage() {
 
   const [rows, setRows] = useState<DamageReport[]>([]);
   const [names, setNames] = useState<Record<string, string>>({});
-  const [loading, setLoading] = useState(true);
+  /** The reports themselves; `loading` below also waits for a store group a link asked for. */
+  const [loadingRows, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [group, setGroup] = useState<DamageGroup>("open");
   const [search, setSearch] = useState("");
@@ -84,13 +87,20 @@ export default function DamagedStockPage() {
   }, [attempt]);
 
   const nameOf = (id: string | null) => (id ? names[id] || `Unnamed ${lower(t.staff.one)}` : "");
+  /** One store group's reports, or every report: what the tiles and the list count. */
+  const storeGroup = useStoreGroupFilter(rows, t, { key: "store_id" });
+  const inStoreGroup = storeGroup.rows;
+  const loading = loadingRows || storeGroup.loading;
   const counts = useMemo(
-    () => ({ open: rows.filter((r) => r.status === "open").length, sorted: rows.filter((r) => r.status === "sorted").length }),
-    [rows]
+    () => ({
+      open: inStoreGroup.filter((r) => r.status === "open").length,
+      sorted: inStoreGroup.filter((r) => r.status === "sorted").length,
+    }),
+    [inStoreGroup]
   );
   const shown = useMemo(() => {
     const q = search.trim().toLowerCase();
-    return rows.filter(
+    return inStoreGroup.filter(
       (r) =>
         r.status === group &&
         (!q ||
@@ -98,7 +108,7 @@ export default function DamagedStockPage() {
           damagedWhat(r).toLowerCase().includes(q) ||
           (r.city ?? "").toLowerCase().includes(q))
     );
-  }, [rows, group, search]);
+  }, [inStoreGroup, group, search]);
 
   async function mark(r: DamageReport, status: DamageGroup) {
     setBusy(r.id);
@@ -124,6 +134,7 @@ export default function DamagedStockPage() {
       title: group === "open" ? "Damaged stock to sort" : "Damaged stock sorted",
       context: [
         group === "open" ? "Reported and not sorted yet." : `Sorted in the last ${SORTED_DAYS} days.`,
+        ...storeGroup.context,
         ...(search.trim() ? [`Matching "${search.trim()}"`] : []),
       ],
       filename: "damaged-stock",
@@ -165,6 +176,8 @@ export default function DamagedStockPage() {
         action={<ExportMenu build={buildSheet} disabled={loading || shown.length === 0} />}
       />
 
+      <StoreGroupPicker filter={storeGroup} t={t} ready={!loading && !error} />
+
       <TopCard>
         <TilePicker
           tiles={tiles}
@@ -175,7 +188,9 @@ export default function DamagedStockPage() {
         />
       </TopCard>
 
-      <ListTools search={search} onSearch={setSearch} placeholder={`Find a ${lower(t.site.one)} or product`} />
+      <ListTools search={search} onSearch={setSearch} placeholder={`Find a ${lower(t.site.one)} or product`}>
+        <StoreGroupChip filter={storeGroup} />
+      </ListTools>
 
       {markError && (
         <p role="alert" className="text-sm text-destructive">
@@ -195,9 +210,11 @@ export default function DamagedStockPage() {
         </div>
       ) : shown.length === 0 ? (
         <p className="rounded-lg border border-border bg-card py-10 text-center text-sm text-muted-foreground">
-          {group === "open"
-            ? `Nothing to sort. When a ${lower(t.staff.one)} reports damaged stock on the phone, it shows here with the photo.`
-            : `Nothing sorted in the last ${SORTED_DAYS} days.`}
+          {storeGroup.within(
+            group === "open"
+              ? `Nothing to sort. When a ${lower(t.staff.one)} reports damaged stock on the phone, it shows here with the photo.`
+              : `Nothing sorted in the last ${SORTED_DAYS} days.`
+          )}
         </p>
       ) : (
         <ul className="divide-y divide-border overflow-hidden rounded-lg border border-border bg-card">
