@@ -674,7 +674,9 @@ export default function StoreReorderPage() {
           {shown.length === inThisGroup.length
             ? `${count(t, "site", shown.length)}.`
             : `${shown.length.toLocaleString()} of ${count(t, "site", inThisGroup.length)}.`}{" "}
-          An order is any order that was not cancelled, and the invoices brought over from QuickBooks. How often a{" "}
+          An order is any order that was not cancelled, and the invoices brought over from QuickBooks. An order
+          counts from the day it was invoiced in QuickBooks or confirmed, if that was later than the day it was
+          taken. How often a{" "}
           {lower(t.site.one)} usually orders needs three orders in the last year. Next {lower(t.job.one)} looks{" "}
           {NEXT_VISIT_DAYS} days ahead.{sales ? " Bought in a year is what was invoiced, excluding VAT." : ""}
           {salesFailed

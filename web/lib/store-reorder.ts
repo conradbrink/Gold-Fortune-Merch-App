@@ -25,7 +25,12 @@ export type StoreReorderRow = {
   store_id: string;
   store_name: string;
   city: string | null;
-  /** YYYY-MM-DD, company time; null when the store never ordered. */
+  /**
+   * YYYY-MM-DD, company time; null when the store never ordered. The day the
+   * clock to the next order starts: for a Tickd order, the day QuickBooks
+   * invoiced it, or else the day the warehouse confirmed it, when that is
+   * later than the day it was taken (one that waited weeks for stock).
+   */
   last_order_on: string | null;
   /** "SO-000150", or a QuickBooks invoice number. */
   last_order_ref: string | null;
@@ -85,9 +90,10 @@ export async function fetchDeclines(supabase: SupabaseClient, since: Date): Prom
 
 /**
  * Each store's reason that still stands: its most recent one, and only when
- * it was given after the store's last order (company days). A reason from
- * before an order the store has since placed is history, not why it is due
- * now; one given on the day it then ordered was overtaken by the order.
+ * it was given after the store's last order day (company days; for an order
+ * that was confirmed or invoiced after it was taken, that later day). A reason
+ * from before that day is history, not why it is due now: the store has had
+ * an order since. One given on that day was overtaken by the order.
  * `declines` must be newest first.
  */
 export function standingDeclines(

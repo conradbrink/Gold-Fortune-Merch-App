@@ -13,8 +13,9 @@ import 'package:intl/intl.dart';
 class StoreReorder {
   final String storeId;
 
-  /// The day of the last order, company time. Null when the store has never
-  /// ordered.
+  /// The day of the last order, company time: for a Tickd order, the day
+  /// QuickBooks invoiced it or the warehouse confirmed it, when that is later
+  /// than the day it was taken. Null when the store has never ordered.
   final DateTime? lastOrderOn;
 
   /// The order number ("SO-000150"), or the QuickBooks invoice number ("1790")
