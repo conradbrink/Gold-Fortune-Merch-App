@@ -1,13 +1,19 @@
 -- Store reorder suite: when each store last ordered and when it is due again
--- (20261015100000, 15 Oct 2026; invoice day 20261016100000).
+-- (20261015100000, 15 Oct 2026; the clock to the next order 20261016100000 and
+-- 20261016110000).
 --
 --   R1  Fixtures with known dates: never ordered; one order 10 days ago; a
 --       store that orders every 14 days; one that orders every 60 days (due at
 --       the 30-day rule, not its own 60); QuickBooks history only; a cancelled
 --       order that does not count; a void invoice that does not count; an
---       imported invoice that names its order, counted once, on the day it
---       was invoiced; an invoice dated before its order, and a void one after
---       it, leave the order on its own day; two orders on one
+--       imported invoice that names its order, counted once, its clock
+--       starting on the day it was invoiced; an invoice dated before its order,
+--       and a void one after it, leave the order on its own day; an order
+--       confirmed days after it was taken counts from the confirmation, and an
+--       invoice voided and issued again does not move it; the rhythm and the
+--       last order go by the day each order was taken, whatever its invoice
+--       says; an order whose only invoice is void still counts; another
+--       store's invoice does not move an order; two orders on one
 --       day, one order day; an order more than a year ago, outside the rhythm
 --       but still the last order; a back-order that is not a new order; an
 --       inactive store left out.
@@ -39,7 +45,7 @@ declare
   v_mgr uuid; v_rep uuid; v_other uuid;
   v_tz text; v_today date;
   v_a uuid; v_b uuid; v_c uuid; v_d uuid; v_e uuid; v_f uuid; v_g uuid; v_h uuid; v_i uuid; v_k uuid; v_l uuid;
-  v_m uuid;
+  v_m uuid; v_cn uuid; v_p uuid; v_q uuid; v_r uuid; v_s uuid; v_loc uuid;
   v_g_order uuid; v_m_order uuid; v_c1_order uuid;
   v_prod uuid; v_units int; v_price numeric;
   v_lines jsonb; v_missing int; v_n int;
@@ -72,6 +78,11 @@ begin
   insert into public.stores (org_id, name) values (c_gf, 'ZZ reorder K void') returning id into v_k;
   insert into public.stores (org_id, name) values (c_gf, 'ZZ reorder L last year') returning id into v_l;
   insert into public.stores (org_id, name) values (c_gf, 'ZZ reorder M invoiced first') returning id into v_m;
+  insert into public.stores (org_id, name) values (c_gf, 'ZZ reorder N confirmed later') returning id into v_cn;
+  insert into public.stores (org_id, name) values (c_gf, 'ZZ reorder P rhythm') returning id into v_p;
+  insert into public.stores (org_id, name) values (c_gf, 'ZZ reorder Q taken last') returning id into v_q;
+  insert into public.stores (org_id, name) values (c_gf, 'ZZ reorder R only void') returning id into v_r;
+  insert into public.stores (org_id, name) values (c_gf, 'ZZ reorder S other store') returning id into v_s;
 
   -- Every order at midday, company time, n days ago. The 14-day store's and the
   -- same-day store's were taken by another rep, which R3 needs.
@@ -94,10 +105,29 @@ begin
       ('ZZ-RO-H1', v_h, v_other, 'new', 8),
       ('ZZ-RO-H2', v_h, v_other, 'new', 8),
       ('ZZ-RO-L1', v_l, null, 'new', 400),
-      ('ZZ-RO-M1', v_m, null, 'new', 6)
+      ('ZZ-RO-M1', v_m, null, 'new', 6),
+      ('ZZ-RO-P1', v_p, null, 'new', 60),
+      ('ZZ-RO-P2', v_p, null, 'new', 46),
+      ('ZZ-RO-P3', v_p, null, 'new', 32),
+      ('ZZ-RO-Q1', v_q, null, 'new', 25),
+      ('ZZ-RO-Q2', v_q, null, 'new', 10),
+      ('ZZ-RO-R1', v_r, null, 'new', 15),
+      ('ZZ-RO-S1', v_s, null, 'new', 14)
     ) as x(num, store, rep, status, ago);
   select id into v_g_order from public.orders where org_id = c_gf and order_number = 'ZZ-RO-G1';
   select id into v_m_order from public.orders where org_id = c_gf and order_number = 'ZZ-RO-M1';
+  -- Taken 12 days ago and confirmed 3 days later. A confirmed order needs a
+  -- warehouse to fill it from: any one Gold Fortune already uses.
+  select fulfil_location_id into v_loc from public.orders
+   where org_id = c_gf and fulfil_location_id is not null limit 1;
+  if v_loc is null then
+    raise exception 'Fixtures missing: a Gold Fortune order with a fulfilment location.';
+  end if;
+  insert into public.orders (org_id, order_number, store_id, source, received_via, status, fulfil_location_id,
+                             created_at, confirmed_at, client_generated_id)
+  values (c_gf, 'ZZ-RO-N1', v_cn, 'warehouse_manual', 'other', 'confirmed', v_loc,
+          ((v_today - 12) + time '12:00') at time zone v_tz,
+          ((v_today - 9) + time '12:00') at time zone v_tz, gen_random_uuid());
   -- A back-order of B's order, 3 days ago: the warehouse finishing B1, not a new order.
   insert into public.orders (org_id, order_number, store_id, source, received_via, status, parent_order_id,
                              created_at, client_generated_id)
@@ -122,6 +152,27 @@ begin
      'Gold Fortune', 'Test', v_today - 7, v_today + 23, 14, 10, 1.4, 11.4),
     (c_gf, 'ZZ9107', 'quickbooks', 'standard', v_m_order, 'ZZ-RO-M1', v_m, 'void', 'Suite fixture',
      'Gold Fortune', 'Test', v_today - 2, v_today + 28, 14, 10, 1.4, 11.4),
+    -- N1's own invoice from the day it was confirmed, voided, and issued again
+    -- yesterday: the order still counts from the day it was confirmed.
+    (c_gf, 'ZZ9108', 'order', 'standard', (select id from public.orders where org_id = c_gf and order_number = 'ZZ-RO-N1'),
+     'ZZ-RO-N1', v_cn, 'void', 'Suite fixture', 'Gold Fortune', 'Test', v_today - 9, v_today + 21, 14, 10, 1.4, 11.4),
+    (c_gf, 'ZZ9109', 'order', 'standard', (select id from public.orders where org_id = c_gf and order_number = 'ZZ-RO-N1'),
+     'ZZ-RO-N1', v_cn, 'issued', null, 'Gold Fortune', 'Test', v_today - 1, v_today + 29, 14, 10, 1.4, 11.4),
+    -- P2, taken 46 days ago between orders 14 days either side, invoiced 11
+    -- days late: the store still orders every 14 days.
+    (c_gf, 'ZZ9110', 'quickbooks', 'standard', (select id from public.orders where org_id = c_gf and order_number = 'ZZ-RO-P2'),
+     'ZZ-RO-P2', v_p, 'issued', null, 'Gold Fortune', 'Test', v_today - 35, v_today - 5, 14, 10, 1.4, 11.4),
+    -- Q1, taken 25 days ago and invoiced 3 days ago, after Q2 was taken: Q2
+    -- is still the last order.
+    (c_gf, 'ZZ9111', 'quickbooks', 'standard', (select id from public.orders where org_id = c_gf and order_number = 'ZZ-RO-Q1'),
+     'ZZ-RO-Q1', v_q, 'issued', null, 'Gold Fortune', 'Test', v_today - 3, v_today + 27, 14, 10, 1.4, 11.4),
+    -- R1's only invoice is void: the order still counts, on its own day.
+    (c_gf, 'ZZ9112', 'quickbooks', 'standard', (select id from public.orders where org_id = c_gf and order_number = 'ZZ-RO-R1'),
+     'ZZ-RO-R1', v_r, 'void', 'Suite fixture', 'Gold Fortune', 'Test', v_today - 4, v_today + 26, 14, 10, 1.4, 11.4),
+    -- An invoice for the never-ordered store, linked by mistake to S1: it
+    -- moves neither store.
+    (c_gf, 'ZZ9113', 'quickbooks', 'standard', (select id from public.orders where org_id = c_gf and order_number = 'ZZ-RO-S1'),
+     'ZZ-RO-S1', v_a, 'issued', null, 'Gold Fortune', 'Test', v_today - 2, v_today + 28, 14, 10, 1.4, 11.4),
     -- A void invoice is not an order.
     (c_gf, 'ZZ9103', 'quickbooks', 'standard', null, null, v_k, 'void', 'Suite fixture',
      'Gold Fortune', 'Test', v_today - 6, v_today + 24, 14, 10, 1.4, 11.4);
@@ -162,6 +213,24 @@ begin
     elsif r.store_id = v_m and not (r.last_order_on = v_today - 6 and r.last_order_ref = 'ZZ-RO-M1'
                                     and r.order_days_year = 1 and r.due_on = v_today + 24) then
       v_fail := v_fail || format('R1 an earlier or a void invoice moved its order: %s', row_to_json(r)) || E'\n';
+    elsif r.store_id = v_cn and not (r.last_order_on = v_today - 9 and r.last_order_ref = 'ZZ-RO-N1'
+                                    and r.last_order_status = 'confirmed' and r.order_days_year = 1
+                                    and r.due_on = v_today + 21) then
+      v_fail := v_fail || format('R1 not counted from the day it was confirmed, or moved by a reissued invoice: %s', row_to_json(r)) || E'\n';
+    elsif r.store_id = v_p and not (r.last_order_on = v_today - 32 and r.last_order_ref = 'ZZ-RO-P3'
+                                    and r.order_days_year = 3 and r.usual_days = 14
+                                    and r.due_after_days = 14 and r.due_on = v_today - 18) then
+      v_fail := v_fail || format('R1 a late invoice changed how often the store orders: %s', row_to_json(r)) || E'\n';
+    elsif r.store_id = v_q and not (r.last_order_on = v_today - 10 and r.last_order_ref = 'ZZ-RO-Q2'
+                                    and r.last_order_status = 'new' and r.order_days_year = 2
+                                    and r.due_on = v_today + 20) then
+      v_fail := v_fail || format('R1 an older order invoiced later became the last order: %s', row_to_json(r)) || E'\n';
+    elsif r.store_id = v_r and not (r.last_order_on = v_today - 15 and r.last_order_ref = 'ZZ-RO-R1'
+                                    and r.order_days_year = 1) then
+      v_fail := v_fail || format('R1 an order whose only invoice is void: %s', row_to_json(r)) || E'\n';
+    elsif r.store_id = v_s and not (r.last_order_on = v_today - 14 and r.last_order_ref = 'ZZ-RO-S1'
+                                    and r.order_days_year = 1) then
+      v_fail := v_fail || format('R1 another store''s invoice moved an order: %s', row_to_json(r)) || E'\n';
     elsif r.store_id = v_h and not (r.last_order_on = v_today - 8 and r.order_days_year = 1) then
       v_fail := v_fail || format('R1 two orders on one day: %s', row_to_json(r)) || E'\n';
     elsif r.store_id = v_k and not (r.last_order_on is null and r.order_days_year = 0) then
@@ -173,8 +242,8 @@ begin
       v_fail := v_fail || 'R1 an inactive store is listed' || E'\n';
     end if;
   end loop;
-  if (select count(*) from public.store_reorder() where store_name like 'ZZ reorder %') <> 11 then
-    v_fail := v_fail || format('R1 expected 11 fixture stores, found %s',
+  if (select count(*) from public.store_reorder() where store_name like 'ZZ reorder %') <> 16 then
+    v_fail := v_fail || format('R1 expected 16 fixture stores, found %s',
       (select count(*) from public.store_reorder() where store_name like 'ZZ reorder %')) || E'\n';
   end if;
 
