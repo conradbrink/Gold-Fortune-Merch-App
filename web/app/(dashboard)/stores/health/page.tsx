@@ -50,6 +50,8 @@ import {
 import { createClient } from "@/lib/supabase/client";
 import { count, lower, type Terms } from "@/lib/terms";
 import { useCompanyConfig, useTerms } from "@/lib/use-company-config";
+import { useStoreGroupFilter } from "@/lib/use-store-group-filter";
+import { StoreGroupChip, StoreGroupPicker } from "@/components/dashboard/store-group-picker";
 
 /** "" is everyone; this is the chip for stores nobody is assigned to. */
 const UNASSIGNED = "unassigned";
@@ -59,8 +61,9 @@ const NO_TOWN = "No town recorded";
 /**
  * The Store health card, opened up: the stores behind each of its numbers.
  *
- * Opened from the card with the group in the URL (`?show=not_visited`), so the
- * list answers the number that was clicked. The groups and their counts come
+ * Opened from the card with the tile in the URL (`?show=not_visited`), so the
+ * list answers the number that was clicked; `?group=` narrows the whole page to
+ * one store group (useStoreGroupFilter). The groups and their counts come
  * from `store_health`, the function the card itself counts, so the two always
  * agree. Each store opens on the stores list, where it can be given to someone.
  */
@@ -77,7 +80,8 @@ export default function StoreHealthPage() {
   /** Full names by profile id; empty for somebody who never gave one. */
   const [names, setNames] = useState<Record<string, string>>({});
   const nameOf = (id: string) => names[id] || `Unnamed ${lower(t.staff.one)}`;
-  const [loading, setLoading] = useState(true);
+  /** The stores themselves; `loading` below also waits for a store group a link asked for. */
+  const [loadingRows, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [asked, setAsked] = useState<HealthGroup | null>(null);
   const [person, setPerson] = useState("");
@@ -103,8 +107,9 @@ export default function StoreHealthPage() {
 
   /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
-    // Mount only, as on the off-site list: the tiles and the picker own the
-    // group and the window from here.
+    // Mount only, as on the off-site list: the tiles own the tile (`?show=`)
+    // and the dates picker the window from here. The store group (`?group=`)
+    // is useStoreGroupFilter's.
     const q = new URLSearchParams(window.location.search);
     setAsked(healthGroupFromQuery(q));
     // A day of slack: the company's today can be the browser's tomorrow, and a
@@ -208,16 +213,28 @@ export default function StoreHealthPage() {
     return m;
   }, [assignments]);
 
+  /** One store group's stores, or every store: what the tiles, panels and list count. */
+  const storeGroup = useStoreGroupFilter(rows, t, {
+    key: "store_id",
+    onChoose: () => {
+      setPerson("");
+      setTown("");
+    },
+  });
+  const inStoreGroup = storeGroup.rows;
+  const loading = loadingRows || storeGroup.loading;
+
   const counts = useMemo(
-    () => Object.fromEntries(groups.map((g) => [g, rows.filter((r) => inGroup(r, g)).length])) as Record<HealthGroup, number>,
-    [rows, groups]
+    () => Object.fromEntries(groups.map((g) => [g, inStoreGroup.filter((r) => inGroup(r, g)).length])) as Record<HealthGroup, number>,
+    [inStoreGroup, groups]
   );
-  const inThisGroup = useMemo(() => rows.filter((r) => inGroup(r, group)), [rows, group]);
+  const inThisGroup = useMemo(() => inStoreGroup.filter((r) => inGroup(r, group)), [inStoreGroup, group]);
 
   /**
    * "By rep": each person's stores split the way the card splits the estate,
    * so the owner sees at a glance whose stores are going quiet. Counted over
-   * every store they cover; the figure beside the bar is this group's.
+   * every store they cover (in the chosen store group); the figure beside the
+   * bar is this tile's.
    */
   const byPerson = useMemo(() => {
     type Split = { id: string; name: string; ordering: number; no_order: number; not_visited: number; total: number; inGroup: number };
@@ -229,7 +246,7 @@ export default function StoreHealthPage() {
       if (inGroup(r, group)) cur.inGroup += 1;
       m.set(id, cur);
     };
-    for (const r of rows) {
+    for (const r of inStoreGroup) {
       const ids = peopleOf.get(r.store_id) ?? [];
       if (ids.length === 0) add(UNASSIGNED, "Unassigned", r);
       for (const id of ids) add(id, names[id] || `Unnamed ${lower(t.staff.one)}`, r);
@@ -237,7 +254,7 @@ export default function StoreHealthPage() {
     return [...m.values()].sort(
       (a, b) => Number(a.id === UNASSIGNED) - Number(b.id === UNASSIGNED) || b.inGroup - a.inGroup || a.name.localeCompare(b.name)
     );
-  }, [rows, peopleOf, names, group, t.staff.one]);
+  }, [inStoreGroup, peopleOf, names, group, t.staff.one]);
 
   /** "By town": where this group's stores are, the most first. */
   const byTown = useMemo(() => {
@@ -283,6 +300,7 @@ export default function StoreHealthPage() {
       context: [
         groupMeaning(group, t, win, today),
         who,
+        ...storeGroup.context,
         ...(activeTown ? [`Town: ${activeTown}`] : []),
         ...(search.trim() ? [`Matching "${search.trim()}"`] : []),
       ],
@@ -323,7 +341,8 @@ export default function StoreHealthPage() {
    */
   const dayKey: SortKey = keyColumn === "visit" ? "visit" : "order";
   const onPhone = (col: "visit" | "order") => (sells && col !== dayKey ? "hidden sm:table-cell" : "");
-  const total = rows.length;
+  const total = inStoreGroup.length;
+  const emptyText = storeGroup.within(emptyGroup(group, t, win));
 
   const tiles: Tile[] = groups.map((g) => ({
     id: g,
@@ -344,7 +363,10 @@ export default function StoreHealthPage() {
         action={<ExportMenu build={buildSheet} disabled={loading || shown.length === 0} />}
       />
 
-      <LookBackPicker value={win} onChange={chooseWindow} presets={WINDOW_DAYS} today={today} />
+      <div className="flex flex-wrap items-center gap-x-6 gap-y-3">
+        <LookBackPicker value={win} onChange={chooseWindow} presets={WINDOW_DAYS} today={today} />
+        <StoreGroupPicker filter={storeGroup} t={t} ready={!loading && !error} />
+      </div>
 
       <TopCard>
         {sells && total > 0 && (
@@ -390,8 +412,8 @@ export default function StoreHealthPage() {
             active={activePerson}
             onToggle={(id) => setPerson(activePerson === id ? "" : id)}
             limit={12}
-            empty={emptyGroup(group, t, win)}
-            footnote={`The bar is all of their ${lower(t.site.many)}. The number is how many are in this group. Tap a name to see only theirs.`}
+            empty={emptyText}
+            footnote={`The bar is all of their ${lower(t.site.many)}${storeGroup.phrase ? ` ${storeGroup.phrase}` : ""}. The number is how many are in "${groupLabel(group, win)}". Tap a name to see only theirs.`}
           />
           <InsightPanel
             title="By town"
@@ -405,7 +427,7 @@ export default function StoreHealthPage() {
             }))}
             active={activeTown}
             onToggle={(id) => setTown(activeTown === id ? "" : id)}
-            empty={emptyGroup(group, t, win)}
+            empty={emptyText}
             moreHint="Search the list below to find one."
           />
         </div>
@@ -417,6 +439,7 @@ export default function StoreHealthPage() {
             {activePerson === UNASSIGNED ? "Unassigned only" : `${nameOf(activePerson)} only`} · show everyone
           </FilterChip>
         )}
+        <StoreGroupChip filter={storeGroup} />
         {activeTown !== "" && <FilterChip onClear={() => setTown("")}>{activeTown} only · every town</FilterChip>}
       </ListTools>
 
@@ -460,7 +483,7 @@ export default function StoreHealthPage() {
               <TableRow>
                 <TableCell colSpan={colSpan} className="py-10 text-center text-sm text-muted-foreground">
                   {inThisGroup.length === 0 ? (
-                    emptyGroup(group, t, win)
+                    emptyText
                   ) : (
                     <>
                       No {lower(t.site.many)} match.{" "}

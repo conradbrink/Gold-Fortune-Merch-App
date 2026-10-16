@@ -26,9 +26,11 @@ import {
   recurringDueWithin,
   reportHref,
   salesHref,
+  storeGroupFromQuery,
   storeHealthHref,
   storeHref,
   storeIdFromQuery,
+  storeReorderHref,
   trackingHref,
 } from "@/lib/dashboard-links";
 import { ORDER_STATUSES } from "@/lib/warehouse";
@@ -84,6 +86,18 @@ test("every Store health group opens itself", () => {
   const id = "17e43ac9-4492-4bf6-be2a-470ba6dece7a";
   assert.equal(storeIdFromQuery(query(storeHref(id))), id);
   assert.equal(storeIdFromQuery(new URLSearchParams("id=Choppies")), null);
+});
+
+test("a store group travels beside the tile, and every group is no group in the link", () => {
+  const choppies = "6d2c1d5e-8f1a-4c7e-9b3a-2f0e5d4c3b2a";
+  const health = query(storeHealthHref("not_visited", choppies));
+  assert.equal(storeGroupFromQuery(health), choppies);
+  // `show` is still the tile; the two never mix.
+  assert.equal(healthGroupFromQuery(health), "not_visited");
+  assert.equal(storeGroupFromQuery(query(storeReorderHref(undefined, "none"))), "none");
+  assert.equal(storeReorderHref(), "/stores/reorder");
+  assert.equal(storeHealthHref(undefined, ""), "/stores/health");
+  assert.equal(storeGroupFromQuery(new URLSearchParams("")), "");
 });
 
 test("the pipeline's stages open exactly their statuses", () => {

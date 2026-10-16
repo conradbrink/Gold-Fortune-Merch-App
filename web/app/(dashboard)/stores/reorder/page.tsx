@@ -24,14 +24,12 @@ import {
   DECLINE_REASONS,
   DEFAULT_REORDER_DAYS,
   NEXT_VISIT_DAYS,
-  NO_STORE_GROUP,
   REORDER_TILES,
   defaultSort,
   describeDue,
   emptyGroup,
   fetchDeclines,
   fetchNextVisits,
-  fetchStoreGroups,
   fetchStorePhones,
   fetchStoreReorder,
   fetchYearSales,
@@ -44,22 +42,20 @@ import {
   orderRhythm,
   reorderStatus,
   sortRows,
-  storeGroupChoices,
-  storeGroupOf,
   type Decline,
   type DeclineReason,
   type NextVisit,
   type Sort,
   type SortKey,
-  type StoreGroups,
   type StoreReorderRow,
 } from "@/lib/store-reorder";
 import { describeDays } from "@/lib/store-health";
 import { formatMoneyShort } from "@/lib/money";
 import { formatPhone } from "@/lib/phone-login";
-import { NativeSelect } from "@/components/ui/native-select";
 import { useIsManager } from "@/lib/use-is-manager";
 import { PlanVisitsDialog } from "@/components/stores/plan-visits-dialog";
+import { StoreGroupChip, StoreGroupPicker } from "@/components/dashboard/store-group-picker";
+import { useStoreGroupFilter } from "@/lib/use-store-group-filter";
 import { createClient } from "@/lib/supabase/client";
 import { count, lower } from "@/lib/terms";
 import { useCompanyConfig, useTerms } from "@/lib/use-company-config";
@@ -96,7 +92,8 @@ export default function StoreReorderPage() {
   /** Full names by profile id; empty for somebody who never gave one. */
   const [names, setNames] = useState<Record<string, string>>({});
   const nameOf = (id: string) => names[id] || `Unnamed ${lower(t.staff.one)}`;
-  const [loading, setLoading] = useState(true);
+  /** The stores themselves; `loading` below also waits for a store group a link asked for. */
+  const [loadingRows, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [asked, setAsked] = useState<ReorderGroup | null>(null);
   /** One person's next visits, or NONE_PLANNED; "" for everyone. */
@@ -116,18 +113,13 @@ export default function StoreReorderPage() {
   /** The stores the plan dialog is open for; empty when it is closed. */
   const [planning, setPlanning] = useState<{ id: string; name: string }[]>([]);
   const [planned, setPlanned] = useState<string | null>(null);
-  /** The store groups; null when they could not be read, which costs only the picker. */
-  const [storeGroups, setStoreGroups] = useState<StoreGroups | null>(null);
-  /** One store group (its id, or NO_STORE_GROUP) for the whole page; "" for every group. */
-  const [storeGroup, setStoreGroup] = useState("");
   const isManager = useIsManager();
 
   /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
-    // Mount only: the tiles and the group picker own these from here.
-    const q = new URLSearchParams(window.location.search);
-    setAsked(reorderGroupFromQuery(q));
-    setStoreGroup(q.get("group") ?? "");
+    // Mount only: the tiles own the tile (`?show=`) from here. The store
+    // group (`?group=`) is useStoreGroupFilter's.
+    setAsked(reorderGroupFromQuery(new URLSearchParams(window.location.search)));
   }, []);
   /* eslint-enable react-hooks/set-state-in-effect */
 
@@ -146,9 +138,8 @@ export default function StoreReorderPage() {
       fetchDeclines(supabase, new Date(Date.now() - DECLINE_DAYS * 86_400_000)).catch(() => [] as Decline[]),
       fetchYearSales(supabase).catch(() => undefined),
       fetchStorePhones(supabase).catch(() => new Map<string, { name: string; phone: string }>()),
-      fetchStoreGroups(supabase).catch(() => null),
     ])
-      .then(async ([reorder, next, given, bought, numbers, groups]) => {
+      .then(async ([reorder, next, given, bought, numbers]) => {
         const ids = [
           ...new Set(
             [...[...(next?.values() ?? [])].map((v) => v.repId), ...given.map((d) => d.rep_id)].filter(
@@ -164,7 +155,6 @@ export default function StoreReorderPage() {
         setSales(bought ?? null);
         setSalesFailed(bought === undefined);
         setPhones(numbers);
-        setStoreGroups(groups);
         setVisits(next ?? new Map());
         setVisitsFailed(next === null);
         setNames(Object.fromEntries(((data ?? []) as { id: string; full_name: string | null }[]).map((p) => [p.id, p.full_name ?? ""])));
@@ -196,14 +186,6 @@ export default function StoreReorderPage() {
     window.history.replaceState(null, "", url);
   }
 
-  function chooseStoreGroup(next: string) {
-    setStoreGroup(next);
-    const url = new URL(window.location.href);
-    if (next) url.searchParams.set("group", next);
-    else url.searchParams.delete("group");
-    window.history.replaceState(null, "", url);
-  }
-
   function chooseSort(key: SortKey) {
     setChosenSort(
       sort.key === key
@@ -218,17 +200,17 @@ export default function StoreReorderPage() {
     setAttempt((n) => n + 1);
   }
 
-  const groupChoices = useMemo(() => (storeGroups ? storeGroupChoices(rows, storeGroups, t) : []), [rows, storeGroups, t]);
-  const activeStoreGroup = groupChoices.some((g) => g.id === storeGroup) ? storeGroup : "";
-  const storeGroupName = groupChoices.find((g) => g.id === activeStoreGroup)?.name ?? "";
-  /** The chosen store group's stores, or every store: what the tiles, panels and list count. */
-  const inStoreGroup = useMemo(
-    () =>
-      activeStoreGroup === "" || !storeGroups
-        ? rows
-        : rows.filter((r) => storeGroupOf(r.store_id, storeGroups.groupOf) === activeStoreGroup),
-    [rows, storeGroups, activeStoreGroup]
-  );
+  /** One store group's stores, or every store: what the tiles, panels and list count. */
+  const storeGroup = useStoreGroupFilter(rows, t, {
+    key: "store_id",
+    onChoose: () => {
+      setPerson("");
+      setTown("");
+      setReasonFilter("");
+    },
+  });
+  const inStoreGroup = storeGroup.rows;
+  const loading = loadingRows || storeGroup.loading;
 
   const counts = useMemo(() => {
     const c = { due: 0, soon: 0, stopped: 0, never: 0, not_due: 0 } as Record<ReorderGroup, number>;
@@ -241,14 +223,7 @@ export default function StoreReorderPage() {
   );
 
   /** What an empty tile says, within the chosen store group when there is one. */
-  const emptyText = (() => {
-    const text = emptyGroup(group, t);
-    if (activeStoreGroup === "") return text;
-    const rest = text.charAt(0).toLowerCase() + text.slice(1);
-    return activeStoreGroup === NO_STORE_GROUP
-      ? `Of the ${lower(t.site.many)} in no ${lower(t.site_group.one)}, ${rest}`
-      : `In ${storeGroupName}, ${rest}`;
-  })();
+  const emptyText = storeGroup.within(emptyGroup(group, t));
 
   /** "Next visit": who is going to this group's stores in the next two weeks, and how many nobody is. */
   const byVisit = useMemo(() => {
@@ -351,11 +326,7 @@ export default function StoreReorderPage() {
       context: [
         groupMeaning(group, t, rule),
         who,
-        ...(activeStoreGroup === NO_STORE_GROUP
-          ? [`Not in a ${lower(t.site_group.one)}`]
-          : activeStoreGroup
-            ? [`${t.site_group.one}: ${storeGroupName}`]
-            : []),
+        ...storeGroup.context,
         ...(activeTown ? [`Town: ${activeTown}`] : []),
         ...(activeReason ? [`Last said: ${DECLINE_REASONS[activeReason as DeclineReason]}`] : []),
         ...(search.trim() ? [`Matching "${search.trim()}"`] : []),
@@ -436,31 +407,7 @@ export default function StoreReorderPage() {
         action={<ExportMenu build={buildSheet} disabled={loading || shown.length === 0} />}
       />
 
-      {/* The whole page, tiles and all, for one group's stores: one person may look after Choppies. */}
-      {groupChoices.some((g) => g.id !== NO_STORE_GROUP) && (
-        <div className="flex flex-wrap items-center gap-2">
-          <label htmlFor="store-group" className="text-sm text-muted-foreground">
-            {t.site_group.one}
-          </label>
-          <div className="w-full sm:w-72">
-            <NativeSelect id="store-group" value={activeStoreGroup} onChange={(e) => chooseStoreGroup(e.target.value)}>
-              <option value="">Every {lower(t.site_group.one)}</option>
-              {groupChoices.map((g) => (
-                <option key={g.id} value={g.id}>
-                  {g.name} ({g.n})
-                </option>
-              ))}
-            </NativeSelect>
-          </div>
-        </div>
-      )}
-
-      {/* Said, rather than quietly showing every group's figures under a link that names one. */}
-      {!loading && !error && storeGroup !== "" && storeGroups === null && (
-        <p role="status" className="text-sm text-amber-700 dark:text-amber-400">
-          The {lower(t.site_group.many)} could not be read, so these are the figures for every {lower(t.site_group.one)}.
-        </p>
-      )}
+      <StoreGroupPicker filter={storeGroup} t={t} ready={!loading && !error} />
 
       <TopCard>
         {total > 0 && (
@@ -530,7 +477,9 @@ export default function StoreReorderPage() {
             }))}
             active={activeReason}
             onToggle={(id) => setReasonFilter(activeReason === id ? "" : id)}
-            empty={`No reasons yet. When a ${lower(t.site.one)} doesn't order, the ${lower(t.staff.one)} picks why on the phone, and it shows here.`}
+            empty={storeGroup.within(
+              `No reasons yet. When a ${lower(t.site.one)} doesn't order, the ${lower(t.staff.one)} picks why on the phone, and it shows here.`
+            )}
           />
         </div>
       )}
@@ -541,12 +490,7 @@ export default function StoreReorderPage() {
             {activePerson === NONE_PLANNED ? `No ${lower(t.job.one)} planned` : `${nameOf(activePerson)}'s next ${lower(t.job.many)}`} · show everyone
           </FilterChip>
         )}
-        {activeStoreGroup !== "" && (
-          <FilterChip onClear={() => chooseStoreGroup("")}>
-            {activeStoreGroup === NO_STORE_GROUP ? `Not in a ${lower(t.site_group.one)}` : `${storeGroupName} only`} · every{" "}
-            {lower(t.site_group.one)}
-          </FilterChip>
-        )}
+        <StoreGroupChip filter={storeGroup} />
         {activeTown !== "" && <FilterChip onClear={() => setTown("")}>{activeTown} only · every town</FilterChip>}
         {activeReason !== "" && (
           <FilterChip onClear={() => setReasonFilter("")}>
@@ -554,7 +498,7 @@ export default function StoreReorderPage() {
           </FilterChip>
         )}
         {/* The ones on screen nobody is going to, onto one person's day in one go. */}
-        {canPlan && unplannedShown.length > 1 && (
+        {!loading && canPlan && unplannedShown.length > 1 && (
           <Button
             size="sm"
             variant="outline"

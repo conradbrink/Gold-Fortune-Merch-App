@@ -20,8 +20,6 @@ import {
   orderRhythm,
   reorderStatus,
   sortRows,
-  storeGroupChoices,
-  storeGroupOf,
   summarise,
   type StoreReorderRow,
 } from "@/lib/store-reorder";
@@ -213,35 +211,5 @@ test("the win-back list puts the biggest buyers first, with their number", () =>
   assert.deepEqual(
     summarise(rows, TODAY, 30, 5, null).winBack.map((w) => w.id),
     ["small", "big", "none"]
-  );
-});
-
-test("the group picker offers the groups with a store on the list, and No group last", () => {
-  const groups = {
-    groups: [
-      { id: "g-choppies", name: "Choppies Group" },
-      { id: "g-empty", name: "Empty Group" },
-      { id: "g-forecourts", name: "Forecourts" },
-    ],
-    groupOf: new Map<string, string | null>([
-      ["s1", "g-choppies"],
-      ["s2", "g-choppies"],
-      ["s3", "g-forecourts"],
-      ["s4", null],
-    ]),
-  };
-  const rows = ["s1", "s2", "s3", "s4", "s5"].map((id) => row({ store_id: id }));
-  assert.deepEqual(storeGroupChoices(rows, groups, DEFAULT_TERMS), [
-    { id: "g-choppies", name: "Choppies Group", n: 2 },
-    { id: "g-forecourts", name: "Forecourts", n: 1 },
-    // s4 has no group, and s5 was added after the groups were read.
-    { id: "none", name: "No group", n: 2 },
-  ]);
-  assert.equal(storeGroupOf("s1", groups.groupOf), "g-choppies");
-  assert.equal(storeGroupOf("s5", groups.groupOf), "none");
-  // Every store in a group: no "No group" to choose.
-  assert.deepEqual(
-    storeGroupChoices(rows.slice(0, 3), groups, DEFAULT_TERMS).map((g) => g.id),
-    ["g-choppies", "g-forecourts"]
   );
 });

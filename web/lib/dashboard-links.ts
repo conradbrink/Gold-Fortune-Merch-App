@@ -82,8 +82,8 @@ export function reportHref(tab: ReportId | ReportTab, range: DateRange, view?: V
 export const HEALTH_GROUPS = ["ordering", "no_order", "not_visited", "lapsed", "visited"] as const;
 export type HealthGroup = (typeof HEALTH_GROUPS)[number];
 
-export function storeHealthHref(show: HealthGroup): string {
-  return href("/stores/health", { show });
+export function storeHealthHref(show?: HealthGroup, group?: string): string {
+  return href("/stores/health", { show, group });
 }
 
 /** How far back a page looks: a number of days ending now, or since a date (YYYY-MM-DD). */
@@ -116,13 +116,23 @@ export function healthGroupFromQuery(q: URLSearchParams): HealthGroup | null {
 export const REORDER_GROUPS = ["due", "soon", "stopped", "never", "not_due"] as const;
 export type ReorderGroup = (typeof REORDER_GROUPS)[number];
 
-export function storeReorderHref(show?: ReorderGroup): string {
-  return href("/stores/reorder", { show });
+export function storeReorderHref(show?: ReorderGroup, group?: string): string {
+  return href("/stores/reorder", { show, group });
 }
 
 export function reorderGroupFromQuery(q: URLSearchParams): ReorderGroup | null {
   const v = q.get("show");
   return v !== null && (REORDER_GROUPS as readonly string[]).includes(v) ? (v as ReorderGroup) : null;
+}
+
+/**
+ * One store group on a card's page: `?group=<id>`, or `?group=none` for the
+ * stores in no group (NO_STORE_GROUP in lib/store-groups.ts); "" for every
+ * group. Not to be confused with `show`, which is the tile the page opens on.
+ * The page checks the id against the company's groups.
+ */
+export function storeGroupFromQuery(q: URLSearchParams): string {
+  return q.get("group")?.trim() ?? "";
 }
 
 /** One store on the stores list, by its id: a name search could also match its neighbours. */
