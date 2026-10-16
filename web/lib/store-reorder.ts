@@ -25,7 +25,11 @@ export type StoreReorderRow = {
   store_id: string;
   store_name: string;
   city: string | null;
-  /** YYYY-MM-DD, company time; null when the store never ordered. */
+  /**
+   * YYYY-MM-DD, company time; null when the store never ordered. A Tickd order
+   * counts on the day it was invoiced when that is later than the day it was
+   * taken: one that waited weeks for stock was bought when it was invoiced.
+   */
   last_order_on: string | null;
   /** "SO-000150", or a QuickBooks invoice number. */
   last_order_ref: string | null;
