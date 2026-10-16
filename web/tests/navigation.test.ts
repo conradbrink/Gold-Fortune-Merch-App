@@ -22,6 +22,7 @@ import { toModuleSet } from "@/lib/modules";
 import { toPermissionSet } from "@/lib/permissions";
 import { parseTerms } from "@/lib/terms";
 import { parseCompanyConfig } from "@/lib/company-config";
+import { storeHealthHref, storeReorderHref } from "@/lib/dashboard-links";
 
 const web = fileURLToPath(new URL("..", import.meta.url));
 const admin = toPermissionSet(["admin"]);
@@ -101,6 +102,16 @@ const LINKED_FROM: Record<string, string> = {
   "/tracking/team": "app/(dashboard)/tracking/page.tsx",
 };
 
+/**
+ * Pages whose buttons build their link with a function from lib/dashboard-links.ts
+ * (so the link can carry a filter, such as the store group). The linking file
+ * must call it, and it must build that page's address.
+ */
+const BUILT_BY: Record<string, () => string> = {
+  "/stores/health": storeHealthHref,
+  "/stores/reorder": storeReorderHref,
+};
+
 test("every page in the app is in the menu or linked from a named page", () => {
   const offered = new Set([
     ...hrefs(visibleNavGroups(admin, distributor, undefined, allSwitches)),
@@ -115,6 +126,8 @@ test("every page in the app is in the menu or linked from a named page", () => {
     const from = LINKED_FROM[route];
     const source = from ? readFileSync(join(web, from), "utf8") : "";
     if (from && (source.includes(`"${route}`) || source.includes(`\`${route}`))) continue;
+    const build = BUILT_BY[route];
+    if (from && build && source.includes(`${build.name}(`) && build().split("?")[0] === route) continue;
     missing.push(route);
   }
   assert.deepEqual(missing, [], `pages nobody can reach: ${missing.join(", ")}`);

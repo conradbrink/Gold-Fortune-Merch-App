@@ -51,7 +51,7 @@ import { createClient } from "@/lib/supabase/client";
 import { count, lower, type Terms } from "@/lib/terms";
 import { useCompanyConfig, useTerms } from "@/lib/use-company-config";
 import { useStoreGroupFilter } from "@/lib/use-store-group-filter";
-import { StoreGroupPicker } from "@/components/dashboard/store-group-picker";
+import { StoreGroupChip, StoreGroupPicker } from "@/components/dashboard/store-group-picker";
 
 /** "" is everyone; this is the chip for stores nobody is assigned to. */
 const UNASSIGNED = "unassigned";
@@ -61,8 +61,9 @@ const NO_TOWN = "No town recorded";
 /**
  * The Store health card, opened up: the stores behind each of its numbers.
  *
- * Opened from the card with the group in the URL (`?show=not_visited`), so the
- * list answers the number that was clicked. The groups and their counts come
+ * Opened from the card with the tile in the URL (`?show=not_visited`), so the
+ * list answers the number that was clicked; `?group=` narrows the whole page to
+ * one store group (useStoreGroupFilter). The groups and their counts come
  * from `store_health`, the function the card itself counts, so the two always
  * agree. Each store opens on the stores list, where it can be given to someone.
  */
@@ -79,7 +80,8 @@ export default function StoreHealthPage() {
   /** Full names by profile id; empty for somebody who never gave one. */
   const [names, setNames] = useState<Record<string, string>>({});
   const nameOf = (id: string) => names[id] || `Unnamed ${lower(t.staff.one)}`;
-  const [loading, setLoading] = useState(true);
+  /** The stores themselves; `loading` below also waits for a store group a link asked for. */
+  const [loadingRows, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [asked, setAsked] = useState<HealthGroup | null>(null);
   const [person, setPerson] = useState("");
@@ -105,8 +107,9 @@ export default function StoreHealthPage() {
 
   /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
-    // Mount only, as on the off-site list: the tiles and the picker own the
-    // group and the window from here.
+    // Mount only, as on the off-site list: the tiles own the tile (`?show=`)
+    // and the dates picker the window from here. The store group (`?group=`)
+    // is useStoreGroupFilter's.
     const q = new URLSearchParams(window.location.search);
     setAsked(healthGroupFromQuery(q));
     // A day of slack: the company's today can be the browser's tomorrow, and a
@@ -211,8 +214,15 @@ export default function StoreHealthPage() {
   }, [assignments]);
 
   /** One store group's stores, or every store: what the tiles, panels and list count. */
-  const storeGroup = useStoreGroupFilter(rows, t, attempt);
+  const storeGroup = useStoreGroupFilter(rows, t, {
+    key: "store_id",
+    onChoose: () => {
+      setPerson("");
+      setTown("");
+    },
+  });
   const inStoreGroup = storeGroup.rows;
+  const loading = loadingRows || storeGroup.loading;
 
   const counts = useMemo(
     () => Object.fromEntries(groups.map((g) => [g, inStoreGroup.filter((r) => inGroup(r, g)).length])) as Record<HealthGroup, number>,
@@ -290,7 +300,7 @@ export default function StoreHealthPage() {
       context: [
         groupMeaning(group, t, win, today),
         who,
-        ...(storeGroup.context ? [storeGroup.context] : []),
+        ...storeGroup.context,
         ...(activeTown ? [`Town: ${activeTown}`] : []),
         ...(search.trim() ? [`Matching "${search.trim()}"`] : []),
       ],
@@ -355,7 +365,7 @@ export default function StoreHealthPage() {
 
       <div className="flex flex-wrap items-center gap-x-6 gap-y-3">
         <LookBackPicker value={win} onChange={chooseWindow} presets={WINDOW_DAYS} today={today} />
-        <StoreGroupPicker filter={storeGroup} t={t} />
+        <StoreGroupPicker filter={storeGroup} t={t} ready={!loading && !error} />
       </div>
 
       <TopCard>
@@ -429,7 +439,7 @@ export default function StoreHealthPage() {
             {activePerson === UNASSIGNED ? "Unassigned only" : `${nameOf(activePerson)} only`} · show everyone
           </FilterChip>
         )}
-        {storeGroup.chip && <FilterChip onClear={() => storeGroup.choose("")}>{storeGroup.chip}</FilterChip>}
+        <StoreGroupChip filter={storeGroup} />
         {activeTown !== "" && <FilterChip onClear={() => setTown("")}>{activeTown} only · every town</FilterChip>}
       </ListTools>
 

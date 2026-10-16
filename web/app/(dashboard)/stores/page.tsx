@@ -95,7 +95,7 @@ import {
   type VisitFrequency,
 } from "@/lib/schedule";
 import { googleMapsUrl } from "@/lib/maps";
-import { storeIdFromQuery } from "@/lib/dashboard-links";
+import { storeHealthHref, storeIdFromQuery, storeReorderHref } from "@/lib/dashboard-links";
 import type { Tables } from "@/lib/supabase/types";
 
 type StoreRow = Tables<"stores">;
@@ -1223,14 +1223,15 @@ export default function StoresPage() {
             receiving it can tell a Gaborone-only list from the whole book. */}
         <ExportMenu build={buildStoreSheet} disabled={loading} label="Export" />
         {/* The dashboard's Store health card as a list: who is ordering, who is
-            visited without ordering, and who nobody has been to. */}
+            visited without ordering, and who nobody has been to. With a group
+            chosen above, it and "Due for an order" open on that group. */}
         <Button
           variant="outline"
           size="sm"
           className="gap-1.5"
           nativeButton={false}
           render={
-            <Link href="/stores/health">
+            <Link href={storeHealthHref(undefined, groupFilter === "all" ? undefined : groupFilter)}>
               <Activity className="h-4 w-4" />
               {terms.site.one} health
             </Link>
@@ -1259,7 +1260,7 @@ export default function StoresPage() {
             className="gap-1.5"
             nativeButton={false}
             render={
-              <Link href="/stores/reorder">
+              <Link href={storeReorderHref(undefined, groupFilter === "all" ? undefined : groupFilter)}>
                 <BellRing className="h-4 w-4" />
                 Due for an order
               </Link>
