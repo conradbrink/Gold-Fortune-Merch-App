@@ -34,6 +34,8 @@ import { lower } from "@/lib/terms";
 import { useCompanyConfig, useTerms } from "@/lib/use-company-config";
 import { achievedFor, fetchTargetProgress, type Measure, type TargetProgress } from "@/lib/targets";
 import { fetchSales, totalsFor, within, type Period, type Sale } from "@/lib/sales";
+import { useStoreGroupFilter } from "@/lib/use-store-group-filter";
+import { StoreGroupChip, StoreGroupPicker } from "@/components/dashboard/store-group-picker";
 
 /**
  * How a period compares with the one before it, as a sentence rather than a
@@ -112,7 +114,8 @@ export default function SalesPage() {
 
   const [sales, setSales] = useState<Sale[]>([]);
   const [targets, setTargets] = useState<TargetProgress[]>([]);
-  const [loading, setLoading] = useState(true);
+  /** The sales themselves; `loading` below also waits for a store group a link asked for. */
+  const [loadingRows, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   /** The dates chosen in the picker (or carried by a link): the viewer's days, end exclusive. */
   const [range, setRange] = useState<DateRange>(() => rangeForPreset("month"));
@@ -132,6 +135,16 @@ export default function SalesPage() {
   const [store, setStore] = useState("");
   const [search, setSearch] = useState("");
   const [sort, setSort] = useState<SortState<SortKey>>({ key: "delivered", dir: "desc" });
+
+  /**
+   * One store group's deliveries, or every delivery: what the figures, the
+   * month bars, the panels and the list count. A store belongs to one group,
+   * so a store picked under another group is let go. No numbers on the picker:
+   * it would count every delivery ever, not the period on screen.
+   */
+  const storeGroup = useStoreGroupFilter(sales, t, { key: "storeId", onChoose: () => setStore(""), counted: false });
+  const inStoreGroup = storeGroup.rows;
+  const loading = loadingRows || storeGroup.loading;
 
   // Fixed at first render, so every figure is measured against one instant: a
   // page open across midnight otherwise starts disagreeing with itself.
@@ -307,11 +320,11 @@ export default function SalesPage() {
     const list = [5, 4, 3, 2, 1, 0].map((back) => {
       const first = monthDay(periods.monthFirst, -back);
       const p = monthPeriod(first);
-      return { key: first, short: monthName(first, "short"), period: p, net: totalsFor(sales, p).net, current: back === 0 };
+      return { key: first, short: monthName(first, "short"), period: p, net: totalsFor(inStoreGroup, p).net, current: back === 0 };
     });
     const firstWithSales = list.findIndex((m) => m.net > 0);
     return firstWithSales === -1 ? list.slice(-1) : list.slice(firstWithSales);
-  }, [sales, periods.monthFirst, monthPeriod]);
+  }, [inStoreGroup, periods.monthFirst, monthPeriod]);
   const monthScale = Math.max(1, ...months.map((m) => m.net));
 
   /** A month bar: that month, as the card counts it. The picker shows its dates. */
@@ -324,7 +337,7 @@ export default function SalesPage() {
     remember(shown);
   }
 
-  const inPeriod = useMemo(() => (period ? sales.filter((s) => within(s, period)) : sales), [sales, period]);
+  const inPeriod = useMemo(() => (period ? inStoreGroup.filter((s) => within(s, period)) : inStoreGroup), [inStoreGroup, period]);
 
   /** "By rep", over the period and the chosen store, so picking a store shows who sold there. */
   const byRep = useMemo(() => {
@@ -356,10 +369,14 @@ export default function SalesPage() {
     return [...m.entries()].sort((a, b) => b[1].net - a[1].net);
   }, [inPeriod, rep]);
 
-  /** This month's target for each person, when the period is this month and one is set. */
+  /**
+   * This month's target for each person, when the period is this month and one
+   * is set. Not within a store group: a target is for everything a person sells,
+   * and one group's share of it would read as falling short.
+   */
   const targetFor = useMemo(() => {
     const m = new Map<string, number>();
-    if (!isThisMonth) return m;
+    if (!isThisMonth || storeGroup.active) return m;
     for (const tg of targets) {
       const target = Number(tg.target ?? 0);
       if (target <= 0) continue;
@@ -367,7 +384,7 @@ export default function SalesPage() {
       m.set(tg.rep_id, achievedFor(tg, measure) / target);
     }
     return m;
-  }, [targets, isThisMonth]);
+  }, [targets, isThisMonth, storeGroup.active]);
 
   // A person or store picked under another period may have nothing in this one.
   const repName = rep ? (sales.find((s) => (s.repId ?? NONE) === rep)?.repName ?? profileName) : null;
@@ -401,14 +418,14 @@ export default function SalesPage() {
     {
       label: "Sales, excluding VAT",
       value: moneyShort(totals.net),
-      sub: before ? comparison(totals.net, totalsFor(sales, before.period).net, before.label) : periodName,
+      sub: before ? comparison(totals.net, totalsFor(inStoreGroup, before.period).net, before.label) : periodName,
     },
     { label: "Deliveries", value: totals.orders, sub: `${totals.units} units` },
     { label: "Including VAT", value: moneyShort(totals.gross), sub: "At each order's own rate" },
   ];
 
   const filteredBy = [repName, storeName].filter(Boolean).join(", ");
-  const meaning = `${periodName}${filteredBy ? `, ${filteredBy}` : ""}: ${money(shownTotals.net)} excluding VAT from ${shownTotals.orders} ${
+  const meaning = `${periodName}${storeGroup.phrase ? `, ${storeGroup.phrase}` : ""}${filteredBy ? `, ${filteredBy}` : ""}: ${money(shownTotals.net)} excluding VAT from ${shownTotals.orders} ${
     shownTotals.orders === 1 ? "delivery" : "deliveries"
   }, ${money(shownTotals.gross)} with VAT.`;
 
@@ -418,6 +435,7 @@ export default function SalesPage() {
       title: "Sales by delivery",
       context: [
         periodName,
+        ...storeGroup.context,
         ...(repName ? [`${t.staff.one}: ${repName}`] : []),
         ...(storeName ? [`${t.site.one}: ${storeName}`] : []),
         `${shown.length} deliveries`,
@@ -472,6 +490,8 @@ export default function SalesPage() {
         onAllTime={chooseAllTime}
         presets={["week", "month", "7d", "30d", "90d"]}
       />
+
+      <StoreGroupPicker filter={storeGroup} t={t} ready={!loading && !error} />
 
       <TopCard>
         <StatTiles tiles={stats} loading={loading} />
@@ -529,7 +549,7 @@ export default function SalesPage() {
             active={rep}
             onToggle={(id) => setRep(rep === id ? "" : id)}
             limit={8}
-            empty="Nothing was delivered in this period."
+            empty={storeGroup.within("Nothing was delivered in this period.")}
             moreHint="Search the list below to find one."
             footnote={
               targetFor.size > 0
@@ -549,7 +569,7 @@ export default function SalesPage() {
             }))}
             active={store}
             onToggle={(id) => setStore(store === id ? "" : id)}
-            empty="Nothing was delivered in this period."
+            empty={storeGroup.within("Nothing was delivered in this period.")}
             moreHint="Search the list below to find one."
             footnote={`Who bought the most. Tap one to see its deliveries and who sold them.`}
           />
@@ -557,6 +577,7 @@ export default function SalesPage() {
       )}
 
       <ListTools search={search} onSearch={setSearch} placeholder={`Find an order, ${lower(t.site.one)} or ${lower(t.staff.one)}`}>
+        <StoreGroupChip filter={storeGroup} />
         {rep && <FilterChip onClear={() => setRep("")}>{repName ?? `One ${lower(t.staff.one)}`} only · everyone</FilterChip>}
         {store && <FilterChip onClear={() => setStore("")}>{storeName ?? `One ${lower(t.site.one)}`} only · every {lower(t.site.one)}</FilterChip>}
       </ListTools>
@@ -584,7 +605,7 @@ export default function SalesPage() {
               <TableRow>
                 <TableCell colSpan={6} className="py-10 text-center text-sm text-muted-foreground">
                   {inPeriod.length === 0 ? (
-                    "Nothing was delivered in this period."
+                    storeGroup.within("Nothing was delivered in this period.")
                   ) : (
                     <>
                       No deliveries match.{" "}
