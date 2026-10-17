@@ -67,14 +67,15 @@ type Line = {
  * different tooling, but it is labelled as of-the-open rather than current.
  *
  * Once submitted the screen becomes the manager's: the variance is measured
- * against the reading taken at submit, and any line whose balance has moved
- * since then is flagged and has to be ticked individually before it can be
- * approved. That tick is the whole reason the RPC takes a list of line ids.
+ * against the reading taken at submit, and any line whose stock changed after
+ * that has to be recounted before the count can be approved. There used to be
+ * a "re-checked" tick that approved such a line as counted; on STK-000005 it
+ * would have taken 51 Kiwi out of 19, and added undelivered stock twice, so it
+ * is gone (20261017130000).
  *
- * A manager can also recount a line before deciding: the count found 8 but the
- * 40 packed for orders were missed, or stock left before the count and was
- * only dispatched in the system afterwards. The recount is measured against
- * the system now, and the first count stays on the line.
+ * A recount is measured against the system now, and the first count stays on
+ * the line. It is also how a manager puts right a count that missed the boxes
+ * packed for orders.
  */
 export default function StocktakeDetailPage() {
   const supabase = createClient();
@@ -97,7 +98,6 @@ export default function StocktakeDetailPage() {
   const [variance, setVariance] = useState<VarianceRow[]>([]);
   const [counts, setCounts] = useState<Record<string, string>>({});
   const [reasons, setReasons] = useState<Record<string, string>>({});
-  const [reconfirm, setReconfirm] = useState<Set<string>>(new Set());
   // Lines a partial save could not write. Marked in the table, because a
   // count of failures is not something a counter can act on with forty rows
   // in front of them.
@@ -205,12 +205,6 @@ export default function StocktakeDetailPage() {
   }
   const moved = variance.filter((v) => v.moved_since_submit);
   const withVariance = variance.filter((v) => v.variance_qty !== 0);
-  const blockedIds = moved.filter((m) => m.variance_qty !== 0).map((m) => m.line_id);
-  const allBlockedTicked = blockedIds.every((b) => reconfirm.has(b));
-  // What is still un-ticked, which is both the number the warning quotes and
-  // the number its verb has to agree with. Taking the count from one and the
-  // verb from the other produced "1 lines have moved".
-  const blockedOutstanding = blockedIds.filter((b) => !reconfirm.has(b)).length;
   // Short lines where stock is packed for orders: the usual reason is that the
   // packed boxes were not counted. Approving those writes off stock that is
   // sitting in the warehouse waiting for a driver.
@@ -299,8 +293,12 @@ export default function StocktakeDetailPage() {
           )}
           {submitted && canApprove && (
             <>
-              <Button onClick={() => setDialog("approve")} disabled={busy}>
-                Approve
+              {/* The database refuses these until they are recounted; saying so
+                  on the button saves a trip into the dialog and back. */}
+              <Button onClick={() => setDialog("approve")} disabled={busy || moved.length > 0}>
+                {moved.length > 0
+                  ? `Recount ${moved.length} line${moved.length === 1 ? "" : "s"} first`
+                  : "Approve"}
               </Button>
               <Button variant="outline" onClick={() => setDialog("reject")} disabled={busy}>
                 Reject
@@ -375,14 +373,16 @@ export default function StocktakeDetailPage() {
       {submitted && moved.length > 0 && (
         <div className="rounded-lg border border-amber-500/40 bg-amber-500/5 p-3">
           <p className="flex items-center gap-2 text-sm font-medium text-amber-700 dark:text-amber-500">
-            <AlertTriangle className="h-4 w-4" /> {moved.length} line
-            {moved.length === 1 ? " has" : "s have"} moved since the sheet was handed in
+            <AlertTriangle className="h-4 w-4" /> Recount {moved.length} line
+            {moved.length === 1 ? "" : "s"} before approving
           </p>
           <p className="mt-1 text-sm text-muted-foreground">
-            Stock moved while this count was waiting. If it was sold or delivered,
-            tick it as re-checked: the difference still stands. If the system
-            figure was corrected (a delivery reversed, an adjustment), recount it
-            instead, or the correction is taken off twice.
+            Stock changed after {moved.length === 1 ? "it was" : "they were"} counted
+            (orders dispatched or cancelled, stock returned or received), so the count
+            no longer lines up with the system. Count what is on the shelf now and
+            press Recount on {moved.length === 1 ? "that line" : "each one"}: the
+            difference is worked out against the system now. They are marked in
+            amber in the Now column.
           </p>
         </div>
       )}
@@ -583,24 +583,11 @@ export default function StocktakeDetailPage() {
                           >
                             Recount
                           </Button>
-                          {v.moved_since_submit && v.variance_qty !== 0 ? (
-                            <label className="flex items-center gap-1.5 text-xs">
-                              <input
-                                type="checkbox"
-                                checked={reconfirm.has(v.line_id)}
-                                onChange={(e) =>
-                                  setReconfirm((prev) => {
-                                    const next = new Set(prev);
-                                    if (e.target.checked) next.add(v.line_id);
-                                    else next.delete(v.line_id);
-                                    return next;
-                                  })
-                                }
-                                className="h-4 w-4"
-                              />
-                              re-checked
-                            </label>
-                          ) : null}
+                          {v.moved_since_submit && (
+                            <span className="text-xs font-medium text-amber-600 dark:text-amber-500">
+                              changed
+                            </span>
+                          )}
                           </div>
                         </TableCell>
                       )}
@@ -667,11 +654,6 @@ export default function StocktakeDetailPage() {
                 const line = recounting;
                 await run(async () => {
                   await recountLine(supabase, { lineId: line.line_id, counted: qty });
-                  setReconfirm((prev) => {
-                    const next = new Set(prev);
-                    next.delete(line.line_id);
-                    return next;
-                  });
                   setRecounting(null);
                 }, `${line.product_name} recounted at ${qty}.`);
               }}
@@ -706,15 +688,6 @@ export default function StocktakeDetailPage() {
                 recount {shortWithPacked.length === 1 ? "it" : "them"} first.
               </p>
             )}
-            {dialog === "approve" && blockedIds.length > 0 && !allBlockedTicked && (
-              <p className="rounded-lg border border-amber-500/40 bg-amber-500/5 p-2.5 text-sm text-amber-700 dark:text-amber-500">
-                {blockedOutstanding} line{blockedOutstanding === 1 ? " has" : "s have"} moved
-                since the sheet was handed in and{" "}
-                {blockedOutstanding === 1 ? "has" : "have"} not been re-checked. Tick{" "}
-                {blockedOutstanding === 1 ? "it" : "them"} in the table first, or the
-                database will refuse this.
-              </p>
-            )}
             <div>
               <Label htmlFor="note">
                 {dialog === "approve" ? "Note (optional)" : "Why is it being rejected?"}
@@ -734,7 +707,6 @@ export default function StocktakeDetailPage() {
                       id,
                       approve: dialog === "approve",
                       note: note.trim() || null,
-                      reconfirmLineIds: Array.from(reconfirm),
                     }),
                   dialog === "approve"
                     ? "Approved. The stock has been adjusted."
