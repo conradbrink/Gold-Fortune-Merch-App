@@ -32,6 +32,7 @@ import {
   STOCKTAKE_TYPES,
   type StocktakeListRow,
 } from "@/lib/stocktakes";
+import { stampWhen } from "@/lib/stocktake-sheet";
 
 export default function StocktakesPage() {
   const supabase = createClient();
@@ -116,14 +117,15 @@ export default function StocktakesPage() {
               <TableHead>Location</TableHead>
               <TableHead className="text-right">Lines</TableHead>
               <TableHead>Status</TableHead>
+              <TableHead>Counted by</TableHead>
               <TableHead>Started</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {loading ? (
-              <EmptyRow colSpan={6}>Loading…</EmptyRow>
+              <EmptyRow colSpan={7}>Loading…</EmptyRow>
             ) : rows.length === 0 ? (
-              <EmptyRow colSpan={6}>
+              <EmptyRow colSpan={7}>
                 No counts yet. A full count freezes the location; a cycle or spot check
                 does not.
               </EmptyRow>
@@ -165,8 +167,9 @@ export default function StocktakesPage() {
                       {s.status}
                     </Badge>
                   </TableCell>
+                  <TableCell className="text-muted-foreground">{s.counted_by ?? "—"}</TableCell>
                   <TableCell className="text-muted-foreground">
-                    {s.started_at ? new Date(s.started_at).toLocaleDateString() : "—"}
+                    {s.started_at ? stampWhen(s.started_at) : "—"}
                   </TableCell>
                 </TableRow>
               ))
