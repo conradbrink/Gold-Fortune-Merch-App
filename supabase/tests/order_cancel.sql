@@ -4,8 +4,9 @@
 --       the order and its lines are cancelled, nothing is left held or
 --       picked, and the stock is back in available.
 --   C2  A confirmed order that was never picked still cancels as before.
---   C3  On real data: SO-000139, the packed duplicate the owner could not
---       cancel on 17 Oct 2026, cancels. Its QuickBooks invoice is left alone.
+--   C3  On real data, while it is still packed: SO-000139, the duplicate the
+--       owner could not cancel on 17 Oct 2026, cancels. Its QuickBooks invoice
+--       is left alone.
 --   C4  A dispatched order is still refused.
 --
 -- HOW TO RUN: one DO block that always ends in `raise exception`, so nothing
@@ -94,9 +95,9 @@ begin
   set local role authenticated;
 
   ---------------------------------------------------------- C3 SO-000139
-  if v_real is null then
-    v_fail := v_fail || 'C3 SO-000139 is no longer packed: nothing to prove on real data' || E'\n';
-  else
+  -- Once SO-000139 has really been cancelled there is nothing left to prove on
+  -- it; C1 covers the same path on a fixture.
+  if v_real is not null then
     begin
       j := public.order_cancel(v_real, 'Suite: duplicated');
       if j->>'status' <> 'cancelled' or (j->>'units_released')::int <> 20 then
