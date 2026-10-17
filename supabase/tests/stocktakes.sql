@@ -13,6 +13,8 @@
 --       expired; stock set aside for an order is never touched. A product
 --       that is all expired can be counted down.
 --   S6  anon cannot call the recount.
+--   S7  A line that changed after it was counted is refused at approval even
+--       when ticked "re-checked" (20261017130000), and named in the refusal.
 --
 -- HOW TO RUN: one DO block that always ends in `raise exception`, so nothing
 -- survives. The last line of the message is the verdict.
@@ -146,6 +148,18 @@ begin
     v_fail := v_fail || 'S4 a line that moved after hand-in was not flagged' || E'\n';
   end if;
   select id into v_line from public.stocktake_lines where stocktake_id = v_st and product_id = v_moved;
+  -- S7: ticked or not, a line that changed after it was counted is refused,
+  -- by name, with both figures.
+  v_msg := null;
+  begin
+    perform public.stocktake_decide(v_st, true, null, array[v_line]);
+    v_fail := v_fail || 'S7 a ticked line that changed after its count was approved' || E'\n';
+  exception when check_violation then
+    v_msg := sqlerrm;
+  end;
+  if v_msg is null or position('Recount this line before approving: ZZ moved after hand-in (it said 20 when counted, 25 now)' in v_msg) = 0 then
+    v_fail := v_fail || 'S7 the refusal does not name the changed line: ' || coalesce(v_msg, '(none)') || E'\n';
+  end if;
   j := public.stocktake_recount_line(v_line, 23, null);
   select * into r from public.stocktake_variance_report(v_st) where product_id = v_moved;
   if r.moved_since_submit or r.variance_qty <> -2 or r.system_qty_at_submit <> 25 then

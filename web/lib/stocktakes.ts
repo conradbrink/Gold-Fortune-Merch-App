@@ -6,9 +6,9 @@ import type { Database } from "@/lib/supabase/types";
  *
  * The three system quantities on a line are the whole point of this feature, so
  * they are surfaced rather than hidden. `stocktake_variance_report` returns
- * `moved_since_submit`, and the approval screen shows it — approving a line
- * whose balance has changed since the sheet was handed in requires ticking that
- * specific line, which is what `p_reconfirm_line_ids` carries.
+ * `moved_since_submit`, and the approval screen shows it — a line whose balance
+ * has changed since the sheet was handed in has to be recounted
+ * (`stocktake_recount_line`) before the count can be approved.
  */
 
 type Client = SupabaseClient<Database>;
@@ -247,16 +247,14 @@ export async function decideStocktake(
     id: string;
     approve: boolean;
     note: string | null;
-    reconfirmLineIds?: string[];
   }
 ) {
+  // p_reconfirm_line_ids is no longer sent: a line that changed after it was
+  // counted is recounted, and the database ignores the old tick.
   const { data, error } = await supabase.rpc("stocktake_decide", {
     p_stocktake_id: input.id,
     p_approve: input.approve,
     p_note: input.note ?? undefined,
-    p_reconfirm_line_ids: input.reconfirmLineIds?.length
-      ? input.reconfirmLineIds
-      : undefined,
   });
   fail(error);
   return data as Record<string, unknown>;
