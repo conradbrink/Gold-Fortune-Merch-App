@@ -138,14 +138,23 @@ begin
                     where ol.order_id = o.id
                       and ol.product_id = v_line.product_id
                       and ol.qty_reserved > 0);
-      v_short := v_short || format(
-        '%s was counted at %s, but %s of the %s in the system are packed or set aside for %s',
-        v_line.product_name,
-        coalesce(v_line.recount_qty, v_line.counted_qty),
-        coalesce(v_bal.qty_reserved, 0),
-        v_live,
-        coalesce(case when v_orders like '%,%' then 'orders ' else 'order ' end || v_orders,
-                 'orders'));
+      v_short := v_short || case
+        when coalesce(v_bal.qty_reserved, 0) > 0 then format(
+          '%s was counted at %s, but %s of the %s in the system are packed or set aside for %s',
+          v_line.product_name,
+          coalesce(v_line.recount_qty, v_line.counted_qty),
+          v_bal.qty_reserved,
+          v_live,
+          coalesce(case when v_orders like '%,%' then 'orders ' else 'order ' end || v_orders,
+                   'orders'))
+        -- Nothing packed: the sheet asks for more than there is (the stock
+        -- moved after hand-in and the line was ticked). A recount fixes it.
+        else format('%s was counted at %s against %s, but the system now has %s',
+          v_line.product_name,
+          coalesce(v_line.recount_qty, v_line.counted_qty),
+          v_line.system_qty_at_submit,
+          v_live)
+        end;
     end if;
   end loop;
 

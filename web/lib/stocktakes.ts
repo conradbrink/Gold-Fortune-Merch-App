@@ -42,6 +42,12 @@ export const VARIANCE_REASONS = [
   "other",
 ] as const;
 
+/** Who started and handed in a count, embedded by constraint name (two FKs to profiles). */
+const PEOPLE =
+  "started:profiles!stocktakes_started_by_fkey(full_name), " +
+  "submitted:profiles!stocktakes_submitted_by_fkey(full_name)";
+type Name = { full_name: string | null } | { full_name: string | null }[] | null;
+
 function fail(error: { message: string } | null) {
   if (error) throw new Error(error.message);
 }
@@ -52,14 +58,11 @@ export async function fetchStocktakes(supabase: Client): Promise<StocktakeListRo
   const { data, error } = await supabase
     .from("stocktakes")
     .select(
-      "*, stock_locations(name), stocktake_lines(id), " +
-        "started:profiles!stocktakes_started_by_fkey(full_name), " +
-        "submitted:profiles!stocktakes_submitted_by_fkey(full_name)"
+      "*, stock_locations(name), stocktake_lines(id), " + PEOPLE
     )
     .order("created_at", { ascending: false })
     .limit(100);
   fail(error);
-  type Name = { full_name: string | null } | { full_name: string | null }[] | null;
   return ((data ?? []) as unknown as (StocktakeRow & {
     stock_locations: { name: string } | { name: string }[] | null;
     stocktake_lines: { id: string }[] | null;
@@ -90,9 +93,8 @@ export async function fetchStocktake(supabase: Client, id: string) {
       .from("stocktakes")
       .select(
         "*, stock_locations(name), " +
-          "started:profiles!stocktakes_started_by_fkey(full_name), " +
-          "submitted:profiles!stocktakes_submitted_by_fkey(full_name), " +
-          "decided:profiles!stocktakes_decided_by_fkey(full_name)"
+          PEOPLE +
+          ", decided:profiles!stocktakes_decided_by_fkey(full_name)"
       )
       .eq("id", id)
       .single(),
@@ -104,7 +106,6 @@ export async function fetchStocktake(supabase: Client, id: string) {
   fail(head.error);
   fail(lines.error);
 
-  type Name = { full_name: string | null } | { full_name: string | null }[] | null;
   const raw = head.data as unknown as StocktakeRow & {
     stock_locations: { name: string } | { name: string }[] | null;
     started: Name;

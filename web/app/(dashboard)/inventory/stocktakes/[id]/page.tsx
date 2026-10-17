@@ -225,11 +225,20 @@ export default function StocktakeDetailPage() {
 
   function exportSheet() {
     if (!head) return null;
+    // While counting, what is typed on screen, saved or not: the print-out
+    // has to match the screen it was printed from.
+    const sheetLines = counting
+      ? lines.map((l) => ({
+          ...l,
+          counted_qty: (counts[l.id] ?? "") === "" ? null : Number(counts[l.id]),
+          variance_reason: reasons[l.id] || null,
+        }))
+      : lines;
     return stocktakeSheet({
       stocktake: head,
       locationName,
       people,
-      lines,
+      lines: sheetLines,
       variance,
       setAside,
     });
@@ -370,8 +379,10 @@ export default function StocktakeDetailPage() {
             {moved.length === 1 ? " has" : "s have"} moved since the sheet was handed in
           </p>
           <p className="mt-1 text-sm text-muted-foreground">
-            Stock traded while this count was waiting. Recount each one, or tick it
-            as re-checked if the count still stands.
+            Stock moved while this count was waiting. If it was sold or delivered,
+            tick it as re-checked: the difference still stands. If the system
+            figure was corrected (a delivery reversed, an adjustment), recount it
+            instead, or the correction is taken off twice.
           </p>
         </div>
       )}
@@ -423,7 +434,7 @@ export default function StocktakeDetailPage() {
                           {l.system_qty_at_open}
                           {(setAside[l.id] ?? 0) > 0 && (
                             <div className="text-xs">
-                              incl. {setAside[l.id]} packed for orders
+                              {setAside[l.id]} packed for orders now
                             </div>
                           )}
                         </TableCell>
@@ -653,24 +664,16 @@ export default function StocktakeDetailPage() {
                   setError("Enter how many single items are there now: a whole number, 0 or more.");
                   return;
                 }
-                setBusy(true);
-                setError(null);
-                setNotice(null);
-                try {
-                  await recountLine(supabase, { lineId: recounting.line_id, counted: qty });
+                const line = recounting;
+                await run(async () => {
+                  await recountLine(supabase, { lineId: line.line_id, counted: qty });
                   setReconfirm((prev) => {
                     const next = new Set(prev);
-                    next.delete(recounting.line_id);
+                    next.delete(line.line_id);
                     return next;
                   });
-                  await reload();
-                  setNotice(`${recounting.product_name} recounted at ${qty}.`);
                   setRecounting(null);
-                } catch (e) {
-                  setError(e instanceof Error ? e.message : String(e));
-                } finally {
-                  setBusy(false);
-                }
+                }, `${line.product_name} recounted at ${qty}.`);
               }}
               disabled={busy || recountQty === ""}
             >

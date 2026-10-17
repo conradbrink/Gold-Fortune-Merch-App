@@ -107,7 +107,11 @@ export function findLookAlike(
       o.status === "posted" &&
       o.id !== ours.id &&
       (ours.status === "draft" ||
-        (o.posted_at != null && ours.posted_at != null && o.posted_at < ours.posted_at))
+        (o.posted_at != null &&
+          ours.posted_at != null &&
+          // As instants: Postgres trims trailing zeros off fractional seconds,
+          // so two timestamps do not compare correctly as text.
+          Date.parse(o.posted_at) < Date.parse(ours.posted_at)))
   );
   let best: LookAlike | null = null;
   for (const o of candidates) {
