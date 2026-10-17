@@ -27,6 +27,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { StatTile, ErrorBanner, EmptyRow } from "@/components/warehouse/stat-tile";
+import { ExportMenu } from "@/components/export-menu";
 import { can } from "@/lib/permissions";
 import { usePermissions } from "@/lib/use-permissions";
 import {
@@ -36,17 +37,24 @@ import {
   CountSaveError,
   submitStocktake,
   decideStocktake,
+  recountLine,
+  balanceKey,
   VARIANCE_REASONS,
+  type StocktakePeople,
   type StocktakeRow,
   type VarianceRow,
 } from "@/lib/stocktakes";
+import { stocktakeSheet, whoAndWhen } from "@/lib/stocktake-sheet";
 
 type Line = {
   id: string;
+  product_id: string;
+  batch_id: string | null;
   product_name: string;
   brand: string | null;
   system_qty_at_open: number;
   counted_qty: number | null;
+  recount_qty: number | null;
   variance_reason: string | null;
 };
 
@@ -62,6 +70,11 @@ type Line = {
  * against the reading taken at submit, and any line whose balance has moved
  * since then is flagged and has to be ticked individually before it can be
  * approved. That tick is the whole reason the RPC takes a list of line ids.
+ *
+ * A manager can also recount a line before deciding: the count found 8 but the
+ * 40 packed for orders were missed, or stock left before the count and was
+ * only dispatched in the system afterwards. The recount is measured against
+ * the system now, and the first count stays on the line.
  */
 export default function StocktakeDetailPage() {
   const supabase = createClient();
@@ -73,6 +86,13 @@ export default function StocktakeDetailPage() {
 
   const [head, setHead] = useState<StocktakeRow | null>(null);
   const [locationName, setLocationName] = useState<string | null>(null);
+  const [people, setPeople] = useState<StocktakePeople>({
+    startedBy: null,
+    submittedBy: null,
+    decidedBy: null,
+  });
+  // Packed or set aside for orders now, by line id.
+  const [setAside, setSetAside] = useState<Record<string, number>>({});
   const [lines, setLines] = useState<Line[]>([]);
   const [variance, setVariance] = useState<VarianceRow[]>([]);
   const [counts, setCounts] = useState<Record<string, string>>({});
@@ -89,11 +109,19 @@ export default function StocktakeDetailPage() {
   const [notice, setNotice] = useState<string | null>(null);
   const [dialog, setDialog] = useState<null | "approve" | "reject">(null);
   const [note, setNote] = useState("");
+  const [recounting, setRecounting] = useState<VarianceRow | null>(null);
+  const [recountQty, setRecountQty] = useState("");
 
   const reload = useCallback(async () => {
     const d = await fetchStocktake(supabase, id);
     setHead(d.stocktake);
     setLocationName(d.locationName);
+    setPeople(d.people);
+    setSetAside(
+      Object.fromEntries(
+        d.lines.map((l) => [l.id, d.setAside[balanceKey(l.product_id, l.batch_id)] ?? 0])
+      )
+    );
     setLines(d.lines);
     setCounts(
       Object.fromEntries(
@@ -183,6 +211,38 @@ export default function StocktakeDetailPage() {
   // the number its verb has to agree with. Taking the count from one and the
   // verb from the other produced "1 lines have moved".
   const blockedOutstanding = blockedIds.filter((b) => !reconfirm.has(b)).length;
+  // Short lines where stock is packed for orders: the usual reason is that the
+  // packed boxes were not counted. Approving those writes off stock that is
+  // sitting in the warehouse waiting for a driver.
+  const shortWithPacked = withVariance.filter(
+    (v) => (v.variance_qty ?? 0) < 0 && (setAside[v.line_id] ?? 0) > 0
+  );
+  const recountOf = new Map(lines.map((l) => [l.id, l.recount_qty]));
+  const withBatch = variance.some((v) => v.batch_number);
+  const showPacked = submitted && variance.some((v) => (setAside[v.line_id] ?? 0) > 0);
+  const columnCount = 7 + (withBatch ? 1 : 0) + (showPacked ? 1 : 0) + (submitted && canApprove ? 1 : 0);
+  const steps = whoAndWhen({ stocktake: head, people });
+
+  function exportSheet() {
+    if (!head) return null;
+    // While counting, what is typed on screen, saved or not: the print-out
+    // has to match the screen it was printed from.
+    const sheetLines = counting
+      ? lines.map((l) => ({
+          ...l,
+          counted_qty: (counts[l.id] ?? "") === "" ? null : Number(counts[l.id]),
+          variance_reason: reasons[l.id] || null,
+        }))
+      : lines;
+    return stocktakeSheet({
+      stocktake: head,
+      locationName,
+      people,
+      lines: sheetLines,
+      variance,
+      setAside,
+    });
+  }
 
   return (
     <div className="space-y-6">
@@ -208,9 +268,13 @@ export default function StocktakeDetailPage() {
           <p className="text-sm text-muted-foreground">
             {head.stocktake_type} count · {locationName}
           </p>
+          {steps.length > 0 && (
+            <p className="mt-1 text-sm text-muted-foreground">{steps.join(" · ")}</p>
+          )}
         </div>
 
         <div className="flex flex-wrap gap-2">
+          <ExportMenu label="Print or Excel" build={exportSheet} />
           {counting && (
             <>
               <Button
@@ -256,6 +320,11 @@ export default function StocktakeDetailPage() {
           stock.
         </p>
       )}
+      {head.notes && (
+        <p className="rounded-lg border border-border bg-muted/40 p-2.5 text-sm">
+          Note — {head.notes}
+        </p>
+      )}
       {head.decision_note && (
         <p className="rounded-lg border border-border bg-muted/40 p-2.5 text-sm">
           {head.status === "rejected" ? "Rejected" : "Approved"} — {head.decision_note}
@@ -288,6 +357,21 @@ export default function StocktakeDetailPage() {
         </div>
       )}
 
+      {submitted && canApprove && shortWithPacked.length > 0 && (
+        <div className="rounded-lg border border-amber-500/40 bg-amber-500/5 p-3">
+          <p className="flex items-center gap-2 text-sm font-medium text-amber-700 dark:text-amber-500">
+            <AlertTriangle className="h-4 w-4" /> {shortWithPacked.length} short line
+            {shortWithPacked.length === 1 ? " has" : "s have"} stock packed for orders
+          </p>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Were the packed boxes counted? If not, recount those lines and include
+            them, or the approval takes that stock off. A count can never take away
+            stock an order is waiting for, so a line counted below what is packed
+            cannot be approved until it is recounted.
+          </p>
+        </div>
+      )}
+
       {submitted && moved.length > 0 && (
         <div className="rounded-lg border border-amber-500/40 bg-amber-500/5 p-3">
           <p className="flex items-center gap-2 text-sm font-medium text-amber-700 dark:text-amber-500">
@@ -295,9 +379,10 @@ export default function StocktakeDetailPage() {
             {moved.length === 1 ? " has" : "s have"} moved since the sheet was handed in
           </p>
           <p className="mt-1 text-sm text-muted-foreground">
-            Stock traded while this count was waiting. Approving those lines as they
-            stand would count that trade twice, so each one has to be confirmed
-            individually below after checking the shelf.
+            Stock moved while this count was waiting. If it was sold or delivered,
+            tick it as re-checked: the difference still stands. If the system
+            figure was corrected (a delivery reversed, an adjustment), recount it
+            instead, or the correction is taken off twice.
           </p>
         </div>
       )}
@@ -310,6 +395,11 @@ export default function StocktakeDetailPage() {
         </CardHeader>
         <CardContent>
           {counting ? (
+            <>
+            <p className="mb-3 text-sm text-muted-foreground">
+              Count every single item at this location, including boxes packed for
+              orders that have not left yet.
+            </p>
             <Table>
               <TableHeader>
                 <TableRow>
@@ -342,6 +432,11 @@ export default function StocktakeDetailPage() {
                         </TableCell>
                         <TableCell className="text-right tabular-nums text-muted-foreground">
                           {l.system_qty_at_open}
+                          {(setAside[l.id] ?? 0) > 0 && (
+                            <div className="text-xs">
+                              {setAside[l.id]} packed for orders now
+                            </div>
+                          )}
                         </TableCell>
                         <TableCell>
                           <Input
@@ -381,36 +476,49 @@ export default function StocktakeDetailPage() {
                 )}
               </TableBody>
             </Table>
+            </>
           ) : (
             <Table>
               <TableHeader>
                 <TableRow>
                   <TableHead>Product</TableHead>
-                  <TableHead>Batch</TableHead>
+                  {withBatch && <TableHead>Batch</TableHead>}
                   <TableHead className="text-right">At open</TableHead>
                   <TableHead className="text-right">Counted</TableHead>
                   <TableHead className="text-right">At submit</TableHead>
                   <TableHead className="text-right">Variance</TableHead>
                   <TableHead className="text-right">Now</TableHead>
+                  {showPacked && <TableHead className="text-right">For orders</TableHead>}
                   <TableHead>Reason</TableHead>
-                  {submitted && canApprove && <TableHead>Confirm</TableHead>}
+                  {submitted && canApprove && <TableHead>Check</TableHead>}
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {variance.length === 0 ? (
-                  <EmptyRow colSpan={9}>No lines.</EmptyRow>
+                  <EmptyRow colSpan={columnCount}>No lines.</EmptyRow>
                 ) : (
                   variance.map((v) => (
                     <TableRow key={v.line_id}>
                       <TableCell className="font-medium">{v.product_name}</TableCell>
-                      <TableCell className="text-muted-foreground">
-                        {v.batch_number ?? "—"}
-                      </TableCell>
+                      {withBatch && (
+                        <TableCell className="text-muted-foreground">
+                          {v.batch_number ?? "—"}
+                        </TableCell>
+                      )}
                       <TableCell className="text-right tabular-nums text-muted-foreground">
                         {v.system_qty_at_open}
                       </TableCell>
                       <TableCell className="text-right tabular-nums">
-                        {v.counted_qty ?? "—"}
+                        {recountOf.get(v.line_id) != null ? (
+                          <span title="First count, then the recount">
+                            <span className="text-muted-foreground line-through">
+                              {v.counted_qty ?? "—"}
+                            </span>{" "}
+                            {recountOf.get(v.line_id)}
+                          </span>
+                        ) : (
+                          (v.counted_qty ?? "—")
+                        )}
                       </TableCell>
                       <TableCell className="text-right tabular-nums">
                         {v.system_qty_at_submit ?? "—"}
@@ -432,7 +540,7 @@ export default function StocktakeDetailPage() {
                         )}
                       </TableCell>
                       <TableCell className="text-right tabular-nums">
-                        {v.moved_since_submit ? (
+                        {submitted && v.moved_since_submit ? (
                           <span className="text-amber-600 dark:text-amber-500">
                             {v.live_qty}
                           </span>
@@ -440,11 +548,41 @@ export default function StocktakeDetailPage() {
                           <span className="text-muted-foreground">{v.live_qty}</span>
                         )}
                       </TableCell>
+                      {showPacked && (
+                        <TableCell className="text-right tabular-nums">
+                          {(setAside[v.line_id] ?? 0) > 0 ? (
+                            <span
+                              className={
+                                (v.variance_qty ?? 0) < 0
+                                  ? "font-medium text-amber-600 dark:text-amber-500"
+                                  : "text-muted-foreground"
+                              }
+                            >
+                              {setAside[v.line_id]}
+                            </span>
+                          ) : (
+                            <span className="text-muted-foreground">—</span>
+                          )}
+                        </TableCell>
+                      )}
                       <TableCell className="text-muted-foreground">
                         {v.variance_reason?.replace(/_/g, " ") ?? "—"}
                       </TableCell>
                       {submitted && canApprove && (
                         <TableCell>
+                          <div className="flex items-center gap-3">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => {
+                              setRecounting(v);
+                              setRecountQty("");
+                              setError(null);
+                            }}
+                            disabled={busy}
+                          >
+                            Recount
+                          </Button>
                           {v.moved_since_submit && v.variance_qty !== 0 ? (
                             <label className="flex items-center gap-1.5 text-xs">
                               <input
@@ -462,9 +600,8 @@ export default function StocktakeDetailPage() {
                               />
                               re-checked
                             </label>
-                          ) : (
-                            <span className="text-xs text-muted-foreground">—</span>
-                          )}
+                          ) : null}
+                          </div>
                         </TableCell>
                       )}
                     </TableRow>
@@ -475,6 +612,76 @@ export default function StocktakeDetailPage() {
           )}
         </CardContent>
       </Card>
+
+      <Dialog open={recounting !== null} onOpenChange={(v) => !v && setRecounting(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Recount {recounting?.product_name}</DialogTitle>
+          </DialogHeader>
+          {recounting && (
+            <div className="space-y-3">
+              <p className="text-sm text-muted-foreground">
+                Count it again now, including any boxes packed for orders that are
+                still here.
+                {(setAside[recounting.line_id] ?? 0) > 0 &&
+                  ` ${setAside[recounting.line_id]} are packed or set aside for orders right now.`}{" "}
+                The difference is worked out against what the system says now (
+                {recounting.live_qty}). The first count ({recounting.counted_qty}) is
+                kept on the sheet.
+              </p>
+              <div>
+                <Label htmlFor="recount">Counted now (single items)</Label>
+                <Input
+                  id="recount"
+                  type="number"
+                  min={0}
+                  value={recountQty}
+                  onChange={(e) => setRecountQty(e.target.value)}
+                  className="text-right"
+                />
+              </div>
+              {recountQty !== "" && Number.isInteger(Number(recountQty)) && Number(recountQty) >= 0 && (
+                <p className="text-sm">
+                  Difference:{" "}
+                  <span className="font-medium tabular-nums">
+                    {Number(recountQty) - recounting.live_qty > 0 ? "+" : ""}
+                    {Number(recountQty) - recounting.live_qty}
+                  </span>
+                </p>
+              )}
+              <ErrorBanner message={error} />
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setRecounting(null)} disabled={busy}>
+              Back
+            </Button>
+            <Button
+              onClick={async () => {
+                if (!recounting) return;
+                const qty = Number(recountQty);
+                if (recountQty === "" || !Number.isInteger(qty) || qty < 0) {
+                  setError("Enter how many single items are there now: a whole number, 0 or more.");
+                  return;
+                }
+                const line = recounting;
+                await run(async () => {
+                  await recountLine(supabase, { lineId: line.line_id, counted: qty });
+                  setReconfirm((prev) => {
+                    const next = new Set(prev);
+                    next.delete(line.line_id);
+                    return next;
+                  });
+                  setRecounting(null);
+                }, `${line.product_name} recounted at ${qty}.`);
+              }}
+              disabled={busy || recountQty === ""}
+            >
+              {busy ? "Saving…" : "Save the recount"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog
         open={dialog === "approve" || dialog === "reject"}
@@ -492,6 +699,13 @@ export default function StocktakeDetailPage() {
                 ? `${withVariance.length} line${withVariance.length === 1 ? "" : "s"} will be adjusted. This changes the stock and cannot be undone except by another adjustment.`
                 : "The count is filed as rejected and nothing changes. The stock stays as it is."}
             </p>
+            {dialog === "approve" && shortWithPacked.length > 0 && (
+              <p className="rounded-lg border border-amber-500/40 bg-amber-500/5 p-2.5 text-sm text-amber-700 dark:text-amber-500">
+                {shortWithPacked.length} short line{shortWithPacked.length === 1 ? " has" : "s have"}{" "}
+                stock packed for orders. If those boxes were not counted, go back and
+                recount {shortWithPacked.length === 1 ? "it" : "them"} first.
+              </p>
+            )}
             {dialog === "approve" && blockedIds.length > 0 && !allBlockedTicked && (
               <p className="rounded-lg border border-amber-500/40 bg-amber-500/5 p-2.5 text-sm text-amber-700 dark:text-amber-500">
                 {blockedOutstanding} line{blockedOutstanding === 1 ? " has" : "s have"} moved

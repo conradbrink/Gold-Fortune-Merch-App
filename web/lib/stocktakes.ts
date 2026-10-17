@@ -21,6 +21,8 @@ export type VarianceRow =
 export type StocktakeListRow = StocktakeRow & {
   location_name: string | null;
   line_count: number;
+  /** Who handed the sheet in, or who started it while it is still being counted. */
+  counted_by: string | null;
 };
 
 export const STOCKTAKE_TYPES = [
@@ -40,6 +42,12 @@ export const VARIANCE_REASONS = [
   "other",
 ] as const;
 
+/** Who started and handed in a count, embedded by constraint name (two FKs to profiles). */
+const PEOPLE =
+  "started:profiles!stocktakes_started_by_fkey(full_name), " +
+  "submitted:profiles!stocktakes_submitted_by_fkey(full_name)";
+type Name = { full_name: string | null } | { full_name: string | null }[] | null;
+
 function fail(error: { message: string } | null) {
   if (error) throw new Error(error.message);
 }
@@ -49,25 +57,45 @@ const one = <T>(v: T | T[] | null): T | null => (Array.isArray(v) ? (v[0] ?? nul
 export async function fetchStocktakes(supabase: Client): Promise<StocktakeListRow[]> {
   const { data, error } = await supabase
     .from("stocktakes")
-    .select("*, stock_locations(name), stocktake_lines(id)")
+    .select(
+      "*, stock_locations(name), stocktake_lines(id), " + PEOPLE
+    )
     .order("created_at", { ascending: false })
     .limit(100);
   fail(error);
   return ((data ?? []) as unknown as (StocktakeRow & {
     stock_locations: { name: string } | { name: string }[] | null;
     stocktake_lines: { id: string }[] | null;
+    started: Name;
+    submitted: Name;
   })[]).map((s) => ({
     ...s,
     location_name: one(s.stock_locations)?.name ?? null,
     line_count: (s.stocktake_lines ?? []).length,
+    counted_by: one(s.submitted)?.full_name ?? one(s.started)?.full_name ?? null,
   }));
 }
+
+/** Who did each step of a count. Null when nobody has, or the person was removed. */
+export type StocktakePeople = {
+  startedBy: string | null;
+  submittedBy: string | null;
+  decidedBy: string | null;
+};
+
+/** `${product_id}|${batch_id}`, the grain a balance row and a count line share. */
+export const balanceKey = (productId: string, batchId: string | null) =>
+  `${productId}|${batchId ?? ""}`;
 
 export async function fetchStocktake(supabase: Client, id: string) {
   const [head, lines] = await Promise.all([
     supabase
       .from("stocktakes")
-      .select("*, stock_locations(name)")
+      .select(
+        "*, stock_locations(name), " +
+          PEOPLE +
+          ", decided:profiles!stocktakes_decided_by_fkey(full_name)"
+      )
       .eq("id", id)
       .single(),
     supabase
@@ -80,11 +108,33 @@ export async function fetchStocktake(supabase: Client, id: string) {
 
   const raw = head.data as unknown as StocktakeRow & {
     stock_locations: { name: string } | { name: string }[] | null;
+    started: Name;
+    submitted: Name;
+    decided: Name;
   };
+
+  // What is packed or set aside for orders at this location right now. The
+  // count has to include it, and a counter who is not told that it is in the
+  // number counts the shelf and leaves the packed boxes out.
+  const balances = await supabase
+    .from("stock_balances")
+    .select("product_id, batch_id, qty_reserved")
+    .eq("location_id", raw.location_id);
+  fail(balances.error);
+  const setAside: Record<string, number> = {};
+  for (const b of balances.data ?? []) {
+    if (b.qty_reserved > 0) setAside[balanceKey(b.product_id, b.batch_id)] = b.qty_reserved;
+  }
 
   return {
     stocktake: raw,
     locationName: one(raw.stock_locations)?.name ?? null,
+    people: {
+      startedBy: one(raw.started)?.full_name ?? null,
+      submittedBy: one(raw.submitted)?.full_name ?? null,
+      decidedBy: one(raw.decided)?.full_name ?? null,
+    } satisfies StocktakePeople,
+    setAside,
     lines: ((lines.data ?? []) as unknown as (StocktakeLineRow & {
       products: { name: string; brand: string | null } | { name: string; brand: string | null }[] | null;
     })[])
@@ -207,6 +257,22 @@ export async function decideStocktake(
     p_reconfirm_line_ids: input.reconfirmLineIds?.length
       ? input.reconfirmLineIds
       : undefined,
+  });
+  fail(error);
+  return data as Record<string, unknown>;
+}
+
+/**
+ * A manager recounts one line of a handed-in sheet. The recount is measured
+ * against what the system says now, and the first count stays on the line.
+ */
+export async function recountLine(
+  supabase: Client,
+  input: { lineId: string; counted: number }
+) {
+  const { data, error } = await supabase.rpc("stocktake_recount_line", {
+    p_line_id: input.lineId,
+    p_counted: input.counted,
   });
   fail(error);
   return data as Record<string, unknown>;

@@ -8230,6 +8230,10 @@ export type Database = {
         }
         Returns: Json
       }
+      stocktake_recount_line: {
+        Args: { p_counted: number; p_line_id: string; p_reason?: string }
+        Returns: Json
+      }
       stocktake_submit: { Args: { p_stocktake_id: string }; Returns: Json }
       stocktake_variance_report: {
         Args: { p_stocktake_id: string }

@@ -472,10 +472,15 @@ export default function NewReceiptPage() {
                     ? l.uom === "shrink" && p && !p.units_per_shrink
                       ? "This product has no pack size on record, so it cannot be received in shrinks."
                       : "Enter a quantity to see the units."
-                    : `${base} base unit${base === 1 ? "" : "s"} into stock` +
+                    : `${base} single item${base === 1 ? "" : "s"} into stock` +
                       (Number(l.qtyDamaged) > 0
                         ? ` — ${Number(l.qtyDamaged) * (base / (Number(l.qtyReceived) || 1))} of them damaged`
                         : "")}
+                  {/* GRN-000006: cases typed into single items put 3 into
+                      stock where 150 arrived. Say it where it is typed. */}
+                  {base !== null && l.uom === "each" && p?.units_per_shrink
+                    ? `. If it came in shrinks, choose Shrink: one holds ${p.units_per_shrink}.`
+                    : ""}
                 </p>
               </div>
             );

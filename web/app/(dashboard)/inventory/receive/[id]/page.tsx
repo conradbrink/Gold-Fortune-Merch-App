@@ -28,11 +28,14 @@ import {
 import { ErrorBanner } from "@/components/warehouse/stat-tile";
 import {
   fetchReceipt,
+  fetchRecentPostedReceipts,
+  receiptForMatch,
   postReceipt,
   cancelReceipt,
   deleteDraftReceipt,
   type ReceiptDetail,
 } from "@/lib/receiving";
+import { findLookAlike, type LookAlike } from "@/lib/receipt-duplicates";
 
 /**
  * A goods received note.
@@ -41,6 +44,10 @@ import {
  * the reversal is refused by the ledger if the stock has already been used.
  * That refusal is surfaced as the RPC wrote it, because it names the product
  * that is the problem and no rewording here would improve on that.
+ *
+ * A note that matches one already posted (same invoice, or the same products
+ * and quantities) says so before it is posted: GRN-000006 was GRN-000005
+ * keyed a second time, in single items instead of cases.
  */
 export default function ReceiptDetailPage() {
   const supabase = createClient();
@@ -48,6 +55,7 @@ export default function ReceiptDetailPage() {
   const { id } = useParams<{ id: string }>();
 
   const [detail, setDetail] = useState<ReceiptDetail | null>(null);
+  const [lookAlike, setLookAlike] = useState<LookAlike | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -56,7 +64,20 @@ export default function ReceiptDetailPage() {
   const [reason, setReason] = useState("");
 
   const reload = useCallback(async () => {
-    setDetail(await fetchReceipt(supabase, id));
+    const d = await fetchReceipt(supabase, id);
+    setDetail(d);
+    // Only worth asking before the stock moves, or while it can still be
+    // reversed. A failed check is no reason to stop anyone posting, so it
+    // shows nothing rather than an error.
+    if (d.receipt.status === "draft" || d.receipt.status === "posted") {
+      try {
+        setLookAlike(findLookAlike(receiptForMatch(d), await fetchRecentPostedReceipts(supabase)));
+      } catch {
+        setLookAlike(null);
+      }
+    } else {
+      setLookAlike(null);
+    }
   }, [supabase, id]);
 
   useEffect(() => {
@@ -166,6 +187,32 @@ export default function ReceiptDetailPage() {
       <ErrorBanner message={error} />
       {notice && (
         <p className="rounded-lg border border-border bg-muted/40 p-2.5 text-sm">{notice}</p>
+      )}
+      {lookAlike && (isDraft || isPosted) && (
+        <div className="rounded-lg border border-amber-500/40 bg-amber-500/5 p-3 text-sm">
+          <p className="font-medium text-amber-700 dark:text-amber-500">
+            {isDraft ? "Has this delivery been received already?" : "This may be a delivery keyed twice"}
+          </p>
+          <p className="mt-1 text-muted-foreground">
+            It looks like{" "}
+            <Link href={`/inventory/receive/${lookAlike.id}`} className="font-medium text-primary hover:underline">
+              {lookAlike.grn_number}
+            </Link>
+            {lookAlike.received_at
+              ? `, received ${new Date(lookAlike.received_at).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}`
+              : ""}
+            :{" "}
+            {lookAlike.sameLines
+              ? "the same products with the same quantities"
+              : "the same supplier invoice number"}
+            .
+            {lookAlike.units &&
+              ` That one put ${lookAlike.units.theirs} single items into stock; this one ${isDraft ? "would put" : "put"} ${lookAlike.units.ours}, so one of them was keyed in a different unit.`}{" "}
+            {isDraft
+              ? "If it is the same delivery, discard this draft instead of posting it."
+              : "If it is the same delivery, reverse this receipt."}
+          </p>
+        </div>
       )}
       {r.cancel_reason && (
         <p className="rounded-lg border border-border bg-muted/40 p-2.5 text-sm">

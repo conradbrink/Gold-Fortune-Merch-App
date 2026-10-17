@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/lib/supabase/types";
+import { lineBase, type ReceiptForMatch } from "@/lib/receipt-duplicates";
 
 /**
  * Goods received notes: keying a delivery, and posting it into stock.
@@ -243,4 +244,60 @@ export async function deleteDraftReceipt(supabase: Client, id: string) {
   if (!data || data.length === 0) {
     throw new Error("That receipt could not be deleted — it may already be posted.");
   }
+}
+
+/** `receipt` in the shape the look-alike check compares. */
+export function receiptForMatch(detail: ReceiptDetail): ReceiptForMatch {
+  const r = detail.receipt;
+  return {
+    id: r.id,
+    grn_number: r.grn_number,
+    status: r.status,
+    supplier_name: r.supplier_name,
+    invoice_number: r.invoice_number,
+    received_at: r.received_at,
+    posted_at: r.posted_at,
+    lines: detail.lines.map((l) => ({
+      product_id: l.product_id,
+      qty_received: l.qty_received,
+      base: lineBase(l),
+    })),
+  };
+}
+
+/**
+ * Posted receipts from the last four months, to check a note against before
+ * it is posted. A delivery keyed twice is nearly always keyed within weeks.
+ */
+export async function fetchRecentPostedReceipts(supabase: Client): Promise<ReceiptForMatch[]> {
+  const since = new Date(Date.now() - 120 * 86_400_000).toISOString();
+  const { data, error } = await supabase
+    .from("goods_receipts")
+    .select(
+      "id, grn_number, status, supplier_name, invoice_number, received_at, posted_at, " +
+        "goods_receipt_lines(product_id, uom, qty_received, units_per_uom, qty_base, products(units_per_shrink))"
+    )
+    .eq("status", "posted")
+    .gte("created_at", since)
+    .order("created_at", { ascending: false })
+    .limit(100);
+  fail(error);
+  type Row = Omit<ReceiptForMatch, "lines"> & {
+    goods_receipt_lines: {
+      product_id: string;
+      uom: string;
+      qty_received: number;
+      units_per_uom: number | null;
+      qty_base: number | null;
+      products: { units_per_shrink: number | null } | { units_per_shrink: number | null }[] | null;
+    }[];
+  };
+  return ((data ?? []) as unknown as Row[]).map(({ goods_receipt_lines, ...r }) => ({
+    ...r,
+    lines: (goods_receipt_lines ?? []).map((l) => ({
+      product_id: l.product_id,
+      qty_received: l.qty_received,
+      base: lineBase({ ...l, units_per_shrink: one(l.products)?.units_per_shrink ?? null }),
+    })),
+  }));
 }
