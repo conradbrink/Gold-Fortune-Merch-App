@@ -97,7 +97,11 @@ begin
     raise exception
       'Recount % before approving: %. Stock changed after % counted, so the count no longer lines up with the system. A recount is measured against the system now.',
       case when cardinality(v_moved) = 1 then 'this line' else 'these ' || cardinality(v_moved) || ' lines' end,
-      array_to_string(v_moved, '; '),
+      -- Five by name; past that the table's amber marks are the better list.
+      array_to_string(v_moved[1:5], '; ')
+        || case when cardinality(v_moved) > 5
+                then format(' and %s more, marked in amber', cardinality(v_moved) - 5)
+                else '' end,
       case when cardinality(v_moved) = 1 then 'it was' else 'they were' end
       using errcode = '23514';
   end if;
