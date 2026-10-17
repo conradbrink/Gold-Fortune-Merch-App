@@ -1706,7 +1706,7 @@ export default function OrderDetailPage() {
           <div className="space-y-3">
             <p className="text-sm text-muted-foreground">
               {confirmKind === "cancel"
-                ? "Any stock held for this order is released. This cannot be undone."
+                ? "Any stock held for this order is released and can be sold again. If it was packed, unpack the boxes back onto the shelf. This cannot be undone."
                 : "A hold freezes the order where it is. Nothing moves until it is released."}
             </p>
             <div>
