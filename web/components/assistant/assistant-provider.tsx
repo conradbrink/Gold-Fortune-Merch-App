@@ -29,7 +29,7 @@ export type AskMessage = {
   pending?: boolean;
   /** A drafted month of visits under the answer, and what saving it did. */
   plan?: PlanDraft;
-  planSaved?: { added: number; already: number };
+  planSaved?: { added: number; already: number; pastDays?: number };
   /** Not about the business: shown, but not sent back as context. */
   refused?: boolean;
   error?: string;
@@ -139,8 +139,9 @@ export function AssistantProvider({ children }: Readonly<{ children: React.React
 
   // The real count, each time the window opens: after signing in again, on
   // another device, or once the hour has moved on.
+  const hasTools = tools !== null && tools.length > 0;
   useEffect(() => {
-    if (!open || tools === null || tools.length === 0) return;
+    if (!open || !hasTools) return;
     let cancelled = false;
     void (async () => {
       try {
@@ -155,7 +156,7 @@ export function AssistantProvider({ children }: Readonly<{ children: React.React
     return () => {
       cancelled = true;
     };
-  }, [open, tools]);
+  }, [open, hasTools]);
 
   const update = useCallback((id: string, change: (m: AskMessage) => AskMessage) => {
     setMessages((all) => all.map((m) => (m.id === id ? change(m) : m)));
@@ -264,9 +265,17 @@ export function AssistantProvider({ children }: Readonly<{ children: React.React
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ staffId: plan.staffId, days: plan.days }),
         });
-        const body = (await res.json().catch(() => ({}))) as { error?: string; added?: number; already?: number };
+        const body = (await res.json().catch(() => ({}))) as {
+          error?: string;
+          added?: number;
+          already?: number;
+          pastDays?: number;
+        };
         if (!res.ok) return body.error ?? `The plan could not be saved (${res.status}).`;
-        update(messageId, (m) => ({ ...m, planSaved: { added: body.added ?? 0, already: body.already ?? 0 } }));
+        update(messageId, (m) => ({
+          ...m,
+          planSaved: { added: body.added ?? 0, already: body.already ?? 0, pastDays: body.pastDays ?? 0 },
+        }));
         return null;
       } catch {
         return "The plan couldn't be saved. Check your connection and try again.";

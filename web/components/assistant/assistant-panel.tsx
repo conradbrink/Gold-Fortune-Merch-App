@@ -304,7 +304,7 @@ function PlanSave({
   const jobs = (n: number) => lower(n === 1 ? t.job.one : t.job.many);
 
   if (message.planSaved) {
-    const { added, already } = message.planSaved;
+    const { added, already, pastDays = 0 } = message.planSaved;
     return (
       <div className="rounded-lg border border-border bg-muted/40 px-3 py-2.5 text-sm">
         <p className="flex items-center gap-2 font-medium text-foreground">
@@ -314,6 +314,11 @@ function PlanSave({
         {already > 0 && (
           <p className="mt-1 text-muted-foreground">
             {already} were already on those days, so they were left as they were.
+          </p>
+        )}
+        {pastDays > 0 && (
+          <p className="mt-1 text-muted-foreground">
+            {pastDays} {pastDays === 1 ? "day had" : "days had"} already started, so {pastDays === 1 ? "it was" : "they were"} skipped.
           </p>
         )}
         <Link href="/schedule" className="mt-1.5 inline-flex items-center gap-1 text-primary hover:underline">

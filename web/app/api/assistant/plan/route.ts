@@ -2,6 +2,7 @@ import { createClient } from "@/lib/supabase/server";
 import { enforceRateLimit, LIMITS } from "@/lib/rate-limit";
 import { parseCompanyConfig } from "@/lib/company-config";
 import { planVisits } from "@/lib/store-reorder";
+import { addDays } from "@/lib/visit-plan";
 
 /**
  * Saves a month of visits that Ask drafted, when the manager presses
@@ -22,12 +23,6 @@ const DAY = /^\d{4}-\d{2}-\d{2}$/;
 
 function json(error: string, status: number) {
   return Response.json({ error }, { status });
-}
-
-function addDays(day: string, n: number): string {
-  const d = new Date(`${day}T00:00:00Z`);
-  d.setUTCDate(d.getUTCDate() + n);
-  return d.toISOString().slice(0, 10);
 }
 
 export async function POST(request: Request) {
@@ -59,21 +54,25 @@ export async function POST(request: Request) {
   const today = new Intl.DateTimeFormat("en-CA", { timeZone: config.timezone }).format(new Date());
   const latest = addDays(today, 100);
   const days: { date: string; siteIds: string[] }[] = [];
+  let pastDays = 0;
   for (const d of rawDays as { date?: unknown; siteIds?: unknown }[]) {
     const date = typeof d?.date === "string" && DAY.test(d.date) ? d.date : null;
     const siteIds = Array.isArray(d?.siteIds) ? d.siteIds : null;
     if (!date || !siteIds || siteIds.length === 0 || siteIds.length > 50) {
       return json("That plan could not be read.", 400);
     }
-    // Today and earlier are the schedule's own rule: nobody re-plans a day that has started.
-    if (date <= today || date > latest) {
-      return json("The plan has a day that is today or already past. Ask for a new draft.", 400);
-    }
-    if (!siteIds.every((id): id is string => typeof id === "string" && UUID.test(id))) {
+    if (date > latest || !siteIds.every((id): id is string => typeof id === "string" && UUID.test(id))) {
       return json("That plan could not be read.", 400);
+    }
+    // Today and earlier are the schedule's own rule: nobody re-plans a day that
+    // has started. A draft saved a day late keeps the days still ahead.
+    if (date <= today) {
+      pastDays++;
+      continue;
     }
     days.push({ date, siteIds: [...new Set(siteIds)] });
   }
+  if (days.length === 0) return json("Every day in this plan has passed. Ask for a new draft.", 400);
 
   const gate = await enforceRateLimit(supabase, LIMITS.assistantPlanSave);
   if (!gate.ok) return gate.response;
@@ -89,10 +88,18 @@ export async function POST(request: Request) {
   if (personError) return json("The plan could not be checked. Try again shortly.", 503);
   if (!person) return json("That person isn't at your company.", 400);
 
+  // In batches: a few hundred ids in one query string is past what a URL holds.
   const wanted = [...new Set(days.flatMap((d) => d.siteIds))];
-  const { data: found, error: sitesError } = await supabase.from("stores").select("id").in("id", wanted);
-  if (sitesError) return json("The plan could not be checked. Try again shortly.", 503);
-  if ((found ?? []).length !== wanted.length) return json("The plan has a site that isn't at your company.", 400);
+  let seen = 0;
+  for (let i = 0; i < wanted.length; i += 100) {
+    const { data: found, error: sitesError } = await supabase
+      .from("stores")
+      .select("id")
+      .in("id", wanted.slice(i, i + 100));
+    if (sitesError) return json("The plan could not be checked. Try again shortly.", 503);
+    seen += (found ?? []).length;
+  }
+  if (seen !== wanted.length) return json("The plan has a site that isn't at your company.", 400);
 
   let added = 0;
   let already = 0;
@@ -109,5 +116,5 @@ export async function POST(request: Request) {
       );
     }
   }
-  return Response.json({ added, already });
+  return Response.json({ added, already, pastDays });
 }

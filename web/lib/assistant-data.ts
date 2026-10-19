@@ -6,6 +6,7 @@ import type { PlanDraft } from "@/lib/assistant-stream";
 import { fetchOrgSettings } from "@/lib/org-settings";
 import {
   NO_TOWN,
+  addDays,
   buildVisitPlan,
   isoWeekday,
   townKey,
@@ -67,11 +68,6 @@ function day(value: unknown, label: string): string {
   return value;
 }
 
-function addDays(dayText: string, n: number): string {
-  const d = new Date(`${dayText}T00:00:00Z`);
-  d.setUTCDate(d.getUTCDate() + n);
-  return d.toISOString().slice(0, 10);
-}
 
 /** Inclusive days in company time, as the instants the database compares. */
 function range(args: Record<string, unknown>, env: ToolEnv): { from: Date; to: Date; label: string } {
@@ -1039,9 +1035,10 @@ async function draftVisitPlan(args: Record<string, unknown>, env: ToolEnv): Prom
     .from("profiles")
     .select("id, full_name")
     .eq("id", staffId)
+    .eq("is_active", true)
     .maybeSingle();
   fail(error);
-  if (!person) throw new LookupError(`That ${lower(t.staff.one)} wasn't found.`);
+  if (!person) throw new LookupError(`That ${lower(t.staff.one)} wasn't found, or is no longer active.`);
 
   const [sites, settings, planned] = await Promise.all([
     assignedSites(env, staffId),

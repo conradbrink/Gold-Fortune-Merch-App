@@ -157,3 +157,35 @@ test("a week the month shares with the next is not counted as missed", () => {
   assert.equal(plan.leftForOtherMonth, 2);
   assert.deepEqual(plan.didNotFit, []);
 });
+
+test("a town given no days is reported as left out", () => {
+  const plan = buildVisitPlan({
+    sites: [site("g", "Gaborone", "weekly"), site("p", "Palapye", "monthly")],
+    towns: [
+      { town: "Gaborone", days: 10 },
+      { town: "Palapye", days: 0 },
+    ],
+    workingDays: MON_FRI,
+    sitesPerDay: 8,
+    ...NOV,
+    daysOff: [],
+    existing: [],
+  });
+  assert.deepEqual(plan.townsLeftOut, [{ town: "Palapye", sites: 1 }]);
+});
+
+test("every second week carries on from a visit already planned", () => {
+  const plan = buildVisitPlan({
+    sites: [site("b", "Gaborone", "biweekly")],
+    towns: [{ town: "Gaborone", days: 20 }],
+    workingDays: MON_FRI,
+    sitesPerDay: 8,
+    ...NOV,
+    daysOff: [],
+    existing: [{ siteId: "b", date: "2026-11-10" }], // week 2
+  });
+  const dates = plan.days.filter((d) => d.siteIds.includes("b")).map((d) => d.date);
+  // Week 4 (23 to 27 Nov), not week 1 beside the planned one.
+  assert.equal(dates.length, 1);
+  assert.ok(dates[0] >= "2026-11-23" && dates[0] <= "2026-11-27", dates[0]);
+});

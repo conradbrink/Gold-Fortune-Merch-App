@@ -85,7 +85,8 @@ export function townLabel(town: string | null | undefined): string {
   return (town ?? "").trim() || NO_TOWN;
 }
 
-function addDays(day: string, n: number): string {
+/** A YYYY-MM-DD day moved by whole days, in plain calendar arithmetic. */
+export function addDays(day: string, n: number): string {
   const d = new Date(`${day}T00:00:00Z`);
   d.setUTCDate(d.getUTCDate() + n);
   return d.toISOString().slice(0, 10);
@@ -130,9 +131,11 @@ export function buildVisitPlan(input: PlanInput): VisitPlan {
   const short: VisitPlan["short"] = [];
   let next = 0;
   for (const { town, days } of input.towns) {
+    const want = Math.max(0, Math.floor(days));
+    // A town given no days is left out, and said so below, not quietly dropped.
+    if (want === 0) continue;
     const key = townKey(town);
     if (!labelOf.has(key)) labelOf.set(key, townLabel(town));
-    const want = Math.max(0, Math.floor(days));
     const got = Math.min(want, dates.length - next);
     for (let i = 0; i < got; i++) townOf.set(dates[next + i], key);
     next += got;
@@ -188,7 +191,10 @@ export function buildVisitPlan(input: PlanInput): VisitPlan {
       const l = load();
       const even = l.filter((_, i) => i % 2 === 0).reduce((a, b) => a + b, 0);
       const odd = l.filter((_, i) => i % 2 === 1).reduce((a, b) => a + b, 0);
-      const parity = weeks.length > 1 && odd < even ? 1 : 0;
+      // A visit already planned sets the rhythm: every second week from it,
+      // so the new one never lands in the week beside it.
+      const planned = weeks.findIndex((w) => hasVisitIn(s, w));
+      const parity = planned >= 0 ? planned % 2 : weeks.length > 1 && odd < even ? 1 : 0;
       const already = (existingFor.get(s.id) ?? []).length;
       let wanted = visitsWanted("biweekly", weeks.length) - already;
       for (let i = parity; i < weeks.length && wanted > 0; i += 2) {
