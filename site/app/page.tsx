@@ -26,7 +26,7 @@ import { FoundingStart } from "@/components/founding-start";
 import { PricingSection } from "@/components/pricing-section";
 import { ProofSection } from "@/components/proof-section";
 import { SectionViews } from "@/components/analytics";
-import { confirmed, contactHref, founding, growthPlan, proof, rand, site } from "@/lib/site";
+import { confirmed, founding, growthPlan, rand, site } from "@/lib/site";
 
 // Copy: ~/Downloads/site-copy-final-v7.md, reworked on 8 Oct 2026 with the
 // Hormozi offer skills (audit in the site-offer worktree's OFFER-AUDIT.md),
@@ -140,32 +140,8 @@ const lead = "max-w-2xl text-lg leading-relaxed text-pretty text-ink";
 // The one line each question section ends on.
 const verdict = "font-display text-2xl font-extrabold leading-snug text-balance text-teal-900 sm:text-3xl";
 
-/**
- * The Rep Control System's three parts, in the hero (owner's words, 19 Oct
- * 2026), with only live features: in-app photos with the time and place, the
- * win-back list and orders to the warehouse, sales against target and the
- * performance report. Two of the owner's words are changed on purpose, by
- * the owner's own rule against "fake" and "catch"; the 7am WhatsApp brief
- * was taken out (owner) until Tickd AI ships.
- */
-const PILLARS: [word: string, text: string][] = [
-  [
-    "SEE",
-    "Every visit proven with a photo taken only in the app, stamped with the time and GPS. No more visits that never happened, or fuel claims for trips nobody made.",
-  ],
-  ["SELL", "Spot quiet stores before they run out, and send orders straight to your warehouse. No more lost WhatsApp orders."],
-  ["SCORE", "Every rep against their target, with a performance report for each rep."],
-];
-
-// "Half the price of imported rep apps" (owner, 19 Oct 2026). Checked that day
-// against published per-user prices: Badger Maps $58 to $69, Repsly about $89,
-// Pepperi about $48 a user a month (itqlick.com, upperinc.com, softwaresuggest
-// .com). Ten reps on Badger Maps is about $580, near R10,500, against Tickd's
-// R3,495 for up to 10 reps; five reps, about R5,300 against R1,995. Recheck
-// both before changing the line or the prices.
-
 const pilotButton =
-  "flex w-full items-center justify-center rounded-full bg-amber-500 px-6 py-4 text-lg font-semibold text-teal-950 transition-[background-color,transform] duration-150 ease-out hover:bg-amber-400 active:scale-[0.97] sm:inline-flex sm:w-auto sm:py-3.5 sm:text-base";
+  "flex w-full items-center justify-center text-balance text-center rounded-full bg-amber-500 px-6 py-4 text-lg font-semibold text-teal-950 transition-[background-color,transform] duration-150 ease-out hover:bg-amber-400 active:scale-[0.97] sm:inline-flex sm:w-auto sm:py-3.5 sm:text-base";
 
 function Lane({
   icon: Icon,
@@ -303,61 +279,49 @@ export default function Home() {
 
       <SectionViews sections={SECTION_EVENTS} />
       <main id="top">
-        {/* 1. Hero (owner's words, 19 Oct 2026): the doubt, the system and its
-            three parts, the way in, then the proof and the price. */}
+        {/* 1. Hero, in the owner's words (19 Oct 2026): who it's for, the
+            outcome, the effort it doesn't take, the way in, and the result. */}
         <section className="mx-auto grid max-w-6xl items-center gap-10 px-4 pb-10 pt-8 sm:px-6 sm:pb-16 sm:pt-12 lg:grid-cols-[1.1fr_0.9fr] lg:gap-14 lg:pt-12">
           <div className="tk-hero grid gap-5 sm:gap-6">
-            <h1 className="font-display text-[2.4rem] font-extrabold leading-[1.04] tracking-tight text-balance text-teal-900 sm:text-[3.4rem] lg:text-[3.75rem]">
-              <span className="block">Your reps say they visited 30 stores.</span>
-              <span className="mt-1 block">
-                Now you&apos;ll{" "}
-                <span className="relative whitespace-nowrap">
-                  know.
-                  <span aria-hidden="true" className="tk-underline absolute inset-x-0 bottom-[-0.02em] h-[0.12em] rounded-full bg-amber-500" />
-                </span>
+            <p className="text-sm font-bold uppercase tracking-wide text-teal-700">For distributors with 3 to 20 reps</p>
+            <h1 className="font-display text-[2.6rem] font-extrabold leading-[1.02] tracking-tight text-balance text-teal-900 sm:text-6xl lg:text-[4.25rem]">
+              Turn every visit into an{" "}
+              <span className="relative whitespace-nowrap">
+                order.
+                <span aria-hidden="true" className="tk-underline absolute inset-x-0 bottom-[-0.02em] h-[0.12em] rounded-full bg-amber-500" />
               </span>
             </h1>
             <p className="max-w-xl text-lg leading-relaxed text-pretty text-ink sm:text-xl">
-              The {site.name} Rep Control System, built by a distributor for distributors with 3 to 20 reps. Set up for you in 48 hours.
+              Every store visited. Every visit proven. Your whole sales team on one screen.
             </p>
-            <ul className="grid max-w-xl gap-4" aria-label={`What the ${site.name} Rep Control System does`}>
-              {PILLARS.map(([word, text]) => (
-                <li key={word} className="grid grid-cols-[4.5rem_1fr] items-baseline gap-3 border-t border-line pt-4 sm:grid-cols-[5rem_1fr]">
-                  <span className="font-display text-xl font-extrabold tracking-wide text-amber-600">{word}</span>
-                  <span className="text-base leading-relaxed text-ink sm:text-lg">{text}</span>
-                </li>
-              ))}
-            </ul>
-            <div className="grid gap-3 sm:flex sm:items-center sm:gap-6">
+            <p className="max-w-xl text-lg font-semibold leading-relaxed text-teal-900">We set everything up. You just add your reps.</p>
+            <div className="grid justify-items-start gap-3">
               <a href="#apply" className={pilotButton}>
-                Start my free {founding.pilotDays}-day pilot
+                See it on your own reps, free for {founding.pilotDays} days
               </a>
-              <a
-                href={contactHref(`Hi, I'd like to know more about ${site.name} for my reps.`)}
-                className="py-2 text-center font-semibold text-teal-900 underline underline-offset-4 hover:text-teal-700 sm:text-left"
-              >
-                {site.whatsapp ? "WhatsApp our team" : "Talk to our team"}
-              </a>
+              <ul className="flex flex-wrap gap-2" aria-label="The pilot">
+                {["No card", "No contract"].map((t) => (
+                  <li key={t} className="flex items-center gap-1.5 rounded-full bg-white px-3 py-1 text-sm font-semibold text-teal-900 ring-1 ring-line">
+                    <Check className="size-4 text-teal-700" strokeWidth={3} aria-hidden="true" />
+                    {t}
+                  </li>
+                ))}
+              </ul>
             </div>
-            <div className="grid max-w-xl gap-3 border-t border-line pt-5">
-              <div className="flex items-center gap-3">
-                <Image
-                  src="/gold-fortune-logo.png"
-                  alt="Gold Fortune logo"
-                  width={256}
-                  height={256}
-                  className="size-11 shrink-0 rounded-lg bg-white object-contain p-0.5 ring-1 ring-line"
-                />
-                <p className="grid leading-snug">
-                  <span className="font-semibold text-teal-900">
-                    One retailer went from {proof.retailer.before} to {proof.retailer.after} a month.
-                  </span>
-                  <span className="text-sm text-muted">
-                    Gold Fortune, {proof.reps} reps, {proof.stores} stores, by their own figures.
-                  </span>
-                </p>
-              </div>
-              <p className="text-sm font-semibold text-teal-700">Half the price of imported rep apps. Priced in rands. No contract.</p>
+            <div className="flex max-w-xl items-center gap-3 border-t border-line pt-5">
+              <Image
+                src="/gold-fortune-logo.png"
+                alt="Gold Fortune logo"
+                width={256}
+                height={256}
+                className="size-11 shrink-0 rounded-lg bg-white object-contain p-0.5 ring-1 ring-line"
+              />
+              <p className="grid leading-snug">
+                <span className="font-display text-xl font-extrabold text-teal-900">
+                  R184k <span aria-label="to">→</span> R340k a month at one retailer
+                </span>
+                <span className="text-sm text-muted">Gold Fortune&apos;s own figures</span>
+              </p>
             </div>
           </div>
           <figure className="tk-hero-demo grid gap-3">
