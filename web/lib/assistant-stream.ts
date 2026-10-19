@@ -40,6 +40,9 @@ export type PlanDraft = {
 /** One chat turn as the panel keeps it and sends it back for context. */
 export type ChatTurn = { role: "user" | "assistant"; text: string };
 
+/** The counters `LIMITS` in lib/rate-limit.ts keeps the questions in. */
+export const QUESTION_BUCKETS = { hour: "assistant_hour", day: "assistant_day" } as const;
+
 /** Questions per person (owner, 19 Oct 2026). `LIMITS` in lib/rate-limit.ts counts them. */
 export const QUESTIONS_PER_HOUR = 10;
 export const QUESTIONS_PER_DAY = 40;
@@ -60,8 +63,8 @@ export function questionsLeftFrom(
     const row = rows.find((r) => r.bucket === bucket && Date.parse(r.window_start) === start);
     return row ? Number(row.count) : 0;
   };
-  const day = Math.max(0, QUESTIONS_PER_DAY - used("assistant_day", 86_400));
-  const hour = Math.max(0, QUESTIONS_PER_HOUR - used("assistant_hour", 3600));
+  const day = Math.max(0, QUESTIONS_PER_DAY - used(QUESTION_BUCKETS.day, 86_400));
+  const hour = Math.max(0, QUESTIONS_PER_HOUR - used(QUESTION_BUCKETS.hour, 3600));
   return { hour: Math.min(hour, day), day };
 }
 

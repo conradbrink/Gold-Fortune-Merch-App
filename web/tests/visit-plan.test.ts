@@ -4,7 +4,16 @@
 // day that week or is reported; nothing already planned is planned twice.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { buildVisitPlan, visitsWanted, workingDates, NO_TOWN, type PlanSite } from "@/lib/visit-plan";
+import {
+  buildVisitPlan,
+  planMonth,
+  visitsWanted,
+  wholeWeeks,
+  workingDates,
+  NO_TOWN,
+  type PlanSite,
+} from "@/lib/visit-plan";
+import { readPlanSave } from "@/lib/plan-save";
 
 const MON_FRI = [1, 2, 3, 4, 5];
 
@@ -188,4 +197,97 @@ test("every second week carries on from a visit already planned", () => {
   // Week 4 (23 to 27 Nov), not week 1 beside the planned one.
   assert.equal(dates.length, 1);
   assert.ok(dates[0] >= "2026-11-23" && dates[0] <= "2026-11-27", dates[0]);
+});
+
+test("a visit in the other month's part of a shared week counts for that week", () => {
+  // December's plan: Mon 30 Nov already had the weekly site, so the week of
+  // 30 Nov to 4 Dec needs nothing more for it.
+  const plan = buildVisitPlan({
+    sites: [site("w", "Gaborone", "weekly")],
+    towns: [{ town: "Gaborone", days: 22 }],
+    workingDays: MON_FRI,
+    sitesPerDay: 8,
+    from: "2026-12-01",
+    to: "2026-12-31",
+    daysOff: [],
+    existing: [{ siteId: "w", date: "2026-11-30" }],
+  });
+  const dates = plan.days.filter((d) => d.siteIds.includes("w")).map((d) => d.date);
+  assert.ok(!dates.some((d) => d <= "2026-12-04"), dates.join(","));
+  assert.equal(dates.length, 4); // the weeks of 7, 14, 21 and 28 Dec
+  assert.deepEqual(wholeWeeks("2026-12-01", "2026-12-31"), { from: "2026-11-30", to: "2027-01-03" });
+});
+
+test("a monthly visit is never left in a shared week, and is missed rather than passed on", () => {
+  // November, Gaborone all month. The week of Mon 30 Nov is shared with December.
+  const plan = buildVisitPlan({
+    sites: [site("m", "Gaborone", "monthly")],
+    towns: [{ town: "Gaborone", days: 21 }],
+    workingDays: MON_FRI,
+    sitesPerDay: 8,
+    ...NOV,
+    daysOff: [],
+    existing: [],
+  });
+  const date = plan.days.find((d) => d.siteIds.includes("m"))!.date;
+  assert.ok(date < "2026-11-30", date);
+});
+
+test("a plan that ends on the last worked day of its week shares no week", () => {
+  // Mon 27 to Fri 31 Jul 2026: Sat 1 and Sun 2 Aug are outside but not worked.
+  const sites = Array.from({ length: 10 }, (_, i) => site(`s${i}`, "Gaborone", "weekly"));
+  const plan = buildVisitPlan({
+    sites,
+    towns: [{ town: "Gaborone", days: 1 }],
+    workingDays: MON_FRI,
+    sitesPerDay: 8,
+    from: "2026-07-27",
+    to: "2026-07-31",
+    daysOff: [],
+    existing: [],
+  });
+  assert.equal(plan.leftForOtherMonth, 0, "not a shared week");
+  assert.equal(plan.didNotFit.length, 2);
+});
+
+test("the month to plan: from tomorrow in this month, never a past month or one too far ahead", () => {
+  assert.deepEqual(planMonth("2026-10", "2026-10-19"), { month: "2026-10", from: "2026-10-20", to: "2026-10-31", label: "October 2026" });
+  assert.equal(planMonth("2026-11", "2026-10-19").from, "2026-11-01");
+  assert.equal(planMonth("2026-12", "2026-10-19").to, "2026-12-31");
+  assert.throws(() => planMonth("2026-09", "2026-10-19"), /over/);
+  assert.throws(() => planMonth("2026-10", "2026-10-31"), /over/);
+  assert.throws(() => planMonth("2027-01", "2026-10-19"), /three months/);
+  assert.throws(() => planMonth("2026-13", "2026-10-19"), /YYYY-MM/);
+  assert.throws(() => planMonth("November", "2026-10-19"), /YYYY-MM/);
+});
+
+const STAFF = "11111111-1111-4111-8111-111111111111";
+const S1 = "22222222-2222-4222-8222-222222222222";
+
+test("saving a plan: read as if typed by hand", () => {
+  const ok = readPlanSave(
+    {
+      staffId: STAFF,
+      days: [
+        { date: "2026-10-19", siteIds: [S1] }, // today: started, skipped
+        { date: "2026-10-20", siteIds: [S1, S1] }, // duplicate ids folded
+      ],
+    },
+    "2026-10-19"
+  );
+  assert.ok(ok.ok);
+  if (ok.ok) {
+    assert.equal(ok.save.pastDays, 1);
+    assert.deepEqual(ok.save.days, [{ date: "2026-10-20", siteIds: [S1] }]);
+  }
+  const bad = (body: unknown) => readPlanSave(body, "2026-10-19").ok;
+  assert.equal(bad(null), false);
+  assert.equal(bad({ staffId: "not-an-id", days: [{ date: "2026-10-20", siteIds: [S1] }] }), false);
+  assert.equal(bad({ staffId: STAFF, days: [] }), false);
+  assert.equal(bad({ staffId: STAFF, days: [{ date: "2026-10-20", siteIds: ["x"] }] }), false);
+  assert.equal(bad({ staffId: STAFF, days: [{ date: "2027-03-01", siteIds: [S1] }] }), false, "too far ahead");
+  assert.equal(bad({ staffId: STAFF, days: [{ date: "2026-10-20", siteIds: Array(51).fill(S1) }] }), false);
+  assert.equal(bad({ staffId: STAFF, days: Array(32).fill({ date: "2026-10-20", siteIds: [S1] }) }), false);
+  const allPast = readPlanSave({ staffId: STAFF, days: [{ date: "2026-10-18", siteIds: [S1] }] }, "2026-10-19");
+  assert.ok(!allPast.ok && /passed/.test(allPast.error));
 });

@@ -94,6 +94,9 @@ export function AssistantPanelView({
   const examples = useMemo(() => exampleQuestions(tools, t), [tools, t]);
   // Shown, never enforced here: the count is from the last answer and the
   // hour moves on. The server says no, with when to try again.
+  // Only the newest unsaved draft can be added: an earlier one was replaced
+  // by it, and saving both would book two different months.
+  const newestPlanId = [...messages].reverse().find((m) => m.plan)?.id ?? null;
   const lastMessage = messages[messages.length - 1];
   const finished = lastMessage?.role === "assistant" && !lastMessage.pending ? lastMessage : null;
 
@@ -190,7 +193,7 @@ export function AssistantPanelView({
                 {m.role === "user" ? (
                   <Question text={m.text} />
                 ) : (
-                  <Answer message={m} terms={t} onSavePlan={onSavePlan} />
+                  <Answer message={m} terms={t} replaced={m.id !== newestPlanId} onSavePlan={onSavePlan} />
                 )}
               </li>
             ))}
@@ -261,8 +264,15 @@ function Question({ text }: Readonly<{ text: string }>) {
 function Answer({
   message,
   terms,
+  replaced,
   onSavePlan,
-}: Readonly<{ message: AskMessage; terms: Terms; onSavePlan: (messageId: string) => Promise<string | null> }>) {
+}: Readonly<{
+  message: AskMessage;
+  terms: Terms;
+  /** A newer draft is below this one. */
+  replaced: boolean;
+  onSavePlan: (messageId: string) => Promise<string | null>;
+}>) {
   return (
     <div className="space-y-3">
       {message.refused ? (
@@ -278,7 +288,7 @@ function Answer({
       )}
       {!message.refused && message.tables.map((table, i) => <AnswerTable key={i} table={table} />)}
       {!message.refused && !message.pending && message.plan && (
-        <PlanSave message={message} terms={terms} onSave={() => onSavePlan(message.id)} />
+        <PlanSave message={message} terms={terms} replaced={replaced} onSave={() => onSavePlan(message.id)} />
       )}
       {message.error && (
         <p role="alert" className="rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
@@ -296,8 +306,9 @@ function Answer({
 function PlanSave({
   message,
   terms: t,
+  replaced,
   onSave,
-}: Readonly<{ message: AskMessage; terms: Terms; onSave: () => Promise<string | null> }>) {
+}: Readonly<{ message: AskMessage; terms: Terms; replaced: boolean; onSave: () => Promise<string | null> }>) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const plan = message.plan!;
@@ -327,6 +338,10 @@ function PlanSave({
         </Link>
       </div>
     );
+  }
+
+  if (replaced) {
+    return <p className="text-sm text-muted-foreground">A newer draft is below. Add that one instead.</p>;
   }
 
   return (

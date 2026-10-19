@@ -9,9 +9,11 @@ import {
   addDays,
   buildVisitPlan,
   isoWeekday,
+  planMonth,
   townKey,
   townLabel,
   visitsWanted,
+  wholeWeeks,
   workingDates,
   type PlanFrequency,
   type PlanSite,
@@ -854,64 +856,82 @@ async function moneyOwed(_args: Record<string, unknown>, env: ToolEnv): Promise<
 
 // ---------------------------------------------------------------- planning
 
-/** The month to plan: from tomorrow (or the 1st) to its last day, company time. */
-function planMonth(value: unknown, env: ToolEnv): { month: string; from: string; to: string; label: string } {
-  if (typeof value !== "string" || !/^\d{4}-\d{2}$/.test(value)) {
-    throw new LookupError("month must be written as YYYY-MM.");
+/** The month to plan, or a message the assistant can pass on. */
+function planMonthFor(value: unknown, env: ToolEnv) {
+  try {
+    return planMonth(value, env.today);
+  } catch (reason) {
+    throw new LookupError(reason instanceof Error ? reason.message : String(reason));
   }
-  const first = `${value}-01`;
-  const next = new Date(`${first}T00:00:00Z`);
-  next.setUTCMonth(next.getUTCMonth() + 1);
-  const last = addDays(next.toISOString().slice(0, 10), -1);
-  const tomorrow = addDays(env.today, 1);
-  if (last < tomorrow) throw new LookupError("That month is over. Plan this month or a later one.");
-  const limit = new Date(`${env.today.slice(0, 7)}-01T00:00:00Z`);
-  limit.setUTCMonth(limit.getUTCMonth() + 3);
-  if (first >= limit.toISOString().slice(0, 10)) throw new LookupError("Plan up to three months ahead.");
-  return {
-    month: value,
-    from: first < tomorrow ? tomorrow : first,
-    to: last,
-    label: new Date(`${first}T12:00:00Z`).toLocaleDateString("en-GB", { month: "long", year: "numeric", timeZone: "UTC" }),
-  };
 }
 
 type Person = { id: string; full_name: string | null };
 
-/** The person's assigned, active sites, as the planner wants them. */
-async function assignedSites(env: ToolEnv, staffId: string): Promise<PlanSite[]> {
-  type Row = {
-    store_id: string;
-    stores:
-      | { name: string; city: string | null; active: boolean; visit_frequency: string; lat: number | null; lng: number | null }
-      | { name: string; city: string | null; active: boolean; visit_frequency: string; lat: number | null; lng: number | null }[]
-      | null;
-  };
+/**
+ * The person's assigned, active sites, as the planner wants them.
+ *
+ * A site where somebody else is the primary person is theirs to visit, not
+ * this person's: planning it for both would send two people every week.
+ * `withCycleDays` counts sites with a call-cycle day set, which "Generate
+ * schedule" would add on top of a plan.
+ */
+async function assignedSites(
+  env: ToolEnv,
+  staffId: string
+): Promise<{ sites: PlanSite[]; othersPrimary: number; withCycleDays: number }> {
+  type Store = { name: string; city: string | null; active: boolean; visit_frequency: string; lat: number | null; lng: number | null };
+  type Row = { store_id: string; is_primary: boolean; day_of_week: number | null; stores: Store | Store[] | null };
   const { rows } = await allRows<Row>((a, b) =>
     env.supabase
       .from("store_assignments")
-      .select("id, store_id, stores(name, city, active, visit_frequency, lat, lng)")
+      .select("id, store_id, is_primary, day_of_week, stores(name, city, active, visit_frequency, lat, lng)")
       .eq("rep_id", staffId)
       .order("id")
       .range(a, b)
   );
-  return rows
-    .map((r) => ({ id: r.store_id, store: one(r.stores) }))
-    .filter((r) => r.store?.active)
-    .map(({ id, store }) => ({
-      id,
-      name: store!.name,
-      town: store!.city,
-      frequency: (["weekly", "biweekly", "monthly"].includes(store!.visit_frequency)
-        ? store!.visit_frequency
-        : "weekly") as PlanFrequency,
-      lat: store!.lat,
-      lng: store!.lng,
-    }));
+  const active = rows.filter((r) => one(r.stores)?.active);
+
+  // Primaries held by somebody else, among this person's non-primary sites.
+  const notMine = active.filter((r) => !r.is_primary).map((r) => r.store_id);
+  const othersPrimary = new Set<string>();
+  for (let i = 0; i < notMine.length; i += 100) {
+    const { data, error } = await env.supabase
+      .from("store_assignments")
+      .select("store_id")
+      .in("store_id", notMine.slice(i, i + 100))
+      .eq("is_primary", true)
+      .neq("rep_id", staffId);
+    fail(error);
+    for (const r of data ?? []) othersPrimary.add(r.store_id);
+  }
+
+  const mine = active.filter((r) => !othersPrimary.has(r.store_id));
+  return {
+    othersPrimary: othersPrimary.size,
+    withCycleDays: mine.filter((r) => r.day_of_week !== null).length,
+    sites: mine.map((r) => {
+      const store = one(r.stores)!;
+      return {
+        id: r.store_id,
+        name: store.name,
+        town: store.city,
+        frequency: (["weekly", "biweekly", "monthly"].includes(store.visit_frequency)
+          ? store.visit_frequency
+          : "weekly") as PlanFrequency,
+        lat: store.lat,
+        lng: store.lng,
+      };
+    }),
+  };
 }
 
-/** What is already on the person's schedule between two days. */
-async function plannedVisits(env: ToolEnv, staffId: string, from: string, to: string) {
+/**
+ * What is already on the person's schedule, over the whole weeks the two days
+ * fall in: the planner judges a week whole, so a visit on Mon 30 Nov counts
+ * for the week December's plan starts in.
+ */
+async function plannedVisits(env: ToolEnv, staffId: string, fromDay: string, toDay: string) {
+  const { from, to } = wholeWeeks(fromDay, toDay);
   const { rows } = await allRows<{ id: string; store_id: string; scheduled_date: string; source: string }>((a, b) =>
     env.supabase
       .from("routes")
@@ -935,7 +955,7 @@ async function staffSites(args: Record<string, unknown>, env: ToolEnv): Promise<
   const t = env.terms;
   const name = searchText(args.staff_name);
   if (!name) throw new LookupError("Give the person's name.");
-  const m = planMonth(args.month, env);
+  const m = planMonthFor(args.month, env);
 
   const { data: people, error } = await env.supabase
     .from("profiles")
@@ -945,18 +965,22 @@ async function staffSites(args: Record<string, unknown>, env: ToolEnv): Promise<
     .order("full_name")
     .limit(10);
   fail(error);
-  const found = (people ?? []) as Person[];
+  let found = (people ?? []) as Person[];
   if (found.length === 0) throw new LookupError(`Nobody's name matches "${name}". Check the spelling.`);
+  // A name typed in full is that person, however many others contain it.
+  const exact = found.filter((p) => (p.full_name ?? "").trim().toLowerCase() === name.toLowerCase());
+  if (exact.length === 1) found = exact;
   if (found.length > 1) {
     return { model: { several_match: found.map((p) => ({ id: p.id, name: p.full_name })), note: "Ask which one." } };
   }
   const person = found[0];
 
-  const [sites, settings, planned] = await Promise.all([
+  const [{ sites, othersPrimary, withCycleDays }, settings, allPlanned] = await Promise.all([
     assignedSites(env, person.id),
     fetchOrgSettings(env.supabase),
     plannedVisits(env, person.id, m.from, m.to),
   ]);
+  const planned = allPlanned.filter((p) => p.scheduled_date >= m.from && p.scheduled_date <= m.to);
   const dates = workingDates(m.from, m.to, settings.workingDays, []);
   // Weeks with working days in them: a weekly site wants one visit in each.
   const weeks = new Set(dates.map((d) => addDays(d, 1 - isoWeekday(d)))).size;
@@ -998,6 +1022,14 @@ async function staffSites(args: Record<string, unknown>, env: ToolEnv): Promise<
         one_off: planned.filter((p) => p.source !== "cycle").length,
       },
       town_without_name: NO_TOWN,
+      left_to_their_primary: othersPrimary,
+      call_cycle: {
+        sites_with_cycle_days: withCycleDays,
+        note:
+          withCycleDays > 0
+            ? `They have a ${lower(t.schedule_cycle.one)}. If someone later presses Generate schedule, its ${lower(t.job.many)} are added on top of this plan.`
+            : `No ${lower(t.schedule_cycle.one)} set.`,
+      },
     },
     sheet: sheet(
       `${person.full_name ?? t.staff.one}'s ${lower(t.site.many)}`,
@@ -1019,7 +1051,7 @@ async function draftVisitPlan(args: Record<string, unknown>, env: ToolEnv): Prom
   const t = env.terms;
   const staffId = optionalId(args.staff_id, "staff_id");
   if (!staffId) throw new LookupError("staff_id is needed, from staff_sites.");
-  const m = planMonth(args.month, env);
+  const m = planMonthFor(args.month, env);
 
   const towns = (Array.isArray(args.towns) ? args.towns : [])
     .slice(0, 30)
@@ -1040,11 +1072,12 @@ async function draftVisitPlan(args: Record<string, unknown>, env: ToolEnv): Prom
   fail(error);
   if (!person) throw new LookupError(`That ${lower(t.staff.one)} wasn't found, or is no longer active.`);
 
-  const [sites, settings, planned] = await Promise.all([
+  const [{ sites }, settings, planned] = await Promise.all([
     assignedSites(env, staffId),
     fetchOrgSettings(env.supabase),
     plannedVisits(env, staffId, m.from, m.to),
   ]);
+  const plannedInMonth = planned.filter((p) => p.scheduled_date >= m.from && p.scheduled_date <= m.to).length;
   if (sites.length === 0) throw new LookupError(`They have no ${lower(t.site.many)} assigned, so there is nothing to plan.`);
   const perDay =
     typeof args.sites_per_day === "number" && args.sites_per_day >= 1
@@ -1101,7 +1134,7 @@ async function draftVisitPlan(args: Record<string, unknown>, env: ToolEnv): Prom
       towns_with_no_assigned_sites: plan.unknownTowns,
       towns_short_of_days: plan.short,
       spare_working_days: plan.spareDays.map(niceDay),
-      already_planned_before: planned.length,
+      already_planned_before: plannedInMonth,
       saved: false,
       note: "A draft. It is saved only when the person presses Add to schedule under it.",
     },

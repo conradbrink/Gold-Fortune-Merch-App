@@ -42,7 +42,11 @@ export type PlanInput = {
   from: string;
   to: string;
   daysOff: readonly string[];
-  /** Visits already on the schedule in the range. */
+  /**
+   * Visits already on the schedule, from the Monday of the first week to the
+   * Sunday of the last: a week is judged whole, so a visit in its other-month
+   * days still counts for that week.
+   */
   existing: readonly { siteId: string; date: string }[];
 };
 
@@ -103,6 +107,37 @@ function weekOf(day: string): string {
   return addDays(day, 1 - isoWeekday(day));
 }
 
+/** The Monday of a day's week and the Sunday after it: the span a week is judged over. */
+export function wholeWeeks(from: string, to: string): { from: string; to: string } {
+  return { from: weekOf(from), to: addDays(weekOf(to), 6) };
+}
+
+/**
+ * The month to plan: its first plannable day (tomorrow, or the 1st) to its last.
+ * Throws with a plain message for a month that is over or more than two
+ * months after this one.
+ */
+export function planMonth(value: unknown, today: string): { month: string; from: string; to: string; label: string } {
+  if (typeof value !== "string" || !/^\d{4}-(0[1-9]|1[0-2])$/.test(value)) {
+    throw new Error("month must be written as YYYY-MM.");
+  }
+  const first = `${value}-01`;
+  const next = new Date(`${first}T00:00:00Z`);
+  next.setUTCMonth(next.getUTCMonth() + 1);
+  const last = addDays(next.toISOString().slice(0, 10), -1);
+  const tomorrow = addDays(today, 1);
+  if (last < tomorrow) throw new Error("That month is over. Plan this month or a later one.");
+  const limit = new Date(`${today.slice(0, 7)}-01T00:00:00Z`);
+  limit.setUTCMonth(limit.getUTCMonth() + 3);
+  if (first >= limit.toISOString().slice(0, 10)) throw new Error("Plan up to three months ahead.");
+  return {
+    month: value,
+    from: first < tomorrow ? tomorrow : first,
+    to: last,
+    label: new Date(`${first}T12:00:00Z`).toLocaleDateString("en-GB", { month: "long", year: "numeric", timeZone: "UTC" }),
+  };
+}
+
 /** Working days from `from` to `to`, less days off. */
 export function workingDates(from: string, to: string, workingDays: readonly number[], daysOff: readonly string[]): string[] {
   const off = new Set(daysOff);
@@ -144,12 +179,27 @@ export function buildVisitPlan(input: PlanInput): VisitPlan {
   const spareDays = dates.slice(next);
 
   // What is already on each day, and which sites already have a visit when.
+  // `existingFor` spans whole weeks; what counts towards the month is only
+  // what falls inside it (`inMonth`).
   const existingOn = new Map<string, number>();
   const existingFor = new Map<string, string[]>();
   for (const e of input.existing) {
     existingOn.set(e.date, (existingOn.get(e.date) ?? 0) + 1);
     existingFor.set(e.siteId, [...(existingFor.get(e.siteId) ?? []), e.date]);
   }
+  const inMonth = (siteId: string) =>
+    (existingFor.get(siteId) ?? []).filter((d) => d >= input.from && d <= input.to).length;
+
+  // A week the plan shares with the month before or after: some of its
+  // working days are outside the plan. Days that are not worked don't count,
+  // so a plan ending on a Friday has no shared week.
+  const sharedWeek = (monday: string) => {
+    for (let i = 0; i < 7; i++) {
+      const d = addDays(monday, i);
+      if ((d < input.from || d > input.to) && input.workingDays.includes(isoWeekday(d))) return true;
+    }
+    return false;
+  };
 
   const sitesByTown = new Map<string, PlanSite[]>();
   for (const s of input.sites) {
@@ -195,8 +245,7 @@ export function buildVisitPlan(input: PlanInput): VisitPlan {
       // so the new one never lands in the week beside it.
       const planned = weeks.findIndex((w) => hasVisitIn(s, w));
       const parity = planned >= 0 ? planned % 2 : weeks.length > 1 && odd < even ? 1 : 0;
-      const already = (existingFor.get(s.id) ?? []).length;
-      let wanted = visitsWanted("biweekly", weeks.length) - already;
+      let wanted = visitsWanted("biweekly", weeks.length) - inMonth(s.id);
       for (let i = parity; i < weeks.length && wanted > 0; i += 2) {
         if (!hasVisitIn(s, weeks[i])) {
           weeks[i].sites.push(s);
@@ -204,15 +253,18 @@ export function buildVisitPlan(input: PlanInput): VisitPlan {
         }
       }
     }
+    // A monthly visit belongs to this month alone, so never to a shared week
+    // while the town has a whole one: what spills from a shared week is left
+    // to the other month, and the other month plans its own monthly visit.
+    const whole = weeks.map((w, i) => i).filter((i) => !sharedWeek(weeks[i].week));
+    const monthlyWeeks = whole.length > 0 ? whole : weeks.map((_, i) => i);
     for (const s of byFrequency("monthly")) {
-      if ((existingFor.get(s.id) ?? []).length > 0) continue;
+      if (inMonth(s.id) > 0) continue;
       const l = load();
-      let best = 0;
-      for (let i = 1; i < l.length; i++) {
-        // Spare room counts, not just the count: a week of two days fills sooner.
-        const room = (j: number) => weeks[j].dates.length * perDay - l[j];
-        if (room(i) > room(best)) best = i;
-      }
+      // Spare room counts, not just the count: a week of two days fills sooner.
+      const room = (j: number) => weeks[j].dates.length * perDay - l[j];
+      let best = monthlyWeeks[0];
+      for (const i of monthlyWeeks) if (room(i) > room(best)) best = i;
       weeks[best].sites.push(s);
     }
 
@@ -220,7 +272,7 @@ export function buildVisitPlan(input: PlanInput): VisitPlan {
     for (const w of weeks) {
       // A week cut by the start or end of the plan (Mon 30 Nov is a week of one
       // day in November): what does not fit belongs to the other month's days.
-      const cut = w.week < input.from || addDays(w.week, 6) > input.to;
+      const cut = sharedWeek(w.week);
       const room = new Map(w.dates.map((d) => [d, Math.max(0, perDay - (existingOn.get(d) ?? 0))]));
       const located = w.sites.filter((s) => s.lat !== null && s.lng !== null);
       const unlocated = w.sites.filter((s) => s.lat === null || s.lng === null);
@@ -247,7 +299,7 @@ export function buildVisitPlan(input: PlanInput): VisitPlan {
       for (const s of overflow) {
         const d = w.dates.find((x) => placed.get(x)!.length < room.get(x)!);
         if (d) placed.get(d)!.push(s);
-        else if (cut) leftForOtherMonth++;
+        else if (cut && s.frequency !== "monthly") leftForOtherMonth++;
         else missed(s);
       }
       for (const d of w.dates) {

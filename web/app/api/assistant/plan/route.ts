@@ -2,7 +2,8 @@ import { createClient } from "@/lib/supabase/server";
 import { enforceRateLimit, LIMITS } from "@/lib/rate-limit";
 import { parseCompanyConfig } from "@/lib/company-config";
 import { planVisits } from "@/lib/store-reorder";
-import { addDays } from "@/lib/visit-plan";
+import { canAccessPath, toPermissionSet } from "@/lib/permissions";
+import { readPlanSave } from "@/lib/plan-save";
 
 /**
  * Saves a month of visits that Ask drafted, when the manager presses
@@ -18,9 +19,6 @@ import { addDays } from "@/lib/visit-plan";
 
 export const runtime = "nodejs";
 
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const DAY = /^\d{4}-\d{2}-\d{2}$/;
-
 function json(error: string, status: number) {
   return Response.json({ error }, { status });
 }
@@ -32,47 +30,28 @@ export async function POST(request: Request) {
   } = await supabase.auth.getUser();
   if (!user) return json("Not signed in.", 401);
 
-  const [{ data: role, error: roleError }, { data: rawConfig, error: configError }] = await Promise.all([
+  const [
+    { data: role, error: roleError },
+    { data: rawConfig, error: configError },
+    { data: perms, error: permsError },
+  ] = await Promise.all([
     supabase.rpc("current_role"),
     supabase.rpc("my_company_config"),
+    supabase.rpc("my_permissions"),
   ]);
-  if (roleError || configError) return json("Your access could not be checked. Try again shortly.", 503);
-  if (role !== "manager") return json("Only a manager can change the schedule.", 403);
+  if (roleError || configError || permsError) return json("Your access could not be checked. Try again shortly.", 503);
+  // The same two rules as the drafting lookups: the schedule page, and the
+  // manager role its tables' write policies ask for.
+  if (role !== "manager" || !canAccessPath(toPermissionSet(perms as string[] | null), "/schedule")) {
+    return json("Only a manager with the schedule can change it.", 403);
+  }
   const config = parseCompanyConfig(rawConfig);
   if (!config) return json("Your company could not be loaded. Try again shortly.", 503);
 
-  const body = (await request.json().catch(() => null)) as {
-    staffId?: unknown;
-    days?: unknown;
-  } | null;
-  const staffId = typeof body?.staffId === "string" && UUID.test(body.staffId) ? body.staffId : null;
-  const rawDays = Array.isArray(body?.days) ? body.days : null;
-  if (!staffId || !rawDays || rawDays.length === 0 || rawDays.length > 31) {
-    return json("That plan could not be read.", 400);
-  }
-
   const today = new Intl.DateTimeFormat("en-CA", { timeZone: config.timezone }).format(new Date());
-  const latest = addDays(today, 100);
-  const days: { date: string; siteIds: string[] }[] = [];
-  let pastDays = 0;
-  for (const d of rawDays as { date?: unknown; siteIds?: unknown }[]) {
-    const date = typeof d?.date === "string" && DAY.test(d.date) ? d.date : null;
-    const siteIds = Array.isArray(d?.siteIds) ? d.siteIds : null;
-    if (!date || !siteIds || siteIds.length === 0 || siteIds.length > 50) {
-      return json("That plan could not be read.", 400);
-    }
-    if (date > latest || !siteIds.every((id): id is string => typeof id === "string" && UUID.test(id))) {
-      return json("That plan could not be read.", 400);
-    }
-    // Today and earlier are the schedule's own rule: nobody re-plans a day that
-    // has started. A draft saved a day late keeps the days still ahead.
-    if (date <= today) {
-      pastDays++;
-      continue;
-    }
-    days.push({ date, siteIds: [...new Set(siteIds)] });
-  }
-  if (days.length === 0) return json("Every day in this plan has passed. Ask for a new draft.", 400);
+  const read = readPlanSave(await request.json().catch(() => null), today);
+  if (!read.ok) return json(read.error, 400);
+  const { staffId, days, pastDays } = read.save;
 
   const gate = await enforceRateLimit(supabase, LIMITS.assistantPlanSave);
   if (!gate.ok) return gate.response;
@@ -84,9 +63,10 @@ export async function POST(request: Request) {
     .select("id, full_name")
     .eq("id", staffId)
     .eq("org_id", config.orgId)
+    .eq("is_active", true)
     .maybeSingle();
   if (personError) return json("The plan could not be checked. Try again shortly.", 503);
-  if (!person) return json("That person isn't at your company.", 400);
+  if (!person) return json("That person isn't active at your company any more.", 400);
 
   // In batches: a few hundred ids in one query string is past what a URL holds.
   const wanted = [...new Set(days.flatMap((d) => d.siteIds))];
@@ -110,8 +90,14 @@ export async function POST(request: Request) {
       already += r.already;
     } catch (reason) {
       console.error("assistant plan: saving a day failed", reason);
+      const day = new Date(`${d.date}T12:00:00Z`).toLocaleDateString("en-GB", {
+        weekday: "short",
+        day: "numeric",
+        month: "short",
+        timeZone: "UTC",
+      });
       return Response.json(
-        { error: `Saving stopped on ${d.date}. ${added} were added before that; open the schedule to check.`, added, already },
+        { error: `Saving stopped on ${day}. ${added} were added before that. Open the schedule to check.`, added, already },
         { status: 500 }
       );
     }
