@@ -142,7 +142,11 @@ export default async function FoundingApplicationsPage({
                   <dd>{a.trade ? trade(a.trade) : notAsked}</dd>
                 </div>
                 <div>
-                  <dt className="text-muted-foreground">Staff</dt>
+                  <dt className="text-muted-foreground">What they distribute</dt>
+                  <dd>{a.distributes ?? notAsked}</dd>
+                </div>
+                <div>
+                  <dt className="text-muted-foreground">Reps</dt>
                   <dd>{a.team_size}</dd>
                 </div>
                 <div>

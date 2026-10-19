@@ -465,29 +465,34 @@ const TEMPLATES: Record<string, Renderer> = {
     const business = str(payload.business_name);
     const waitlist = payload.waitlist === true;
     const whatsapp = str(payload.whatsapp);
-    const facts: Fact[] = [
-      { label: waitlist ? "Your place" : "Applications close", value: waitlist ? "On the waiting list" : FOUNDING_OFFER.closes },
-      ...(waitlist ? [] : [{ label: "We confirm your place by", value: FOUNDING_OFFER.tellsBy }]),
-      ...(whatsapp ? [{ label: "We will call you on", value: `+${whatsapp}` }] : []),
-    ];
+    const facts: Fact[] = waitlist
+      ? [{ label: "Your place", value: "On the waiting list" }]
+      : [
+          { label: "Your free pilot", value: `${FOUNDING_OFFER.pilotDays} days, set up for you` },
+          {
+            label: "After the pilot",
+            value: `R${FOUNDING_OFFER.price.toLocaleString("en-US")} a month for ${FOUNDING_OFFER.priceMonths} months, ${FOUNDING_OFFER.percentOff}% off`,
+          },
+          ...(whatsapp ? [{ label: "We will WhatsApp you on", value: `+${whatsapp}` }] : []),
+        ];
     const body = stack([
       para(`Hello${first ? ` ${first}` : ""},`, true),
       para(
         waitlist
           ? `Thank you for your interest in Tickd. The ${FOUNDING_OFFER.spots} founding places are taken, so ${business ? `${business} is` : "you are"} on the waiting list.`
-          : `Thank you for applying to be one of Tickd's first ${FOUNDING_OFFER.spots} founding businesses. We have your application${business ? ` for ${business}` : ""}.`
+          : `Thank you for asking for a free pilot of Tickd, as one of our first ${FOUNDING_OFFER.spots} founding distributors. We have your details${business ? ` for ${business}` : ""}.`
       ),
       factsBlock(facts),
       para(
         waitlist
           ? "You are first in line if a place opens, and first for the next round. We will let you know as soon as it does."
-          : `We will call you between ${FOUNDING_OFFER.callsBetween}, and confirm your place by ${FOUNDING_OFFER.tellsBy}. Then we set everything up for you, and you run Tickd free for ${FOUNDING_OFFER.days} days.`
+          : `We will WhatsApp you within ${FOUNDING_OFFER.replyMinutes} minutes during work hours. Then we load your stores, products and reps, and your free ${FOUNDING_OFFER.pilotDays}-day pilot starts.`
       ),
-      para("There is nothing to pay, and we do not need a card."),
+      para("There is nothing to pay during the pilot, and we do not need a card."),
     ]);
     const { html, text } = layout(ctx, {
       heading: waitlist ? "You are on the waiting list" : "Thank you, we have your application",
-      preheader: waitlist ? "You are first in line if a place opens." : `We confirm your place by ${FOUNDING_OFFER.tellsBy}.`,
+      preheader: waitlist ? "You are first in line if a place opens." : `We will WhatsApp you within ${FOUNDING_OFFER.replyMinutes} minutes during work hours.`,
       bodyHtml: body.html,
       bodyText: body.text,
       closing: para("Thank you,\nThe Tickd team"),
@@ -501,24 +506,27 @@ const TEMPLATES: Record<string, Renderer> = {
     const business = str(payload.business_name);
     const whatsapp = str(payload.whatsapp);
     const facts: Fact[] = [
-      { label: "We set you up from", value: FOUNDING_OFFER.setupFrom },
-      { label: `Your ${FOUNDING_OFFER.days} free days start`, value: FOUNDING_OFFER.startsOn },
-      { label: "After that", value: `R${FOUNDING_OFFER.price} a month for ${FOUNDING_OFFER.priceMonths} months, or walk away` },
+      { label: "Your free pilot", value: `${FOUNDING_OFFER.pilotDays} days, from the day we set you up` },
+      {
+        label: "After that",
+        value: `R${FOUNDING_OFFER.price.toLocaleString("en-US")} a month for ${FOUNDING_OFFER.priceMonths} months (${FOUNDING_OFFER.percentOff}% off), or walk away`,
+      },
+      { label: "Included", value: "Set-up, a training day by video call, and 60 days of WhatsApp support" },
     ];
     const body = stack([
       para(`Hello${first ? ` ${first}` : ""},`, true),
-      para(`Welcome. ${business ? business : "Your business"} is one of Tickd's first ${FOUNDING_OFFER.spots} founding businesses.`),
+      para(`Welcome. ${business ? business : "Your business"} is one of Tickd's first ${FOUNDING_OFFER.spots} founding distributors.`),
       factsBlock(facts),
       para(
         whatsapp
           ? `We will message you on +${whatsapp} to book your set-up. We do it with you, so you do not have to work anything out alone.`
           : "We will message you to book your set-up. We do it with you, so you do not have to work anything out alone."
       ),
-      para("There is nothing to pay now, and we do not need a card. If you would rather talk first, just reply to this email."),
+      para("There is nothing to pay during the pilot, and we do not need a card. If you would rather talk first, just reply to this email."),
     ]);
     const { html, text } = layout(ctx, {
-      heading: "You are one of our founding businesses",
-      preheader: `We set you up from ${FOUNDING_OFFER.setupFrom}.`,
+      heading: "You are one of our founding distributors",
+      preheader: `Your free ${FOUNDING_OFFER.pilotDays}-day pilot starts when we set you up.`,
       bodyHtml: body.html,
       bodyText: body.text,
       closing: para("Welcome aboard,\nThe Tickd team"),

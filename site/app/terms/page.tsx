@@ -18,93 +18,80 @@ export default function TermsPage() {
 
       <h2>What {site.name} is</h2>
       <p>
-        {site.name} is an app for teams that work on site: a phone app for your team and a web dashboard for you. Your
-        team checks in at jobs, takes photos and fills in forms. You see where they worked, for how long and what was
-        done.
+        {site.name} is an app for distributors and their reps: a phone app for your reps and a web dashboard for you.
+        Your reps check in at stores, take photos, fill in forms and take orders. You see where they went, for how long,
+        what was done and what was ordered.
       </p>
 
-      <h2>Your free {founding.days} days</h2>
+      <h2 id="founding">The Founding {founding.spots} pilot and founding price</h2>
       <ul>
-        <li>A Founding member runs {site.name} free for {founding.days} days from the day we set up their account. We don&apos;t ask for a card.</li>
-        <li>During your free days you can have up to 10 users.</li>
         <li>
-          If you don&apos;t choose a plan by the end of the free days, your account becomes read-only: you can still sign in and
-          see everything, but you can&apos;t add or change anything until you choose a plan.
+          A Founding distributor runs {site.name} free for {founding.pilotDays} days (the pilot) from the day we set up
+          their account. We don&apos;t ask for a card for the pilot.
+        </li>
+        <li>During the pilot you can have up to {founding.reps} reps.</li>
+        <li>
+          After the pilot, a Founding distributor pays {rand(founding.price)} a month for {founding.priceMonths} months, for
+          up to {founding.reps} reps (the founding price). The setup, the training day by video call and the bonuses we
+          list on our website are included. After the {founding.priceMonths} months, the normal price of your plan
+          applies.
+        </li>
+        <li>There is no contract. You can stop at the end of any month. The founding price is once per business.</li>
+        <li>
+          If you don&apos;t carry on after the pilot, your account becomes read-only: you can still sign in and see
+          everything, but you can&apos;t add or change anything until you choose a plan.
         </li>
       </ul>
 
-      <h2 id="promise">Our {rand(founding.guarantee)} promise to Founding members</h2>
+      <h2 id="guarantee">Our {founding.guaranteeDays}-day promise to Founding distributors</h2>
       <p>
-        If you use {site.name} properly for your {founding.days} free days and it hasn&apos;t helped your business, we
-        pay you {rand(founding.guarantee)}. &ldquo;Properly&rdquo; means you meet every one of these conditions. Our app
-        records (sign-ins, clock-ins and check-ins) show whether you did.
+        Run {site.name} for {founding.guaranteeDays} days. If your reps aren&apos;t visiting more stores, we refund your
+        month, and you keep the Rep Leak Audit. Our app records (clock-ins and store check-ins) show whether they are.
+        The promise holds when you meet every one of these conditions.
       </p>
       <ol>
         <li>
-          <strong>You are a Founding member.</strong> We accepted your business into the Founding {founding.spots} and set
-          up your account. The promise is once per business.
+          <strong>You are a Founding distributor.</strong> We set up your account as one of the Founding {founding.spots}, and
+          you paid the founding price for your first month. The promise is once per business.
         </li>
         <li>
-          <strong>You set it up in the first 7 days.</strong> Within 7 days of the day we set up your account, you give us
-          your list of sites or clients and the people who work for you, and every one of those people installs the app
-          and signs in.
+          <strong>How we measure it.</strong> The {founding.guaranteeDays} days start on the day we set up your account. We
+          compare the store visits per rep per workday in your first 5 workdays with your last 5 workdays of the{" "}
+          {founding.guaranteeDays} days. If the number didn&apos;t go up, your reps aren&apos;t visiting more stores.
         </li>
         <li>
-          <strong>Your whole team uses it every workday.</strong> For all {founding.days} days, every person who works
-          away from the office clocks in on {site.name} on every day they work, and checks in at every site or job they
-          go to. Missing a few days here and there is fine. But if your team clocked in on fewer than 90 out of every 100
-          days that they worked, this condition isn&apos;t met.
-        </li>
-        <li>
-          <strong>You use it too.</strong> You, or a manager you name, sign in to the {site.name} dashboard at least once
-          a week, every week.
-        </li>
-        <li>
-          <strong>You take part.</strong> You attend the training day, and you join at least 7 of the 8 weekly check-in
-          calls.
-        </li>
-        <li>
-          <strong>You give us a chance to fix it.</strong> If something isn&apos;t working for you, you tell us in
-          writing (WhatsApp or email) before day 45, so that we have time to put it right.
+          <strong>Your reps use it every workday.</strong> Every rep clocks in on {site.name} on every day they work, and
+          checks in at every store they visit. Missing a few days is fine. But if your reps clocked in on fewer than 90
+          out of every 100 days that they worked, this condition isn&apos;t met.
         </li>
         <li>
           <strong>You claim in time.</strong> You email <a href={`mailto:${site.email}`}>{site.email}</a> within 7 days
-          after your {founding.days} days end, and tell us why {site.name} didn&apos;t help your business.
+          after the {founding.guaranteeDays} days end.
         </li>
       </ol>
       <ul>
         <li>
-          If you choose a paid plan at the end of the {founding.days} days, or carry on using {site.name}, you can&apos;t
-          also claim the promise.
-        </li>
-        <li>
-          The promise doesn&apos;t apply if your business improved while you used {site.name}. We compare your first
-          two weeks with your last two weeks. If your team&apos;s productivity went up (for example more jobs or visits
-          done per person per day, more time on site, or fewer missed tasks), you found value, and we don&apos;t pay.
+          If you meet every condition and the visits didn&apos;t go up, we refund what you paid for your first month at
+          the founding price, within 14 days of your claim. You keep the Rep Leak Audit. If you don&apos;t meet them, we
+          tell you which ones and show you the records.
         </li>
         <li>
           The promise doesn&apos;t apply if we suspended your account for misusing {site.name}, or if you deleted your
           records before claiming.
-        </li>
-        <li>
-          Days when the clock is paused (15 December to 5 January) don&apos;t count towards the {founding.days} days.
-        </li>
-        <li>
-          If you meet every condition, we pay {rand(founding.guarantee)} once, by EFT into your business&apos;s bank
-          account, within 14 days of your claim. If you don&apos;t meet them, we tell you which ones and show you the
-          records.
         </li>
       </ul>
 
       <h2>Plans and prices</h2>
       <ul>
         <li>
-          You pay monthly or yearly, in rand, at the prices on our website on the day you pay. Today that is from{" "}
-          {rand(pricing.monthly.base)} a month or {rand(pricing.yearly.base)} a year for {pricing.includedUsers} users.
+          Apart from the founding price above, you pay monthly or yearly, in rand, at the prices on our website on the
+          day you pay. Today that is{" "}
+          {pricing.plans.map((p) => `${rand(p.monthly)} a month for up to ${p.reps} reps`).join("; ")}. A year costs{" "}
+          {pricing.yearlyMonths} months.
         </li>
         <li>We are not registered for VAT, so no VAT is added.</li>
         <li>A once-off setup fee of {rand(pricing.setupValue)} is added to your first monthly payment. It is free on yearly plans.</li>
-        <li>You pay for a number of users. Adding users costs a share of the price for the rest of your current period, charged straight away. Fewer users take effect from your next renewal.</li>
+        <li>You choose a plan by the number of reps. Moving to a bigger plan costs a share of the difference for the rest of your current period, charged straight away. A smaller plan takes effect from your next renewal.</li>
         <li>We may raise prices once a year, by no more than inflation. We will tell you at least 30 days before.</li>
       </ul>
 

@@ -387,7 +387,10 @@ export const FORM_FIELDS = [
   ["first_name", "First name"],
   ["last_name", "Last name"],
   ["business_name", "Business name"],
-  ["team_size", "How many staff"],
+  // Asked from 19 Oct 2026, when the email box came off the form; the email row
+  // stays for the applications before it.
+  ["distributes", "What they distribute"],
+  ["team_size", "How many reps"],
   ["whatsapp", "WhatsApp number"],
   ["email", "Email"],
 ] as const;

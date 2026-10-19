@@ -586,12 +586,14 @@ test("an application received says what happens next, in the applicant's words, 
   assert.equal(e.subject, "We have your application, Thandi");
   assert.match(e.html, /Hello Thandi,/);
   assert.match(e.html, /Shine Cleaning/);
-  assert.ok(e.html.includes(FOUNDING_OFFER.closes) && e.html.includes(FOUNDING_OFFER.tellsBy));
-  assert.match(e.html, /We confirm your place by/);
-  assert.match(e.html, /call you between 20 and 22 October/);
+  assert.match(e.html, /14 days, set up for you/);
+  assert.match(e.html, /R2,097 a month for 12 months, 40% off/);
+  assert.match(e.html, /WhatsApp you within 5 minutes during work hours/);
+  assert.ok(!e.html.includes("60 days") && !e.html.includes("October"));
   assert.ok(!e.html.includes("If you are picked") && !e.html.includes("next round"));
   assert.match(e.html, /\+27821234567/);
-  assert.match(e.html, /free for 60 days/);
+  assert.match(e.html, /free 14-day pilot starts/);
+  assert.equal(FOUNDING_OFFER.pilotDays, 14);
   assert.match(e.html, /Sent by Tickd\./);
   assert.ok(!e.html.includes("Stop these emails") && !e.html.includes("Know what your team got done today"));
   assert.match(e.html, /Questions\? Just reply to this email and it will reach Tickd\./);
@@ -642,11 +644,12 @@ test("emails from Tickd itself are their own set, and none of them is a client e
   for (const t of TICKD_TEMPLATES) assert.ok(!CLIENT_TEMPLATES.has(t) && !DOCUMENT_TEMPLATES.has(t), t);
 });
 
-test("the founding answer: the accepted one gives the dates and price, and welcomes them", () => {
+test("the founding answer: the accepted one gives the pilot and the price, and welcomes them", () => {
   const yes = renderEmail("founding_accepted", { first_name: "Thandi", business_name: "Shine Cleaning", whatsapp: "27821234567" }, tickd)!;
   assert.equal(yes.subject, "You are in, Thandi: one of Tickd's first 10");
-  assert.ok(yes.html.includes(FOUNDING_OFFER.setupFrom) && yes.html.includes(FOUNDING_OFFER.startsOn));
-  assert.match(yes.html, /R749 a month for 12 months/);
+  assert.match(yes.html, /14 days, from the day we set you up/);
+  assert.match(yes.html, /R2,097 a month for 12 months \(40% off\)/);
+  assert.ok(!yes.html.includes("R749") && !yes.html.includes("November"));
   assert.match(yes.html, /\+27821234567/);
   assert.match(yes.html, /Welcome\. Shine Cleaning is one of/);
   assert.ok(!yes.html.includes("Good news"));

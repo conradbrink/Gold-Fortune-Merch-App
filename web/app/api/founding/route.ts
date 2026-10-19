@@ -127,21 +127,30 @@ export async function POST(request: Request) {
       .insert(row as typeof application & { status: string })
       .select("id")
       .single();
-  let { data: saved, error } = await insert({ ...application, status });
-  // The attribution column comes with its own migration. If this code is live
-  // before it, PostgREST refuses the unknown column (PGRST204): save the
-  // application without it rather than lose it.
+  let row: Record<string, unknown> = { ...application, status };
+  let { data: saved, error } = await insert(row);
+  // Each of these columns came with its own migration. If this code is live
+  // before one of them, PostgREST refuses the unknown column (PGRST204): save
+  // the application without it rather than lose it. "What do you distribute?"
+  // (19 Oct 2026) first, as the newest.
+  if (error?.code === "PGRST204" && error.message.includes("distributes")) {
+    console.error("founding: distributes column missing, saved without it");
+    row = { ...row, distributes: undefined };
+    ({ data: saved, error } = await insert(row));
+  }
   if (error?.code === "PGRST204" && application.attribution) {
     console.error("founding: attribution column missing, saved without it");
-    ({ data: saved, error } = await insert({ ...application, attribution: undefined, status }));
+    row = { ...row, attribution: undefined };
+    ({ data: saved, error } = await insert(row));
   }
-  // Likewise the email column (it comes with its own migration): save the
-  // application without it, and without the confirmation, rather than lose it.
+  // Likewise the email column: save the application without it, and without
+  // the confirmation, rather than lose it.
   let emailSaved = true;
   if (error?.code === "PGRST204") {
     console.error("founding: email column missing, saved without it");
     emailSaved = false;
-    ({ data: saved, error } = await insert({ ...application, email: undefined, attribution: undefined, status }));
+    row = { ...row, email: undefined, attribution: undefined };
+    ({ data: saved, error } = await insert(row));
   }
   if (error || !saved) {
     console.error("founding: could not save an application", error?.message);

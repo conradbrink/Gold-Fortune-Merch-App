@@ -265,7 +265,9 @@ export function SignupForm({
           aria-describedby={fieldErrors.templates ? "templates-error" : undefined}
         >
           <legend className="text-pretty text-muted-foreground">
-            Pick the work your team does. Pick more than one if you do several; the first one sets your words.
+            {templates.length === 1
+              ? "Your account is set up for this kind of work."
+              : "Pick the work your team does. Pick more than one if you do several; the first one sets your words."}
           </legend>
           <ul className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
             {templates.map((t, i) => {

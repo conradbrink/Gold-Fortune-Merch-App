@@ -6,14 +6,36 @@ import { trackLead } from "@/components/meta-pixel";
 import { track } from "@/components/analytics";
 import { firstVisit } from "@/lib/first-visit";
 
-// The Founding 10 application on /founding. It is posted to the app
-// (`founding.apiUrl`), which saves it, emails the owner and lists it under
-// /platform/founding. All required: the applicant's first and last name (sent
-// as one `name`), the business's name, how many staff, WhatsApp and email. On
-// 11 Oct 2026 the owner cut it from eleven answers, after no ad visitor
-// finished the long form.
+// The Founding 10 pilot form, on /founding and at the foot of the main page.
+// It is posted to the app (`founding.apiUrl`), which saves it, emails the owner
+// and lists it under /platform/founding. All required: the applicant's first
+// and last name (sent as one `name`), the business's name, what they
+// distribute, how many reps and WhatsApp. On 11 Oct 2026 the owner cut it from
+// eleven answers; on 19 Oct 2026 the email box came off and "What do you
+// distribute?" went on (the owner's short form for distributors).
 
 type Option = [label: string, value: string];
+
+// What the business does, in the app's own codes (its industry templates).
+// The site is only for distributors since 19 Oct 2026 (owner), so the form
+// offers that one, chosen already, and sends it as `trade`. The others stay
+// here, and in the app, for when the site speaks to them again: add a code to
+// `OFFERED` to show it.
+const businessTypes: Option[] = [
+  ["Distributor", "distribution"],
+  ["Cleaning", "cleaning"],
+  ["CCTV and installation", "installation"],
+  ["Security and patrols", "security"],
+  ["Maintenance", "maintenance"],
+  ["Plumbing", "plumbing"],
+  ["Garden", "garden"],
+  ["Pest control", "pest_control"],
+  ["Pools", "pool"],
+  ["Delivery", "delivery"],
+  ["Something else", "generic"],
+];
+const OFFERED = new Set(["distribution"]);
+const offeredTypes = businessTypes.filter(([, code]) => OFFERED.has(code));
 
 const sizes: Option[] = [
   ["1 to 4", "1-4"],
@@ -23,7 +45,7 @@ const sizes: Option[] = [
   ["50+", "50+"],
 ];
 
-type Field = "name" | "businessName" | "teamSize" | "whatsapp" | "email";
+type Field = "name" | "businessName" | "distributes" | "teamSize" | "whatsapp";
 
 // Where visitors stop (the owner's ask, 11 Oct 2026, after 3 started and none
 // sent): each box sends `signup_field` the first time it takes focus and
@@ -35,15 +57,15 @@ const boxKey: Record<string, string> = {
   firstName: "first_name",
   lastName: "last_name",
   businessName: "business_name",
+  distributes: "distributes",
   whatsapp: "whatsapp",
-  email: "email",
 };
 const issueKey: Record<Field, string> = {
   name: "first_name",
   businessName: "business_name",
+  distributes: "distributes",
   teamSize: "team_size",
   whatsapp: "whatsapp",
-  email: "email",
 };
 type Issue = { field: Field; message: string };
 type State =
@@ -131,6 +153,8 @@ export function FoundingForm() {
   const id = useId();
   const [state, setState] = useState<State>({ kind: "idle" });
   const [teamSize, setTeamSize] = useState("");
+  // With one type on offer it is chosen already; there is nothing to pick.
+  const [trade, setTrade] = useState(offeredTypes.length === 1 ? offeredTypes[0][1] : "");
   const [missing, setMissing] = useState<Partial<Record<Field, string>>>({});
 
   const pickSize = (v: string) => {
@@ -185,7 +209,7 @@ export function FoundingForm() {
 
     track("signup_submitted");
     const gaps: Partial<Record<Field, string>> = {};
-    if (!teamSize) gaps.teamSize = "Choose how many staff you have.";
+    if (!teamSize) gaps.teamSize = "Choose how many reps you have.";
     setMissing(gaps);
     if (Object.keys(gaps).length > 0) {
       track("signup_error", { section: "team_size" });
@@ -206,9 +230,10 @@ export function FoundingForm() {
         body: JSON.stringify({
           name: `${text("firstName").trim()} ${text("lastName").trim()}`.trim(),
           businessName: text("businessName"),
+          distributes: text("distributes"),
           teamSize,
+          trade,
           whatsapp: text("whatsapp"),
-          email: text("email"),
           website: text("website"),
           source: src,
           attribution: firstVisit(),
@@ -238,11 +263,11 @@ export function FoundingForm() {
   if (state.kind === "done") {
     return (
       <div role="status" className="grid gap-3 rounded-2xl bg-white/10 p-5 ring-1 ring-white/20 sm:p-6">
-        <p className="font-display text-2xl font-bold text-amber-500">You&apos;re in the running.</p>
+        <p className="font-display text-2xl font-bold text-amber-500">{state.waitlist ? "You're on the waiting list." : "We have your details."}</p>
         <p className="leading-relaxed text-teal-100 sm:text-lg">
           {state.waitlist
             ? "All the spots are taken, so you are on the waiting list. If one opens, we will WhatsApp you."
-            : `We'll WhatsApp you by ${founding.tellsBy}.`}
+            : `We'll WhatsApp you within ${founding.replyMinutes} minutes during work hours, to set up your free ${founding.pilotDays}-day pilot.`}
         </p>
       </div>
     );
@@ -262,8 +287,24 @@ export function FoundingForm() {
       <Labelled label="Business name" htmlFor={`${id}-biz`} error={problem("businessName")}>
         <input id={`${id}-biz`} name="businessName" required maxLength={120} autoComplete="organization" className={input} />
       </Labelled>
-      <Chips label="How many staff do you have?" options={sizes} value={teamSize} onChange={pickSize} error={problem("teamSize")} />
-      <Labelled label="WhatsApp number" htmlFor={`${id}-wa`} hint="We reply here. We never share it." error={problem("whatsapp")}>
+      <Labelled label="What do you distribute?" htmlFor={`${id}-dist`} error={problem("distributes")}>
+        <input
+          id={`${id}-dist`}
+          name="distributes"
+          required
+          maxLength={200}
+          placeholder="For example, snacks and cold drinks"
+          className={input}
+        />
+      </Labelled>
+      <Chips label="What kind of business is it?" options={offeredTypes} value={trade} onChange={setTrade} />
+      <Chips label="How many reps do you have?" options={sizes} value={teamSize} onChange={pickSize} error={problem("teamSize")} />
+      <Labelled
+        label="WhatsApp number"
+        htmlFor={`${id}-wa`}
+        hint={`We WhatsApp you here within ${founding.replyMinutes} minutes during work hours. We never share it.`}
+        error={problem("whatsapp")}
+      >
         <input
           id={`${id}-wa`}
           name="whatsapp"
@@ -273,19 +314,6 @@ export function FoundingForm() {
           maxLength={25}
           autoComplete="tel"
           placeholder="082 123 4567"
-          className={input}
-        />
-      </Labelled>
-      <Labelled label="Email" htmlFor={`${id}-email`} hint="We confirm your application here. We never share it." error={problem("email")}>
-        <input
-          id={`${id}-email`}
-          name="email"
-          type="email"
-          inputMode="email"
-          required
-          maxLength={254}
-          autoComplete="email"
-          placeholder="you@yourbusiness.co.za"
           className={input}
         />
       </Labelled>
@@ -312,7 +340,7 @@ export function FoundingForm() {
         disabled={sending}
         className="w-full rounded-full bg-amber-500 px-6 py-4 text-center text-lg font-semibold text-teal-950 transition-[background-color,transform] duration-150 ease-out hover:bg-amber-400 active:scale-[0.97] disabled:opacity-70 sm:w-auto sm:py-3.5 sm:text-base"
       >
-        {sending ? "Sending..." : "Send my application"}
+        {sending ? "Sending..." : `Start my free ${founding.pilotDays}-day pilot`}
       </button>
     </form>
   );

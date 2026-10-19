@@ -1,83 +1,57 @@
-import { Check, ChevronDown, ShieldCheck } from "lucide-react";
+import { Check } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { FoundingForm } from "@/components/founding-form";
+import { FoundingGuarantee, FoundingStack, Objections } from "@/components/founding-package";
 import { SpotsText } from "@/components/founding-spots";
 import { FoundingVideo } from "@/components/founding-video";
 import { Logo } from "@/components/logo";
 import { ProofSection } from "@/components/proof-section";
-import { founding, pricing, rand, site } from "@/lib/site";
+import { founding, growthPlan, rand, site } from "@/lib/site";
 
-// The Founding 10 page, for visitors who arrive from Facebook: it has to make
-// sense on its own, and the offer has to be the first thing they see. So the
-// headline and the value stack share the top of the page, and everything under
-// them is kept short. The video sits right under the headline and plays by
-// itself (components/founding-video.tsx). The words are the owner's (~/Downloads/founding-10-site-prompt.md).
+// The Founding 10 distributors page, for visitors who arrive from an advert:
+// it has to make sense on its own, and the offer has to be the first thing
+// they see. So the headline and the value stack share the top of the page,
+// and everything under them is kept short. The video sits right under the
+// headline and plays by itself (components/founding-video.tsx).
 //
-// Two lines differ from that file on purpose, because the owner's own rule
-// says never to use these words: "no catch" is "no strings", and the owner's
-// word "cheap" is kept as written.
+// Since 19 Oct 2026 the offer is the owner's Founding 10 distributors package
+// (it replaced "60 days free, then R749 a month"): a free 14-day pilot, set up
+// for them, then R2,097 a month for 12 months, 40% off the 10-rep plan, with
+// the stack, the bonuses and the guarantee in lib/site.ts and
+// components/founding-package.tsx. Only 10 spots, because Conrad onboards
+// each one personally; the number left is the owner's, from the database.
 
 export const metadata: Metadata = {
-  title: `Become one of our Founding 10 | ${site.name}`,
-  description: `We're taking on our first founding businesses to run ${site.name} free for ${founding.days} days. We set it all up. You get proof of every job. We get your story.`,
+  title: `Become one of our Founding 10 distributors | ${site.name}`,
+  description: `A free ${founding.pilotDays}-day pilot of ${site.name}, set up for you. Then ${rand(founding.price)} a month for ${founding.priceMonths} months, ${founding.percentOff}% off. Only ${founding.spots} founding spots.`,
 };
 
 const h2 = "font-display text-2xl font-bold leading-[1.1] tracking-tight text-balance text-teal-900 sm:text-4xl";
 
 const does = [
-  ["Every job, proven.", "Time on site, photos and a signed report."],
-  ["No more WhatsApp chaos.", "Your team sees today's jobs in one tap."],
-  ["Know about missed tasks before your client does.", ""],
-  ["Late work gets paid.", "Every hour lands on the timesheet."],
-  ["Quote, invoice and get paid from one app.", ""],
+  ["Every store visit, proven.", "The time, the place and photos of the shelf."],
+  ["No more orders on WhatsApp.", "Reps take the order on the phone, and it goes straight to your warehouse."],
+  ["See which stores have stopped ordering, before you lose them.", ""],
+  ["See each rep's sales against their target.", ""],
+  ["Every order becomes an invoice.", ""],
   ["Works on cheap Androids, with no signal.", ""],
 ];
 
-// What a founder gets, each with what it is worth. Half price for 12 months
-// is what they save against the normal price.
-const daysWorth = Math.round(pricing.monthly.base * (founding.days / 30));
-const halfPriceSaved = (pricing.monthly.base - founding.price) * founding.priceMonths;
-const gets: [label: string, value: string, worth: number][] = [
-  [`${founding.days} days of ${site.name}, free`, rand(daysWorth), daysWorth],
-  ["We set it all up for you", rand(pricing.setupValue), pricing.setupValue],
-  ["A training day with your team, on site", rand(pricing.trainingValue), pricing.trainingValue],
-  [`A direct WhatsApp line and a weekly check-in, for ${founding.days} days`, rand(pricing.supportValue), pricing.supportValue],
-  [`Stay on? Half price for ${founding.priceMonths} months`, `${rand(halfPriceSaved)} saved`, halfPriceSaved],
-];
-const worth = gets.reduce((sum, [, , w]) => sum + w, 0);
-
-const ask = [
-  `Your whole team uses ${site.name} every workday for ${founding.days} days.`,
-  "A 5-minute check-in call every week, so we can find out how to help.",
-  "A 60-second phone video and a Google review.",
-  "Two business owners you think it would help.",
-];
-
 const lookingFor = [
-  "Teams of 2 to 15 people who work away from the office.",
-  "Clients who ask you for proof.",
-  "Cleaning, security, CCTV, maintenance, garden, pest, pool and sales teams.",
+  "Distributors with 3 to 20 reps.",
+  "Reps who visit stores, take orders and check the shelves.",
+  "You deliver the orders from your own warehouse.",
 ];
 
-// How it works: a date and what happens on it.
-const steps: [when: string, what: string][] = [
-  [`Apply by ${founding.closes}`, `Apply by ${founding.closes}.`],
-  ["20 to 22 October", "We call everyone who applies, from 20 to 22 October."],
-  [founding.tellsBy, `We confirm your place by ${founding.tellsBy}.`],
-  ["From 26 October", "We set you up from 26 October."],
-  ["Monday 2 November", `Your ${founding.days} days start on Monday 2 November.`],
-  ["15 December to 5 January", "We pause the clock from 15 December to 5 January, so the holidays don't count."],
-];
-
-const faqs = [
-  ["Why is it free?", `We want ${founding.spots} real stories. You give us yours. We give you ${founding.days} days on us.`],
-  [
-    `What happens after ${founding.days} days?`,
-    `Stay at ${rand(founding.price)} a month for ${founding.priceMonths} months. Or walk away. No card, no strings.`,
-  ],
-  ["Who can apply?", "Teams of 2 to 15 whose clients ask for proof."],
-  ["What happens after I apply?", `We call you between 20 and 22 October and confirm your place by ${founding.tellsBy}. Then we set everything up for you.`],
+// How it works, in order. No dates: the pilot starts when we've set you up.
+const steps = [
+  "Send us the short form below.",
+  `We WhatsApp you within ${founding.replyMinutes} minutes during work hours.`,
+  "We load your stores, products and reps for you.",
+  "We train your reps on a video call.",
+  `Your free ${founding.pilotDays}-day pilot starts. No card needed.`,
+  `Like it? Stay on at ${rand(founding.price)} a month for ${founding.priceMonths} months.`,
 ];
 
 const button =
@@ -108,85 +82,44 @@ export default function FoundingPage() {
             href="#apply"
             className="rounded-full bg-teal-900 px-4 py-2 text-sm font-semibold text-sand transition-[background-color,transform] duration-150 ease-out hover:bg-teal-800 active:scale-[0.97]"
           >
-            Apply for a spot
+            Start my free pilot
           </a>
         </div>
       </header>
 
       <main>
-        {/* 1. The offer, first: the ask on the left, what you get on the right. */}
+        {/* 1. The offer, first: the outcome on the left, the value stack on the right. */}
         <section className="mx-auto grid max-w-6xl gap-6 px-4 pb-8 pt-6 sm:px-6 sm:pb-12 sm:pt-10 lg:grid-cols-2 lg:gap-x-12 lg:gap-y-6">
           <div className="grid content-start gap-4 sm:gap-5 lg:col-start-1 lg:row-start-1">
             <p className="text-sm font-bold uppercase tracking-wide text-teal-700">
-              Only {founding.spots} spots · Applications close {founding.closes}
+              Only {founding.spots} spots, because Conrad onboards each one personally
             </p>
             <h1 className="font-display text-[2.4rem] font-extrabold leading-[1.02] tracking-tight text-balance text-teal-900 sm:text-6xl">
-              Become one of our Founding {founding.spots}.
+              Become one of our Founding {founding.spots} distributors.
             </h1>
             <FoundingVideo />
             <p className="max-w-xl text-lg leading-relaxed text-pretty text-ink sm:text-xl">
-              We&apos;re taking on our first founding businesses to run {site.name} free for {founding.days} days. We set it all up. You get
-              proof of every job. We get your story.
+              A free {founding.pilotDays}-day pilot, set up for you. Then {rand(founding.price)} a month for {founding.priceMonths} months,{" "}
+              {founding.percentOff}% off our Growth plan of {rand(growthPlan.monthly)}.
             </p>
             <div className="grid justify-items-start gap-2">
               <a href="#apply" className={button}>
-                Apply for a spot
+                Start my free {founding.pilotDays}-day pilot
               </a>
               <SpotsText className="text-sm font-semibold text-teal-700" />
             </div>
           </div>
 
-          <div className="grid content-start gap-4 rounded-2xl bg-white p-5 shadow-sm ring-1 ring-teal-900/15 sm:p-7 lg:col-start-2 lg:row-start-1">
-            <h2 className="font-display text-2xl font-extrabold leading-tight text-teal-900">What you get as a founder</h2>
-            <ul className="grid gap-2.5">
-              {gets.map(([label, value]) => (
-                <li key={label} className="flex items-baseline justify-between gap-4 border-b border-line pb-2.5">
-                  <span className="flex gap-2.5 font-medium leading-snug text-ink">
-                    <Check className="mt-0.5 size-5 shrink-0 text-teal-700" strokeWidth={3} aria-hidden="true" />
-                    {label}
-                  </span>
-                  <span className="shrink-0 font-semibold text-teal-900">{value}</span>
-                </li>
-              ))}
-              <li className="flex gap-2.5 font-medium leading-snug text-ink">
-                <Check className="mt-0.5 size-5 shrink-0 text-teal-700" strokeWidth={3} aria-hidden="true" />
-                Your logo on our site as a founder, and a say in what we build next.
-              </li>
-            </ul>
-            <div className="grid gap-1 rounded-xl bg-teal-900 px-5 py-4 text-sand">
-              <p className="flex items-baseline justify-between gap-4 text-lg">
-                <span>Worth</span>
-                <span className="font-semibold line-through decoration-amber-500 decoration-2">{rand(worth)}</span>
-              </p>
-              <p className="flex items-baseline justify-between gap-4 font-display text-3xl font-extrabold text-amber-500">
-                <span>You pay</span>
-                <span>{rand(0)}</span>
-              </p>
-            </div>
-            <div className="flex gap-3 rounded-xl bg-amber-500 px-5 py-4 text-teal-950 shadow-md ring-2 ring-amber-600">
-              <ShieldCheck className="mt-1 size-8 shrink-0" strokeWidth={2.5} aria-hidden="true" />
-              <div className="grid gap-1">
-                <p className="text-lg font-bold leading-snug">
-                  Used {site.name} for {founding.days} days and not found value in it? We&apos;ll pay you
-                </p>
-                <p className="font-display text-5xl font-extrabold leading-none tracking-tight">{rand(founding.guarantee)}</p>
-                <Link href="/terms#promise" className="text-sm font-medium underline underline-offset-2">
-                  T&amp;Cs apply.
-                </Link>
-              </div>
-            </div>
-            <p className="text-sm font-medium text-muted">No card. No contract. If it&apos;s not for you after {founding.days} days, walk away.</p>
-            <a href="#apply" className={`${button} sm:w-full`}>
-              Apply for a spot
-            </a>
+          <div className="grid content-start gap-4 lg:col-start-2 lg:row-start-1">
+            <FoundingStack applyHref="#apply" />
+            <FoundingGuarantee />
           </div>
-
         </section>
 
         {/* 2. Proof, straight under the offer */}
         <ProofSection applyHref="#apply" />
 
-        {/* 3. What it does, what we ask, who we want: side by side to keep the page short */}
+        {/* 3. What it does, who we want, how it works: side by side to keep the page short */}
         <section>
           <div className="mx-auto grid max-w-6xl gap-4 px-4 py-8 sm:px-6 sm:py-12 lg:grid-cols-3 lg:gap-6">
             <div className="grid content-start gap-4 rounded-2xl bg-white p-5 ring-1 ring-line sm:p-6">
@@ -207,65 +140,45 @@ export default function FoundingPage() {
               </Link>
             </div>
             <div className="grid content-start gap-4 rounded-2xl bg-white p-5 ring-1 ring-line sm:p-6">
-              <h2 className={h2}>What we ask in return</h2>
-              <Ticks items={ask} />
-            </div>
-            <div className="grid content-start gap-4 rounded-2xl bg-white p-5 ring-1 ring-line sm:p-6">
               <h2 className={h2}>Who we&apos;re looking for</h2>
               <Ticks items={lookingFor} />
             </div>
+            <div className="grid content-start gap-4 rounded-2xl bg-white p-5 ring-1 ring-line sm:p-6">
+              <h2 className={h2}>How it works</h2>
+              <ol className="grid gap-3">
+                {steps.map((what, i) => (
+                  <li key={what} className="grid grid-cols-[2rem_1fr] items-start gap-3">
+                    <span className="grid size-8 place-items-center rounded-full bg-amber-500 font-display font-extrabold text-teal-950">
+                      {i + 1}
+                    </span>
+                    <span className="pt-1 leading-snug text-ink">{what}</span>
+                  </li>
+                ))}
+              </ol>
+            </div>
           </div>
         </section>
 
-        {/* 4. How it works: six dates in a row */}
-        <section className="border-y border-line bg-white">
-          <div className="mx-auto grid max-w-6xl gap-5 px-4 py-8 sm:px-6 sm:py-12">
-            <h2 className={h2}>How it works</h2>
-            <ol className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-              {steps.map(([when, what], i) => (
-                <li key={when} className="grid grid-cols-[2rem_1fr] items-start gap-3 rounded-xl bg-mint p-4 ring-1 ring-line">
-                  <span className="grid size-8 place-items-center rounded-full bg-amber-500 font-display font-extrabold text-teal-950">
-                    {i + 1}
-                  </span>
-                  <span className="leading-snug text-ink">{what}</span>
-                </li>
-              ))}
-            </ol>
-          </div>
-        </section>
-
-        {/* 5. Apply */}
-        <section id="apply" className="scroll-mt-20 px-4 pb-10 pt-8 sm:px-6 sm:pb-14 sm:pt-12">
+        {/* 4. The pilot form */}
+        <section id="apply" className="scroll-mt-20 border-t border-line px-4 pb-10 pt-8 sm:px-6 sm:pb-14 sm:pt-12">
           <div className="mx-auto grid max-w-3xl gap-6 rounded-2xl bg-teal-900 p-6 text-sand sm:p-10">
             <div className="grid gap-2">
               <h2 className="font-display text-3xl font-extrabold leading-[1.1] tracking-tight text-balance sm:text-5xl">
-                Apply for a spot.
+                Start your free {founding.pilotDays}-day pilot.
               </h2>
-              <p className="leading-relaxed text-teal-100 sm:text-lg">It takes 2 minutes. We read every one.</p>
+              <p className="leading-relaxed text-teal-100 sm:text-lg">
+                It takes a minute. We WhatsApp you within {founding.replyMinutes} minutes during work hours.
+              </p>
               <SpotsText className="text-sm font-semibold text-amber-500" />
             </div>
             <FoundingForm />
           </div>
         </section>
 
-        {/* 6. Questions */}
-        <section className="border-t border-line">
+        {/* 5. The doubts, answered just under the form */}
+        <section>
           <div className="mx-auto grid max-w-3xl gap-5 px-4 py-8 sm:px-6 sm:py-12">
-            <h2 className={h2}>Questions</h2>
-            <div className="divide-y divide-line border-y border-line">
-              {faqs.map(([q, a]) => (
-                <details key={q} className="group">
-                  <summary className="flex min-h-14 cursor-pointer list-none items-center justify-between gap-4 py-4 font-display text-lg font-bold text-teal-900 [&::-webkit-details-marker]:hidden">
-                    {q}
-                    <ChevronDown
-                      className="size-5 shrink-0 text-teal-700 transition-transform duration-200 ease-out group-open:rotate-180 motion-reduce:transition-none"
-                      aria-hidden="true"
-                    />
-                  </summary>
-                  <p className="max-w-2xl pb-5 leading-relaxed text-ink">{a}</p>
-                </details>
-              ))}
-            </div>
+            <Objections />
           </div>
         </section>
       </main>

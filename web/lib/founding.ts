@@ -33,6 +33,8 @@ export type FoundingInput = {
   teamSize: string;
   whatsapp: string;
   email: string;
+  /** What they distribute, in their words (asked from 19 Oct 2026; optional here). */
+  distributes: string;
   // Everything below was on the longer form until then. Each is optional:
   // checked only when given, so a visitor still on the old form gets through.
   trade: string;
@@ -57,6 +59,8 @@ export type FoundingApplication = {
   whatsapp: string;
   /** Where we confirm the application; lower case; null when none was given. */
   email: string | null;
+  /** What they distribute; null when not asked. */
+  distributes: string | null;
   /** Null: not asked (the form stopped asking these on 11 Oct 2026). */
   trade: string | null;
   town: string | null;
@@ -175,6 +179,7 @@ export function foundingIssues(input: FoundingInput): FoundingIssue[] {
   // Required on the form; here only checked when given, so an older form is never turned away.
   if (input.email.trim() && !validEmail(input.email)) add("email", "That email address does not look right. Please check it, so we can confirm your application.");
   // No longer on the form; only checked when the old form sends them.
+  if (input.distributes.trim().length > 200) add("distributes", "Please keep what you distribute to 200 characters.");
   if (input.trade && !/^[a-z][a-z_]{0,39}$/.test(input.trade)) add("trade", "Choose what your team does.");
   if (input.town.trim().length > 80) add("town", "Please use a shorter town or city name.");
   if (input.howRun && !(HOW_RUN as readonly string[]).includes(input.howRun)) add("howRun", "Choose how you run jobs today.");
@@ -199,6 +204,7 @@ export function checkApplication(
       team_size: input.teamSize as TeamSize,
       whatsapp: normaliseWhatsapp(input.whatsapp)!,
       email: input.email.trim() ? input.email.trim().toLowerCase() : null,
+      distributes: input.distributes.trim() || null,
       trade: input.trade || null,
       town: input.town.trim() || null,
       how_run: input.howRun ? (input.howRun as HowRun) : null,
@@ -245,6 +251,7 @@ export function inputFromBody(body: unknown): FoundingInput {
     businessName: s("businessName"),
     whatsapp: s("whatsapp"),
     email: s("email"),
+    distributes: s("distributes"),
     trade: s("trade"),
     teamSize: s("teamSize"),
     town: s("town"),
@@ -275,7 +282,7 @@ export function applicationEmail(
   tradeLabel: string | null,
   waitlist: boolean
 ): { subject: string; html: string; text: string } {
-  const about = [tradeLabel, a.town, `${a.team_size} staff`].filter(Boolean).join(", ");
+  const about = [tradeLabel, a.town, `${a.team_size} reps`].filter(Boolean).join(", ");
   const subject = `${waitlist ? "Waiting list" : "New Founding application"}: ${a.business_name} (${about})`;
   const link = `https://wa.me/${a.whatsapp}`;
   const yn = (b: boolean) => (b ? "Yes" : "No");
@@ -283,7 +290,8 @@ export function applicationEmail(
   const rows: [string, string][] = [
     ["Name", a.name],
     ["Business", a.business_name],
-    ["Staff", a.team_size],
+    ["What they distribute", a.distributes ?? notAsked],
+    ["Reps", a.team_size],
     ["WhatsApp", `+${a.whatsapp}`],
     ["Email", a.email ?? "(none given)"],
     ["Type of work", tradeLabel ?? notAsked],
