@@ -3,6 +3,7 @@
 import {
   AlertTriangle,
   BatteryMedium,
+  BellRing,
   Check,
   ChevronLeft,
   ChevronRight,
@@ -183,6 +184,18 @@ const beats: Beat[] = [
     card: { icon: <MapPin className="size-4" />, tone: "green", title: "Thabo is at Store 14", body: "Checked in 18 m from the store", delay: 1900 },
   },
   {
+    when: "07:33",
+    say: "The app tells him Store 14 is due for an order, and to ask the buyer.",
+    part: "team",
+    ms: 4600,
+    // The real store screen with a store due for an order (rendered from the
+    // Flutter screen with example data, 19 Oct 2026): when it last ordered,
+    // how often it usually does, and the order button.
+    images: [shot("04b-due-for-order")],
+    phone: () => <ShotScreen frames={[{ src: shot("04b-due-for-order"), at: 0 }]} taps={[{ x: 29, y: 482, w: 302, h: 48, at: 2600 }]} />,
+    card: { icon: <BellRing className="size-4" />, tone: "flag", title: "Store 14 is due for an order", body: "Last order 16 days ago · usually every 2 weeks", delay: 1200 },
+  },
+  {
     when: "07:40",
     say: "He checks that your promotion is on the shelf.",
     part: "team",
@@ -243,11 +256,12 @@ const beats: Beat[] = [
   },
   {
     when: "Next morning",
-    say: "Every morning, your sales and your reps on one screen.",
+    say: "Your dashboard shows which stores are due for an order.",
     part: "office",
     ms: 4800,
-    window: { url: "app.tickd.co.za", src: dash("o7-dashboard"), mark: [425, 1010, 712, 180], zoom: 1.8 },
-    points: ["Sales this month, by month", "Each rep against their target", "Orders that need you today"],
+    // The real StoreReorderCard (example data) on the dashboard picture.
+    window: { url: "app.tickd.co.za", src: dash("o8-dashboard-reorder"), mark: [400, 525, 1550, 503], focus: [400, 525, 1030, 503], zoom: 1.7 },
+    points: ["Due now, and due within 7 days", "The stores that order most often, first", "Stopped ordering, with a number to ring"],
   },
   {
     when: "Month end",
