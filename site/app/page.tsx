@@ -36,7 +36,7 @@ import { confirmed, founding, growthPlan, rand, site } from "@/lib/site";
 // print), and as few words as will do. Still no dashes, and only live features.
 // Lines v7 marks [CONFIRM] sit behind `confirmed` in lib/site.ts.
 // On 19 Oct 2026 the owner made the site only for distributors whose reps
-// visit stores, teams of 3 to 20 reps (worksheet: ~/.claude/plans/site-
+// visit stores, teams of 3 to 50 reps (worksheet: ~/.claude/plans/site-
 // distributors), then laid it out as the questions an owner asks: "Did my reps
 // actually go?", "Did they sell?", then the Founding 10 distributors package
 // as a value stack, the pilot form, and the doubts answered just under it.
@@ -111,7 +111,7 @@ const replaces = [
 
 // The rest of the questions, after the doubts at the form (lib/site.ts `objections`).
 const faqs: [q: string, a: string][] = [
-  ["Who is it for?", "Distributors with 3 to 20 reps who visit stores, take orders and check the shelves."],
+  ["Who is it for?", "Distributors with 3 to 50 reps who visit stores, take orders and check the shelves."],
   [
     `What happens after the ${founding.priceMonths} founding months?`,
     `You go onto our normal price, ${rand(growthPlan.monthly)} a month for up to ${growthPlan.reps} reps. The other plans are below.`,
@@ -283,7 +283,7 @@ export default function Home() {
             outcome, the effort it doesn't take, the way in, and the result. */}
         <section className="mx-auto grid max-w-6xl items-center gap-10 px-4 pb-10 pt-8 sm:px-6 sm:pb-16 sm:pt-12 lg:grid-cols-[1.1fr_0.9fr] lg:gap-14 lg:pt-12">
           <div className="tk-hero grid gap-5 sm:gap-6">
-            <p className="text-sm font-bold uppercase tracking-wide text-teal-700">For distributors with 3 to 20 reps</p>
+            <p className="text-sm font-bold uppercase tracking-wide text-teal-700">For distributors with 3 to 50 reps</p>
             <h1 className="font-display text-[2.6rem] font-extrabold leading-[1.02] tracking-tight text-balance text-teal-900 sm:text-6xl lg:text-[4.25rem]">
               Turn every visit into an{" "}
               <span className="relative whitespace-nowrap">

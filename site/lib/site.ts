@@ -5,7 +5,7 @@ export const site = {
   name: "Tickd",
   tagline: "Proof, not promises.",
   // The plain answer to "what is this?", for anyone landing cold. The site is
-  // only for distributors with 3 to 20 reps since 19 Oct 2026 (owner); the
+  // only for distributors with 3 to 50 reps since 19 Oct 2026 (owner); the
   // other trades are still in the app, for later.
   whatItIs: "The app for distributors and their reps.",
   url: "https://tickd.co.za",

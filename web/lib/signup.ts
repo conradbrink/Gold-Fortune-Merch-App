@@ -18,7 +18,7 @@ export const SELF_SERVE_SIGNUP_OPEN = false;
 /**
  * The kinds of work the public sign-up offers, as industry template codes.
  * Only distributors since 19 Oct 2026 (owner: the sales site is only for
- * distributors with 3 to 20 reps). Every other template stays in the database
+ * distributors with 3 to 50 reps). Every other template stays in the database
  * and in the operator's "Add a company"; add its code here to offer it again.
  */
 export const SIGNUP_TEMPLATE_CODES: readonly string[] = ["distribution"];
