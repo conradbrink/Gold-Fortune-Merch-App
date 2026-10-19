@@ -193,8 +193,9 @@ export const legal = {
   // A telephone number for the business (ECTA s43).
   phone: "",
   // Who answers privacy requests (Botswana: data protection officer; POPIA:
-  // information officer). The sole director, unless someone else is named.
-  informationOfficer: "Conrad Brink",
+  // information officer). Empty since 19 Oct 2026 (owner: the site says "our
+  // team", never a person's name); put a name back here to show it.
+  informationOfficer: "",
   // Where the app's data is hosted (Supabase, AWS eu-west-3).
   dataLocation: "Paris, France",
   lastUpdated: "19 October 2026",
