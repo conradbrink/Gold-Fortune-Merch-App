@@ -514,7 +514,7 @@ export default function Home() {
           <div className={`${wrap} max-w-6xl`}>
             <div className="grid gap-3">
               <h2 className={h2}>The Founding {founding.spots} distributors package.</h2>
-              <p className={lead}>Only {founding.spots} founding spots, because Conrad onboards each one personally.</p>
+              <p className={lead}>Only {founding.spots} founding spots, because our team onboards each one personally.</p>
               <SpotsText className="tk-reveal w-fit rounded-full bg-amber-100 px-3 py-1 text-sm font-bold text-teal-900" />
             </div>
             <div className="grid gap-4 lg:grid-cols-[1.2fr_1fr] lg:items-start lg:gap-6">
@@ -534,7 +534,7 @@ export default function Home() {
                       {site.name} with.
                     </li>
                     <li>
-                      <strong className="text-teal-900">What if you get stuck?</strong> WhatsApp Conrad directly for your first 60 days.
+                      <strong className="text-teal-900">What if you get stuck?</strong> WhatsApp our team directly for your first 60 days.
                     </li>
                   </ul>
                 </div>

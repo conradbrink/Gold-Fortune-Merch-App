@@ -32,7 +32,7 @@ export function contactHref(message: string, subject = message): string {
 }
 
 // Lines marked [CONFIRM] in ~/Downloads/site-copy-final-v7.md stay off the
-// site until Conrad says yes. Flip one to true to show it.
+// site until the owner says yes. Flip one to true to show it.
 export const confirmed = {
   // Card 1: only once the team can deliver it.
   doneForYou: false,
@@ -77,7 +77,8 @@ export const biggestPlan: Plan = pricing.plans[pricing.plans.length - 1];
 // The Founding 10 for distributors (owner, 19 Oct 2026; it replaced the "60
 // days free, then R749 a month" offer of 10 Oct): a free 14-day pilot, set up
 // for them, then the founding price for 12 months, 40% off the plan for up to
-// 10 reps. Only 10 spots, because Conrad onboards each one personally. The
+// 10 reps. Only 10 spots, because our team onboards each one personally (the
+// site never names a person: owner, 19 Oct 2026). The
 // spots left are one setting in the database (platform_settings
 // founding_spots_left) that only the owner changes; the page reads it from the
 // app (GET {apiUrl}), and shows `spots` until that answer is in. The same
@@ -116,7 +117,7 @@ export const foundingStack: { name: string; note: string; worth: number }[] = [
   { name: "A rep training day, by video call", note: "Your reps learn the app, and you learn the dashboard", worth: pricing.trainingValue },
   { name: "Bonus: the Rep Leak Audit", note: "A report on the store visits your reps miss", worth: 1500 },
   { name: "Bonus: call-cycle and route templates", note: "From the merchandising team we built Tickd with", worth: 1000 },
-  { name: "Bonus: 60 days of WhatsApp support from Conrad", note: "A direct line if you get stuck", worth: 5000 },
+  { name: "Bonus: 60 days of WhatsApp support from our team", note: "A direct line if you get stuck", worth: 5000 },
 ];
 
 export const foundingWorth = foundingStack.reduce((sum, b) => sum + b.worth, 0);

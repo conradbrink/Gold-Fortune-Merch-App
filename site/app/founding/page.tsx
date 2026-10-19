@@ -19,7 +19,7 @@ import { founding, growthPlan, rand, site } from "@/lib/site";
 // (it replaced "60 days free, then R749 a month"): a free 14-day pilot, set up
 // for them, then R2,097 a month for 12 months, 40% off the 10-rep plan, with
 // the stack, the bonuses and the guarantee in lib/site.ts and
-// components/founding-package.tsx. Only 10 spots, because Conrad onboards
+// components/founding-package.tsx. Only 10 spots, because our team onboards
 // each one personally; the number left is the owner's, from the database.
 
 export const metadata: Metadata = {
@@ -92,7 +92,7 @@ export default function FoundingPage() {
         <section className="mx-auto grid max-w-6xl gap-6 px-4 pb-8 pt-6 sm:px-6 sm:pb-12 sm:pt-10 lg:grid-cols-2 lg:gap-x-12 lg:gap-y-6">
           <div className="grid content-start gap-4 sm:gap-5 lg:col-start-1 lg:row-start-1">
             <p className="text-sm font-bold uppercase tracking-wide text-teal-700">
-              Only {founding.spots} spots, because Conrad onboards each one personally
+              Only {founding.spots} spots, because our team onboards each one personally
             </p>
             <h1 className="font-display text-[2.4rem] font-extrabold leading-[1.02] tracking-tight text-balance text-teal-900 sm:text-6xl">
               Become one of our Founding {founding.spots} distributors.

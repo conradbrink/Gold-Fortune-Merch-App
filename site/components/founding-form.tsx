@@ -18,9 +18,10 @@ type Option = [label: string, value: string];
 
 // What the business does, in the app's own codes (its industry templates).
 // The site is only for distributors since 19 Oct 2026 (owner), so the form
-// offers that one, chosen already, and sends it as `trade`. The others stay
-// here, and in the app, for when the site speaks to them again: add a code to
-// `OFFERED` to show it.
+// doesn't ask (it asks what they distribute instead) and sends "distribution"
+// as `trade`. The others stay here, and in the app, for when the site speaks
+// to them again: add a code to `OFFERED`, and show the choice with <Chips>
+// again when there is more than one.
 const businessTypes: Option[] = [
   ["Distributor", "distribution"],
   ["Cleaning", "cleaning"],
@@ -153,8 +154,8 @@ export function FoundingForm() {
   const id = useId();
   const [state, setState] = useState<State>({ kind: "idle" });
   const [teamSize, setTeamSize] = useState("");
-  // With one type on offer it is chosen already; there is nothing to pick.
-  const [trade, setTrade] = useState(offeredTypes.length === 1 ? offeredTypes[0][1] : "");
+  // With one type on offer there is nothing to ask: it is that one.
+  const [trade] = useState(offeredTypes.length === 1 ? offeredTypes[0][1] : "");
   const [missing, setMissing] = useState<Partial<Record<Field, string>>>({});
 
   const pickSize = (v: string) => {
@@ -297,7 +298,6 @@ export function FoundingForm() {
           className={input}
         />
       </Labelled>
-      <Chips label="What kind of business is it?" options={offeredTypes} value={trade} onChange={setTrade} />
       <Chips label="How many reps do you have?" options={sizes} value={teamSize} onChange={pickSize} error={problem("teamSize")} />
       <Labelled
         label="WhatsApp number"
