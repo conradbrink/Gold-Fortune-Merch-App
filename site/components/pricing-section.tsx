@@ -103,6 +103,10 @@ export function PricingSection() {
             <h3 className="font-display text-xl font-bold text-teal-900">Add-ons</h3>
             <ul className="grid gap-3">
               <li className="grid gap-0.5">
+                <span className="font-display text-lg font-bold text-teal-900">AI Manager</span>
+                <span className="leading-relaxed text-muted">R599 a month</span>
+              </li>
+              <li className="grid gap-0.5">
                 <span className="font-display text-lg font-bold text-teal-900">HR</span>
                 <span className="leading-relaxed text-muted">R199 a month (up to 5 staff), R499 (6 to 30)</span>
               </li>

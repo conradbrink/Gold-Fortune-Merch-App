@@ -1,6 +1,9 @@
 import {
+  CalendarDays,
   Check,
   CloudOff,
+  FileText,
+  MessageSquareText,
   GraduationCap,
   LayoutDashboard,
   MapPin,
@@ -50,6 +53,7 @@ import { confirmed, founding, growthPlan, proof, rand, site } from "@/lib/site";
 const nav = [
   { href: "#visits", label: "Did they go?" },
   { href: "#sales", label: "Did they sell?" },
+  { href: "#ai", label: "AI Manager" },
   { href: "#offer", label: "Founding offer" },
   { href: "#faq", label: "Questions" },
 ];
@@ -84,6 +88,25 @@ const sales = [
   { icon: Repeat, text: "“Same again”: the store's last order, ready for the rep to repeat and add to." },
   { icon: PackageX, text: "Reps mark the products a store doesn't stock, so you can sell them in." },
   { icon: Target, text: "Each rep's sales against their target, every day." },
+];
+
+// The AI Manager, live on main: Ask answers from the company's own data (the
+// tools in the app's lib/assistant-tools.ts), plans a rep's month of visits
+// (#186), and every report has its summary (/api/insights).
+const ai = [
+  { icon: MessageSquareText, text: "Ask about your stores, reps, sales, orders and stock, and get the answer in seconds." },
+  { icon: CalendarDays, text: "It plans a rep's month of visits, town by town, ready to put on the schedule." },
+  { icon: FileText, text: "Every report comes with a short summary of what stands out." },
+];
+
+// The shelf-photo check (owner, 19 Oct 2026), shown as "Launching soon".
+const shelfCheck = [
+  "It finds your products on the shelf by reading the pack, and counts how many fronts are showing.",
+  "It says where they stand: on the counter, behind the till, in a cabinet, high or low.",
+  "It reads the price on the shelf tag, and lists the competitor brands next to yours.",
+  "It flags products the store usually buys that are missing, and photos that need a retake.",
+  "You confirm each find with one tap, and every correction teaches it.",
+  "Nothing to set up: it works from your product list, with no product photos.",
 ];
 
 // Who does what: the reps work on their phones, the owner runs it from anywhere.
@@ -228,6 +251,7 @@ function Shot({
 // pricing_view (one per visit); the normal prices below it don't send it again.
 const SECTION_EVENTS = {
   offer: "pricing_view",
+  ai: "feature_view",
   visits: "feature_view",
   sales: "feature_view",
   how: "feature_view",
@@ -415,6 +439,52 @@ export default function Home() {
             </div>
             <div className="tk-reveal">
               <CostCalculator />
+            </div>
+          </div>
+        </section>
+
+        {/* 4b. "What do I do about it?" The AI Manager (owner, 19 Oct 2026): Ask
+            and the report summaries are live (#183, #186, /api/insights); the
+            shelf-photo check is built but not live yet (it misses too many
+            products on today's photos), so it carries "Launching soon". */}
+        <section id="ai" className="scroll-mt-28 border-t border-line">
+          <div className={`${wrap} max-w-6xl lg:grid-cols-[1fr_0.8fr] lg:items-center lg:gap-14`}>
+            <div className="grid content-start gap-6 sm:gap-8">
+              <div className="grid gap-3">
+                <p className="tk-reveal text-sm font-bold uppercase tracking-wide text-teal-700">The {site.name} AI Manager</p>
+                <h2 className={h2}>What do I do about it?</h2>
+                <p className={lead}>
+                  No time to read reports? Ask the AI Manager in your own words, and it answers from your own stores, reps and orders.
+                </p>
+              </div>
+              <Points items={ai} badge="bg-teal-900 text-amber-500" />
+              <p className={verdict}>Like a sales manager who has read every report.</p>
+            </div>
+            <Shot
+              src="/demo/dash/site-ask.webp"
+              alt="The AI Manager answering “Which stores have dropped this month?” with four stores, what each ordered this month against last month, and which of them a rep visits on Thursday."
+              width={800}
+              height={1280}
+              className="mx-auto w-full max-w-sm"
+            />
+            <div className="tk-reveal grid gap-5 rounded-2xl bg-teal-950 p-6 text-sand sm:p-8 lg:col-span-2">
+              <div className="grid gap-2">
+                <p className="w-fit rounded-full bg-amber-500 px-3 py-1 text-xs font-bold uppercase tracking-wide text-teal-950">Launching soon</p>
+                <p className="font-display text-2xl font-bold leading-tight text-sand sm:text-3xl">The shelf-photo check</p>
+                <p className="max-w-2xl leading-relaxed text-teal-100">
+                  After each visit, the AI Manager checks the rep&apos;s shelf photos in the background. The rep does nothing extra.
+                </p>
+              </div>
+              <ul className="grid gap-x-8 gap-y-3 sm:grid-cols-2">
+                {shelfCheck.map((r) => (
+                  <li key={r} className="flex items-start gap-3 border-t border-white/15 pt-3 leading-snug">
+                    <span className="mt-0.5 grid size-5 shrink-0 place-items-center rounded-full bg-amber-500 text-teal-950">
+                      <Check className="size-3" strokeWidth={3.5} aria-hidden="true" />
+                    </span>
+                    <span>{r}</span>
+                  </li>
+                ))}
+              </ul>
             </div>
           </div>
         </section>
