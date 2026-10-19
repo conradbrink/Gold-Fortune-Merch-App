@@ -15,6 +15,19 @@
  */
 export const SELF_SERVE_SIGNUP_OPEN = false;
 
+/**
+ * The kinds of work the public sign-up offers, as industry template codes.
+ * Only distributors since 19 Oct 2026 (owner: the sales site is only for
+ * distributors with 3 to 50 reps). Every other template stays in the database
+ * and in the operator's "Add a company"; add its code here to offer it again.
+ */
+export const SIGNUP_TEMPLATE_CODES: readonly string[] = ["distribution"];
+
+/** The templates the public sign-up shows, in the catalogue's own order. */
+export function signupTemplates<T extends { code: string }>(all: readonly T[]): T[] {
+  return all.filter((t) => SIGNUP_TEMPLATE_CODES.includes(t.code));
+}
+
 export type SignupInput = {
   fullName: string;
   email: string;
@@ -47,7 +60,10 @@ export function signupIssues(input: SignupInput): SignupIssue[] {
   if (!/^[A-Za-z]{3}$/.test(input.currencyCode.trim())) add("currencyCode", "Choose your currency.");
   if (!input.timezone.trim()) add("timezone", "Choose your timezone.");
   if (input.templates.length === 0) add("templates", "Choose what kind of work your team does.");
-  else if (input.templates.some((t) => !TEMPLATE_CODE.test(t)) || new Set(input.templates).size !== input.templates.length) {
+  else if (
+    input.templates.some((t) => !TEMPLATE_CODE.test(t) || !SIGNUP_TEMPLATE_CODES.includes(t)) ||
+    new Set(input.templates).size !== input.templates.length
+  ) {
     add("templates", "That choice of work was not understood. Please choose again.");
   }
   return p;

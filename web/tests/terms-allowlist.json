@@ -158,5 +158,60 @@
     "file": "components/platform/visitors-chart.tsx",
     "text": "No visits recorded in this period yet.",
     "reason": "Operator (Control Centre) chart of visits to Tickd's website, not a company's site visits; the job term would be wrong here."
+  },
+  {
+    "file": "app/signup/page.tsx",
+    "text": "Set up for a distributor: stores, reps, orders and visits",
+    "reason": "The public sign-up page has no company yet, so there are no terms to ask; it speaks to distributors because the sales site and the sign-up are only for distributors since 19 Oct 2026 (owner)."
+  },
+  {
+    "file": "app/signup/page.tsx",
+    "text": "We set it all up for you: your reps, your stores and your products.",
+    "reason": "The public sign-up page has no company yet, so there are no terms to ask; it speaks to distributors because the sales site and the sign-up are only for distributors since 19 Oct 2026 (owner)."
+  },
+  {
+    "file": "app/signup/page.tsx",
+    "text": "Made for distributors and their reps, across Southern Africa.",
+    "reason": "The public sign-up page has no company yet, so there are no terms to ask; it speaks to distributors because the sales site and the sign-up are only for distributors since 19 Oct 2026 (owner)."
+  },
+  {
+    "file": "app/signup/page.tsx",
+    "text": "you see every store visit and every order.",
+    "reason": "The public sign-up page has no company yet, so there are no terms to ask; it speaks to distributors because the sales site and the sign-up are only for distributors since 19 Oct 2026 (owner)."
+  },
+  {
+    "file": "app/platform/founding/page.tsx",
+    "text": "Reps",
+    "reason": "Tickd's own words to distributors (its platform screens, its own emails and its application), not a company's screen: there are no company terms here, and Tickd sells only to distributors since 19 Oct 2026 (owner)."
+  },
+  {
+    "file": "lib/acquisition.ts",
+    "text": "How many reps",
+    "reason": "Tickd's own words to distributors (its platform screens, its own emails and its application), not a company's screen: there are no company terms here, and Tickd sells only to distributors since 19 Oct 2026 (owner)."
+  },
+  {
+    "file": "lib/email/brand.ts",
+    "text": "Know which stores your reps visited today.",
+    "reason": "Tickd's own words to distributors (its platform screens, its own emails and its application), not a company's screen: there are no company terms here, and Tickd sells only to distributors since 19 Oct 2026 (owner)."
+  },
+  {
+    "file": "lib/email/brand.ts",
+    "text": "Tickd is the app for distributors and their reps.",
+    "reason": "Tickd's own words to distributors (its platform screens, its own emails and its application), not a company's screen: there are no company terms here, and Tickd sells only to distributors since 19 Oct 2026 (owner)."
+  },
+  {
+    "file": "lib/email/templates.ts",
+    "text": "Then we load your stores, products and reps",
+    "reason": "Tickd's own words to distributors (its platform screens, its own emails and its application), not a company's screen: there are no company terms here, and Tickd sells only to distributors since 19 Oct 2026 (owner)."
+  },
+  {
+    "file": "lib/founding.ts",
+    "text": "reps",
+    "reason": "Tickd's own words to distributors (its platform screens, its own emails and its application), not a company's screen: there are no company terms here, and Tickd sells only to distributors since 19 Oct 2026 (owner)."
+  },
+  {
+    "file": "lib/founding.ts",
+    "text": "Reps",
+    "reason": "Tickd's own words to distributors (its platform screens, its own emails and its application), not a company's screen: there are no company terms here, and Tickd sells only to distributors since 19 Oct 2026 (owner)."
   }
 ]

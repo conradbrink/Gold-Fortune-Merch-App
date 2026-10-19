@@ -1217,6 +1217,7 @@ export type Database = {
           biggest_cost: string | null
           business_name: string
           created_at: string
+          distributes: string | null
           how_run: string | null
           id: string
           marketing_ok: boolean | null
@@ -1241,6 +1242,7 @@ export type Database = {
           biggest_cost?: string | null
           business_name: string
           created_at?: string
+          distributes?: string | null
           how_run?: string | null
           id?: string
           marketing_ok?: boolean | null
@@ -1265,6 +1267,7 @@ export type Database = {
           biggest_cost?: string | null
           business_name?: string
           created_at?: string
+          distributes?: string | null
           how_run?: string | null
           id?: string
           marketing_ok?: boolean | null

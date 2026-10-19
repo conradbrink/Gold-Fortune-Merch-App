@@ -14,7 +14,7 @@ const outfit = Outfit({
 const inter = Inter({ subsets: ["latin"], variable: "--font-inter" });
 
 const description =
-  "Tickd is the all-in-one app for teams that work on site. See who's at work and their hours, where everyone is, the kilometres they drive and every task done with photos. Send clients signed task reports, get alerts when something's off, and quote, invoice and see who owes you. Made for Southern Africa.";
+  "Tickd is the app for distributors with 3 to 50 reps. See which stores each rep visited and when, get orders from their phones straight to your warehouse, photos of the shelf and your promotions, each rep's sales against target, the kilometres they drive, and invoices for every order. Made for Southern Africa.";
 
 export const metadata: Metadata = {
   metadataBase: new URL(site.url),

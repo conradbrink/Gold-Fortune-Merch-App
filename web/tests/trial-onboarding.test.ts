@@ -11,6 +11,8 @@ import {
   signupCompanyPayload,
   signupIssues,
   signupProblems,
+  signupTemplates,
+  SIGNUP_TEMPLATE_CODES,
   type SignupInput,
 } from "@/lib/signup";
 import { DEFAULT_TERMS, type Terms } from "@/lib/terms";
@@ -69,11 +71,11 @@ function valid(): SignupInput {
     fullName: " Thandi Owner ",
     email: " Thandi@Example.com ",
     password: "abcd2345",
-    companyName: " Sparkle Cleaning ",
+    companyName: " Sparkle Distributors ",
     countryCode: "za",
     currencyCode: "zar",
     timezone: "Africa/Johannesburg",
-    templates: ["cleaning"],
+    templates: ["distribution"],
   };
 }
 
@@ -86,7 +88,7 @@ test("a complete sign-up has no problems; each problem names its field", () => {
   assert.deepEqual(signupIssues(empty).map((i) => i.field), [
     "fullName", "email", "password", "companyName", "countryCode", "currencyCode", "timezone", "templates",
   ]);
-  assert.deepEqual(signupProblems({ ...valid(), templates: ["cleaning", "cleaning"] }), [
+  assert.deepEqual(signupProblems({ ...valid(), templates: ["distribution", "distribution"] }), [
     "That choice of work was not understood. Please choose again.",
   ]);
   assert.deepEqual(signupProblems({ ...valid(), templates: ["Robert'); drop"] }), [
@@ -96,7 +98,7 @@ test("a complete sign-up has no problems; each problem names its field", () => {
 
 test("the company payload is trimmed, codes upper-cased, the email lower-cased, and no password in it", () => {
   const p = signupCompanyPayload(valid());
-  assert.equal(p.name, "Sparkle Cleaning");
+  assert.equal(p.name, "Sparkle Distributors");
   assert.equal(p.country_code, "ZA");
   assert.equal(p.currency_code, "ZAR");
   assert.deepEqual(p.owner, { full_name: "Thandi Owner", email: "thandi@example.com" });
@@ -107,6 +109,19 @@ test("the rate-limit key is the first forwarded address", () => {
   assert.equal(clientAddress("203.0.113.7, 10.0.0.1", null), "203.0.113.7");
   assert.equal(clientAddress(null, " 198.51.100.2 "), "198.51.100.2");
   assert.equal(clientAddress("", ""), null);
+});
+
+test("the public sign-up offers distributors only; the other trades stay in the catalogue", () => {
+  const catalogue = [{ code: "cleaning" }, { code: "distribution" }, { code: "security" }, { code: "generic" }];
+  assert.deepEqual(signupTemplates(catalogue), [{ code: "distribution" }]);
+  assert.deepEqual(SIGNUP_TEMPLATE_CODES, ["distribution"]);
+  // A trade the sign-up doesn't show is turned away even if it is posted by hand.
+  assert.deepEqual(signupProblems({ ...valid(), templates: ["cleaning"] }), [
+    "That choice of work was not understood. Please choose again.",
+  ]);
+  assert.deepEqual(signupProblems({ ...valid(), templates: ["distribution", "cleaning"] }), [
+    "That choice of work was not understood. Please choose again.",
+  ]);
 });
 
 test("the sales site's ?industry= picks a trade only if it is one we offer", () => {

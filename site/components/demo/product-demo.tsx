@@ -3,7 +3,6 @@
 import {
   AlertTriangle,
   BatteryMedium,
-  Camera,
   Check,
   ChevronLeft,
   ChevronRight,
@@ -11,24 +10,27 @@ import {
   MapPin,
   Pause,
   Play,
+  ShoppingCart,
   Signal,
+  Tag,
 } from "lucide-react";
 import Image from "next/image";
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { LogoMark } from "@/components/logo";
 import { AndroidNav, at } from "@/components/demo/phone-screens";
 import { ShotScreen } from "@/components/demo/shot-screen";
-import { site } from "@/lib/site";
 
-// The hero demo: one working day, team and office, in about 45 seconds.
-// A clock moves through the day; each scene is one plain sentence. Team
-// scenes show the worker's phone and what shows up on the owner's dashboard
+// The hero demo: one working day of a distributor, reps and office, in about
+// 45 seconds. A clock moves through the day; each scene is one plain sentence.
+// Rep scenes show the rep's phone and what shows up on the owner's dashboard
 // because of it. Office scenes show the whole dashboard window, then move in
 // on the number the sentence is about.
 // The phone plays real screenshots of the staff app (rendered from its
-// Flutter widgets with example data). They were made for a merchandising
-// company, so `Patch` covers the few retail words ("stores", "Store visit",
-// "Take an order") in the screenshot's own colours. Dashboard windows are
+// Flutter widgets with example data, for a merchandising company). On 19 Oct
+// 2026 the example's few non-store words ("Office block", "Clinic", "Daily
+// cleaning checklist") were re-lettered in the files themselves, in Roboto
+// and the screenshot's own colours, and the order screen's footer now says
+// prices come from the store's price list, as the app does. Dashboard windows are
 // real screenshots, never cropped. The demo company priced in pula, so in
 // o7-dashboard and o4-rep-performance each "P" was made an "R" (9 Oct 2026)
 // by drawing R's leg in that letter's own colour and stroke. Owner cards say "Your dashboard", not a
@@ -112,41 +114,8 @@ function Patch({
   );
 }
 
-const HEADER = "#103d3e";
-
-// "3 stores scheduled" under the date, on the day screens.
-const JobsToday = () => (
-  <Patch box={[5, 17.9, 60, 3.3]} bg={HEADER} className="text-[3.7cqw] text-[#9eb4b6]">
-    3 jobs today
-  </Patch>
-);
-// "Store visit" in the title bar, on the job screens.
-const JobTitle = () => (
-  <Patch box={[19, 3.6, 70, 5.4]} bg={HEADER} className="text-[5.3cqw] font-medium text-white">
-    Today&apos;s job
-  </Patch>
-);
-
-// The Android camera the app opens, then the checklist with the photo in it.
-function CameraThenForm() {
-  return (
-    <div className="relative h-full w-full bg-black">
-      <div className="absolute inset-x-0 top-[6%] bottom-[18%] overflow-hidden">
-        <Image src="/demo/washroom.jpg" alt="" fill unoptimized className="object-cover" priority />
-        <span className="tk-flash absolute inset-0 bg-white" style={at(1000)} />
-      </div>
-      <div className="absolute inset-x-0 bottom-[4%] flex items-center justify-center">
-        <span className="relative grid size-14 place-items-center rounded-full border-4 border-white">
-          <span className="size-10 rounded-full bg-white" />
-          <span className="tk-ring absolute left-1/2 top-1/2 size-12 rounded-full border-[3px] border-amber-500 bg-amber-500/25" style={at(750)} />
-        </span>
-      </div>
-      <div className="tk-fade absolute inset-0" style={at(1500)}>
-        <ShotScreen frames={[{ src: shot("05b-photo-taken"), at: 0 }]} />
-      </div>
-    </div>
-  );
-}
+// The page's own background, under the screenshots' bottom edge.
+const SCREEN_BG = "#f6f8fa";
 
 type Tone = "teal" | "green" | "flag";
 
@@ -187,96 +156,105 @@ const beats: Beat[] = [
           ]}
           taps={[{ x: 33, y: 266, w: 294, h: 48, at: 200 }]}
         />
-        <JobsToday />
         {/* Time worked: just started, not the screenshot's 33 minutes. */}
         <Patch box={[16, 37.4, 27, 3.6]} bg="#ffffff" className="tk-fade justify-center text-[4.6cqw] font-bold text-ink" style={at(400)}>
           0m
         </Patch>
       </>
     ),
-    card: { icon: <Clock className="size-4" />, tone: "teal", title: "Thabo started work", body: "06:58 · 3 jobs today", delay: 600 },
+    card: { icon: <Clock className="size-4" />, tone: "teal", title: "Thabo started work", body: "06:58 · 3 stores today", delay: 600 },
   },
   {
     when: "07:31",
-    say: "He checks in when he gets to the first job.",
+    say: "He checks in when he gets to the first store.",
     part: "team",
     ms: 4600,
     images: [shot("03-site-before-checkin"), shot("04-site-checked-in")],
     phone: () => (
-      <>
-        <ShotScreen
-          frames={[
-            { src: shot("03-site-before-checkin"), at: 0 },
-            { src: shot("04-site-checked-in"), at: 1300 },
-          ]}
-          taps={[{ x: 16, y: 309, w: 328, h: 52, at: 900 }]}
-        />
-        <JobTitle />
-        {/* "Take an order" is a sales feature; this is a cleaning job. */}
-        <Patch box={[3, 56, 94, 7.4]} bg="#f6f8fa" className="tk-fade" style={at(1300)} />
-        <Patch box={[0, 93.4, 100, 6.6]} bg="#10b982" className="tk-fade pl-[6.8%] text-[3.9cqw] text-white" style={at(1300)}>
-          Checked in (18m from site).
-        </Patch>
-      </>
+      <ShotScreen
+        frames={[
+          { src: shot("03-site-before-checkin"), at: 0 },
+          { src: shot("04-site-checked-in"), at: 1300 },
+        ]}
+        taps={[{ x: 16, y: 309, w: 328, h: 52, at: 900 }]}
+      />
     ),
-    card: { icon: <MapPin className="size-4" />, tone: "green", title: "Thabo is at Office block", body: "Checked in 18 m from the site", delay: 1900 },
+    card: { icon: <MapPin className="size-4" />, tone: "green", title: "Thabo is at Store 14", body: "Checked in 18 m from the store", delay: 1900 },
   },
   {
-    when: "07:44",
-    say: "He takes the photos the checklist asks for.",
+    when: "07:40",
+    say: "He checks that your promotion is on the shelf.",
     part: "team",
     ms: 4600,
-    phone: CameraThenForm,
-    images: ["/demo/washroom.jpg", shot("05b-photo-taken")],
-    card: { icon: <Camera className="size-4" />, tone: "teal", title: "New photos from Office block", body: "Bathrooms · 07:44", photo: "/demo/washroom.jpg", delay: 2100 },
+    images: [shot("10-order-sent")],
+    phone: () => (
+      <>
+        <ShotScreen frames={[{ src: shot("10-order-sent"), at: 0 }]} taps={[{ x: 30, y: 487, w: 94, h: 38, at: 1000 }]} />
+        {/* The "Order saved" bar belongs to the next scene. */}
+        <Patch box={[0, 90.6, 100, 9.4]} bg={SCREEN_BG} />
+      </>
+    ),
+    card: { icon: <Tag className="size-4" />, tone: "teal", title: "Promotion running at Store 14", body: "2 for 1 on Product A", delay: 1700 },
+  },
+  {
+    when: "07:52",
+    say: "He takes the order on his phone. It goes straight to your warehouse.",
+    part: "team",
+    ms: 4600,
+    images: [shot("09-order"), shot("10-order-sent")],
+    phone: () => (
+      <ShotScreen
+        frames={[
+          { src: shot("09-order"), at: 0 },
+          { src: shot("10-order-sent"), at: 1500 },
+        ]}
+        taps={[{ x: 233, y: 668, w: 115, h: 40, at: 1100 }]}
+      />
+    ),
+    card: { icon: <ShoppingCart className="size-4" />, tone: "teal", title: "New order from Store 14", body: "3 products · 42 shrinks · priced", delay: 2000 },
   },
   {
     when: "09:15",
-    say: "Sipho checks in 1.4 km from the job. Tickd flags it.",
+    say: "Sipho checks in 1.4 km from the store. Tickd flags it.",
     part: "team",
     who: "Sipho",
     ms: 4600,
     images: [shot("03-site-before-checkin")],
-    phone: () => (
-      <>
-        <ShotScreen frames={[{ src: shot("03-site-before-checkin"), at: 0 }]} taps={[{ x: 16, y: 309, w: 328, h: 52, at: 900 }]} />
-        <JobTitle />
-      </>
-    ),
-    card: { icon: <AlertTriangle className="size-4" />, tone: "flag", title: "Off-site check-in", body: "Sipho · 1.4 km from Office block", delay: 1500 },
+    phone: () => <ShotScreen frames={[{ src: shot("03-site-before-checkin"), at: 0 }]} taps={[{ x: 16, y: 309, w: 328, h: 52, at: 900 }]} />,
+    card: { icon: <AlertTriangle className="size-4" />, tone: "flag", title: "Off-site check-in", body: "Sipho · 1.4 km from Store 14", delay: 1500 },
   },
   {
-    when: "13:10",
-    say: "A client asks for a price. You send the quote in a minute.",
+    when: "10:20",
+    say: "Your warehouse confirms the order, then picks and packs it.",
     part: "office",
     ms: 4800,
-    window: { url: "app.tickd.co.za/quotes/QT-317", src: dash("o1-quote"), mark: [1000, 622, 375, 112], focus: [475, 140, 1400, 620], zoom: 1.4 },
-    points: ["Lines from your own price list", "VAT and totals worked out", "A yes turns it into the job"],
+    window: { url: "app.tickd.co.za", src: dash("o7-dashboard"), mark: [1212, 606, 712, 156], zoom: 2 },
+    points: ["To confirm, being picked, packed, out for delivery", "Every order from every rep, in one place"],
   },
   {
     when: "16:30",
-    say: "Thabo clocks out. His hours are already counted.",
+    say: "Thabo clocks out. His kilometres are already worked out.",
     part: "office",
     ms: 4800,
     window: { url: "app.tickd.co.za/tracking/thabo", src: dash("d2-day-history"), mark: [1184, 250, 766, 138], zoom: 2 },
     card: { icon: <Check className="size-4" strokeWidth={3} />, tone: "green", title: "Thabo finished work", body: "8 h 22 m today · 38 km driven", delay: 300 },
-    points: ["Hours from clock-in to clock-out", "Kilometres driven, along the roads"],
+    points: ["His route, store by store", "Kilometres driven, for fuel claims"],
   },
   {
     when: "Next morning",
-    say: "Every morning, the whole business on one screen.",
+    say: "Every morning, your sales and your reps on one screen.",
     part: "office",
     ms: 4800,
-    window: { url: "app.tickd.co.za", src: dash("o7-dashboard"), mark: [400, 306, 923, 194], zoom: 1.85 },
-    points: ["Money in, and money owed to you", "Jobs that need you today", "Each person against their target"],
+    window: { url: "app.tickd.co.za", src: dash("o7-dashboard"), mark: [425, 1010, 712, 180], zoom: 1.8 },
+    points: ["Sales this month, by month", "Each rep against their target", "Orders that need you today"],
   },
   {
     when: "Month end",
-    say: "A report on every person, ready for their review.",
+    say: "A report on every rep, ready for their review.",
     part: "office",
     ms: 4800,
     window: { url: "app.tickd.co.za/reports/staff", src: dash("o4-rep-performance"), mark: [632, 344, 1086, 510], zoom: 1.6 },
-    points: ["Jobs done against jobs planned", "Sites visited, and sites missed", "A score out of 100, ready to print"],
+    points: ["Visits done against visits planned", "Sales, and sales per visit", "A score out of 100, ready to print"],
   },
   {
     when: "Month end",
@@ -284,7 +262,7 @@ const beats: Beat[] = [
     part: "office",
     ms: 4800,
     window: { url: "app.tickd.co.za/invoices", src: dash("d6-invoices-list"), mark: [922, 243, 1028, 114], zoom: 1.75 },
-    points: ["Paid, part paid and overdue", "What each client still owes", "Export it for your bookkeeper"],
+    points: ["Paid, part paid and overdue", "What each customer still owes", "Export it for your bookkeeper"],
   },
 ];
 
@@ -349,7 +327,7 @@ const phoneScenes = beats.flatMap((b, i) => (b.phone ? [i] : []));
 
 const CTA = beats.length;
 const END_MS = 4500;
-const END_LINE = "Your whole team and your whole business, in one place.";
+const END_LINE = "Your reps, your orders and your sales, in one place.";
 const teamCount = beats.filter((b) => b.part === "team").length;
 
 export function ProductDemo() {
@@ -462,7 +440,7 @@ export function ProductDemo() {
             <span className="tk-in flex items-center gap-2 text-sm font-semibold">
               <Clock className="size-4 text-amber-500" />
               <span className="tabular-nums text-amber-500">{beat.when}</span>
-              <span className="text-teal-100/70">· {beat.part === "team" ? "Your team" : "Your office"}</span>
+              <span className="text-teal-100/70">· {beat.part === "team" ? "Your reps" : "Your office"}</span>
             </span>
             <p className="tk-in font-display text-xl font-bold leading-snug text-balance text-sand sm:text-2xl" style={at(80)}>
               {beat.say}
@@ -544,11 +522,11 @@ export function ProductDemo() {
                 {END_LINE}
               </p>
               <a
-                href={site.foundingPath}
+                href="#apply"
                 className="tk-in rounded-full bg-amber-500 px-5 py-3 font-semibold text-teal-950 transition-[background-color,transform] duration-150 ease-out hover:bg-amber-400 active:scale-[0.97]"
                 style={at(450)}
               >
-                Become a founding member
+                Start my free pilot
               </a>
             </div>
           </div>
@@ -591,7 +569,7 @@ export function ProductDemo() {
                 </button>
               ))}
               <span className="text-xs font-semibold text-muted" style={{ gridColumn: `span ${teamCount}` }}>
-                Your team
+                Your reps
               </span>
               <span className="text-xs font-semibold text-muted" style={{ gridColumn: `span ${beats.length - teamCount}` }}>
                 Your office

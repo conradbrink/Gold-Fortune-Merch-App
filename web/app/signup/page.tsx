@@ -3,7 +3,7 @@ import { redirect } from "next/navigation";
 import { Check } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { listTemplates, platformAdminClient, trialDays } from "@/lib/platform";
-import { SELF_SERVE_SIGNUP_OPEN, industryFromQuery } from "@/lib/signup";
+import { SELF_SERVE_SIGNUP_OPEN, industryFromQuery, signupTemplates } from "@/lib/signup";
 import { FOUNDING_OFFER } from "@/lib/founding-offer";
 import { SignupForm } from "@/components/signup/signup-form";
 import { PRODUCT_MARK, PRODUCT_NAME, PRODUCT_TAGLINE } from "@/lib/product";
@@ -25,7 +25,7 @@ import { PRODUCT_MARK, PRODUCT_NAME, PRODUCT_TAGLINE } from "@/lib/product";
 
 export const dynamic = "force-dynamic";
 
-export const metadata = { title: "Become a founding member" };
+export const metadata = { title: "Start your free pilot" };
 
 /** The spots left, one setting only the owner changes; null when it cannot be read. */
 async function spotsLeft(): Promise<number | null> {
@@ -49,20 +49,24 @@ export default async function SignupPage({
   if (user) redirect("/");
 
   const open = SELF_SERVE_SIGNUP_OPEN;
+  // Only the kinds of work the public sign-up offers (distributors, since 19 Oct
+  // 2026); with one on offer it is chosen already.
   const [templates, days, left] = open
-    ? await Promise.all([listTemplates(), trialDays(), Promise.resolve(null)])
+    ? await Promise.all([listTemplates().then(signupTemplates), trialDays(), Promise.resolve(null)])
     : [[], 0, await spotsLeft()];
-  const industry = industryFromQuery((await searchParams).industry, templates.map((t) => t.code));
+  const industry =
+    industryFromQuery((await searchParams).industry, templates.map((t) => t.code)) ??
+    (templates.length === 1 ? templates[0].code : null);
 
   const reasons = open
     ? [
         `Free for ${days} days. No card needed.`,
-        "Your trade's words, checklists and forms, ready when you finish.",
+        "Set up for a distributor: stores, reps, orders and visits, ready when you finish.",
         "Your team works on the Android phones they already have.",
       ]
     : [
-        `Free for ${FOUNDING_OFFER.days} days. No card needed.`,
-        "We set it all up for you: your team, your places and your checklists.",
+        `A free ${FOUNDING_OFFER.pilotDays}-day pilot. No card needed.`,
+        "We set it all up for you: your reps, your stores and your products.",
         "Your team works on the Android phones they already have.",
       ];
 
@@ -86,7 +90,7 @@ export default async function SignupPage({
             ))}
           </ul>
         </div>
-        <p className="text-sm text-[#dcebea]/80">Made for teams that work on site, across Southern Africa.</p>
+        <p className="text-sm text-[#dcebea]/80">Made for distributors and their reps, across Southern Africa.</p>
       </aside>
 
       <main className="flex justify-center px-4 py-8 sm:px-6 sm:py-12 lg:items-center lg:py-16">
@@ -110,11 +114,11 @@ export default async function SignupPage({
                     : `The Founding ${FOUNDING_OFFER.spots}`}
                 </p>
                 <h1 className="text-3xl font-extrabold leading-tight tracking-tight text-[#0f3d3e] text-balance sm:text-4xl">
-                  Become a founding member
+                  Start your free {FOUNDING_OFFER.pilotDays}-day pilot
                 </h1>
                 <p className="text-lg leading-relaxed text-[#2f4a47] text-pretty">
-                  We are taking on our first founding businesses to run {PRODUCT_NAME} free for {FOUNDING_OFFER.days} days. We set it
-                  all up for you, and you see your team&apos;s whole day with proof of every task.
+                  We are taking on our first {FOUNDING_OFFER.spots} founding distributors. We set {PRODUCT_NAME} up for you, your pilot is
+                  free for {FOUNDING_OFFER.pilotDays} days, and you see every store visit and every order.
                 </p>
               </div>
 
@@ -134,11 +138,11 @@ export default async function SignupPage({
                   href={FOUNDING_OFFER.applyUrl}
                   className="flex min-h-12 items-center justify-center rounded-full bg-[#f5a524] px-7 py-3 text-lg font-bold text-[#0f3d3e] transition-[background-color,transform] duration-150 ease-out hover:bg-[#ffb73a] active:scale-[0.97]"
                 >
-                  Apply to be a founding member
+                  Start my free {FOUNDING_OFFER.pilotDays}-day pilot
                 </a>
                 <p className="text-center text-sm font-semibold text-[#0f3d3e]">
-                  Applications close {FOUNDING_OFFER.closes}. After the free days it is R{FOUNDING_OFFER.price} a month for{" "}
-                  {FOUNDING_OFFER.priceMonths} months.
+                  After the pilot it is R{FOUNDING_OFFER.price.toLocaleString("en-US")} a month for {FOUNDING_OFFER.priceMonths} months,{" "}
+                  {FOUNDING_OFFER.percentOff}% off.
                 </p>
               </div>
 

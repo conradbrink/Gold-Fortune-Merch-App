@@ -202,6 +202,7 @@ test("the form report: boxes reached and answered, where people stopped, and wha
     ["first_name", 1, 1],
     ["last_name", 1, 0],
     ["business_name", 0, 0],
+    ["distributes", 0, 0],
     ["team_size", 0, 0],
     ["whatsapp", 1, 1],
     ["email", 1, 0],

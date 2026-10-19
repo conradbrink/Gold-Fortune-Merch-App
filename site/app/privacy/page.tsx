@@ -34,8 +34,9 @@ export default function PrivacyPage() {
           that business, which is responsible for it. We process it for them, on their instructions.
         </li>
         <li>
-          Our data protection and information officer
-          {legal.informationOfficer ? ` is ${legal.informationOfficer} and` : ""} can be reached at{" "}
+          {legal.informationOfficer
+            ? `Our data protection and information officer is ${legal.informationOfficer} and can be reached at `
+            : "Our team handles data protection and privacy requests, and can be reached at "}
           <a href={`mailto:${site.email}`}>{site.email}</a>.
         </li>
       </ul>

@@ -12,8 +12,8 @@ export default function RefundsPage() {
     <LegalPage title="Cancellations and refunds">
       <h2>Try it first</h2>
       <p>
-        Every Founding member starts with {founding.days} days free, with no card needed, so you can see whether{" "}
-        {site.name} works for your team before you pay anything.
+        Every Founding distributor starts with a free {founding.pilotDays}-day pilot, with no card needed, so you can see
+        whether {site.name} works for your reps before you pay anything.
       </p>
 
       <h2>Cancelling</h2>
@@ -27,7 +27,11 @@ export default function RefundsPage() {
       <h2>Refunds</h2>
       <ul>
         <li>We don&apos;t refund part of a month or year you have already paid for, or the setup fee once your account has been set up.</li>
-        <li>Fewer users take effect from your next renewal, so there is nothing to refund when you remove users.</li>
+        <li>A smaller plan takes effect from your next renewal, so there is nothing to refund when you move down.</li>
+        <li>
+          Founding distributors have our {founding.guaranteeDays}-day promise: if your reps aren&apos;t visiting more stores, we
+          refund your first month. The conditions are in <a href="/terms#guarantee">our terms</a>.
+        </li>
         <li>If we charged you in error, or charged you twice, we refund the full amount.</li>
         <li>
           If South Africa&apos;s Electronic Communications and Transactions Act gives you a cooling-off right as a

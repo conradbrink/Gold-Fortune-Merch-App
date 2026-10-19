@@ -1,12 +1,56 @@
 "use client";
 
-import { Cctv, FileCheck2, ShieldCheck, ShoppingCart, SprayCan, Sprout, Wrench, Zap } from "lucide-react";
+import { Cctv, CloudOff, LayoutDashboard, MapPin, Route, ShieldCheck, ShoppingCart, SprayCan, Sprout, Tag, Wrench, Zap } from "lucide-react";
 import { useRef, useState } from "react";
 import { PhoneShot } from "@/components/phone-shot";
 
-// Each trade shows the staff-app screen closest to its line. The screens
-// come from one example company, so they share its places and names.
-const trades = [
+type Tab = { name: string; icon: typeof Cctv; line: string; screen: string; alt: string };
+
+// What a rep does at every store, each with the staff-app screen that shows it.
+// The site is only for distributors since 19 Oct 2026 (owner), so these are
+// the tabs on the page. The screens come from one example company and share
+// its stores and names; public/demo/app has them at full size.
+export const storeTabs: Tab[] = [
+  {
+    name: "Today's stores",
+    icon: Route,
+    line: "Each rep sees the stores they have to visit today. One tap starts their day.",
+    screen: "02-day-started",
+    alt: "The rep's app after starting the day: the workday is running, with today's three stores listed underneath.",
+  },
+  {
+    name: "Check in",
+    icon: MapPin,
+    line: "The check-in records the time, and how far the rep was from the store.",
+    screen: "04-site-checked-in",
+    alt: "A store visit on the phone: checked in at 7:31, 18 m from the store, with the shelf check to do before checking out.",
+  },
+  {
+    name: "Shelf and promotions",
+    icon: Tag,
+    line: "Reps check that your promotions are on the shelf, and take photos of the shelf.",
+    screen: "10-order-sent",
+    alt: "The promotions at Store 14 on the phone: 2 for 1 on Product A is marked as running.",
+  },
+  {
+    name: "Take the order",
+    icon: ShoppingCart,
+    line: "Reps take the order on the phone, and it goes straight to your warehouse. Prices come from each store's own price list.",
+    screen: "09-order",
+    alt: "Taking an order on the phone: each product in shrinks, with the units worked out.",
+  },
+  {
+    name: "No signal",
+    icon: CloudOff,
+    line: "No signal in the store? The visit and the order are saved, and sent as soon as there's signal.",
+    screen: "07-offline",
+    alt: "The rep's app with no signal: 3 changes waiting to send, and the day carries on.",
+  },
+];
+
+// The other trades the app is set up for, kept for when the site speaks to
+// them again (owner, 19 Oct 2026: "we might use them in the future"). Not shown.
+export const otherTrades: Tab[] = [
   {
     name: "Cleaning",
     icon: SprayCan,
@@ -58,22 +102,22 @@ const trades = [
   },
 ];
 
-// On a phone the trades are one row you swipe sideways (no ragged wrap); from
+// On a phone the tabs are one row you swipe sideways (no ragged wrap); from
 // md up they are a list down the left with the answer beside it. ARIA tabs:
 // arrow keys move and select, Home/End jump, only the selected tab is in the
 // Tab order. The answer fades in on a click, never on a key (design rule:
 // keyboard actions are not animated).
-export function TradeTabs() {
+export function TradeTabs({ tabs: trades = storeTabs, label = "At every store" }: { tabs?: Tab[]; label?: string }) {
   const [active, setActive] = useState(0);
   const [animate, setAnimate] = useState(false);
-  const tabs = useRef<(HTMLButtonElement | null)[]>([]);
+  const tabRefs = useRef<(HTMLButtonElement | null)[]>([]);
   const t = trades[active];
   const Icon = t.icon;
 
   function select(i: number, viaKey: boolean) {
     setAnimate(!viaKey);
     setActive(i);
-    tabs.current[i]?.scrollIntoView({ block: "nearest", inline: "nearest" });
+    tabRefs.current[i]?.scrollIntoView({ block: "nearest", inline: "nearest" });
   }
 
   function onKeyDown(e: React.KeyboardEvent, i: number) {
@@ -87,14 +131,14 @@ export function TradeTabs() {
     if (next === null) return;
     e.preventDefault();
     select(next, true);
-    tabs.current[next]?.focus();
+    tabRefs.current[next]?.focus();
   }
 
   return (
     <div className="grid gap-4 md:grid-cols-[15rem_1fr] md:gap-6">
       <div
         role="tablist"
-        aria-label="Trades"
+        aria-label={label}
         className="-mx-4 -my-1.5 flex snap-x snap-mandatory scroll-px-4 gap-2 overflow-x-auto px-4 py-1.5 [mask-image:linear-gradient(to_right,black_calc(100%-2.5rem),transparent)] [scrollbar-width:none] md:mx-0 md:my-0 md:flex-col md:overflow-visible md:p-0 md:[mask-image:none] [&::-webkit-scrollbar]:hidden"
       >
         {trades.map((tr, i) => {
@@ -107,7 +151,7 @@ export function TradeTabs() {
               role="tab"
               id={`trade-tab-${i}`}
               ref={(el) => {
-                tabs.current[i] = el;
+                tabRefs.current[i] = el;
               }}
               aria-selected={on}
               aria-controls="trade-panel"
@@ -143,8 +187,8 @@ export function TradeTabs() {
             </p>
           </div>
           <p className="flex items-start gap-2.5 border-t border-line pt-4 font-medium leading-relaxed text-ink">
-            <FileCheck2 className="mt-0.5 size-5 shrink-0 text-teal-700" strokeWidth={2.25} aria-hidden="true" />
-            Whatever your trade, every job ends with a signed report you can send straight to your client.
+            <LayoutDashboard className="mt-0.5 size-5 shrink-0 text-teal-700" strokeWidth={2.25} aria-hidden="true" />
+            Every visit and every order shows up on your dashboard, with the time and the place.
           </p>
         </div>
         {/* Every screen is mounted once and stacked, and the chosen one shows:

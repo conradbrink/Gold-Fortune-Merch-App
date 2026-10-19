@@ -129,15 +129,15 @@ export function ProofSlides({ applyHref }: { applyHref: string }) {
           <div key="you" className="tk-slide grid content-start gap-3" role="group" aria-roledescription="slide" aria-label={`${SLIDES} of ${SLIDES}`}>
             <p className="font-display text-2xl font-extrabold leading-tight text-amber-500">What could this mean for you?</p>
             <ul className="grid gap-1.5 text-lg leading-snug">
-              <li>More visits in the same day.</li>
-              <li>More of your area covered.</li>
-              <li>Proof for every client, with the time, the place and photos.</li>
+              <li>More store visits from the same reps.</li>
+              <li>More of your stores served.</li>
+              <li>Proof of every visit, with the time, the place and photos of the shelf.</li>
             </ul>
             <a
               href={applyHref}
               className="mt-1 w-fit rounded-full bg-amber-500 px-5 py-2.5 font-semibold text-teal-950 transition-[background-color,transform] duration-150 ease-out hover:bg-amber-400 active:scale-[0.97]"
             >
-              Apply for a spot
+              Start my free pilot
             </a>
           </div>
         )}

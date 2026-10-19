@@ -15,9 +15,10 @@ export function emailAssetUrl(file: string): string {
 export const TICKD_LOGO_FILE = "tickd-logo-email.png";
 
 export const PROMO = {
-  headline: "Know what your team got done today.",
-  body: "Tickd is the app for businesses whose staff work out on site. See where your people are, get photo proof of every task, and send quotes and invoices, all in one place.",
-  cta: "Become a Tickd founding member",
+  // For distributors only since 19 Oct 2026, like the sales site.
+  headline: "Know which stores your reps visited today.",
+  body: "Tickd is the app for distributors and their reps. See every store visit, take orders on the phone, and invoice every order, all in one place.",
+  cta: "Start a free Tickd pilot",
   /** The Founding offer's page, with a tag that says where the visit came from. */
   url: `${TICKD_SITE_URL}/founding?utm_source=client-email&utm_medium=email&utm_campaign=sent-with-tickd`,
 } as const;

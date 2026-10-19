@@ -1,10 +1,13 @@
 import { ProofSlides } from "@/components/proof-slides";
+import { proof } from "@/lib/site";
 
-// "Real results": what Gold Fortune, one of our clients, got from Tickd, on the main page under "What do you need to start?"
+// "Real results": what Gold Fortune, a distributor with 3 reps, got from Tickd, on the main page under "What do you need to start?"
 // and on /founding. The numbers are real, from Tickd's own data (see `proof`
 // in lib/site.ts for exactly what is compared). There is no "before Tickd"
 // data, so the first two weeks of use are the "before". The owner asked for
 // the heading and the slides only (10 Oct 2026): no intro, no small print.
+// Gold Fortune is the owner's own family business, so the heading says what it
+// is (a distributor), never "one of our clients" (19 Oct 2026).
 
 export function ProofSection({ id, applyHref }: { id?: string; applyHref: string }) {
   return (
@@ -16,7 +19,7 @@ export function ProofSection({ id, applyHref }: { id?: string; applyHref: string
             id="proof-title"
             className="font-display text-3xl font-bold leading-[1.1] tracking-tight text-balance text-teal-900 sm:text-4xl"
           >
-            See what it did for one of our clients.
+            See what it did for a distributor with {proof.reps} reps.
           </h2>
         </div>
         <ProofSlides applyHref={applyHref} />
