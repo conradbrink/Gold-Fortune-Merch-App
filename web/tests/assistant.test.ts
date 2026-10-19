@@ -18,7 +18,7 @@ import {
   refusalText,
   type AssistantContext,
 } from "@/lib/assistant-prompt";
-import { decodeEvents, encodeEvent, history, parseConversation, MAX_QUESTION_CHARS } from "@/lib/assistant-stream";
+import { decodeEvents, encodeEvent, history, parseConversation, questionsLeftFrom, MAX_QUESTION_CHARS } from "@/lib/assistant-stream";
 import { parseAnswer } from "@/lib/assistant-text";
 
 const everything = toModuleSet({
@@ -40,11 +40,11 @@ const cleaning = parseTerms({
   job: { one: "Job", many: "Jobs" },
 });
 
-const names = (perms: string[], modules = everything) =>
-  toolsFor(toPermissionSet(perms), modules).map((t) => t.name).sort();
+const names = (perms: string[], modules = everything, manager = false) =>
+  toolsFor(toPermissionSet(perms), modules, manager).map((t) => t.name).sort();
 
 test("an administrator at a company with every module gets every lookup", () => {
-  assert.deepEqual(names(["admin"]), TOOLS.map((t) => t.name).sort());
+  assert.deepEqual(names(["admin"], everything, true), TOOLS.map((t) => t.name).sort());
 });
 
 test("each person gets only the lookups for pages they may open", () => {
@@ -59,12 +59,25 @@ test("each person gets only the lookups for pages they may open", () => {
   assert.deepEqual(names([]), []);
 });
 
+test("planning visits is for managers only, because only they can save a plan", () => {
+  // Field operations without the manager role: the schedule page, not the writes.
+  assert.deepEqual(names(["field_ops"], everything, false), ["site_visits"]);
+  assert.deepEqual(names(["field_ops"], everything, true), ["draft_visit_plan", "site_visits", "staff_sites"]);
+  assert.ok(!names(["admin"], everything, false).includes("draft_visit_plan"));
+});
+
 test("a company without a module gets none of its lookups, whoever asks", () => {
   // Core only: finding stores and the visit history still work.
-  assert.deepEqual(names(["admin"], coreOnly), ["find_sites", "site_visits", "sites_not_visited"]);
+  assert.deepEqual(names(["admin"], coreOnly, true), [
+    "draft_visit_plan",
+    "find_sites",
+    "site_visits",
+    "sites_not_visited",
+    "staff_sites",
+  ]);
   // No Distribution: no sales, orders or reorder list, even for an administrator.
   const noDistribution = toModuleSet({ reports: true, warehouse: true, invoicing: true });
-  const offered = names(["admin"], noDistribution);
+  const offered = names(["admin"], noDistribution, true);
   for (const n of ["sales", "orders", "sites_due_for_order"] as const) assert.ok(!offered.includes(n), n);
 });
 
@@ -88,7 +101,7 @@ test("lookups, examples and the refusal speak the company's words", () => {
   assert.match(sales.description(cleaning), /cleaner/);
   assert.doesNotMatch(sales.description(cleaning), /\brep\b|\bstore\b/);
 
-  const examples = exampleQuestions(toolsFor(toPermissionSet(["admin"]), everything), cleaning);
+  const examples = exampleQuestions(toolsFor(toPermissionSet(["admin"]), everything, true), cleaning);
   assert.equal(examples.length, 4);
   assert.ok(examples.every((q) => !/\b(store|rep)s?\b/i.test(q)), examples.join(" | "));
 
@@ -111,7 +124,7 @@ test("the assistant is told the rules that keep it on the business", () => {
     currency: "BWP",
     currencySymbol: "P",
   };
-  const tools = toolsFor(toPermissionSet(["warehouse"]), everything);
+  const tools = toolsFor(toPermissionSet(["warehouse"]), everything, false);
   const text = assistantInstructions(ctx, tools);
   assert.match(text, /Monday,? 19 October 2026/);
   assert.match(text, /Use these words in your answers/);
@@ -251,7 +264,7 @@ async function run(guard: Guard, events: Record<string, unknown>[]) {
     model: "m",
     guardModel: "m",
     ctx: { terms: gf, companyName: "Gold Fortune", merchandising: true, today: "2026-10-19", timeZone: "UTC", currency: "BWP", currencySymbol: "P" },
-    tools: toolsFor(toPermissionSet(["admin"]), everything),
+    tools: toolsFor(toPermissionSet(["admin"]), everything, true),
     turns: [{ role: "user", text: "Sales this month?" }],
     run: async () => ({ model: {} }),
     send: (e) => sent.push(e),
@@ -291,4 +304,27 @@ test("an answer stopped at the length limit says it was cut short", async () => 
   ]);
   const text = sent.filter((e) => e.type === "text").map((e) => (e as { text: string }).text).join("");
   assert.match(text, /cut short/);
+});
+
+test("questions left come from this window's counters only", () => {
+  const now = Date.parse("2026-10-19T15:20:00Z");
+  const left = questionsLeftFrom(
+    [
+      { bucket: "assistant_hour", window_start: "2026-10-19T15:00:00+00:00", count: 4 },
+      { bucket: "assistant_hour", window_start: "2026-10-19T14:00:00+00:00", count: 10 },
+      { bucket: "assistant_day", window_start: "2026-10-19T00:00:00+00:00", count: 37 },
+    ],
+    now
+  );
+  // 6 left this hour, but only 3 today: the day caps the hour.
+  assert.deepEqual(left, { hour: 3, day: 3 });
+  assert.deepEqual(questionsLeftFrom([], now), { hour: 10, day: 40 });
+});
+
+test("a saved plan is in the context, so the assistant knows it was saved", () => {
+  const turns = history([
+    { role: "user", text: "Francistown first" },
+    { role: "assistant", text: "Draft done.", planSaved: { added: 68, already: 2 } },
+  ]);
+  assert.match(turns[1].text, /pressed Add to schedule: 68 added, 2 were already there/);
 });

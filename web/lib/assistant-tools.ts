@@ -30,7 +30,9 @@ export type ToolName =
   | "stock"
   | "hours_worked"
   | "team_performance"
-  | "money_owed";
+  | "money_owed"
+  | "staff_sites"
+  | "draft_visit_plan";
 
 type JsonSchema = Record<string, unknown>;
 
@@ -43,6 +45,12 @@ export type ToolSpec = {
   parameters: (t: Terms) => JsonSchema;
   /** Shown while it runs: "Looking up sales". */
   working: (t: Terms) => string;
+  /**
+   * Only for managers. Planning writes the schedule, and the schedule's tables
+   * still let only `current_role() = 'manager'` write (see `use-is-manager.ts`);
+   * offering it to anybody else would draft a plan they could never save.
+   */
+  managerOnly?: boolean;
 };
 
 const DATE = "A date as YYYY-MM-DD, in the company's time zone.";
@@ -196,6 +204,53 @@ export const TOOLS: readonly ToolSpec[] = [
     working: (t) => `Looking up how the ${lower(t.staff.many)} did`,
   },
   {
+    name: "staff_sites",
+    page: "/schedule",
+    managerOnly: true,
+    description: (t) =>
+      `The ${lower(t.site.many)} assigned to one ${lower(t.staff.one)}, by town: how many in each town and how ` +
+      `often each wants a ${lower(t.job.one)}, plus what is already on their schedule for the month and the company's ` +
+      `${lower(t.site.many)}-a-day and working days. Use it first when planning someone's ${lower(t.job.many)}.`,
+    parameters: (t) =>
+      object({
+        staff_name: { type: "string", description: `The ${lower(t.staff.one)}'s name, or part of it.` },
+        month: { type: "string", description: "The month to plan, as YYYY-MM." },
+      }),
+    working: (t) => `Looking up their ${lower(t.site.many)}`,
+  },
+  {
+    name: "draft_visit_plan",
+    page: "/schedule",
+    managerOnly: true,
+    description: (t) =>
+      `Drafts a month of ${lower(t.job.many)} for one ${lower(t.staff.one)} from their assigned ` +
+      `${lower(t.site.many)}: the towns in order with how many days in each, days off, and ` +
+      `${lower(t.site.many)} a day. It is only a draft: the person saves it with the button under it.`,
+    parameters: (t) =>
+      object({
+        staff_id: { type: "string", description: `The ${lower(t.staff.one)}'s id, from staff_sites.` },
+        month: { type: "string", description: "The month, as YYYY-MM." },
+        towns: {
+          type: "array",
+          description: "The towns in the order to go to them, each with how many working days to spend there.",
+          items: object({
+            town: { type: "string", description: "The town, as staff_sites names it." },
+            days: { type: "integer", description: "Working days in that town." },
+          }),
+        },
+        days_off: {
+          type: "array",
+          description: "Days they won't work, as YYYY-MM-DD. Empty for none.",
+          items: { type: "string" },
+        },
+        sites_per_day: {
+          type: ["integer", "null"],
+          description: `${t.site.many} a day, or null for the company's number.`,
+        },
+      }),
+    working: () => "Drafting the plan",
+  },
+  {
     name: "money_owed",
     page: "/owed",
     description: (t) =>
@@ -211,13 +266,22 @@ export function toolSpec(name: string): ToolSpec | undefined {
 }
 
 /** Whether this person, at this company, may have the assistant run a lookup. */
-export function toolAllowed(spec: ToolSpec, permissions: PermissionSet, modules: ModuleSet): boolean {
-  return canAccessPath(permissions, spec.page) && canReachPath(modules, spec.page);
+export function toolAllowed(
+  spec: ToolSpec,
+  permissions: PermissionSet,
+  modules: ModuleSet,
+  isManager: boolean
+): boolean {
+  return (
+    canAccessPath(permissions, spec.page) &&
+    canReachPath(modules, spec.page) &&
+    (!spec.managerOnly || isManager)
+  );
 }
 
 /** The lookups this person may use. Empty means the assistant has nothing to offer them. */
-export function toolsFor(permissions: PermissionSet, modules: ModuleSet): ToolSpec[] {
-  return TOOLS.filter((spec) => toolAllowed(spec, permissions, modules));
+export function toolsFor(permissions: PermissionSet, modules: ModuleSet, isManager: boolean): ToolSpec[] {
+  return TOOLS.filter((spec) => toolAllowed(spec, permissions, modules, isManager));
 }
 
 /**
@@ -229,6 +293,7 @@ export function toolsFor(permissions: PermissionSet, modules: ModuleSet): ToolSp
 export function exampleQuestions(tools: readonly ToolSpec[], t: Terms): string[] {
   const has = (n: ToolName) => tools.some((s) => s.name === n);
   const out: string[] = [];
+  if (has("draft_visit_plan")) out.push(`Help me plan a ${lower(t.staff.one)}'s ${lower(t.job.many)} for next month`);
   if (has("sales")) out.push(`What are sales this month per ${lower(t.staff.one)}?`);
   if (has("sites_due_for_order")) out.push(`Which ${lower(t.site.many)} are due for an order?`);
   if (has("sites_not_visited")) out.push(`Which ${lower(t.site.many)} haven't been visited in 30 days?`);

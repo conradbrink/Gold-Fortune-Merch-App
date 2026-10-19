@@ -2,6 +2,19 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/lib/supabase/types";
 import type { ExportColumn, ExportSheet } from "@/lib/export";
 import type { ToolName } from "@/lib/assistant-tools";
+import type { PlanDraft } from "@/lib/assistant-stream";
+import { fetchOrgSettings } from "@/lib/org-settings";
+import {
+  NO_TOWN,
+  buildVisitPlan,
+  isoWeekday,
+  townKey,
+  townLabel,
+  visitsWanted,
+  workingDates,
+  type PlanFrequency,
+  type PlanSite,
+} from "@/lib/visit-plan";
 import { companyMidnight, companyTime } from "@/lib/company-time";
 import { fetchStoreReorder, groupLabel, orderRhythm, reorderStatus, describeDue } from "@/lib/store-reorder";
 import { fetchRepScorecard, formatDuration } from "@/lib/reports";
@@ -36,7 +49,7 @@ export type ToolEnv = {
   today: string;
 };
 
-export type ToolResult = { model: unknown; sheet?: ExportSheet };
+export type ToolResult = { model: unknown; sheet?: ExportSheet; plan?: PlanDraft };
 
 /** Rows the assistant reads from one lookup. The table shows them all. */
 const MODEL_ROWS = 40;
@@ -843,6 +856,274 @@ async function moneyOwed(_args: Record<string, unknown>, env: ToolEnv): Promise<
   };
 }
 
+// ---------------------------------------------------------------- planning
+
+/** The month to plan: from tomorrow (or the 1st) to its last day, company time. */
+function planMonth(value: unknown, env: ToolEnv): { month: string; from: string; to: string; label: string } {
+  if (typeof value !== "string" || !/^\d{4}-\d{2}$/.test(value)) {
+    throw new LookupError("month must be written as YYYY-MM.");
+  }
+  const first = `${value}-01`;
+  const next = new Date(`${first}T00:00:00Z`);
+  next.setUTCMonth(next.getUTCMonth() + 1);
+  const last = addDays(next.toISOString().slice(0, 10), -1);
+  const tomorrow = addDays(env.today, 1);
+  if (last < tomorrow) throw new LookupError("That month is over. Plan this month or a later one.");
+  const limit = new Date(`${env.today.slice(0, 7)}-01T00:00:00Z`);
+  limit.setUTCMonth(limit.getUTCMonth() + 3);
+  if (first >= limit.toISOString().slice(0, 10)) throw new LookupError("Plan up to three months ahead.");
+  return {
+    month: value,
+    from: first < tomorrow ? tomorrow : first,
+    to: last,
+    label: new Date(`${first}T12:00:00Z`).toLocaleDateString("en-GB", { month: "long", year: "numeric", timeZone: "UTC" }),
+  };
+}
+
+type Person = { id: string; full_name: string | null };
+
+/** The person's assigned, active sites, as the planner wants them. */
+async function assignedSites(env: ToolEnv, staffId: string): Promise<PlanSite[]> {
+  type Row = {
+    store_id: string;
+    stores:
+      | { name: string; city: string | null; active: boolean; visit_frequency: string; lat: number | null; lng: number | null }
+      | { name: string; city: string | null; active: boolean; visit_frequency: string; lat: number | null; lng: number | null }[]
+      | null;
+  };
+  const { rows } = await allRows<Row>((a, b) =>
+    env.supabase
+      .from("store_assignments")
+      .select("id, store_id, stores(name, city, active, visit_frequency, lat, lng)")
+      .eq("rep_id", staffId)
+      .order("id")
+      .range(a, b)
+  );
+  return rows
+    .map((r) => ({ id: r.store_id, store: one(r.stores) }))
+    .filter((r) => r.store?.active)
+    .map(({ id, store }) => ({
+      id,
+      name: store!.name,
+      town: store!.city,
+      frequency: (["weekly", "biweekly", "monthly"].includes(store!.visit_frequency)
+        ? store!.visit_frequency
+        : "weekly") as PlanFrequency,
+      lat: store!.lat,
+      lng: store!.lng,
+    }));
+}
+
+/** What is already on the person's schedule between two days. */
+async function plannedVisits(env: ToolEnv, staffId: string, from: string, to: string) {
+  const { rows } = await allRows<{ id: string; store_id: string; scheduled_date: string; source: string }>((a, b) =>
+    env.supabase
+      .from("routes")
+      .select("id, store_id, scheduled_date, source")
+      .eq("rep_id", staffId)
+      .gte("scheduled_date", from)
+      .lte("scheduled_date", to)
+      .order("id")
+      .range(a, b)
+  );
+  return rows;
+}
+
+const FREQUENCY_WORDS: Record<PlanFrequency, string> = {
+  weekly: "Every week",
+  biweekly: "Every second week",
+  monthly: "Once a month",
+};
+
+async function staffSites(args: Record<string, unknown>, env: ToolEnv): Promise<ToolResult> {
+  const t = env.terms;
+  const name = searchText(args.staff_name);
+  if (!name) throw new LookupError("Give the person's name.");
+  const m = planMonth(args.month, env);
+
+  const { data: people, error } = await env.supabase
+    .from("profiles")
+    .select("id, full_name")
+    .eq("is_active", true)
+    .ilike("full_name", `%${name}%`)
+    .order("full_name")
+    .limit(10);
+  fail(error);
+  const found = (people ?? []) as Person[];
+  if (found.length === 0) throw new LookupError(`Nobody's name matches "${name}". Check the spelling.`);
+  if (found.length > 1) {
+    return { model: { several_match: found.map((p) => ({ id: p.id, name: p.full_name })), note: "Ask which one." } };
+  }
+  const person = found[0];
+
+  const [sites, settings, planned] = await Promise.all([
+    assignedSites(env, person.id),
+    fetchOrgSettings(env.supabase),
+    plannedVisits(env, person.id, m.from, m.to),
+  ]);
+  const dates = workingDates(m.from, m.to, settings.workingDays, []);
+  // Weeks with working days in them: a weekly site wants one visit in each.
+  const weeks = new Set(dates.map((d) => addDays(d, 1 - isoWeekday(d)))).size;
+
+  const towns = new Map<string, { town: string; sites: number; weekly: number; biweekly: number; monthly: number; visits: number }>();
+  for (const s of sites) {
+    const key = townKey(s.town);
+    const row = towns.get(key) ?? { town: townLabel(s.town), sites: 0, weekly: 0, biweekly: 0, monthly: 0, visits: 0 };
+    row.sites++;
+    row[s.frequency]++;
+    row.visits += visitsWanted(s.frequency, weeks);
+    towns.set(key, row);
+  }
+  const byTown = [...towns.values()]
+    .sort((a, b) => b.sites - a.sites)
+    .map((r) => ({
+      town: r.town,
+      sites: r.sites,
+      weekly: r.weekly,
+      every_second_week: r.biweekly,
+      monthly: r.monthly,
+      visits_if_there_every_week: r.visits,
+      days_needed_if_there_every_week: Math.ceil(r.visits / settings.storesPerDay),
+    }));
+
+  return {
+    model: {
+      staff: { id: person.id, name: person.full_name },
+      month: m.label,
+      plannable: { from: niceDay(m.from), to: niceDay(m.to), working_days: dates.length, weeks },
+      sites_per_day: settings.storesPerDay,
+      working_weekdays: settings.workingDays,
+      assigned_sites: sites.length,
+      towns: byTown,
+      already_planned: {
+        visits: planned.length,
+        days: new Set(planned.map((p) => p.scheduled_date)).size,
+        from_call_cycle: planned.filter((p) => p.source === "cycle").length,
+        one_off: planned.filter((p) => p.source !== "cycle").length,
+      },
+      town_without_name: NO_TOWN,
+    },
+    sheet: sheet(
+      `${person.full_name ?? t.staff.one}'s ${lower(t.site.many)}`,
+      "assigned",
+      [`${sites.length} assigned`],
+      [
+        { header: "Town", key: "town" },
+        { header: t.site.one, key: "site" },
+        { header: "How often", key: "how_often" },
+      ],
+      sites
+        .map((s) => ({ town: townLabel(s.town), site: s.name, how_often: FREQUENCY_WORDS[s.frequency] }))
+        .sort((a, b) => a.town.localeCompare(b.town) || a.site.localeCompare(b.site))
+    ),
+  };
+}
+
+async function draftVisitPlan(args: Record<string, unknown>, env: ToolEnv): Promise<ToolResult> {
+  const t = env.terms;
+  const staffId = optionalId(args.staff_id, "staff_id");
+  if (!staffId) throw new LookupError("staff_id is needed, from staff_sites.");
+  const m = planMonth(args.month, env);
+
+  const towns = (Array.isArray(args.towns) ? args.towns : [])
+    .slice(0, 30)
+    .map((x) => x as { town?: unknown; days?: unknown })
+    .filter((x) => typeof x.town === "string" && Number.isFinite(Number(x.days)))
+    .map((x) => ({ town: String(x.town).slice(0, 60), days: Math.min(31, Math.max(0, Math.round(Number(x.days)))) }));
+  if (towns.length === 0) throw new LookupError("Say which towns to go to and how many days in each.");
+  const daysOff = (Array.isArray(args.days_off) ? args.days_off : []).filter(
+    (d): d is string => typeof d === "string" && DAY.test(d)
+  );
+
+  const { data: person, error } = await env.supabase
+    .from("profiles")
+    .select("id, full_name")
+    .eq("id", staffId)
+    .maybeSingle();
+  fail(error);
+  if (!person) throw new LookupError(`That ${lower(t.staff.one)} wasn't found.`);
+
+  const [sites, settings, planned] = await Promise.all([
+    assignedSites(env, staffId),
+    fetchOrgSettings(env.supabase),
+    plannedVisits(env, staffId, m.from, m.to),
+  ]);
+  if (sites.length === 0) throw new LookupError(`They have no ${lower(t.site.many)} assigned, so there is nothing to plan.`);
+  const perDay =
+    typeof args.sites_per_day === "number" && args.sites_per_day >= 1
+      ? Math.min(50, Math.round(args.sites_per_day))
+      : settings.storesPerDay;
+
+  const plan = buildVisitPlan({
+    sites,
+    towns,
+    workingDays: settings.workingDays,
+    sitesPerDay: perDay,
+    from: m.from,
+    to: m.to,
+    daysOff,
+    existing: planned.map((p) => ({ siteId: p.store_id, date: p.scheduled_date })),
+  });
+
+  const nameOf = new Map(sites.map((s) => [s.id, s]));
+  const rows = plan.days.flatMap((d) =>
+    d.siteIds.map((id) => ({
+      day: niceDay(d.date),
+      town: d.town,
+      site: nameOf.get(id)?.name ?? "",
+      how_often: FREQUENCY_WORDS[nameOf.get(id)?.frequency ?? "weekly"],
+    }))
+  );
+  const staffName = person.full_name ?? t.staff.one;
+  const draft: PlanDraft = {
+    staffId,
+    staffName,
+    month: m.month,
+    monthLabel: m.label,
+    days: plan.days.filter((d) => d.siteIds.length > 0).map((d) => ({ date: d.date, siteIds: d.siteIds })),
+    visits: rows.length,
+  };
+
+  return {
+    model: {
+      staff: staffName,
+      month: m.label,
+      sites_per_day: perDay,
+      new_visits: rows.length,
+      days: plan.days.map((d) => ({
+        day: niceDay(d.date),
+        town: d.town,
+        new_visits: d.siteIds.length,
+        already_planned: d.alreadyPlanned,
+      })),
+      did_not_fit: plan.didNotFit.slice(0, MODEL_ROWS),
+      left_for_the_other_month: plan.leftForOtherMonth,
+      left_for_the_other_month_means:
+        `${t.job.many} in a week the month shares with the next or last month that didn't fit on this month's days of it. Not missed.`,
+      towns_given_no_days: plan.townsLeftOut,
+      towns_with_no_assigned_sites: plan.unknownTowns,
+      towns_short_of_days: plan.short,
+      spare_working_days: plan.spareDays.map(niceDay),
+      already_planned_before: planned.length,
+      saved: false,
+      note: "A draft. It is saved only when the person presses Add to schedule under it.",
+    },
+    sheet: sheet(
+      `${t.job.many} for ${staffName}, ${m.label}`,
+      "visit-plan",
+      [`${rows.length} new ${lower(rows.length === 1 ? t.job.one : t.job.many)}`, `Up to ${perDay} a day`],
+      [
+        { header: "Day", key: "day" },
+        { header: "Town", key: "town" },
+        { header: t.site.one, key: "site" },
+        { header: "How often", key: "how_often" },
+      ],
+      rows
+    ),
+    plan: rows.length > 0 ? draft : undefined,
+  };
+}
+
 const RUN: Record<ToolName, (args: Record<string, unknown>, env: ToolEnv) => Promise<ToolResult>> = {
   find_sites: findSites,
   site_visits: siteVisits,
@@ -854,6 +1135,8 @@ const RUN: Record<ToolName, (args: Record<string, unknown>, env: ToolEnv) => Pro
   hours_worked: hoursWorked,
   team_performance: teamPerformance,
   money_owed: moneyOwed,
+  staff_sites: staffSites,
+  draft_visit_plan: draftVisitPlan,
 };
 
 /**

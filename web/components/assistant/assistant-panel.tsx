@@ -2,7 +2,17 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ArrowUp, ExternalLink, LoaderCircle, MessageSquareText, Square, SquarePen, X } from "lucide-react";
+import {
+  ArrowUp,
+  CalendarPlus,
+  Check,
+  ExternalLink,
+  LoaderCircle,
+  MessageSquareText,
+  Square,
+  SquarePen,
+  X,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ExportMenu } from "@/components/export-menu";
 import { cn } from "@/lib/utils";
@@ -27,7 +37,7 @@ import { useAssistant, type AskMessage, type AskTable } from "@/components/assis
  * whose access gives it nothing to look up.
  */
 export function AssistantPanel() {
-  const { open, setOpen, tools, messages, busy, left, ask, stop, reset } = useAssistant();
+  const { open, setOpen, tools, messages, busy, left, ask, savePlan, stop, reset } = useAssistant();
   const company = useCompanyConfig();
   const t = useTerms();
   if (!open || tools === null || tools.length === 0) return null;
@@ -40,6 +50,7 @@ export function AssistantPanel() {
       busy={busy}
       left={left}
       onAsk={ask}
+      onSavePlan={savePlan}
       onStop={stop}
       onReset={reset}
       onClose={() => setOpen(false)}
@@ -58,6 +69,8 @@ type PanelViewProps = {
   onStop: () => void;
   onReset: () => void;
   onClose: () => void;
+  /** Saves the drafted plan under an answer; resolves with an error to show, or null. */
+  onSavePlan: (messageId: string) => Promise<string | null>;
 };
 
 /** The panel itself, from plain props: what `AssistantPanel` shows once it is open. */
@@ -72,6 +85,7 @@ export function AssistantPanelView({
   onStop,
   onReset,
   onClose,
+  onSavePlan,
 }: Readonly<PanelViewProps>) {
   const [draft, setDraft] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -172,7 +186,13 @@ export function AssistantPanelView({
         ) : (
           <ol className="space-y-5">
             {messages.map((m) => (
-              <li key={m.id}>{m.role === "user" ? <Question text={m.text} /> : <Answer message={m} />}</li>
+              <li key={m.id}>
+                {m.role === "user" ? (
+                  <Question text={m.text} />
+                ) : (
+                  <Answer message={m} terms={t} onSavePlan={onSavePlan} />
+                )}
+              </li>
             ))}
           </ol>
         )}
@@ -238,7 +258,11 @@ function Question({ text }: Readonly<{ text: string }>) {
   );
 }
 
-function Answer({ message }: Readonly<{ message: AskMessage }>) {
+function Answer({
+  message,
+  terms,
+  onSavePlan,
+}: Readonly<{ message: AskMessage; terms: Terms; onSavePlan: (messageId: string) => Promise<string | null> }>) {
   return (
     <div className="space-y-3">
       {message.refused ? (
@@ -253,9 +277,75 @@ function Answer({ message }: Readonly<{ message: AskMessage }>) {
         </p>
       )}
       {!message.refused && message.tables.map((table, i) => <AnswerTable key={i} table={table} />)}
+      {!message.refused && !message.pending && message.plan && (
+        <PlanSave message={message} terms={terms} onSave={() => onSavePlan(message.id)} />
+      )}
       {message.error && (
         <p role="alert" className="rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
           {message.error}
+        </p>
+      )}
+    </div>
+  );
+}
+
+/**
+ * The one thing Ask does in the app: a drafted plan goes on the schedule only
+ * when the manager presses this. Until then it is a table and nothing more.
+ */
+function PlanSave({
+  message,
+  terms: t,
+  onSave,
+}: Readonly<{ message: AskMessage; terms: Terms; onSave: () => Promise<string | null> }>) {
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const plan = message.plan!;
+  const jobs = (n: number) => lower(n === 1 ? t.job.one : t.job.many);
+
+  if (message.planSaved) {
+    const { added, already } = message.planSaved;
+    return (
+      <div className="rounded-lg border border-border bg-muted/40 px-3 py-2.5 text-sm">
+        <p className="flex items-center gap-2 font-medium text-foreground">
+          <Check className="size-4 shrink-0 text-primary" aria-hidden />
+          Added {added} {jobs(added)} to {plan.staffName}&apos;s schedule for {plan.monthLabel}.
+        </p>
+        {already > 0 && (
+          <p className="mt-1 text-muted-foreground">
+            {already} were already on those days, so they were left as they were.
+          </p>
+        )}
+        <Link href="/schedule" className="mt-1.5 inline-flex items-center gap-1 text-primary hover:underline">
+          Open the schedule
+          <ExternalLink className="size-3" aria-hidden />
+        </Link>
+      </div>
+    );
+  }
+
+  return (
+    <div className="rounded-lg border border-primary/30 bg-primary/5 px-3 py-3 text-sm">
+      <p className="text-foreground">
+        This is a draft. Nothing goes on {plan.staffName}&apos;s schedule until you add it.
+      </p>
+      <Button
+        size="sm"
+        className="mt-2.5 gap-1.5"
+        disabled={saving}
+        onClick={async () => {
+          setSaving(true);
+          setError(null);
+          setError(await onSave());
+          setSaving(false);
+        }}
+      >
+        <CalendarPlus className="size-3.5" aria-hidden />
+        {saving ? "Adding…" : `Add ${plan.visits} ${jobs(plan.visits)} to the schedule`}
+      </Button>
+      {error && (
+        <p role="alert" className="mt-2 text-destructive">
+          {error}
         </p>
       )}
     </div>

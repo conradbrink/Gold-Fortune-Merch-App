@@ -56,6 +56,8 @@ export const LIMITS = {
    */
   assistantHour: { bucket: "assistant_hour", limit: QUESTIONS_PER_HOUR, windowSeconds: 3600 },
   assistantDay: { bucket: "assistant_day", limit: QUESTIONS_PER_DAY, windowSeconds: 86_400 },
+  /** Saving a plan Ask drafted. Free to run, but it writes the schedule. */
+  assistantPlanSave: { bucket: "assistant_plan_save", limit: 20, windowSeconds: 3600 },
 } satisfies Record<string, Limit>;
 
 type Verdict =

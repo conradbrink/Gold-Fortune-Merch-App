@@ -182,6 +182,7 @@ export async function answerQuestion(o: AnswerOptions): Promise<void> {
         send({ type: "status", text: spec.working(ctx.terms) });
         const result = await o.run(spec.name, call.arguments);
         if (result.sheet) send({ type: "table", sheet: result.sheet, href: spec.page });
+        if (result.plan) send({ type: "plan", plan: result.plan });
         input.push({
           type: "function_call_output",
           call_id: call.call_id,

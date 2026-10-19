@@ -15,6 +15,8 @@ export type AssistantEvent =
   | { type: "text"; text: string }
   /** A list a lookup returned, with the page it came from. */
   | { type: "table"; sheet: ExportSheet; href: string }
+  /** A drafted month of visits, saved only when the person presses the button. */
+  | { type: "plan"; plan: PlanDraft }
   /** Not about the business: the fixed refusal, and nothing else. */
   | { type: "refused"; text: string }
   | { type: "error"; text: string }
@@ -23,12 +25,45 @@ export type AssistantEvent =
 
 export type QuestionsLeft = { hour: number; day: number };
 
+/** What "Add to schedule" saves: the new visits, by day, for one person. */
+export type PlanDraft = {
+  staffId: string;
+  staffName: string;
+  /** YYYY-MM */
+  month: string;
+  /** "November 2026" */
+  monthLabel: string;
+  days: { date: string; siteIds: string[] }[];
+  visits: number;
+};
+
 /** One chat turn as the panel keeps it and sends it back for context. */
 export type ChatTurn = { role: "user" | "assistant"; text: string };
 
 /** Questions per person (owner, 19 Oct 2026). `LIMITS` in lib/rate-limit.ts counts them. */
 export const QUESTIONS_PER_HOUR = 10;
 export const QUESTIONS_PER_DAY = 40;
+
+/**
+ * Where a person stands against the limits, from their counter rows.
+ *
+ * The windows are floored to the clock exactly as `consume_rate_limit` floors
+ * them (whole hours, whole UTC days), so a row from an earlier window counts
+ * for nothing. Rows are the person's own `rate_limits` rows.
+ */
+export function questionsLeftFrom(
+  rows: readonly { bucket: string; window_start: string; count: number }[],
+  now = Date.now()
+): QuestionsLeft {
+  const used = (bucket: string, seconds: number) => {
+    const start = Math.floor(now / 1000 / seconds) * seconds * 1000;
+    const row = rows.find((r) => r.bucket === bucket && Date.parse(r.window_start) === start);
+    return row ? Number(row.count) : 0;
+  };
+  const day = Math.max(0, QUESTIONS_PER_DAY - used("assistant_day", 86_400));
+  const hour = Math.max(0, QUESTIONS_PER_HOUR - used("assistant_hour", 3600));
+  return { hour: Math.min(hour, day), day };
+}
 
 /** The limits on what the route accepts, shared so the panel stops at the same place. */
 export const MAX_QUESTION_CHARS = 500;
@@ -37,7 +72,12 @@ export const MAX_HISTORY_TURNS = 8;
 const MAX_TURN_CHARS = 4000;
 
 /** A turn as the panel shows it: an answer can be unfinished, refused or failed. */
-export type ShownTurn = ChatTurn & { pending?: boolean; refused?: boolean; error?: string };
+export type ShownTurn = ChatTurn & {
+  pending?: boolean;
+  refused?: boolean;
+  error?: string;
+  planSaved?: { added: number; already: number };
+};
 
 /**
  * The turns sent back for context: answered questions with their answers, the
@@ -53,7 +93,12 @@ export function history(messages: readonly ShownTurn[]): ChatTurn[] {
     if (q.role !== "user" || !a || a.role !== "assistant") continue;
     i++;
     if (a.pending || a.error || a.refused || !a.text.trim()) continue;
-    turns.push({ role: "user", text: q.text }, { role: "assistant", text: a.text });
+    // The assistant cannot see the button: tell it what pressing it did, so
+    // "did it save?" gets a true answer.
+    const saved = a.planSaved
+      ? `\n\n(The person pressed Add to schedule: ${a.planSaved.added} added, ${a.planSaved.already} were already there.)`
+      : "";
+    turns.push({ role: "user", text: q.text }, { role: "assistant", text: a.text + saved });
   }
   return turns.slice(-MAX_HISTORY_TURNS);
 }

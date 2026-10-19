@@ -1,4 +1,5 @@
 import OpenAI from "openai";
+import { createClient as createAdminClient } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/server";
 import { enforceRateLimit, requireFeature, LIMITS } from "@/lib/rate-limit";
 import { parseCompanyConfig } from "@/lib/company-config";
@@ -9,7 +10,12 @@ import { toolsFor } from "@/lib/assistant-tools";
 import type { AssistantContext } from "@/lib/assistant-prompt";
 import { runTool, type ToolEnv } from "@/lib/assistant-data";
 import { answerQuestion } from "@/lib/assistant-answer";
-import { encodeEvent, parseConversation, type QuestionsLeft } from "@/lib/assistant-stream";
+import {
+  encodeEvent,
+  parseConversation,
+  questionsLeftFrom,
+  type QuestionsLeft,
+} from "@/lib/assistant-stream";
 
 /**
  * Ask: questions about the company's own business, answered from its data.
@@ -58,6 +64,43 @@ function limitReached(response: Response, period: "hour" | "day"): Response {
   );
 }
 
+/**
+ * How many questions the signed-in person has left, without using one.
+ *
+ * The panel asks when it opens, so the count is right after signing in again
+ * or on another device; it used to show the full allowance until the first
+ * answer. `rate_limits` is readable by nobody through RLS, so this reads the
+ * caller's own rows with the service role, keyed by the user the session
+ * proved, never by anything in the request.
+ */
+export async function GET() {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return json("Not signed in.", 401);
+  if (!process.env.SUPABASE_SERVICE_ROLE_KEY) return Response.json({ left: null });
+
+  const admin = createAdminClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY,
+    { auth: { autoRefreshToken: false, persistSession: false } }
+  );
+  // Today's UTC day is the oldest window either counter can still be in.
+  const dayStart = new Date(Math.floor(Date.now() / 86_400_000) * 86_400_000).toISOString();
+  const { data, error } = await admin
+    .from("rate_limits")
+    .select("bucket, window_start, count")
+    .eq("subject", user.id)
+    .in("bucket", [LIMITS.assistantHour.bucket, LIMITS.assistantDay.bucket])
+    .gte("window_start", dayStart);
+  if (error) {
+    console.error("assistant: questions left could not be read", error.message);
+    return Response.json({ left: null }, { headers: { "Cache-Control": "no-store" } });
+  }
+  return Response.json({ left: questionsLeftFrom(data ?? []) }, { headers: { "Cache-Control": "no-store" } });
+}
+
 export async function POST(request: Request) {
   const supabase = await createClient();
 
@@ -71,15 +114,24 @@ export async function POST(request: Request) {
   if (!conversation.ok) return json(conversation.error, 400);
 
   // Who is asking and what they may see, from the database with their session.
-  const [{ data: perms, error: permsError }, { data: rawConfig, error: configError }] =
-    await Promise.all([supabase.rpc("my_permissions"), supabase.rpc("my_company_config")]);
-  if (permsError || configError) {
+  const [
+    { data: perms, error: permsError },
+    { data: rawConfig, error: configError },
+    { data: role, error: roleError },
+  ] = await Promise.all([
+    supabase.rpc("my_permissions"),
+    supabase.rpc("my_company_config"),
+    // The function the schedule's write policies ask (see use-is-manager.ts).
+    supabase.rpc("current_role"),
+  ]);
+  if (permsError || configError || roleError) {
     return json("Your access could not be checked. Try again shortly.", 503);
   }
   const config = parseCompanyConfig(rawConfig);
   if (!config) return json("Your company could not be loaded. Try again shortly.", 503);
 
-  const tools = toolsFor(toPermissionSet(perms as string[] | null), config.modules);
+  const isManager = role === "manager";
+  const tools = toolsFor(toPermissionSet(perms as string[] | null), config.modules, isManager);
   if (tools.length === 0) {
     return json("There's nothing in your access that Ask can look up yet.", 403);
   }
