@@ -1,0 +1,195 @@
+import type OpenAI from "openai";
+import type {
+  FunctionTool,
+  ResponseInputItem,
+  ResponseOutputItem,
+} from "openai/resources/responses/responses";
+import { toolSpec, type ToolName, type ToolSpec } from "@/lib/assistant-tools";
+import {
+  GUARD_SCHEMA,
+  assistantInstructions,
+  guardInput,
+  guardInstructions,
+  parseGuardVerdict,
+  refusalText,
+  type AssistantContext,
+} from "@/lib/assistant-prompt";
+import type { ToolResult } from "@/lib/assistant-data";
+import type { AssistantEvent, ChatTurn, QuestionsLeft } from "@/lib/assistant-stream";
+
+/**
+ * One question, answered: the topic check, the lookups, the streamed answer.
+ *
+ * Kept apart from the route so it can be run with sample lookups against the
+ * real model (the lookups are the only part that needs a signed-in session).
+ * `run` does the lookups; `send` writes each event to the person.
+ */
+
+/** Lookup rounds per question. Enough to find a name and then ask about it. */
+const MAX_ROUNDS = 5;
+
+export type AnswerOptions = {
+  client: OpenAI;
+  model: string;
+  /** The off-topic check's model. */
+  guardModel: string;
+  ctx: AssistantContext;
+  /** What this person may look up. Anything else the model asks for is refused. */
+  tools: readonly ToolSpec[];
+  turns: readonly ChatTurn[];
+  run: (name: ToolName, args: string) => Promise<ToolResult>;
+  send: (event: AssistantEvent) => void;
+  /** Aborted when the person goes away, and by a failed topic check. */
+  abort: AbortController;
+  left: QuestionsLeft | null;
+};
+
+export async function answerQuestion(o: AnswerOptions): Promise<void> {
+  const { client, ctx, tools, send, abort, left } = o;
+
+  const functionTools: FunctionTool[] = tools.map((spec) => ({
+    type: "function",
+    name: spec.name,
+    description: spec.description(ctx.terms),
+    parameters: spec.parameters(ctx.terms),
+    strict: true,
+  }));
+
+  // The check runs alongside the first round, so an on-topic question waits
+  // for nothing. Nothing reaches the person until it has said yes.
+  const questions = o.turns.filter((t) => t.role === "user").map((t) => t.text);
+  const guard = client.responses
+    .create(
+      {
+        model: o.guardModel,
+        instructions: guardInstructions(ctx),
+        input: guardInput(questions),
+        reasoning: { effort: "low" },
+        max_output_tokens: 2000,
+        store: false,
+        text: {
+          format: {
+            type: "json_schema",
+            name: "topic_check",
+            schema: GUARD_SCHEMA as unknown as Record<string, unknown>,
+            strict: true,
+          },
+        },
+      },
+      { signal: abort.signal }
+    )
+    .then((r) => parseGuardVerdict(r.output_text))
+    // A check that cannot run is a no: the answer is held, not leaked.
+    .catch((reason) => {
+      if (!abort.signal.aborted) console.error("assistant: topic check failed", reason);
+      return false;
+    });
+
+  let cleared = false;
+  const allowed = async () => {
+    if (cleared) return true;
+    if (await guard) {
+      cleared = true;
+      return true;
+    }
+    abort.abort();
+    return false;
+  };
+
+  const refuse = () => {
+    send({ type: "refused", text: refusalText(ctx) });
+    send({ type: "done", left });
+  };
+
+  try {
+    send({ type: "status", text: "Reading your question" });
+
+    const input: ResponseInputItem[] = o.turns.map((t) => ({ role: t.role, content: t.text }));
+    const instructions = assistantInstructions(ctx, tools);
+
+    let wrote = false;
+    for (let round = 0; round < MAX_ROUNDS; round++) {
+      const response = await client.responses.create(
+        {
+          model: o.model,
+          instructions,
+          input,
+          tools: functionTools,
+          reasoning: { effort: "low" },
+          // Reasoning travels with the lookups between rounds without the
+          // provider keeping the conversation (`store: false`).
+          include: ["reasoning.encrypted_content"],
+          max_output_tokens: 6000,
+          store: false,
+          stream: true,
+        },
+        { signal: abort.signal }
+      );
+
+      let output: ResponseOutputItem[] = [];
+      for await (const event of response) {
+        if (event.type === "response.output_text.delta") {
+          if (!(await allowed())) return refuse();
+          send({ type: "text", text: event.delta });
+          wrote = true;
+        } else if (event.type === "response.completed" || event.type === "response.incomplete") {
+          output = event.response.output;
+        } else if (event.type === "response.failed") {
+          throw new Error(event.response.error?.message ?? "The answer failed.");
+        }
+      }
+
+      const calls = output.filter(
+        (item): item is Extract<ResponseOutputItem, { type: "function_call" }> => item.type === "function_call"
+      );
+      if (calls.length === 0) break;
+
+      if (!(await allowed())) return refuse();
+      // A few words before a lookup get a break after them.
+      if (wrote) send({ type: "text", text: "\n\n" });
+
+      input.push(...(output as ResponseInputItem[]));
+      for (const call of calls) {
+        const spec = toolSpec(call.name);
+        // Only what was offered: a lookup this person may not use is refused here.
+        if (!spec || !tools.includes(spec)) {
+          input.push({
+            type: "function_call_output",
+            call_id: call.call_id,
+            output: JSON.stringify({ error: "That lookup is not available." }),
+          });
+          continue;
+        }
+        send({ type: "status", text: spec.working(ctx.terms) });
+        const result = await o.run(spec.name, call.arguments);
+        if (result.sheet) send({ type: "table", sheet: result.sheet, href: spec.page });
+        input.push({
+          type: "function_call_output",
+          call_id: call.call_id,
+          output: JSON.stringify(result.model),
+        });
+      }
+
+      if (round === MAX_ROUNDS - 1) {
+        send({
+          type: "text",
+          text: "That needed more lookups than I can do for one question. Try asking it in smaller parts.",
+        });
+        wrote = true;
+      }
+    }
+
+    if (!(await allowed())) return refuse();
+    if (!wrote) send({ type: "text", text: "I couldn't find an answer to that. Try asking it another way." });
+    send({ type: "done", left });
+  } catch (reason) {
+    if (abort.signal.aborted) {
+      // Stopped by the topic check, or by the person leaving.
+      if (!(await guard)) refuse();
+      return;
+    }
+    console.error("assistant: answer failed", reason);
+    send({ type: "error", text: "Something went wrong while answering. Try again in a moment." });
+    send({ type: "done", left });
+  }
+}

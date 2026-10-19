@@ -27,6 +27,8 @@ import { ThemeToggle } from "@/components/layout/theme-toggle";
 import { NotificationsBell } from "@/components/hr/notifications-bell";
 import { AlertsBell } from "@/components/alerts/alerts-bell";
 import { WorkdayControl } from "@/components/workday/workday-control";
+import { AssistantButton } from "@/components/assistant/assistant-panel";
+import { forgetAssistant } from "@/components/assistant/assistant-provider";
 import { can } from "@/lib/permissions";
 import { usePermissions } from "@/lib/use-permissions";
 import { useCompanyConfig } from "@/lib/use-company-config";
@@ -87,6 +89,7 @@ export function TopBar() {
     // here must not be shown their company's configuration or map view.
     forgetCompanyConfig();
     forgetSitesView();
+    forgetAssistant();
     router.push("/login");
     router.refresh();
   }
@@ -134,6 +137,9 @@ export function TopBar() {
         {/* Ahead of the bell, because it is the one control in this bar that
             somebody comes to the app specifically to press. Renders nothing for
             anybody without the `workday` permission. */}
+        {/* Ask: questions about the business, answered from its own data.
+            Shown to anybody whose access gives it something to look up. */}
+        <AssistantButton />
         <WorkdayControl />
         {hasAlerts && <AlertsBell />}
         {hasHr && <NotificationsBell />}

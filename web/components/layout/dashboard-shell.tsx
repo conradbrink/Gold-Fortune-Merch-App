@@ -7,6 +7,8 @@ import { NavProvider } from "@/components/layout/nav-context";
 import { SectionTabs } from "@/components/layout/section-tabs";
 import { TopBar } from "@/components/layout/top-bar";
 import { CompanyConfigProvider } from "@/lib/use-company-config";
+import { AssistantProvider } from "@/components/assistant/assistant-provider";
+import { AssistantPanel } from "@/components/assistant/assistant-panel";
 
 /**
  * The signed-in frame: sidebar, top bar, scrolling main, and on a phone a bar
@@ -26,6 +28,7 @@ export function DashboardShell({
   return (
     <CompanyConfigProvider initialConfig={initialConfig}>
       <NavProvider>
+      <AssistantProvider>
       {/*
        * The three `data-app-*` attributes are print hooks, and nothing reads them
        * on screen. `components/rep-report/report-print.css` uses them to drop the
@@ -49,8 +52,11 @@ export function DashboardShell({
             {children}
           </main>
         </div>
+        {/* Ask, beside the page on a wide screen and over it on a phone. */}
+        <AssistantPanel />
         <MobileTabBar onOpenMore={() => setNavOpen(true)} />
       </div>
+      </AssistantProvider>
       </NavProvider>
     </CompanyConfigProvider>
   );
