@@ -125,6 +125,36 @@ export function reorderGroupFromQuery(q: URLSearchParams): ReorderGroup | null {
   return v !== null && (REORDER_GROUPS as readonly string[]).includes(v) ? (v as ReorderGroup) : null;
 }
 
+// --------------------------------------------------------------------- range
+
+/**
+ * The Range card's tiles: the stores missing products from their range, the
+ * stores that stopped buying one, every product, and the new products'
+ * results. The rules are in the database (range_facts, 20261019100000) and
+ * lib/store-range.ts.
+ */
+export const RANGE_SHOWS = ["missing", "stopped", "products", "new"] as const;
+export type RangeShow = (typeof RANGE_SHOWS)[number];
+
+/** The look-backs the Range page offers; 60 days unless the company changed range_lapse_days. */
+export const RANGE_DAYS = [30, 60, 90] as const;
+
+/** The Range page on a tile, one store group, or one store. */
+export function storeRangeHref(show?: RangeShow, group?: string, store?: string): string {
+  return href("/stores/range", { show, group, store });
+}
+
+export function rangeShowFromQuery(q: URLSearchParams): RangeShow | null {
+  const v = q.get("show");
+  return v !== null && (RANGE_SHOWS as readonly string[]).includes(v) ? (v as RangeShow) : null;
+}
+
+/** The store a Range link asked for (`?store=`), if it carried one. */
+export function rangeStoreFromQuery(q: URLSearchParams): string | null {
+  const v = q.get("store");
+  return v && /^[0-9a-f-]{36}$/i.test(v) ? v : null;
+}
+
 /**
  * One store group on a card's page: `?group=<id>`, or `?group=none` for the
  * stores in no group (NO_STORE_GROUP in lib/store-groups.ts); "" for every

@@ -40,10 +40,12 @@ import {
   reportHref,
   salesHref,
   storeHealthHref,
+  storeRangeHref,
   storeReorderHref,
   storeHref,
   trackingHref,
 } from "@/lib/dashboard-links";
+import { newProductsLine, type RangeCardData } from "@/lib/store-range";
 
 /**
  * The redesigned dashboard's cards: the headline row, sales, the orders
@@ -848,6 +850,106 @@ export function StoreReorderCard({ reorder }: { reorder: ReorderSummary }) {
           )}
         </div>
       </div>
+    </SectionCard>
+  );
+}
+
+// ------------------------------------------------------------------ range
+
+/**
+ * Range (owner, 19 Oct 2026): which products each store should carry, worked
+ * out by Tickd from the orders, and what is missing. The same rows as the page
+ * it opens (lib/store-range.ts). A company still learning sees how far along
+ * it is and its best sellers so far, never an empty card.
+ */
+export function StoreRangeCard({ range }: { range: RangeCardData }) {
+  const t = useTerms();
+  const { moneyShort } = useMoney();
+  const s = range.summary;
+  const sites = lower(t.site.many);
+  const newLine = newProductsLine(range.newProducts);
+  const hasNew = newLine !== "No new products";
+
+  if (s.learning) {
+    const done = Math.min(s.orderingStores, s.minStores);
+    return (
+      <SectionCard title="Range" href={storeRangeHref("new")} linkLabel="See your products">
+        <p className="text-sm text-foreground">
+          Tickd is learning your {sites}: {done} of {s.minStores} have ordered. Once {s.minStores} have, you will see which
+          products each {lower(t.site.one)} should have, and what is missing.
+        </p>
+        <div
+          className="h-2 overflow-hidden rounded-full bg-muted"
+          role="progressbar"
+          aria-label={`${done} of ${s.minStores} ${sites} have ordered`}
+          aria-valuemin={0}
+          aria-valuemax={s.minStores}
+          aria-valuenow={done}
+        >
+          <div className="h-full rounded-full bg-primary" style={{ width: `${(100 * done) / Math.max(1, s.minStores)}%` }} />
+        </div>
+        <div className="flex flex-col border-t">
+          <span className="pb-1.5 pt-3 text-xs text-muted-foreground">Best sellers so far</span>
+          {range.best.length === 0 ? (
+            <p className="py-2 text-sm text-muted-foreground">Your first orders will show here.</p>
+          ) : (
+            range.best.map((p) => (
+              <div key={p.id} className="flex items-center justify-between gap-3 border-b py-2 text-sm last:border-b-0">
+                <span className="min-w-0 truncate">{p.name}</span>
+                <span className="shrink-0 text-xs text-muted-foreground">
+                  {p.stores} {p.stores === 1 ? lower(t.site.one) : sites}
+                </span>
+              </div>
+            ))
+          )}
+        </div>
+      </SectionCard>
+    );
+  }
+
+  const total = Math.max(1, s.inRange);
+  return (
+    <SectionCard title="Range" href={storeRangeHref("missing")} linkLabel="See the list">
+      <div className="flex h-3.5 gap-0.5 overflow-hidden rounded-full" aria-hidden>
+        <div className="bg-emerald-600" style={{ flex: s.have / total }} />
+        <div className="bg-amber-500" style={{ flex: s.missing / total }} />
+        <div className="bg-red-600" style={{ flex: s.stopped / total }} />
+      </div>
+      <p className="text-sm text-foreground">
+        Your {sites} have <span className="font-semibold tabular-nums">{s.filledPct ?? 0}%</span> of the products they
+        should have.
+        {s.missingValue !== null && s.missingValue > 0 && (
+          <> What is missing sells about <span className="font-semibold tabular-nums">{moneyShort(s.missingValue)}</span> a month at similar {sites}.</>
+        )}
+      </p>
+      <div className="grid grid-cols-3 gap-3">
+        <MiniStat
+          label={`Missing from ${sites}`}
+          value={s.missing}
+          href={storeRangeHref("missing")}
+          title={`Products ${sites} should have and have never ordered`}
+        />
+        <MiniStat
+          label="Stopped buying"
+          value={s.stopped}
+          tone={s.stopped > 0 ? "bad" : undefined}
+          href={storeRangeHref("stopped")}
+          title={`Products ${sites} used to order and have not in ${range.days} days`}
+        />
+        <MiniStat label="Has it" value={s.have} tone="good" href={storeRangeHref("products")} title="Every product, and where it is" />
+      </div>
+      {hasNew && (
+        <Link href={storeRangeHref("new")} className="group border-t pt-3 text-xs text-muted-foreground hover:text-foreground">
+          New products: {newLine}. <span className="font-medium text-primary group-hover:underline">See the results</span>
+        </Link>
+      )}
+      {s.quietStores > 0 && (
+        <Link href={storeReorderHref()} className="group text-xs text-muted-foreground hover:text-foreground">
+          {s.quietStores === 1 ? `1 ${lower(t.site.one)} has` : `${s.quietStores} ${sites} have`} not ordered in {range.days} days, so{" "}
+          {s.quietStores === 1 ? "it is" : "they are"} not counted here.{" "}
+          <span className="font-medium text-primary group-hover:underline">See who to ask</span>
+        </Link>
+      )}
     </SectionCard>
   );
 }

@@ -2,6 +2,11 @@
 
 import { useCallback, useEffect, useId, useMemo, useState } from "react";
 import { MoreHorizontal, Package, Plus } from "lucide-react";
+import Link from "next/link";
+import { storeRangeHref } from "@/lib/dashboard-links";
+import { canAccessPath } from "@/lib/permissions";
+import { fetchRangeProducts, resultLabel, resultTone, type ProductResult } from "@/lib/store-range";
+import { usePermissions } from "@/lib/use-permissions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -101,6 +106,28 @@ export default function ProductsPage() {
    * A plain object rather than a Map, matching the rest of this codebase.
    */
   const [busyRows, setBusyRows] = useState<Record<string, number>>({});
+  /**
+   * Each new product's result from Range (proven, being tried, not taking
+   * off…), for whoever may open Range: Tickd judges them from the orders, so
+   * the result sits beside the product it is about.
+   */
+  const permissions = usePermissions();
+  const seesRange = permissions !== null && canAccessPath(permissions, "/stores/range");
+  const [results, setResults] = useState<Map<string, ProductResult>>(new Map());
+  useEffect(() => {
+    if (!seesRange) return;
+    let stale = false;
+    fetchRangeProducts(supabase)
+      .then((rows) => {
+        if (!stale)
+          setResults(new Map(rows.filter((r) => r.stage !== "established").map((r) => [r.product_id, r.result])));
+      })
+      // Only a badge: the list stands without it.
+      .catch(() => undefined);
+    return () => {
+      stale = true;
+    };
+  }, [seesRange, supabase]);
 
   const isBusy = (id: string) => (busyRows[id] ?? 0) > 0;
 
@@ -438,6 +465,22 @@ export default function ProductsPage() {
                       <p className="truncate text-sm font-medium text-foreground">
                         {p.name}
                       </p>
+                      {results.has(p.id) && (
+                        <Link
+                          href={storeRangeHref("new")}
+                          className={`text-xs font-medium hover:underline ${
+                            resultTone(results.get(p.id)!) === "good"
+                              ? "text-emerald-700 dark:text-emerald-400"
+                              : resultTone(results.get(p.id)!) === "bad"
+                                ? "text-red-700 dark:text-red-400"
+                                : resultTone(results.get(p.id)!) === "warn"
+                                  ? "text-amber-700 dark:text-amber-400"
+                                  : "text-muted-foreground"
+                          }`}
+                        >
+                          New product: {resultLabel(results.get(p.id)!).toLowerCase()}
+                        </Link>
+                      )}
                       <p className="truncate text-xs text-muted-foreground">
                         {[
                           p.brand,

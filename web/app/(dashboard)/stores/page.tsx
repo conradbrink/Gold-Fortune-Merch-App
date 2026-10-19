@@ -25,6 +25,7 @@ import {
   ArrowDown,
   ArrowUpDown,
   Users,
+  LayoutGrid,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -95,7 +96,9 @@ import {
   type VisitFrequency,
 } from "@/lib/schedule";
 import { googleMapsUrl } from "@/lib/maps";
-import { storeHealthHref, storeIdFromQuery, storeReorderHref } from "@/lib/dashboard-links";
+import { storeHealthHref, storeIdFromQuery, storeRangeHref, storeReorderHref } from "@/lib/dashboard-links";
+import { canAccessPath } from "@/lib/permissions";
+import { usePermissions } from "@/lib/use-permissions";
 import type { Tables } from "@/lib/supabase/types";
 
 type StoreRow = Tables<"stores">;
@@ -105,6 +108,8 @@ const emptyForm = {
   name: "",
   store_group_id: "",
   visit_frequency: "weekly",
+  /** The store's size for its range, set by hand; "" lets Tickd size it from its orders. */
+  size_override: "",
   address: "",
   city: "",
   state: "",
@@ -220,6 +225,9 @@ export default function StoresPage() {
   const terms = useTerms();
   const companyConfig = useCompanyConfig();
   const sells = !!companyConfig && moduleEnabled(companyConfig.modules, "distribution");
+  const permissions = usePermissions();
+  // Range shows money and management figures (insights): only for whoever may open it.
+  const seesRange = sells && permissions !== null && canAccessPath(permissions, "/stores/range");
   const byName = useSitesByName();
   const [view, setView] = useState<"list" | "map">("list");
   const [stores, setStores] = useState<StoreRow[]>([]);
@@ -642,6 +650,7 @@ export default function StoresPage() {
       name: store.name ?? "",
       store_group_id: store.store_group_id ?? "",
       visit_frequency: store.visit_frequency ?? "weekly",
+      size_override: store.size_override ?? "",
       address: store.address ?? "",
       city: store.city ?? "",
       state: store.state ?? "",
@@ -688,6 +697,8 @@ export default function StoresPage() {
       const payload = {
         name: form.name,
         store_group_id: groupId,
+        // Only a company that sells has ranges; anyone else keeps what is there.
+        ...(sells ? { size_override: form.size_override || null } : {}),
         address: form.address,
         city: form.city,
         state: form.state,
@@ -1267,6 +1278,21 @@ export default function StoresPage() {
             }
           />
         )}
+        {/* Which products each store should carry, and where they are missing. */}
+        {seesRange && (
+          <Button
+            variant="outline"
+            size="sm"
+            className="gap-1.5"
+            nativeButton={false}
+            render={
+              <Link href={storeRangeHref(undefined, groupFilter === "all" ? undefined : groupFilter)}>
+                <LayoutGrid className="h-4 w-4" />
+                Range
+              </Link>
+            }
+          />
+        )}
         <Button
           variant="outline"
           size="sm"
@@ -1508,6 +1534,28 @@ export default function StoresPage() {
                 {lower(terms.site.one)}.
               </p>
             </div>
+            {/* The size Range compares this store at (lib/store-range.ts).
+                Tickd works it out from the orders; this is the override. */}
+            {sells && (
+              <div className="space-y-1.5">
+                <Label htmlFor="store-size">Size, for its range</Label>
+                <NativeSelect
+                  id="store-size"
+                  value={form.size_override}
+                  aria-describedby="store-size-help"
+                  onChange={(e) => setForm({ ...form, size_override: e.target.value })}
+                >
+                  <option value="">Tickd decides from its orders</option>
+                  <option value="big">Big</option>
+                  <option value="medium">Medium</option>
+                  <option value="small">Small</option>
+                </NativeSelect>
+                <p id="store-size-help" className="text-xs text-muted-foreground">
+                  Big {lower(terms.site.many)} carry more of your products than small ones. Tickd sizes each{" "}
+                  {lower(terms.site.one)} against the others in its {lower(terms.site_group.one)}; choose one only if you know better.
+                </p>
+              </div>
+            )}
             <div className="space-y-1.5">
               <Label htmlFor="store-name">{terms.site.one} name</Label>
               <Input

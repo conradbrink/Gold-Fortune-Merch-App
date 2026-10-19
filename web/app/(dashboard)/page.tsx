@@ -46,6 +46,7 @@ import {
 } from "@/lib/dashboard-layout";
 import { fetchOrgId } from "@/lib/representatives";
 import { fetchReorderSummary, type ReorderSummary } from "@/lib/store-reorder";
+import { fetchRangeCard, type RangeCardData } from "@/lib/store-range";
 import { AccountCards } from "@/components/dashboard/account-cards";
 import {
   fetchContractsDue,
@@ -105,6 +106,8 @@ export default function InsightsDashboardPage() {
   const [tradeFailed, setTradeFailed] = useState<Set<WidgetSource>>(new Set());
   const [reorder, setReorder] = useState<ReorderSummary | null>(null);
   const [reorderFailed, setReorderFailed] = useState(false);
+  const [rangeCard, setRangeCard] = useState<RangeCardData | null>(null);
+  const [rangeFailed, setRangeFailed] = useState(false);
   /** Bumped by Retry, so the trade cards try again with the rest. */
   const [tradeTick, setTradeTick] = useState(0);
   const [orgId, setOrgId] = useState<string | null>(null);
@@ -426,6 +429,7 @@ export default function InsightsDashboardPage() {
   const wantsToday = layout.includes("today");
   const wantsContracts = layout.includes("money") && !!company?.settings.money_contracts;
   const wantsReorder = layout.includes("store_reorder") && !!company && moduleEnabled(company.modules, "distribution");
+  const wantsRange = layout.includes("store_range") && !!company && moduleEnabled(company.modules, "distribution");
   useEffect(() => {
     if (!layoutLoaded || !company) return;
     let cancelled = false;
@@ -487,6 +491,32 @@ export default function InsightsDashboardPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [layoutLoaded, company, wantsReorder, permissionsKnown, seesMoney, tradeTick]);
 
+  /**
+   * Range: its own load like the one above, about now rather than the chosen
+   * dates, and only for someone with insights (the card is theirs; anyone
+   * else is refused by the database and the card is left off).
+   */
+  const seesRange = permissions !== null && can(permissions, "insights");
+  useEffect(() => {
+    if (!layoutLoaded || !company || !wantsRange || !seesRange) return;
+    let cancelled = false;
+    fetchRangeCard(supabase, company.settings.range_lapse_days)
+      .then((card) => {
+        if (cancelled) return;
+        setRangeCard(card);
+        setRangeFailed(false);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setRangeCard(null);
+        setRangeFailed(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [layoutLoaded, company, wantsRange, seesRange, tradeTick]);
+
   const days = rangeDays(range);
   const widgetData: WidgetData = {
     summary: data,
@@ -504,6 +534,7 @@ export default function InsightsDashboardPage() {
     today,
     contractsDue,
     reorder,
+    storeRange: rangeCard,
   };
 
   /**
@@ -527,6 +558,7 @@ export default function InsightsDashboardPage() {
     numbers: numbers !== null && !tradeFailed.has("numbers"),
     today: today !== null && !tradeFailed.has("today"),
     reorder: reorder !== null && !reorderFailed,
+    storeRange: rangeCard !== null && !rangeFailed,
   };
 
   // Cards for modules the company does not have are left out, not shown empty.
@@ -575,7 +607,7 @@ export default function InsightsDashboardPage() {
         </p>
       )}
 
-      {(error || tradeFailed.size > 0 || reorderFailed) && (
+      {(error || tradeFailed.size > 0 || reorderFailed || rangeFailed) && (
         <Card>
           <CardContent className="py-8 text-center text-sm">
             {/* Cards whose own source arrived are still shown, so this must not
@@ -620,7 +652,8 @@ export default function InsightsDashboardPage() {
               {sourceReady[widget.source] ? (
                 widget.render(widgetData)
               ) : ((widget.source === "numbers" || widget.source === "today") && !tradeFailed.has(widget.source)) ||
-                (widget.source === "reorder" && !reorderFailed) ? (
+                (widget.source === "reorder" && !reorderFailed) ||
+                (widget.source === "storeRange" && !rangeFailed) ? (
                 // Still on its way: the card's shape, not an error.
                 <div
                   className={`animate-pulse rounded-xl bg-secondary motion-reduce:animate-none ${widget.span === 4 ? "h-[112px]" : "h-[260px]"}`}

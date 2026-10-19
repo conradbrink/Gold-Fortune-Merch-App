@@ -22,7 +22,7 @@ import { toModuleSet } from "@/lib/modules";
 import { toPermissionSet } from "@/lib/permissions";
 import { parseTerms } from "@/lib/terms";
 import { parseCompanyConfig } from "@/lib/company-config";
-import { storeHealthHref, storeReorderHref } from "@/lib/dashboard-links";
+import { storeHealthHref, storeRangeHref, storeReorderHref } from "@/lib/dashboard-links";
 
 const web = fileURLToPath(new URL("..", import.meta.url));
 const admin = toPermissionSet(["admin"]);
@@ -95,6 +95,8 @@ const LINKED_FROM: Record<string, string> = {
   "/stores/health": "app/(dashboard)/stores/page.tsx",
   // Stores due for an order; the dashboard card opens it too.
   "/stores/reorder": "app/(dashboard)/stores/page.tsx",
+  // Range: which products each store should carry; the dashboard card opens it too.
+  "/stores/range": "app/(dashboard)/stores/page.tsx",
   // Damaged stock the reps reported; the dashboard card links it too.
   "/stores/damages": "app/(dashboard)/stores/page.tsx",
   // The Orders pipeline and Field team cards as pages; their cards open them too.
@@ -112,6 +114,7 @@ const LINKED_FROM: Record<string, string> = {
 const BUILT_BY: Record<string, () => string> = {
   "/stores/health": storeHealthHref,
   "/stores/reorder": storeReorderHref,
+  "/stores/range": storeRangeHref,
 };
 
 test("every page in the app is in the menu or linked from a named page", () => {

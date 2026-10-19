@@ -268,6 +268,9 @@ const PRODUCTS: ItemDef = {
     { href: "/products", label: "Products", permission: "resources" },
     // What each group of stores pays: written by whoever invoices.
     { href: "/products/price-lists", label: "Price lists", permission: "invoicing" },
+    // Which products each group's stores should carry: Tickd works it out
+    // from the orders; whoever looks after the products overrides it.
+    { href: "/products/ranges", label: "Ranges", permission: "resources" },
   ],
 };
 
