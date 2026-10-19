@@ -100,15 +100,6 @@ const ownerSteps = [
   ["Get paid.", "Every order becomes an invoice, and you see who still owes you."],
 ];
 
-// What the one app takes the place of: the value is the mess it removes.
-const replaces = [
-  "WhatsApp groups for orders and photos",
-  "Paper order books",
-  "Spreadsheets of stores and visits",
-  "A paper logbook for kilometres",
-  "Typing up invoices at night",
-];
-
 // The rest of the questions, after the doubts at the form (lib/site.ts `objections`).
 const faqs: [q: string, a: string][] = [
   ["Who is it for?", "Distributors with 3 to 30 reps who visit stores, take orders and check the shelves."],
@@ -468,27 +459,6 @@ export default function Home() {
                 className="bg-mint ring-teal-100"
                 badge="bg-teal-900 text-sand"
               />
-            </div>
-            <div className="tk-reveal grid gap-6 rounded-2xl bg-teal-950 p-6 text-sand sm:p-8 md:grid-cols-[0.8fr_1.2fr] md:items-center md:gap-10">
-              <div className="grid gap-2">
-                <p className="font-display text-2xl font-bold leading-tight text-amber-500 sm:text-3xl">One app instead of five.</p>
-                <p className="leading-relaxed text-teal-100">
-                  {site.name} replaces all of these. If you need HR later, you can add it.
-                </p>
-              </div>
-              <ul className="grid gap-x-8 gap-y-3 sm:grid-cols-2">
-                {replaces.map((r) => (
-                  <li key={r} className="tk-reveal-late tk-timeline flex items-start gap-3 border-t border-white/15 pt-3 font-medium leading-snug">
-                    <span className="tk-pop mt-0.5 grid size-5 shrink-0 place-items-center rounded-full bg-amber-500 text-teal-950">
-                      <Check className="tk-draw size-3" strokeWidth={3.5} aria-hidden="true" />
-                    </span>
-                    <span>
-                      <span className="sr-only">Replaces </span>
-                      {r}
-                    </span>
-                  </li>
-                ))}
-              </ul>
             </div>
           </div>
         </section>
