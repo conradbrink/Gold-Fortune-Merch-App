@@ -95,7 +95,7 @@ const sales = [
 // (#186), and every report has its summary (/api/insights).
 const ai = [
   { icon: MessageSquareText, text: "Ask about your stores, reps, sales, orders and stock, and get the answer in seconds." },
-  { icon: CalendarDays, text: "It plans a rep's month of visits, town by town, ready to put on the schedule." },
+  { icon: CalendarDays, text: "Ask it to plan a rep's month of visits: one town a day, so they drive less and spend less on fuel." },
   { icon: FileText, text: "Every report comes with a short summary of what stands out." },
 ];
 
@@ -448,7 +448,7 @@ export default function Home() {
             shelf-photo check is built and being rolled out (owner: "mark it as
             new"), so it says New, and Founding distributors get it first. */}
         <section id="ai" className="scroll-mt-28 border-t border-line">
-          <div className={`${wrap} max-w-6xl lg:grid-cols-[1fr_0.8fr] lg:items-center lg:gap-14`}>
+          <div className={`${wrap} max-w-6xl lg:grid-cols-[0.9fr_1.1fr] lg:items-center lg:gap-12`}>
             <div className="grid content-start gap-6 sm:gap-8">
               <div className="grid gap-3">
                 <p className="tk-reveal text-sm font-bold uppercase tracking-wide text-teal-700">The {site.name} AI Manager</p>
@@ -460,13 +460,24 @@ export default function Home() {
               <Points items={ai} badge="bg-teal-900 text-amber-500" />
               <p className={verdict}>Like a sales manager who has read every report.</p>
             </div>
-            <Shot
-              src="/demo/dash/site-ask.webp"
-              alt="The AI Manager answering “Which stores have dropped this month?” with four stores, what each ordered this month against last month, and which of them a rep visits on Thursday."
-              width={800}
-              height={1280}
-              className="mx-auto w-full max-w-sm"
-            />
+            {/* Two real Ask answers (example data): what dropped, and a month
+                of visits planned town by town, ready to add to the schedule. */}
+            <div className="grid gap-4 sm:grid-cols-2">
+              <Shot
+                src="/demo/dash/site-ask.webp"
+                alt="The AI Manager answering “Which stores have dropped this month?” with four stores, what each ordered this month against last month, and which of them a rep visits on Thursday."
+                width={800}
+                height={1280}
+                className="mx-auto w-full max-w-xs"
+              />
+              <Shot
+                src="/demo/dash/site-ask-plan.webp"
+                alt="The AI Manager planning Thabo's November so he drives less: 66 visits to 33 stores, one town a day, with a button to add them to the schedule."
+                width={800}
+                height={1280}
+                className="mx-auto w-full max-w-xs"
+              />
+            </div>
             <div className="tk-reveal grid gap-5 rounded-2xl bg-teal-950 p-6 text-sand sm:p-8 lg:col-span-2">
               <div className="grid gap-2">
                 <p className="w-fit rounded-full bg-amber-500 px-3 py-1 text-xs font-bold uppercase tracking-wide text-teal-950">New</p>
