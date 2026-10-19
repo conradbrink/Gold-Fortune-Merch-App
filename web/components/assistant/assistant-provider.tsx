@@ -50,8 +50,16 @@ const STORAGE_KEY = "tickd.ask.v1";
 
 type Stored = { orgId: string; open: boolean; messages: AskMessage[]; left: QuestionsLeft | null };
 
+/**
+ * Bumped on sign-out. A provider remembers the one it started under and stops
+ * saving once it changes, so an answer still streaming as somebody signs out
+ * cannot write their conversation back for the next person at this tab.
+ */
+let signOuts = 0;
+
 /** Clears this tab's conversation. Called on sign-out. */
 export function forgetAssistant() {
+  signOuts++;
   try {
     sessionStorage.removeItem(STORAGE_KEY);
   } catch {
@@ -97,6 +105,7 @@ export function AssistantProvider({ children }: Readonly<{ children: React.React
   const [busy, setBusy] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
   const [loadedFor, setLoadedFor] = useState<string | null>(null);
+  const [session] = useState(() => signOuts);
 
   const orgId = company?.orgId ?? null;
 
@@ -113,12 +122,12 @@ export function AssistantProvider({ children }: Readonly<{ children: React.React
   }, [orgId, loadedFor]);
 
   useEffect(() => {
-    if (!orgId || loadedFor !== orgId) return;
+    if (!orgId || loadedFor !== orgId || session !== signOuts) return;
     // A question whose answer is still coming is left out with it: restored
     // alone it would read as asked and never answered.
     const done = messages.filter((m, i) => !m.pending && !(m.role === "user" && messages[i + 1]?.pending));
     save({ orgId, open, left, messages: done });
-  }, [orgId, loadedFor, open, left, messages]);
+  }, [orgId, loadedFor, session, open, left, messages]);
 
   const update = useCallback((id: string, change: (m: AskMessage) => AskMessage) => {
     setMessages((all) => all.map((m) => (m.id === id ? change(m) : m)));

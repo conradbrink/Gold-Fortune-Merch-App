@@ -5,7 +5,6 @@ import { parseCompanyConfig } from "@/lib/company-config";
 import { moduleEnabled } from "@/lib/modules";
 import { currencySymbol } from "@/lib/money";
 import { toPermissionSet } from "@/lib/permissions";
-import { DEFAULT_TERMS } from "@/lib/terms";
 import { toolsFor } from "@/lib/assistant-tools";
 import type { AssistantContext } from "@/lib/assistant-prompt";
 import { runTool, type ToolEnv } from "@/lib/assistant-data";
@@ -105,7 +104,7 @@ export async function POST(request: Request) {
 
   const today = new Intl.DateTimeFormat("en-CA", { timeZone: config.timezone }).format(new Date());
   const ctx: AssistantContext = {
-    terms: config.terms ?? DEFAULT_TERMS,
+    terms: config.terms,
     companyName: config.branding.name ?? "",
     merchandising: moduleEnabled(config.modules, "distribution"),
     today,

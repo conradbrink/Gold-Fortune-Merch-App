@@ -28,6 +28,11 @@ import type { AssistantEvent, ChatTurn, QuestionsLeft } from "@/lib/assistant-st
 /** Lookup rounds per question. Enough to find a name and then ask about it. */
 const MAX_ROUNDS = 5;
 
+type Verdict = "on" | "off" | "failed";
+
+/** The topic check could not run, so nothing was answered. */
+class CheckFailed extends Error {}
+
 export type AnswerOptions = {
   client: OpenAI;
   model: string;
@@ -78,21 +83,25 @@ export async function answerQuestion(o: AnswerOptions): Promise<void> {
       },
       { signal: abort.signal }
     )
-    .then((r) => parseGuardVerdict(r.output_text))
-    // A check that cannot run is a no: the answer is held, not leaked.
-    .catch((reason) => {
+    .then((r): Verdict => (parseGuardVerdict(r.output_text) ? "on" : "off"))
+    // A check that cannot run holds the answer back, and says so: it is not
+    // an off-topic question, and must not be refused as one.
+    .catch((reason): Verdict => {
       if (!abort.signal.aborted) console.error("assistant: topic check failed", reason);
-      return false;
+      return "failed";
     });
 
   let cleared = false;
+  /** True once the check says yes. False (and stopped) for a no. Throws when it could not run. */
   const allowed = async () => {
     if (cleared) return true;
-    if (await guard) {
+    const verdict = await guard;
+    if (verdict === "on") {
       cleared = true;
       return true;
     }
     abort.abort();
+    if (verdict === "failed") throw new CheckFailed();
     return false;
   };
 
@@ -127,13 +136,17 @@ export async function answerQuestion(o: AnswerOptions): Promise<void> {
       );
 
       let output: ResponseOutputItem[] = [];
+      let cutShort = false;
       for await (const event of response) {
         if (event.type === "response.output_text.delta") {
           if (!(await allowed())) return refuse();
           send({ type: "text", text: event.delta });
           wrote = true;
-        } else if (event.type === "response.completed" || event.type === "response.incomplete") {
+        } else if (event.type === "response.completed") {
           output = event.response.output;
+        } else if (event.type === "response.incomplete") {
+          output = event.response.output;
+          cutShort = true;
         } else if (event.type === "response.failed") {
           throw new Error(event.response.error?.message ?? "The answer failed.");
         }
@@ -142,7 +155,13 @@ export async function answerQuestion(o: AnswerOptions): Promise<void> {
       const calls = output.filter(
         (item): item is Extract<ResponseOutputItem, { type: "function_call" }> => item.type === "function_call"
       );
-      if (calls.length === 0) break;
+      if (calls.length === 0) {
+        // Stopped at the length limit: say so, or half a list reads as the whole.
+        if (cutShort && wrote) {
+          send({ type: "text", text: "\n\nThat answer was cut short. Ask for a smaller part, or download the table." });
+        }
+        break;
+      }
 
       if (!(await allowed())) return refuse();
       // A few words before a lookup get a break after them.
@@ -183,9 +202,14 @@ export async function answerQuestion(o: AnswerOptions): Promise<void> {
     if (!wrote) send({ type: "text", text: "I couldn't find an answer to that. Try asking it another way." });
     send({ type: "done", left });
   } catch (reason) {
+    if (reason instanceof CheckFailed) {
+      send({ type: "error", text: "Ask couldn't check your question just now. Try again in a moment." });
+      send({ type: "done", left });
+      return;
+    }
     if (abort.signal.aborted) {
       // Stopped by the topic check, or by the person leaving.
-      if (!(await guard)) refuse();
+      if ((await guard) === "off") refuse();
       return;
     }
     console.error("assistant: answer failed", reason);

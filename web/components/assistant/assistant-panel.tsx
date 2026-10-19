@@ -78,7 +78,10 @@ export function AssistantPanelView({
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
   const examples = useMemo(() => exampleQuestions(tools, t), [tools, t]);
-  const outOfQuestions = left !== null && left.hour <= 0;
+  // Shown, never enforced here: the count is from the last answer and the
+  // hour moves on. The server says no, with when to try again.
+  const lastMessage = messages[messages.length - 1];
+  const finished = lastMessage?.role === "assistant" && !lastMessage.pending ? lastMessage : null;
 
   // Opening puts the cursor in the box, ready to type.
   useEffect(() => {
@@ -96,7 +99,7 @@ export function AssistantPanelView({
   }, [count, lastText, lastTables]);
 
   function submit(text: string) {
-    if (busy || outOfQuestions || !text.trim()) return;
+    if (busy || !text.trim()) return;
     pinned.current = true;
     onAsk(text);
     setDraft("");
@@ -139,7 +142,6 @@ export function AssistantPanelView({
           pinned.current = el.scrollHeight - el.scrollTop - el.clientHeight < 48;
         }}
         className="min-h-0 flex-1 overflow-y-auto px-4 py-5"
-        aria-live="polite"
       >
         {messages.length === 0 ? (
           <div className="space-y-5">
@@ -156,7 +158,7 @@ export function AssistantPanelView({
                       <button
                         type="button"
                         onClick={() => submit(q)}
-                        disabled={busy || outOfQuestions}
+                        disabled={busy}
                         className="w-full rounded-lg border border-border px-3 py-2.5 text-left text-sm text-foreground transition-colors hover:bg-muted focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none active:scale-[0.99] disabled:opacity-50 motion-reduce:active:scale-100"
                       >
                         {q}
@@ -175,6 +177,11 @@ export function AssistantPanelView({
           </ol>
         )}
       </div>
+
+      {/* For screen readers: each finished answer once, not every word as it streams. */}
+      <p className="sr-only" aria-live="polite">
+        {finished ? (finished.error ?? finished.text) : ""}
+      </p>
 
       <form
         className="shrink-0 border-t border-border px-4 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]"
@@ -200,8 +207,7 @@ export function AssistantPanelView({
                 submit(draft);
               }
             }}
-            placeholder={outOfQuestions ? "No questions left this hour" : "Ask a question"}
-            disabled={outOfQuestions}
+            placeholder="Ask a question"
             className="field-sizing-content max-h-40 min-h-8 flex-1 resize-none bg-transparent py-1 text-base text-foreground outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed md:text-sm"
           />
           {busy ? (
@@ -209,7 +215,7 @@ export function AssistantPanelView({
               <Square className="size-3 fill-current" />
             </Button>
           ) : (
-            <Button type="submit" size="icon-sm" aria-label="Send question" disabled={!draft.trim() || outOfQuestions}>
+            <Button type="submit" size="icon-sm" aria-label="Send question" disabled={!draft.trim()}>
               <ArrowUp className="size-4" />
             </Button>
           )}
@@ -241,7 +247,7 @@ function Answer({ message }: Readonly<{ message: AskMessage }>) {
         message.text && <AnswerText text={message.text} />
       )}
       {message.pending && message.status && (
-        <p className="flex items-center gap-2 text-sm text-muted-foreground">
+        <p role="status" className="flex items-center gap-2 text-sm text-muted-foreground">
           <LoaderCircle className="size-3.5 animate-spin motion-reduce:animate-none" aria-hidden />
           {message.status}…
         </p>

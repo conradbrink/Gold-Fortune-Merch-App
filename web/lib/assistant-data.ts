@@ -167,6 +167,14 @@ async function allRows<T>(
   return { rows, capped: true };
 }
 
+/** Every store's last check-in, paged: one row per visited store can pass 1000. */
+async function lastVisits(env: ToolEnv): Promise<Map<string, string>> {
+  const { rows } = await allRows<{ store_id: string; last_visit_at: string }>((a, b) =>
+    env.supabase.rpc("store_last_visit").order("store_id").range(a, b)
+  );
+  return new Map(rows.map((l) => [l.store_id, l.last_visit_at]));
+}
+
 function sheet(
   title: string,
   filename: string,
@@ -192,34 +200,47 @@ async function findSites(args: Record<string, unknown>, env: ToolEnv): Promise<T
   fail(error);
   const found = (data ?? []).slice(0, 10);
 
-  // The last check-in at each, then who made it: two queries for any number
-  // of matches.
+  // The last check-in at each match and who made it. Usually one query: the
+  // newest check-ins across the matches. A match a busier one crowded out of
+  // that page gets its own small query, so "last" is exact either way.
+  type Last = { store_id: string; checkin_at: string | null; rep: { full_name: string } | { full_name: string }[] | null };
+  const last = new Map<string, Last>();
   const ids = found.map((s) => s.id);
-  const lastAt = new Map<string, string>();
   if (ids.length) {
-    const { data: lv, error: le } = await env.supabase.rpc("store_last_visit");
-    fail(le);
-    for (const l of lv ?? []) if (ids.includes(l.store_id)) lastAt.set(l.store_id, l.last_visit_at);
-  }
-  const by = new Map<string, string>();
-  if (lastAt.size) {
     const { data: v, error: e } = await env.supabase
       .from("visits")
       .select("store_id, checkin_at, rep:profiles!visits_rep_id_fkey(full_name)")
-      .in("store_id", [...lastAt.keys()])
-      .in("checkin_at", [...lastAt.values()]);
+      .in("store_id", ids)
+      .not("checkin_at", "is", null)
+      .order("checkin_at", { ascending: false })
+      .limit(200);
     fail(e);
-    for (const row of v ?? []) {
-      if (Date.parse(row.checkin_at ?? "") !== Date.parse(lastAt.get(row.store_id) ?? "")) continue;
-      const name = one(row.rep as { full_name: string } | { full_name: string }[] | null)?.full_name;
-      if (name) by.set(row.store_id, name);
+    for (const row of (v ?? []) as Last[]) if (!last.has(row.store_id)) last.set(row.store_id, row);
+    if ((v ?? []).length === 200) {
+      await Promise.all(
+        ids
+          .filter((id) => !last.has(id))
+          .map(async (id) => {
+            const { data: latest, error: e1 } = await env.supabase
+              .from("visits")
+              .select("store_id, checkin_at, rep:profiles!visits_rep_id_fkey(full_name)")
+              .eq("store_id", id)
+              .not("checkin_at", "is", null)
+              .order("checkin_at", { ascending: false })
+              .limit(1);
+            fail(e1);
+            const row = ((latest ?? []) as Last[])[0];
+            if (row) last.set(id, row);
+          })
+      );
     }
   }
 
   return {
     model: {
       matches: found.map((s) => {
-        const at = lastAt.get(s.id) ?? null;
+        const v = last.get(s.id);
+        const at = v?.checkin_at ?? null;
         return {
           id: s.id,
           name: s.name,
@@ -228,7 +249,7 @@ async function findSites(args: Record<string, unknown>, env: ToolEnv): Promise<T
           active: s.active,
           last_visit_day: at ? niceDay(localDay(at, env.timeZone)) : null,
           last_visit_time: at ? companyTime(at, env.timeZone) : null,
-          last_visit_by: by.get(s.id) ?? null,
+          last_visit_by: one(v?.rep)?.full_name ?? null,
         };
       }),
       more_matches: (data ?? []).length > 10,
@@ -319,11 +340,10 @@ async function sitesNotVisited(args: Record<string, unknown>, env: ToolEnv): Pro
         .order("id")
         .range(a, b)
     ),
-    env.supabase.rpc("store_last_visit"),
+    lastVisits(env),
   ]);
-  fail(last.error);
 
-  const lastBy = new Map((last.data ?? []).map((l) => [l.store_id, l.last_visit_at]));
+  const lastBy = last;
   const rows = stores.rows
     .map((s) => {
       const at = lastBy.get(s.id) ?? null;
@@ -428,13 +448,16 @@ async function sales(args: Record<string, unknown>, env: ToolEnv): Promise<ToolR
   type Row = {
     id: string;
     delivered_at: string;
-    stores: { name: string } | { name: string }[] | null;
+    store_id: string | null;
+    rep_id: string | null;
+    stores: { name: string; city: string | null } | { name: string; city: string | null }[] | null;
     rep: { full_name: string } | { full_name: string }[] | null;
     order_lines:
       | {
           qty_delivered: number;
           qty_returned: number;
           unit_price: number | null;
+          product_id: string;
           products: { name: string } | { name: string }[] | null;
         }[]
       | null;
@@ -448,8 +471,8 @@ async function sales(args: Record<string, unknown>, env: ToolEnv): Promise<ToolR
     let q = env.supabase
       .from("orders")
       .select(
-        `id, delivered_at, stores(name), rep:profiles!orders_rep_id_fkey(full_name),
-         order_lines(qty_delivered, qty_returned, unit_price, products(name))`
+        `id, delivered_at, store_id, rep_id, stores(name, city), rep:profiles!orders_rep_id_fkey(full_name),
+         order_lines(qty_delivered, qty_returned, unit_price, product_id, products(name))`
       )
       .eq("status", "delivered")
       .gte("delivered_at", r.from.toISOString())
@@ -466,10 +489,11 @@ async function sales(args: Record<string, unknown>, env: ToolEnv): Promise<ToolR
     if (page.length < PAGE) break;
   }
 
-  type Group = { name: string; orders: Set<string>; units: number; net: number };
+  // Keyed by id, not name: two branches called "Choppies" are two rows.
+  type Group = { name: string; town: string | null; orders: Set<string>; units: number; net: number };
   const groups = new Map<string, Group>();
-  const add = (key: string, orderId: string, units: number, net: number) => {
-    const g = groups.get(key) ?? { name: key, orders: new Set<string>(), units: 0, net: 0 };
+  const add = (key: string, name: string, town: string | null, orderId: string, units: number, net: number) => {
+    const g = groups.get(key) ?? { name, town, orders: new Set<string>(), units: 0, net: 0 };
     g.orders.add(orderId);
     g.units += units;
     g.net += net;
@@ -486,22 +510,30 @@ async function sales(args: Record<string, unknown>, env: ToolEnv): Promise<ToolR
       const value = qty * (l.unit_price == null ? 0 : Number(l.unit_price));
       units += qty;
       net += value;
-      const key =
-        groupBy === "staff"
-          ? (one(o.rep)?.full_name ?? `No ${lower(t.staff.one)}`)
-          : groupBy === "site"
-            ? (one(o.stores)?.name ?? "")
-            : groupBy === "month"
-              ? new Date(`${month}-15T12:00:00Z`).toLocaleDateString("en-GB", { month: "long", year: "numeric", timeZone: "UTC" })
-              : groupBy === "product"
-                ? (one(l.products)?.name ?? "")
-                : "";
-      if (groupBy !== "total") add(key, o.id, qty, value);
+      const store = one(o.stores);
+      if (groupBy === "staff") {
+        add(o.rep_id ?? "", one(o.rep)?.full_name ?? `No ${lower(t.staff.one)}`, null, o.id, qty, value);
+      } else if (groupBy === "site") {
+        add(o.store_id ?? "", store?.name ?? "", store?.city ?? null, o.id, qty, value);
+      } else if (groupBy === "month") {
+        const label = new Date(`${month}-15T12:00:00Z`).toLocaleDateString("en-GB", { month: "long", year: "numeric", timeZone: "UTC" });
+        add(month, label, null, o.id, qty, value);
+      } else if (groupBy === "product") {
+        add(l.product_id, one(l.products)?.name ?? "", null, o.id, qty, value);
+      }
     }
   }
 
+  // Two rows that would read the same say which town they are.
+  const seen = new Map<string, number>();
+  for (const g of groups.values()) seen.set(g.name, (seen.get(g.name) ?? 0) + 1);
   const list = [...groups.values()]
-    .map((g) => ({ name: g.name, orders: g.orders.size, units: g.units, sales_excl_vat: money(g.net) }))
+    .map((g) => ({
+      name: (seen.get(g.name) ?? 0) > 1 && g.town ? `${g.name} (${g.town})` : g.name,
+      orders: g.orders.size,
+      units: g.units,
+      sales_excl_vat: money(g.net),
+    }))
     .sort((a, b) =>
       groupBy === "month" ? 0 : b.sales_excl_vat - a.sales_excl_vat
     );

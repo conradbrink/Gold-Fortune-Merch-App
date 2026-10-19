@@ -220,3 +220,75 @@ test("context carries answered questions only, never a refused or failed one", (
     { role: "assistant", text: "P68,000.25." },
   ]);
 });
+
+// The answer loop, with a stand-in for the AI: the topic check's three
+// outcomes and an answer cut off at the length limit.
+import { answerQuestion } from "@/lib/assistant-answer";
+import type { AssistantEvent } from "@/lib/assistant-stream";
+
+type Guard = "on" | "off" | "throws";
+
+function fakeClient(guard: Guard, events: Record<string, unknown>[]) {
+  return {
+    responses: {
+      create: async (params: { text?: { format?: { name?: string } } }) => {
+        if (params.text?.format?.name === "topic_check") {
+          if (guard === "throws") throw new Error("429 from the provider");
+          return { output_text: JSON.stringify({ on_topic: guard === "on" }) };
+        }
+        return (async function* () {
+          for (const e of events) yield e;
+        })();
+      },
+    },
+  };
+}
+
+async function run(guard: Guard, events: Record<string, unknown>[]) {
+  const sent: AssistantEvent[] = [];
+  await answerQuestion({
+    client: fakeClient(guard, events) as never,
+    model: "m",
+    guardModel: "m",
+    ctx: { terms: gf, companyName: "Gold Fortune", merchandising: true, today: "2026-10-19", timeZone: "UTC", currency: "BWP", currencySymbol: "P" },
+    tools: toolsFor(toPermissionSet(["admin"]), everything),
+    turns: [{ role: "user", text: "Sales this month?" }],
+    run: async () => ({ model: {} }),
+    send: (e) => sent.push(e),
+    abort: new AbortController(),
+    left: { hour: 9, day: 39 },
+  });
+  return sent;
+}
+
+const answer = [
+  { type: "response.output_text.delta", delta: "Sales are P1,000." },
+  { type: "response.completed", response: { output: [] } },
+];
+
+test("an on-topic question is answered; an off-topic one gets only the refusal", async () => {
+  const on = await run("on", answer);
+  assert.ok(on.some((e) => e.type === "text" && e.text === "Sales are P1,000."));
+  assert.equal(on.at(-1)?.type, "done");
+
+  const off = await run("off", answer);
+  assert.ok(!off.some((e) => e.type === "text"), "nothing of the answer leaks");
+  assert.ok(off.some((e) => e.type === "refused"));
+});
+
+test("a topic check that could not run is an error, never a refusal", async () => {
+  const sent = await run("throws", answer);
+  assert.ok(!sent.some((e) => e.type === "refused"));
+  assert.ok(!sent.some((e) => e.type === "text"));
+  assert.ok(sent.some((e) => e.type === "error" && /couldn't check/.test(e.text)));
+  assert.equal(sent.at(-1)?.type, "done");
+});
+
+test("an answer stopped at the length limit says it was cut short", async () => {
+  const sent = await run("on", [
+    { type: "response.output_text.delta", delta: "- Kiwi: 40" },
+    { type: "response.incomplete", response: { output: [] } },
+  ]);
+  const text = sent.filter((e) => e.type === "text").map((e) => (e as { text: string }).text).join("");
+  assert.match(text, /cut short/);
+});
