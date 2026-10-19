@@ -38,6 +38,20 @@ const businessTypes: Option[] = [
 const OFFERED = new Set(["distribution"]);
 const offeredTypes = businessTypes.filter(([, code]) => OFFERED.has(code));
 
+// What they distribute, as tap-to-pick options (owner, 19 Oct 2026); more than
+// one can be picked. Sent as the labels joined with commas, in this order, in
+// the application's `distributes` (free text, up to 200 characters).
+const products = [
+  "Snacks and sweets",
+  "Cold drinks and juice",
+  "Groceries",
+  "Liquor",
+  "Tobacco, vapes and lighters",
+  "Personal care",
+  "Cleaning and household",
+  "Something else",
+];
+
 const sizes: Option[] = [
   ["1 to 4", "1-4"],
   ["5 to 10", "5-10"],
@@ -58,7 +72,6 @@ const boxKey: Record<string, string> = {
   firstName: "first_name",
   lastName: "last_name",
   businessName: "business_name",
-  distributes: "distributes",
   whatsapp: "whatsapp",
 };
 const issueKey: Record<Field, string> = {
@@ -121,6 +134,51 @@ function Chips({
   );
 }
 
+// Like Chips, but any number can be on (toggle buttons in a group).
+function MultiChips({
+  label,
+  options,
+  value,
+  onToggle,
+  error,
+}: {
+  label: string;
+  options: string[];
+  value: string[];
+  onToggle: (v: string) => void;
+  error?: string;
+}) {
+  return (
+    <fieldset className="grid gap-2">
+      <legend className="mb-1 text-sm font-medium text-teal-100">{label}</legend>
+      <div role="group" aria-label={label} className="flex flex-wrap gap-2">
+        {options.map((text) => {
+          const on = value.includes(text);
+          return (
+            <button
+              key={text}
+              type="button"
+              aria-pressed={on}
+              onClick={() => onToggle(text)}
+              className={`min-h-11 rounded-full px-4 py-2 text-sm font-semibold ring-1 transition-[background-color,color,transform] duration-150 ease-out active:scale-[0.97] ${
+                on ? "bg-amber-500 text-teal-950 ring-amber-500" : "text-teal-100 ring-white/25 hover:bg-white/10"
+              }`}
+            >
+              {text}
+            </button>
+          );
+        })}
+      </div>
+      <p className="text-sm text-teal-100/80">Pick all that apply.</p>
+      {error && (
+        <p role="alert" className={errorText}>
+          {error}
+        </p>
+      )}
+    </fieldset>
+  );
+}
+
 function Labelled({
   label,
   htmlFor,
@@ -154,10 +212,19 @@ export function FoundingForm() {
   const id = useId();
   const [state, setState] = useState<State>({ kind: "idle" });
   const [teamSize, setTeamSize] = useState("");
+  const [distributes, setDistributes] = useState<string[]>([]);
   // With one type on offer there is nothing to ask: it is that one.
   const [trade] = useState(offeredTypes.length === 1 ? offeredTypes[0][1] : "");
   const [missing, setMissing] = useState<Partial<Record<Field, string>>>({});
 
+  const toggleProduct = (v: string) => {
+    started();
+    once("signup_field", "distributes");
+    once("signup_filled", "distributes");
+    // Kept in the list's own order, whatever order they were tapped in.
+    setDistributes((cur) => (cur.includes(v) ? cur.filter((c) => c !== v) : products.filter((p) => p === v || cur.includes(p))));
+    setMissing((m) => ({ ...m, distributes: undefined }));
+  };
   const pickSize = (v: string) => {
     started();
     once("signup_field", "team_size");
@@ -210,10 +277,11 @@ export function FoundingForm() {
 
     track("signup_submitted");
     const gaps: Partial<Record<Field, string>> = {};
+    if (distributes.length === 0) gaps.distributes = "Choose what you distribute.";
     if (!teamSize) gaps.teamSize = "Choose how many reps you have.";
     setMissing(gaps);
     if (Object.keys(gaps).length > 0) {
-      track("signup_error", { section: "team_size" });
+      for (const f of Object.keys(gaps) as Field[]) track("signup_error", { section: issueKey[f] });
       return;
     }
 
@@ -231,7 +299,7 @@ export function FoundingForm() {
         body: JSON.stringify({
           name: `${text("firstName").trim()} ${text("lastName").trim()}`.trim(),
           businessName: text("businessName"),
-          distributes: text("distributes"),
+          distributes: distributes.join(", "),
           teamSize,
           trade,
           whatsapp: text("whatsapp"),
@@ -288,16 +356,13 @@ export function FoundingForm() {
       <Labelled label="Business name" htmlFor={`${id}-biz`} error={problem("businessName")}>
         <input id={`${id}-biz`} name="businessName" required maxLength={120} autoComplete="organization" className={input} />
       </Labelled>
-      <Labelled label="What do you distribute?" htmlFor={`${id}-dist`} error={problem("distributes")}>
-        <input
-          id={`${id}-dist`}
-          name="distributes"
-          required
-          maxLength={200}
-          placeholder="For example, snacks and cold drinks"
-          className={input}
-        />
-      </Labelled>
+      <MultiChips
+        label="What do you distribute?"
+        options={products}
+        value={distributes}
+        onToggle={toggleProduct}
+        error={problem("distributes")}
+      />
       <Chips label="How many reps do you have?" options={sizes} value={teamSize} onChange={pickSize} error={problem("teamSize")} />
       <Labelled
         label="WhatsApp number"
