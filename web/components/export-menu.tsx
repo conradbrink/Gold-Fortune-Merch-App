@@ -35,6 +35,8 @@ export type ExportVariant = {
 type ExportMenuProps = {
   disabled?: boolean;
   label?: string;
+  /** A small outlined button, for a narrow place such as the Ask panel. */
+  compact?: boolean;
 } & (
   | { build: ExportVariant["build"]; variants?: undefined }
   | { variants: ExportVariant[]; build?: undefined }
@@ -66,6 +68,7 @@ export function ExportMenu({
   variants,
   disabled = false,
   label = "Export",
+  compact = false,
 }: ExportMenuProps) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -105,8 +108,13 @@ export function ExportMenu({
       <DropdownMenu>
         <DropdownMenuTrigger
           render={
-            <Button className="gap-1.5" disabled={disabled || busy}>
-              <Download className="h-4 w-4" />
+            <Button
+              className="gap-1.5"
+              size={compact ? "sm" : "default"}
+              variant={compact ? "outline" : "default"}
+              disabled={disabled || busy}
+            >
+              <Download className={compact ? "h-3.5 w-3.5" : "h-4 w-4"} />
               {busy ? "Preparing…" : label}
             </Button>
           }

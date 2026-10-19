@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { QUESTIONS_PER_DAY, QUESTIONS_PER_HOUR } from "@/lib/assistant-stream";
 
 /**
  * Server-side rate limiting for the routes that reach a paid third party.
@@ -47,10 +48,23 @@ export const LIMITS = {
    * before anyone notices.
    */
   roadDistance: { bucket: "road_distance", limit: 200, windowSeconds: 3600 },
+  /**
+   * The assistant (Ask), per person: the owner's numbers, 19 Oct 2026. Every
+   * question counts, answered or refused, so nobody can run up the bill by
+   * asking it things it will not answer. The day is a UTC day, so it starts
+   * again at 02:00 in South Africa and Botswana.
+   */
+  assistantHour: { bucket: "assistant_hour", limit: QUESTIONS_PER_HOUR, windowSeconds: 3600 },
+  assistantDay: { bucket: "assistant_day", limit: QUESTIONS_PER_DAY, windowSeconds: 86_400 },
 } satisfies Record<string, Limit>;
 
 type Verdict =
   | { ok: true }
+  | { ok: false; response: Response };
+
+/** As `Verdict`, with what is left in the window when it could be counted. */
+type CountedVerdict =
+  | { ok: true; remaining: number | null }
   | { ok: false; response: Response };
 
 /**
@@ -78,7 +92,7 @@ export async function enforceRateLimit(
   limit: Limit,
   cost = 1,
   { failClosed = false }: { failClosed?: boolean } = {}
-): Promise<Verdict> {
+): Promise<CountedVerdict> {
   const { data, error } = await supabase.rpc("consume_rate_limit", {
     p_bucket: limit.bucket,
     p_limit: limit.limit,
@@ -90,7 +104,7 @@ export async function enforceRateLimit(
     console.error(
       `[rate-limit] ${limit.bucket} could not be counted: ${error.message}`
     );
-    if (!failClosed) return { ok: true };
+    if (!failClosed) return { ok: true, remaining: null };
     return {
       ok: false,
       response: Response.json(
@@ -109,7 +123,7 @@ export async function enforceRateLimit(
     retry_after_seconds: number;
   };
 
-  if (verdict.allowed) return { ok: true };
+  if (verdict.allowed) return { ok: true, remaining: verdict.remaining };
 
   const retryAfter = Math.max(verdict.retry_after_seconds, 1);
   // Logged as a security event: a burst here is either a runaway client or

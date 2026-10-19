@@ -27,6 +27,7 @@ import { ThemeToggle } from "@/components/layout/theme-toggle";
 import { NotificationsBell } from "@/components/hr/notifications-bell";
 import { AlertsBell } from "@/components/alerts/alerts-bell";
 import { WorkdayControl } from "@/components/workday/workday-control";
+import { forgetAssistant } from "@/components/assistant/assistant-provider";
 import { can } from "@/lib/permissions";
 import { usePermissions } from "@/lib/use-permissions";
 import { useCompanyConfig } from "@/lib/use-company-config";
@@ -87,6 +88,7 @@ export function TopBar() {
     // here must not be shown their company's configuration or map view.
     forgetCompanyConfig();
     forgetSitesView();
+    forgetAssistant();
     router.push("/login");
     router.refresh();
   }
