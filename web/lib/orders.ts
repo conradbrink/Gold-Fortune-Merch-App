@@ -1,8 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/lib/supabase/types";
 import { lower, withArticle, type Terms } from "@/lib/terms";
-import { ORDER_STATUSES } from "@/lib/warehouse";
-import { orderStatusesFromQuery } from "@/lib/dashboard-links";
 import type { StorePriceList } from "@/lib/price-lists";
 
 /**
@@ -24,14 +22,6 @@ export type AvailabilityRow =
   Database["public"]["Functions"]["order_availability_check"]["Returns"][number];
 export type PickingRow =
   Database["public"]["Functions"]["order_picking_list"]["Returns"][number];
-
-export type OrderListRow = OrderRow & {
-  store_name: string | null;
-  line_count: number;
-  units: number;
-  /** What the order is worth to the business, VAT included. */
-  total_incl_vat: number;
-};
 
 export type OrderDetail = {
   order: OrderRow;
@@ -108,90 +98,170 @@ function fail(error: { message: string } | null) {
 
 // ------------------------------------------------------------------ reads
 
-export async function fetchOrders(
+/**
+ * The search box's filter, for `.or()`: order number, invoice number, contact,
+ * or a store whose name matches. Null when there is nothing left to search for.
+ *
+ * It has to run in the database, before any limit. Filtering the rows that came
+ * back means an order older than the newest page can never be found by its own
+ * order number, and the screen says "no orders" about an order that exists.
+ *
+ * `order_number`, `invoice_number` and `contact_name` are columns here, so they
+ * go straight into the filter. The store name lives on an embedded table and
+ * cannot, so the matching store ids are looked up first and folded in.
+ */
+async function orderSearchFilter(supabase: Client, term: string | undefined): Promise<string | null> {
+  // PostgREST parses this filter as a comma-separated list with parenthesised
+  // groups, so those characters have to go or the query is malformed. `%` and
+  // `_` are ilike wildcards and would widen the match silently, and so is `*`,
+  // which PostgREST reads as `%` in a like pattern.
+  const safe = (term ?? "").trim().replace(/[%_*,()\\]/g, "");
+  if (!safe) return null;
+  const { data: storeHits, error: storeError } = await supabase
+    .from("stores")
+    .select("id")
+    .ilike("name", `%${safe}%`)
+    .limit(100);
+  fail(storeError);
+
+  const clauses = [
+    `order_number.ilike.%${safe}%`,
+    `invoice_number.ilike.%${safe}%`,
+    `contact_name.ilike.%${safe}%`,
+  ];
+  const storeIds = (storeHits ?? []).map((s) => s.id);
+  if (storeIds.length > 0) clauses.push(`store_id.in.(${storeIds.join(",")})`);
+  return clauses.join(",");
+}
+
+/** A finished order, as the archive lists it. */
+export type ArchivedOrder = {
+  id: string;
+  orderNumber: string;
+  invoiceNumber: string | null;
+  status: "delivered" | "cancelled";
+  podStatus: string;
+  storeName: string | null;
+  contactName: string | null;
+  repName: string | null;
+  createdAt: string;
+  /** When it was delivered, or cancelled. Null only on an order older than the stamps. */
+  closedAt: string | null;
+  /** Who signed for it, from the consignment that arrived. */
+  receivedBy: string | null;
+  cancelReason: string | null;
+  /** VAT included, at the rate frozen onto the order. */
+  total: number;
+};
+
+/** How many the archive shows at a time. */
+export const ARCHIVE_PAGE = 50;
+
+/**
+ * The archive: delivered (or cancelled) orders, the newest first.
+ *
+ * Newest by the day it was delivered or cancelled, then by the day it was
+ * taken, so a batch recorded on one afternoon still reads newest order first.
+ * One row more than a page is asked for, which is how `more` knows there is
+ * another page without counting the whole table.
+ */
+export async function fetchArchivedOrders(
   supabase: Client,
-  opts: {
-    /** One status, several joined by commas, "open" for everything not yet delivered, or "all". */
-    status?: string;
-    search?: string;
-    /** Delivered with no signed proof on file: the pipeline's "proof of delivery missing". */
-    pod?: "outstanding";
-  } = {}
-): Promise<OrderListRow[]> {
+  opts: { show: "delivered" | "cancelled"; search?: string; offset?: number }
+): Promise<{ rows: ArchivedOrder[]; more: boolean }> {
+  const offset = opts.offset ?? 0;
   let q = supabase
     .from("orders")
-    .select("*, stores(name), order_lines(qty_ordered, unit_price)")
+    .select(
+      `id, order_number, invoice_number, status, pod_status, contact_name, created_at, delivered_at,
+       cancelled_at, cancel_reason, vat_rate, stores(name), profiles!orders_rep_id_fkey(full_name),
+       order_lines(qty_ordered, unit_price), dispatches(status, received_by_name, delivered_at)`
+    )
+    .eq("status", opts.show)
+    .order(opts.show === "delivered" ? "delivered_at" : "cancelled_at", { ascending: false, nullsFirst: false })
     .order("created_at", { ascending: false })
-    .limit(200);
+    .order("id")
+    .range(offset, offset + ARCHIVE_PAGE);
 
-  // In the query, before the limit, for the same reason as the search below: a
-  // filter applied to the newest 200 can miss the very orders it was asked for.
-  const statuses = orderStatusesFromQuery(opts.status ?? null, ORDER_STATUSES);
-  if (statuses) q = statuses.length === 1 ? q.eq("status", statuses[0]) : q.in("status", statuses);
-  if (opts.pod === "outstanding") q = q.eq("status", "delivered").eq("pod_status", "outstanding");
-
-  // The search has to happen in the database, before the limit. Filtering the
-  // 200 rows that came back means an order older than the newest 200 can never
-  // be found by its own order number — the screen says "no orders" about an
-  // order that exists, which is worse than saying nothing.
-  //
-  // `order_number`, `invoice_number` and `contact_name` are columns here, so they go straight
-  // into an `.or()`. The store name lives on an embedded table and cannot, so
-  // the matching store ids are looked up first and folded into the same filter
-  // rather than dropped from the search.
-  const term = opts.search?.trim();
-  if (term) {
-    // PostgREST parses this filter as a comma-separated list with parenthesised
-    // groups, so those characters have to go or the query is malformed. `%` and
-    // `_` are ilike wildcards and would widen the match silently.
-    const safe = term.replace(/[%_,()\\]/g, "");
-    if (safe) {
-      const { data: storeHits, error: storeError } = await supabase
-        .from("stores")
-        .select("id")
-        .ilike("name", `%${safe}%`)
-        .limit(100);
-      fail(storeError);
-
-      const clauses = [
-        `order_number.ilike.%${safe}%`,
-        `invoice_number.ilike.%${safe}%`,
-        `contact_name.ilike.%${safe}%`,
-      ];
-      const storeIds = (storeHits ?? []).map((s) => s.id);
-      if (storeIds.length > 0) clauses.push(`store_id.in.(${storeIds.join(",")})`);
-      q = q.or(clauses.join(","));
-    }
-  }
+  const filter = await orderSearchFilter(supabase, opts.search);
+  if (filter) q = q.or(filter);
 
   const { data, error } = await q;
   fail(error);
 
-  const rows = (data ?? []) as unknown as (OrderRow & {
+  type Raw = {
+    id: string;
+    order_number: string;
+    invoice_number: string | null;
+    status: "delivered" | "cancelled";
+    pod_status: string;
+    contact_name: string | null;
+    created_at: string;
+    delivered_at: string | null;
+    cancelled_at: string | null;
+    cancel_reason: string | null;
+    vat_rate: number | null;
     stores: { name: string } | { name: string }[] | null;
+    profiles: { full_name: string | null } | { full_name: string | null }[] | null;
     order_lines: { qty_ordered: number; unit_price: number | null }[] | null;
-  })[];
+    dispatches: { status: string; received_by_name: string | null; delivered_at: string | null }[] | null;
+  };
+  const one = <T,>(v: T | T[] | null): T | null => (Array.isArray(v) ? (v[0] ?? null) : v);
+  const raw = (data ?? []) as unknown as Raw[];
 
-  return rows.map((r) => {
-    // PostgREST returns an embedded to-one as an object or an array depending
-    // on how it resolves the relationship; normalise rather than guess.
-    const store = Array.isArray(r.stores) ? r.stores[0] : r.stores;
-    const lines = r.order_lines ?? [];
-    return {
-      ...r,
-      store_name: store?.name ?? null,
-      line_count: lines.length,
-      units: lines.reduce((n, l) => n + l.qty_ordered, 0),
-      // At the rate frozen onto this order, not the organisation's current one.
-      total_incl_vat: orderTotals(
-        lines.map((l) => ({
-          qty: l.qty_ordered,
-          unitPrice: l.unit_price == null ? 0 : Number(l.unit_price),
-        })),
-        Number(r.vat_rate ?? 0)
-      ).total,
-    } as OrderListRow;
-  });
+  return {
+    more: raw.length > ARCHIVE_PAGE,
+    rows: raw.slice(0, ARCHIVE_PAGE).map((r) => {
+      // The consignment that arrived. An order that went out, came back and
+      // went out again has a returned dispatch as well, with nobody signing.
+      const arrived = (r.dispatches ?? [])
+        .filter((d) => d.status === "delivered")
+        .sort((a, b) => (b.delivered_at ?? "").localeCompare(a.delivered_at ?? ""))[0];
+      return {
+        id: r.id,
+        orderNumber: r.order_number,
+        invoiceNumber: r.invoice_number,
+        status: r.status,
+        podStatus: r.pod_status,
+        storeName: one(r.stores)?.name ?? null,
+        contactName: r.contact_name,
+        repName: one(r.profiles)?.full_name ?? null,
+        createdAt: r.created_at,
+        closedAt: r.status === "delivered" ? r.delivered_at : r.cancelled_at,
+        receivedBy: arrived?.received_by_name ?? null,
+        cancelReason: r.cancel_reason,
+        total: orderTotals(
+          (r.order_lines ?? []).map((l) => ({
+            qty: l.qty_ordered,
+            unitPrice: l.unit_price == null ? 0 : Number(l.unit_price),
+          })),
+          Number(r.vat_rate ?? 0)
+        ).total,
+      };
+    }),
+  };
+}
+
+/**
+ * The archive in month blocks, in the order given: "October 2026" and its rows.
+ * A row with no date (older than the stamps) goes under "Date not recorded".
+ */
+export function archiveMonths<T extends { closedAt: string | null }>(
+  rows: T[],
+  timeZone?: string
+): { month: string; rows: T[] }[] {
+  const out: { month: string; rows: T[] }[] = [];
+  for (const r of rows) {
+    // In the company's time zone, so a delivery just after midnight on the 1st
+    // is that month's, wherever the page is opened.
+    const month = r.closedAt
+      ? new Date(r.closedAt).toLocaleDateString("en-GB", { month: "long", year: "numeric", timeZone })
+      : "Date not recorded";
+    const last = out[out.length - 1];
+    if (last && last.month === month) last.rows.push(r);
+    else out.push({ month, rows: [r] });
+  }
+  return out;
 }
 
 export async function fetchOrderDetail(
@@ -911,9 +981,15 @@ export const markPacked = (supabase: Client, orderId: string, acceptShort = fals
 export class PartialDispatchError extends Error {
   /** Always true. Present so the check reads as a fact, not a type cast. */
   readonly orderWasDispatched = true;
-  constructor(message: string) {
+  /**
+   * Why the hand-over failed, without the order page's "on the delivery below":
+   * a screen with no delivery card says where to go in its own words.
+   */
+  readonly reason: string;
+  constructor(message: string, reason?: string) {
     super(message);
     this.name = "PartialDispatchError";
+    this.reason = reason ?? message;
   }
 }
 
@@ -970,17 +1046,19 @@ export async function dispatchOrder(
   if (typeof dispatchId !== "string") {
     throw new PartialDispatchError(
       `The order was dispatched, but it could not be given to ${withArticle(t, "staff")} — the ` +
-        `dispatch id came back missing. Set the ${one} on the delivery below.`
+        `dispatch id came back missing. Set the ${one} on the delivery below.`,
+      "the dispatch id came back missing."
     );
   }
 
   try {
     await assignDispatchRep(supabase, dispatchId, carrier.assignedRepId);
   } catch (e) {
+    const reason = e instanceof Error ? e.message : String(e);
     throw new PartialDispatchError(
-      `The order was dispatched, but it could not be given to ${withArticle(t, "staff")}: ${
-        e instanceof Error ? e.message : String(e)
-      } Set the ${one} on the delivery below — do not dispatch again.`
+      `The order was dispatched, but it could not be given to ${withArticle(t, "staff")}: ${reason} ` +
+        `Set the ${one} on the delivery below — do not dispatch again.`,
+      reason
     );
   }
   return result;

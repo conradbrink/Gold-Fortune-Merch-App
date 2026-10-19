@@ -99,6 +99,8 @@ const LINKED_FROM: Record<string, string> = {
   "/stores/damages": "app/(dashboard)/stores/page.tsx",
   // The Orders pipeline and Field team cards as pages; their cards open them too.
   "/orders/pipeline": "app/(dashboard)/orders/page.tsx",
+  // Finished orders, off the orders board.
+  "/orders/archive": "app/(dashboard)/orders/page.tsx",
   "/tracking/team": "app/(dashboard)/tracking/page.tsx",
 };
 

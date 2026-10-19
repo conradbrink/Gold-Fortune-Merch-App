@@ -277,8 +277,11 @@ export default function InvoicesPage() {
                 {rows.length === 0 ? (
                   sells && !canStart ? (
                     <>
-                      No invoices in this period. Open an order that has gone out and choose{" "}
-                      <Link href="/orders" className="text-primary hover:underline">Issue tax invoice</Link>.
+                      No invoices in this period. Open an order that has gone out (Dispatched on the{" "}
+                      <Link href="/orders" className="text-primary hover:underline">orders board</Link>, or
+                      delivered in the{" "}
+                      <Link href="/orders/archive" className="text-primary hover:underline">archive</Link>) and
+                      choose Issue tax invoice.
                     </>
                   ) : (
                     "No invoices in this period."

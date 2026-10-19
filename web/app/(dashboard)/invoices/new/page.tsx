@@ -251,11 +251,15 @@ export default function NewInvoicePage() {
 
       {source === "order" && (
         <p className="text-sm text-muted-foreground">
-          Open an order that has gone out and choose{" "}
+          Open an order that has gone out (Dispatched on the{" "}
           <Link href="/orders" className="text-primary hover:underline">
-            Issue tax invoice
+            orders board
           </Link>
-          .
+          , or delivered in the{" "}
+          <Link href="/orders/archive" className="text-primary hover:underline">
+            archive
+          </Link>
+          ) and choose Issue tax invoice.
         </p>
       )}
 
