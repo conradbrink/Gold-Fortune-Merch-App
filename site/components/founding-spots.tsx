@@ -40,11 +40,19 @@ export function spotsText(left: number | null): string {
   return `${Math.min(left, founding.spots)} of ${founding.spots} spots left`;
 }
 
-export function SpotsText({ className = "" }: { className?: string }) {
+/** `short`: "7 spots left." for the banner, and nothing at all until the number is in. */
+export function SpotsText({ className = "", short = false }: { className?: string; short?: boolean }) {
   const left = useSpotsLeft();
+  const text = short
+    ? left === null
+      ? ""
+      : left <= 0
+        ? "All spots are taken."
+        : `${Math.min(left, founding.spots)} spots left.`
+    : spotsText(left);
   return (
     <span className={className} aria-live="polite">
-      {spotsText(left)}
+      {text}
     </span>
   );
 }

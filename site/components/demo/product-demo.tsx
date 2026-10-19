@@ -162,7 +162,8 @@ const beats: Beat[] = [
         </Patch>
       </>
     ),
-    card: { icon: <Clock className="size-4" />, tone: "teal", title: "Thabo started work", body: "06:58 · 3 stores today", delay: 600 },
+    // The owner's view first (owner, 19 Oct 2026): the whole team at a glance.
+    card: { icon: <Clock className="size-4" />, tone: "teal", title: "4 reps out", body: "06:58 · 11 stores today · 2 orders in", delay: 600 },
   },
   {
     when: "07:31",
