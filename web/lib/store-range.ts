@@ -8,7 +8,7 @@ import type { RangeShow } from "@/lib/dashboard-links";
  * plan must be in a way automatic … the system should be able to learn the
  * new product sales and analyse it and then give a result").
  *
- * The rule lives in the database (range_facts, 20261019100000): a store's
+ * The rule lives in the database (range_facts, 20261019180000): a store's
  * size inside its group, the similar stores it is compared with, the share of
  * them taking each product, its own repeat orders, the new-product results,
  * and the office's overrides. This file only reads its answer (range_status,

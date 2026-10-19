@@ -1,4 +1,4 @@
--- Rollback of 20261019100000_store_range: the range functions, the pins and
+-- Rollback of 20261019180000_store_range: the range functions, the pins and
 -- exclusions, the store size column, the range settings and the dashboard
 -- card go. Nothing else read them.
 --

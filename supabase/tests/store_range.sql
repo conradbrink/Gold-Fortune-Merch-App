@@ -1,5 +1,5 @@
 -- Store range suite: Tickd works out which products each store should carry,
--- and judges new products by their repeat orders (20261019100000, 19 Oct 2026).
+-- and judges new products by their repeat orders (20261019180000, 19 Oct 2026).
 --
 -- Fixtures in Gold Fortune, in their own group so the group's sizes and
 -- shares are the suite's alone: "ZZ range chain" (S1..S10 ordering, S11 set

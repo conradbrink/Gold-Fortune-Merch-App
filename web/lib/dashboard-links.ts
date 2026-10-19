@@ -130,7 +130,7 @@ export function reorderGroupFromQuery(q: URLSearchParams): ReorderGroup | null {
 /**
  * The Range card's tiles: the stores missing products from their range, the
  * stores that stopped buying one, every product, and the new products'
- * results. The rules are in the database (range_facts, 20261019100000) and
+ * results. The rules are in the database (range_facts, 20261019180000) and
  * lib/store-range.ts.
  */
 export const RANGE_SHOWS = ["missing", "stopped", "products", "new"] as const;

@@ -53,7 +53,7 @@
 -- read invoices. The two internal functions take a company id and are not
 -- callable by anyone.
 --
--- Rollback: supabase/rollback/20261019100000_store_range.down.sql.
+-- Rollback: supabase/rollback/20261019180000_store_range.down.sql.
 
 ------------------------------------------------------------------ the settings
 
@@ -724,7 +724,7 @@ $$;
 revoke all on function public.range_status(integer) from public, anon;
 grant execute on function public.range_status(integer) to authenticated;
 comment on function public.range_status(integer) is
-  'Each active store, its name and town: its size and why, whether Tickd is still learning (and the ordering stores against the stores it needs), whether it has ordered lately, and its range: every product in it or ordered in the last p_days (range_lapse_days when null), with its status, why it is in the range, and what similar stores sell. Insights; money only with invoicing. Security definer over every order (see 20261019100000).';
+  'Each active store, its name and town: its size and why, whether Tickd is still learning (and the ordering stores against the stores it needs), whether it has ordered lately, and its range: every product in it or ordered in the last p_days (range_lapse_days when null), with its status, why it is in the range, and what similar stores sell. Insights; money only with invoicing. Security definer over every order (see 20261019180000).';
 
 -- Each orderable product's new-product result. The spread (stores with it,
 -- missing, stopped) the screens count from range_status's rows, so this does
