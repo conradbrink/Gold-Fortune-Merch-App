@@ -1,4 +1,4 @@
-import { clusterByProximity, type Point } from "@/lib/geo";
+import { distanceKm, orderStops, type Point } from "@/lib/geo";
 
 /**
  * A month of visits for one person, built from the towns and days the manager
@@ -13,10 +13,13 @@ import { clusterByProximity, type Point } from "@/lib/geo";
  *   wants a visit: weekly every week, every second week on alternate weeks,
  *   monthly once, in the quietest week. A visit already planned for that site
  *   in the month counts.
- * - Within the week, sites near each other share a day, up to the sites-a-day
- *   limit less what is already on that day. What does not fit is reported,
- *   not squeezed in; in a week the month shares with the next or last month,
- *   it is left for that month's days instead.
+ * - Each town's sites are split once into areas by where they are, one area a
+ *   day, so a day is neighbours and the same part of town falls on the same
+ *   day each week. The day's sites go in driving order.
+ * - A full day keeps its nearest sites and moves the rest to the nearest day
+ *   that week with room. What still does not fit is reported, not squeezed
+ *   in; in a week the month shares with the next or last month, it is left
+ *   for that month's days instead.
  */
 
 export type PlanFrequency = "weekly" | "biweekly" | "monthly";
@@ -75,7 +78,46 @@ export type VisitPlan = {
   short: { town: string; asked: number; got: number }[];
   /** Working days nobody was given. */
   spareDays: string[];
+  /** Sites with no map location: placed where there was room, not by area. */
+  noLocation: { siteId: string; name: string; town: string }[];
+  /**
+   * Sites whose map location is far from the rest of their town, most likely
+   * set wrong: placed as if they had none, so they don't pull a day across
+   * the country.
+   */
+  farFromTown: { siteId: string; name: string; town: string; km: number }[];
 };
+
+/** How far from the middle of its town a site may be before its location is doubted. */
+export const TOWN_RADIUS_KM = 30;
+
+/**
+ * Sites whose location is more than `TOWN_RADIUS_KM` from the middle of their
+ * town's other sites. Judged only where a town has three or more located
+ * sites; with fewer there is no "rest of the town" to compare against. The
+ * middle is the median, so one wrong location cannot drag it.
+ */
+export function sitesFarFromTown(sites: readonly PlanSite[]): Map<string, number> {
+  const far = new Map<string, number>();
+  const byTown = new Map<string, PlanSite[]>();
+  for (const s of sites) if (s.lat !== null && s.lng !== null) {
+    const key = townKey(s.town);
+    byTown.set(key, [...(byTown.get(key) ?? []), s]);
+  }
+  const median = (xs: number[]) => {
+    const v = [...xs].sort((a, b) => a - b);
+    return v.length % 2 ? v[(v.length - 1) / 2] : (v[v.length / 2 - 1] + v[v.length / 2]) / 2;
+  };
+  for (const town of byTown.values()) {
+    if (town.length < 3) continue;
+    const middle = { lat: median(town.map((s) => s.lat!)), lng: median(town.map((s) => s.lng!)) };
+    for (const s of town) {
+      const km = distanceKm({ lat: s.lat!, lng: s.lng! }, middle);
+      if (km > TOWN_RADIUS_KM) far.set(s.id, Math.round(km));
+    }
+  }
+  return far;
+}
 
 /** The name used for sites with no town, in the lookups and the answers. */
 export const NO_TOWN = "No town set";
@@ -156,7 +198,127 @@ export function visitsWanted(frequency: PlanFrequency, weeks: number): number {
   return 1;
 }
 
-export function buildVisitPlan(input: PlanInput): VisitPlan {
+const hasPoint = (s: PlanSite) => s.lat !== null && s.lng !== null;
+const pointOf = (s: PlanSite): Point => ({ lat: s.lat!, lng: s.lng! });
+
+/** The middle of the sites with a location, or null when none has one. */
+function centre(sites: readonly PlanSite[]): Point | null {
+  const located = sites.filter(hasPoint);
+  if (located.length === 0) return null;
+  return {
+    lat: located.reduce((n, s) => n + s.lat!, 0) / located.length,
+    lng: located.reduce((n, s) => n + s.lng!, 0) / located.length,
+  };
+}
+
+/** Kilometres from a point; 0 when either side has no location, so those stay put. */
+function away(s: PlanSite, p: Point | null): number {
+  return p && hasPoint(s) ? distanceKm(pointOf(s), p) : 0;
+}
+
+/**
+ * Groups sites purely by where they are: each site joins the nearest of
+ * `count` centres, and the centres settle on their groups (k-means).
+ *
+ * Not `clusterByProximity`, which evens the group sizes for a call cycle and
+ * so pushes a site into a far group just to balance the count. Here the day's
+ * limit is handled afterwards, by moving a full day's furthest sites to the
+ * nearest day with room. Seeds are spread from the edges (each the site
+ * furthest from those chosen so far), so the result is the same every time.
+ */
+function nearestGroups(sites: readonly PlanSite[], count: number): PlanSite[][] {
+  const k = Math.min(count, sites.length);
+  if (k === 0) return [];
+  const middle = centre(sites)!;
+  const seeds: Point[] = [];
+  let first = sites[0];
+  for (const s of sites) if (distanceKm(pointOf(s), middle) > distanceKm(pointOf(first), middle)) first = s;
+  seeds.push(pointOf(first));
+  while (seeds.length < k) {
+    let pick = sites[0];
+    let far = -1;
+    for (const s of sites) {
+      const near = Math.min(...seeds.map((c) => distanceKm(pointOf(s), c)));
+      if (near > far) {
+        far = near;
+        pick = s;
+      }
+    }
+    seeds.push(pointOf(pick));
+  }
+
+  let assign = sites.map(() => -1);
+  for (let round = 0; round < 25; round++) {
+    const next = sites.map((s) => {
+      let best = 0;
+      for (let i = 1; i < seeds.length; i++) {
+        if (distanceKm(pointOf(s), seeds[i]) < distanceKm(pointOf(s), seeds[best])) best = i;
+      }
+      return best;
+    });
+    if (next.every((g, i) => g === assign[i])) break;
+    assign = next;
+    for (let i = 0; i < seeds.length; i++) {
+      const members = sites.filter((_, j) => assign[j] === i);
+      if (members.length) seeds[i] = centre(members)!;
+    }
+  }
+  return seeds.map((_, i) => sites.filter((_, j) => assign[j] === i)).filter((g) => g.length > 0);
+}
+
+/**
+ * Splits a town's sites into `count` areas by where they are, numbered so
+ * that areas next to each other in number are next to each other on the
+ * ground: a short week folds area 1 into area 2, not into area 5.
+ *
+ * Sites with no location cannot be placed by distance; each goes to the
+ * area with the fewest sites so far. Returns site id to area number.
+ */
+export function townAreas(sites: readonly PlanSite[], count: number): Map<string, number> {
+  const located = sites.filter(hasPoint);
+  const groups = nearestGroups(located, Math.max(1, count));
+
+  // Chain the areas: start at the one furthest from the middle of town, then
+  // always step to the nearest area not yet numbered.
+  const middles = groups.map((g) => centre(g)!);
+  const all = centre(located);
+  const order: number[] = [];
+  if (groups.length) {
+    let at = middles.reduce((best, m, i) => (distanceKm(m, all!) > distanceKm(middles[best], all!) ? i : best), 0);
+    while (order.length < groups.length) {
+      order.push(at);
+      let next = -1;
+      for (let i = 0; i < groups.length; i++) {
+        if (order.includes(i)) continue;
+        if (next === -1 || distanceKm(middles[at], middles[i]) < distanceKm(middles[at], middles[next])) next = i;
+      }
+      if (next === -1) break;
+      at = next;
+    }
+  }
+
+  const areaOf = new Map<string, number>();
+  const size = Array.from({ length: Math.max(1, count) }, () => 0);
+  order.forEach((g, area) => {
+    for (const s of groups[g]) areaOf.set(s.id, area);
+    size[area] = groups[g].length;
+  });
+  for (const s of sites) {
+    if (areaOf.has(s.id)) continue;
+    const area = size.indexOf(Math.min(...size));
+    areaOf.set(s.id, area);
+    size[area]++;
+  }
+  return areaOf;
+}
+
+export function buildVisitPlan(raw: PlanInput): VisitPlan {
+  // A location far from its town is treated as no location at all.
+  const far = sitesFarFromTown(raw.sites);
+  const input: PlanInput = {
+    ...raw,
+    sites: raw.sites.map((s) => (far.has(s.id) ? { ...s, lat: null, lng: null } : s)),
+  };
   const perDay = Math.max(1, Math.floor(input.sitesPerDay));
   const dates = workingDates(input.from, input.to, input.workingDays, input.daysOff);
 
@@ -222,33 +384,46 @@ export function buildVisitPlan(input: PlanInput): VisitPlan {
     const sites = [...(sitesByTown.get(key) ?? [])].sort((a, b) => a.name.localeCompare(b.name));
 
     // The town's weeks, in order, with their days.
-    const weeks: { week: string; dates: string[]; sites: PlanSite[] }[] = [];
+    const weeks: { week: string; dates: string[] }[] = [];
     for (const d of townDates) {
       const w = weekOf(d);
       const last = weeks[weeks.length - 1];
       if (last && last.week === w) last.dates.push(d);
-      else weeks.push({ week: w, dates: [d], sites: [] });
+      else weeks.push({ week: w, dates: [d] });
     }
-    const load = () => weeks.map((w) => w.sites.length);
     const hasVisitIn = (s: PlanSite, w: (typeof weeks)[number]) =>
       (existingFor.get(s.id) ?? []).some((d) => weekOf(d) === w.week);
 
-    // Weekly first (fixed), then fortnightly on the lighter alternate weeks,
-    // then monthly into whichever week is lightest at the time.
+    // Areas: the town's sites split once, by where they are, into one group
+    // for each day of its fullest week. The same part of town then falls on
+    // the same day every week, and a day's sites are neighbours, not a drive
+    // across town. A shorter week folds neighbouring areas together.
+    const perWeek = Math.max(...weeks.map((w) => w.dates.length));
+    const areaOf = townAreas(sites, perWeek);
+    const dateFor = (w: (typeof weeks)[number], s: PlanSite) =>
+      w.dates[Math.min(w.dates.length - 1, Math.floor((areaOf.get(s.id)! * w.dates.length) / perWeek))];
+
+    const planned = new Map<string, PlanSite[]>(townDates.map((d) => [d, []]));
+    const roomOn = (d: string) => Math.max(0, perDay - (existingOn.get(d) ?? 0));
+    const weekLoad = (w: (typeof weeks)[number]) => w.dates.reduce((n, d) => n + planned.get(d)!.length, 0);
+    const put = (w: (typeof weeks)[number], s: PlanSite) => planned.get(dateFor(w, s))!.push(s);
+
+    // Weekly first (fixed), then every second week on the lighter alternate
+    // weeks for that site's day, then monthly into the week its day has most
+    // room, spreading ties across the month.
     const byFrequency = (f: PlanFrequency) => sites.filter((s) => s.frequency === f);
-    for (const s of byFrequency("weekly")) for (const w of weeks) if (!hasVisitIn(s, w)) w.sites.push(s);
+    for (const s of byFrequency("weekly")) for (const w of weeks) if (!hasVisitIn(s, w)) put(w, s);
     for (const s of byFrequency("biweekly")) {
-      const l = load();
-      const even = l.filter((_, i) => i % 2 === 0).reduce((a, b) => a + b, 0);
-      const odd = l.filter((_, i) => i % 2 === 1).reduce((a, b) => a + b, 0);
+      const loadOn = (parity: number) =>
+        weeks.reduce((n, w, i) => (i % 2 === parity ? n + planned.get(dateFor(w, s))!.length : n), 0);
       // A visit already planned sets the rhythm: every second week from it,
       // so the new one never lands in the week beside it.
-      const planned = weeks.findIndex((w) => hasVisitIn(s, w));
-      const parity = planned >= 0 ? planned % 2 : weeks.length > 1 && odd < even ? 1 : 0;
+      const already = weeks.findIndex((w) => hasVisitIn(s, w));
+      const parity = already >= 0 ? already % 2 : weeks.length > 1 && loadOn(1) < loadOn(0) ? 1 : 0;
       let wanted = visitsWanted("biweekly", weeks.length) - inMonth(s.id);
       for (let i = parity; i < weeks.length && wanted > 0; i += 2) {
         if (!hasVisitIn(s, weeks[i])) {
-          weeks[i].sites.push(s);
+          put(weeks[i], s);
           wanted--;
         }
       }
@@ -256,55 +431,55 @@ export function buildVisitPlan(input: PlanInput): VisitPlan {
     // A monthly visit belongs to this month alone, so never to a shared week
     // while the town has a whole one: what spills from a shared week is left
     // to the other month, and the other month plans its own monthly visit.
-    const whole = weeks.map((w, i) => i).filter((i) => !sharedWeek(weeks[i].week));
-    const monthlyWeeks = whole.length > 0 ? whole : weeks.map((_, i) => i);
+    const whole = weeks.filter((w) => !sharedWeek(w.week));
+    const monthlyWeeks = whole.length > 0 ? whole : weeks;
     for (const s of byFrequency("monthly")) {
       if (inMonth(s.id) > 0) continue;
-      const l = load();
-      // Spare room counts, not just the count: a week of two days fills sooner.
-      const room = (j: number) => weeks[j].dates.length * perDay - l[j];
+      const room = (w: (typeof weeks)[number]) => roomOn(dateFor(w, s)) - planned.get(dateFor(w, s))!.length;
       let best = monthlyWeeks[0];
-      for (const i of monthlyWeeks) if (room(i) > room(best)) best = i;
-      weeks[best].sites.push(s);
+      for (const w of monthlyWeeks) {
+        if (room(w) > room(best) || (room(w) === room(best) && weekLoad(w) < weekLoad(best))) best = w;
+      }
+      put(best, s);
     }
 
-    // Within each week: near sites together, one group a day, within room.
+    // A full day keeps its nearest sites; the rest move to the nearest day
+    // that week with room, else they did not fit.
     for (const w of weeks) {
       // A week cut by the start or end of the plan (Mon 30 Nov is a week of one
       // day in November): what does not fit belongs to the other month's days.
       const cut = sharedWeek(w.week);
-      const room = new Map(w.dates.map((d) => [d, Math.max(0, perDay - (existingOn.get(d) ?? 0))]));
-      const located = w.sites.filter((s) => s.lat !== null && s.lng !== null);
-      const unlocated = w.sites.filter((s) => s.lat === null || s.lng === null);
-      const groups = located.length
-        ? clusterByProximity(located, (s) => ({ lat: s.lat, lng: s.lng }) as Point, w.dates.length)
-        : [];
-      while (groups.length < w.dates.length) groups.push([]);
-      // Sites with no location go to the lightest days.
-      for (const s of unlocated) {
-        let j = 0;
-        for (let i = 1; i < groups.length; i++) if (groups[i].length < groups[j].length) j = i;
-        groups[j].push(s);
-      }
-
-      const placed = new Map<string, PlanSite[]>(w.dates.map((d) => [d, []]));
-      const overflow: PlanSite[] = [];
-      w.dates.forEach((d, i) => {
-        for (const s of groups[i] ?? []) {
-          if (placed.get(d)!.length < room.get(d)!) placed.get(d)!.push(s);
-          else overflow.push(s);
-        }
-      });
-      // A full day's extras go to another day that week with room, else they did not fit.
-      for (const s of overflow) {
-        const d = w.dates.find((x) => placed.get(x)!.length < room.get(x)!);
-        if (d) placed.get(d)!.push(s);
-        else if (cut && s.frequency !== "monthly") leftForOtherMonth++;
-        else missed(s);
-      }
+      const extras: PlanSite[] = [];
       for (const d of w.dates) {
-        days.push({ date: d, town: label, siteIds: placed.get(d)!.map((s) => s.id), alreadyPlanned: existingOn.get(d) ?? 0 });
+        const list = planned.get(d)!;
+        const room = roomOn(d);
+        if (list.length <= room) continue;
+        const middle = centre(list);
+        const nearestFirst = [...list].sort((a, b) => away(a, middle) - away(b, middle));
+        planned.set(d, nearestFirst.slice(0, room));
+        extras.push(...nearestFirst.slice(room));
       }
+      for (const s of extras) {
+        const open = w.dates.filter((d) => planned.get(d)!.length < roomOn(d));
+        if (open.length === 0) {
+          if (cut && s.frequency !== "monthly") leftForOtherMonth++;
+          else missed(s);
+          continue;
+        }
+        const target = open.reduce((best, d) =>
+          away(s, centre(planned.get(d)!)) < away(s, centre(planned.get(best)!)) ? d : best
+        );
+        planned.get(target)!.push(s);
+      }
+    }
+
+    // Each day in driving order: shortest route through the sites with a
+    // location, then those without one.
+    for (const d of townDates) {
+      const list = planned.get(d)!;
+      const located = list.filter(hasPoint);
+      const ordered = [...orderStops(located, pointOf), ...list.filter((s) => !hasPoint(s))];
+      days.push({ date: d, town: label, siteIds: ordered.map((s) => s.id), alreadyPlanned: existingOn.get(d) ?? 0 });
     }
   }
 
@@ -317,5 +492,13 @@ export function buildVisitPlan(input: PlanInput): VisitPlan {
     .sort((a, b) => b.sites - a.sites);
   const unknownTowns = [...labelOf.entries()].filter(([key]) => !sitesByTown.has(key)).map(([, label]) => label);
 
-  return { days, didNotFit, leftForOtherMonth, townsLeftOut, unknownTowns, short, spareDays };
+  const planned = new Set(days.flatMap((d) => d.siteIds));
+  const noLocation = raw.sites
+    .filter((s) => (s.lat === null || s.lng === null) && planned.has(s.id))
+    .map((s) => ({ siteId: s.id, name: s.name, town: townLabel(s.town) }));
+  const farFromTown = raw.sites
+    .filter((s) => far.has(s.id))
+    .map((s) => ({ siteId: s.id, name: s.name, town: townLabel(s.town), km: far.get(s.id)! }));
+
+  return { days, didNotFit, leftForOtherMonth, townsLeftOut, unknownTowns, short, spareDays, noLocation, farFromTown };
 }

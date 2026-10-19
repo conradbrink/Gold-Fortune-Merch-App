@@ -6,7 +6,10 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   buildVisitPlan,
+  isoWeekday,
   planMonth,
+  sitesFarFromTown,
+  townAreas,
   visitsWanted,
   wholeWeeks,
   workingDates,
@@ -85,9 +88,11 @@ test("every second week and monthly sites, spread so weeks stay even", () => {
   assert.equal(visits("w"), 4);
   assert.equal(visits("b1"), 2);
   assert.equal(visits("m1"), 1);
-  // Four monthly sites across four weeks: one a week, not all in the first.
-  const weekOfVisit = ["m1", "m2", "m3", "m4"].map((id) => plan.days.find((d) => d.siteIds.includes(id))!.date);
-  assert.equal(new Set(weekOfVisit.map((d) => d.slice(0, 8) + String(Math.floor((Number(d.slice(8)) - 2) / 7)))).size, 4);
+  // The weeks stay even: monthly visits go where the month is lightest, not
+  // all into the first week.
+  const perWeek = [0, 0, 0, 0];
+  for (const d of plan.days) perWeek[Math.floor((Number(d.date.slice(8)) - 2) / 7)] += d.siteIds.length;
+  assert.ok(Math.max(...perWeek) - Math.min(...perWeek) <= 1, perWeek.join(","));
   assert.deepEqual(plan.didNotFit, []);
 });
 
@@ -290,4 +295,112 @@ test("saving a plan: read as if typed by hand", () => {
   assert.equal(bad({ staffId: STAFF, days: Array(32).fill({ date: "2026-10-20", siteIds: [S1] }) }), false);
   const allPast = readPlanSave({ staffId: STAFF, days: [{ date: "2026-10-18", siteIds: [S1] }] }, "2026-10-19");
   assert.ok(!allPast.ok && /passed/.test(allPast.error));
+});
+
+// Two parts of a town 10 km apart, five stores each, two days a week.
+const NORTH = Array.from({ length: 5 }, (_, i) => ({ ...site(`n${i}`, "Gaborone", "weekly"), lat: -24.55 + i * 0.002, lng: 25.92 }));
+const SOUTH = Array.from({ length: 5 }, (_, i) => ({ ...site(`s${i}`, "Gaborone", "weekly"), lat: -24.7 + i * 0.002, lng: 25.92 }));
+
+test("a day is one part of town, and the same part falls on the same day each week", () => {
+  const plan = buildVisitPlan({
+    sites: [...SOUTH, ...NORTH].sort(() => 0),
+    towns: [{ town: "Gaborone", days: 21 }],
+    workingDays: [1, 3], // Mondays and Wednesdays
+    sitesPerDay: 8,
+    // Four whole weeks: a week shared with December folds its areas together.
+    from: "2026-11-02",
+    to: "2026-11-29",
+    daysOff: [],
+    existing: [],
+  });
+  for (const d of plan.days) {
+    const parts = new Set(d.siteIds.map((id) => id[0]));
+    assert.equal(parts.size, 1, `${d.date} mixes both parts of town: ${d.siteIds.join(",")}`);
+  }
+  const mondays = new Set(plan.days.filter((d) => isoWeekday(d.date) === 1).map((d) => d.siteIds[0][0]));
+  assert.equal(mondays.size, 1, "Mondays are always the same part of town");
+});
+
+test("a full day keeps its nearest stores and sends the rest to the nearest day with room", () => {
+  // One far store in the north crowds a 5-a-day limit; it should join the north day.
+  const plan = buildVisitPlan({
+    sites: [...NORTH, ...SOUTH, { ...site("n9", "Gaborone", "weekly"), lat: -24.56, lng: 25.93 }],
+    towns: [{ town: "Gaborone", days: 3 }],
+    workingDays: MON_FRI,
+    sitesPerDay: 5,
+    ...NOV,
+    daysOff: [],
+    existing: [],
+  });
+  for (const d of plan.days) {
+    if (d.siteIds.length === 0) continue;
+    const parts = new Set(d.siteIds.map((id) => id[0]));
+    assert.equal(parts.size, 1, `${d.date}: ${d.siteIds.join(",")}`);
+  }
+  assert.deepEqual(plan.didNotFit, []);
+});
+
+test("a day's stores are in driving order", () => {
+  // Five stores in a line, given out of order: the day visits them end to end.
+  const line = [3, 0, 4, 1, 2].map((i) => ({ ...site(`l${i}`, "Gaborone", "weekly"), lat: -24.6, lng: 25.9 + i * 0.01 }));
+  const plan = buildVisitPlan({
+    sites: line,
+    towns: [{ town: "Gaborone", days: 1 }],
+    workingDays: MON_FRI,
+    sitesPerDay: 8,
+    ...NOV,
+    daysOff: [],
+    existing: [],
+  });
+  const order = plan.days[0].siteIds.join(",");
+  assert.ok(order === "l0,l1,l2,l3,l4" || order === "l4,l3,l2,l1,l0", order);
+});
+
+test("areas are numbered so neighbours are next to each other", () => {
+  // Three clusters west to east; whichever end it starts from, the middle is area 1.
+  const west = Array.from({ length: 3 }, (_, i) => ({ ...site(`w${i}`, "T", "weekly"), lat: -24.6, lng: 25.0 + i * 0.001 }));
+  const mid = Array.from({ length: 3 }, (_, i) => ({ ...site(`m${i}`, "T", "weekly"), lat: -24.6, lng: 25.5 + i * 0.001 }));
+  const east = Array.from({ length: 3 }, (_, i) => ({ ...site(`e${i}`, "T", "weekly"), lat: -24.6, lng: 26.0 + i * 0.001 }));
+  const areas = townAreas([...east, ...west, ...mid], 3);
+  assert.equal(areas.get("m0"), 1);
+  assert.notEqual(areas.get("w0"), areas.get("e0"));
+});
+
+test("a store whose map location is far from its town is planned as if it had none, and named", () => {
+  // Real case: a Mochudi store whose location was set in Maun, 564 km away.
+  const mochudi = [
+    { ...site("a", "Mochudi", "weekly"), lat: -24.394, lng: 26.145 },
+    { ...site("b", "Mochudi", "weekly"), lat: -24.399, lng: 26.148 },
+    { ...site("c", "Mochudi", "weekly"), lat: -24.409, lng: 26.17 },
+    { ...site("wrong", "Mochudi", "weekly"), lat: -19.992, lng: 23.422 },
+  ];
+  assert.deepEqual([...sitesFarFromTown(mochudi).keys()], ["wrong"]);
+  const plan = buildVisitPlan({
+    sites: mochudi,
+    towns: [{ town: "Mochudi", days: 2 }],
+    workingDays: MON_FRI,
+    sitesPerDay: 8,
+    ...NOV,
+    daysOff: [],
+    existing: [],
+  });
+  assert.equal(plan.farFromTown.length, 1);
+  assert.equal(plan.farFromTown[0].name, "Site wrong");
+  assert.ok(plan.farFromTown[0].km > 500);
+  // It is still visited, just not given a day of its own across the country.
+  assert.ok(plan.days.some((d) => d.siteIds.includes("wrong")));
+  assert.ok(plan.days.every((d) => d.siteIds.length > 0), "no day spent on it alone");
+});
+
+test("stores with no map location are planned and named", () => {
+  const plan = buildVisitPlan({
+    sites: [site("x", "Gaborone", "weekly"), { ...site("y", "Gaborone", "weekly"), lat: -24.6, lng: 25.9 }],
+    towns: [{ town: "Gaborone", days: 5 }],
+    workingDays: MON_FRI,
+    sitesPerDay: 8,
+    ...NOV,
+    daysOff: [],
+    existing: [],
+  });
+  assert.deepEqual(plan.noLocation.map((n) => n.siteId), ["x"]);
 });

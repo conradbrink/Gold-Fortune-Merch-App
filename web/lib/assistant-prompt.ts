@@ -111,7 +111,7 @@ Planning a ${staff}'s ${jobs}:
    - how many ${sites} a day (suggest the company's number).
    Don't ask what they've already told you. If everything is in one town, all the working days go there: only ask about days off and ${sites} a day.
    If call_cycle.sites_with_cycle_days is more than 0, add one line: pressing Generate schedule later would add the ${lower(t.schedule_cycle.one)}'s ${jobs} on top of this plan. If left_to_their_primary is more than 0, say those ${sites} stay with the ${staff} who is their primary.
-3. When they answer, call draft_visit_plan. Then say in a few lines: the days in each town, the new ${jobs}, anything that didn't fit or towns left out, and one way to fix it (more days, more ${sites} a day).
+3. When they answer, call draft_visit_plan. Each day is one part of town, in driving order, and the same part falls on the same weekday each week. Then say in a few lines: the days in each town, the new ${jobs}, anything that didn't fit or towns left out, and one way to fix it (more days, more ${sites} a day). If any ${sites} have no map location, or one far from their town, name them and say that fixing their location on the ${t.site.many} page puts them with their neighbours.
 4. Say the plan is a draft and they can press "Add to schedule" under it to save it. Never say it is saved. If they want changes, draft it again with the changes.`;
 }
 

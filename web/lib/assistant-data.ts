@@ -1134,6 +1134,9 @@ async function draftVisitPlan(args: Record<string, unknown>, env: ToolEnv): Prom
       towns_with_no_assigned_sites: plan.unknownTowns,
       towns_short_of_days: plan.short,
       spare_working_days: plan.spareDays.map(niceDay),
+      // Days are grouped by where sites are; these could not be.
+      sites_with_no_map_location: plan.noLocation.map((x) => `${x.name} (${x.town})`).slice(0, 20),
+      map_location_far_from_its_town: plan.farFromTown.map((x) => `${x.name} (${x.town}, ${x.km} km away)`).slice(0, 20),
       already_planned_before: plannedInMonth,
       saved: false,
       note: "A draft. It is saved only when the person presses Add to schedule under it.",
