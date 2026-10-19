@@ -99,7 +99,7 @@ const ai = [
   { icon: FileText, text: "Every report comes with a short summary of what stands out." },
 ];
 
-// The shelf-photo check (owner, 19 Oct 2026), shown as "Launching soon".
+// The shelf-photo check (owner, 19 Oct 2026), shown as New.
 const shelfCheck = [
   "It finds your products on the shelf by reading the pack, and counts how many fronts are showing.",
   "It says where they stand: on the counter, behind the till, in a cabinet, high or low.",
@@ -445,8 +445,8 @@ export default function Home() {
 
         {/* 4b. "What do I do about it?" The AI Manager (owner, 19 Oct 2026): Ask
             and the report summaries are live (#183, #186, /api/insights); the
-            shelf-photo check is built but not live yet (it misses too many
-            products on today's photos), so it carries "Launching soon". */}
+            shelf-photo check is built and being rolled out (owner: "mark it as
+            new"), so it says New, and Founding distributors get it first. */}
         <section id="ai" className="scroll-mt-28 border-t border-line">
           <div className={`${wrap} max-w-6xl lg:grid-cols-[1fr_0.8fr] lg:items-center lg:gap-14`}>
             <div className="grid content-start gap-6 sm:gap-8">
@@ -469,10 +469,11 @@ export default function Home() {
             />
             <div className="tk-reveal grid gap-5 rounded-2xl bg-teal-950 p-6 text-sand sm:p-8 lg:col-span-2">
               <div className="grid gap-2">
-                <p className="w-fit rounded-full bg-amber-500 px-3 py-1 text-xs font-bold uppercase tracking-wide text-teal-950">Launching soon</p>
+                <p className="w-fit rounded-full bg-amber-500 px-3 py-1 text-xs font-bold uppercase tracking-wide text-teal-950">New</p>
                 <p className="font-display text-2xl font-bold leading-tight text-sand sm:text-3xl">The shelf-photo check</p>
                 <p className="max-w-2xl leading-relaxed text-teal-100">
                   After each visit, the AI Manager checks the rep&apos;s shelf photos in the background. The rep does nothing extra.
+                  Founding distributors get it first.
                 </p>
               </div>
               <ul className="grid gap-x-8 gap-y-3 sm:grid-cols-2">
