@@ -19,10 +19,10 @@ import { parseAnswer, type Span } from "@/lib/assistant-text";
 import { useAssistant, type AskMessage, type AskTable } from "@/components/assistant/assistant-provider";
 
 /**
- * Ask: the panel on the right.
+ * Ask: the chat window that opens from the round button in the corner.
  *
- * On a wide screen it is a column beside the page, so the page stays usable
- * while the answer is read against it. On a phone it covers the screen, the
+ * On a wide screen it floats above the button, over the bottom-right of the
+ * page, and stays open from page to page. On a phone it covers the screen, the
  * way the menu does. It renders nothing while closed, and nothing for somebody
  * whose access gives it nothing to look up.
  */
@@ -110,7 +110,13 @@ export function AssistantPanelView({
         // but still bubbling through React) closes that menu, not the panel.
         if (e.key === "Escape" && e.currentTarget.contains(e.target as Node)) onClose();
       }}
-      className="fixed inset-0 z-50 flex flex-col bg-background lg:static lg:z-auto lg:w-[400px] lg:shrink-0 lg:border-l lg:border-border print:hidden"
+      className={cn(
+        "fixed inset-0 z-50 flex flex-col bg-background print:hidden",
+        // Floating above the button from md up: the phone's bottom bar is gone by then.
+        "md:inset-auto md:right-6 md:bottom-24 md:h-[min(640px,calc(100dvh-8rem))] md:w-[400px] md:overflow-hidden md:rounded-2xl md:border md:border-border md:shadow-2xl md:shadow-black/15",
+        // Grows out of the button: short, eased, and not at all with reduced motion.
+        "origin-bottom-right animate-in fade-in-0 zoom-in-95 duration-200 ease-out motion-reduce:animate-none"
+      )}
     >
       <header className="flex h-14 shrink-0 items-center gap-2 border-b border-border px-4">
         <MessageSquareText className="size-4 shrink-0 text-primary" aria-hidden />
@@ -384,21 +390,62 @@ function AnswerTable({ table }: Readonly<{ table: AskTable }>) {
   );
 }
 
-/** The top bar's way in. Nothing for somebody Ask can't help yet. */
-export function AssistantButton() {
+/**
+ * The round button in the bottom-right corner, on every page, the way a chat
+ * button sits on a website. It opens and closes the chat window above it; on a
+ * phone it sits above the bottom bar and hides while the chat fills the screen.
+ * Nothing for somebody Ask can't help yet.
+ */
+export function AssistantLauncher() {
   const { open, setOpen, tools } = useAssistant();
   if (!tools || tools.length === 0) return null;
+  return <LauncherButton open={open} onToggle={() => setOpen(!open)} />;
+}
+
+/** The button itself, from plain props. */
+export function LauncherButton({ open, onToggle }: Readonly<{ open: boolean; onToggle: () => void }>) {
+  const ref = useRef<HTMLButtonElement>(null);
+  const wasOpen = useRef(open);
+
+  // Closing the window hands the keyboard back to the button that opened it.
+  useEffect(() => {
+    if (wasOpen.current && !open) ref.current?.focus();
+    wasOpen.current = open;
+  }, [open]);
+
+  const label = open ? "Close Ask" : "Ask about your business";
   return (
-    <Button
-      variant={open ? "secondary" : "outline"}
-      size="sm"
-      onClick={() => setOpen(!open)}
+    <button
+      ref={ref}
+      type="button"
+      onClick={onToggle}
       aria-expanded={open}
-      aria-label={open ? "Close Ask" : "Ask about your business"}
-      className="gap-1.5 text-foreground"
+      aria-label={label}
+      className={cn(
+        "group fixed right-4 bottom-[calc(4.5rem+env(safe-area-inset-bottom))] z-50 flex size-14 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-lg shadow-black/25 transition-transform duration-150 ease-out hover:scale-105 focus-visible:ring-4 focus-visible:ring-ring/50 focus-visible:outline-none active:scale-95 md:right-6 md:bottom-6 motion-reduce:transition-none motion-reduce:hover:scale-100 motion-reduce:active:scale-100 print:hidden",
+        open && "max-md:hidden"
+      )}
     >
-      <MessageSquareText className="size-3.5" />
-      <span className="hidden sm:inline">Ask</span>
-    </Button>
+      {open ? <X className="size-6" aria-hidden /> : <MessageSquareText className="size-6" aria-hidden />}
+      {/* What the button is for, beside it on hover. Not on touch screens, where nothing hovers. */}
+      {!open && (
+        <span
+          aria-hidden
+          className="pointer-events-none absolute right-full mr-3 hidden rounded-lg bg-foreground px-2.5 py-1 text-xs font-medium whitespace-nowrap text-background opacity-0 shadow-md transition-opacity duration-150 group-hover:opacity-100 group-focus-visible:opacity-100 md:block"
+        >
+          {label}
+        </span>
+      )}
+    </button>
   );
+}
+
+/**
+ * Room at the foot of every page for the button, so it never sits on top of
+ * the last row or a page's own buttons once scrolled to the end.
+ */
+export function AssistantSpacer() {
+  const { tools } = useAssistant();
+  if (!tools || tools.length === 0) return null;
+  return <div aria-hidden className="h-16 print:hidden" />;
 }

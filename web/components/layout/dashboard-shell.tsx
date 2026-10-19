@@ -8,7 +8,7 @@ import { SectionTabs } from "@/components/layout/section-tabs";
 import { TopBar } from "@/components/layout/top-bar";
 import { CompanyConfigProvider } from "@/lib/use-company-config";
 import { AssistantProvider } from "@/components/assistant/assistant-provider";
-import { AssistantPanel } from "@/components/assistant/assistant-panel";
+import { AssistantLauncher, AssistantPanel, AssistantSpacer } from "@/components/assistant/assistant-panel";
 
 /**
  * The signed-in frame: sidebar, top bar, scrolling main, and on a phone a bar
@@ -50,11 +50,13 @@ export function DashboardShell({
           >
             <SectionTabs />
             {children}
+            <AssistantSpacer />
           </main>
         </div>
-        {/* Ask, beside the page on a wide screen and over it on a phone. */}
-        <AssistantPanel />
         <MobileTabBar onOpenMore={() => setNavOpen(true)} />
+        {/* Ask: the round chat button in the corner and the window it opens. */}
+        <AssistantLauncher />
+        <AssistantPanel />
       </div>
       </AssistantProvider>
       </NavProvider>
