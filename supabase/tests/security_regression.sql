@@ -218,6 +218,16 @@ begin
     v_fail := v_fail || '15. the rate limiter allowed a 4th call past a limit of 3' || E'\n';
   end if;
 
+  -- 15b. What is left is read without spending any, and only the caller's own:
+  --      the 3 spent above leave 0, and asking twice does not change it.
+  if public.rate_limit_left('regression_test', 3, 60) <> 0
+     or public.rate_limit_left('regression_test', 3, 60) <> 0 then
+    v_fail := v_fail || '15b. rate_limit_left did not report 0 left after a spent window' || E'\n';
+  end if;
+  if public.rate_limit_left('regression_test_untouched', 5, 60) <> 5 then
+    v_fail := v_fail || '15b. rate_limit_left counted a bucket nobody used' || E'\n';
+  end if;
+
   -- 16. Counters are neither readable nor resettable by the people they bind.
   begin
     select count(*) into v_n from public.rate_limits;

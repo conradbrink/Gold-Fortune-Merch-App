@@ -18,7 +18,7 @@ import {
   refusalText,
   type AssistantContext,
 } from "@/lib/assistant-prompt";
-import { decodeEvents, encodeEvent, history, parseConversation, questionsLeftFrom, MAX_QUESTION_CHARS } from "@/lib/assistant-stream";
+import { decodeEvents, encodeEvent, history, parseConversation, MAX_QUESTION_CHARS } from "@/lib/assistant-stream";
 import { parseAnswer } from "@/lib/assistant-text";
 
 const everything = toModuleSet({
@@ -306,20 +306,6 @@ test("an answer stopped at the length limit says it was cut short", async () => 
   assert.match(text, /cut short/);
 });
 
-test("questions left come from this window's counters only", () => {
-  const now = Date.parse("2026-10-19T15:20:00Z");
-  const left = questionsLeftFrom(
-    [
-      { bucket: "assistant_hour", window_start: "2026-10-19T15:00:00+00:00", count: 4 },
-      { bucket: "assistant_hour", window_start: "2026-10-19T14:00:00+00:00", count: 10 },
-      { bucket: "assistant_day", window_start: "2026-10-19T00:00:00+00:00", count: 37 },
-    ],
-    now
-  );
-  // 6 left this hour, but only 3 today: the day caps the hour.
-  assert.deepEqual(left, { hour: 3, day: 3 });
-  assert.deepEqual(questionsLeftFrom([], now), { hour: 10, day: 40 });
-});
 
 test("a saved plan is in the context, so the assistant knows it was saved", () => {
   const turns = history([

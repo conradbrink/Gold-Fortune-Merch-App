@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { callRpc } from "@/lib/rpc";
 import { QUESTION_BUCKETS, QUESTIONS_PER_DAY, QUESTIONS_PER_HOUR } from "@/lib/assistant-stream";
 
 /**
@@ -145,6 +146,27 @@ export async function enforceRateLimit(
       { status: 429, headers: { "Retry-After": String(retryAfter) } }
     ),
   };
+}
+
+/**
+ * How much of a limit the caller has left, without using any of it.
+ *
+ * Reads through `rate_limit_left`, the read-only twin of `consume_rate_limit`
+ * (migration 20261019190000): the caller's own counter only, by their session.
+ * Null when it cannot be read, so a caller shows nothing rather than a wrong
+ * number.
+ */
+export async function quotaLeft(supabase: SupabaseClient, limit: Limit): Promise<number | null> {
+  const { data, error } = await callRpc(supabase, "rate_limit_left", {
+    p_bucket: limit.bucket,
+    p_limit: limit.limit,
+    p_window_seconds: limit.windowSeconds,
+  });
+  if (error || typeof data !== "number") {
+    if (error) console.error(`[rate-limit] ${limit.bucket} left could not be read: ${error.message}`);
+    return null;
+  }
+  return data;
 }
 
 /**
