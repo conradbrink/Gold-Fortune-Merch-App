@@ -404,3 +404,47 @@ test("stores with no map location are planned and named", () => {
   });
   assert.deepEqual(plan.noLocation.map((n) => n.siteId), ["x"]);
 });
+
+test("a day off moves only that day's area, the rest keep their weekdays", () => {
+  // Five parts of a town, one a weekday; Wed 11 Nov is off.
+  const parts = [0, 1, 2, 3, 4].flatMap((p) =>
+    // Parts 5 km apart: one town, not five.
+    [0, 1].map((i) => ({ ...site(`p${p}_${i}`, "Gaborone", "weekly"), lat: -24.6, lng: 25.9 + p * 0.05 + i * 0.001 }))
+  );
+  const plan = buildVisitPlan({
+    sites: parts,
+    towns: [{ town: "Gaborone", days: 19 }],
+    workingDays: MON_FRI,
+    sitesPerDay: 8,
+    from: "2026-11-02",
+    to: "2026-11-27",
+    daysOff: ["2026-11-11"],
+    existing: [],
+  });
+  const weekdayOf = (prefix: string) =>
+    plan.days.filter((d) => d.siteIds.some((id) => id.startsWith(prefix))).map((d) => isoWeekday(d.date));
+  // Every part other than Wednesday's is on one weekday all month.
+  const sets = ["p0", "p1", "p2", "p3", "p4"].map((p) => new Set(weekdayOf(p)));
+  assert.equal(sets.filter((x) => x.size === 1).length, 4, sets.map((x) => [...x].join("/")).join(" "));
+});
+
+test("extras go to the nearest day, not to an empty day across town", () => {
+  // Monday area (west) is full; Tuesday (beside it) has room; Friday's area
+  // (far east) has no visits this week because its only store is monthly and
+  // already planned this month.
+  const west = Array.from({ length: 6 }, (_, i) => ({ ...site(`w${i}`, "T", "weekly"), lat: -24.6, lng: 25.0 + i * 0.001 }));
+  const nextDoor = [{ ...site("n0", "T", "weekly"), lat: -24.6, lng: 25.05 }];
+  const east = [{ ...site("e0", "T", "monthly"), lat: -24.6, lng: 25.2 }];
+  const plan = buildVisitPlan({
+    sites: [...west, ...nextDoor, ...east],
+    towns: [{ town: "T", days: 2 }],
+    workingDays: [1, 2],
+    sitesPerDay: 4,
+    from: "2026-11-02",
+    to: "2026-11-08",
+    daysOff: [],
+    existing: [{ siteId: "e0", date: "2026-11-03" }],
+  });
+  const tuesday = plan.days.find((d) => d.date === "2026-11-03")!;
+  assert.ok(tuesday.siteIds.some((id) => id.startsWith("w")), "west extras went next door");
+});
