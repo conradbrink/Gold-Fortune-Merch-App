@@ -3,8 +3,9 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import type { ExportSheet } from "@/lib/export";
 import { toolsFor, type ToolSpec } from "@/lib/assistant-tools";
-import { decodeEvents, history, type QuestionsLeft } from "@/lib/assistant-stream";
+import { decodeEvents, history, type PlanDraft, type QuestionsLeft } from "@/lib/assistant-stream";
 import { usePermissions } from "@/lib/use-permissions";
+import { useIsManager } from "@/lib/use-is-manager";
 import { useCompanyConfig } from "@/lib/use-company-config";
 
 /**
@@ -26,6 +27,9 @@ export type AskMessage = {
   /** While answering: what it is doing now. */
   status?: string;
   pending?: boolean;
+  /** A drafted month of visits under the answer, and what saving it did. */
+  plan?: PlanDraft;
+  planSaved?: { added: number; already: number; pastDays?: number };
   /** Not about the business: shown, but not sent back as context. */
   refused?: boolean;
   error?: string;
@@ -40,6 +44,8 @@ type AssistantState = {
   busy: boolean;
   left: QuestionsLeft | null;
   ask: (question: string) => void;
+  /** Saves the plan under an answer to the schedule. Resolves with an error to show, or null. */
+  savePlan: (messageId: string) => Promise<string | null>;
   stop: () => void;
   reset: () => void;
 };
@@ -93,10 +99,12 @@ const newId = () => `${Date.now().toString(36)}-${(counter++).toString(36)}`;
 
 export function AssistantProvider({ children }: Readonly<{ children: React.ReactNode }>) {
   const permissions = usePermissions();
+  // Planning is offered once the database says this person is a manager.
+  const isManager = useIsManager();
   const company = useCompanyConfig();
   const tools = useMemo(
-    () => (permissions && company ? toolsFor(permissions, company.modules) : null),
-    [permissions, company]
+    () => (permissions && company ? toolsFor(permissions, company.modules, isManager === true) : null),
+    [permissions, company, isManager]
   );
 
   const [open, setOpen] = useState(false);
@@ -128,6 +136,27 @@ export function AssistantProvider({ children }: Readonly<{ children: React.React
     const done = messages.filter((m, i) => !m.pending && !(m.role === "user" && messages[i + 1]?.pending));
     save({ orgId, open, left, messages: done });
   }, [orgId, loadedFor, session, open, left, messages]);
+
+  // The real count, each time the window opens: after signing in again, on
+  // another device, or once the hour has moved on.
+  const hasTools = tools !== null && tools.length > 0;
+  useEffect(() => {
+    if (!open || !hasTools) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const res = await fetch("/api/assistant", { cache: "no-store" });
+        if (!res.ok) return;
+        const body = (await res.json()) as { left?: QuestionsLeft | null };
+        if (!cancelled && body.left) setLeft(body.left);
+      } catch {
+        // Not worth an error: the next answer brings the count anyway.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [open, hasTools]);
 
   const update = useCallback((id: string, change: (m: AskMessage) => AskMessage) => {
     setMessages((all) => all.map((m) => (m.id === id ? change(m) : m)));
@@ -191,6 +220,7 @@ export function AssistantProvider({ children }: Readonly<{ children: React.React
               if (e.type === "status") update(answer.id, (m) => ({ ...m, status: e.text }));
               else if (e.type === "text") update(answer.id, (m) => ({ ...m, text: m.text + e.text, status: undefined }));
               else if (e.type === "table") update(answer.id, (m) => ({ ...m, tables: [...m.tables, { sheet: e.sheet, href: e.href }] }));
+              else if (e.type === "plan") update(answer.id, (m) => ({ ...m, plan: e.plan }));
               else if (e.type === "refused") update(answer.id, (m) => ({ ...m, text: e.text, tables: [], refused: true }));
               else if (e.type === "error") update(answer.id, (m) => ({ ...m, error: e.text }));
               else if (e.type === "done") {
@@ -225,6 +255,35 @@ export function AssistantProvider({ children }: Readonly<{ children: React.React
     [busy, messages, update]
   );
 
+  const savePlan = useCallback(
+    async (messageId: string): Promise<string | null> => {
+      const plan = messages.find((m) => m.id === messageId)?.plan;
+      if (!plan) return "That plan is no longer here. Ask for a new draft.";
+      try {
+        const res = await fetch("/api/assistant/plan", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ staffId: plan.staffId, days: plan.days }),
+        });
+        const body = (await res.json().catch(() => ({}))) as {
+          error?: string;
+          added?: number;
+          already?: number;
+          pastDays?: number;
+        };
+        if (!res.ok) return body.error ?? `The plan could not be saved (${res.status}).`;
+        update(messageId, (m) => ({
+          ...m,
+          planSaved: { added: body.added ?? 0, already: body.already ?? 0, pastDays: body.pastDays ?? 0 },
+        }));
+        return null;
+      } catch {
+        return "The plan couldn't be saved. Check your connection and try again.";
+      }
+    },
+    [messages, update]
+  );
+
   const stop = useCallback(() => abortRef.current?.abort(), []);
 
   const reset = useCallback(() => {
@@ -233,8 +292,8 @@ export function AssistantProvider({ children }: Readonly<{ children: React.React
   }, []);
 
   const value = useMemo<AssistantState>(
-    () => ({ tools, open, setOpen, messages, busy, left, ask, stop, reset }),
-    [tools, open, messages, busy, left, ask, stop, reset]
+    () => ({ tools, open, setOpen, messages, busy, left, ask, savePlan, stop, reset }),
+    [tools, open, messages, busy, left, ask, savePlan, stop, reset]
   );
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

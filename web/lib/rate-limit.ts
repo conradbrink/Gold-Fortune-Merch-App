@@ -1,5 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { QUESTIONS_PER_DAY, QUESTIONS_PER_HOUR } from "@/lib/assistant-stream";
+import { QUESTION_BUCKETS, QUESTIONS_PER_DAY, QUESTIONS_PER_HOUR } from "@/lib/assistant-stream";
 
 /**
  * Server-side rate limiting for the routes that reach a paid third party.
@@ -54,8 +54,10 @@ export const LIMITS = {
    * asking it things it will not answer. The day is a UTC day, so it starts
    * again at 02:00 in South Africa and Botswana.
    */
-  assistantHour: { bucket: "assistant_hour", limit: QUESTIONS_PER_HOUR, windowSeconds: 3600 },
-  assistantDay: { bucket: "assistant_day", limit: QUESTIONS_PER_DAY, windowSeconds: 86_400 },
+  assistantHour: { bucket: QUESTION_BUCKETS.hour, limit: QUESTIONS_PER_HOUR, windowSeconds: 3600 },
+  assistantDay: { bucket: QUESTION_BUCKETS.day, limit: QUESTIONS_PER_DAY, windowSeconds: 86_400 },
+  /** Saving a plan Ask drafted. Free to run, but it writes the schedule. */
+  assistantPlanSave: { bucket: "assistant_plan_save", limit: 20, windowSeconds: 3600 },
 } satisfies Record<string, Limit>;
 
 type Verdict =
