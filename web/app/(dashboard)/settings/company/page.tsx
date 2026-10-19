@@ -23,6 +23,7 @@ import { MoneySettingsCard } from "@/components/settings/money-settings-card";
 import { DocumentStyleCard } from "@/components/settings/document-style-card";
 import { DashboardSettingsCard } from "@/components/settings/dashboard-settings-card";
 import { ReorderSettingsCard } from "@/components/settings/reorder-settings-card";
+import { RangeSettingsCard } from "@/components/settings/range-settings-card";
 import { EmailSettingsCard } from "@/components/settings/email-settings-card";
 import { AlertsSettingsCard } from "@/components/settings/alerts-settings-card";
 import { ModulesCard } from "@/components/settings/modules-card";
@@ -504,6 +505,7 @@ export default function CompanySettingsPage() {
           {org && <WorkdaySettingsCard orgId={org.id} canEdit={canEditCompany} />}
           {org && <WorkingHoursCard orgId={org.id} canEdit={canEditCompany} />}
           {org && <ReorderSettingsCard orgId={org.id} canEdit={canEditCompany} />}
+          {org && <RangeSettingsCard orgId={org.id} canEdit={canEditCompany} />}
           {org && <DashboardSettingsCard orgId={org.id} canEdit={canEditCompany} />}
         </TabsContent>
 

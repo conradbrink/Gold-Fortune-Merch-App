@@ -71,8 +71,9 @@ begin
   end if;
   if coalesce((select value #>> '{}' from public.company_settings where org_id = c_gf and key = 'dashboard_layout'),
               (select default_value #>> '{}' from public.setting_definitions where key = 'dashboard_layout'))
-       -- store_reorder since 20261015100000 (Stores due for an order).
-       is distinct from 'headline,sales,pipeline,field_team,store_health,store_reorder,live_reps' then
+       -- store_reorder since 20261015100000 (Stores due for an order),
+       -- store_range since 20261019180000 (Range).
+       is distinct from 'headline,sales,pipeline,field_team,store_health,store_reorder,store_range,live_reps' then
     v_fail := v_fail || 'D1 Gold Fortune''s dashboard layout changed' || E'\n';
   end if;
 

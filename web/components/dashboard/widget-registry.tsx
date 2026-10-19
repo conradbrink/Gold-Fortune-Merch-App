@@ -39,9 +39,11 @@ import {
   PipelineCard,
   SalesCard,
   StoreHealthCard,
+  StoreRangeCard,
   StoreReorderCard,
 } from "@/components/dashboard/business-widgets";
 import type { ReorderSummary } from "@/lib/store-reorder";
+import type { RangeCardData } from "@/lib/store-range";
 import type { TargetProgress } from "@/lib/targets";
 import { SettleDriving } from "@/components/workday/settle-driving";
 import {
@@ -81,7 +83,16 @@ import {
  */
 
 /** The RPCs behind the catalogue. One fetch each, however many cards use them. */
-export type WidgetSource = "summary" | "dayTimes" | "operations" | "liveReps" | "business" | "numbers" | "today" | "reorder";
+export type WidgetSource =
+  | "summary"
+  | "dayTimes"
+  | "operations"
+  | "liveReps"
+  | "business"
+  | "numbers"
+  | "today"
+  | "reorder"
+  | "storeRange";
 
 /** Sales, pipeline, money and store health, with this month's rep targets. */
 export type BusinessData = {
@@ -117,6 +128,8 @@ export type WidgetData = {
   contractsDue: ContractsDue | null;
   /** Stores due for an order, fetched only when that card is on the layout. */
   reorder: ReorderSummary | null;
+  /** Range: what each store should carry and what is missing, fetched only when that card is on the layout. */
+  storeRange: RangeCardData | null;
 };
 
 // Where a tile's number can be taken apart: `reportHref` and the other links
@@ -311,6 +324,18 @@ export const WIDGETS: WidgetDefinition[] = [
     source: "reorder",
     module: "distribution",
     render: (d) => d.reorder && <StoreReorderCard reorder={d.reorder} />,
+  },
+  {
+    id: "store_range",
+    title: () => "Range",
+    description: (t) =>
+      `Which products each ${lower(t.site.one)} should have, what is missing, and how new products are doing. Tickd works it out from your orders.`,
+    span: 2,
+    source: "storeRange",
+    module: "distribution",
+    // Management figures with money, like the page it opens (/stores/range).
+    permission: "insights",
+    render: (d) => d.storeRange && <StoreRangeCard range={d.storeRange} />,
   },
   {
     id: "visits_completed",
@@ -745,6 +770,7 @@ export const DEFAULT_LAYOUT: string[] = [
   "field_team",
   "store_health",
   "store_reorder",
+  "store_range",
   "live_reps",
 ];
 

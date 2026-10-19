@@ -5045,6 +5045,7 @@ export type Database = {
           name: string
           org_id: string
           place_code: string | null
+          size_override: string | null
           state: string | null
           store_group_id: string | null
           sub_territory_id: string | null
@@ -5071,6 +5072,7 @@ export type Database = {
           name: string
           org_id: string
           place_code?: string | null
+          size_override?: string | null
           state?: string | null
           store_group_id?: string | null
           sub_territory_id?: string | null
@@ -5097,6 +5099,7 @@ export type Database = {
           name?: string
           org_id?: string
           place_code?: string | null
+          size_override?: string | null
           state?: string | null
           store_group_id?: string | null
           sub_territory_id?: string | null

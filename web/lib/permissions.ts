@@ -108,6 +108,8 @@ const PATH_PERMISSIONS: { prefix: string; permission: PermissionCode }[] = [
   { prefix: "/commissions", permission: "insights" },
   { prefix: "/leads", permission: "sales_coverage" },
   { prefix: "/stores", permission: "sales_coverage" },
+  // The Range card's own page: management figures, with money, like /sales.
+  { prefix: "/stores/range", permission: "insights" },
   { prefix: "/territories", permission: "sales_coverage" },
   { prefix: "/schedule", permission: "field_ops" },
   { prefix: "/activities", permission: "field_ops" },

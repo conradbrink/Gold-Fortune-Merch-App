@@ -37,6 +37,8 @@ export type CompanySettings = {
   money_invoice_orders: boolean;
   /** The longest a store goes before it is due for an order; sooner if it usually orders sooner (lib/store-reorder.ts). */
   reorder_after_days: number;
+  /** A store has a product in its range if it ordered it in this many days (lib/store-range.ts). */
+  range_lapse_days: number;
   /** The numbers "Your numbers" shows, comma-separated codes (lib/kpis.ts). */
   dashboard_cards: string;
   /** The cards a new user's dashboard starts with, comma-separated widget ids. */
@@ -104,6 +106,7 @@ const SETTING_FALLBACK: CompanySettings = {
   money_contracts: false,
   money_invoice_orders: false,
   reorder_after_days: 30,
+  range_lapse_days: 60,
   dashboard_cards: "jobs_done_pct,missed,gps_verified_pct,owed",
   dashboard_layout: "headline,sales,pipeline,field_team,store_health,store_reorder,live_reps",
   report_tabs: "score,oos,coverage,adherence,reps,trends,form,photos",
@@ -179,6 +182,7 @@ export function parseCompanyConfig(raw: unknown): CompanyConfig | null {
       money_contracts: bool(s.money_contracts, f.money_contracts),
       money_invoice_orders: bool(s.money_invoice_orders, f.money_invoice_orders),
       reorder_after_days: int(s.reorder_after_days, f.reorder_after_days),
+      range_lapse_days: int(s.range_lapse_days, f.range_lapse_days),
       dashboard_cards: list(s.dashboard_cards, f.dashboard_cards),
       dashboard_layout: list(s.dashboard_layout, f.dashboard_layout),
       report_tabs: list(s.report_tabs, f.report_tabs),
