@@ -37,6 +37,10 @@ export const STAGE_NEXT: Record<PipelineStage, string> = {
 export type PipelineOrder = {
   id: string;
   orderNumber: string;
+  /** The invoice this sale was billed on, Tickd's or a QuickBooks number. */
+  invoiceNumber: string | null;
+  /** The person the order is for, as the orders board searches it. */
+  contactName: string | null;
   status: string;
   podStatus: string | null;
   onHold: boolean;
@@ -45,6 +49,8 @@ export type PipelineOrder = {
   repId: string | null;
   repName: string | null;
   createdAt: string;
+  /** When it was confirmed: the orders board's Invoiced column counts from here. */
+  confirmedAt: string | null;
   /** When it reached the stage it is in now, which is how long it has waited. */
   enteredAt: string;
   /** The day the customer needs it, when the order says. */
@@ -57,6 +63,8 @@ export type PipelineOrder = {
 type Row = {
   id: string;
   order_number: string;
+  invoice_number: string | null;
+  contact_name: string | null;
   status: string;
   pod_status: string | null;
   on_hold: boolean | null;
@@ -124,7 +132,7 @@ export async function fetchPipelineOrders(supabase: SupabaseClient): Promise<Pip
     supabase
       .from("orders")
       .select(
-        `id, order_number, status, pod_status, on_hold, store_id, rep_id, created_at, confirmed_at,
+        `id, order_number, invoice_number, contact_name, status, pod_status, on_hold, store_id, rep_id, created_at, confirmed_at,
          picking_started_at, packed_at, dispatched_at, delivered_at, required_by, vat_rate,
          stores(name), profiles!orders_rep_id_fkey(full_name), order_lines(qty_ordered, unit_price)`
       );
@@ -144,6 +152,8 @@ export async function fetchPipelineOrders(supabase: SupabaseClient): Promise<Pip
       {
         id: r.id,
         orderNumber: r.order_number,
+        invoiceNumber: r.invoice_number,
+        contactName: r.contact_name,
         status: r.status,
         podStatus: r.pod_status,
         onHold: !!r.on_hold,
@@ -152,6 +162,7 @@ export async function fetchPipelineOrders(supabase: SupabaseClient): Promise<Pip
         repId: r.rep_id,
         repName: one(r.profiles)?.full_name ?? null,
         createdAt: r.created_at,
+        confirmedAt: r.confirmed_at,
         enteredAt: enteredAtOf(r),
         requiredBy: r.required_by,
         total: orderTotals(

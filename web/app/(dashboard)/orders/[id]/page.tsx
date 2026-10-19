@@ -620,9 +620,21 @@ export default function OrderDetailPage() {
     <div className="space-y-6">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <Link href="/orders" className="text-sm text-muted-foreground hover:underline">
-            ← Orders
-          </Link>
+          {/* Back to where the order is listed: a finished one is in the
+              archive, not on the board. */}
+          {o.status === "cancelled" ? (
+            <Link href="/orders/archive?show=cancelled" className="text-sm text-muted-foreground hover:underline">
+              ← Archive
+            </Link>
+          ) : o.status === "delivered" && o.pod_status !== "outstanding" ? (
+            <Link href="/orders/archive" className="text-sm text-muted-foreground hover:underline">
+              ← Archive
+            </Link>
+          ) : (
+            <Link href="/orders" className="text-sm text-muted-foreground hover:underline">
+              ← Orders
+            </Link>
+          )}
           <h1 className="mt-1 flex items-center gap-2 text-2xl font-semibold tracking-tight">
             {o.order_number}
             <Badge variant={o.status === "cancelled" ? "outline" : "secondary"}>
@@ -1231,18 +1243,17 @@ export default function OrderDetailPage() {
               <CardTitle className="text-base">Documents</CardTitle>
             </CardHeader>
             <CardContent className="space-y-2 text-sm">
-              {/* The rule this states is already enforced — the orders list
-                  derives its stage from `pod_status`, so an order sits in
-                  "Delivered — needs POD" and cannot reach "Delivered and
-                  fulfilled" until the trigger on `delivery_documents` flips it
-                  to `received`. It was enforced silently, which is why it read
-                  as missing: the screen never said the delivery was unfinished
-                  or what would finish it. */}
+              {/* The rule this states is already enforced: the orders board
+                  derives its column from `pod_status`, so an order stays in
+                  Delivered, and out of the archive, until the trigger on
+                  `delivery_documents` flips it to `received`. It was enforced
+                  silently, which is why it read as missing: the screen never
+                  said the delivery was unfinished or what would finish it. */}
               {o.pod_status === "outstanding" && (
                 <p className="rounded-lg border border-amber-500/40 bg-amber-500/5 p-2.5 text-amber-700 dark:text-amber-500">
-                  This delivery is not finished. It stays under{" "}
-                  <strong>Delivered — needs POD</strong> until a signed proof of
-                  delivery is filed here, and only then counts as fulfilled.
+                  This delivery is not finished. It stays in{" "}
+                  <strong>Delivered</strong> on the orders board until a signed
+                  proof of delivery is filed here, and then goes to the archive.
                 </p>
               )}
               {detail.documents.length === 0 ? (
