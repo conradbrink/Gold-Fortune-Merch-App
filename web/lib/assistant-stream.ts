@@ -36,6 +36,28 @@ export const MAX_QUESTION_CHARS = 500;
 export const MAX_HISTORY_TURNS = 8;
 const MAX_TURN_CHARS = 4000;
 
+/** A turn as the panel shows it: an answer can be unfinished, refused or failed. */
+export type ShownTurn = ChatTurn & { pending?: boolean; refused?: boolean; error?: string };
+
+/**
+ * The turns sent back for context: answered questions with their answers, the
+ * newest few. A question that was refused, failed or never finished goes with
+ * its answer, so an off-topic request cannot ride along unanswered behind the
+ * next good one.
+ */
+export function history(messages: readonly ShownTurn[]): ChatTurn[] {
+  const turns: ChatTurn[] = [];
+  for (let i = 0; i < messages.length; i++) {
+    const q = messages[i];
+    const a = messages[i + 1];
+    if (q.role !== "user" || !a || a.role !== "assistant") continue;
+    i++;
+    if (a.pending || a.error || a.refused || !a.text.trim()) continue;
+    turns.push({ role: "user", text: q.text }, { role: "assistant", text: a.text });
+  }
+  return turns.slice(-MAX_HISTORY_TURNS);
+}
+
 export function encodeEvent(event: AssistantEvent): string {
   return JSON.stringify(event) + "\n";
 }

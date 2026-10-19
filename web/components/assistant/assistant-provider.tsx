@@ -3,12 +3,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import type { ExportSheet } from "@/lib/export";
 import { toolsFor, type ToolSpec } from "@/lib/assistant-tools";
-import {
-  MAX_HISTORY_TURNS,
-  decodeEvents,
-  type ChatTurn,
-  type QuestionsLeft,
-} from "@/lib/assistant-stream";
+import { decodeEvents, history, type QuestionsLeft } from "@/lib/assistant-stream";
 import { usePermissions } from "@/lib/use-permissions";
 import { useCompanyConfig } from "@/lib/use-company-config";
 
@@ -87,13 +82,6 @@ function save(stored: Stored) {
 let counter = 0;
 const newId = () => `${Date.now().toString(36)}-${(counter++).toString(36)}`;
 
-/** The turns sent back for context: answered ones only, the newest few. */
-function history(messages: AskMessage[]): ChatTurn[] {
-  return messages
-    .filter((m) => !m.pending && !m.error && !m.refused && m.text.trim() !== "")
-    .map((m) => ({ role: m.role, text: m.text }))
-    .slice(-MAX_HISTORY_TURNS);
-}
 
 export function AssistantProvider({ children }: Readonly<{ children: React.ReactNode }>) {
   const permissions = usePermissions();
@@ -126,7 +114,10 @@ export function AssistantProvider({ children }: Readonly<{ children: React.React
 
   useEffect(() => {
     if (!orgId || loadedFor !== orgId) return;
-    save({ orgId, open, left, messages: messages.filter((m) => !m.pending) });
+    // A question whose answer is still coming is left out with it: restored
+    // alone it would read as asked and never answered.
+    const done = messages.filter((m, i) => !m.pending && !(m.role === "user" && messages[i + 1]?.pending));
+    save({ orgId, open, left, messages: done });
   }, [orgId, loadedFor, open, left, messages]);
 
   const update = useCallback((id: string, change: (m: AskMessage) => AskMessage) => {

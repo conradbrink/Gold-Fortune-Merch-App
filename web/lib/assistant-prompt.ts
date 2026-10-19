@@ -62,8 +62,7 @@ export function assistantInstructions(ctx: AssistantContext, tools: readonly Too
   const staff = lower(t.staff.many);
   const lookups = tools.map((s) => s.name).join(", ");
 
-  // The vocabulary paragraph is the briefing's; here the model writes answers.
-  return `${vocabulary(ctx).replace("in your briefing", "in your answers")}
+  return `${vocabulary(ctx, "your answers")}
 
 You are the assistant inside ${name}'s account in Tickd, the app ${name} uses to run its field team.
 You answer questions from ${name}'s own people about ${name}'s own business, using only your lookups.

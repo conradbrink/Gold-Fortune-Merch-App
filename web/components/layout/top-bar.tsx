@@ -134,12 +134,12 @@ export function TopBar() {
 
             Ungated by role, like the theme toggle below it: a rep with a
             pending leave decision needs telling as much as a manager does. */}
-        {/* Ahead of the bell, because it is the one control in this bar that
-            somebody comes to the app specifically to press. Renders nothing for
-            anybody without the `workday` permission. */}
         {/* Ask: questions about the business, answered from its own data.
             Shown to anybody whose access gives it something to look up. */}
         <AssistantButton />
+        {/* Ahead of the bell, because it is the one control in this bar that
+            somebody comes to the app specifically to press. Renders nothing for
+            anybody without the `workday` permission. */}
         <WorkdayControl />
         {hasAlerts && <AlertsBell />}
         {hasHr && <NotificationsBell />}

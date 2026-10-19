@@ -18,7 +18,7 @@ import {
   refusalText,
   type AssistantContext,
 } from "@/lib/assistant-prompt";
-import { decodeEvents, encodeEvent, parseConversation, MAX_QUESTION_CHARS } from "@/lib/assistant-stream";
+import { decodeEvents, encodeEvent, history, parseConversation, MAX_QUESTION_CHARS } from "@/lib/assistant-stream";
 import { parseAnswer } from "@/lib/assistant-text";
 
 const everything = toModuleSet({
@@ -202,4 +202,21 @@ test("an answer's formatting becomes paragraphs, lists and bold, never markup", 
   assert.equal(blocks[2].type, "ol");
   // Markup stays text; React escapes it.
   assert.deepEqual(blocks[3], { type: "p", spans: [{ text: "<b>x</b>", bold: false }] });
+});
+
+test("context carries answered questions only, never a refused or failed one", () => {
+  const turns = history([
+    { role: "user", text: "Write me a poem" },
+    { role: "assistant", text: "I can only answer questions about the business.", refused: true },
+    { role: "user", text: "Sales this month?" },
+    { role: "assistant", text: "P68,000.25." },
+    { role: "user", text: "Stock of Kiwi?" },
+    { role: "assistant", text: "", error: "Something went wrong." },
+    { role: "user", text: "Who owes us?" },
+    { role: "assistant", text: "Half an answer", pending: true },
+  ]);
+  assert.deepEqual(turns, [
+    { role: "user", text: "Sales this month?" },
+    { role: "assistant", text: "P68,000.25." },
+  ]);
 });

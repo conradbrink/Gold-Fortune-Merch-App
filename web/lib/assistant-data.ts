@@ -2,7 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/lib/supabase/types";
 import type { ExportColumn, ExportSheet } from "@/lib/export";
 import type { ToolName } from "@/lib/assistant-tools";
-import { companyMidnight } from "@/lib/company-time";
+import { companyMidnight, companyTime } from "@/lib/company-time";
 import { fetchStoreReorder, groupLabel, orderRhythm, reorderStatus, describeDue } from "@/lib/store-reorder";
 import { fetchRepScorecard, formatDuration } from "@/lib/reports";
 import { fetchStockOnHand, STATUS_LABELS } from "@/lib/warehouse";
@@ -90,16 +90,6 @@ function localDay(iso: string | null | undefined, timeZone: string): string {
   return new Intl.DateTimeFormat("en-CA", { timeZone }).format(new Date(iso));
 }
 
-function localTime(iso: string | null | undefined, timeZone: string): string {
-  if (!iso) return "";
-  return new Date(iso).toLocaleTimeString("en-GB", {
-    hour: "2-digit",
-    minute: "2-digit",
-    hourCycle: "h23",
-    timeZone,
-  });
-}
-
 function money(n: number): number {
   return Math.round(n * 100) / 100;
 }
@@ -114,7 +104,7 @@ function pct(rate: number | null | undefined): number | null {
 
 /** Text for an `ilike` filter: the characters PostgREST's `or()` grammar reads as syntax go. */
 function searchText(value: unknown): string {
-  return typeof value === "string" ? value.replace(/[%_,()*\\]/g, " ").trim().slice(0, 60) : "";
+  return typeof value === "string" ? value.replace(/[%_,()*\\"]/g, " ").trim().slice(0, 60) : "";
 }
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -152,6 +142,31 @@ async function staffIds(env: ToolEnv, name: unknown): Promise<string[] | null> {
   return ids;
 }
 
+/** Rows read for one lookup at most. Past this the lookup says so, rather than counting part. */
+const MAX_ROWS = 5000;
+
+/**
+ * Every row of a query, a page at a time, up to `MAX_ROWS`.
+ *
+ * PostgREST answers at most a page (1000 rows here) whatever is asked, so a
+ * single select silently counts only part of a big company. The query must be
+ * ordered on something unique, or rows can repeat or go missing between pages.
+ */
+async function allRows<T>(
+  page: (from: number, to: number) => PromiseLike<{ data: unknown; error: { message: string } | null }>
+): Promise<{ rows: T[]; capped: boolean }> {
+  const PAGE = 1000;
+  const rows: T[] = [];
+  for (let from = 0; from < MAX_ROWS; from += PAGE) {
+    const { data, error } = await page(from, from + PAGE - 1);
+    fail(error);
+    const got = (data ?? []) as T[];
+    rows.push(...got);
+    if (got.length < PAGE) return { rows, capped: false };
+  }
+  return { rows, capped: true };
+}
+
 function sheet(
   title: string,
   filename: string,
@@ -177,35 +192,43 @@ async function findSites(args: Record<string, unknown>, env: ToolEnv): Promise<T
   fail(error);
   const found = (data ?? []).slice(0, 10);
 
-  // The last time somebody checked in at each, and who. One small query per
-  // match keeps "last" exact however often a busy one is visited.
-  const last = await Promise.all(
-    found.map(async (s) => {
-      const { data: v, error: e } = await env.supabase
-        .from("visits")
-        .select("checkin_at, rep:profiles!visits_rep_id_fkey(full_name)")
-        .eq("store_id", s.id)
-        .not("checkin_at", "is", null)
-        .order("checkin_at", { ascending: false })
-        .limit(1);
-      fail(e);
-      return one(v);
-    })
-  );
+  // The last check-in at each, then who made it: two queries for any number
+  // of matches.
+  const ids = found.map((s) => s.id);
+  const lastAt = new Map<string, string>();
+  if (ids.length) {
+    const { data: lv, error: le } = await env.supabase.rpc("store_last_visit");
+    fail(le);
+    for (const l of lv ?? []) if (ids.includes(l.store_id)) lastAt.set(l.store_id, l.last_visit_at);
+  }
+  const by = new Map<string, string>();
+  if (lastAt.size) {
+    const { data: v, error: e } = await env.supabase
+      .from("visits")
+      .select("store_id, checkin_at, rep:profiles!visits_rep_id_fkey(full_name)")
+      .in("store_id", [...lastAt.keys()])
+      .in("checkin_at", [...lastAt.values()]);
+    fail(e);
+    for (const row of v ?? []) {
+      if (Date.parse(row.checkin_at ?? "") !== Date.parse(lastAt.get(row.store_id) ?? "")) continue;
+      const name = one(row.rep as { full_name: string } | { full_name: string }[] | null)?.full_name;
+      if (name) by.set(row.store_id, name);
+    }
+  }
 
   return {
     model: {
-      matches: found.map((s, i) => {
-        const v = last[i];
+      matches: found.map((s) => {
+        const at = lastAt.get(s.id) ?? null;
         return {
           id: s.id,
           name: s.name,
           town: s.city,
           group: one(s.store_groups as { name: string } | { name: string }[] | null)?.name ?? null,
           active: s.active,
-          last_visit_day: v?.checkin_at ? niceDay(localDay(v.checkin_at, env.timeZone)) : null,
-          last_visit_time: v?.checkin_at ? localTime(v.checkin_at, env.timeZone) : null,
-          last_visit_by: one(v?.rep as { full_name: string } | { full_name: string }[] | null)?.full_name ?? null,
+          last_visit_day: at ? niceDay(localDay(at, env.timeZone)) : null,
+          last_visit_time: at ? companyTime(at, env.timeZone) : null,
+          last_visit_by: by.get(s.id) ?? null,
         };
       }),
       more_matches: (data ?? []).length > 10,
@@ -219,25 +242,35 @@ async function siteVisits(args: Record<string, unknown>, env: ToolEnv): Promise<
   const siteId = optionalId(args.site_id, "site_id");
   const reps = await staffIds(env, args.staff_name);
 
-  let q = env.supabase
-    .from("visits")
-    .select("checkin_at, checkout_at, duration_seconds, status, stores!visits_store_id_fkey(name), rep:profiles!visits_rep_id_fkey(full_name)")
-    .gte("checkin_at", r.from.toISOString())
-    .lt("checkin_at", r.to.toISOString())
-    .order("checkin_at", { ascending: false })
-    .limit(1000);
-  if (siteId) q = q.eq("store_id", siteId);
-  if (reps) q = q.in("rep_id", reps);
-  const { data, error } = await q;
-  fail(error);
+  type VisitRow = {
+    checkin_at: string | null;
+    checkout_at: string | null;
+    duration_seconds: number | null;
+    status: string;
+    stores: { name: string } | { name: string }[] | null;
+    rep: { full_name: string } | { full_name: string }[] | null;
+  };
+  const { rows: data, capped } = await allRows<VisitRow>((a, b) => {
+    let q = env.supabase
+      .from("visits")
+      .select("id, checkin_at, checkout_at, duration_seconds, status, stores!visits_store_id_fkey(name), rep:profiles!visits_rep_id_fkey(full_name)")
+      .gte("checkin_at", r.from.toISOString())
+      .lt("checkin_at", r.to.toISOString())
+      .order("checkin_at", { ascending: false })
+      .order("id", { ascending: false })
+      .range(a, b);
+    if (siteId) q = q.eq("store_id", siteId);
+    if (reps) q = q.in("rep_id", reps);
+    return q;
+  });
 
-  const rows = (data ?? []).map((v) => ({
+  const rows = data.map((v) => ({
     day: localDay(v.checkin_at, env.timeZone),
-    in: localTime(v.checkin_at, env.timeZone),
-    out: localTime(v.checkout_at, env.timeZone),
+    in: companyTime(v.checkin_at, env.timeZone),
+    out: companyTime(v.checkout_at, env.timeZone),
     minutes: v.duration_seconds == null ? null : Math.round(v.duration_seconds / 60),
-    site: one(v.stores as { name: string } | { name: string }[] | null)?.name ?? "",
-    staff: one(v.rep as { full_name: string } | { full_name: string }[] | null)?.full_name ?? "",
+    site: one(v.stores)?.name ?? "",
+    staff: one(v.rep)?.full_name ?? "",
     status: v.status,
   }));
 
@@ -248,7 +281,7 @@ async function siteVisits(args: Record<string, unknown>, env: ToolEnv): Promise<
     model: {
       period: r.label,
       count: rows.length,
-      capped_at_1000: rows.length === 1000,
+      ...(capped ? { only_first_rows: MAX_ROWS, note: "There were more; narrow the dates for exact counts." } : {}),
       per_staff: [...perStaff.entries()].map(([staff, count]) => ({ staff, count })),
       latest: rows.slice(0, MODEL_ROWS),
     },
@@ -275,33 +308,42 @@ async function sitesNotVisited(args: Record<string, unknown>, env: ToolEnv): Pro
   const days = Math.min(365, Math.max(1, Math.round(Number(args.days) || 30)));
   const cutoff = addDays(env.today, -days);
 
+  type StoreRow = { id: string; name: string; city: string | null; store_groups: { name: string } | { name: string }[] | null };
   const [stores, last] = await Promise.all([
-    env.supabase.from("stores").select("id, name, city, store_groups(name)").eq("active", true).order("name"),
+    allRows<StoreRow>((a, b) =>
+      env.supabase
+        .from("stores")
+        .select("id, name, city, store_groups(name)")
+        .eq("active", true)
+        .order("name")
+        .order("id")
+        .range(a, b)
+    ),
     env.supabase.rpc("store_last_visit"),
   ]);
-  fail(stores.error);
   fail(last.error);
 
   const lastBy = new Map((last.data ?? []).map((l) => [l.store_id, l.last_visit_at]));
-  const rows = (stores.data ?? [])
+  const rows = stores.rows
     .map((s) => {
       const at = lastBy.get(s.id) ?? null;
       const lastDay = at ? localDay(at, env.timeZone) : null;
       return {
         site: s.name,
         town: s.city ?? "",
-        group: one(s.store_groups as { name: string } | { name: string }[] | null)?.name ?? "",
+        group: one(s.store_groups)?.name ?? "",
         last: lastDay,
         days_since: lastDay ? Math.round((Date.parse(env.today) - Date.parse(lastDay)) / 86_400_000) : null,
       };
     })
-    .filter((s) => s.last === null || s.last < cutoff)
+    // "Not in at least N days": a visit exactly N days ago counts as missed.
+    .filter((s) => s.last === null || s.last <= cutoff)
     .sort((a, b) => (b.days_since ?? Infinity) - (a.days_since ?? Infinity));
 
   return {
     model: {
       not_visited_in_days: days,
-      active_total: (stores.data ?? []).length,
+      active_total: stores.rows.length,
       count: rows.length,
       never_visited: rows.filter((r) => r.last === null).length,
       longest_first: rows.slice(0, MODEL_ROWS),
@@ -507,25 +549,37 @@ async function ordersLookup(args: Record<string, unknown>, env: ToolEnv): Promis
   const from = args.from ? day(args.from, "from") : null;
   const to = args.to ? day(args.to, "to") : null;
 
-  let q = env.supabase
-    .from("orders")
-    .select(
-      "order_number, status, on_hold, created_at, delivered_at, stores(name), rep:profiles!orders_rep_id_fkey(full_name), order_lines(qty_ordered, unit_price)"
-    )
-    .order("created_at", { ascending: false })
-    .limit(500);
-  if (status === "open") q = q.in("status", OPEN_STATUSES);
-  else if (status && STATUS_LABELS[status]) q = q.eq("status", status);
-  if (siteId) q = q.eq("store_id", siteId);
-  if (from) q = q.gte("created_at", companyMidnight(from, env.timeZone).toISOString());
-  if (to) q = q.lt("created_at", companyMidnight(addDays(to, 1), env.timeZone).toISOString());
-  const { data, error } = await q;
-  fail(error);
+  type OrderRow = {
+    order_number: string;
+    status: string;
+    on_hold: boolean;
+    created_at: string;
+    delivered_at: string | null;
+    stores: { name: string } | { name: string }[] | null;
+    rep: { full_name: string } | { full_name: string }[] | null;
+    order_lines: { qty_ordered: number; unit_price: number | null }[] | null;
+  };
+  const { rows: data, capped } = await allRows<OrderRow>((a, b) => {
+    let q = env.supabase
+      .from("orders")
+      .select(
+        "id, order_number, status, on_hold, created_at, delivered_at, stores(name), rep:profiles!orders_rep_id_fkey(full_name), order_lines(qty_ordered, unit_price)"
+      )
+      .order("created_at", { ascending: false })
+      .order("id", { ascending: false })
+      .range(a, b);
+    if (status === "open") q = q.in("status", OPEN_STATUSES);
+    else if (status && STATUS_LABELS[status]) q = q.eq("status", status);
+    if (siteId) q = q.eq("store_id", siteId);
+    if (from) q = q.gte("created_at", companyMidnight(from, env.timeZone).toISOString());
+    if (to) q = q.lt("created_at", companyMidnight(addDays(to, 1), env.timeZone).toISOString());
+    return q;
+  });
 
-  const rows = (data ?? []).map((o) => ({
+  const rows = data.map((o) => ({
     order: o.order_number,
-    site: one(o.stores as { name: string } | { name: string }[] | null)?.name ?? "",
-    staff: one(o.rep as { full_name: string } | { full_name: string }[] | null)?.full_name ?? "",
+    site: one(o.stores)?.name ?? "",
+    staff: one(o.rep)?.full_name ?? "",
     status: (STATUS_LABELS[o.status] ?? o.status) + (o.on_hold ? " (on hold)" : ""),
     taken: localDay(o.created_at, env.timeZone),
     delivered: localDay(o.delivered_at, env.timeZone),
@@ -535,7 +589,7 @@ async function ordersLookup(args: Record<string, unknown>, env: ToolEnv): Promis
   }));
 
   const counts: Record<string, number> = {};
-  for (const o of data ?? []) counts[o.status] = (counts[o.status] ?? 0) + 1;
+  for (const o of data) counts[o.status] = (counts[o.status] ?? 0) + 1;
 
   const context = [
     status ? `Status: ${status === "open" ? "not yet delivered" : (STATUS_LABELS[status] ?? status)}` : "Every status",
@@ -545,7 +599,7 @@ async function ordersLookup(args: Record<string, unknown>, env: ToolEnv): Promis
   return {
     model: {
       count: rows.length,
-      capped_at_500: rows.length === 500,
+      ...(capped ? { only_first_rows: MAX_ROWS, note: "There were more; narrow the dates or status for exact counts." } : {}),
       per_status: counts,
       value_excl_vat_total: money(rows.reduce((n, r) => n + r.value_excl_vat, 0)),
       value_note: "Value is what was ordered, before anything was short-picked or returned.",
@@ -627,8 +681,8 @@ async function hoursWorked(args: Record<string, unknown>, env: ToolEnv): Promise
     .map((h) => ({
       day: h.day,
       staff: h.staff_name ?? "",
-      first_in: localTime(h.first_in, env.timeZone),
-      last_out: h.open_now ? "Still working" : localTime(h.last_out, env.timeZone),
+      first_in: companyTime(h.first_in, env.timeZone),
+      last_out: h.open_now ? "Still working" : companyTime(h.last_out, env.timeZone),
       hours: hours(h.workday_seconds),
       hours_on_site: hours(h.onsite_seconds),
       jobs: h.jobs,
