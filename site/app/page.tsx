@@ -4,7 +4,6 @@ import {
   Check,
   ClipboardList,
   Compass,
-  Layers,
   MapPin,
   MessageSquareText,
   MessagesSquare,
@@ -68,11 +67,6 @@ const pains = [
     icon: Compass,
     title: "No clear plan to grow.",
     body: "You can't see which stores or areas to push, so growth comes down to gut feel.",
-  },
-  {
-    icon: Layers,
-    title: "Your figures are in five places.",
-    body: "Orders, stock, invoices and visits sit in WhatsApp, Excel, paper and your accounting software, so it's hard to make sense of them, let alone decide what to do next.",
   },
 ];
 
