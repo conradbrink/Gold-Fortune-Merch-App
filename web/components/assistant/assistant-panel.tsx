@@ -8,9 +8,10 @@ import {
   Check,
   ExternalLink,
   LoaderCircle,
-  MessageSquareText,
+  Sparkles,
   Square,
   SquarePen,
+  UserRound,
   X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -139,7 +140,7 @@ export function AssistantPanelView({
       )}
     >
       <header className="flex h-14 shrink-0 items-center gap-2 border-b border-border px-4">
-        <MessageSquareText className="size-4 shrink-0 text-primary" aria-hidden />
+        <AiManagerIcon className="mr-1 size-5 shrink-0 text-primary" />
         <h2 className="min-w-0 flex-1 truncate text-sm font-semibold text-foreground">Ask about your business</h2>
         {messages.length > 0 && (
           <Button variant="ghost" size="sm" onClick={onReset} disabled={busy} className="gap-1.5">
@@ -507,6 +508,63 @@ function AnswerTable({ table }: Readonly<{ table: AskTable }>) {
 }
 
 /**
+ * The AI Manager's mark: a manager, with the AI's sparkle at the shoulder in
+ * the company's accent colour. On the button and at the top of the chat.
+ */
+function AiManagerIcon({ className }: Readonly<{ className?: string }>) {
+  return (
+    <span aria-hidden className={cn("relative inline-flex", className)}>
+      <UserRound className="size-full" />
+      {/* Without the sparkles' little dot, which would sit against the head. */}
+      <Sparkles className="absolute -top-[28%] -right-[38%] size-[62%] fill-current text-gold [&_circle]:hidden" />
+    </span>
+  );
+}
+
+/** The first "How can I help you?" after the dashboard opens, then how often, and for how long. */
+const GREET_FIRST_MS = 4_000;
+const GREET_EVERY_MS = 90_000;
+const GREET_FOR_MS = 6_000;
+
+/**
+ * Whether the button says "How can I help you?" right now: a few seconds after
+ * the dashboard opens, then now and then. Never while Ask is open, nor in a
+ * background tab where nobody would see it. Once Ask has been opened, the next
+ * one waits the full gap rather than greeting somebody who has just used it.
+ */
+function useGreeting(paused: boolean): boolean {
+  const [greet, setGreet] = useState(false);
+  const greeted = useRef(false);
+
+  useEffect(() => {
+    if (paused) {
+      greeted.current = true;
+      return;
+    }
+    let timer: ReturnType<typeof setTimeout>;
+    function wait(ms: number) {
+      timer = setTimeout(say, ms);
+    }
+    function say() {
+      if (document.visibilityState !== "visible") return wait(GREET_EVERY_MS);
+      greeted.current = true;
+      setGreet(true);
+      timer = setTimeout(() => {
+        setGreet(false);
+        wait(GREET_EVERY_MS);
+      }, GREET_FOR_MS);
+    }
+    wait(greeted.current ? GREET_EVERY_MS : GREET_FIRST_MS);
+    return () => {
+      clearTimeout(timer);
+      setGreet(false);
+    };
+  }, [paused]);
+
+  return greet;
+}
+
+/**
  * The round button in the bottom-right corner, on every page, the way a chat
  * button sits on a website. It opens and closes the chat window above it; on a
  * phone it sits above the bottom bar and hides while the chat fills the screen.
@@ -514,12 +572,20 @@ function AnswerTable({ table }: Readonly<{ table: AskTable }>) {
  */
 export function AssistantLauncher() {
   const { open, setOpen, tools } = useAssistant();
+  const greet = useGreeting(open);
   if (!tools || tools.length === 0) return null;
-  return <LauncherButton open={open} onToggle={() => setOpen(!open)} />;
+  return <LauncherButton open={open} greet={greet} onToggle={() => setOpen(!open)} />;
 }
 
-/** The button itself, from plain props. */
-export function LauncherButton({ open, onToggle }: Readonly<{ open: boolean; onToggle: () => void }>) {
+/**
+ * The button itself, from plain props. While closed it breathes (a soft ring
+ * grows out of it), and `greet` shows "How can I help you?" beside it.
+ */
+export function LauncherButton({
+  open,
+  greet = false,
+  onToggle,
+}: Readonly<{ open: boolean; greet?: boolean; onToggle: () => void }>) {
   const ref = useRef<HTMLButtonElement>(null);
   const wasOpen = useRef(open);
 
@@ -530,6 +596,7 @@ export function LauncherButton({ open, onToggle }: Readonly<{ open: boolean; onT
   }, [open]);
 
   const label = open ? "Close Ask" : "Ask about your business";
+  const saying = greet && !open;
   return (
     <button
       ref={ref}
@@ -542,9 +609,29 @@ export function LauncherButton({ open, onToggle }: Readonly<{ open: boolean; onT
         open && "max-md:hidden"
       )}
     >
-      {open ? <X className="size-6" aria-hidden /> : <MessageSquareText className="size-6" aria-hidden />}
-      {/* What the button is for, beside it on hover. Not on touch screens, where nothing hovers. */}
+      {/* The breathing ring, behind the icon. Still with reduced motion. */}
       {!open && (
+        <span aria-hidden className="absolute inset-0 -z-10 animate-ask-halo rounded-full bg-primary motion-reduce:hidden" />
+      )}
+      {/* The sparkle weighs the mark up and to the right, so it sits a touch down and left. */}
+      {open ? <X className="size-6" aria-hidden /> : <AiManagerIcon className="size-6 -translate-x-0.5 translate-y-px" />}
+      {/* "How can I help you?" now and then, in a speech bubble pointing at the
+          button. A tap on it opens Ask, like the button. Screen readers get the
+          button's own label instead of a line read out every minute and a half. */}
+      <span
+        aria-hidden
+        className={cn(
+          "absolute top-1/2 right-full mr-3.5 -translate-y-1/2 origin-right rounded-2xl bg-popover px-3.5 py-2 text-sm font-medium whitespace-nowrap text-popover-foreground shadow-lg shadow-black/15 ring-1 ring-border transition-[opacity,translate,scale] duration-200 ease-out motion-reduce:transition-opacity",
+          saying
+            ? "opacity-100"
+            : "pointer-events-none translate-x-2 scale-95 opacity-0 motion-reduce:translate-x-0 motion-reduce:scale-100"
+        )}
+      >
+        How can I help you?
+        <span className="absolute top-1/2 -right-[5px] size-2.5 -translate-y-1/2 rotate-45 border-t border-r border-border bg-popover" />
+      </span>
+      {/* What the button is for, beside it on hover. Not on touch screens, where nothing hovers. */}
+      {!open && !saying && (
         <span
           aria-hidden
           className="pointer-events-none absolute right-full mr-3 hidden rounded-lg bg-foreground px-2.5 py-1 text-xs font-medium whitespace-nowrap text-background opacity-0 shadow-md transition-opacity duration-150 group-hover:opacity-100 group-focus-visible:opacity-100 md:block"
