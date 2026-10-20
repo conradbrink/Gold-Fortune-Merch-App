@@ -74,6 +74,9 @@ export function PricingSection() {
           <ul className="grid gap-2">
             <Item>Everything: store visits, orders, photos, routes and kilometres, invoices and reports</Item>
             <Item>
+              <strong>Our AI Manager:</strong> Ask about your business, and get a plan to grow
+            </Item>
+            <Item>
               <strong>Your stores, products and price lists:</strong> We load them for you
             </Item>
             <Item>
@@ -100,21 +103,12 @@ export function PricingSection() {
             </a>
           </div>
           <div className="grid gap-3 border-t border-line pt-4">
-            <h3 className="font-display text-xl font-bold text-teal-900">Add-ons</h3>
-            <ul className="grid gap-3">
-              <li className="grid gap-0.5">
-                <span className="font-display text-lg font-bold text-teal-900">AI Manager</span>
-                <span className="leading-relaxed text-muted">R599 a month</span>
-              </li>
-              <li className="grid gap-0.5">
-                <span className="font-display text-lg font-bold text-teal-900">HR</span>
-                <span className="leading-relaxed text-muted">R199 a month (up to 5 staff), R499 (6 to 30)</span>
-              </li>
-              <li className="grid gap-0.5">
-                <span className="font-display text-lg font-bold text-teal-900">Warehouse and deliveries</span>
-                <span className="leading-relaxed text-muted">R499 a month per warehouse</span>
-              </li>
-            </ul>
+            {/* HR and the warehouse are one add-on at one price (owner, 20 Oct 2026). */}
+            <h3 className="font-display text-xl font-bold text-teal-900">Add-on</h3>
+            <div className="grid gap-0.5">
+              <span className="font-display text-lg font-bold text-teal-900">Warehouse, deliveries and HR</span>
+              <span className="leading-relaxed text-muted">R495 a month for both</span>
+            </div>
           </div>
         </div>
       </div>

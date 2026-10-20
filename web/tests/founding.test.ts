@@ -144,7 +144,8 @@ test("an application from the short form saves the unasked answers as null", () 
 });
 
 test("the team sizes and ways of running jobs are exactly the form's", () => {
-  for (const size of ["1-4", "5-10", "11-25", "26-50", "50+"]) assert.deepEqual(foundingIssues({ ...good, teamSize: size }), []);
+  // The bands since 20 Oct 2026, and the older ones still taken.
+  for (const size of ["1-4", "5-10", "11-15", "20-50+", "11-25", "26-50", "50+"]) assert.deepEqual(foundingIssues({ ...good, teamSize: size }), []);
   for (const how of ["whatsapp", "paper", "app", "memory"]) assert.deepEqual(foundingIssues({ ...good, howRun: how }), []);
   assert.equal(foundingIssues({ ...good, teamSize: "1-2" })[0]?.field, "teamSize");
 });

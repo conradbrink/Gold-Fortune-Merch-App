@@ -1,11 +1,11 @@
 import { Check, ChevronDown, ShieldCheck } from "lucide-react";
 import Link from "next/link";
-import { founding, foundingStack, foundingWorth, growthPlan, objections, rand, site } from "@/lib/site";
+import { founding, foundingPrice, foundingStack, foundingWorth, objections, pricing, rand, site } from "@/lib/site";
 
 // The Founding 10 distributors package (owner, 19 Oct 2026), on the main page
 // and on /founding: what they get and what each part is worth first, then the
-// price, which looks small next to it (Hormozi: never show the price alone).
-// Then the guarantee, and the doubts answered under the form.
+// discount on each plan (owner, 20 Oct 2026: 40% off the plan that fits, for
+// the first 3 months). Then the guarantee, and the doubts.
 
 export function FoundingStack({ applyHref }: { applyHref: string }) {
   return (
@@ -23,21 +23,28 @@ export function FoundingStack({ applyHref }: { applyHref: string }) {
           </li>
         ))}
       </ul>
-      <div className="grid gap-1 rounded-xl bg-teal-900 px-5 py-4 text-sand">
-        <p className="flex items-baseline justify-between gap-4 text-lg">
-          <span>Total value</span>
-          <span className="font-semibold tabular-nums line-through decoration-amber-500 decoration-2">{rand(foundingWorth)}</span>
+      <div className="grid gap-3 rounded-xl bg-teal-900 px-5 py-4 text-sand">
+        <p className="text-lg leading-snug">
+          All of this, worth <span className="font-semibold tabular-nums">{rand(foundingWorth)}</span>, is included.
         </p>
-        <p className="flex flex-wrap items-baseline justify-between gap-x-4 font-display text-2xl font-extrabold text-amber-500 sm:text-3xl">
-          <span>Founding price</span>
-          <span className="tabular-nums">
-            {rand(founding.price)}
-            <span className="font-sans text-base font-medium text-teal-100"> a month</span>
-          </span>
-        </p>
+        <div className="grid gap-1.5 border-t border-white/15 pt-3">
+          <p className="font-display text-xl font-extrabold text-amber-500 sm:text-2xl">
+            Then {founding.percentOff}% off your plan for {founding.priceMonths} months
+          </p>
+          <ul className="grid gap-1">
+            {pricing.plans.map((p) => (
+              <li key={p.reps} className="flex items-baseline justify-between gap-3">
+                <span className="whitespace-nowrap text-teal-100">Up to {p.reps} reps</span>
+                <span className="whitespace-nowrap tabular-nums">
+                  <span className="text-sm text-teal-100 line-through">{rand(p.monthly)}</span>{" "}
+                  <strong className="font-display text-xl font-extrabold text-sand">{rand(foundingPrice(p))}</strong>
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
         <p className="text-sm leading-snug text-teal-100">
-          For {founding.priceMonths} months. That&apos;s {founding.percentOff}% off our Growth plan (
-          <span className="line-through">{rand(growthPlan.monthly)}</span> a month), with the AI Manager, the setup and the bonuses included.
+          A month, for your first {founding.priceMonths} months. Then your plan&apos;s normal price. No contract.
         </p>
       </div>
       <a
@@ -58,8 +65,7 @@ export function FoundingGuarantee() {
       <div className="grid gap-1">
         <p className="font-display text-xl font-extrabold leading-snug">Our promise</p>
         <p className="text-lg font-semibold leading-snug">
-          Run {site.name} for {founding.guaranteeDays} days. If your reps aren&apos;t visiting more stores, we refund your month, and you
-          keep the Rep Leak Audit.
+          Run {site.name} for {founding.guaranteeDays} days, if you&apos;re unhappy we refund you.
         </p>
         <Link href="/terms#guarantee" className="w-fit text-sm font-medium underline underline-offset-2">
           T&amp;Cs apply.
@@ -73,7 +79,7 @@ export function FoundingGuarantee() {
 export function Objections({ heading = "Questions", more = [] }: { heading?: string; more?: [q: string, a: string][] }) {
   return (
     <div className="grid gap-5">
-      <h2 className="font-display text-2xl font-bold leading-[1.1] tracking-tight text-balance text-teal-900 sm:text-4xl">{heading}</h2>
+      <h2 className="text-center font-display text-2xl font-bold leading-[1.1] tracking-tight text-balance text-teal-900 sm:text-4xl">{heading}</h2>
       <div className="divide-y divide-line border-y border-line">
         {[...objections, ...more].map(([q, a]) => (
           <details key={q} className="group">

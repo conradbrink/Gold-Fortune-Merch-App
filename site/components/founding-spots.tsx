@@ -40,8 +40,20 @@ export function spotsText(left: number | null): string {
   return `${Math.min(left, founding.spots)} of ${founding.spots} spots left`;
 }
 
-/** `short`: "7 spots left." for the banner, and nothing at all until the number is in. */
-export function SpotsText({ className = "", short = false }: { className?: string; short?: boolean }) {
+/**
+ * `short`: "7 spots left." for the banner, and nothing at all until the number is in.
+ * `urgent`: "Only 7 spots left" for the badge that glows (globals.css tk-urgent);
+ * "Only 10 spots" until the number is in, and still once they are all taken.
+ */
+export function SpotsText({
+  className = "",
+  short = false,
+  urgent = false,
+}: {
+  className?: string;
+  short?: boolean;
+  urgent?: boolean;
+}) {
   const left = useSpotsLeft();
   const text = short
     ? left === null
@@ -49,9 +61,15 @@ export function SpotsText({ className = "", short = false }: { className?: strin
       : left <= 0
         ? "All spots are taken."
         : `${Math.min(left, founding.spots)} spots left.`
-    : spotsText(left);
+    : urgent
+      ? left === null
+        ? `Only ${founding.spots} spots`
+        : left <= 0
+          ? `All ${founding.spots} spots are taken`
+          : `Only ${Math.min(left, founding.spots)} spots left`
+      : spotsText(left);
   return (
-    <span className={className} aria-live="polite">
+    <span className={`${className} ${urgent && left !== 0 ? "tk-urgent" : ""}`} aria-live="polite">
       {text}
     </span>
   );

@@ -18,7 +18,9 @@ import { listTemplates, platformAdminClient } from "@/lib/platform";
  *   POST  an application. Saved first (founding_applications is the record),
  *         then the owner is emailed; a mail that cannot be sent never loses
  *         the application. While no spot is left an application is still
- *         saved, as 'waitlist'.
+ *         saved, as 'waitlist'. One per person: a WhatsApp number or email
+ *         address already on an application saves nothing new and sends no
+ *         email; the answer says `already`.
  *
  * Public, so it is checked again here, limited per address and per number, and
  * only the sales site's own origins are answered in a browser. `/api` is
@@ -116,6 +118,16 @@ export async function POST(request: Request) {
     }
   }
 
+  // One application per person (owner, 20 Oct 2026): the same WhatsApp number
+  // or email address as an earlier application saves nothing new and sends no
+  // email, and the form says they have already applied. Two at once from the
+  // same person are stopped by the table's unique indexes (23505, below).
+  const earlier = await earlierApplication(admin, application.whatsapp, application.email);
+  if (earlier === undefined) {
+    return json(request, { error: "Applying is not available just now. Please try again in a moment." }, 503);
+  }
+  if (earlier) return json(request, { ok: true, already: true, waitlist: earlier.status === "waitlist" });
+
   const left = await spotsLeft();
   if (left === null) return json(request, { error: "Applying is not available just now. Please try again in a moment." }, 503);
   const waitlist = left <= 0;
@@ -152,6 +164,7 @@ export async function POST(request: Request) {
     row = { ...row, email: undefined, attribution: undefined };
     ({ data: saved, error } = await insert(row));
   }
+  if (error?.code === "23505") return json(request, { ok: true, already: true, waitlist });
   if (error || !saved) {
     console.error("founding: could not save an application", error?.message);
     return json(request, { error: "Your application could not be saved just now. Please try again." }, 500);
@@ -162,6 +175,39 @@ export async function POST(request: Request) {
   if (emailSaved && toEmail) after(() => confirmToApplicant(saved.id, { ...application, email: toEmail }, waitlist));
 
   return json(request, { ok: true, waitlist });
+}
+
+/**
+ * The earliest application with this WhatsApp number or email address (both
+ * are stored normalised: the number as digits, the email in lower case), null
+ * when there is none, or undefined when the table could not be read. Two plain
+ * lookups rather than one `or` filter, so nothing typed is ever read as filter
+ * syntax.
+ */
+async function earlierApplication(
+  admin: ReturnType<typeof platformAdminClient>,
+  whatsapp: string,
+  email: string | null
+): Promise<{ id: string; status: string } | null | undefined> {
+  const byNumber = await admin
+    .from("founding_applications")
+    .select("id, status")
+    .eq("whatsapp", whatsapp)
+    .order("created_at")
+    .limit(1)
+    .maybeSingle();
+  if (byNumber.error) return undefined;
+  if (byNumber.data) return byNumber.data;
+  if (!email) return null;
+  const byEmail = await admin
+    .from("founding_applications")
+    .select("id, status")
+    .eq("email", email)
+    .order("created_at")
+    .limit(1)
+    .maybeSingle();
+  if (byEmail.error) return undefined;
+  return byEmail.data ?? null;
 }
 
 /**

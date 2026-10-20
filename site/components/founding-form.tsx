@@ -10,9 +10,10 @@ import { firstVisit } from "@/lib/first-visit";
 // It is posted to the app (`founding.apiUrl`), which saves it, emails the owner
 // and lists it under /platform/founding. All required: the applicant's first
 // and last name (sent as one `name`), the business's name, what they
-// distribute, how many reps and WhatsApp. On 11 Oct 2026 the owner cut it from
-// eleven answers; on 19 Oct 2026 the email box came off and "What do you
-// distribute?" went on (the owner's short form for distributors).
+// distribute, how many reps, WhatsApp and email. On 11 Oct 2026 the owner cut it
+// from eleven answers; on 19 Oct 2026 the email box came off and "What do you
+// distribute?" went on (the owner's short form for distributors); on 20 Oct
+// 2026 the email box came back.
 
 type Option = [label: string, value: string];
 
@@ -52,15 +53,16 @@ const products = [
   "Something else",
 ];
 
+// The owner's bands (20 Oct 2026; were 11 to 25, 26 to 50 and 50+). The app
+// and the database take these and the old ones.
 const sizes: Option[] = [
   ["1 to 4", "1-4"],
   ["5 to 10", "5-10"],
-  ["11 to 25", "11-25"],
-  ["26 to 50", "26-50"],
-  ["50+", "50+"],
+  ["11 to 15", "11-15"],
+  ["20 to 50+", "20-50+"],
 ];
 
-type Field = "name" | "businessName" | "distributes" | "teamSize" | "whatsapp";
+type Field = "name" | "businessName" | "distributes" | "teamSize" | "whatsapp" | "email";
 
 // Where visitors stop (the owner's ask, 11 Oct 2026, after 3 started and none
 // sent): each box sends `signup_field` the first time it takes focus and
@@ -73,6 +75,7 @@ const boxKey: Record<string, string> = {
   lastName: "last_name",
   businessName: "business_name",
   whatsapp: "whatsapp",
+  email: "email",
 };
 const issueKey: Record<Field, string> = {
   name: "first_name",
@@ -80,13 +83,14 @@ const issueKey: Record<Field, string> = {
   distributes: "distributes",
   teamSize: "team_size",
   whatsapp: "whatsapp",
+  email: "email",
 };
 type Issue = { field: Field; message: string };
 type State =
   | { kind: "idle" }
   | { kind: "sending" }
   | { kind: "error"; message: string; issues: Issue[] }
-  | { kind: "done"; waitlist: boolean };
+  | { kind: "done"; waitlist: boolean; already: boolean };
 
 const input =
   "min-h-12 w-full rounded-xl border-0 bg-white px-4 py-3 text-base text-ink ring-1 ring-white/30 placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-amber-500";
@@ -303,16 +307,31 @@ export function FoundingForm() {
           teamSize,
           trade,
           whatsapp: text("whatsapp"),
+          email: text("email"),
           website: text("website"),
           source: src,
           attribution: firstVisit(),
         }),
       });
-      const body = (await res.json().catch(() => null)) as { ok?: boolean; waitlist?: boolean; error?: string; issues?: Issue[] } | null;
+      const body = (await res.json().catch(() => null)) as {
+        ok?: boolean;
+        waitlist?: boolean;
+        already?: boolean;
+        error?: string;
+        issues?: Issue[];
+      } | null;
+      if (res.ok && body?.ok && body.already) {
+        // One application per person (owner, 20 Oct 2026): not a new lead, so
+        // no Pixel lead and no "sent"; the Control Centre lists it under
+        // what stopped people ("Had already applied").
+        track("signup_error", { section: "already" });
+        setState({ kind: "done", waitlist: body.waitlist === true, already: true });
+        return;
+      }
       if (res.ok && body?.ok) {
         trackLead();
         track("signup_completed", { waitlist: body.waitlist === true });
-        setState({ kind: "done", waitlist: body.waitlist === true });
+        setState({ kind: "done", waitlist: body.waitlist === true, already: false });
         return;
       }
       const turnedBack = body?.issues?.length ? body.issues.map((i) => issueKey[i.field]).filter(Boolean) : [];
@@ -332,11 +351,21 @@ export function FoundingForm() {
   if (state.kind === "done") {
     return (
       <div role="status" className="grid gap-3 rounded-2xl bg-white/10 p-5 ring-1 ring-white/20 sm:p-6">
-        <p className="font-display text-2xl font-bold text-amber-500">{state.waitlist ? "You're on the waiting list." : "We have your details."}</p>
+        <p className="font-display text-2xl font-bold text-amber-500">
+          {state.already
+            ? "You've already applied."
+            : state.waitlist
+              ? "You're on the waiting list."
+              : "We have your details."}
+        </p>
         <p className="leading-relaxed text-teal-100 sm:text-lg">
-          {state.waitlist
-            ? "All the spots are taken, so you are on the waiting list. If one opens, we will WhatsApp you."
-            : `We'll WhatsApp you within ${founding.replyMinutes} minutes during work hours, to set up your free ${founding.pilotDays}-day pilot.`}
+          {state.already
+            ? state.waitlist
+              ? `You're already on the waiting list, so there's no need to apply again. To change your details, email ${site.email}.`
+              : `We already have your application, so there's no need to send it again. To change your details, email ${site.email}.`
+            : state.waitlist
+              ? "All the spots are taken, so you are on the waiting list. If one opens, we will email you."
+              : `We'll email you to set up your free ${founding.pilotDays}-day pilot.`}
         </p>
       </div>
     );
@@ -367,7 +396,7 @@ export function FoundingForm() {
       <Labelled
         label="WhatsApp number"
         htmlFor={`${id}-wa`}
-        hint={`We WhatsApp you here within ${founding.replyMinutes} minutes during work hours. We never share it.`}
+        hint="We never share your number."
         error={problem("whatsapp")}
       >
         <input
@@ -379,6 +408,26 @@ export function FoundingForm() {
           maxLength={25}
           autoComplete="tel"
           placeholder="082 123 4567"
+          className={input}
+        />
+      </Labelled>
+      {/* Back on the form (owner, 20 Oct 2026): the app emails the applicant a
+          confirmation (application_received) when there is an address. */}
+      <Labelled
+        label="Email address"
+        htmlFor={`${id}-email`}
+        hint="We email you a confirmation."
+        error={problem("email")}
+      >
+        <input
+          id={`${id}-email`}
+          name="email"
+          type="email"
+          inputMode="email"
+          required
+          maxLength={254}
+          autoComplete="email"
+          placeholder="you@yourbusiness.co.za"
           className={input}
         />
       </Labelled>

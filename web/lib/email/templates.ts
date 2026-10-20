@@ -12,6 +12,7 @@ import { alertHref, alertText, dayText, type AlertItem } from "@/lib/alerts";
 import { parseTerms } from "@/lib/terms";
 import { PROMO, TICKD_LOGO_FILE, emailAssetUrl } from "@/lib/email/brand";
 import { FOUNDING_OFFER } from "@/lib/founding-offer";
+import { foundingLine } from "@/lib/plans";
 import { ageingParts, amountText, dayText as dateText, overdueText, periodText } from "@/lib/client-document";
 
 export type EmailContext = {
@@ -471,9 +472,9 @@ const TEMPLATES: Record<string, Renderer> = {
           { label: "Your free pilot", value: `${FOUNDING_OFFER.pilotDays} days, set up for you` },
           {
             label: "After the pilot",
-            value: `R${FOUNDING_OFFER.price.toLocaleString("en-US")} a month for ${FOUNDING_OFFER.priceMonths} months, ${FOUNDING_OFFER.percentOff}% off`,
+            value: foundingLine,
           },
-          ...(whatsapp ? [{ label: "We will WhatsApp you on", value: `+${whatsapp}` }] : []),
+          ...(whatsapp ? [{ label: "Your WhatsApp number", value: `+${whatsapp}` }] : []),
         ];
     const body = stack([
       para(`Hello${first ? ` ${first}` : ""},`, true),
@@ -486,13 +487,13 @@ const TEMPLATES: Record<string, Renderer> = {
       para(
         waitlist
           ? "You are first in line if a place opens, and first for the next round. We will let you know as soon as it does."
-          : `We will WhatsApp you within ${FOUNDING_OFFER.replyMinutes} minutes during work hours. Then we load your stores, products and reps, and your free ${FOUNDING_OFFER.pilotDays}-day pilot starts.`
+          : `We will email you to set up your pilot. Then we load your stores, products and reps, and your free ${FOUNDING_OFFER.pilotDays}-day pilot starts.`
       ),
       para("There is nothing to pay during the pilot, and we do not need a card."),
     ]);
     const { html, text } = layout(ctx, {
       heading: waitlist ? "You are on the waiting list" : "Thank you, we have your application",
-      preheader: waitlist ? "You are first in line if a place opens." : `We will WhatsApp you within ${FOUNDING_OFFER.replyMinutes} minutes during work hours.`,
+      preheader: waitlist ? "You are first in line if a place opens." : "We will email you to set up your free pilot.",
       bodyHtml: body.html,
       bodyText: body.text,
       closing: para("Thank you,\nThe Tickd team"),
@@ -504,12 +505,11 @@ const TEMPLATES: Record<string, Renderer> = {
   founding_accepted: (payload, ctx) => {
     const first = str(payload.first_name);
     const business = str(payload.business_name);
-    const whatsapp = str(payload.whatsapp);
     const facts: Fact[] = [
       { label: "Your free pilot", value: `${FOUNDING_OFFER.pilotDays} days, from the day we set you up` },
       {
         label: "After that",
-        value: `R${FOUNDING_OFFER.price.toLocaleString("en-US")} a month for ${FOUNDING_OFFER.priceMonths} months (${FOUNDING_OFFER.percentOff}% off), or walk away`,
+        value: `${foundingLine}, or walk away`,
       },
       { label: "Included", value: "Set-up, a training day by video call, and 60 days of WhatsApp support" },
     ];
@@ -517,11 +517,8 @@ const TEMPLATES: Record<string, Renderer> = {
       para(`Hello${first ? ` ${first}` : ""},`, true),
       para(`Welcome. ${business ? business : "Your business"} is one of Tickd's first ${FOUNDING_OFFER.spots} founding distributors.`),
       factsBlock(facts),
-      para(
-        whatsapp
-          ? `We will message you on +${whatsapp} to book your set-up. We do it with you, so you do not have to work anything out alone.`
-          : "We will message you to book your set-up. We do it with you, so you do not have to work anything out alone."
-      ),
+      // By email, not WhatsApp (owner, 20 Oct 2026: "we will email them").
+      para("We will email you to book your set-up. We do it with you, so you do not have to work anything out alone."),
       para("There is nothing to pay during the pilot, and we do not need a card. If you would rather talk first, just reply to this email."),
     ]);
     const { html, text } = layout(ctx, {

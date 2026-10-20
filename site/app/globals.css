@@ -300,3 +300,21 @@ section[id] {
 }
 .tk-pop-note[data-pop="wait"] { opacity: 0; transform: translateY(24px) scale(0.96); }
 .tk-pop-note[data-pop="in"] { animation: tk-note 0.5s cubic-bezier(0.34, 1.56, 0.64, 1) 0.3s both; }
+
+/* "Only 7 spots left" (owner, 20 Oct 2026: "make this glow and pulsate ...
+   and wiggle"): a soft amber glow that breathes, and every few seconds a
+   quick wiggle with a small swell. Transform and shadow only. With reduced
+   motion it simply glows, still. */
+@keyframes tk-urgent {
+  0%, 100% { transform: none; box-shadow: 0 0 0 0 rgb(245 165 36 / 0.55), 0 0 14px rgb(245 165 36 / 0.45); }
+  6% { transform: scale(1.06) rotate(-3deg); }
+  12% { transform: scale(1.06) rotate(3deg); }
+  18% { transform: scale(1.06) rotate(-2deg); }
+  24% { transform: scale(1.03) rotate(1deg); }
+  30% { transform: none; }
+  50% { box-shadow: 0 0 0 10px rgb(245 165 36 / 0), 0 0 26px rgb(245 165 36 / 0.75); }
+}
+.tk-urgent { box-shadow: 0 0 14px rgb(245 165 36 / 0.45); }
+@media (prefers-reduced-motion: no-preference) {
+  .tk-urgent { animation: tk-urgent 2.8s ease-in-out infinite; }
+}
