@@ -160,7 +160,6 @@ const faqs: [q: string, a: string][] = [
 // Headings are 36px on a phone and 48px from sm; body copy is 18px.
 const wrap = "mx-auto grid gap-6 px-4 py-10 sm:gap-8 sm:px-6 sm:py-16";
 const h2 = "tk-reveal font-display text-4xl font-bold leading-[1.08] tracking-tight text-balance text-teal-900 sm:text-5xl";
-const h3 = "tk-reveal font-display text-2xl font-bold leading-tight text-balance text-teal-900 sm:text-3xl";
 const lead = "max-w-2xl text-lg leading-relaxed text-pretty text-ink";
 // The one line a section ends on.
 const verdict = "font-display text-2xl font-extrabold leading-snug text-balance text-teal-900 sm:text-3xl";
@@ -303,7 +302,7 @@ export default function Home() {
           </figure>
         </section>
 
-        {/* 3. The problem: the old way, then what it costs (the calculator). */}
+        {/* 3. The problem: the old way. */}
         <section id="problem" aria-labelledby="problem-title">
           <div className={`${wrap} max-w-6xl`}>
             <div className="grid gap-3">
@@ -328,13 +327,6 @@ export default function Home() {
                 </li>
               ))}
             </ul>
-            <div className="grid gap-3 pt-4 sm:pt-6">
-              <h3 className={h3}>Every missed visit is an order you never see.</h3>
-              <p className={lead}>Put in your numbers to see what missed orders cost you.</p>
-            </div>
-            <div className="tk-reveal">
-              <CostCalculator />
-            </div>
           </div>
         </section>
 
@@ -394,6 +386,22 @@ export default function Home() {
               height={1280}
               className="mx-auto w-full max-w-sm"
             />
+          </div>
+        </section>
+
+        {/* What missed orders cost: the Rep Leak Calculator, after the AI
+            Manager (owner, 20 Oct 2026). */}
+        <section id="calculator" aria-labelledby="calculator-title" className="border-t border-line bg-white">
+          <div className={`${wrap} max-w-6xl`}>
+            <div className="grid gap-3">
+              <h2 id="calculator-title" className={h2}>
+                Every missed visit is an order you never see.
+              </h2>
+              <p className={lead}>Put in your numbers to see what missed orders cost you.</p>
+            </div>
+            <div className="tk-reveal">
+              <CostCalculator />
+            </div>
           </div>
         </section>
 
