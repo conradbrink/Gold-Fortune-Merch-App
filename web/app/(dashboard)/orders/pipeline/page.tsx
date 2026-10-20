@@ -36,7 +36,7 @@ import {
   recurringDueHref,
 } from "@/lib/dashboard-links";
 import { fetchBusinessSummary, type BusinessSummary } from "@/lib/dashboard";
-import { rangeForPreset, toLocalDate, toLocalDateInput, type DateRange } from "@/lib/date-range";
+import { rangeForPreset, type DateRange } from "@/lib/date-range";
 import type { ExportSheet } from "@/lib/export";
 import { formatMoney, formatMoneyShort } from "@/lib/money";
 import {
@@ -45,7 +45,6 @@ import {
   STAGE_NEXT,
   WAIT_BANDS,
   WAIT_LABELS,
-  daysWaiting,
   describeWait,
   fetchPipelineOrders,
   stageFromQuery,
@@ -54,6 +53,8 @@ import {
   type PipelineOrder,
   type PipelineStage,
 } from "@/lib/order-pipeline";
+import { dayInZone, daysBetween } from "@/lib/order-board";
+import { dayLabel } from "@/lib/store-reorder";
 import { STATUS_LABELS } from "@/lib/warehouse";
 import { createClient } from "@/lib/supabase/client";
 import { lower } from "@/lib/terms";
@@ -61,10 +62,19 @@ import { useCompanyConfig, useTerms } from "@/lib/use-company-config";
 import { useStoreGroupFilter } from "@/lib/use-store-group-filter";
 import { StoreGroupChip, StoreGroupPicker } from "@/components/dashboard/store-group-picker";
 
+/**
+ * Calendar days an order has been in its stage, in the company's time zone: an
+ * order that reached it yesterday afternoon has waited 1 day, the same count the
+ * orders board shows, so the date beside it ("since 18 Oct") always agrees.
+ */
+function waitedDays(o: PipelineOrder, today: string, timeZone: string): number {
+  return daysBetween(dayInZone(o.enteredAt, timeZone), today);
+}
+
 /** The "By rep" line for orders nobody took (keyed in at the warehouse). */
 const NO_REP = "none";
 
-type SortKey = "order" | "waiting" | "value";
+type SortKey = "order" | "ordered" | "waiting" | "value";
 
 /**
  * The Orders pipeline card, opened up: every order still to go out, and every
@@ -78,7 +88,10 @@ type SortKey = "order" | "waiting" | "value";
 export default function OrdersPipelinePage() {
   const t = useTerms();
   const router = useRouter();
-  const currency = useCompanyConfig()?.settings.currency_code ?? "";
+  const config = useCompanyConfig();
+  const currency = config?.settings.currency_code ?? "";
+  /** Days and dates are the company's, wherever the page is opened (as on the orders board). */
+  const timeZone = config?.timezone ?? Intl.DateTimeFormat().resolvedOptions().timeZone;
   const money = (n: number) => formatMoney(n, currency);
   const moneyShort = (n: number) => formatMoneyShort(n, currency);
 
@@ -153,7 +166,12 @@ export default function OrdersPipelinePage() {
     setAttempt((n) => n + 1);
   }
 
-  const waited = (o: PipelineOrder) => daysWaiting(o.enteredAt, now);
+  /** The company's calendar day, now and for any stamp. */
+  const today = useMemo(() => dayInZone(now, timeZone), [now, timeZone]);
+  const dayOf = (iso: string) => dayInZone(iso, timeZone);
+  const waited = (o: PipelineOrder) => waitedDays(o, today, timeZone);
+  /** "16 Oct", with the year when it is not this year. */
+  const shortDay = (day: string) => dayLabel(day, today);
 
   /**
    * One store group's orders, or every order: what the tiles, panels and list
@@ -179,10 +197,10 @@ export default function OrdersPipelinePage() {
       const cur = m[o.stage];
       cur.n += 1;
       cur.value += o.total;
-      cur.oldest = Math.max(cur.oldest, daysWaiting(o.enteredAt, now));
+      cur.oldest = Math.max(cur.oldest, waitedDays(o, today, timeZone));
     }
     return m;
-  }, [inStoreGroup, now]);
+  }, [inStoreGroup, today, timeZone]);
 
   const inView = useMemo(() => {
     const stages = stagesInView(stage);
@@ -193,11 +211,11 @@ export default function OrdersPipelinePage() {
   const bands = useMemo(() => {
     const m = new Map<string, number>();
     for (const o of inView) {
-      const b = waitBand(daysWaiting(o.enteredAt, now));
+      const b = waitBand(waitedDays(o, today, timeZone));
       m.set(b, (m.get(b) ?? 0) + 1);
     }
     return WAIT_BANDS.map((b) => ({ id: b, n: m.get(b) ?? 0 }));
-  }, [inView, now]);
+  }, [inView, today, timeZone]);
 
   /** "By rep": whose orders these are. */
   const reps = useMemo(() => {
@@ -218,7 +236,7 @@ export default function OrdersPipelinePage() {
   const shown = useMemo(() => {
     const q = search.trim().toLowerCase();
     const filtered = inView.filter((o) => {
-      if (activeBand && waitBand(daysWaiting(o.enteredAt, now)) !== activeBand) return false;
+      if (activeBand && waitBand(waitedDays(o, today, timeZone)) !== activeBand) return false;
       if (activeRep && (o.repId ?? NO_REP) !== activeRep) return false;
       if (!q) return true;
       return o.orderNumber.toLowerCase().includes(q) || (o.storeName ?? "").toLowerCase().includes(q);
@@ -227,16 +245,19 @@ export default function OrdersPipelinePage() {
     return filtered.sort((a, b) => {
       if (sort.key === "order") return sign * a.orderNumber.localeCompare(b.orderNumber);
       if (sort.key === "value") return sign * (a.total - b.total) || a.orderNumber.localeCompare(b.orderNumber);
+      // Ordered: newest first when descending, by the moment it was taken.
+      if (sort.key === "ordered") {
+        return sign * (new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()) || a.orderNumber.localeCompare(b.orderNumber);
+      }
       // Waiting: by the moment it arrived, so two "3 days" keep their real order.
       return sign * (new Date(b.enteredAt).getTime() - new Date(a.enteredAt).getTime()) || a.orderNumber.localeCompare(b.orderNumber);
     });
-  }, [inView, activeBand, activeRep, search, sort, now]);
+  }, [inView, activeBand, activeRep, search, sort, today, timeZone]);
 
   function chooseSort(key: SortKey) {
     setSort((s) => (s.key === key ? { key, dir: s.dir === "asc" ? "desc" : "asc" } : { key, dir: key === "order" ? "asc" : "desc" }));
   }
 
-  const today = toLocalDateInput(new Date(now));
   const viewTotal = inView.reduce((n, o) => n + o.total, 0);
   const plural = (n: number) => (n === 1 ? "order" : "orders");
   const meaning = storeGroup.within(
@@ -272,16 +293,18 @@ export default function OrdersPipelinePage() {
         { header: t.site.one, key: "site" },
         { header: t.staff.one, key: "rep" },
         { header: "Stage", key: "stage" },
+        { header: "In this stage since", key: "since" },
         { header: "Days waiting", key: "days", numeric: true },
         { header: "Needed by", key: "due" },
         { header: "Value incl. VAT", key: "value", numeric: true },
       ],
       rows: shown.map((o) => ({
         order: o.orderNumber,
-        captured: toLocalDate(o.createdAt),
+        captured: dayOf(o.createdAt),
         site: o.storeName ?? "",
         rep: o.repName ?? "",
         stage: STAGE_LABELS[o.stage],
+        since: dayOf(o.enteredAt),
         days: waited(o),
         due: o.requiredBy ?? "",
         value: o.total.toFixed(2),
@@ -306,7 +329,7 @@ export default function OrdersPipelinePage() {
       ]
     : [];
 
-  const colSpan = 6;
+  const colSpan = 7;
 
   return (
     <div className="space-y-4">
@@ -385,6 +408,7 @@ export default function OrdersPipelinePage() {
               <SortHead label="Order" sortKey="order" sort={sort} onSort={chooseSort} />
               <TableHead>{t.site.one}</TableHead>
               <TableHead className="hidden md:table-cell">{t.staff.one}</TableHead>
+              <SortHead label="Ordered" sortKey="ordered" sort={sort} onSort={chooseSort} className="hidden sm:table-cell" />
               <TableHead className={stage ? "hidden" : "hidden sm:table-cell"}>Stage</TableHead>
               <SortHead label="Waiting" sortKey="waiting" sort={sort} onSort={chooseSort} />
               <SortHead label="Value" sortKey="value" sort={sort} onSort={chooseSort} className="hidden text-right sm:table-cell" />
@@ -451,22 +475,31 @@ export default function OrdersPipelinePage() {
                           on hold
                         </Badge>
                       )}
-                      {/* On a phone the value rides under the number; it has its own column from sm up. */}
-                      <span className="block text-xs tabular-nums text-muted-foreground sm:hidden">{money(o.total)}</span>
+                      {/* On a phone the order date and value ride under the number; they have their own columns from sm up. */}
+                      <span className="block text-xs tabular-nums text-muted-foreground sm:hidden">
+                        {shortDay(dayOf(o.createdAt))} · {money(o.total)}
+                      </span>
                     </TableCell>
                     <TableCell className="min-w-[120px] whitespace-normal text-sm">
                       {o.storeName ?? "Unknown"}
                       <span className="block text-xs text-muted-foreground md:hidden">{o.repName ?? ""}</span>
                     </TableCell>
                     <TableCell className="hidden text-sm text-muted-foreground md:table-cell">{o.repName ?? ""}</TableCell>
+                    <TableCell className="hidden whitespace-nowrap text-sm tabular-nums text-muted-foreground sm:table-cell">
+                      {shortDay(dayOf(o.createdAt))}
+                    </TableCell>
                     <TableCell className={stage ? "hidden" : "hidden text-sm sm:table-cell"}>
                       <Badge variant="secondary">{o.stage === "no_pod" ? "Delivered, no proof" : (STATUS_LABELS[o.status] ?? o.status)}</Badge>
                     </TableCell>
-                    <TableCell className="whitespace-nowrap text-sm tabular-nums" title={`Since ${toLocalDate(o.enteredAt)}`}>
+                    <TableCell className="whitespace-nowrap text-sm tabular-nums">
                       <span className={days > 7 ? "font-medium text-red-700 dark:text-red-400" : "font-medium text-foreground"}>
                         {describeWait(days)}
                       </span>
-                      {late && <span className="block text-xs text-red-700 dark:text-red-400">Needed by {o.requiredBy}</span>}
+                      {/* The day it reached this stage, which is what the wait counts from. */}
+                      {days > 0 && <span className="block text-xs text-muted-foreground">since {shortDay(dayOf(o.enteredAt))}</span>}
+                      {late && o.requiredBy && (
+                        <span className="block text-xs text-red-700 dark:text-red-400">Needed by {shortDay(o.requiredBy)}</span>
+                      )}
                     </TableCell>
                     <TableCell className="hidden text-right text-sm tabular-nums sm:table-cell">{money(o.total)}</TableCell>
                   </TableRow>
