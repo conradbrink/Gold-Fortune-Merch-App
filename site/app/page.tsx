@@ -1,21 +1,17 @@
 import {
   CalendarDays,
   Check,
-  CloudOff,
+  ClipboardList,
   FileText,
-  MessageSquareText,
-  GraduationCap,
-  LayoutDashboard,
   MapPin,
-  MapPinned,
+  MessageSquareText,
+  MessagesSquare,
   Navigation,
   PackageX,
   Repeat,
-  Smartphone,
   Store,
-  Tags,
   Target,
-  Camera,
+  UserX,
 } from "lucide-react";
 import Image from "next/image";
 import { CostCalculator } from "@/components/cost-calculator";
@@ -25,69 +21,82 @@ import { FoundingGuarantee, FoundingStack, Objections } from "@/components/found
 import { SpotsText } from "@/components/founding-spots";
 import { Logo } from "@/components/logo";
 import { TradeTabs } from "@/components/trade-tabs";
-import { FoundingStart } from "@/components/founding-start";
 import { PricingSection } from "@/components/pricing-section";
 import { ProofSection } from "@/components/proof-section";
 import { SectionViews } from "@/components/analytics";
 import { confirmed, founding, growthPlan, proof, rand, site } from "@/lib/site";
 
 // Copy: ~/Downloads/site-copy-final-v7.md, reworked on 8 Oct 2026 with the
-// Hormozi offer skills (audit in the site-offer worktree's OFFER-AUDIT.md),
-// then rewritten on 9 Oct 2026 to read the way you'd say it to an owner:
-// say what Tickd does in the hero, one idea per sentence, no bold title that
-// only repeats its sentence, no puns, body text in ink (grey is for small
-// print), and as few words as will do. Still no dashes, and only live features.
-// Lines v7 marks [CONFIRM] sit behind `confirmed` in lib/site.ts.
-// On 19 Oct 2026 the owner made the site only for distributors whose reps
-// visit stores, teams of 3 to 30 reps (worksheet: ~/.claude/plans/site-
-// distributors), then laid it out as the questions an owner asks: "Did my reps
-// actually go?", "Did they sell?", then the Founding 10 distributors package
-// as a value stack, the pilot form, and the doubts answered just under it.
-// (The owner's third question, Tickd AI on WhatsApp, waits until it ships.)
-// The result shown is Gold Fortune's, a distributor that is the owner's own
-// family business, so no line calls it a client.
+// Hormozi offer skills, then rewritten on 9 Oct 2026 to read the way you'd say
+// it to an owner: one idea per sentence, no puns, body text in ink (grey is
+// for small print), as few words as will do, no dashes, and only live
+// features. Lines v7 marks [CONFIRM] sit behind `confirmed` in lib/site.ts.
+// Since 19 Oct 2026 the site is only for distributors whose reps visit stores,
+// teams of 3 to 30 reps. The result shown is Gold Fortune's, a distributor
+// that is the owner's own family business, so no line calls it a client.
+//
+// On 20 Oct 2026 the owner set the page's order (worksheet:
+// ~/.claude/plans/site-landing/worksheet.md): hero, proof, the problem, the
+// benefits, how it works, the doubts (the Founding package, the prices, the
+// questions), then the form to close. One focus: the header has no links but
+// the one button, and "Sign in" for customers is in the footer. There are no
+// reviews or client logos yet, so the trust shown is Gold Fortune's real result.
 // Mobile first: every style below is the phone's; sm:/md:/lg: only add room.
 // Light only, on purpose: owners read this on a phone outdoors, between jobs,
 // and the brand is built on the sand ground.
 
-const nav = [
-  { href: "#visits", label: "Did they go?" },
-  { href: "#sales", label: "Did they sell?" },
-  { href: "#ai", label: "AI Manager" },
-  { href: "#offer", label: "Founding offer" },
-  { href: "#faq", label: "Questions" },
+// 3. The old way: what an owner lives with before Tickd.
+const pains = [
+  { icon: UserX, title: "You can't prove who went where.", body: "A store says nobody came, and your rep says he did." },
+  {
+    icon: MessagesSquare,
+    title: "Orders come in on WhatsApp and paper.",
+    body: "Someone types them up again at night, and the mistakes reach your warehouse.",
+  },
+  { icon: Store, title: "Good stores go quiet.", body: "Nobody notices for weeks, and by then a competitor has the shelf." },
+  {
+    icon: PackageX,
+    title: "Reps take whatever order they're given.",
+    body: "Nobody sells in the products a store doesn't stock yet, so every visit stays small.",
+  },
 ];
 
-// The things that make it easy to say yes, straight under the hero. Each item
-// answers the strip's question, "What do you need to start?"; the training one
-// takes away the "my reps won't use it" doubt early.
-const easy = [
-  { icon: Smartphone, title: "Just their own phones", body: "Tickd runs on the Android phones your reps already have." },
-  { icon: GraduationCap, title: "Reps learn it in 10 minutes", body: "We train them for you, on a video call." },
-  { icon: CloudOff, title: "No signal needed in the store", body: "The app works without signal, and sends the visits and orders once there's signal again." },
-  { icon: Tags, title: "Your stores and products, loaded for you", body: "Send us your store list and your price lists, and we set it all up." },
-];
-
-// "Did my reps actually go?": live on main, the live map and each rep's day
-// (/tracking), photos only from the app's camera with the time and place, and
-// the alerts for a planned visit missed and a check-in away from the store
-// (20261009170000_alerts: missed_planned, off_site_checkin).
-const visits = [
-  { icon: Navigation, text: "A live map of where every rep is, and each rep's day, store by store." },
-  { icon: Camera, text: "Photos can only be taken in the app, and each one shows the time and place." },
-  { icon: MapPin, text: "A warning when a store on the route is missed, or a rep checks in away from the store." },
-  { icon: MapPinned, text: "How far each rep drove, for your petrol claims." },
-];
-
-// "Did they sell?": live on main, the win-back list of stores that stopped
-// ordering (/stores/reorder), "Same again" on the rep's phone (the store's
-// last order), "Don't stock" on each promotion check, and sales against target.
-// No leaderboard and no out-of-stock form yet, so neither is claimed.
-const sales = [
-  { icon: Store, text: "Stores that have stopped ordering, biggest buyers first, with a number to ring." },
-  { icon: Repeat, text: "“Same again”: the store's last order, ready for the rep to repeat and add to." },
-  { icon: PackageX, text: "Reps mark the products a store doesn't stock, so you can sell them in." },
-  { icon: Target, text: "Each rep's sales against their target, every day." },
+// 4. What changes: each live feature, and what it means for the owner.
+// Visits: check-ins with the distance from the store, photos only from the
+// app's camera, the missed_planned and off_site_checkin alerts, the live map
+// and kilometres (/tracking). Sales: the win-back list (/stores/reorder),
+// "Same again", "Don't stock", sales against target, invoices and /owed.
+const benefits = [
+  {
+    icon: MapPin,
+    title: "Every visit, proven",
+    body: "Reps check in at the store, and shelf photos can only be taken in the app, with the time and place. A missed store or a check-in away from the store is flagged.",
+  },
+  {
+    icon: Navigation,
+    title: "Each rep's day, on one screen",
+    body: "A live map of every rep, and each rep's day store by store, with the kilometres for petrol claims. You know the day is on track without phoning anyone.",
+  },
+  {
+    icon: ClipboardList,
+    title: "Orders straight to your warehouse",
+    body: "Reps take the order on the phone, at the store's own prices. Nobody types up orders from WhatsApp again.",
+  },
+  {
+    icon: Store,
+    title: "Quiet stores won back",
+    body: "The stores that have stopped ordering, biggest buyers first, with a number to ring. You hear about them while they can still be won back.",
+  },
+  {
+    icon: Repeat,
+    title: "Bigger orders at every visit",
+    body: "“Same again” fills in the store's last order for the rep to add to, and reps mark the products a store doesn't stock, so you can sell them in.",
+  },
+  {
+    icon: Target,
+    title: "Who's selling, and who owes you",
+    body: "Each rep's sales against their target, every day. Every order becomes an invoice, and you see who still owes you.",
+  },
 ];
 
 // The AI Manager, live on main: Ask answers from the company's own data (the
@@ -109,26 +118,31 @@ const shelfCheck = [
   "Nothing to set up: it works from your product list, with no product photos.",
 ];
 
-// Who does what: the reps work on their phones, the owner runs it from anywhere.
-const teamSteps = [
-  ["Start the day.", "One tap starts their day and shows today's stores."],
-  ["Visit the store.", "They check in, check the shelf and your promotions, and take photos."],
-  ["Take the order.", "They take the order on the phone. The prices come from the store's price list."],
-  ["End the day.", "Their visits, orders and kilometres are all saved."],
-];
-const ownerSteps = [
-  ["Set it up.", "We load your reps, stores and products for you."],
-  ["Plan the routes.", "Give each rep their stores for the day."],
-  ["Pack and deliver.", "Your warehouse confirms, picks and packs every order."],
-  ["Get paid.", "Every order becomes an invoice, and you see who still owes you."],
+// 5. How it works: how easy it is to start, with what you need folded in
+// (their own phones, 10 minutes to learn, no signal needed, loaded for you).
+const steps = [
+  ["Send us the short form.", `It takes a minute. We WhatsApp you within ${founding.replyMinutes} minutes during work hours.`],
+  ["We load everything for you.", "Send us your store list and price lists, and we set up your stores, products and reps."],
+  ["We train your reps.", "On a video call. They learn it in 10 minutes, on the Android phones they already have."],
+  [
+    `Your free ${founding.pilotDays}-day pilot starts.`,
+    "You see every visit and every order from the first day. The app works without signal, and sends it all once there's signal again.",
+  ],
 ];
 
-// The rest of the questions, after the doubts at the form (lib/site.ts `objections`).
+// What the form at the foot of the page gets them, in three lines.
+const youGet = [
+  "Every store visit, proven.",
+  "Orders on the phone, straight to your warehouse.",
+  "Set up for you, and your reps trained.",
+];
+
+// The rest of the questions, after the doubts (lib/site.ts `objections`).
 const faqs: [q: string, a: string][] = [
   ["Who is it for?", "Distributors with 3 to 30 reps who visit stores, take orders and check the shelves."],
   [
     `What happens after the ${founding.priceMonths} founding months?`,
-    `You go onto our normal price, ${rand(growthPlan.monthly)} a month for up to ${growthPlan.reps} reps. The other plans are below.`,
+    `You go onto our normal price, ${rand(growthPlan.monthly)} a month for up to ${growthPlan.reps} reps. The other plans are above.`,
   ],
   ["Do my reps need new phones?", "No. Tickd runs on the Android phones your reps already have."],
   ["Can I trust the shelf photos?", "Yes. They can only be taken inside the app, and each one shows the time and place."],
@@ -148,59 +162,18 @@ const faqs: [q: string, a: string][] = [
 
 // One spacing rhythm for every section: 80px between sections on a phone, 128px
 // from sm up, and 24px (32px) between a heading block and what follows it.
+// Headings are 36px on a phone and 48px from sm; body copy is 18px.
 const wrap = "mx-auto grid gap-6 px-4 py-10 sm:gap-8 sm:px-6 sm:py-16";
-const h2 = "tk-reveal font-display text-3xl font-bold leading-[1.1] tracking-tight text-balance text-teal-900 sm:text-[2.75rem]";
+const h2 = "tk-reveal font-display text-4xl font-bold leading-[1.08] tracking-tight text-balance text-teal-900 sm:text-5xl";
+const h3 = "tk-reveal font-display text-2xl font-bold leading-tight text-balance text-teal-900 sm:text-3xl";
 const lead = "max-w-2xl text-lg leading-relaxed text-pretty text-ink";
-// The one line each question section ends on.
+// The one line a section ends on.
 const verdict = "font-display text-2xl font-extrabold leading-snug text-balance text-teal-900 sm:text-3xl";
 
 const pilotButton =
-  "flex w-full items-center justify-center text-balance text-center rounded-full bg-amber-500 px-6 py-4 text-lg font-semibold text-teal-950 transition-[background-color,transform] duration-150 ease-out hover:bg-amber-400 active:scale-[0.97] sm:inline-flex sm:w-auto sm:py-3.5 sm:text-base";
+  "flex min-h-14 w-full items-center justify-center text-balance text-center rounded-full bg-amber-500 px-6 py-4 text-lg font-semibold text-teal-950 transition-[background-color,transform] duration-150 ease-out hover:bg-amber-400 active:scale-[0.97] sm:inline-flex sm:w-auto sm:py-3.5";
 
-function Lane({
-  icon: Icon,
-  who,
-  where,
-  steps,
-  className,
-  badge,
-}: {
-  icon: typeof Smartphone;
-  who: string;
-  where: string;
-  steps: string[][];
-  className: string;
-  badge: string;
-}) {
-  return (
-    <div className={`tk-reveal grid content-start gap-5 rounded-2xl p-5 ring-1 sm:p-7 ${className}`}>
-      <div className="flex items-center gap-3">
-        <span className={`grid size-11 shrink-0 place-items-center rounded-xl ${badge}`}>
-          <Icon className="size-5" strokeWidth={2.25} />
-        </span>
-        <span className="grid leading-tight">
-          <span className="font-display text-2xl font-extrabold text-teal-900">{who}</span>
-          <span className="text-sm font-medium text-muted">{where}</span>
-        </span>
-      </div>
-      <ol className="grid gap-4">
-        {steps.map(([title, body], i) => (
-          <li key={title} className="grid grid-cols-[2rem_1fr] gap-3">
-            <span className={`grid size-8 place-items-center rounded-full font-display font-extrabold ${badge}`}>
-              {i + 1}
-            </span>
-            <span className="grid gap-0.5">
-              <h3 className="font-display text-lg font-bold text-teal-900 sm:text-xl">{title}</h3>
-              <p className="leading-relaxed text-ink">{body}</p>
-            </span>
-          </li>
-        ))}
-      </ol>
-    </div>
-  );
-}
-
-function Points({ items, badge }: { items: { icon: typeof Smartphone; text: string }[]; badge: string }) {
+function Points({ items, badge }: { items: { icon: typeof Store; text: string }[]; badge: string }) {
   return (
     <ul className="grid gap-4">
       {items.map(({ icon: Icon, text }) => (
@@ -251,15 +224,15 @@ function Shot({
 // pricing_view (one per visit); the normal prices below it don't send it again.
 const SECTION_EVENTS = {
   offer: "pricing_view",
+  benefits: "feature_view",
   ai: "feature_view",
-  visits: "feature_view",
-  sales: "feature_view",
   how: "feature_view",
 };
 
 export default function Home() {
   return (
     <>
+      {/* One focus: the banner and the one button, both to the form. */}
       <header className="sticky top-0 z-40 border-b border-line/70 bg-mint/90 backdrop-blur">
         <div className="bg-teal-900 px-4 py-2 text-center text-sm text-sand">
           Founding {founding.spots}: free {founding.pilotDays}-day pilot + {founding.percentOff}% off for a year.{" "}
@@ -272,35 +245,24 @@ export default function Home() {
           <a href="#top" aria-label={`${site.name} home`}>
             <Logo />
           </a>
-          <nav className="hidden items-center gap-7 text-sm font-medium text-muted md:flex">
-            {nav.map((n) => (
-              <a key={n.href} href={n.href} className="hover:text-teal-900">
-                {n.label}
-              </a>
-            ))}
-          </nav>
-          <div className="flex items-center gap-3">
-            <a href={`${site.appUrl}/login`} className="hidden text-sm font-semibold text-teal-900 hover:underline sm:inline">
-              Sign in
-            </a>
-            <a
-              href="#apply"
-              className="rounded-full bg-teal-900 px-4 py-2 text-sm font-semibold text-sand transition-[background-color,transform] duration-150 ease-out hover:bg-teal-800 active:scale-[0.97]"
-            >
-              Start my free pilot
-            </a>
-          </div>
+          <a
+            href="#apply"
+            className="flex min-h-11 items-center rounded-full bg-teal-900 px-4 text-sm font-semibold text-sand transition-[background-color,transform] duration-150 ease-out hover:bg-teal-800 active:scale-[0.97]"
+          >
+            Start my free pilot
+          </a>
         </div>
       </header>
 
       <SectionViews sections={SECTION_EVENTS} />
       <main id="top">
         {/* 1. Hero, in the owner's words (19 Oct 2026): who it's for, the
-            outcome, the effort it doesn't take, the way in, and the result. */}
+            outcome, how, the effort it doesn't take, the way in, and the
+            first trust signal (Gold Fortune's result). */}
         <section className="mx-auto grid max-w-6xl items-center gap-10 px-4 pb-10 pt-8 sm:px-6 sm:pb-16 sm:pt-12 lg:grid-cols-[1.1fr_0.9fr] lg:gap-14 lg:pt-12">
           <div className="tk-hero grid gap-5 sm:gap-6">
             <p className="text-sm font-bold uppercase tracking-wide text-teal-700">For distributors with 3 to 30 reps</p>
-            <h1 className="font-display text-[2.6rem] font-extrabold leading-[1.02] tracking-tight text-balance text-teal-900 sm:text-6xl lg:text-[4.25rem]">
+            <h1 className="font-display text-5xl font-extrabold leading-[1.02] tracking-tight text-balance text-teal-900 sm:text-6xl lg:text-[4rem]">
               Turn every visit into an{" "}
               <span className="relative whitespace-nowrap">
                 order.
@@ -348,98 +310,91 @@ export default function Home() {
           </figure>
         </section>
 
-        {/* 2. Easy to say yes: the effort it doesn't take. */}
-        <section aria-labelledby="start-title" className="border-y border-line bg-white">
-          {/* The heading, then the four answers: one column on a phone, two
-              from sm. No picture (owner, 19 Oct 2026). */}
+        {/* 2. Social proof: Gold Fortune's real numbers, straight under the hero. */}
+        <ProofSection applyHref="#apply" />
+
+        {/* 3. The problem: the old way, then what it costs (the calculator). */}
+        <section id="problem" aria-labelledby="problem-title">
           <div className={`${wrap} max-w-6xl`}>
-            <h2 id="start-title" className="tk-reveal font-display text-2xl font-bold leading-tight text-teal-900 sm:text-3xl">
-              What do you need to start?
-            </h2>
-            <ul className="grid gap-5 sm:grid-cols-2 sm:gap-x-10 sm:gap-y-6">
-              {easy.map(({ icon: Icon, title, body }) => (
-                <li key={title} className="tk-reveal tk-timeline flex gap-3.5">
-                  <Icon className="tk-draw mt-0.5 size-6 shrink-0 text-teal-700" strokeWidth={2} aria-hidden="true" />
-                  <span className="grid gap-0.5">
-                    <span className="font-display text-lg font-bold text-teal-900">{title}</span>
-                    <span className="leading-relaxed text-ink">{body}</span>
+            <div className="grid gap-3">
+              <h2 id="problem-title" className={h2}>
+                The old way is costing you orders.
+              </h2>
+              <p className={lead}>This is how most reps are still run.</p>
+            </div>
+            <ul className="grid gap-x-10 gap-y-6 sm:grid-cols-2">
+              {pains.map(({ icon: Icon, title, body }) => (
+                <li key={title} className="tk-reveal tk-timeline flex gap-3.5 border-t border-line pt-5">
+                  <span className="tk-pop grid size-10 shrink-0 place-items-center rounded-xl bg-flag/10 text-flag ring-1 ring-flag/20">
+                    <Icon className="size-5" strokeWidth={2.25} aria-hidden="true" />
+                  </span>
+                  <span className="grid gap-1">
+                    <span className="font-display text-xl font-bold leading-snug text-teal-900">{title}</span>
+                    <span className="text-lg leading-relaxed text-ink">{body}</span>
                   </span>
                 </li>
               ))}
             </ul>
-          </div>
-        </section>
-
-        {/* The result at a distributor, just under what you need to start. */}
-        <ProofSection applyHref="#apply" />
-
-        {/* 3. "Did my reps actually go?" Proof that it works. */}
-        <section id="visits" className="scroll-mt-28">
-          <div className={`${wrap} max-w-6xl lg:grid-cols-[1fr_1.05fr] lg:items-center lg:gap-14`}>
-            <div className="grid content-start gap-6 sm:gap-8">
-              <div className="grid gap-3">
-                <h2 className={h2}>Did my reps actually go?</h2>
-                <p className={lead}>
-                  A store says nobody came, and your rep says he did. With {site.name}, every visit is checked in at the store, with the time and
-                  the place.
-                </p>
-              </div>
-              <Points items={visits} badge="bg-teal-900 text-amber-500" />
-            </div>
-            {/* The whole live map is too small to read on a phone, so a phone
-                gets the close-up of one rep's day instead. */}
-            <Shot
-              src="/demo/dash/site-live-map-panel.webp"
-              alt="Thabo's day on the live map: 19.8 km driven, 3 check-ins, 2 orders, and every arrival and departure since 06:58."
-              width={634}
-              height={905}
-              className="mx-auto w-full max-w-xs sm:hidden"
-            />
-            <Shot
-              src="/demo/dash/site-live-map.webp"
-              alt="The live map: Naledi arrived at Store 22 8 minutes ago, and Thabo's day so far: two stores, two orders, and his arrival at Riverside complex at 11:05."
-              width={1984}
-              height={1139}
-              className="hidden sm:grid"
-            />
-            <p className={`${verdict} lg:col-span-2`}>If it isn&apos;t in {site.name}, it didn&apos;t happen.</p>
-          </div>
-        </section>
-
-        {/* 4. "Did they sell?" The dream outcome, in money they can picture. */}
-        <section id="sales" className="scroll-mt-28 border-t border-line bg-white">
-          <div className={`${wrap} max-w-6xl`}>
-            <div className="grid gap-6 lg:grid-cols-[1.05fr_1fr] lg:items-center lg:gap-14">
-              <div className="order-2 lg:order-1">
-                <Shot
-                  src="/demo/dash/site-dashboard.webp"
-                  alt="The owner's dashboard: sales by month, each rep's sales against target, and the orders being confirmed, picked, packed and delivered."
-                  width={2016}
-                  height={1180}
-                />
-              </div>
-              <div className="order-1 grid content-start gap-6 sm:gap-8 lg:order-2">
-                <div className="grid gap-3">
-                  <h2 className={h2}>Did they sell?</h2>
-                  <p className={lead}>
-                    Stores go quiet and nobody notices. Reps take whatever order the shop owner gives them. {site.name} shows you where the sales
-                    are leaking.
-                  </p>
-                </div>
-                <Points items={sales} badge="bg-amber-500 text-teal-950" />
-              </div>
-            </div>
-            <p className={verdict}>Every visit becomes a bigger order.</p>
-            <div className="grid gap-3 border-t border-line pt-8 sm:pt-10">
-              <h3 className="tk-reveal font-display text-2xl font-bold leading-tight text-teal-900 sm:text-3xl">The Rep Leak Calculator</h3>
+            <div className="grid gap-3 pt-4 sm:pt-6">
+              <h3 className={h3}>Every missed visit is an order you never see.</h3>
               <p className={lead}>
-                One store that stops ordering at R4,000 a month costs you R48,000 a year. Put in your numbers to see what missed visits could be
-                costing you.
+                One store that stops ordering at R4,000 a month costs you R48,000 a year. Put in your numbers to see what missed visits
+                could be costing you.
               </p>
             </div>
             <div className="tk-reveal">
               <CostCalculator />
             </div>
+          </div>
+        </section>
+
+        {/* 4. The solution: each benefit with what it means, then the real screens. */}
+        <section id="benefits" aria-labelledby="benefits-title" className="scroll-mt-28 border-t border-line bg-white">
+          <div className={`${wrap} max-w-6xl`}>
+            <div className="grid gap-3">
+              <h2 id="benefits-title" className={h2}>
+                {site.name} fixes all four.
+              </h2>
+              <p className={lead}>
+                Your reps use the app on their phones. You see it all on your computer, or on your own phone.
+              </p>
+            </div>
+            <ul className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              {benefits.map(({ icon: Icon, title, body }) => (
+                <li key={title} className="tk-reveal grid content-start gap-3 rounded-2xl bg-mint p-5 ring-1 ring-teal-100 sm:p-6">
+                  <span className="tk-icon-hover grid size-11 place-items-center rounded-xl bg-teal-900 text-amber-500">
+                    <Icon className="size-5" strokeWidth={2.25} aria-hidden="true" />
+                  </span>
+                  <h3 className="font-display text-xl font-bold leading-snug text-teal-900">{title}</h3>
+                  <p className="text-base leading-relaxed text-ink sm:text-lg">{body}</p>
+                </li>
+              ))}
+            </ul>
+            <div className="grid gap-4 pt-2 lg:grid-cols-2 lg:items-start lg:gap-6">
+              {/* The whole live map is too small to read on a phone, so a phone
+                  gets the close-up of one rep's day instead. */}
+              <Shot
+                src="/demo/dash/site-live-map-panel.webp"
+                alt="Thabo's day on the live map: 19.8 km driven, 3 check-ins, 2 orders, and every arrival and departure since 06:58."
+                width={634}
+                height={905}
+                className="mx-auto w-full max-w-xs sm:hidden"
+              />
+              <Shot
+                src="/demo/dash/site-live-map.webp"
+                alt="The live map: Naledi arrived at Store 22 8 minutes ago, and Thabo's day so far: two stores, two orders, and his arrival at Riverside complex at 11:05."
+                width={1984}
+                height={1139}
+                className="hidden sm:grid"
+              />
+              <Shot
+                src="/demo/dash/site-dashboard.webp"
+                alt="The owner's dashboard: sales by month, each rep's sales against target, and the orders being confirmed, picked, packed and delivered."
+                width={2016}
+                height={1180}
+              />
+            </div>
+            <p className={verdict}>If it isn&apos;t in {site.name}, it didn&apos;t happen.</p>
           </div>
         </section>
 
@@ -501,12 +456,28 @@ export default function Home() {
           </div>
         </section>
 
-        {/* 5. At every store (was "Your trade": the other trades are kept in
-            components/trade-tabs.tsx, not shown). */}
-        <section id="stores" className="border-t border-line">
+        {/* 5. How it works: four steps to start, then the rep's day on the phone. */}
+        <section id="how" aria-labelledby="how-title" className="scroll-mt-28 border-t border-line bg-white">
           <div className={`${wrap} max-w-6xl`}>
             <div className="grid gap-3">
-              <h2 className={h2}>What your reps do at every store</h2>
+              <h2 id="how-title" className={h2}>
+                Up and running in four steps.
+              </h2>
+              <p className={lead}>You don&apos;t set anything up yourself. We do it with you.</p>
+            </div>
+            <ol className="grid gap-6 sm:grid-cols-2 lg:grid-cols-4 lg:gap-8">
+              {steps.map(([title, body], i) => (
+                <li key={title} className="tk-reveal grid content-start gap-3">
+                  <span className="grid size-12 place-items-center rounded-full bg-amber-500 font-display text-xl font-extrabold text-teal-950">
+                    {i + 1}
+                  </span>
+                  <h3 className="font-display text-xl font-bold leading-snug text-teal-900">{title}</h3>
+                  <p className="text-lg leading-relaxed text-ink">{body}</p>
+                </li>
+              ))}
+            </ol>
+            <div className="grid gap-3 border-t border-line pt-8 sm:pt-10">
+              <h3 className={h3}>What your reps do at every store</h3>
               <p className={lead}>Tap each step to see it on the rep&apos;s phone.</p>
             </div>
             <div className="tk-reveal">
@@ -515,38 +486,9 @@ export default function Home() {
           </div>
         </section>
 
-        {/* 6. How it works */}
-        <section id="how" className="border-t border-line bg-white">
-          <div className={`${wrap} max-w-6xl`}>
-            <div className="grid gap-3">
-              <h2 className={h2}>How {site.name} works</h2>
-              <p className={lead}>
-                Your reps use the app on their phones. You follow along on your computer, or on your own phone.
-              </p>
-            </div>
-            <div className="grid gap-4 md:grid-cols-2 md:gap-6">
-              <Lane
-                icon={Smartphone}
-                who="Your reps"
-                where="On their phone"
-                steps={teamSteps}
-                className="bg-amber-100/60 ring-amber-500/40"
-                badge="bg-amber-500 text-teal-950"
-              />
-              <Lane
-                icon={LayoutDashboard}
-                who="You"
-                where="From the office, or your phone"
-                steps={ownerSteps}
-                className="bg-mint ring-teal-100"
-                badge="bg-teal-900 text-sand"
-              />
-            </div>
-          </div>
-        </section>
-
-        {/* 7. The Founding 10 distributors package: the value first, then the
-            price, the promise and why there are only 10. */}
+        {/* 6. The doubts: the Founding 10 package (the value first, then the
+            price, the promise and why each bonus is there), the normal prices,
+            and the questions. */}
         <section id="offer" className="scroll-mt-28 border-t border-line">
           <div className={`${wrap} max-w-6xl`}>
             <div className="grid gap-3">
@@ -580,29 +522,6 @@ export default function Home() {
           </div>
         </section>
 
-        {/* 8. The pilot form, and the doubts answered just under it. */}
-        <section id="apply" className="scroll-mt-28 px-4 pb-4 sm:px-6">
-          <div className="tk-reveal mx-auto grid max-w-3xl gap-6 rounded-2xl bg-teal-900 p-6 text-sand sm:p-10">
-            <div className="grid gap-2">
-              <h2 className="font-display text-3xl font-extrabold leading-[1.1] tracking-tight text-balance sm:text-5xl">
-                Start your free {founding.pilotDays}-day pilot.
-              </h2>
-              <p className="leading-relaxed text-teal-100 sm:text-lg">
-                It takes a minute. We WhatsApp you within {founding.replyMinutes} minutes during work hours.
-              </p>
-              <SpotsText className="text-sm font-semibold text-amber-500" />
-            </div>
-            <FoundingForm />
-          </div>
-        </section>
-
-        <section id="faq" className="scroll-mt-28">
-          <div className={`${wrap} max-w-3xl`}>
-            <Objections more={faqs} />
-          </div>
-        </section>
-
-        {/* 9. The normal prices, after the Founding 10. */}
         <section id="pricing" className="border-t border-line bg-white">
           <div className={`${wrap} max-w-6xl`}>
             <div className="grid gap-3">
@@ -615,17 +534,35 @@ export default function Home() {
           </div>
         </section>
 
-        {/* 10. The offer again, in plain words. */}
-        <section id="start" className="px-4 pb-14 pt-10 sm:px-6 sm:pb-16 sm:pt-16">
-          <div className="tk-reveal mx-auto grid max-w-6xl gap-5 rounded-2xl bg-teal-900 p-6 text-sand sm:gap-6 sm:p-10">
-            <h2 className="font-display text-3xl font-extrabold leading-[1.1] tracking-tight text-balance sm:text-5xl">
-              See every store visit, and every order.
-            </h2>
-            <p className="max-w-2xl leading-relaxed text-pretty text-teal-100 sm:text-lg">
-              We load your stores, products and reps, and train your team. Your pilot is free for {founding.pilotDays} days, then it&apos;s{" "}
-              {rand(founding.price)} a month for {founding.priceMonths} months. You don&apos;t need a card.
-            </p>
-            <FoundingStart />
+        <section id="faq" className="scroll-mt-28 border-t border-line">
+          <div className={`${wrap} max-w-3xl`}>
+            <Objections more={faqs} />
+          </div>
+        </section>
+
+        {/* 7. The close: what they get, in three lines, and the form. */}
+        <section id="apply" className="scroll-mt-28 px-4 pb-14 sm:px-6 sm:pb-16">
+          <div className="tk-reveal mx-auto grid max-w-3xl gap-6 rounded-2xl bg-teal-900 p-6 text-sand sm:p-10">
+            <div className="grid gap-3">
+              <h2 className="font-display text-4xl font-extrabold leading-[1.08] tracking-tight text-balance sm:text-5xl">
+                Start your free {founding.pilotDays}-day pilot.
+              </h2>
+              <ul className="grid gap-2">
+                {youGet.map((g) => (
+                  <li key={g} className="flex items-start gap-2.5 text-lg font-semibold leading-snug">
+                    <span aria-hidden="true" className="mt-0.5 grid size-6 shrink-0 place-items-center rounded-full bg-amber-500 text-teal-950">
+                      <Check className="size-4" strokeWidth={3.5} />
+                    </span>
+                    {g}
+                  </li>
+                ))}
+              </ul>
+              <p className="leading-relaxed text-teal-100 sm:text-lg">
+                It takes a minute. We WhatsApp you within {founding.replyMinutes} minutes during work hours. No card, no contract.
+              </p>
+              <SpotsText className="text-sm font-semibold text-amber-500" />
+            </div>
+            <FoundingForm />
           </div>
         </section>
       </main>
@@ -641,6 +578,9 @@ export default function Home() {
               </a>
             </p>
             <nav aria-label="Legal" className="flex flex-wrap gap-x-5 gap-y-1">
+              <a href={`${site.appUrl}/login`} className="py-1 font-semibold hover:text-sand">
+                Customer sign in
+              </a>
               <a href="/terms" className="py-1 hover:text-sand">Terms</a>
               <a href="/privacy" className="py-1 hover:text-sand">Privacy</a>
               <a href="/refunds" className="py-1 hover:text-sand">Cancellations and refunds</a>
