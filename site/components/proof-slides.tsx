@@ -120,7 +120,9 @@ export function ProofSlides({ applyHref }: { applyHref: string }) {
           <div key={i} className="tk-slide grid gap-3" role="group" aria-roledescription="slide" aria-label={`${i + 1} of ${SLIDES}`}>
             <div className="flex flex-wrap items-center justify-between gap-2">
               <p className="font-display text-lg font-bold leading-tight">{facts[i].label}</p>
-              <span className="rounded-full bg-amber-500 px-3 py-0.5 text-sm font-bold text-teal-950">{facts[i].badge}</span>
+              {/* Glows and jingles like the spots badge (owner, 20 Oct 2026); the
+                  slide's key starts it again on every slide. */}
+              <span className="tk-urgent rounded-full bg-amber-500 px-3 py-0.5 text-sm font-bold text-teal-950">{facts[i].badge}</span>
             </div>
             <Bars {...facts[i]} />
             <p className="text-teal-100">{facts[i].line}</p>
