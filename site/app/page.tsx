@@ -261,9 +261,6 @@ export default function Home() {
                 Start my free pilot
               </a>
               <p className="text-sm font-semibold text-teal-900">No card · No contract</p>
-              <p className="text-sm text-ink">
-                We&apos;ll WhatsApp you within {founding.replyMinutes} minutes to get started, during work hours.
-              </p>
             </div>
             <div className="flex max-w-xl items-center gap-3 border-t border-line pt-5">
               <Image
