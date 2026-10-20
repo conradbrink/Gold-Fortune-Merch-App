@@ -60,6 +60,7 @@ import {
   type AvailabilityRow,
   type ShortfallAction,
 } from "@/lib/orders";
+import { formatDateOnly } from "@/lib/format-date";
 import { useCompanyConfig, useTerms } from "@/lib/use-company-config";
 import { capital, lower, possessive, withArticle } from "@/lib/terms";
 import { fetchPriceBook, listForGroup, type PriceBook } from "@/lib/price-lists";
@@ -215,6 +216,9 @@ export default function OrderDetailPage() {
     contact_phone: "",
     required_by: "",
     notes: "",
+    customer_po_number: "",
+    customer_po_date: "",
+    customer_po_expires_on: "",
   });
   const [savingDetails, setSavingDetails] = useState(false);
 
@@ -590,6 +594,9 @@ export default function OrderDetailPage() {
       contact_phone: o.contact_phone ?? "",
       required_by: o.required_by ?? "",
       notes: o.notes ?? "",
+      customer_po_number: o.customer_po_number ?? "",
+      customer_po_date: o.customer_po_date ?? "",
+      customer_po_expires_on: o.customer_po_expires_on ?? "",
     });
     setEditingDetails(true);
   }
@@ -604,6 +611,9 @@ export default function OrderDetailPage() {
         contact_phone: detailsDraft.contact_phone.trim() || null,
         required_by: detailsDraft.required_by || null,
         notes: detailsDraft.notes.trim() || null,
+        customer_po_number: detailsDraft.customer_po_number.trim() || null,
+        customer_po_date: detailsDraft.customer_po_date || null,
+        customer_po_expires_on: detailsDraft.customer_po_expires_on || null,
       });
       await reload();
       setEditingDetails(false);
@@ -1054,6 +1064,19 @@ export default function OrderDetailPage() {
               {o.contact_name && <Row label="Contact" value={o.contact_name} />}
               {o.contact_phone && <Row label="Phone" value={o.contact_phone} />}
               {o.required_by && <Row label="Required by" value={o.required_by} />}
+              {o.customer_po_number && (
+                <Row
+                  label="PO number"
+                  value={
+                    o.customer_po_date
+                      ? `${o.customer_po_number}, dated ${formatDateOnly(o.customer_po_date)}`
+                      : o.customer_po_number
+                  }
+                />
+              )}
+              {o.customer_po_expires_on && (
+                <Row label="PO expires" value={formatDateOnly(o.customer_po_expires_on)} />
+              )}
               <Row label="Deliver to" value={o.delivery_address ?? `The ${lower(terms.site.one)}`} />
               {/* Set by confirming, so absent on a new order — there is no
                   answer yet, and naming the default here would look like a
@@ -1091,7 +1114,7 @@ export default function OrderDetailPage() {
                   onClick={startEditingDetails}
                   className="pt-1 text-xs text-primary hover:underline"
                 >
-                  Edit contact, date and notes
+                  Edit contact, dates, PO and notes
                 </button>
               )}
 
@@ -1127,6 +1150,45 @@ export default function OrderDetailPage() {
                     }
                     aria-label="Required by"
                   />
+                  <Input
+                    value={detailsDraft.customer_po_number}
+                    onChange={(e) =>
+                      setDetailsDraft((d) => ({ ...d, customer_po_number: e.target.value }))
+                    }
+                    placeholder="Their PO number"
+                    aria-label="Their PO number"
+                    maxLength={60}
+                  />
+                  <div className="grid grid-cols-2 gap-2">
+                    <label className="space-y-1 text-xs text-muted-foreground">
+                      PO date
+                      <Input
+                        type="date"
+                        value={detailsDraft.customer_po_date}
+                        onChange={(e) =>
+                          setDetailsDraft((d) => ({ ...d, customer_po_date: e.target.value }))
+                        }
+                      />
+                    </label>
+                    <label className="space-y-1 text-xs text-muted-foreground">
+                      PO expires
+                      <Input
+                        type="date"
+                        min={detailsDraft.customer_po_date || undefined}
+                        value={detailsDraft.customer_po_expires_on}
+                        onChange={(e) =>
+                          setDetailsDraft((d) => ({ ...d, customer_po_expires_on: e.target.value }))
+                        }
+                      />
+                    </label>
+                  </div>
+                  {/* The invoice is a record of what was sent: it keeps the
+                      PO it was issued with (order_invoice_write copies it). */}
+                  {o.invoice_number && (
+                    <p className="text-xs text-muted-foreground">
+                      Invoice {o.invoice_number} keeps the PO it was issued with.
+                    </p>
+                  )}
                   <Input
                     value={detailsDraft.notes}
                     onChange={(e) =>

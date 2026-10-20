@@ -17,6 +17,7 @@ import {
   dropAnswer,
   matchesSearch,
   nextStepOf,
+  poExpiry,
   waitTone,
 } from "@/lib/order-board";
 import { archiveMonths } from "@/lib/orders";
@@ -141,6 +142,20 @@ test("the board's search reads order, invoice, store and contact", () => {
   assert.ok(matchesSearch(o, " neo "));
   assert.ok(!matchesSearch(o, "sefalana"));
   assert.ok(!matchesSearch({ ...o, invoiceNumber: null, contactName: null }, "neo"));
+  // The chain's own PO number, which is what Choppies quotes when it rings.
+  assert.ok(matchesSearch({ ...o, customerPoNumber: "1001160022257" }, "100116002"));
+  assert.ok(!matchesSearch(o, "100116002"));
+});
+
+test("a customer's PO turns amber two days before it lapses and red after", () => {
+  assert.deepEqual(poExpiry("2026-10-26", "2026-10-20", "26 Oct"), { tone: "calm", words: "PO valid until 26 Oct" });
+  assert.deepEqual(poExpiry("2026-10-26", "2026-10-24", "26 Oct"), { tone: "amber", words: "PO expires in 2 days, on 26 Oct" });
+  assert.deepEqual(poExpiry("2026-10-26", "2026-10-25", "26 Oct"), { tone: "amber", words: "PO expires tomorrow" });
+  // Still valid on its last day: Choppies takes the delivery on the 26th.
+  assert.deepEqual(poExpiry("2026-10-26", "2026-10-26", "26 Oct"), { tone: "amber", words: "PO expires today" });
+  assert.deepEqual(poExpiry("2026-10-26", "2026-10-27", "26 Oct"), { tone: "red", words: "PO expired on 26 Oct" });
+  // Across a month end, counted in calendar days.
+  assert.equal(poExpiry("2026-11-01", "2026-10-30", "1 Nov").tone, "amber");
 });
 
 test("the archive groups by month in the order given, newest first", () => {

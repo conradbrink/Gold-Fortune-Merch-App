@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent, type ReactNode } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Archive, CalendarClock, Clock, FileText, Plus, Search, User } from "lucide-react";
+import { Archive, CalendarClock, Clock, FileText, Plus, Receipt, Search, User } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -25,6 +25,7 @@ import {
   invoicesOnConfirm,
   matchesSearch,
   nextStepOf,
+  poExpiry,
   stepLabel,
   waitTone,
   waitWords,
@@ -249,7 +250,7 @@ export default function OrdersBoardPage() {
           <Input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder={`Search order, invoice, ${lower(terms.site.one)} or contact`}
+            placeholder={`Search order, invoice, PO, ${lower(terms.site.one)} or contact`}
             aria-label="Search the board"
             className="pl-8"
           />
@@ -502,8 +503,14 @@ function OrderCard({
   const step = nextStepOf(o);
   const tone = column === "delivered" ? "red" : waitTone(days);
   const late = o.requiredBy !== null && o.requiredBy < today;
-  const toneText =
-    tone === "red" ? "font-medium text-destructive" : tone === "amber" ? "font-medium text-amber-700 dark:text-amber-500" : "";
+  // A delivered order no longer depends on the PO being open.
+  const po =
+    o.customerPoExpiresOn && column !== "delivered"
+      ? poExpiry(o.customerPoExpiresOn, today, dayLabel(o.customerPoExpiresOn, today))
+      : null;
+  const toneClass = (t: "calm" | "amber" | "red") =>
+    t === "red" ? "font-medium text-destructive" : t === "amber" ? "font-medium text-amber-700 dark:text-amber-500" : "";
+  const toneText = toneClass(tone);
 
   let action: ReactNode = null;
   if (!canMove) {
@@ -591,6 +598,18 @@ function OrderCard({
           <p className="flex items-center gap-1">
             <FileText className="h-3 w-3 shrink-0" />
             Invoice {o.invoiceNumber}
+          </p>
+        )}
+        {o.customerPoNumber && (
+          <p className="flex items-center gap-1">
+            <Receipt className="h-3 w-3 shrink-0" />
+            <span className="truncate">PO {o.customerPoNumber}</span>
+          </p>
+        )}
+        {po && (
+          <p className={`flex items-center gap-1 ${toneClass(po.tone)}`}>
+            <CalendarClock className="h-3 w-3 shrink-0" />
+            {po.words}
           </p>
         )}
         <p className="flex items-center gap-1">

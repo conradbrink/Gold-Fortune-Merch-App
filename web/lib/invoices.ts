@@ -360,6 +360,20 @@ function totalsOf(inv: Invoice, subtotal: number, vat: number, total: number, cr
 
 const qtyCell = (qty: number, unit: string | null | undefined) => (unit ? `${formatQty(qty)} ${unit}` : formatQty(qty));
 
+/**
+ * The customer's purchase order as an invoice states it, "1001160022257 of
+ * 2026-10-16", or null when there is none. A chain pays an invoice only when it
+ * quotes the chain's PO number, so it sits with the dates at the top. `day`
+ * writes the date the way the rest of the document does.
+ */
+export function customerPoText(
+  inv: Pick<Invoice, "customer_po_number" | "customer_po_date">,
+  day: (d: string) => string = (d) => d
+): string | null {
+  if (!inv.customer_po_number) return null;
+  return inv.customer_po_date ? `${inv.customer_po_number} of ${day(inv.customer_po_date)}` : inv.customer_po_number;
+}
+
 /** The invoice as the PDF drawer takes it; pure, so the client's page builds the same one from its own data. */
 export function invoicePdfSpec(detail: Pick<InvoiceDetail, "invoice" | "lines" | "visits">): PdfSpec {
   const inv = detail.invoice;
@@ -373,6 +387,8 @@ export function invoicePdfSpec(detail: Pick<InvoiceDetail, "invoice" | "lines" |
   if (inv.order_number) meta.push(["Order", inv.order_number]);
   else if (inv.source === "quote" && inv.reference) meta.push(["Quote", inv.reference]);
   else if (inv.reference) meta.push(["Reference", inv.reference]);
+  const po = customerPoText(inv);
+  if (po) meta.push(["Your PO", po]);
   const notes: string[] = [];
   if (inv.status === "void") notes.push(`VOID — ${inv.void_reason}`);
   if (detail.visits.length > 0) {

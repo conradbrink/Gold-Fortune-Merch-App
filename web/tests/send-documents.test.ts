@@ -21,7 +21,7 @@ import {
 } from "@/lib/client-document";
 import { documentPdfSpec, invoiceViewPdfSpec, quoteViewPdfSpec, statementViewPdfSpec } from "@/lib/client-document-pdf";
 import { buildMoneyPdf } from "@/lib/money-pdf";
-import { invoicePdfSpec, type Invoice, type InvoiceLine } from "@/lib/invoices";
+import { customerPoText, invoicePdfSpec, type Invoice, type InvoiceLine } from "@/lib/invoices";
 import type { StatementRow } from "@/lib/owed";
 import type { QuoteRow } from "@/lib/quotes";
 
@@ -658,4 +658,18 @@ test("the founding answer: the accepted one gives the pilot and the price, and w
   assert.match(bare.html, /Hello,/);
   assert.match(bare.html, /Your business is one of/);
   assert.equal(renderEmail("founding_declined", {}, tickd), null);
+});
+
+test("an invoice states the customer's PO under its order number, so the chain can pay it", () => {
+  const ordered = { ...invoice, order_number: "SO-000189", customer_po_number: "1001160022257", customer_po_date: "2026-10-16" } as Invoice;
+  const meta = invoicePdfSpec({ invoice: ordered, lines: invoiceLines, visits: [] }).meta;
+  assert.deepEqual(meta.slice(-2), [
+    ["Order", "SO-000189"],
+    ["Your PO", "1001160022257 of 2026-10-16"],
+  ]);
+  assert.equal(customerPoText(ordered, () => "16 Oct 2026"), "1001160022257 of 16 Oct 2026");
+  assert.equal(customerPoText({ customer_po_number: "PO-7", customer_po_date: null }), "PO-7");
+  // No PO, no line: the meta is what it was before.
+  assert.equal(customerPoText(invoice), null);
+  assert.ok(!invoicePdfSpec({ invoice, lines: invoiceLines, visits: [] }).meta.some(([k]) => k === "Your PO"));
 });

@@ -138,6 +138,7 @@ export default function InvoicesPage() {
         r.invoice_number.toLowerCase().includes(q) ||
         (r.order_number ?? "").toLowerCase().includes(q) ||
         (r.reference ?? "").toLowerCase().includes(q) ||
+        (r.customer_po_number ?? "").toLowerCase().includes(q) ||
         r.customer_name.toLowerCase().includes(q)
       );
     });
@@ -237,7 +238,7 @@ export default function InvoicesPage() {
           <Input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder={`Invoice, reference or ${lower(terms.client.one)}`}
+            placeholder={`Invoice, reference, PO or ${lower(terms.client.one)}`}
             className="pl-8"
             aria-label="Search invoices"
           />
