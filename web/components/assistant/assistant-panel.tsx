@@ -532,15 +532,17 @@ const GREET_FOR_MS = 6_000;
  * background tab where nobody would see it. Once Ask has been opened, the next
  * one waits the full gap rather than greeting somebody who has just used it.
  */
-function useGreeting(paused: boolean): boolean {
+function useGreeting(open: boolean, ready: boolean): boolean {
   const [greet, setGreet] = useState(false);
   const greeted = useRef(false);
 
   useEffect(() => {
-    if (paused) {
+    if (open) {
       greeted.current = true;
       return;
     }
+    // Nothing to say for somebody Ask can't help: the button isn't there.
+    if (!ready) return;
     let timer: ReturnType<typeof setTimeout>;
     function wait(ms: number) {
       timer = setTimeout(say, ms);
@@ -559,7 +561,7 @@ function useGreeting(paused: boolean): boolean {
       clearTimeout(timer);
       setGreet(false);
     };
-  }, [paused]);
+  }, [open, ready]);
 
   return greet;
 }
@@ -572,8 +574,9 @@ function useGreeting(paused: boolean): boolean {
  */
 export function AssistantLauncher() {
   const { open, setOpen, tools } = useAssistant();
-  const greet = useGreeting(open);
-  if (!tools || tools.length === 0) return null;
+  const ready = !!tools && tools.length > 0;
+  const greet = useGreeting(open, ready);
+  if (!ready) return null;
   return <LauncherButton open={open} greet={greet} onToggle={() => setOpen(!open)} />;
 }
 
