@@ -254,21 +254,23 @@ export default function Home() {
 
       <SectionViews sections={SECTION_EVENTS} />
       <main id="top">
-        {/* 1. Hero, in the owner's words (19 Oct 2026): who it's for, the
-            outcome, how, the effort it doesn't take, the way in, and the
+        {/* 1. Hero, in the owner's words (20 Oct 2026): who it's for, what it
+            is, how it helps, the effort it doesn't take, the way in, and the
             first trust signal (Gold Fortune's result). */}
         <section className="mx-auto grid max-w-6xl items-center gap-10 px-4 pb-10 pt-8 sm:px-6 sm:pb-16 sm:pt-12 lg:grid-cols-[1.1fr_0.9fr] lg:gap-14 lg:pt-12">
           <div className="tk-hero grid gap-5 sm:gap-6">
-            <p className="text-sm font-bold uppercase tracking-wide text-teal-700">For distributors with 3 to 30 reps</p>
-            <h1 className="font-display text-5xl font-extrabold leading-[1.02] tracking-tight text-balance text-teal-900 sm:text-6xl lg:text-[4rem]">
-              Turn every visit into an{" "}
+            <p className="text-sm font-bold uppercase tracking-wide text-teal-700">For teams of 3 to 30 reps</p>
+            <h1 className="font-display text-[2.6rem] font-extrabold leading-[1.04] tracking-tight text-balance text-teal-900 sm:text-5xl lg:text-[3.6rem]">
+              Distributors:{" "}
               <span className="relative whitespace-nowrap">
-                order.
+                one app
                 <span aria-hidden="true" className="tk-underline absolute inset-x-0 bottom-[-0.02em] h-[0.12em] rounded-full bg-amber-500" />
-              </span>
+              </span>{" "}
+              to manage your reps, orders and invoices.
             </h1>
             <p className="max-w-xl text-lg leading-relaxed text-pretty text-ink sm:text-xl">
-              Every store visited. Every visit proven. Your whole sales team on one screen.
+              Your reps visit the stores you&apos;ve planned, and {site.name} helps them sell more at each one. The AI Manager then
+              tells you how to grow your business.
             </p>
             <p className="flex max-w-xl items-start gap-2.5 text-lg font-semibold leading-relaxed text-teal-900">
               <span aria-hidden="true" className="mt-1 grid size-6 shrink-0 place-items-center rounded-full bg-teal-700 text-white">
