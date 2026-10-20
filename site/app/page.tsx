@@ -341,7 +341,7 @@ export default function Home() {
               src="/demo/dash/site-ask-sales.webp"
               alt="The AI Manager answering “How can we improve sales in Riverside?”: sales are down to R18,400 from R24,100, a store that hasn't ordered and is due, a store that ordered less, two stores without a visit in three weeks, and putting Riverside on one day for the rep."
               width={800}
-              height={1280}
+              height={1125}
               className="mx-auto w-full max-w-sm"
             />
           </div>
