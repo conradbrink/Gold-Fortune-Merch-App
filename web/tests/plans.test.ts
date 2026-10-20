@@ -4,7 +4,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { FOUNDING_OFFER } from "@/lib/founding-offer";
 import { DEFAULT_TERMS, type Terms } from "@/lib/terms";
-import { AI_MANAGER_MONTHLY, PLANS, contactLink, foundingFrom, foundingLine, foundingPrice, planFor, planMessage, rand } from "@/lib/plans";
+import { PLANS, contactLink, foundingFrom, foundingLine, foundingPrice, planFor, planMessage, rand } from "@/lib/plans";
 // The site's own code, loaded by address so this project's type checker doesn't reach into the other project.
 const sitePath = new URL("../../site/lib/site.ts", import.meta.url).href;
 const site = (await import(sitePath)) as {
@@ -35,8 +35,8 @@ test("the founding price is the site's: 40% off the plan that fits, for the firs
   assert.deepEqual(PLANS.plans.map(foundingPrice), site.pricing.plans.map(site.foundingPrice));
   assert.equal(foundingFrom, site.foundingFrom);
   assert.equal(foundingLine, "40% off your plan for 3 months, from R1,197 a month");
-  const ai = site.foundingStack.find((b) => b.name.startsWith("The AI Manager"));
-  assert.equal(ai?.worth, AI_MANAGER_MONTHLY * FOUNDING_OFFER.priceMonths);
+  // The AI Manager is part of every plan, so it is not a founding bonus.
+  assert.ok(!site.foundingStack.some((b) => b.name.includes("AI Manager")));
 });
 
 test("the plan that fits is the smallest one with room for the team", () => {

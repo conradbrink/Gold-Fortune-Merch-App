@@ -21,9 +21,6 @@ export const PLANS = {
   setupValue: 2500,
 } as const;
 
-/** The AI Manager add-on, a month (the site's add-ons); the founding price includes it. */
-export const AI_MANAGER_MONTHLY = 599;
-
 export type Plan = (typeof PLANS.plans)[number];
 
 export const biggestPlan: Plan = PLANS.plans[PLANS.plans.length - 1];

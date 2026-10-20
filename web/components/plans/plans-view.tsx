@@ -3,7 +3,7 @@ import type { ReactNode } from "react";
 import type { TrialState } from "@/lib/onboarding";
 import { FOUNDING_OFFER } from "@/lib/founding-offer";
 import { count, lower, type Terms } from "@/lib/terms";
-import { AI_MANAGER_MONTHLY, PLANS, biggestPlan, contactLink, foundingFrom, foundingPrice, planFor, planMessage, rand, type PlanChoice } from "@/lib/plans";
+import { PLANS, biggestPlan, contactLink, foundingFrom, foundingPrice, planFor, planMessage, rand, type PlanChoice } from "@/lib/plans";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -79,8 +79,7 @@ export function PlansView({ trial, trialEndsAt, founding, reps, terms: t, compan
               {fits
                 ? `That is ${FOUNDING_OFFER.percentOff}% off the ${rand(fits.monthly)} plan, ${rand((fits.monthly - foundingPrice(fits)) * FOUNDING_OFFER.priceMonths)} less over the ${FOUNDING_OFFER.priceMonths} months`
                 : `From ${rand(foundingFrom)} a month on the plan for up to ${count(t, "staff", PLANS.plans[0].reps)}`}
-              , and the AI Manager ({rand(AI_MANAGER_MONTHLY)} a month on its own) is included. It is only for the first{" "}
-              {FOUNDING_OFFER.spots} distributors on the pilot.
+              . It is only for the first {FOUNDING_OFFER.spots} distributors on the pilot.
             </CardDescription>
           </CardHeader>
           <CardContent className="flex flex-wrap items-center gap-3">

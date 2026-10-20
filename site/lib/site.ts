@@ -112,14 +112,13 @@ export const foundingFrom = foundingPrice(firstPlan);
 // What a founder gets besides the discount, each with what it is worth (owner,
 // 19 Oct 2026). Each bonus answers one doubt: the audit "I don't know if I
 // have a problem", the templates "I don't know how to set up call cycles", the
-// WhatsApp line "what if I get stuck?". The AI Manager (R599 a month, the
-// owner's figure) is included for the founding months. The templates are
+// WhatsApp line "what if I get stuck?". The AI Manager is part of every plan
+// (owner, 20 Oct 2026), so it is not listed as a bonus. The templates are
 // Gold Fortune's, the owner's own family business, so the line says "the
 // team we built Tickd with", never "a client".
 export const foundingStack: { name: string; note: string; worth: number }[] = [
   { name: "Done-for-you setup", note: "Your stores, products and reps, loaded for you", worth: pricing.setupValue },
   { name: "A rep training day, by video call", note: "Your reps learn the app, and you learn the dashboard", worth: pricing.trainingValue },
-  { name: `The AI Manager, for ${founding.priceMonths} months`, note: "Ask about your business, and the shelf-photo check when it launches", worth: 599 * founding.priceMonths },
   { name: "Bonus: the Rep Leak Audit", note: "A report on the store visits your reps miss", worth: 1500 },
   { name: "Bonus: call-cycle and route templates", note: "From the merchandising team we built Tickd with", worth: 1000 },
   { name: "Bonus: 60 days of WhatsApp support from our team", note: "A direct line if you get stuck", worth: 5000 },
