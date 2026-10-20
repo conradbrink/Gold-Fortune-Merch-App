@@ -350,10 +350,6 @@ export default function Home() {
           </div>
         </section>
 
-        {/* Social proof: Gold Fortune's real numbers, between the benefits and
-            the AI Manager (owner, 20 Oct 2026). */}
-        <ProofSection applyHref="#apply" />
-
         {/* 4b. "How do I grow my business?" (was "What do I do about it?") The AI Manager (owner, 19 Oct 2026): Ask
             and the report summaries are live (#183, #186, /api/insights). The
             shelf-photo check panel came off the page (owner, 20 Oct 2026). */}
@@ -381,6 +377,10 @@ export default function Home() {
             />
           </div>
         </section>
+
+        {/* Social proof: Gold Fortune's real numbers, after the AI Manager
+            (owner, 20 Oct 2026). */}
+        <ProofSection applyHref="#apply" />
 
         {/* What missed orders cost: the Rep Leak Calculator, after the AI
             Manager (owner, 20 Oct 2026). */}
