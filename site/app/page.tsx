@@ -83,7 +83,7 @@ const benefits = [
   },
   {
     icon: Store,
-    title: "Quiet stores won back",
+    title: "More sales per store",
     body: "The stores that have stopped ordering, biggest buyers first, with a number to ring. You hear about them while they can still be won back.",
   },
   {
