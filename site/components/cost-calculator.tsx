@@ -94,8 +94,8 @@ export function CostCalculator() {
 
       <div aria-live="polite" className="grid gap-4 border-t border-line pt-5">
         {/* Two numbers, the missed orders and what they are worth, the same
-            size (owner, 20 Oct 2026: the price line came off, the sales went up). */}
-        <div className="grid gap-4 sm:grid-cols-2">
+            size and in the middle (owner, 20 Oct 2026). */}
+        <div className="grid gap-4 text-center sm:grid-cols-2">
           <p className="grid gap-1">
             <strong className="font-display text-5xl font-extrabold leading-none tabular-nums text-flag sm:text-6xl">
               {fmt(missedOrders)}

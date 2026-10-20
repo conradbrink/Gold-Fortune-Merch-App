@@ -361,8 +361,8 @@ export function FoundingForm() {
         <p className="leading-relaxed text-teal-100 sm:text-lg">
           {state.already
             ? state.waitlist
-              ? "You're already on the waiting list, so there's no need to apply again. If a spot opens, we will email you."
-              : "We already have your application, so there's no need to send it again. We'll be in touch by email."
+              ? `You're already on the waiting list, so there's no need to apply again. To change your details, email ${site.email}.`
+              : `We already have your application, so there's no need to send it again. To change your details, email ${site.email}.`
             : state.waitlist
               ? "All the spots are taken, so you are on the waiting list. If one opens, we will email you."
               : `We'll email you to set up your free ${founding.pilotDays}-day pilot.`}

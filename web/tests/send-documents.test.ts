@@ -686,7 +686,8 @@ test("the founding answer: the accepted one gives the pilot and the price, and w
   assert.match(yes.html, /14 days, from the day we set you up/);
   assert.match(yes.html, /40% off your plan for 3 months, from R1,197 a month, or walk away/);
   assert.ok(!yes.html.includes("R749") && !yes.html.includes("November"));
-  assert.match(yes.html, /\+27821234567/);
+  // The team emails to book the set-up (owner, 20 Oct 2026), so no WhatsApp number is quoted.
+  assert.match(yes.html, /We will email you to book your set-up/);
   assert.match(yes.html, /Welcome\. Shine Cleaning is one of/);
   assert.ok(!yes.html.includes("Good news"));
   assert.match(yes.text, /Welcome aboard,\nThe Tickd team/);

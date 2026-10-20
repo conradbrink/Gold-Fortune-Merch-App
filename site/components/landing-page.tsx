@@ -137,10 +137,11 @@ const faqs: [q: string, a: string][] = [
 // from sm up, and 24px (32px) between a heading block and what follows it.
 // Headings are 36px on a phone and 48px from sm; body copy is 18px.
 const wrap = "mx-auto grid gap-6 px-4 py-10 sm:gap-8 sm:px-6 sm:py-16";
-const h2 = "tk-reveal font-display text-4xl font-bold leading-[1.08] tracking-tight text-balance text-teal-900 sm:text-5xl";
-const lead = "max-w-2xl text-lg leading-relaxed text-pretty text-ink";
+// Every section heading, and the line under it, in the middle (owner, 20 Oct 2026).
+const h2 = "tk-reveal text-center font-display text-4xl font-bold leading-[1.08] tracking-tight text-balance text-teal-900 sm:text-5xl";
+const lead = "mx-auto max-w-2xl text-center text-lg leading-relaxed text-pretty text-ink";
 // The one line a section ends on.
-const verdict = "font-display text-2xl font-extrabold leading-snug text-balance text-teal-900 sm:text-3xl";
+const verdict = "text-center font-display text-2xl font-extrabold leading-snug text-balance text-teal-900 sm:text-3xl";
 
 const pilotButton =
   "flex min-h-14 w-full items-center justify-center text-balance text-center rounded-full bg-amber-500 px-6 py-4 text-lg font-semibold text-teal-950 transition-[background-color,transform] duration-150 ease-out hover:bg-amber-400 active:scale-[0.97] sm:inline-flex sm:w-auto sm:py-3.5";
@@ -260,13 +261,15 @@ export function LandingPage({ hero = "home" }: { hero?: "home" | "founding" }) {
               <span aria-hidden="true" className="mt-1 grid size-6 shrink-0 place-items-center rounded-full bg-teal-700 text-white">
                 <Check className="size-4" strokeWidth={3.5} />
               </span>
-              We set everything up. You just add your reps.
+              We set everything up.
             </p>
-            <div className="grid justify-items-start gap-2">
+            {/* The button and "No card · No contract" share one width, so the
+                line sits in the middle under it (owner, 20 Oct 2026). */}
+            <div className="grid w-full justify-items-start gap-2 sm:w-fit">
               <a href="#apply" className={pilotButton}>
                 Start my free pilot
               </a>
-              <p className="text-sm font-semibold text-teal-900">No card · No contract</p>
+              <p className="w-full text-center text-sm font-semibold text-teal-900">No card · No contract</p>
               {hero === "founding" && (
                 <SpotsText
                   urgent
@@ -362,10 +365,10 @@ export function LandingPage({ hero = "home" }: { hero?: "home" | "founding" }) {
           <div className={`${wrap} max-w-6xl lg:grid-cols-[0.9fr_1.1fr] lg:items-center lg:gap-12`}>
             <div className="grid content-start gap-6 sm:gap-8">
               <div className="grid gap-3">
-                <p className="tk-reveal text-sm font-bold uppercase tracking-wide text-teal-700">Our AI Manager</p>
+                <p className="tk-reveal text-center text-sm font-bold uppercase tracking-wide text-teal-700">Our AI Manager</p>
                 <h2 className={h2}>How do I grow my business?</h2>
                 <p className={lead}>
-                  Ask any question about your company, and get an instant answer from your real data, so you can make decisions.
+                  Ask any question about your company, and get an answer from your real data, so you can make instant decisions.
                 </p>
               </div>
               <p className={verdict}>Like a sales manager who has read every report.</p>
@@ -454,7 +457,7 @@ export function LandingPage({ hero = "home" }: { hero?: "home" | "founding" }) {
         <section id="apply" className="scroll-mt-28 px-4 pb-14 sm:px-6 sm:pb-16">
           <div className="tk-reveal mx-auto grid max-w-3xl gap-6 rounded-2xl bg-teal-900 p-6 text-sand sm:p-10">
             <div className="grid gap-3">
-              <h2 className="font-display text-4xl font-extrabold leading-[1.08] tracking-tight text-balance sm:text-5xl">
+              <h2 className="text-center font-display text-4xl font-extrabold leading-[1.08] tracking-tight text-balance sm:text-5xl">
                 Start your free {founding.pilotDays}-day pilot.
               </h2>
               <ul className="grid gap-2">

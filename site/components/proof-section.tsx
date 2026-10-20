@@ -14,10 +14,10 @@ export function ProofSection({ id, applyHref }: { id?: string; applyHref: string
     <section id={id} aria-labelledby="proof-title" className="border-y border-line bg-white">
       <div className="mx-auto grid max-w-6xl gap-6 px-4 py-8 sm:px-6 sm:py-12 lg:grid-cols-[0.9fr_1.1fr] lg:items-center lg:gap-12">
         <div className="grid content-start gap-4">
-          <p className="text-sm font-bold uppercase tracking-wide text-teal-700">Real results</p>
+          <p className="text-center text-sm font-bold uppercase tracking-wide text-teal-700">Real results</p>
           <h2
             id="proof-title"
-            className="font-display text-3xl font-bold leading-[1.1] tracking-tight text-balance text-teal-900 sm:text-4xl"
+            className="text-center font-display text-3xl font-bold leading-[1.1] tracking-tight text-balance text-teal-900 sm:text-4xl"
           >
             See what it did for a distributor with {proof.reps} reps.
           </h2>

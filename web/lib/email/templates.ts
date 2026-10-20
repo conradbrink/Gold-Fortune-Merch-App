@@ -505,7 +505,6 @@ const TEMPLATES: Record<string, Renderer> = {
   founding_accepted: (payload, ctx) => {
     const first = str(payload.first_name);
     const business = str(payload.business_name);
-    const whatsapp = str(payload.whatsapp);
     const facts: Fact[] = [
       { label: "Your free pilot", value: `${FOUNDING_OFFER.pilotDays} days, from the day we set you up` },
       {
@@ -518,11 +517,8 @@ const TEMPLATES: Record<string, Renderer> = {
       para(`Hello${first ? ` ${first}` : ""},`, true),
       para(`Welcome. ${business ? business : "Your business"} is one of Tickd's first ${FOUNDING_OFFER.spots} founding distributors.`),
       factsBlock(facts),
-      para(
-        whatsapp
-          ? `We will message you on +${whatsapp} to book your set-up. We do it with you, so you do not have to work anything out alone.`
-          : "We will message you to book your set-up. We do it with you, so you do not have to work anything out alone."
-      ),
+      // By email, not WhatsApp (owner, 20 Oct 2026: "we will email them").
+      para("We will email you to book your set-up. We do it with you, so you do not have to work anything out alone."),
       para("There is nothing to pay during the pilot, and we do not need a card. If you would rather talk first, just reply to this email."),
     ]);
     const { html, text } = layout(ctx, {
