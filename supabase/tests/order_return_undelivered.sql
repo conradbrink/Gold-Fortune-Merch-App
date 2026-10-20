@@ -10,6 +10,9 @@
 --       batch's stock is back in available and nothing is left picked.
 --   R4  On real data: a Gold Fortune order on the road returns and cancels
 --       (skipped when none is dispatched).
+--   R5  The deferred invoice follow-up (orders_invoice_follow) runs on all of
+--       the above without error: forced with SET CONSTRAINTS ALL IMMEDIATE,
+--       because the block never reaches commit.
 --
 -- Before 20261020083000, R1, R3 and R4 failed with order_lines_picked_within_held.
 --
@@ -127,6 +130,12 @@ begin
   exception when others then
     v_fail := v_fail || 'R2 could not go out again: ' || sqlerrm || E'\n';
   end;
+  select o.status, ol.qty_reserved, ol.qty_dispatched into r
+    from public.orders o join public.order_lines ol on ol.order_id = o.id where o.id = v_o2;
+  if (r.status, r.qty_reserved, r.qty_dispatched) <> ('dispatched', 0, 10) then
+    v_fail := v_fail || format('R2 after going out again: %s, held %s, dispatched %s',
+      r.status, r.qty_reserved, r.qty_dispatched) || E'\n';
+  end if;
 
   ---------------------------------------------------------- R3 two batches, cancel
   begin
@@ -157,6 +166,13 @@ begin
     end;
   end if;
   reset role;
+
+  ---------------------------------------------------------- R5 invoice follow-up
+  begin
+    set constraints all immediate;
+  exception when others then
+    v_fail := v_fail || 'R5 the deferred invoice follow-up failed: ' || sqlerrm || E'\n';
+  end;
 
   ---------------------------------------------------------- stock
   -- R1 back to available, R2 out again (in transit at the same location), R3 both batches back.
