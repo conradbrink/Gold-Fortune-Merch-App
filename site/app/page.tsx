@@ -82,7 +82,7 @@ const benefits = [
   {
     icon: LayoutDashboard,
     title: "Every rep, on one dashboard",
-    body: "Reps check in at each store and take photos and orders in the app, so it all lands in one place, not in spreadsheets and WhatsApp. A missed store visit is flagged. Ask the AI Manager who went where and what they sold, and get the answer in seconds.",
+    body: "Reps check in at each store and take photos and orders in their mobile app. It shows on your dashboard instantly. A missed store visit is flagged. Ask the AI Manager who went where and what they sold, and get the answer in seconds.",
   },
   {
     icon: PackageCheck,
