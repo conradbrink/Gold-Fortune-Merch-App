@@ -364,24 +364,15 @@ export default function Home() {
               <Points items={ai} badge="bg-teal-900 text-amber-500" />
               <p className={verdict}>Like a sales manager who has read every report.</p>
             </div>
-            {/* Two real Ask answers (example data): what dropped, and a month
-                of visits planned town by town, ready to add to the schedule. */}
-            <div className="grid gap-4 sm:grid-cols-2">
-              <Shot
-                src="/demo/dash/site-ask.webp"
-                alt="The AI Manager answering “Which stores have dropped this month?” with four stores, what each ordered this month against last month, and which of them a rep visits on Thursday."
-                width={800}
-                height={1280}
-                className="mx-auto w-full max-w-xs"
-              />
-              <Shot
-                src="/demo/dash/site-ask-plan.webp"
-                alt="The AI Manager planning Thabo's November so he drives less: 66 visits to 33 stores, one town a day, with a button to add them to the schedule."
-                width={800}
-                height={1280}
-                className="mx-auto w-full max-w-xs"
-              />
-            </div>
+            {/* One real Ask answer (example data), the owner's pick (20 Oct
+                2026): how to improve sales in an area. */}
+            <Shot
+              src="/demo/dash/site-ask-sales.webp"
+              alt="The AI Manager answering “How can we improve sales in Riverside?”: sales are down to R18,400 from R24,100, a store that hasn't ordered and is due, a store that ordered less, two stores without a visit in three weeks, and putting Riverside on one day for the rep."
+              width={800}
+              height={1280}
+              className="mx-auto w-full max-w-sm"
+            />
           </div>
         </section>
 
