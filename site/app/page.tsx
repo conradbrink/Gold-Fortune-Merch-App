@@ -2,7 +2,6 @@ import {
   CalendarDays,
   Check,
   ClipboardList,
-  FileText,
   MapPin,
   MessageSquareText,
   MessagesSquare,
@@ -21,7 +20,6 @@ import { FoundingForm } from "@/components/founding-form";
 import { FoundingGuarantee, FoundingStack, Objections } from "@/components/founding-package";
 import { SpotsText } from "@/components/founding-spots";
 import { Logo } from "@/components/logo";
-import { TradeTabs } from "@/components/trade-tabs";
 import { PricingSection } from "@/components/pricing-section";
 import { ProofSection } from "@/components/proof-section";
 import { SectionViews } from "@/components/analytics";
@@ -105,13 +103,10 @@ const benefits = [
 // (#186), and every report has its summary (/api/insights).
 const ai = [
   { icon: MessageSquareText, text: "Ask about your stores, reps, sales, orders and stock, and get the answer in seconds." },
-  { icon: CalendarDays, text: "Ask it to plan a rep's month of visits: one town a day, so they drive less and spend less on fuel." },
-  { icon: FileText, text: "Every report comes with a short summary of what stands out." },
   // Added by the owner (20 Oct 2026). Ask answers from the company's own
   // lookups and drafts plans from them; a list it shows can be downloaded
   // (ExportMenu). There is no "send to the team" yet, so it says download.
   { icon: TrendingUp, text: "Ask it how to grow your sales in an area, and it draws up a plan." },
-  { icon: Store, text: "Ask it which stores need more attention." },
   { icon: Users, text: "Ask about each rep's performance, and download the report to share with your team." },
 ];
 
@@ -211,7 +206,6 @@ const SECTION_EVENTS = {
   offer: "pricing_view",
   benefits: "feature_view",
   ai: "feature_view",
-  how: "feature_view",
 };
 
 export default function Home() {
@@ -387,22 +381,6 @@ export default function Home() {
                 height={1280}
                 className="mx-auto w-full max-w-xs"
               />
-            </div>
-          </div>
-        </section>
-
-        {/* 5. How it works: the rep's day, on the phone. The four steps to
-            start came off the page (owner, 20 Oct 2026). */}
-        <section id="how" aria-labelledby="how-title" className="scroll-mt-28 border-t border-line bg-white">
-          <div className={`${wrap} max-w-6xl`}>
-            <div className="grid gap-3">
-              <h2 id="how-title" className={h2}>
-                What your reps do at every store
-              </h2>
-              <p className={lead}>Tap each step to see it on the rep&apos;s phone.</p>
-            </div>
-            <div className="tk-reveal">
-              <TradeTabs />
             </div>
           </div>
         </section>
