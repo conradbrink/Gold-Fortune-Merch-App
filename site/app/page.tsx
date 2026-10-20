@@ -335,10 +335,13 @@ export default function Home() {
             <ul className="grid gap-4 sm:grid-cols-2">
               {benefits.map(({ icon: Icon, title, body }) => (
                 <li key={title} className="tk-reveal grid content-start gap-3 rounded-2xl bg-mint p-5 ring-1 ring-teal-100 sm:p-6">
-                  <span className="tk-icon-hover grid size-11 place-items-center rounded-xl bg-teal-900 text-amber-500">
-                    <Icon className="size-5" strokeWidth={2.25} aria-hidden="true" />
-                  </span>
-                  <h3 className="font-display text-xl font-bold leading-snug text-teal-900">{title}</h3>
+                  {/* The heading beside its icon (owner, 20 Oct 2026). */}
+                  <div className="flex items-center gap-3">
+                    <span className="tk-icon-hover grid size-11 shrink-0 place-items-center rounded-xl bg-teal-900 text-amber-500">
+                      <Icon className="size-5" strokeWidth={2.25} aria-hidden="true" />
+                    </span>
+                    <h3 className="font-display text-xl font-bold leading-snug text-teal-900">{title}</h3>
+                  </div>
                   <p className="text-base leading-relaxed text-ink sm:text-lg">{body}</p>
                 </li>
               ))}
