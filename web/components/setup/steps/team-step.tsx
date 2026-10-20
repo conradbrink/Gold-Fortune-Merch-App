@@ -112,9 +112,9 @@ export function TeamStep({ setup, text, icon, onBack, onNext, reload }: StepProp
       <div className="space-y-5">
         {setup.places && (
           <p className="text-sm text-muted-foreground">
-            {/* Only the field role takes a place (20261020160000); office and warehouse logins are free. */}
+            {/* Only the field role takes a place (20261020160000); office and warehouse logins don't use one. */}
             {setup.places.used} of {setup.places.limit} {lower(t.staff.one)} places used
-            {setup.places.used >= setup.places.limit ? ". Every place is taken." : ". Office and warehouse logins are free."}
+            {setup.places.used >= setup.places.limit ? ". Every place is taken." : ". Office and warehouse logins don't use a place."}
           </p>
         )}
 

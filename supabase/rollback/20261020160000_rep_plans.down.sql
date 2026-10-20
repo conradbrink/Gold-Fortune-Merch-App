@@ -21,6 +21,10 @@ begin
         check ((unit = 'employees'::text) = (tier_min is not null));
   end if;
 
+  update public.platform_settings
+     set description = 'Most active logins a company on trial may have.'
+   where key = 'trial_user_limit';
+
   if to_regprocedure('public.billing_lines(uuid, text, jsonb, boolean)') is not null then
     execute $ddl$
 CREATE OR REPLACE FUNCTION public.billing_lines(p_org uuid, p_period text, p_plan jsonb, p_with_setup boolean)

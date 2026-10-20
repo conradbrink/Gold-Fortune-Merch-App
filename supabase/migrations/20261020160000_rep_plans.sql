@@ -68,6 +68,10 @@ begin
       ('base', 'base', 'yearly', null, 'reps', 11, 15, 5995000, 0, null, 'Plan for up to 15 reps', date '2026-10-20');
   end if;
 
+  update public.platform_settings
+     set description = 'Most active reps a company on its free pilot may have; office and warehouse logins do not count.'
+   where key = 'trial_user_limit';
+
   if to_regprocedure('public.billing_lines(uuid, text, jsonb, boolean)') is not null then
     execute $ddl$
 CREATE OR REPLACE FUNCTION public.billing_lines(p_org uuid, p_period text, p_plan jsonb, p_with_setup boolean)
@@ -91,7 +95,7 @@ begin
     raise exception 'Choose monthly or yearly.' using errcode = '22023';
   end if;
   if v_seats is null or v_seats < 1 or v_seats > 1000 then
-    raise exception 'The number of users must be between 1 and 1000.' using errcode = '22023';
+    raise exception 'The number of places must be between 1 and 1000.' using errcode = '22023';
   end if;
   if p_plan->'addons' is not null and jsonb_typeof(p_plan->'addons') <> 'object' then
     raise exception 'Add-ons are not understood.' using errcode = '22023';
