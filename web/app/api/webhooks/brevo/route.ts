@@ -1,5 +1,6 @@
 import { timingSafeEqual } from "node:crypto";
 import { createClient as createAdminClient } from "@supabase/supabase-js";
+import { supabaseFetch } from "@/lib/supabase/fetch";
 import type { Database } from "@/lib/supabase/types";
 import { brevoEvent } from "@/lib/email/brevo";
 
@@ -28,6 +29,7 @@ export async function POST(request: Request) {
   const events = Array.isArray(body) ? body : body ? [body] : [];
   const admin = createAdminClient<Database>(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!, {
     auth: { autoRefreshToken: false, persistSession: false },
+    global: { fetch: supabaseFetch },
   });
   let recorded = 0;
   for (const e of events) {

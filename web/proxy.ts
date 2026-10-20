@@ -1,5 +1,6 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
+import { supabaseFetch } from "@/lib/supabase/fetch";
 import {
   canAccessPath,
   homeFor,
@@ -30,6 +31,7 @@ export async function proxy(request: NextRequest) {
           );
         },
       },
+      global: { fetch: supabaseFetch },
     }
   );
 
@@ -144,7 +146,9 @@ export async function proxy(request: NextRequest) {
     // One retry before giving up. Straight after sign-in the new token can be
     // refused for a moment as "JWT issued at future" (PGRST303, clock skew
     // between the auth server and the API), which showed the person the
-    // "could not check your access" page on their very first screen.
+    // "could not check your access" page on their very first screen. The
+    // client's fetch now sends those again itself (lib/supabase/fetch.ts);
+    // this one is for anything else that fails for a moment.
     if (permissionError || configError) {
       await new Promise((resolve) => setTimeout(resolve, 1000));
       [

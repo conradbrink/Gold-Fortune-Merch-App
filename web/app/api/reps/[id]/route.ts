@@ -2,6 +2,7 @@ import {
   createClient as createAdminClient,
   type SupabaseClient,
 } from "@supabase/supabase-js";
+import { supabaseFetch } from "@/lib/supabase/fetch";
 import { createClient } from "@/lib/supabase/server";
 import { enforceRateLimit, LIMITS } from "@/lib/rate-limit";
 import { loginPhone, normalisePhone } from "@/lib/phone-login";
@@ -99,7 +100,7 @@ async function authorise(id: string) {
   const admin = createAdminClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY,
-    { auth: { autoRefreshToken: false, persistSession: false } }
+    { auth: { autoRefreshToken: false, persistSession: false }, global: { fetch: supabaseFetch } }
   );
 
   // The base role says nothing about what an account can reach: the seeded CFO

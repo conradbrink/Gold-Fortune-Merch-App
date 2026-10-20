@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { createClient as createAdminClient } from "@supabase/supabase-js";
+import { supabaseFetch } from "@/lib/supabase/fetch";
 import type { Database } from "@/lib/supabase/types";
 import { verifyLink } from "@/lib/email/links";
 
@@ -22,6 +23,7 @@ export const dynamic = "force-dynamic";
 function admin() {
   return createAdminClient<Database>(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!, {
     auth: { autoRefreshToken: false, persistSession: false },
+    global: { fetch: supabaseFetch },
   });
 }
 

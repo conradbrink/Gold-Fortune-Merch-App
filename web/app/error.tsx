@@ -9,14 +9,17 @@ import { ServiceMessage } from "@/components/service-message";
  * the root, so the rest of the shell survives and Try again re-renders only
  * the segment that broke.
  *
- * Note `unstable_retry`, not `reset` — this Next version renamed it.
+ * Note `retry`, not `reset`: `reset` only clears the error and renders the same
+ * failed content again, while `retry` fetches it again first. Next 16.2 called
+ * it `unstable_retry` and 16.3 renamed it, so from then on the button called
+ * `undefined` and threw (Sentry JAVASCRIPT-NEXTJS-4, 8 October 2026).
  */
 export default function ErrorPage({
   error,
-  unstable_retry,
+  retry,
 }: {
   error: Error & { digest?: string };
-  unstable_retry: () => void;
+  retry: () => void;
 }) {
   useEffect(() => {
     // The digest ties this render to the server-side stack trace, which is the
@@ -37,7 +40,7 @@ export default function ErrorPage({
     >
       <button
         type="button"
-        onClick={() => unstable_retry()}
+        onClick={() => retry()}
         className="inline-flex h-9 items-center justify-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground shadow-sm transition-colors hover:bg-primary/90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
       >
         Try again

@@ -1,5 +1,6 @@
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
+import { supabaseFetch } from "@/lib/supabase/fetch";
 import type { Database } from "@/lib/supabase/types";
 
 export async function createClient() {
@@ -24,6 +25,7 @@ export async function createClient() {
           }
         },
       },
+      global: { fetch: supabaseFetch },
     }
   );
 }

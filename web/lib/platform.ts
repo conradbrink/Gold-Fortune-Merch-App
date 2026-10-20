@@ -1,6 +1,7 @@
 import "server-only";
 import { cache } from "react";
 import { createClient as createAdminClient } from "@supabase/supabase-js";
+import { supabaseFetch } from "@/lib/supabase/fetch";
 import type { Database, Json } from "@/lib/supabase/types";
 import { toPlatformUsers, type LoginRow, type PlatformUser } from "@/lib/platform-users";
 
@@ -34,7 +35,7 @@ export function platformAdminClient() {
   return createAdminClient<Database>(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!,
-    { auth: { autoRefreshToken: false, persistSession: false } }
+    { auth: { autoRefreshToken: false, persistSession: false }, global: { fetch: supabaseFetch } }
   );
 }
 

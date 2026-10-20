@@ -3,6 +3,7 @@
 import { headers } from "next/headers";
 import { revalidatePath } from "next/cache";
 import { createClient as createAdminClient } from "@supabase/supabase-js";
+import { supabaseFetch } from "@/lib/supabase/fetch";
 import type { Database } from "@/lib/supabase/types";
 import { verifyLink } from "@/lib/email/links";
 import { linkCompanyClosed } from "@/lib/company-closed";
@@ -25,6 +26,7 @@ export async function signReport(
   const ip = (h.get("x-forwarded-for") ?? "").split(",")[0].trim() || null;
   const admin = createAdminClient<Database>(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!, {
     auth: { autoRefreshToken: false, persistSession: false },
+    global: { fetch: supabaseFetch },
   });
   if (await linkCompanyClosed(admin, "job_reports", id)) {
     return { ok: false, error: "This link does not work any more. Ask for a new one." };

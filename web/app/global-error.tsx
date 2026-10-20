@@ -16,10 +16,10 @@ import "./globals.css";
  */
 export default function GlobalError({
   error,
-  unstable_retry,
+  retry,
 }: {
   error: Error & { digest?: string };
-  unstable_retry: () => void;
+  retry: () => void;
 }) {
   useEffect(() => {
     // The most severe case: the root layout itself failed, so nothing else
@@ -41,7 +41,7 @@ export default function GlobalError({
         >
           <button
             type="button"
-            onClick={() => unstable_retry()}
+            onClick={() => retry()}
             className="inline-flex h-9 items-center justify-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground shadow-sm transition-colors hover:bg-primary/90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
           >
             Try again
