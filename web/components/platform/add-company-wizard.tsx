@@ -684,8 +684,8 @@ export function AddCompanyWizard({
               <span>
                 <span className="font-medium text-foreground">Start on the free {pilotDays}-day pilot</span>
                 <span className="block text-muted-foreground">
-                  The free days start now. After them the account is read-only until a plan is chosen. Untick for a
-                  company that is free by arrangement.
+                  The free days start now. On day 10 the owner is emailed to choose a plan. Untick for a company that
+                  is free by arrangement.
                 </span>
               </span>
             </label>
