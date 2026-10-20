@@ -72,7 +72,7 @@ const pains = [
   {
     icon: Layers,
     title: "Your figures are in five places.",
-    body: "Orders, stock, invoices and visits sit in WhatsApp, Excel, paper and your accounting software.",
+    body: "Orders, stock, invoices and visits sit in WhatsApp, Excel, paper and your accounting software, so it's hard to make sense of them, let alone decide what to do next.",
   },
 ];
 
