@@ -2,12 +2,15 @@
 --
 --   W1  A founding application can carry an email address; a bad one is refused;
 --       an earlier row without one stays valid.
---   W2  The trial offer: a company on its trial for 45 days or more, or with
---       no account row (the operator made it), is asked once, by email to its
---       administrator; younger, paid, read-only, exempt (Gold Fortune) and
---       past-trial companies are not; a second run asks no one again.
+--   W2  The trial offer: a company on its trial for the offer day or more is
+--       asked once, by email to its administrator; younger, paid, read-only,
+--       exempt (Gold Fortune), past-trial and no-account-row companies (free
+--       by arrangement, since 20261020100000) are not; a second run asks no
+--       one again. W2, W5 and W6 set the day to 45 themselves.
 --   W3  The day is the owner's (platform_settings trial_offer_day), and a
---       setting that is not a number is 45, not a stopped job.
+--       setting that is not a number is 10, not a stopped job.
+--   W7  The free 14-day pilot (20261020100000): with the day at 10, a company
+--       9 days into its pilot is not asked, one 11 days in is.
 --   W4  Grants, the daily job and the table's registration.
 --   W6  The holiday pause (trial_pause_from to trial_pause_to) is not counted:
 --       a company whose 45 days run through it is asked 21 days later; one
@@ -42,6 +45,8 @@ begin
   update public.platform_settings set value = '"2000-01-01"' where key = 'trial_offer_counts_from';
   update public.platform_settings set value = '"2000-01-01"' where key = 'trial_pause_from';
   update public.platform_settings set value = '"2000-01-22"' where key = 'trial_pause_to';
+  -- The mechanism is checked at 45 days; the live day is 10 (the 14-day pilot, W7).
+  update public.platform_settings set value = '45' where key = 'trial_offer_day';
 
   ---------------------------------------------------------------- W2 the offer
   -- Gold Fortune stands in for a company: its administrator has an email, and
@@ -56,25 +61,24 @@ begin
      or exists (select 1 from public.trial_offers where org_id = v_org) then
     v_fail := v_fail || 'W2 an exempt company was sent a trial offer' || E'\n';
   end if;
-  -- No account row at all (a company the operator made, on its free days by arrangement): asked.
+  -- No account row at all (a company the operator made with no end date: free
+  -- by arrangement since 20261020100000): not asked, however old.
   delete from public.company_account where org_id = v_org;
-  v_n := public.queue_trial_offers();
-  select to_address into v_owner_email from public.trial_offers where org_id = v_org;
-  select count(*) into v_n from public.message_outbox where template = 'trial_offer' and org_id = v_org and related_kind = 'trial_offer' and related_id = v_org;
-  select payload into v_j from public.message_outbox where template = 'trial_offer' and org_id = v_org;
-  if v_owner_email is null or v_n <> 1 or v_j ->> 'company_name' is null or v_j ->> 'days_left' is not null then
-    v_fail := v_fail || format('W2 a company with no account row got %s emails to %s: %s', v_n, v_owner_email, v_j::text) || E'\n';
-  end if;
-  if public.queue_trial_offers() <> 0 or (select count(*) from public.message_outbox where template = 'trial_offer' and org_id = v_org) <> 1 then
-    v_fail := v_fail || 'W2 a second run asked the same company again' || E'\n';
+  if public.queue_trial_offers() <> 0 or exists (select 1 from public.trial_offers where org_id = v_org) then
+    v_fail := v_fail || 'W2 a company with no account row (free by arrangement) was asked' || E'\n';
   end if;
   -- On a trial 46 days old with 14 left: asked, with the days left.
   delete from public.trial_offers; delete from public.message_outbox where template = 'trial_offer';
   insert into public.company_account (org_id, status, trial_ends_at, created_at) values (v_org, 'trial', now() + interval '14 days', now() - interval '46 days');
   v_n := public.queue_trial_offers();
+  select to_address into v_owner_email from public.trial_offers where org_id = v_org;
   select payload into v_j from public.message_outbox where template = 'trial_offer' and org_id = v_org;
-  if v_n < 1 or (v_j ->> 'days_left')::int not between 13 and 14 or v_j ->> 'trial_ends_at' is null or v_j ->> 'trial_ends_on' is null then
+  if v_n < 1 or v_owner_email is null or v_j ->> 'company_name' is null
+     or (v_j ->> 'days_left')::int not between 13 and 14 or v_j ->> 'trial_ends_at' is null or v_j ->> 'trial_ends_on' is null then
     v_fail := v_fail || format('W2 the offer for a company on its trial is wrong (%s queued): %s', v_n, v_j::text) || E'\n';
+  end if;
+  if public.queue_trial_offers() <> 0 or (select count(*) from public.message_outbox where template = 'trial_offer' and org_id = v_org) <> 1 then
+    v_fail := v_fail || 'W2 a second run asked the same company again' || E'\n';
   end if;
   -- Too young, paid, read only, past its trial: nobody.
   delete from public.trial_offers; delete from public.message_outbox where template = 'trial_offer';
@@ -110,12 +114,16 @@ begin
      and exists (select 1 from public.trial_offers where org_id = v_org) then
     v_fail := v_fail || 'W3 an offer the outbox cancelled was remembered as made' || E'\n';
   end if;
-  -- A setting that is not a number is 45, and the job still runs.
-  delete from public.trial_offers;
+  -- A setting that is not a number is 10, and the job still runs: the 20-day
+  -- company is asked (its address is suppressed above, so the outbox row is
+  -- what shows it was asked).
+  delete from public.trial_offers; delete from public.message_outbox where template = 'trial_offer';
   update public.platform_settings set value = '"soon"' where key = 'trial_offer_day';
   begin
-    v_n := public.queue_trial_offers();
-    if v_n <> 0 then v_fail := v_fail || 'W3 a setting that is not a number was not read as 45' || E'\n'; end if;
+    perform public.queue_trial_offers();
+    if not exists (select 1 from public.message_outbox where template = 'trial_offer' and org_id = v_org) then
+      v_fail := v_fail || 'W3 a setting that is not a number was not read as 10' || E'\n';
+    end if;
   exception when others then
     v_fail := v_fail || format('W3 a setting that is not a number stopped the job: %s', sqlerrm) || E'\n';
   end;
@@ -196,6 +204,25 @@ begin
   end;
   if (select count(*) from public.platform_settings where key in ('trial_pause_from', 'trial_pause_to')) <> 2 then
     v_fail := v_fail || 'W6 the pause settings are missing' || E'\n';
+  end if;
+
+  ---------------------------------------------------------------- W7 the free 14-day pilot
+  update public.platform_settings set value = '10' where key = 'trial_offer_day';
+  update public.platform_settings set value = '""' where key in ('trial_offer_counts_from', 'trial_pause_from', 'trial_pause_to');
+  delete from public.trial_offers; delete from public.message_outbox where template = 'trial_offer';
+  -- Nine days into a 14-day pilot: not asked yet.
+  update public.company_account set status = 'trial', created_at = now() - interval '9 days', trial_ends_at = now() + interval '5 days' where org_id = v_org;
+  update public.organizations set created_at = now() - interval '9 days' where id = v_org;
+  perform public.queue_trial_offers();
+  if exists (select 1 from public.message_outbox where template = 'trial_offer' and org_id = v_org) then
+    v_fail := v_fail || 'W7 a company 9 days into its pilot was asked' || E'\n';
+  end if;
+  -- Eleven days in, three left: asked.
+  update public.company_account set created_at = now() - interval '11 days', trial_ends_at = now() + interval '3 days' where org_id = v_org;
+  update public.organizations set created_at = now() - interval '11 days' where id = v_org;
+  perform public.queue_trial_offers();
+  if not exists (select 1 from public.message_outbox where template = 'trial_offer' and org_id = v_org) then
+    v_fail := v_fail || 'W7 a company 11 days into its pilot was not asked' || E'\n';
   end if;
 
   if v_fail <> '' then

@@ -149,7 +149,7 @@ export default function OnboardingPage() {
       {(trial.kind === "active" || trial.kind === "ending") && (
         <p className="flex items-center gap-2 rounded-lg border border-gold/50 bg-gold/10 px-4 py-2 text-sm text-foreground">
           <Clock className="size-4" aria-hidden />
-          {trial.daysLeft} {trial.daysLeft === 1 ? "day" : "days"} left in your free trial
+          {trial.daysLeft} {trial.daysLeft === 1 ? "day" : "days"} left in your free pilot
         </p>
       )}
       <div className="flex flex-wrap items-end justify-between gap-3">

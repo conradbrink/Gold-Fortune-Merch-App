@@ -7,6 +7,7 @@ import {
   moduleDependencies,
   settingDefinitions,
   termDefinitions,
+  trialDays,
 } from "@/lib/platform";
 import { AddCompanyWizard } from "@/components/platform/add-company-wizard";
 import { createCompanyAction, previewTemplates } from "@/app/platform/actions";
@@ -38,12 +39,13 @@ export default async function AddCompanyPage() {
   if (error) throw error;
   if (!isOperator) notFound();
 
-  const [templates, modules, dependencies, settings, terms] = await Promise.all([
+  const [templates, modules, dependencies, settings, terms, pilotDays] = await Promise.all([
     listTemplates(),
     moduleCatalogue(),
     moduleDependencies(),
     settingDefinitions(),
     termDefinitions(),
+    trialDays(),
   ]);
 
   return (
@@ -67,6 +69,7 @@ export default async function AddCompanyPage() {
         terms={terms}
         preview={previewTemplates}
         create={createCompanyAction}
+        pilotDays={pilotDays}
       />
     </main>
   );

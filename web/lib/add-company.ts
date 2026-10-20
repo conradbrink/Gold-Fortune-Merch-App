@@ -119,6 +119,12 @@ export type AddCompanyInput = {
   checklists: string[];
   forms: string[];
   owner: { fullName: string; email: string; password: string };
+  /**
+   * Start the company on the free pilot (`trial_days`, 14) rather than free
+   * with no end date (owner, 20 Oct 2026: the Founding offer is a free 14-day
+   * pilot). Untick for a company that is free by arrangement.
+   */
+  pilot: boolean;
 };
 
 /** A module and what it needs switched on first (`module_dependencies`). */

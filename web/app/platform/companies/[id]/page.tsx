@@ -91,10 +91,10 @@ export default async function PlatformCompanyPage({
       <section className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border bg-card p-4">
         <p className="text-sm text-foreground">
           {trial.kind === "none"
-            ? "Not on a free trial."
+            ? "Not on a free pilot (free by arrangement, or paying)."
             : trial.kind === "ended"
-              ? `Free trial ended ${dateTime.format(new Date(trialEndsAt!))} UTC.`
-              : `Free trial ends ${dateTime.format(new Date(trialEndsAt!))} UTC (${trial.daysLeft} ${trial.daysLeft === 1 ? "day" : "days"} left).`}
+              ? `Free pilot ended ${dateTime.format(new Date(trialEndsAt!))} UTC.`
+              : `Free pilot ends ${dateTime.format(new Date(trialEndsAt!))} UTC (${trial.daysLeft} ${trial.daysLeft === 1 ? "day" : "days"} left).`}
         </p>
         <form action={extendTrial} className="flex items-center gap-2">
           <input type="hidden" name="orgId" value={company.id} />

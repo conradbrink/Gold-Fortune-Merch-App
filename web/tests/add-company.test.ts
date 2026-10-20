@@ -40,6 +40,7 @@ function valid(): AddCompanyInput {
     checklists: ["office_clean"],
     forms: [],
     owner: { fullName: "Thandi Owner", email: " Thandi@Example.com ", password: "abcd2345" },
+    pilot: true,
   };
 }
 
