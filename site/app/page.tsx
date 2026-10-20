@@ -369,7 +369,7 @@ export default function Home() {
             the AI Manager (owner, 20 Oct 2026). */}
         <ProofSection applyHref="#apply" />
 
-        {/* 4b. "What do I do about it?" The AI Manager (owner, 19 Oct 2026): Ask
+        {/* 4b. "How do I grow my business?" (was "What do I do about it?") The AI Manager (owner, 19 Oct 2026): Ask
             and the report summaries are live (#183, #186, /api/insights). The
             shelf-photo check panel came off the page (owner, 20 Oct 2026). */}
         <section id="ai" className="scroll-mt-28 border-t border-line">
@@ -377,7 +377,7 @@ export default function Home() {
             <div className="grid content-start gap-6 sm:gap-8">
               <div className="grid gap-3">
                 <p className="tk-reveal text-sm font-bold uppercase tracking-wide text-teal-700">The {site.name} AI Manager</p>
-                <h2 className={h2}>What do I do about it?</h2>
+                <h2 className={h2}>How do I grow my business?</h2>
                 <p className={lead}>
                   Ask any question about your company, and get an instant answer from your real data, so you can make decisions.
                 </p>
