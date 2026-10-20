@@ -108,18 +108,6 @@ const ai = [
   { icon: FileText, text: "Every report comes with a short summary of what stands out." },
 ];
 
-// 5. How it works: how easy it is to start, with what you need folded in
-// (their own phones, 10 minutes to learn, no signal needed, loaded for you).
-const steps = [
-  ["Send us the short form.", `It takes a minute. We WhatsApp you within ${founding.replyMinutes} minutes during work hours.`],
-  ["We load everything for you.", "Send us your store list and price lists, and we set up your stores, products and reps."],
-  ["We train your reps.", "On a video call. They learn it in 10 minutes, on the Android phones they already have."],
-  [
-    `Your free ${founding.pilotDays}-day pilot starts.`,
-    "You see every visit and every order from the first day. The app works without signal, and sends it all once there's signal again.",
-  ],
-];
-
 // What the form at the foot of the page gets them, in three lines.
 const youGet = [
   "Every store visit, proven.",
@@ -425,28 +413,14 @@ export default function Home() {
           </div>
         </section>
 
-        {/* 5. How it works: four steps to start, then the rep's day on the phone. */}
+        {/* 5. How it works: the rep's day, on the phone. The four steps to
+            start came off the page (owner, 20 Oct 2026). */}
         <section id="how" aria-labelledby="how-title" className="scroll-mt-28 border-t border-line bg-white">
           <div className={`${wrap} max-w-6xl`}>
             <div className="grid gap-3">
               <h2 id="how-title" className={h2}>
-                Up and running in four steps.
+                What your reps do at every store
               </h2>
-              <p className={lead}>You don&apos;t set anything up yourself. We do it with you.</p>
-            </div>
-            <ol className="grid gap-6 sm:grid-cols-2 lg:grid-cols-4 lg:gap-8">
-              {steps.map(([title, body], i) => (
-                <li key={title} className="tk-reveal grid content-start gap-3">
-                  <span className="grid size-12 place-items-center rounded-full bg-amber-500 font-display text-xl font-extrabold text-teal-950">
-                    {i + 1}
-                  </span>
-                  <h3 className="font-display text-xl font-bold leading-snug text-teal-900">{title}</h3>
-                  <p className="text-lg leading-relaxed text-ink">{body}</p>
-                </li>
-              ))}
-            </ol>
-            <div className="grid gap-3 border-t border-line pt-8 sm:pt-10">
-              <h3 className={h3}>What your reps do at every store</h3>
               <p className={lead}>Tap each step to see it on the rep&apos;s phone.</p>
             </div>
             <div className="tk-reveal">
@@ -456,8 +430,7 @@ export default function Home() {
         </section>
 
         {/* 6. The doubts: the Founding 10 package (the value first, then the
-            price, the promise and why each bonus is there), the normal prices,
-            and the questions. */}
+            price and the promise), the normal prices, and the questions. */}
         <section id="offer" className="scroll-mt-28 border-t border-line">
           <div className={`${wrap} max-w-6xl`}>
             <div className="grid gap-3">
@@ -471,21 +444,6 @@ export default function Home() {
               </div>
               <div className="tk-reveal grid content-start gap-4">
                 <FoundingGuarantee />
-                <div className="grid gap-2 rounded-2xl bg-white p-5 ring-1 ring-line sm:p-6">
-                  <p className="font-display text-xl font-bold text-teal-900">Why each bonus is there</p>
-                  <ul className="grid gap-2 leading-relaxed text-ink">
-                    <li>
-                      <strong className="text-teal-900">Not sure you have a problem?</strong> The Rep Leak Audit shows you the visits your reps miss.
-                    </li>
-                    <li>
-                      <strong className="text-teal-900">Not sure how to set up call cycles?</strong> Start from the templates of the team we built{" "}
-                      {site.name} with.
-                    </li>
-                    <li>
-                      <strong className="text-teal-900">What if you get stuck?</strong> WhatsApp our team directly for your first 60 days.
-                    </li>
-                  </ul>
-                </div>
               </div>
             </div>
           </div>
