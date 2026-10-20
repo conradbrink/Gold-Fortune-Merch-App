@@ -1,7 +1,10 @@
 import {
   CalendarDays,
+  Car,
   Check,
   ClipboardList,
+  Compass,
+  Layers,
   MapPin,
   MessageSquareText,
   MessagesSquare,
@@ -11,7 +14,6 @@ import {
   Target,
   TrendingUp,
   Users,
-  UserX,
 } from "lucide-react";
 import Image from "next/image";
 import { CostCalculator } from "@/components/cost-calculator";
@@ -44,21 +46,38 @@ import { confirmed, firstPlan, founding, foundingFrom, proof, rand, site } from 
 // Light only, on purpose: owners read this on a phone outdoors, between jobs,
 // and the brand is built on the sand ground.
 
-// 3. The old way: what an owner lives with before Tickd.
+// 3. The old way: the problems the owner picked as the real ones for the
+// distributors he sells to (20 Oct 2026).
 const pains = [
-  { icon: UserX, title: "You can't prove who went where.", body: "A store says nobody came, and your rep says he did." },
   {
     icon: MessagesSquare,
-    title: "Orders come in on WhatsApp and paper.",
-    body: "Someone types them up again at night, and the mistakes reach your warehouse.",
+    title: "Managing reps on spreadsheets and WhatsApp.",
+    body: "Every rep reports their own way, and it takes hours to work out who went where and what they sold.",
   },
-  { icon: Store, title: "Good stores go quiet.", body: "Nobody notices for weeks, and by then a competitor has the shelf." },
   {
     icon: PackageX,
-    title: "Reps take whatever order they're given.",
-    body: "Nobody sells in the products a store doesn't stock yet, so every visit stays small.",
+    title: "Stores run out of your stock.",
+    body: "Nobody reorders in time, and the sale goes to a competitor on the same shelf.",
+  },
+  {
+    icon: Car,
+    title: "Reps reach too few stores.",
+    body: "Too much driving and admin means fewer stores a day, and the fuel bill keeps climbing.",
+  },
+  {
+    icon: Compass,
+    title: "No clear plan to grow.",
+    body: "You can't see which stores or areas to push, so growth comes down to gut feel.",
+  },
+  {
+    icon: Layers,
+    title: "Your figures are in five places.",
+    body: "Orders, stock, invoices and visits sit in WhatsApp, Excel, paper and your accounting software.",
   },
 ];
+
+// The benefits' heading counts the problems above.
+const countWords = ["no", "one", "two", "three", "four", "five", "six"];
 
 // 4. What changes: each live feature, and what it means for the owner.
 // Visits: check-ins with the distance from the store, photos only from the
@@ -296,11 +315,14 @@ export default function Home() {
               <h2 id="problem-title" className={h2}>
                 The old way is costing you orders.
               </h2>
-              <p className={lead}>This is how most reps are still run.</p>
+              <p className={lead}>Sound familiar?</p>
             </div>
             <ul className="grid gap-x-10 gap-y-6 sm:grid-cols-2">
               {pains.map(({ icon: Icon, title, body }) => (
-                <li key={title} className="tk-reveal tk-timeline flex gap-3.5 border-t border-line pt-5">
+                <li
+                  key={title}
+                  className="tk-reveal tk-timeline flex gap-3.5 border-t border-line pt-5 sm:last:odd:col-span-2"
+                >
                   <span className="tk-pop grid size-10 shrink-0 place-items-center rounded-xl bg-flag/10 text-flag ring-1 ring-flag/20">
                     <Icon className="size-5" strokeWidth={2.25} aria-hidden="true" />
                   </span>
@@ -327,7 +349,7 @@ export default function Home() {
           <div className={`${wrap} max-w-6xl`}>
             <div className="grid gap-3">
               <h2 id="benefits-title" className={h2}>
-                {site.name} fixes all four.
+                {site.name} fixes all {countWords[pains.length] ?? pains.length}.
               </h2>
               <p className={lead}>
                 Your reps use the app on their phones. You see it all on your computer, or on your own phone.
