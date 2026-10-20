@@ -1,16 +1,14 @@
 import {
-  CalendarDays,
   Car,
   Check,
-  ClipboardList,
   Compass,
-  MapPin,
+  LayoutDashboard,
   MessageSquareText,
   MessagesSquare,
+  PackageCheck,
   PackageX,
-  Repeat,
+  Route,
   Store,
-  Target,
   TrendingUp,
   Users,
 } from "lucide-react";
@@ -73,41 +71,33 @@ const pains = [
 // The benefits' heading counts the problems above.
 const countWords = ["no", "one", "two", "three", "four", "five", "six"];
 
-// 4. What changes: each live feature, and what it means for the owner.
-// Visits: check-ins with the distance from the store, photos only from the
-// app's camera, the missed_planned and off_site_checkin alerts, the live map
-// and kilometres (/tracking). Sales: the win-back list (/stores/reorder),
-// "Same again", "Don't stock", sales against target, invoices and /owed.
+// 4. What changes: one card for each problem above, in the same order (owner,
+// 20 Oct 2026: "addressing these 4", with the AI Manager in the copy). Only
+// live features: check-ins, photos and orders in the app, the missed-visit
+// alert; the order rhythm and "Due for an order" (store_reorder); Ask's
+// lookups (site_visits, sales, team_performance, sites_due_for_order), its
+// visit plan one town a day (draft_visit_plan) and Add to schedule; the
+// kilometres (/tracking); targets.
 const benefits = [
   {
-    icon: MapPin,
-    title: "Every visit, proven",
-    body: "Reps check in at the store, and shelf photos can only be taken in the app, with the time and place. A missed store visit is flagged, to improve your team's efficiency.",
+    icon: LayoutDashboard,
+    title: "Every rep, on one screen",
+    body: "Reps check in at each store and take photos and orders in the app, so it all lands in one place, not in spreadsheets and WhatsApp. A missed store visit is flagged. Ask the AI Manager who went where and what they sold, and get the answer in seconds.",
   },
   {
-    icon: CalendarDays,
-    title: "Every store visited, planned ahead",
-    body: "Make sure all your stores are visited, and plan your reps' visits months in advance.",
+    icon: PackageCheck,
+    title: "Stores reordered on time",
+    body: "Tickd learns how often each store orders, and reminds the rep to take an order when it's due. The AI Manager shows you which stores are due or have dropped, before a competitor takes the shelf.",
   },
   {
-    icon: ClipboardList,
-    title: "Orders straight to your warehouse",
-    body: "Orders taken by your reps show up on the system automatically.",
+    icon: Route,
+    title: "More stores a day, less fuel",
+    body: "The AI Manager plans each rep's month one town a day, so they drive less. Orders are taken on the phone at the store's own prices, so there's no typing up at night, and the kilometres are logged for petrol claims.",
   },
   {
-    icon: Store,
-    title: "More sales per store",
-    body: "The stores that have stopped ordering, biggest buyers first, with a number to ring. You hear about them while they can still be won back.",
-  },
-  {
-    icon: Repeat,
-    title: "More data",
-    body: "The app prompts your reps from each store's purchase history, and reminds them to take an order when a store hasn't ordered like it usually does. Then the AI Manager turns your data into insights to grow.",
-  },
-  {
-    icon: Target,
-    title: "Targets for every rep",
-    body: "Give your reps targets, and make sure they achieve them.",
+    icon: TrendingUp,
+    title: "A clear plan to grow",
+    body: "Ask the AI Manager how to grow sales in an area. It draws up a plan from your own data and puts the visits into your reps' schedule. Give each rep a target, and see how they're doing every day.",
   },
 ];
 
@@ -342,7 +332,7 @@ export default function Home() {
                 Your reps use the app on their phones. You see it all on your computer, or on your own phone.
               </p>
             </div>
-            <ul className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            <ul className="grid gap-4 sm:grid-cols-2">
               {benefits.map(({ icon: Icon, title, body }) => (
                 <li key={title} className="tk-reveal grid content-start gap-3 rounded-2xl bg-mint p-5 ring-1 ring-teal-100 sm:p-6">
                   <span className="tk-icon-hover grid size-11 place-items-center rounded-xl bg-teal-900 text-amber-500">
@@ -416,8 +406,13 @@ export default function Home() {
                 first {founding.pilotDays} days are free, and then you get {founding.percentOff}% off your plan for{" "}
                 {founding.priceMonths} months, from {rand(foundingFrom)} a month.
               </p>
-              <p className={lead}>Only {founding.spots} spots, because our team onboards each one personally.</p>
-              <SpotsText className="tk-reveal w-fit rounded-full bg-amber-100 px-3 py-1 text-sm font-bold text-teal-900" />
+              {/* The reveal on the wrapper, the glow and wiggle on the badge: one animation each. */}
+              <span className="tk-reveal grid justify-items-start pt-1">
+                <SpotsText
+                  urgent
+                  className="inline-block w-fit rounded-full bg-amber-500 px-4 py-1.5 text-sm font-extrabold uppercase tracking-wide text-teal-950"
+                />
+              </span>
             </div>
             <div className="grid gap-4 lg:grid-cols-[1.2fr_1fr] lg:items-start lg:gap-6">
               <div className="tk-reveal">
