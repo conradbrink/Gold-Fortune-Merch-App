@@ -1,7 +1,6 @@
 import OpenAI from "openai";
-import { createClient as createAdminClient } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/server";
-import { enforceRateLimit, requireFeature, LIMITS } from "@/lib/rate-limit";
+import { enforceRateLimit, quotaLeft, requireFeature, LIMITS } from "@/lib/rate-limit";
 import { parseCompanyConfig } from "@/lib/company-config";
 import { moduleEnabled } from "@/lib/modules";
 import { currencySymbol } from "@/lib/money";
@@ -10,12 +9,7 @@ import { toolsFor } from "@/lib/assistant-tools";
 import type { AssistantContext } from "@/lib/assistant-prompt";
 import { runTool, type ToolEnv } from "@/lib/assistant-data";
 import { answerQuestion } from "@/lib/assistant-answer";
-import {
-  encodeEvent,
-  parseConversation,
-  questionsLeftFrom,
-  type QuestionsLeft,
-} from "@/lib/assistant-stream";
+import { encodeEvent, parseConversation, questionsLeft } from "@/lib/assistant-stream";
 
 /**
  * Ask: questions about the company's own business, answered from its data.
@@ -69,9 +63,8 @@ function limitReached(response: Response, period: "hour" | "day"): Response {
  *
  * The panel asks when it opens, so the count is right after signing in again
  * or on another device; it used to show the full allowance until the first
- * answer. `rate_limits` is readable by nobody through RLS, so this reads the
- * caller's own rows with the service role, keyed by the user the session
- * proved, never by anything in the request.
+ * answer. Read with the person's own session through `rate_limit_left`, which
+ * only ever reads the caller's own counter.
  */
 export async function GET() {
   const supabase = await createClient();
@@ -79,26 +72,12 @@ export async function GET() {
     data: { user },
   } = await supabase.auth.getUser();
   if (!user) return json("Not signed in.", 401);
-  if (!process.env.SUPABASE_SERVICE_ROLE_KEY) return Response.json({ left: null });
 
-  const admin = createAdminClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY,
-    { auth: { autoRefreshToken: false, persistSession: false } }
-  );
-  // Today's UTC day is the oldest window either counter can still be in.
-  const dayStart = new Date(Math.floor(Date.now() / 86_400_000) * 86_400_000).toISOString();
-  const { data, error } = await admin
-    .from("rate_limits")
-    .select("bucket, window_start, count")
-    .eq("subject", user.id)
-    .in("bucket", [LIMITS.assistantHour.bucket, LIMITS.assistantDay.bucket])
-    .gte("window_start", dayStart);
-  if (error) {
-    console.error("assistant: questions left could not be read", error.message);
-    return Response.json({ left: null }, { headers: { "Cache-Control": "no-store" } });
-  }
-  return Response.json({ left: questionsLeftFrom(data ?? []) }, { headers: { "Cache-Control": "no-store" } });
+  const [hour, day] = await Promise.all([
+    quotaLeft(supabase, LIMITS.assistantHour),
+    quotaLeft(supabase, LIMITS.assistantDay),
+  ]);
+  return Response.json({ left: questionsLeft(hour, day) }, { headers: { "Cache-Control": "no-store" } });
 }
 
 export async function POST(request: Request) {
@@ -149,10 +128,7 @@ export async function POST(request: Request) {
   if (!hour.ok) return limitReached(hour.response, "hour");
   const dayGate = await enforceRateLimit(supabase, LIMITS.assistantDay, 1, { failClosed: true });
   if (!dayGate.ok) return limitReached(dayGate.response, "day");
-  const left: QuestionsLeft | null =
-    hour.remaining === null || dayGate.remaining === null
-      ? null
-      : { hour: Math.min(hour.remaining, dayGate.remaining), day: dayGate.remaining };
+  const left = questionsLeft(hour.remaining, dayGate.remaining);
 
   const today = new Intl.DateTimeFormat("en-CA", { timeZone: config.timezone }).format(new Date());
   const ctx: AssistantContext = {

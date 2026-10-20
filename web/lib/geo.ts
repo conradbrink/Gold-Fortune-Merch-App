@@ -293,6 +293,39 @@ export function clusterByProximity<T>(
   return groups;
 }
 
+/**
+ * The middle (the mean) of the points that have a position, or null when none
+ * do. Pure, so the server-side planner and the map can share it; `map-centre`
+ * re-exports it for the browser.
+ */
+export function centreOf(
+  points: readonly { lat: number | null; lng: number | null }[]
+): Point | null {
+  const located = points.filter(
+    (p): p is Point => p.lat !== null && p.lng !== null
+  );
+  if (located.length === 0) return null;
+  return {
+    lat: located.reduce((n, p) => n + p.lat, 0) / located.length,
+    lng: located.reduce((n, p) => n + p.lng, 0) / located.length,
+  };
+}
+
+/**
+ * The point whose latitude and longitude are each the median of the points:
+ * a middle that one far-off point cannot drag the way it drags a mean. Null
+ * for no points.
+ */
+export function medianPoint(points: readonly Point[]): Point | null {
+  if (points.length === 0) return null;
+  const median = (xs: number[]) => {
+    const s = [...xs].sort((a, b) => a - b);
+    const mid = Math.floor(s.length / 2);
+    return s.length % 2 ? s[mid] : (s[mid - 1] + s[mid]) / 2;
+  };
+  return { lat: median(points.map((p) => p.lat)), lng: median(points.map((p) => p.lng)) };
+}
+
 /** `{lat, lng}` when both are present, null otherwise — for `shortestPathKm`. */
 export function toPoint(
   lat: number | null | undefined,

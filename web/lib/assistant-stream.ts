@@ -25,6 +25,14 @@ export type AssistantEvent =
 
 export type QuestionsLeft = { hour: number; day: number };
 
+/**
+ * Questions left, from what is left this hour and today: nobody has more
+ * left this hour than today. Null when either could not be counted.
+ */
+export function questionsLeft(hour: number | null, day: number | null): QuestionsLeft | null {
+  return hour === null || day === null ? null : { hour: Math.min(hour, day), day };
+}
+
 /** What "Add to schedule" saves: the new visits, by day, for one person. */
 export type PlanDraft = {
   staffId: string;
@@ -46,27 +54,6 @@ export const QUESTION_BUCKETS = { hour: "assistant_hour", day: "assistant_day" }
 /** Questions per person (owner, 19 Oct 2026). `LIMITS` in lib/rate-limit.ts counts them. */
 export const QUESTIONS_PER_HOUR = 10;
 export const QUESTIONS_PER_DAY = 40;
-
-/**
- * Where a person stands against the limits, from their counter rows.
- *
- * The windows are floored to the clock exactly as `consume_rate_limit` floors
- * them (whole hours, whole UTC days), so a row from an earlier window counts
- * for nothing. Rows are the person's own `rate_limits` rows.
- */
-export function questionsLeftFrom(
-  rows: readonly { bucket: string; window_start: string; count: number }[],
-  now = Date.now()
-): QuestionsLeft {
-  const used = (bucket: string, seconds: number) => {
-    const start = Math.floor(now / 1000 / seconds) * seconds * 1000;
-    const row = rows.find((r) => r.bucket === bucket && Date.parse(r.window_start) === start);
-    return row ? Number(row.count) : 0;
-  };
-  const day = Math.max(0, QUESTIONS_PER_DAY - used(QUESTION_BUCKETS.day, 86_400));
-  const hour = Math.max(0, QUESTIONS_PER_HOUR - used(QUESTION_BUCKETS.hour, 3600));
-  return { hour: Math.min(hour, day), day };
-}
 
 /** The limits on what the route accepts, shared so the panel stops at the same place. */
 export const MAX_QUESTION_CHARS = 500;

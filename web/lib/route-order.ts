@@ -1,7 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { callRpc } from "@/lib/rpc";
 import { toLocalDateInput } from "@/lib/date-range";
-import { distanceKm, orderStops, pathLengthKm, type Point } from "@/lib/geo";
+import { distanceKm, medianPoint, orderStops, pathLengthKm, type Point } from "@/lib/geo";
 import { capital, lower, withArticle, type Terms } from "@/lib/terms";
 
 /**
@@ -78,9 +78,11 @@ export type OrderSummary = {
  * back to holding whatever stop is currently first.
  */
 export async function fetchRepStartAnchors(
-  supabase: SupabaseClient
+  supabase: SupabaseClient,
+  /** Only this person's anchor, for a caller that plans one person. */
+  repId?: string
 ): Promise<Map<string, Point>> {
-  const { data, error } = await supabase
+  let query = supabase
     .from("visits")
     .select("rep_id, checkin_at, checkin_lat, checkin_lng")
     .not("checkin_at", "is", null)
@@ -88,8 +90,9 @@ export async function fetchRepStartAnchors(
     // to become 0 in the median — putting a rep's anchor in the Gulf of Guinea
     // and quietly reshaping every day it touches.
     .not("checkin_lat", "is", null)
-    .not("checkin_lng", "is", null)
-    .order("checkin_at", { ascending: true });
+    .not("checkin_lng", "is", null);
+  if (repId) query = query.eq("rep_id", repId);
+  const { data, error } = await query.order("checkin_at", { ascending: true });
   if (error) throw new Error(error.message);
 
   const rows = (data ?? []) as {
@@ -119,18 +122,10 @@ export async function fetchRepStartAnchors(
     else byRep.set(repId, [p]);
   }
 
-  const median = (xs: number[]) => {
-    const s = [...xs].sort((a, b) => a - b);
-    const mid = Math.floor(s.length / 2);
-    return s.length % 2 ? s[mid] : (s[mid - 1] + s[mid]) / 2;
-  };
-
   const anchors = new Map<string, Point>();
-  for (const [repId, points] of byRep) {
-    anchors.set(repId, {
-      lat: median(points.map((p) => p.lat)),
-      lng: median(points.map((p) => p.lng)),
-    });
+  for (const [rep, points] of byRep) {
+    const middle = medianPoint(points);
+    if (middle) anchors.set(rep, middle);
   }
   return anchors;
 }
