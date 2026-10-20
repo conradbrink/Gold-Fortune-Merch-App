@@ -4,7 +4,7 @@ import type {
   ResponseInputItem,
   ResponseOutputItem,
 } from "openai/resources/responses/responses";
-import { toolSpec, type ToolName, type ToolSpec } from "@/lib/assistant-tools";
+import { showsTable, toolSpec, type ToolName, type ToolSpec } from "@/lib/assistant-tools";
 import {
   GUARD_SCHEMA,
   assistantInstructions,
@@ -117,6 +117,7 @@ export async function answerQuestion(o: AnswerOptions): Promise<void> {
     const instructions = assistantInstructions(ctx, tools);
 
     let wrote = false;
+    let tabled = false;
     for (let round = 0; round < MAX_ROUNDS; round++) {
       const response = await client.responses.create(
         {
@@ -158,7 +159,8 @@ export async function answerQuestion(o: AnswerOptions): Promise<void> {
       if (calls.length === 0) {
         // Stopped at the length limit: say so, or half a list reads as the whole.
         if (cutShort && wrote) {
-          send({ type: "text", text: "\n\nThat answer was cut short. Ask for a smaller part, or download the table." });
+          const or = tabled ? "download the table" : "ask to see it as a table";
+          send({ type: "text", text: `\n\nThat answer was cut short. Ask for a smaller part, or ${or}.` });
         }
         break;
       }
@@ -181,7 +183,11 @@ export async function answerQuestion(o: AnswerOptions): Promise<void> {
         }
         send({ type: "status", text: spec.working(ctx.terms) });
         const result = await o.run(spec.name, call.arguments);
-        if (result.sheet) send({ type: "table", sheet: result.sheet, href: spec.page });
+        // Only a list the person asked to see. The rest still reach the model below.
+        if (result.sheet && showsTable(spec, call.arguments)) {
+          send({ type: "table", sheet: result.sheet, href: spec.page });
+          tabled = true;
+        }
         if (result.plan) send({ type: "plan", plan: result.plan });
         input.push({
           type: "function_call_output",

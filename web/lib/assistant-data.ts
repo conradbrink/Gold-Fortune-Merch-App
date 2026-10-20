@@ -39,8 +39,9 @@ import { lower, type Terms } from "@/lib/terms";
  * Each lookup returns two things. `model` is what the assistant reads: small,
  * already rounded, with dates in company time, so it has nothing to work out
  * and nothing to get wrong. `sheet` is the full list for the person, shown
- * under the answer and downloadable, so the answer can be checked against the
- * rows it came from.
+ * under the answer and downloadable when they asked to see it
+ * (`showsTable` in lib/assistant-tools.ts), so the answer can be checked
+ * against the rows it came from.
  */
 
 type Client = SupabaseClient<Database>;
@@ -55,7 +56,7 @@ export type ToolEnv = {
 
 export type ToolResult = { model: unknown; sheet?: ExportSheet; plan?: PlanDraft };
 
-/** Rows the assistant reads from one lookup. The table shows them all. */
+/** Rows the assistant reads from one lookup. The table, when shown, has them all. */
 const MODEL_ROWS = 40;
 
 // ---------------------------------------------------------------- helpers

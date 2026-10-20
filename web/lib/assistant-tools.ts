@@ -51,6 +51,14 @@ export type ToolSpec = {
    * offering it to anybody else would draft a plan they could never save.
    */
   managerOnly?: boolean;
+  /**
+   * When its rows are shown under the answer as a table. "asked": only when
+   * the call sets `show_table`, which the model does when the person asked to
+   * see a list. Most lookups are made to answer one fact, and a table of every
+   * row behind it buries the answer. "always": the rows are the answer (a
+   * drafted plan). Left out: it returns no table.
+   */
+  table?: "asked" | "always";
 };
 
 const DATE = "A date as YYYY-MM-DD, in the company's time zone.";
@@ -75,6 +83,20 @@ const nullableString = (description: string): JsonSchema => ({
   description,
 });
 
+/** A lookup whose rows the person can ask to see: its parameters, plus `show_table`. */
+function listed(properties: Record<string, JsonSchema>): JsonSchema {
+  return object({
+    ...properties,
+    show_table: {
+      type: "boolean",
+      description:
+        "True when the person asked for the list itself: which or who (more than one), a list, a table, " +
+        "a report, a breakdown (per person, per month...), or a download. False when they asked for one " +
+        "fact, a count or a total (how many, how much, one name), or you only need the rows to work out your answer.",
+    },
+  });
+}
+
 export const TOOLS: readonly ToolSpec[] = [
   {
     name: "find_sites",
@@ -91,13 +113,14 @@ export const TOOLS: readonly ToolSpec[] = [
   },
   {
     name: "site_visits",
+    table: "asked",
     page: "/activities",
     description: (t) =>
       `${t.job.many} in a date range: when each ${lower(t.staff.one)} checked in and out, at which ` +
       `${lower(t.site.one)}, and for how long. Filter by one ${lower(t.site.one)} (id from find_sites) ` +
       `or one ${lower(t.staff.one)}.`,
     parameters: (t) =>
-      object({
+      listed({
         ...dateRange,
         site_id: nullableString(`Only this ${lower(t.site.one)} (id from find_sites), or null for all.`),
         staff_name: nullableString(`Only this ${lower(t.staff.one)} (part of their name), or null for all.`),
@@ -106,37 +129,40 @@ export const TOOLS: readonly ToolSpec[] = [
   },
   {
     name: "sites_not_visited",
+    table: "asked",
     page: "/stores",
     description: (t) =>
       `Active ${lower(t.site.many)} nobody has been to in the last N days, or ever, with the ` +
       `date of the last ${lower(t.job.one)} there.`,
     parameters: () =>
-      object({
+      listed({
         days: { type: "integer", description: "Not visited in at least this many days, 1 to 365." },
       }),
     working: (t) => `Checking which ${lower(t.site.many)} were missed`,
   },
   {
     name: "sites_due_for_order",
+    table: "asked",
     page: "/stores/reorder",
     description: (t) =>
       `${t.site.many} due for an order: when each last ordered, how often it usually orders, ` +
       `and whether it is due now, due soon, has stopped ordering or has never ordered.`,
     parameters: () =>
-      object({
+      listed({
         town: nullableString("Only this town, or null for all."),
       }),
     working: (t) => `Checking which ${lower(t.site.many)} are due for an order`,
   },
   {
     name: "sales",
+    table: "asked",
     page: "/sales",
     description: (t) =>
       `Sales in a date range, counted on the day the order was delivered and valued on what ` +
       `arrived, excluding VAT. Group by ${lower(t.staff.one)}, ${lower(t.site.one)}, month or ` +
       `product, or get the total. Can filter to one ${lower(t.site.one)} or one ${lower(t.staff.one)}.`,
     parameters: (t) =>
-      object({
+      listed({
         ...dateRange,
         group_by: {
           type: "string",
@@ -150,13 +176,14 @@ export const TOOLS: readonly ToolSpec[] = [
   },
   {
     name: "orders",
+    table: "asked",
     page: "/orders",
     description: (t) =>
       `Orders and where they stand (new, confirmed, picking, packed, dispatched, delivered, ` +
       `cancelled), with value excluding VAT. Filter by status, one ${lower(t.site.one)}, or the ` +
       `day the order was taken.`,
     parameters: (t) =>
-      object({
+      listed({
         status: {
           type: ["string", "null"],
           enum: ["new", "confirmed", "picking", "packed", "dispatched", "delivered", "cancelled", "open", null],
@@ -170,12 +197,13 @@ export const TOOLS: readonly ToolSpec[] = [
   },
   {
     name: "stock",
+    table: "asked",
     page: "/inventory",
     description: () =>
       "Stock in the warehouse per product: on hand, packed for orders (reserved), available, " +
       "damaged, and whether it is below its minimum.",
     parameters: () =>
-      object({
+      listed({
         search: nullableString("Part of a product name, brand or code, or null for all products."),
         only_low: { type: "boolean", description: "Only products below their minimum or out of stock." },
       }),
@@ -183,12 +211,13 @@ export const TOOLS: readonly ToolSpec[] = [
   },
   {
     name: "hours_worked",
+    table: "asked",
     page: "/reports",
     description: (t) =>
       `Hours per ${lower(t.staff.one)} per day in a date range: first in, last out, hours worked, ` +
       `hours on site, ${lower(t.job.many)} done and km. Shows who is working right now for today.`,
     parameters: (t) =>
-      object({
+      listed({
         ...dateRange,
         staff_name: nullableString(`Only this ${lower(t.staff.one)} (part of their name), or null.`),
       }),
@@ -196,15 +225,17 @@ export const TOOLS: readonly ToolSpec[] = [
   },
   {
     name: "team_performance",
+    table: "asked",
     page: "/reports",
     description: (t) =>
       `Per ${lower(t.staff.one)} in a date range: ${lower(t.job.many)} planned and done, completion ` +
       `rate, average time on site, form compliance, GPS-verified rate and overall score.`,
-    parameters: () => object({ ...dateRange }),
+    parameters: () => listed({ ...dateRange }),
     working: (t) => `Looking up how the ${lower(t.staff.many)} did`,
   },
   {
     name: "staff_sites",
+    table: "asked",
     page: "/schedule",
     managerOnly: true,
     description: (t) =>
@@ -212,7 +243,7 @@ export const TOOLS: readonly ToolSpec[] = [
       `often each wants a ${lower(t.job.one)}, plus what is already on their schedule for the month and the company's ` +
       `${lower(t.site.many)}-a-day and working days. Use it first when planning someone's ${lower(t.job.many)}.`,
     parameters: (t) =>
-      object({
+      listed({
         staff_name: { type: "string", description: `The ${lower(t.staff.one)}'s name, or part of it.` },
         month: { type: "string", description: "The month to plan, as YYYY-MM." },
       }),
@@ -220,6 +251,7 @@ export const TOOLS: readonly ToolSpec[] = [
   },
   {
     name: "draft_visit_plan",
+    table: "always",
     page: "/schedule",
     managerOnly: true,
     description: (t) =>
@@ -252,17 +284,29 @@ export const TOOLS: readonly ToolSpec[] = [
   },
   {
     name: "money_owed",
+    table: "asked",
     page: "/owed",
     description: (t) =>
       `Who owes the company money today, per ${lower(t.client.one)}: not yet due, 1 to 30, 31 to 60, ` +
       `61 to 90 and over 90 days overdue, total, and when they last paid.`,
-    parameters: () => object({}),
+    parameters: () => listed({}),
     working: () => "Looking up money owed",
   },
 ];
 
 export function toolSpec(name: string): ToolSpec | undefined {
   return TOOLS.find((t) => t.name === name);
+}
+
+/** Whether this call's rows are shown as a table: see `ToolSpec.table`. Anything but a clear yes is a no. */
+export function showsTable(spec: ToolSpec, rawArgs: string): boolean {
+  if (spec.table === "always") return true;
+  if (spec.table !== "asked") return false;
+  try {
+    return (JSON.parse(rawArgs || "{}") as { show_table?: unknown } | null)?.show_table === true;
+  } catch {
+    return false;
+  }
 }
 
 /** Whether this person, at this company, may have the assistant run a lookup. */

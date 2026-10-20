@@ -4,16 +4,16 @@ import type { ExportSheet } from "@/lib/export";
  * What the assistant route sends back, one JSON object per line.
  *
  * A line per event rather than plain text, because an answer is more than
- * words: what it is looking up while the person waits, the tables it read
- * (shown under the answer, ready to download), and how many questions are
- * left. Shared by the route that writes it and the panel that reads it.
+ * words: what it is looking up while the person waits, the lists they asked
+ * to see (shown under the answer, ready to download), and how many questions
+ * are left. Shared by the route that writes it and the panel that reads it.
  */
 export type AssistantEvent =
   /** What it is doing now: "Adding up sales". */
   | { type: "status"; text: string }
   /** The next piece of the answer. */
   | { type: "text"; text: string }
-  /** A list a lookup returned, with the page it came from. */
+  /** A list the person asked to see, with the page it came from. */
   | { type: "table"; sheet: ExportSheet; href: string }
   /** A drafted month of visits, saved only when the person presses the button. */
   | { type: "plan"; plan: PlanDraft }
