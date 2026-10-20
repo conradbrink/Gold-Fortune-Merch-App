@@ -91,7 +91,7 @@ const benefits = [
   },
   {
     icon: Route,
-    title: "More stores a day, less fuel",
+    title: "More store visits a day, less fuel",
     body: "The AI Manager plans each rep's month one town a day, so they drive less. Orders are taken on the phone at the store's own prices, so there's no typing up at night, and the kilometres are logged for petrol claims.",
   },
   {
