@@ -76,20 +76,23 @@ export const biggestPlan: Plan = pricing.plans[pricing.plans.length - 1];
 
 // The Founding 10 for distributors (owner, 19 Oct 2026; it replaced the "60
 // days free, then R749 a month" offer of 10 Oct): a free 14-day pilot, set up
-// for them, then the founding price for 12 months, 40% off the plan for up to
-// 10 reps. Only 10 spots, because our team onboards each one personally (the
-// site never names a person: owner, 19 Oct 2026). The
-// spots left are one setting in the database (platform_settings
-// founding_spots_left) that only the owner changes; the page reads it from the
-// app (GET {apiUrl}), and shows `spots` until that answer is in. The same
-// numbers as FOUNDING_OFFER in the app's lib/founding-offer.ts.
+// for them, then 40% off the plan that fits their team for their first 3
+// months (owner, 20 Oct 2026: it was R2,097 a month for 12 months, 40% off the
+// 10-rep plan, which cost a team of 5 more than its own plan). Only 10 spots,
+// because our team onboards each one personally (the site never names a
+// person: owner, 19 Oct 2026). The spots left are one setting in the database
+// (platform_settings founding_spots_left) that only the owner changes; the
+// page reads it from the app (GET {apiUrl}), and shows `spots` until that
+// answer is in. The same numbers as FOUNDING_OFFER in the app's
+// lib/founding-offer.ts.
 export const founding = {
   spots: 10,
   pilotDays: 14,
-  reps: 10,
-  price: 2097,
-  priceMonths: 12,
+  // Reps a company may have during the pilot (the app's trial_user_limit).
+  pilotReps: 10,
+  // After the pilot: this much off the plan that fits, for this many months.
   percentOff: 40,
+  priceMonths: 3,
   // How soon we WhatsApp an applicant back, in work hours.
   replyMinutes: 5,
   // The guarantee: run it this many days; its conditions are on /terms#guarantee.
@@ -98,25 +101,25 @@ export const founding = {
   apiUrl: process.env.NEXT_PUBLIC_FOUNDING_API || "https://app.tickd.co.za/api/founding",
 } as const;
 
-/** The plan the founding price is taken off: the one for up to `founding.reps` reps. */
-export const growthPlan: Plan = planFor(founding.reps) ?? biggestPlan;
+/** A plan's founding price a month: `founding.percentOff` off, in whole rands. */
+export function foundingPrice(plan: Plan): number {
+  return Math.round((plan.monthly * (100 - founding.percentOff)) / 100);
+}
 
-// What a founder gets, each with what it is worth (owner, 19 Oct 2026). Each
-// bonus answers one doubt: the audit "I don't know if I have a problem", the
-// templates "I don't know how to set up call cycles", the WhatsApp line "what
-// if I get stuck?". The AI Manager (R7,188 for the year, the owner's figure)
-// went back on once Ask shipped (#183). The templates are
+/** The lowest founding price, the "from" price: the smallest plan's. */
+export const foundingFrom = foundingPrice(firstPlan);
+
+// What a founder gets besides the discount, each with what it is worth (owner,
+// 19 Oct 2026). Each bonus answers one doubt: the audit "I don't know if I
+// have a problem", the templates "I don't know how to set up call cycles", the
+// WhatsApp line "what if I get stuck?". The AI Manager (R599 a month, the
+// owner's figure) is included for the founding months. The templates are
 // Gold Fortune's, the owner's own family business, so the line says "the
 // team we built Tickd with", never "a client".
 export const foundingStack: { name: string; note: string; worth: number }[] = [
-  {
-    name: `Tickd for up to ${founding.reps} reps, for ${founding.priceMonths} months`,
-    note: "Our Growth plan",
-    worth: growthPlan.monthly * founding.priceMonths,
-  },
   { name: "Done-for-you setup", note: "Your stores, products and reps, loaded for you", worth: pricing.setupValue },
   { name: "A rep training day, by video call", note: "Your reps learn the app, and you learn the dashboard", worth: pricing.trainingValue },
-  { name: `The AI Manager, for ${founding.priceMonths} months`, note: "Ask about your business, and the shelf-photo check when it launches", worth: 599 * 12 },
+  { name: `The AI Manager, for ${founding.priceMonths} months`, note: "Ask about your business, and the shelf-photo check when it launches", worth: 599 * founding.priceMonths },
   { name: "Bonus: the Rep Leak Audit", note: "A report on the store visits your reps miss", worth: 1500 },
   { name: "Bonus: call-cycle and route templates", note: "From the merchandising team we built Tickd with", worth: 1000 },
   { name: "Bonus: 60 days of WhatsApp support from our team", note: "A direct line if you get stuck", worth: 5000 },
@@ -137,12 +140,12 @@ export const objections: [q: string, a: string][] = [
   ],
   [
     "Is there a contract?",
-    `No. The founding price is yours for ${founding.priceMonths} months, and you can stop at the end of any month. The pilot is free, and we don't ask for a card.`,
+    `No. The founding price is yours for your first ${founding.priceMonths} months, and you can stop at the end of any month. The pilot is free, and we don't ask for a card.`,
   ],
   ["Can I see my data in Excel?", "Yes. Your sales, invoices and reports download to Excel or CSV whenever you want them."],
   [
-    `What if I have more than ${founding.reps} reps?`,
-    `The founding price covers up to ${founding.reps} reps. Tell us on the form how many you have, and we'll give you a founding price for your whole team.`,
+    `What if I have more than ${biggestPlan.reps} reps?`,
+    `The founding price covers our plans up to ${biggestPlan.reps} reps. Tell us on the form how many you have, and we'll give you a founding price for your whole team.`,
   ],
 ];
 
@@ -200,7 +203,7 @@ export const legal = {
   informationOfficer: "",
   // Where the app's data is hosted (Supabase, AWS eu-west-3).
   dataLocation: "Paris, France",
-  lastUpdated: "19 October 2026",
+  lastUpdated: "20 October 2026",
 } as const;
 
 export function rand(amount: number): string {

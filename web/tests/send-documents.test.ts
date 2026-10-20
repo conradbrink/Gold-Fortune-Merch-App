@@ -621,7 +621,7 @@ test("an application received says what happens next, in the applicant's words, 
   assert.match(e.html, /Hello Thandi,/);
   assert.match(e.html, /Shine Cleaning/);
   assert.match(e.html, /14 days, set up for you/);
-  assert.match(e.html, /R2,097 a month for 12 months, 40% off/);
+  assert.match(e.html, /40% off your plan for 3 months, from R1,197 a month/);
   assert.match(e.html, /WhatsApp you within 5 minutes during work hours/);
   assert.ok(!e.html.includes("60 days") && !e.html.includes("October"));
   assert.ok(!e.html.includes("If you are picked") && !e.html.includes("next round"));
@@ -682,7 +682,7 @@ test("the founding answer: the accepted one gives the pilot and the price, and w
   const yes = renderEmail("founding_accepted", { first_name: "Thandi", business_name: "Shine Cleaning", whatsapp: "27821234567" }, tickd)!;
   assert.equal(yes.subject, "You are in, Thandi: one of Tickd's first 10");
   assert.match(yes.html, /14 days, from the day we set you up/);
-  assert.match(yes.html, /R2,097 a month for 12 months \(40% off\)/);
+  assert.match(yes.html, /40% off your plan for 3 months, from R1,197 a month, or walk away/);
   assert.ok(!yes.html.includes("R749") && !yes.html.includes("November"));
   assert.match(yes.html, /\+27821234567/);
   assert.match(yes.html, /Welcome\. Shine Cleaning is one of/);

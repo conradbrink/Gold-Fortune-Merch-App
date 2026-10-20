@@ -7,7 +7,7 @@ import { SpotsText } from "@/components/founding-spots";
 import { FoundingVideo } from "@/components/founding-video";
 import { Logo } from "@/components/logo";
 import { ProofSection } from "@/components/proof-section";
-import { founding, growthPlan, rand, site } from "@/lib/site";
+import { founding, foundingFrom, rand, site } from "@/lib/site";
 
 // The Founding 10 distributors page, for visitors who arrive from an advert:
 // it has to make sense on its own, and the offer has to be the first thing
@@ -17,14 +17,15 @@ import { founding, growthPlan, rand, site } from "@/lib/site";
 //
 // Since 19 Oct 2026 the offer is the owner's Founding 10 distributors package
 // (it replaced "60 days free, then R749 a month"): a free 14-day pilot, set up
-// for them, then R2,097 a month for 12 months, 40% off the 10-rep plan, with
+// for them, then 40% off the plan that fits for the first 3 months (owner,
+// 20 Oct 2026; it was R2,097 a month for 12 months), with
 // the stack, the bonuses and the guarantee in lib/site.ts and
 // components/founding-package.tsx. Only 10 spots, because our team onboards
 // each one personally; the number left is the owner's, from the database.
 
 export const metadata: Metadata = {
   title: `Become one of our Founding 10 distributors | ${site.name}`,
-  description: `A free ${founding.pilotDays}-day pilot of ${site.name}, set up for you. Then ${rand(founding.price)} a month for ${founding.priceMonths} months, ${founding.percentOff}% off. Only ${founding.spots} founding spots.`,
+  description: `A free ${founding.pilotDays}-day pilot of ${site.name}, set up for you. Then ${founding.percentOff}% off your plan for ${founding.priceMonths} months, from ${rand(foundingFrom)} a month. Only ${founding.spots} founding spots.`,
 };
 
 const h2 = "font-display text-2xl font-bold leading-[1.1] tracking-tight text-balance text-teal-900 sm:text-4xl";
@@ -51,7 +52,7 @@ const steps = [
   "We load your stores, products and reps for you.",
   "We train your reps on a video call.",
   `Your free ${founding.pilotDays}-day pilot starts. No card needed.`,
-  `Like it? Stay on at ${rand(founding.price)} a month for ${founding.priceMonths} months.`,
+  `Like it? Stay on with ${founding.percentOff}% off your plan for ${founding.priceMonths} months.`,
 ];
 
 const button =
@@ -99,8 +100,8 @@ export default function FoundingPage() {
             </h1>
             <FoundingVideo />
             <p className="max-w-xl text-lg leading-relaxed text-pretty text-ink sm:text-xl">
-              A free {founding.pilotDays}-day pilot, set up for you. Then {rand(founding.price)} a month for {founding.priceMonths} months,{" "}
-              {founding.percentOff}% off our Growth plan of {rand(growthPlan.monthly)}.
+              A free {founding.pilotDays}-day pilot, set up for you. Then {founding.percentOff}% off your plan for {founding.priceMonths}{" "}
+              months, from {rand(foundingFrom)} a month.
             </p>
             <div className="grid justify-items-start gap-2">
               <a href="#apply" className={button}>

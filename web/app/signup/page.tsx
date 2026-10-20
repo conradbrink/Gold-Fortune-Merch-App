@@ -5,6 +5,7 @@ import { createClient } from "@/lib/supabase/server";
 import { listTemplates, platformAdminClient, trialDays } from "@/lib/platform";
 import { SELF_SERVE_SIGNUP_OPEN, industryFromQuery, signupTemplates } from "@/lib/signup";
 import { FOUNDING_OFFER } from "@/lib/founding-offer";
+import { foundingLine } from "@/lib/plans";
 import { SignupForm } from "@/components/signup/signup-form";
 import { PRODUCT_MARK, PRODUCT_NAME, PRODUCT_TAGLINE } from "@/lib/product";
 
@@ -141,8 +142,7 @@ export default async function SignupPage({
                   Start my free {FOUNDING_OFFER.pilotDays}-day pilot
                 </a>
                 <p className="text-center text-sm font-semibold text-[#0f3d3e]">
-                  After the pilot it is R{FOUNDING_OFFER.price.toLocaleString("en-US")} a month for {FOUNDING_OFFER.priceMonths} months,{" "}
-                  {FOUNDING_OFFER.percentOff}% off.
+                  After the pilot it is {foundingLine}.
                 </p>
               </div>
 

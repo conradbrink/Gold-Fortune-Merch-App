@@ -12,6 +12,7 @@ import { alertHref, alertText, dayText, type AlertItem } from "@/lib/alerts";
 import { parseTerms } from "@/lib/terms";
 import { PROMO, TICKD_LOGO_FILE, emailAssetUrl } from "@/lib/email/brand";
 import { FOUNDING_OFFER } from "@/lib/founding-offer";
+import { foundingLine } from "@/lib/plans";
 import { ageingParts, amountText, dayText as dateText, overdueText, periodText } from "@/lib/client-document";
 
 export type EmailContext = {
@@ -471,7 +472,7 @@ const TEMPLATES: Record<string, Renderer> = {
           { label: "Your free pilot", value: `${FOUNDING_OFFER.pilotDays} days, set up for you` },
           {
             label: "After the pilot",
-            value: `R${FOUNDING_OFFER.price.toLocaleString("en-US")} a month for ${FOUNDING_OFFER.priceMonths} months, ${FOUNDING_OFFER.percentOff}% off`,
+            value: foundingLine,
           },
           ...(whatsapp ? [{ label: "We will WhatsApp you on", value: `+${whatsapp}` }] : []),
         ];
@@ -509,7 +510,7 @@ const TEMPLATES: Record<string, Renderer> = {
       { label: "Your free pilot", value: `${FOUNDING_OFFER.pilotDays} days, from the day we set you up` },
       {
         label: "After that",
-        value: `R${FOUNDING_OFFER.price.toLocaleString("en-US")} a month for ${FOUNDING_OFFER.priceMonths} months (${FOUNDING_OFFER.percentOff}% off), or walk away`,
+        value: `${foundingLine}, or walk away`,
       },
       { label: "Included", value: "Set-up, a training day by video call, and 60 days of WhatsApp support" },
     ];

@@ -23,10 +23,10 @@ test("self-serve sign-up is closed, and its action refuses before it touches any
   assert.match(src.slice(gate, gate + 260), /FOUNDING_OFFER\.applyUrl/);
 });
 
-test("the Founding offer is a 14-day pilot, then the founding price, and the page it points to is the application", () => {
+test("the Founding offer is a 14-day pilot, then 40% off for 3 months, and the page it points to is the application", () => {
   assert.equal(FOUNDING_OFFER.pilotDays, 14);
-  assert.equal(FOUNDING_OFFER.price, 2097);
-  assert.equal(Math.round(FOUNDING_OFFER.fullPrice * (1 - FOUNDING_OFFER.percentOff / 100)), FOUNDING_OFFER.price);
+  assert.equal(FOUNDING_OFFER.percentOff, 40);
+  assert.equal(FOUNDING_OFFER.priceMonths, 3);
   assert.equal(FOUNDING_OFFER.applyUrl, "https://tickd.co.za/founding");
   assert.ok(PROMO.url.startsWith(FOUNDING_OFFER.applyUrl));
   assert.doesNotMatch(`${PROMO.cta} ${PROMO.body} ${PROMO.headline}`, /14/);

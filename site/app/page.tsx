@@ -23,7 +23,7 @@ import { Logo } from "@/components/logo";
 import { PricingSection } from "@/components/pricing-section";
 import { ProofSection } from "@/components/proof-section";
 import { SectionViews } from "@/components/analytics";
-import { confirmed, founding, growthPlan, proof, rand, site } from "@/lib/site";
+import { confirmed, firstPlan, founding, foundingFrom, proof, rand, site } from "@/lib/site";
 
 // Copy: ~/Downloads/site-copy-final-v7.md, reworked on 8 Oct 2026 with the
 // Hormozi offer skills, then rewritten on 9 Oct 2026 to read the way you'd say
@@ -122,7 +122,7 @@ const faqs: [q: string, a: string][] = [
   ["Who is it for?", "Distributors with 3 to 30 reps who visit stores, take orders and check the shelves."],
   [
     `What happens after the ${founding.priceMonths} founding months?`,
-    `You go onto our normal price, ${rand(growthPlan.monthly)} a month for up to ${growthPlan.reps} reps. The other plans are above.`,
+    `You go onto your plan's normal price, from ${rand(firstPlan.monthly)} a month for up to ${firstPlan.reps} reps. The plans are above.`,
   ],
   ["Do my reps need new phones?", "No. Tickd runs on the Android phones your reps already have."],
   ["Can I trust the shelf photos?", "Yes. They can only be taken inside the app, and each one shows the time and place."],
@@ -214,7 +214,7 @@ export default function Home() {
       {/* One focus: the banner and the one button, both to the form. */}
       <header className="sticky top-0 z-40 border-b border-line/70 bg-mint/90 backdrop-blur">
         <div className="bg-teal-900 px-4 py-2 text-center text-sm text-sand">
-          Founding {founding.spots}: free {founding.pilotDays}-day pilot + {founding.percentOff}% off for a year.{" "}
+          Founding {founding.spots}: free {founding.pilotDays}-day pilot + {founding.percentOff}% off for {founding.priceMonths} months.{" "}
           <SpotsText short className="font-semibold" />{" "}
           <a href="#apply" className="whitespace-nowrap font-semibold text-amber-500 underline underline-offset-4 hover:text-amber-400">
             Start my free pilot
@@ -381,8 +381,13 @@ export default function Home() {
         <section id="offer" className="scroll-mt-28 border-t border-line">
           <div className={`${wrap} max-w-6xl`}>
             <div className="grid gap-3">
-              <h2 className={h2}>The Founding {founding.spots} distributors package.</h2>
-              <p className={lead}>Only {founding.spots} founding spots, because our team onboards each one personally.</p>
+              <h2 className={h2}>Want to grow your business?</h2>
+              <p className={lead}>
+                Become one of our Founding {founding.spots} distributors. We set {site.name} up for you and train your reps, your
+                first {founding.pilotDays} days are free, and then you get {founding.percentOff}% off your plan for{" "}
+                {founding.priceMonths} months, from {rand(foundingFrom)} a month.
+              </p>
+              <p className={lead}>Only {founding.spots} spots, because our team onboards each one personally.</p>
               <SpotsText className="tk-reveal w-fit rounded-full bg-amber-100 px-3 py-1 text-sm font-bold text-teal-900" />
             </div>
             <div className="grid gap-4 lg:grid-cols-[1.2fr_1fr] lg:items-start lg:gap-6">

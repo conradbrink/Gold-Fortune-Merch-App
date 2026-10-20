@@ -3,7 +3,7 @@ import type { ReactNode } from "react";
 import type { TrialState } from "@/lib/onboarding";
 import { FOUNDING_OFFER } from "@/lib/founding-offer";
 import { count, lower, type Terms } from "@/lib/terms";
-import { AI_MANAGER_MONTHLY, PLANS, biggestPlan, contactLink, foundingSaving, planFor, planMessage, rand, type PlanChoice } from "@/lib/plans";
+import { AI_MANAGER_MONTHLY, PLANS, biggestPlan, contactLink, foundingFrom, foundingPrice, planFor, planMessage, rand, type PlanChoice } from "@/lib/plans";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -32,7 +32,6 @@ export function PlansView({ trial, trialEndsAt, founding, reps, terms: t, compan
   const staff = lower(t.staff.many);
   const fits = reps && reps > 0 ? planFor(reps) : null;
   const tooBig = reps !== null && reps > biggestPlan.reps;
-  const foundingFits = reps === null || reps <= FOUNDING_OFFER.reps;
   const link = (choice: PlanChoice, subject: string) => contactLink(contact, planMessage(choice, company, t), subject);
   const noContact = contactLink(contact, "", "") === null;
   const ends = trialEndsAt ? endDate(trialEndsAt, timezone) : null;
@@ -64,24 +63,32 @@ export function PlansView({ trial, trialEndsAt, founding, reps, terms: t, compan
         <Card className="ring-2 ring-gold">
           <CardHeader>
             <Badge className="bg-gold text-gold-foreground">Founding distributor price</Badge>
-            <CardTitle className="pt-1">
-              <span className="text-3xl font-bold tabular-nums text-foreground">{rand(FOUNDING_OFFER.price)}</span>{" "}
-              <span className="text-base font-medium text-muted-foreground">
-                a month for {FOUNDING_OFFER.priceMonths} months, for up to {count(t, "staff", FOUNDING_OFFER.reps)}
-              </span>
-            </CardTitle>
+            {fits ? (
+              <CardTitle className="pt-1">
+                <span className="text-3xl font-bold tabular-nums text-foreground">{rand(foundingPrice(fits))}</span>{" "}
+                <span className="text-base font-medium text-muted-foreground">
+                  a month for {FOUNDING_OFFER.priceMonths} months, on the plan for up to {count(t, "staff", fits.reps)}
+                </span>
+              </CardTitle>
+            ) : (
+              <CardTitle className="pt-1 text-xl font-bold text-foreground">
+                {FOUNDING_OFFER.percentOff}% off your plan for {FOUNDING_OFFER.priceMonths} months
+              </CardTitle>
+            )}
             <CardDescription className="text-pretty">
-              That is {FOUNDING_OFFER.percentOff}% off the {rand(FOUNDING_OFFER.fullPrice)} plan, {rand(foundingSaving)}{" "}
-              less over the year, and the AI Manager ({rand(AI_MANAGER_MONTHLY)} a month on its own) is included. It
-              is only for the first {FOUNDING_OFFER.spots} distributors on the pilot.
+              {fits
+                ? `That is ${FOUNDING_OFFER.percentOff}% off the ${rand(fits.monthly)} plan, ${rand((fits.monthly - foundingPrice(fits)) * FOUNDING_OFFER.priceMonths)} less over the ${FOUNDING_OFFER.priceMonths} months`
+                : `From ${rand(foundingFrom)} a month on the plan for up to ${count(t, "staff", PLANS.plans[0].reps)}`}
+              , and the AI Manager ({rand(AI_MANAGER_MONTHLY)} a month on its own) is included. It is only for the first{" "}
+              {FOUNDING_OFFER.spots} distributors on the pilot.
             </CardDescription>
           </CardHeader>
           <CardContent className="flex flex-wrap items-center gap-3">
             <ChooseButton href={link({ kind: "founding", reps }, "The founding price")} primary>
               Choose the founding price
             </ChooseButton>
-            {reps !== null && reps > 0 && foundingFits && <FitsNote reps={reps} t={t} />}
-            {!foundingFits && (
+            {fits && reps !== null && <FitsNote reps={reps} t={t} />}
+            {tooBig && (
               <p className="text-sm text-foreground">
                 You have {count(t, "staff", reps ?? 0)}. We&apos;ll give you a founding price for your whole team.
               </p>

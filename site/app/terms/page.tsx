@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { LegalPage } from "@/components/legal-page";
-import { founding, legal, pricing, rand, site } from "@/lib/site";
+import { biggestPlan, founding, foundingPrice, legal, pricing, rand, site } from "@/lib/site";
 
 // DRAFT for the owner's lawyer to check before launch (owner, 8 Oct 2026). It
 // describes how the product actually works; change the product, change this.
@@ -29,10 +29,14 @@ export default function TermsPage() {
           A Founding distributor runs {site.name} free for {founding.pilotDays} days (the pilot) from the day we set up
           their account. We don&apos;t ask for a card for the pilot.
         </li>
-        <li>During the pilot you can have up to {founding.reps} reps.</li>
         <li>
-          After the pilot, a Founding distributor pays {rand(founding.price)} a month for {founding.priceMonths} months, for
-          up to {founding.reps} reps (the founding price). The setup, the training day by video call and the bonuses we
+          During the pilot you can have up to {founding.pilotReps} reps. Office and warehouse logins don&apos;t count.
+        </li>
+        <li>
+          After the pilot, a Founding distributor pays {founding.percentOff}% less than the normal price of the plan that
+          fits their team, for their first {founding.priceMonths} months (the founding price):{" "}
+          {pricing.plans.map((p) => `${rand(foundingPrice(p))} a month for up to ${p.reps} reps`).join(", ")}. A team of
+          more than {biggestPlan.reps} reps is priced with us. The setup, the training day by video call and the bonuses we
           list on our website are included. After the {founding.priceMonths} months, the normal price of your plan
           applies.
         </li>

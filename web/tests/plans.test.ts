@@ -4,13 +4,14 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { FOUNDING_OFFER } from "@/lib/founding-offer";
 import { DEFAULT_TERMS, type Terms } from "@/lib/terms";
-import { AI_MANAGER_MONTHLY, PLANS, contactLink, foundingSaving, planFor, planMessage, rand } from "@/lib/plans";
+import { AI_MANAGER_MONTHLY, PLANS, contactLink, foundingFrom, foundingLine, foundingPrice, planFor, planMessage, rand } from "@/lib/plans";
 // The site's own code, loaded by address so this project's type checker doesn't reach into the other project.
 const sitePath = new URL("../../site/lib/site.ts", import.meta.url).href;
 const site = (await import(sitePath)) as {
   pricing: { plans: readonly { reps: number; monthly: number }[]; popularReps: number; yearlyMonths: number; setupValue: number };
-  founding: { pilotDays: number; reps: number; price: number; priceMonths: number; percentOff: number; spots: number };
-  growthPlan: { reps: number; monthly: number };
+  founding: { pilotDays: number; pilotReps: number; priceMonths: number; percentOff: number; spots: number };
+  foundingPrice: (plan: { reps: number; monthly: number }) => number;
+  foundingFrom: number;
   foundingStack: { name: string; worth: number }[];
 };
 
@@ -24,14 +25,18 @@ test("the app's plans are the site's plans", () => {
   assert.equal(PLANS.setupValue, site.pricing.setupValue);
 });
 
-test("the founding price is the site's, taken off the site's plan for up to 10 reps", () => {
-  for (const k of ["pilotDays", "reps", "price", "priceMonths", "percentOff", "spots"] as const) {
+test("the founding price is the site's: 40% off the plan that fits, for the first 3 months", () => {
+  for (const k of ["pilotDays", "pilotReps", "priceMonths", "percentOff", "spots"] as const) {
     assert.equal(FOUNDING_OFFER[k], site.founding[k], k);
   }
-  assert.equal(FOUNDING_OFFER.fullPrice, site.growthPlan.monthly);
-  assert.equal(foundingSaving, 16776);
+  assert.equal(FOUNDING_OFFER.percentOff, 40);
+  assert.equal(FOUNDING_OFFER.priceMonths, 3);
+  assert.deepEqual(PLANS.plans.map(foundingPrice), [1197, 2097, 3597]);
+  assert.deepEqual(PLANS.plans.map(foundingPrice), site.pricing.plans.map(site.foundingPrice));
+  assert.equal(foundingFrom, site.foundingFrom);
+  assert.equal(foundingLine, "40% off your plan for 3 months, from R1,197 a month");
   const ai = site.foundingStack.find((b) => b.name.startsWith("The AI Manager"));
-  assert.equal(ai?.worth, AI_MANAGER_MONTHLY * 12);
+  assert.equal(ai?.worth, AI_MANAGER_MONTHLY * FOUNDING_OFFER.priceMonths);
 });
 
 test("the plan that fits is the smallest one with room for the team", () => {
@@ -52,11 +57,15 @@ test("each button's message names the company and the plan, in the company's wor
   );
   assert.equal(
     planMessage({ kind: "founding" }, null, t),
-    "Hi, we'd like the founding price: R2,097 a month for 12 months, for up to 10 reps."
+    "Hi, we'd like the founding price: 40% off your plan for 3 months, from R1,197 a month."
   );
   assert.equal(
-    planMessage({ kind: "founding", reps: 12 }, "Moloto Foods", t),
-    "Hi, we'd like the founding price for Moloto Foods. We have 12 reps. What would it be for our whole team?"
+    planMessage({ kind: "founding", reps: 4 }, "Moloto Foods", t),
+    "Hi, we'd like the founding price for Moloto Foods: R1,197 a month for 3 months, on the plan for up to 5 reps."
+  );
+  assert.equal(
+    planMessage({ kind: "founding", reps: 18 }, "Moloto Foods", t),
+    "Hi, we'd like the founding price for Moloto Foods. We have 18 reps. What would it be for our whole team?"
   );
   assert.equal(
     planMessage({ kind: "bigger" }, "Moloto Foods", t),

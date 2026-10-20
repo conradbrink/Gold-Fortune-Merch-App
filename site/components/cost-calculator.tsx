@@ -1,8 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { useSpotsLeft } from "@/components/founding-spots";
-import { biggestPlan, contactHref, founding, planFor, rand, site } from "@/lib/site";
+import { biggestPlan, contactHref, planFor, rand, site } from "@/lib/site";
 
 const WORKING_DAYS = 22;
 // Starting values (19 Oct 2026, for distributors): 5 reps, one store a day that
@@ -22,19 +21,12 @@ export function CostCalculator() {
   const people = Math.floor(num(reps));
   const visits = people * num(missed) * WORKING_DAYS;
   const orders = visits * num(order);
-  // The anchor: what this many reps would pay, from the same numbers as the
-  // offer: the founding price up to its reps, else the plan that fits. Prices
-  // are in rand, so only beside rand. Said as the orders a month that pay for
-  // it: Tickd shows which stores were missed; the reps still have to go and sell.
-  // Once every founding spot is taken (the database says 0 left), the normal plan.
-  const spotsLeft = useSpotsLeft();
-  const foundingOpen = spotsLeft === null || spotsLeft > 0;
-  const plan =
-    people <= 0
-      ? null
-      : foundingOpen && people <= founding.reps
-        ? { reps: founding.reps, monthly: founding.price, founding: true }
-        : planFor(people);
+  // The anchor: what this many reps would pay, at the plan's normal price (the
+  // founding discount is only for the first 3 months, so the lasting price is
+  // the honest one). Prices are in rand, so only beside rand. Said as the
+  // orders a month that pay for it: Tickd shows which stores were missed; the
+  // reps still have to go and sell.
+  const plan = people <= 0 ? null : planFor(people);
   const paysFor = plan && num(order) > 0 ? Math.ceil(plan.monthly / num(order)) : 0;
 
   const field =
@@ -100,8 +92,7 @@ export function CostCalculator() {
         </p>
         {currency === "R" && plan && paysFor > 0 && (
           <p className="rounded-xl bg-teal-900 px-4 py-3 leading-snug text-teal-100">
-            At {rand(plan.monthly)} a month{"founding" in plan ? " (founding price)" : ""}, {site.name} pays for itself when your reps win
-            back{" "}
+            At {rand(plan.monthly)} a month, {site.name} pays for itself when your reps win back{" "}
             <strong className="font-display text-2xl font-extrabold tabular-nums text-amber-500">
               {paysFor} {paysFor === 1 ? "order" : "orders"} a month
             </strong>
