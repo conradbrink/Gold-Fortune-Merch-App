@@ -102,7 +102,7 @@ const benefits = [
   {
     icon: Repeat,
     title: "More data",
-    body: "The app prompts your reps from each store's purchase history, and reminds them to take an order when a store hasn't ordered like it usually does.",
+    body: "The app prompts your reps from each store's purchase history, and reminds them to take an order when a store hasn't ordered like it usually does. Then the AI Manager turns your data into insights to grow.",
   },
   {
     icon: Target,
