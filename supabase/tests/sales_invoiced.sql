@@ -196,6 +196,11 @@ begin
      or exists (select 1 from public.sales_documents(null, v_day - interval '3 days') where doc_id = v_a) then
     v_fail := v_fail || 'S3 A counts outside the day it was issued' || E'\n';
   end if;
+  -- Placed at the start of its day, so a period running to "now" has it all day.
+  if (select issued_at from public.sales_documents() where doc_id = v_a)
+       is distinct from (v_today - 3)::timestamp at time zone v_tz then
+    v_fail := v_fail || 'S3 A is not placed at the start of its day' || E'\n';
+  end if;
   -- A range ending part-way through a day takes that day.
   if not exists (select 1 from public.sales_documents(v_day - interval '4 days', v_day - interval '3 days' + interval '1 hour') where doc_id = v_a) then
     v_fail := v_fail || 'S3 a range ending at 01:00 leaves out that day' || E'\n';

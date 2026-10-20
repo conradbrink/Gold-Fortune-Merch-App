@@ -36,7 +36,7 @@ export type Sale = {
   number: string;
   /** Where it opens: the invoice (a credit note shows on its invoice), or the order. */
   href: string;
-  /** Midday of the day it was issued, in the company's time. */
+  /** The start of the day it was issued, in the company's time. */
   at: string;
   repId: string | null;
   repName: string;

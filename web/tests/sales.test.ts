@@ -19,7 +19,7 @@ function row(over: Record<string, unknown>) {
     store_name: "Spar Riverside",
     store_city: "Gaborone",
     issued_on: "2026-10-17",
-    issued_at: "2026-10-17T10:00:00Z",
+    issued_at: "2026-10-16T22:00:00Z",
     units: 10,
     revenue_excl_vat: 1000,
     revenue_incl_vat: 1140,

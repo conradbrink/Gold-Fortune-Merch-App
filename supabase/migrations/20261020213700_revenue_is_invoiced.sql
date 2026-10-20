@@ -245,9 +245,10 @@ as $$
   select l.doc_id, l.doc_kind, l.doc_number, l.invoice_id, l.order_id,
          l.rep_id, l.rep_name, l.store_id, l.store_name, l.store_city,
          l.issued_on,
-         -- Midday of that day in the company's time, for code that places a
-         -- sale by a time: it cannot slip into the day before or after.
-         (l.issued_on + time '12:00') at time zone z.tz,
+         -- The start of that day in the company's time, for code that places a
+         -- sale by a time: a period that runs to "now" (this month so far)
+         -- takes today's invoices from the first minute of the day.
+         l.issued_on::timestamp at time zone z.tz,
          sum(l.units),
          round(sum(l.net), 2),
          max(l.doc_gross),
