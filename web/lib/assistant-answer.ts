@@ -4,7 +4,14 @@ import type {
   ResponseInputItem,
   ResponseOutputItem,
 } from "openai/resources/responses/responses";
-import { showsTable, toolSpec, type ToolName, type ToolSpec } from "@/lib/assistant-tools";
+import {
+  parseArgs,
+  showsTable,
+  toolParameters,
+  toolSpec,
+  type ToolName,
+  type ToolSpec,
+} from "@/lib/assistant-tools";
 import {
   GUARD_SCHEMA,
   assistantInstructions,
@@ -33,6 +40,17 @@ type Verdict = "on" | "off" | "failed";
 /** The topic check could not run, so nothing was answered. */
 class CheckFailed extends Error {}
 
+/**
+ * What the model reads back from a lookup that can show a table: its result,
+ * plus whether the person can see the rows. It never points at a table that
+ * isn't there, and knows when it must answer from the rows in words.
+ */
+function withTableNote(model: unknown, shown: boolean): unknown {
+  return model !== null && typeof model === "object" && !Array.isArray(model)
+    ? { ...model, shown_as_table: shown }
+    : model;
+}
+
 export type AnswerOptions = {
   client: OpenAI;
   model: string;
@@ -56,7 +74,7 @@ export async function answerQuestion(o: AnswerOptions): Promise<void> {
     type: "function",
     name: spec.name,
     description: spec.description(ctx.terms),
-    parameters: spec.parameters(ctx.terms),
+    parameters: toolParameters(spec, ctx.terms),
     strict: true,
   }));
 
@@ -117,7 +135,9 @@ export async function answerQuestion(o: AnswerOptions): Promise<void> {
     const instructions = assistantInstructions(ctx, tools);
 
     let wrote = false;
+    // A table was shown under this answer; a list was read but not shown.
     let tabled = false;
+    let hidden = false;
     for (let round = 0; round < MAX_ROUNDS; round++) {
       const response = await client.responses.create(
         {
@@ -159,8 +179,8 @@ export async function answerQuestion(o: AnswerOptions): Promise<void> {
       if (calls.length === 0) {
         // Stopped at the length limit: say so, or half a list reads as the whole.
         if (cutShort && wrote) {
-          const or = tabled ? "download the table" : "ask to see it as a table";
-          send({ type: "text", text: `\n\nThat answer was cut short. Ask for a smaller part, or ${or}.` });
+          const or = tabled ? ", or download the table" : hidden ? ", or ask to see it as a table" : "";
+          send({ type: "text", text: `\n\nThat answer was cut short. Ask for a smaller part${or}.` });
         }
         break;
       }
@@ -184,15 +204,16 @@ export async function answerQuestion(o: AnswerOptions): Promise<void> {
         send({ type: "status", text: spec.working(ctx.terms) });
         const result = await o.run(spec.name, call.arguments);
         // Only a list the person asked to see. The rest still reach the model below.
-        if (result.sheet && showsTable(spec, call.arguments)) {
-          send({ type: "table", sheet: result.sheet, href: spec.page });
-          tabled = true;
-        }
+        const { sheet } = result;
+        const shown = sheet !== undefined && showsTable(spec, parseArgs(call.arguments));
+        if (shown) send({ type: "table", sheet, href: spec.page });
+        tabled ||= shown;
+        hidden ||= sheet !== undefined && !shown;
         if (result.plan) send({ type: "plan", plan: result.plan });
         input.push({
           type: "function_call_output",
           call_id: call.call_id,
-          output: JSON.stringify(result.model),
+          output: JSON.stringify(spec.table ? withTableNote(result.model, shown) : result.model),
         });
       }
 

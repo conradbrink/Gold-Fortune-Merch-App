@@ -1,7 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/lib/supabase/types";
 import type { ExportColumn, ExportSheet } from "@/lib/export";
-import type { ToolName } from "@/lib/assistant-tools";
+import { parseArgs, type ToolName } from "@/lib/assistant-tools";
 import type { PlanDraft } from "@/lib/assistant-stream";
 import { fetchOrgSettings } from "@/lib/org-settings";
 import { fetchRepStartAnchors } from "@/lib/route-order";
@@ -1258,13 +1258,8 @@ const RUN: Record<ToolName, (args: Record<string, unknown>, env: ToolEnv) => Pro
  * tell the person, because a half-answered question is better than a crash.
  */
 export async function runTool(name: ToolName, rawArgs: string, env: ToolEnv): Promise<ToolResult> {
-  let args: Record<string, unknown>;
-  try {
-    const parsed = JSON.parse(rawArgs || "{}") as unknown;
-    args = parsed !== null && typeof parsed === "object" ? (parsed as Record<string, unknown>) : {};
-  } catch {
-    return { model: { error: "The lookup's arguments could not be read." } };
-  }
+  const args = parseArgs(rawArgs);
+  if (!args) return { model: { error: "The lookup's arguments could not be read." } };
   try {
     return await RUN[name](args, env);
   } catch (reason) {
