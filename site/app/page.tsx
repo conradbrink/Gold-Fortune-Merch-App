@@ -313,7 +313,7 @@ export default function Home() {
             </ul>
             <div className="grid gap-3 pt-4 sm:pt-6">
               <h3 className={h3}>Every missed visit is an order you never see.</h3>
-              <p className={lead}>Put in your numbers to see what missed visits cost you.</p>
+              <p className={lead}>Put in your numbers to see what missed orders cost you.</p>
             </div>
             <div className="tk-reveal">
               <CostCalculator />
