@@ -2,23 +2,28 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { salesContact } from "@/lib/platform";
 import { trialState } from "@/lib/onboarding";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { SELF_SERVE_SIGNUP_OPEN } from "@/lib/signup";
+import { parseCompanyConfig } from "@/lib/company-config";
+import { DEFAULT_TERMS } from "@/lib/terms";
+import { PlansView } from "@/components/plans/plans-view";
 
 /**
- * "View plans" from the trial banner (Stage 5).
+ * "View plans" from the pilot banner, and where the day-10 email's "Choose
+ * your plan" lands.
  *
- * Until billing exists (Stage 6) there is nothing to buy here: it says where
- * the trial stands and how to talk to us. The contact details and the price
- * list link are the service's own settings (`platform_settings`), so nothing
- * here is a price or an address written into the code; whatever is not set is
- * not shown. Behind `company_settings` in the proxy's permission map.
+ * Until billing exists (Stage 6) nothing is bought here: each plan's button
+ * opens a ready-written message to our team (`sales_whatsapp`, else
+ * `sales_email`, the service's own settings), who set the plan up. The plans
+ * are the site's three (lib/plans.ts), in the company's own word for its
+ * people (its `staff` term: "Reps" for a distributor). The Founding price shows to a company
+ * on, or past, its free pilot while self-serve sign-up is closed, since the
+ * Founding application is then the only way onto a pilot. Behind
+ * `company_settings` in the proxy's permission map.
  */
 
 export const dynamic = "force-dynamic";
 
 export const metadata = { title: "Plans" };
-
-const dateFormat = new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "long", year: "numeric" });
 
 export default async function PlansPage() {
   const supabase = await createClient();
@@ -27,71 +32,24 @@ export default async function PlansPage() {
   } = await supabase.auth.getUser();
   if (!user) redirect("/login");
 
-  const [{ data: account }, contact] = await Promise.all([
+  const [{ data: account }, { data: org }, { count: reps, error: repsError }, { data: config }, contact] = await Promise.all([
     supabase.from("company_account").select("trial_ends_at").maybeSingle(),
+    supabase.from("organizations").select("name").maybeSingle(),
+    supabase.from("profiles").select("id", { count: "exact", head: true }).eq("role", "rep").eq("is_active", true),
+    supabase.rpc("my_company_config"),
     salesContact(),
   ]);
   const trial = trialState(account?.trial_ends_at ?? null);
-  const whatsapp = contact.whatsapp?.replace(/\D/g, "") || null;
-  const nothingSet = !contact.email && !whatsapp && !contact.pricingUrl;
 
   return (
-    <div className="mx-auto max-w-2xl space-y-4">
-      <h1 className="text-xl font-semibold tracking-tight text-foreground">Plans</h1>
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">
-            {trial.kind === "none"
-              ? "Your plan"
-              : trial.kind === "ended"
-                ? "Your free pilot has ended"
-                : `${trial.daysLeft} ${trial.daysLeft === 1 ? "day" : "days"} left in your free pilot`}
-          </CardTitle>
-          <CardDescription>
-            {trial.kind !== "none" && account?.trial_ends_at
-              ? `${trial.kind === "ended" ? "It ended" : "It ends"} on ${dateFormat.format(new Date(account.trial_ends_at))}. `
-              : ""}
-            {trial.kind === "none"
-              ? "Talk to us about changing your plan."
-              : "Everything keeps working while we sort out a plan with you. Talk to us about the plan that fits your team."}
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="flex flex-wrap gap-3">
-          {contact.pricingUrl && (
-            <a
-              href={contact.pricingUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex h-9 items-center rounded-md border border-border px-4 text-sm hover:bg-secondary"
-            >
-              See plans and prices
-            </a>
-          )}
-          {whatsapp && (
-            <a
-              href={`https://wa.me/${whatsapp}`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex h-9 items-center rounded-md bg-primary px-4 text-sm text-primary-foreground hover:bg-primary/90"
-            >
-              Talk to us on WhatsApp
-            </a>
-          )}
-          {contact.email && (
-            <a
-              href={`mailto:${contact.email}`}
-              className="inline-flex h-9 items-center rounded-md border border-border px-4 text-sm hover:bg-secondary"
-            >
-              Email us
-            </a>
-          )}
-          {nothingSet && (
-            <p className="text-sm text-muted-foreground">
-              The details for choosing a plan have not been added yet.
-            </p>
-          )}
-        </CardContent>
-      </Card>
-    </div>
+    <PlansView
+      trial={trial}
+      trialEndsAt={account?.trial_ends_at ?? null}
+      founding={!SELF_SERVE_SIGNUP_OPEN && trial.kind !== "none"}
+      reps={repsError ? null : (reps ?? null)}
+      terms={parseCompanyConfig(config)?.terms ?? DEFAULT_TERMS}
+      company={org?.name ?? null}
+      contact={{ email: contact.email, whatsapp: contact.whatsapp }}
+    />
   );
 }
