@@ -108,16 +108,6 @@ const ai = [
   { icon: FileText, text: "Every report comes with a short summary of what stands out." },
 ];
 
-// The shelf-photo check (owner, 19 Oct 2026), shown as New.
-const shelfCheck = [
-  "It finds your products on the shelf by reading the pack, and counts how many fronts are showing.",
-  "It says where they stand: on the counter, behind the till, in a cabinet, high or low.",
-  "It reads the price on the shelf tag, and lists the competitor brands next to yours.",
-  "It flags products the store usually buys that are missing, and photos that need a retake.",
-  "You confirm each find with one tap, and every correction teaches it.",
-  "Nothing to set up: it works from your product list, with no product photos.",
-];
-
 // 5. How it works: how easy it is to start, with what you need folded in
 // (their own phones, 10 minutes to learn, no signal needed, loaded for you).
 const steps = [
@@ -399,9 +389,8 @@ export default function Home() {
         </section>
 
         {/* 4b. "What do I do about it?" The AI Manager (owner, 19 Oct 2026): Ask
-            and the report summaries are live (#183, #186, /api/insights); the
-            shelf-photo check is built and being rolled out (owner: "mark it as
-            new"), so it says New, and Founding distributors get it first. */}
+            and the report summaries are live (#183, #186, /api/insights). The
+            shelf-photo check panel came off the page (owner, 20 Oct 2026). */}
         <section id="ai" className="scroll-mt-28 border-t border-line">
           <div className={`${wrap} max-w-6xl lg:grid-cols-[0.9fr_1.1fr] lg:items-center lg:gap-12`}>
             <div className="grid content-start gap-6 sm:gap-8">
@@ -432,26 +421,6 @@ export default function Home() {
                 height={1280}
                 className="mx-auto w-full max-w-xs"
               />
-            </div>
-            <div className="tk-reveal grid gap-5 rounded-2xl bg-teal-950 p-6 text-sand sm:p-8 lg:col-span-2">
-              <div className="grid gap-2">
-                <p className="w-fit rounded-full bg-amber-500 px-3 py-1 text-xs font-bold uppercase tracking-wide text-teal-950">New</p>
-                <p className="font-display text-2xl font-bold leading-tight text-sand sm:text-3xl">The shelf-photo check</p>
-                <p className="max-w-2xl leading-relaxed text-teal-100">
-                  After each visit, the AI Manager checks the rep&apos;s shelf photos in the background. The rep does nothing extra.
-                  Founding distributors get it first.
-                </p>
-              </div>
-              <ul className="grid gap-x-8 gap-y-3 sm:grid-cols-2">
-                {shelfCheck.map((r) => (
-                  <li key={r} className="flex items-start gap-3 border-t border-white/15 pt-3 leading-snug">
-                    <span className="mt-0.5 grid size-5 shrink-0 place-items-center rounded-full bg-amber-500 text-teal-950">
-                      <Check className="size-3" strokeWidth={3.5} aria-hidden="true" />
-                    </span>
-                    <span>{r}</span>
-                  </li>
-                ))}
-              </ul>
             </div>
           </div>
         </section>
