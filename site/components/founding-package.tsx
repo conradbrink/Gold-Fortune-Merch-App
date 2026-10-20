@@ -79,7 +79,7 @@ export function FoundingGuarantee() {
 export function Objections({ heading = "Questions", more = [] }: { heading?: string; more?: [q: string, a: string][] }) {
   return (
     <div className="grid gap-5">
-      <h2 className="text-center font-display text-2xl font-bold leading-[1.1] tracking-tight text-balance text-teal-900 sm:text-4xl">{heading}</h2>
+      <h2 className="font-display text-2xl font-bold leading-[1.1] tracking-tight text-balance text-teal-900 sm:text-4xl">{heading}</h2>
       <div className="divide-y divide-line border-y border-line">
         {[...objections, ...more].map(([q, a]) => (
           <details key={q} className="group">

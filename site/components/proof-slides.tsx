@@ -116,7 +116,10 @@ export function ProofSlides({ applyHref }: { applyHref: string }) {
         </p>
       </div>
 
-      <div className="min-h-[14.5rem] sm:min-h-[15.5rem]" aria-live={auto ? "off" : "polite"}>
+      {/* As tall as the tallest slide, so nothing under the box moves as the
+          slides change (owner, 21 Oct 2026: the page "glitched" while
+          scrolling on an iPhone; slides there are 243 to 299px tall). */}
+      <div className="min-h-[19rem] sm:min-h-[16rem]" aria-live={auto ? "off" : "polite"}>
         {i < facts.length ? (
           <div key={i} className="tk-slide grid gap-3" role="group" aria-roledescription="slide" aria-label={`${i + 1} of ${SLIDES}`}>
             <p className="font-display text-lg font-bold leading-tight">{facts[i].label}</p>

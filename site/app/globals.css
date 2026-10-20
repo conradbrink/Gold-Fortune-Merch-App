@@ -252,41 +252,46 @@ section[id] {
   /* Open FAQ answers fade up rather than snap in. */
   details[open] > .tk-answer { animation: tk-rise 0.25s var(--ease-out) both; }
 
-  @supports (animation-timeline: view()) {
-    .tk-reveal {
-      animation: tk-rise linear both;
-      animation-timeline: view();
-      animation-range: entry 0% entry 40%;
-    }
-    /* "With Tickd" lands just after the problem it answers. */
-    .tk-reveal-late {
-      animation: tk-slide linear both;
-      animation-timeline: view();
-      animation-range: entry 25% entry 70%;
-    }
-    /* Icons draw themselves as they scroll in, like a tick being written:
-       every stroke of a lucide icon is dashed and the dash slides home.
-       The paths are short (a 24 unit box), so 120 covers each of them. */
-    /* Timed against the row they sit in (`tk-timeline`), not the icon:
-       an icon is 20 to 40 px tall, so its own entry is over in a flick. */
-    .tk-timeline { view-timeline-name: --tk-item; }
-    .tk-draw :is(path, line, polyline, circle, rect, ellipse) {
-      animation: tk-draw-stroke linear both;
-      animation-timeline: --tk-item;
-      animation-range: entry 60% cover 40%;
-    }
-    /* Icon tiles pop in from slightly small and tilted. */
-    .tk-pop {
-      animation: tk-pop-in linear both;
-      animation-timeline: --tk-item;
-      animation-range: entry 30% cover 30%;
-    }
-    /* The amber rule above each team point grows from the left. */
-    .tk-rule {
-      animation: tk-underline linear both;
-      animation-timeline: view();
-      animation-range: entry 10% entry 60%;
-      transform-origin: left;
+  /* Scroll-linked reveals only with a mouse (owner, 21 Oct 2026): on an
+     iPhone the page stuttered as sections slid in while scrolling, so touch
+     screens get the page still. */
+  @media (hover: hover) and (pointer: fine) {
+    @supports (animation-timeline: view()) {
+      .tk-reveal {
+        animation: tk-rise linear both;
+        animation-timeline: view();
+        animation-range: entry 0% entry 40%;
+      }
+      /* "With Tickd" lands just after the problem it answers. */
+      .tk-reveal-late {
+        animation: tk-slide linear both;
+        animation-timeline: view();
+        animation-range: entry 25% entry 70%;
+      }
+      /* Icons draw themselves as they scroll in, like a tick being written:
+         every stroke of a lucide icon is dashed and the dash slides home.
+         The paths are short (a 24 unit box), so 120 covers each of them. */
+      /* Timed against the row they sit in (`tk-timeline`), not the icon:
+         an icon is 20 to 40 px tall, so its own entry is over in a flick. */
+      .tk-timeline { view-timeline-name: --tk-item; }
+      .tk-draw :is(path, line, polyline, circle, rect, ellipse) {
+        animation: tk-draw-stroke linear both;
+        animation-timeline: --tk-item;
+        animation-range: entry 60% cover 40%;
+      }
+      /* Icon tiles pop in from slightly small and tilted. */
+      .tk-pop {
+        animation: tk-pop-in linear both;
+        animation-timeline: --tk-item;
+        animation-range: entry 30% cover 30%;
+      }
+      /* The amber rule above each team point grows from the left. */
+      .tk-rule {
+        animation: tk-underline linear both;
+        animation-timeline: view();
+        animation-range: entry 10% entry 60%;
+        transform-origin: left;
+      }
     }
   }
 }
@@ -301,20 +306,35 @@ section[id] {
 .tk-pop-note[data-pop="wait"] { opacity: 0; transform: translateY(24px) scale(0.96); }
 .tk-pop-note[data-pop="in"] { animation: tk-note 0.5s cubic-bezier(0.34, 1.56, 0.64, 1) 0.3s both; }
 
-/* "Only 7 spots left" (owner, 20 Oct 2026: "make this glow and pulsate ...
-   and wiggle"): a soft amber glow that breathes, and every few seconds a
-   quick wiggle with a small swell. Transform and shadow only. With reduced
-   motion it simply glows, still. */
+/* "Only 7 spots left" and the results badges (owner, 20 Oct 2026: "make this
+   glow and pulsate ... and wiggle"): a quick wiggle with a small swell every
+   few seconds, and an amber glow that breathes. The glow is a shadow that
+   only fades in and out (opacity), and the wiggle only moves (transform), so
+   the phone never repaints them while scrolling (owner, 21 Oct 2026: the
+   page stuttered on an iPhone). With reduced motion it simply glows, still. */
 @keyframes tk-urgent {
-  0%, 100% { transform: none; box-shadow: 0 0 0 0 rgb(245 165 36 / 0.55), 0 0 14px rgb(245 165 36 / 0.45); }
+  0%, 30%, 100% { transform: none; }
   6% { transform: scale(1.06) rotate(-3deg); }
   12% { transform: scale(1.06) rotate(3deg); }
   18% { transform: scale(1.06) rotate(-2deg); }
   24% { transform: scale(1.03) rotate(1deg); }
-  30% { transform: none; }
-  50% { box-shadow: 0 0 0 10px rgb(245 165 36 / 0), 0 0 26px rgb(245 165 36 / 0.75); }
 }
-.tk-urgent { box-shadow: 0 0 14px rgb(245 165 36 / 0.45); }
+@keyframes tk-urgent-glow {
+  0%, 100% { opacity: 0.45; }
+  50% { opacity: 1; }
+}
+.tk-urgent { position: relative; isolation: isolate; }
+.tk-urgent::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: inherit;
+  box-shadow: 0 0 18px 3px rgb(245 165 36 / 0.7);
+  opacity: 0.6;
+  pointer-events: none;
+}
 @media (prefers-reduced-motion: no-preference) {
   .tk-urgent { animation: tk-urgent 2.8s ease-in-out infinite; }
+  .tk-urgent::after { animation: tk-urgent-glow 2.8s ease-in-out infinite; will-change: opacity; }
 }
