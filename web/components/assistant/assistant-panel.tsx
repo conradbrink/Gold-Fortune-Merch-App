@@ -125,7 +125,7 @@ export function AssistantPanelView({
 
   return (
     <aside
-      aria-label="Ask about your business"
+      aria-label="Tickd AI Manager"
       onKeyDown={(e) => {
         // Only from inside the panel itself: Escape in a download menu (portalled,
         // but still bubbling through React) closes that menu, not the panel.
@@ -141,7 +141,7 @@ export function AssistantPanelView({
     >
       <header className="flex h-14 shrink-0 items-center gap-2 border-b border-border px-4">
         <AiManagerIcon className="mr-1 size-5 shrink-0 text-primary" />
-        <h2 className="min-w-0 flex-1 truncate text-sm font-semibold text-foreground">Ask about your business</h2>
+        <h2 className="min-w-0 flex-1 truncate text-sm font-semibold text-foreground">Tickd AI Manager</h2>
         {messages.length > 0 && (
           <Button variant="ghost" size="sm" onClick={onReset} disabled={busy} className="gap-1.5">
             <SquarePen className="size-3.5" />
@@ -598,7 +598,7 @@ export function LauncherButton({
     wasOpen.current = open;
   }, [open]);
 
-  const label = open ? "Close Ask" : "Ask about your business";
+  const label = open ? "Close the AI Manager" : "Ask the Tickd AI Manager";
   const saying = greet && !open;
   return (
     <button

@@ -64,7 +64,7 @@ export function assistantInstructions(ctx: AssistantContext, tools: readonly Too
 
   return `${vocabulary(ctx, "your answers")}
 
-You are the assistant inside ${name}'s account in Tickd, the app ${name} uses to run its field team.
+You are the Tickd AI Manager inside ${name}'s account in Tickd, the app ${name} uses to run its field team.
 You answer questions from ${name}'s own people about ${name}'s own business, using only your lookups.
 Today is ${longDate(ctx.today, ctx.timeZone)}. Money in the lookups is in ${ctx.currency} and excludes VAT unless a field says otherwise.
 The lookups you have for this person: ${lookups}. They see only what this person may see in the app.
