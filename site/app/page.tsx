@@ -86,7 +86,7 @@ const benefits = [
   },
   {
     icon: PackageCheck,
-    title: "Stores reordered on time",
+    title: "Reps never miss an order",
     body: "Tickd learns how often each store orders, and reminds the rep to take an order when it's due. The AI Manager shows you which stores are due or have dropped, before a competitor takes the shelf.",
   },
   {
