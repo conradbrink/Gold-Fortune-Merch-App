@@ -2,7 +2,7 @@
 --
 --   W1  A new trial: my_setup() for its owner shows the wizard, with the trade
 --       and how it usually gets paid, the template's price list (nothing priced
---       yet), the trial's places and the country's usual VAT rate.
+--       yet), the trial's places (reps only) and the country's usual VAT rate.
 --   W2  save_setup_step remembers the step; finishing hides the wizard and the
 --       first finishing time stays; a malformed step is refused.
 --   W3  A field employee can neither read nor move the wizard, nor see the
@@ -86,8 +86,9 @@ begin
     v_fail := v_fail || format('W1 counts %s (expected %s checklists, 0 sites, 2 people, 0 check-ins)%s',
                                v_j->'counts', v_forms, E'\n');
   end if;
-  if (v_j->'places'->>'used')::int is distinct from 2 or (v_j->'places'->>'limit')::int is distinct from v_limit then
-    v_fail := v_fail || format('W1 places %s, expected 2 of %s%s', v_j->'places', v_limit, E'\n');
+  -- Only reps take a place (20261020160000): the employee, not the owner.
+  if (v_j->'places'->>'used')::int is distinct from 1 or (v_j->'places'->>'limit')::int is distinct from v_limit then
+    v_fail := v_fail || format('W1 places %s, expected 1 of %s%s', v_j->'places', v_limit, E'\n');
   end if;
   if v_j->>'country_code' is distinct from 'ZA' or (v_j->>'vat_rate_default')::numeric is distinct from 15 then
     v_fail := v_fail || format('W1 country %s, VAT %s; expected ZA and 15%s', v_j->>'country_code', v_j->>'vat_rate_default', E'\n');
