@@ -299,7 +299,7 @@ export default function Home() {
                 {site.name} fixes all {countWords[pains.length] ?? pains.length}.
               </h2>
               <p className={lead}>
-                Your reps use the app on their phones. You see it all on your computer, or on your own phone.
+                Your reps use the app on their phones. You see it all on your computer.
               </p>
             </div>
             <ul className="grid gap-4 sm:grid-cols-2">
