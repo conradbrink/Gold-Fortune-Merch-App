@@ -3012,6 +3012,8 @@ export type Database = {
           bank_details: string | null
           period_start: string | null
           period_end: string | null
+          customer_po_number: string | null
+          customer_po_date: string | null
         }
         Insert: {
           id?: string
@@ -3052,6 +3054,8 @@ export type Database = {
           bank_details?: string | null
           period_start?: string | null
           period_end?: string | null
+          customer_po_number?: string | null
+          customer_po_date?: string | null
         }
         Update: {
           id?: string
@@ -3092,6 +3096,8 @@ export type Database = {
           bank_details?: string | null
           period_start?: string | null
           period_end?: string | null
+          customer_po_number?: string | null
+          customer_po_date?: string | null
         }
         Relationships: []
       }
@@ -3195,6 +3201,9 @@ export type Database = {
           updated_at: string
           vat_rate: number
           delivery_address: string | null
+          customer_po_number: string | null
+          customer_po_date: string | null
+          customer_po_expires_on: string | null
         }
         Insert: {
           cancel_reason?: string | null
@@ -3237,6 +3246,9 @@ export type Database = {
           updated_at?: string
           vat_rate?: number
           delivery_address?: string | null
+          customer_po_number?: string | null
+          customer_po_date?: string | null
+          customer_po_expires_on?: string | null
         }
         Update: {
           cancel_reason?: string | null
@@ -3279,6 +3291,9 @@ export type Database = {
           updated_at?: string
           vat_rate?: number
           delivery_address?: string | null
+          customer_po_number?: string | null
+          customer_po_date?: string | null
+          customer_po_expires_on?: string | null
         }
         Relationships: [
           {

@@ -100,7 +100,7 @@ function fail(error: { message: string } | null) {
 
 /**
  * The search box's filter, for `.or()`: order number, invoice number, contact,
- * or a store whose name matches. Null when there is nothing left to search for.
+ * the customer's PO number, or a store whose name matches. Null when there is nothing left to search for.
  *
  * It has to run in the database, before any limit. Filtering the rows that came
  * back means an order older than the newest page can never be found by its own
@@ -128,6 +128,7 @@ async function orderSearchFilter(supabase: Client, term: string | undefined): Pr
     `order_number.ilike.%${safe}%`,
     `invoice_number.ilike.%${safe}%`,
     `contact_name.ilike.%${safe}%`,
+    `customer_po_number.ilike.%${safe}%`,
   ];
   const storeIds = (storeHits ?? []).map((s) => s.id);
   if (storeIds.length > 0) clauses.push(`store_id.in.(${storeIds.join(",")})`);
@@ -657,6 +658,20 @@ export function requiredByRange(today = new Date()) {
   return { min: iso(first), max: iso(last) };
 }
 
+/**
+ * What is wrong with a customer's purchase order as typed, or null. The same
+ * rules as the database's checks on `orders`, said in words before the save.
+ */
+export function customerPoProblem(po: {
+  number: string | null;
+  date: string | null;
+  expiresOn: string | null;
+}): string | null {
+  if (po.number && po.number.length > 60) return "A PO number can be at most 60 characters.";
+  if (po.date && po.expiresOn && po.expiresOn < po.date) return "A PO cannot expire before its own date.";
+  return null;
+}
+
 export async function updateOrderDetails(
   supabase: Client,
   orderId: string,
@@ -665,8 +680,17 @@ export async function updateOrderDetails(
     contact_phone: string | null;
     required_by: string | null;
     notes: string | null;
+    customer_po_number: string | null;
+    customer_po_date: string | null;
+    customer_po_expires_on: string | null;
   }
 ) {
+  const poProblem = customerPoProblem({
+    number: fields.customer_po_number,
+    date: fields.customer_po_date,
+    expiresOn: fields.customer_po_expires_on,
+  });
+  if (poProblem) throw new Error(`${poProblem} Nothing was saved.`);
   if (fields.required_by) {
     const { min, max } = requiredByRange();
     // String comparison is exact for `YYYY-MM-DD` and sidesteps parsing a bare
@@ -865,6 +889,10 @@ export async function createManualOrder(
     repId?: string | null;
     /** The accounting system's invoice number, when it already exists. */
     invoiceNumber?: string | null;
+    /** The customer's own purchase order: its number, date and last valid day. */
+    customerPoNumber?: string | null;
+    customerPoDate?: string | null;
+    customerPoExpiresOn?: string | null;
     /** `unitPrice` is before the discount; the database derives the net.
         `discountAmount` is off the whole line, in place of a percentage. */
     lines: {
@@ -879,6 +907,12 @@ export async function createManualOrder(
   if (input.lines.length === 0) {
     throw new Error("Add at least one product before saving the order.");
   }
+  const poProblem = customerPoProblem({
+    number: input.customerPoNumber?.trim() || null,
+    date: input.customerPoDate || null,
+    expiresOn: input.customerPoExpiresOn || null,
+  });
+  if (poProblem) throw new Error(poProblem);
 
   const { data: number, error: numberError } = await supabase.rpc(
     "next_document_number",
@@ -901,6 +935,9 @@ export async function createManualOrder(
       delivery_address: input.deliveryAddress || null,
       rep_id: input.repId || null,
       invoice_number: input.invoiceNumber || null,
+      customer_po_number: input.customerPoNumber?.trim() || null,
+      customer_po_date: input.customerPoDate || null,
+      customer_po_expires_on: input.customerPoExpiresOn || null,
       client_generated_id: crypto.randomUUID(),
     })
     .select("id")

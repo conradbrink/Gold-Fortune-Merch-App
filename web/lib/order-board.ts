@@ -327,14 +327,38 @@ export function boardViewFromQuery(q: URLSearchParams): {
   return { columns: BOARD_COLUMNS.filter((c) => columns.has(c)), archive };
 }
 
-/** Whether a card matches the board's search box: order, invoice, store or contact. */
+/**
+ * Whether a card matches the board's search box: order, invoice, store, contact
+ * or the customer's PO number, which is what a chain quotes when it rings.
+ */
 export function matchesSearch(
-  o: { orderNumber: string; invoiceNumber: string | null; storeName: string | null; contactName: string | null },
+  o: {
+    orderNumber: string;
+    invoiceNumber: string | null;
+    storeName: string | null;
+    contactName: string | null;
+    customerPoNumber?: string | null;
+  },
   query: string
 ): boolean {
   const q = query.trim().toLowerCase();
   if (!q) return true;
-  return [o.orderNumber, o.invoiceNumber, o.storeName, o.contactName].some((v) =>
+  return [o.orderNumber, o.invoiceNumber, o.storeName, o.contactName, o.customerPoNumber].some((v) =>
     (v ?? "").toLowerCase().includes(q)
   );
+}
+
+/**
+ * How close the customer's purchase order is to lapsing. A chain refuses a
+ * delivery once its PO has expired (Choppies, 20 Oct 2026), so the last two
+ * days are amber and a lapsed PO is red. `expiresOn` and `today` are
+ * YYYY-MM-DD in the company's time zone; `day` is the expiry as people say it.
+ */
+export function poExpiry(expiresOn: string, today: string, day: string): { tone: "calm" | "amber" | "red"; words: string } {
+  if (expiresOn < today) return { tone: "red", words: `PO expired on ${day}` };
+  const left = daysBetween(today, expiresOn);
+  if (left === 0) return { tone: "amber", words: "PO expires today" };
+  if (left === 1) return { tone: "amber", words: "PO expires tomorrow" };
+  if (left === 2) return { tone: "amber", words: `PO expires in 2 days, on ${day}` };
+  return { tone: "calm", words: `PO valid until ${day}` };
 }

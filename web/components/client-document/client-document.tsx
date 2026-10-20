@@ -20,7 +20,7 @@ import {
   type Seller,
   type StatementView,
 } from "@/lib/client-document";
-import { invoiceHeading, PAYMENT_METHODS } from "@/lib/invoices";
+import { customerPoText, invoiceHeading, PAYMENT_METHODS } from "@/lib/invoices";
 import { formatQty, lineTotal } from "@/lib/money-docs";
 import { statementDetail, STATEMENT_KIND_LABELS } from "@/lib/owed";
 import { DownloadPdfButton } from "@/components/client-document/download-pdf-button";
@@ -385,6 +385,8 @@ function Invoice({ v, logo, today, look, p }: { v: InvoiceView; logo: string | n
   if (inv.order_number) meta.push(["Order", inv.order_number]);
   else if (inv.source === "quote" && inv.reference) meta.push(["Quote", inv.reference]);
   else if (inv.reference) meta.push(["Reference", inv.reference]);
+  const po = customerPoText(inv, dayText);
+  if (po) meta.push(["Your PO", po]);
   const rate = Number(inv.vat_rate);
   const totals: Total[] = rate === 0 ? [] : [["Subtotal (excl. VAT)", money(inv.subtotal)], [vatLabel(rate, inv.prices_include_vat), money(inv.vat)]];
   const settled = v.credited > 0 || v.paid > 0;

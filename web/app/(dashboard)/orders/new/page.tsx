@@ -104,6 +104,9 @@ export default function NewOrderPage() {
   const [deliveryAddress, setDeliveryAddress] = useState("");
   const [repId, setRepId] = useState("");
   const [invoiceNumber, setInvoiceNumber] = useState("");
+  const [poNumber, setPoNumber] = useState("");
+  const [poDate, setPoDate] = useState("");
+  const [poExpiresOn, setPoExpiresOn] = useState("");
 
   // The store picker. 211 stores makes a plain <select> a scroll through the
   // alphabet, so this is a search box over the same list. `storeQuery` is what
@@ -352,6 +355,9 @@ export default function NewOrderPage() {
         deliveryAddress: deliveryAddress.trim() || null,
         repId: repId || null,
         invoiceNumber: automaticInvoice ? null : invoiceNumber.trim() || null,
+        customerPoNumber: poNumber.trim() || null,
+        customerPoDate: poDate || null,
+        customerPoExpiresOn: poExpiresOn || null,
         lines: filled.map((l) => ({
           productId: l.productId,
           qty: Number(l.qty),
@@ -557,6 +563,34 @@ export default function NewOrderPage() {
               />
             </div>
           )}
+          {/* A chain's own order number, which it wants on the invoice, and
+              the day after which it will refuse the delivery. */}
+          <div>
+            <Label htmlFor="po-number">Their PO number</Label>
+            <Input
+              id="po-number"
+              value={poNumber}
+              onChange={(e) => setPoNumber(e.target.value)}
+              maxLength={60}
+              placeholder="If they sent a purchase order"
+            />
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <Label htmlFor="po-date">PO date</Label>
+              <Input id="po-date" type="date" value={poDate} onChange={(e) => setPoDate(e.target.value)} />
+            </div>
+            <div>
+              <Label htmlFor="po-expires">PO expires</Label>
+              <Input
+                id="po-expires"
+                type="date"
+                min={poDate || undefined}
+                value={poExpiresOn}
+                onChange={(e) => setPoExpiresOn(e.target.value)}
+              />
+            </div>
+          </div>
           <div className="sm:col-span-2">
             <Label htmlFor="delivery">Delivery address</Label>
             <Input

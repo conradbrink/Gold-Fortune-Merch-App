@@ -185,6 +185,7 @@ export default function InvoiceDetailPage() {
               </>
             )}
             {!inv.order_id && !inv.quote_id && inv.reference && ` · reference ${inv.reference}`}
+            {inv.customer_po_number && ` · their PO ${inv.customer_po_number}`}
             {invoicePeriod(inv) && ` · for ${invoicePeriod(inv)}`}
             {detail.contract && (
               <>

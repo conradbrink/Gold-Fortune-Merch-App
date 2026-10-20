@@ -55,6 +55,9 @@ export type PipelineOrder = {
   enteredAt: string;
   /** The day the customer needs it, when the order says. */
   requiredBy: string | null;
+  /** The customer's own purchase order number, and the last day it is valid. */
+  customerPoNumber: string | null;
+  customerPoExpiresOn: string | null;
   /** VAT included, as the Orders list shows it. */
   total: number;
   stage: PipelineStage;
@@ -77,6 +80,8 @@ type Row = {
   dispatched_at: string | null;
   delivered_at: string | null;
   required_by: string | null;
+  customer_po_number: string | null;
+  customer_po_expires_on: string | null;
   vat_rate: number | null;
   stores: { name: string } | { name: string }[] | null;
   profiles: { full_name: string | null } | { full_name: string | null }[] | null;
@@ -133,7 +138,7 @@ export async function fetchPipelineOrders(supabase: SupabaseClient): Promise<Pip
       .from("orders")
       .select(
         `id, order_number, invoice_number, contact_name, status, pod_status, on_hold, store_id, rep_id, created_at, confirmed_at,
-         picking_started_at, packed_at, dispatched_at, delivered_at, required_by, vat_rate,
+         picking_started_at, packed_at, dispatched_at, delivered_at, required_by, customer_po_number, customer_po_expires_on, vat_rate,
          stores(name), profiles!orders_rep_id_fkey(full_name), order_lines(qty_ordered, unit_price)`
       );
   type Page = PromiseLike<{ data: Row[] | null; error: { message: string } | null }>;
@@ -165,6 +170,8 @@ export async function fetchPipelineOrders(supabase: SupabaseClient): Promise<Pip
         confirmedAt: r.confirmed_at,
         enteredAt: enteredAtOf(r),
         requiredBy: r.required_by,
+        customerPoNumber: r.customer_po_number,
+        customerPoExpiresOn: r.customer_po_expires_on,
         total: orderTotals(
           lines.map((l) => ({ qty: l.qty_ordered, unitPrice: l.unit_price == null ? 0 : Number(l.unit_price) })),
           Number(r.vat_rate ?? 0)
