@@ -50,6 +50,45 @@ const facts: Fact[] = [
 
 const SLIDES = facts.length + 1;
 
+/** One slide's content. `still`: the invisible copy that only holds the box's height, without the badge's animation. */
+function SlideBody({ n, applyHref, still = false }: { n: number; applyHref: string; still?: boolean }) {
+  if (n < facts.length) {
+    const f = facts[n];
+    return (
+      <>
+        <p className="font-display text-lg font-bold leading-tight">{f.label}</p>
+        {/* In the middle of the slide, glowing and jingling like the spots
+            badge (owner, 20 Oct 2026); the slide's key starts it again on
+            every slide. */}
+        <div className="flex justify-center">
+          <span className={`${still ? "" : "tk-urgent "}rounded-full bg-amber-500 px-4 py-1 text-base font-extrabold text-teal-950`}>
+            {f.badge}
+          </span>
+        </div>
+        <Bars {...f} />
+        <p className="text-teal-100">{f.line}</p>
+      </>
+    );
+  }
+  return (
+    <>
+      <p className="font-display text-2xl font-extrabold leading-tight text-amber-500">What could this mean for you?</p>
+      <ul className="grid gap-1.5 text-lg leading-snug">
+        <li>More store visits from the same reps.</li>
+        <li>More of your stores served.</li>
+        <li>Proof of every visit, with the time, the place and photos of the shelf.</li>
+      </ul>
+      <a
+        href={applyHref}
+        tabIndex={still ? -1 : undefined}
+        className="mt-1 w-fit rounded-full bg-amber-500 px-5 py-2.5 font-semibold text-teal-950 transition-[background-color,transform] duration-150 ease-out hover:bg-amber-400 active:scale-[0.97]"
+      >
+        Start my free pilot
+      </a>
+    </>
+  );
+}
+
 function Bars({ before, after, beforeN, afterN, when }: Pick<Fact, "before" | "after" | "beforeN" | "afterN" | "when">) {
   const top = Math.max(beforeN, afterN);
   const [first, second] = when ?? ["First 2 weeks", "Mid September"];
@@ -116,35 +155,26 @@ export function ProofSlides({ applyHref }: { applyHref: string }) {
         </p>
       </div>
 
-      <div className="min-h-[14.5rem] sm:min-h-[15.5rem]" aria-live={auto ? "off" : "polite"}>
-        {i < facts.length ? (
-          <div key={i} className="tk-slide grid gap-3" role="group" aria-roledescription="slide" aria-label={`${i + 1} of ${SLIDES}`}>
-            <p className="font-display text-lg font-bold leading-tight">{facts[i].label}</p>
-            {/* In the middle of the slide, glowing and jingling like the spots
-                badge (owner, 20 Oct 2026); the slide's key starts it again on
-                every slide. */}
-            <div className="flex justify-center">
-              <span className="tk-urgent rounded-full bg-amber-500 px-4 py-1 text-base font-extrabold text-teal-950">{facts[i].badge}</span>
-            </div>
-            <Bars {...facts[i]} />
-            <p className="text-teal-100">{facts[i].line}</p>
+      {/* Every slide sits in the same grid cell, the others invisible, so the
+          box is always as tall as the tallest slide and nothing under it
+          moves as the slides change, whatever the phone or its text size
+          (owner, 21 Oct 2026: the page "glitched" while scrolling on an
+          iPhone, where the slides were 243 to 299px tall). */}
+      <div className="grid" aria-live={auto ? "off" : "polite"}>
+        {Array.from({ length: SLIDES }, (_, n) => (
+          <div key={`size-${n}`} aria-hidden="true" className="invisible grid content-start gap-3 [grid-area:1/1]">
+            <SlideBody n={n} applyHref={applyHref} still />
           </div>
-        ) : (
-          <div key="you" className="tk-slide grid content-start gap-3" role="group" aria-roledescription="slide" aria-label={`${SLIDES} of ${SLIDES}`}>
-            <p className="font-display text-2xl font-extrabold leading-tight text-amber-500">What could this mean for you?</p>
-            <ul className="grid gap-1.5 text-lg leading-snug">
-              <li>More store visits from the same reps.</li>
-              <li>More of your stores served.</li>
-              <li>Proof of every visit, with the time, the place and photos of the shelf.</li>
-            </ul>
-            <a
-              href={applyHref}
-              className="mt-1 w-fit rounded-full bg-amber-500 px-5 py-2.5 font-semibold text-teal-950 transition-[background-color,transform] duration-150 ease-out hover:bg-amber-400 active:scale-[0.97]"
-            >
-              Start my free pilot
-            </a>
-          </div>
-        )}
+        ))}
+        <div
+          key={i}
+          className="tk-slide grid content-start gap-3 [grid-area:1/1]"
+          role="group"
+          aria-roledescription="slide"
+          aria-label={`${i + 1} of ${SLIDES}`}
+        >
+          <SlideBody n={i} applyHref={applyHref} />
+        </div>
       </div>
 
       <div className="flex items-center justify-between gap-3">

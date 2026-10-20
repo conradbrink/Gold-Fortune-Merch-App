@@ -137,14 +137,15 @@ const faqs: [q: string, a: string][] = [
 // from sm up, and 24px (32px) between a heading block and what follows it.
 // Headings are 36px on a phone and 48px from sm; body copy is 18px.
 const wrap = "mx-auto grid gap-6 px-4 py-10 sm:gap-8 sm:px-6 sm:py-16";
-// Every section heading, and the line under it, in the middle (owner, 20 Oct 2026).
-const h2 = "tk-reveal text-center font-display text-4xl font-bold leading-[1.08] tracking-tight text-balance text-teal-900 sm:text-5xl";
-const lead = "mx-auto max-w-2xl text-center text-lg leading-relaxed text-pretty text-ink";
+// Section headings on the left again (owner, 21 Oct 2026); a size smaller on a
+// phone, where 36px read too big.
+const h2 = "tk-reveal font-display text-3xl font-bold leading-[1.1] tracking-tight text-balance text-teal-900 sm:text-5xl";
+const lead = "max-w-2xl text-base leading-relaxed text-pretty text-ink sm:text-lg";
 // The one line a section ends on.
-const verdict = "text-center font-display text-2xl font-extrabold leading-snug text-balance text-teal-900 sm:text-3xl";
+const verdict = "font-display text-xl font-extrabold leading-snug text-balance text-teal-900 sm:text-3xl";
 
 const pilotButton =
-  "flex min-h-14 w-full items-center justify-center text-balance text-center rounded-full bg-amber-500 px-6 py-4 text-lg font-semibold text-teal-950 transition-[background-color,transform] duration-150 ease-out hover:bg-amber-400 active:scale-[0.97] sm:inline-flex sm:w-auto sm:py-3.5";
+  "flex min-h-12 w-full items-center justify-center text-balance text-center rounded-full bg-amber-500 px-6 py-3 text-lg font-semibold text-teal-950 transition-[background-color,transform] duration-150 ease-out hover:bg-amber-400 active:scale-[0.97] sm:inline-flex sm:w-auto sm:py-3.5";
 
 
 // A real dashboard screenshot (example data), cut to the page's own content
@@ -197,8 +198,10 @@ export function LandingPage({ hero = "home" }: { hero?: "home" | "founding" }) {
   return (
     <>
       {/* One focus: the banner and the one button, both to the form. */}
-      <header className="sticky top-0 z-40 border-b border-line/70 bg-mint/90 backdrop-blur">
-        <div className="bg-teal-900 px-4 py-2 text-center text-sm text-sand">
+      {/* Solid, not blurred: a blurred bar over the page as it scrolls is
+          heavy work on an iPhone and made scrolling stutter (owner, 21 Oct 2026). */}
+      <header className="sticky top-0 z-40 border-b border-line/70 bg-mint">
+        <div className="bg-teal-900 px-4 py-1.5 text-center text-[13px] leading-snug text-sand sm:py-2 sm:text-sm">
           Founding {founding.spots}: free {founding.pilotDays}-day pilot + {founding.percentOff}% off for {founding.priceMonths} months.{" "}
           <SpotsText short className="font-semibold" />{" "}
           <a href="#apply" className="whitespace-nowrap font-semibold text-amber-500 underline underline-offset-4 hover:text-amber-400">
@@ -223,11 +226,13 @@ export function LandingPage({ hero = "home" }: { hero?: "home" | "founding" }) {
         {/* 1. Hero, in the owner's words (20 Oct 2026): who it's for, what it
             is, how it helps, the effort it doesn't take, the way in, and the
             first trust signal (Gold Fortune's result). */}
-        <section className="mx-auto grid max-w-6xl items-center gap-10 px-4 pb-10 pt-8 sm:px-6 sm:pb-16 sm:pt-12 lg:grid-cols-[1.1fr_0.9fr] lg:gap-14 lg:pt-12">
-          <div className="tk-hero grid gap-5 sm:gap-6">
+        {/* A size smaller on a phone (owner, 21 Oct 2026: on an iPhone 16 Pro the
+            Gold Fortune line was under the first screen). */}
+        <section className="mx-auto grid max-w-6xl items-center gap-10 px-4 pb-10 pt-5 sm:px-6 sm:pb-16 sm:pt-12 lg:grid-cols-[1.1fr_0.9fr] lg:gap-14 lg:pt-12">
+          <div className="tk-hero grid gap-4 sm:gap-6">
             <p className="text-sm font-bold uppercase tracking-wide text-teal-700">For teams of 3 to 30 reps</p>
             {hero === "founding" ? (
-              <h1 className="font-display text-[2.6rem] font-extrabold leading-[1.04] tracking-tight text-balance text-teal-900 sm:text-5xl lg:text-[3.6rem]">
+              <h1 className="font-display text-[2.1rem] font-extrabold leading-[1.06] tracking-tight text-balance text-teal-900 sm:text-5xl lg:text-[3.6rem]">
                 Become one of our{" "}
                 <span className="relative whitespace-nowrap">
                   Founding {founding.spots}
@@ -236,7 +241,7 @@ export function LandingPage({ hero = "home" }: { hero?: "home" | "founding" }) {
                 distributors.
               </h1>
             ) : (
-              <h1 className="font-display text-[2.6rem] font-extrabold leading-[1.04] tracking-tight text-balance text-teal-900 sm:text-5xl lg:text-[3.6rem]">
+              <h1 className="font-display text-[2.1rem] font-extrabold leading-[1.06] tracking-tight text-balance text-teal-900 sm:text-5xl lg:text-[3.6rem]">
                 Distributors:{" "}
                 <span className="relative whitespace-nowrap">
                   one app
@@ -246,19 +251,19 @@ export function LandingPage({ hero = "home" }: { hero?: "home" | "founding" }) {
               </h1>
             )}
             {hero === "founding" ? (
-              <p className="max-w-xl text-lg leading-relaxed text-pretty text-ink sm:text-xl">
+              <p className="max-w-xl text-base leading-relaxed text-pretty text-ink sm:text-xl">
                 A free {founding.pilotDays}-day pilot, set up for you. Then {founding.percentOff}% off your plan for{" "}
                 {founding.priceMonths} months, from {rand(foundingFrom)} a month. Our AI Manager then tells you how to grow your
                 business.
               </p>
             ) : (
-              <p className="max-w-xl text-lg leading-relaxed text-pretty text-ink sm:text-xl">
+              <p className="max-w-xl text-base leading-relaxed text-pretty text-ink sm:text-xl">
                 Your reps visit the stores you&apos;ve planned, and {site.name} helps them sell more at each one. Our AI Manager then
                 tells you how to grow your business.
               </p>
             )}
-            <p className="flex max-w-xl items-start gap-2.5 text-lg font-semibold leading-relaxed text-teal-900">
-              <span aria-hidden="true" className="mt-1 grid size-6 shrink-0 place-items-center rounded-full bg-teal-700 text-white">
+            <p className="flex max-w-xl items-start gap-2.5 text-base font-semibold leading-relaxed text-teal-900 sm:text-lg">
+              <span aria-hidden="true" className="mt-0.5 grid size-6 shrink-0 place-items-center rounded-full bg-teal-700 text-white">
                 <Check className="size-4" strokeWidth={3.5} />
               </span>
               We set everything up.
@@ -277,7 +282,7 @@ export function LandingPage({ hero = "home" }: { hero?: "home" | "founding" }) {
                 />
               )}
             </div>
-            <div className="flex max-w-xl items-center gap-3 border-t border-line pt-5">
+            <div className="flex max-w-xl items-center gap-3 border-t border-line pt-4 sm:pt-5">
               <Image
                 src="/gold-fortune-logo.png"
                 alt="Gold Fortune logo"
@@ -286,7 +291,7 @@ export function LandingPage({ hero = "home" }: { hero?: "home" | "founding" }) {
                 className="size-11 shrink-0 rounded-lg bg-white object-contain p-0.5 ring-1 ring-line"
               />
               <p className="grid leading-snug">
-                <span className="font-display text-xl font-extrabold text-teal-900">
+                <span className="font-display text-lg font-extrabold text-teal-900 sm:text-xl">
                   R184k <span aria-label="to">→</span> R340k a month at one retailer
                 </span>
                 <span className="text-sm text-muted">
@@ -319,8 +324,8 @@ export function LandingPage({ hero = "home" }: { hero?: "home" | "founding" }) {
                     <Icon className="size-5" strokeWidth={2.25} aria-hidden="true" />
                   </span>
                   <span className="grid gap-1">
-                    <span className="font-display text-xl font-bold leading-snug text-teal-900">{title}</span>
-                    <span className="text-lg leading-relaxed text-ink">{body}</span>
+                    <span className="font-display text-lg font-bold leading-snug text-teal-900 sm:text-xl">{title}</span>
+                    <span className="text-base leading-relaxed text-ink sm:text-lg">{body}</span>
                   </span>
                 </li>
               ))}
@@ -348,7 +353,7 @@ export function LandingPage({ hero = "home" }: { hero?: "home" | "founding" }) {
                     <span className="tk-icon-hover grid size-11 shrink-0 place-items-center rounded-xl bg-teal-900 text-amber-500">
                       <Icon className="size-5" strokeWidth={2.25} aria-hidden="true" />
                     </span>
-                    <h3 className="font-display text-xl font-bold leading-snug text-teal-900">{title}</h3>
+                    <h3 className="font-display text-lg font-bold leading-snug text-teal-900 sm:text-xl">{title}</h3>
                   </div>
                   <p className="text-base leading-relaxed text-ink sm:text-lg">{body}</p>
                 </li>
@@ -365,7 +370,7 @@ export function LandingPage({ hero = "home" }: { hero?: "home" | "founding" }) {
           <div className={`${wrap} max-w-6xl lg:grid-cols-[0.9fr_1.1fr] lg:items-center lg:gap-12`}>
             <div className="grid content-start gap-6 sm:gap-8">
               <div className="grid gap-3">
-                <p className="tk-reveal text-center text-sm font-bold uppercase tracking-wide text-teal-700">Our AI Manager</p>
+                <p className="tk-reveal text-sm font-bold uppercase tracking-wide text-teal-700">Our AI Manager</p>
                 <h2 className={h2}>How do I grow my business?</h2>
                 <p className={lead}>
                   Ask any question about your company, and get an answer from your real data, so you can make instant decisions.
@@ -457,7 +462,7 @@ export function LandingPage({ hero = "home" }: { hero?: "home" | "founding" }) {
         <section id="apply" className="scroll-mt-28 px-4 pb-14 sm:px-6 sm:pb-16">
           <div className="tk-reveal mx-auto grid max-w-3xl gap-6 rounded-2xl bg-teal-900 p-6 text-sand sm:p-10">
             <div className="grid gap-3">
-              <h2 className="text-center font-display text-4xl font-extrabold leading-[1.08] tracking-tight text-balance sm:text-5xl">
+              <h2 className="font-display text-3xl font-extrabold leading-[1.1] tracking-tight text-balance sm:text-5xl">
                 Start your free {founding.pilotDays}-day pilot.
               </h2>
               <ul className="grid gap-2">
