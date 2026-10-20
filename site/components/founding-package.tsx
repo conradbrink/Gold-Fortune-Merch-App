@@ -65,8 +65,8 @@ export function FoundingGuarantee() {
       <div className="grid gap-1">
         <p className="font-display text-xl font-extrabold leading-snug">Our promise</p>
         <p className="text-lg font-semibold leading-snug">
-          Run {site.name} for {founding.guaranteeDays} days. If your reps aren&apos;t visiting more stores, we refund your month, and you
-          keep the Rep Leak Audit.
+          Run {site.name} for {founding.guaranteeDays} days. If you&apos;re not happy, we refund your month, and you keep the Rep Leak
+          Audit.
         </p>
         <Link href="/terms#guarantee" className="w-fit text-sm font-medium underline underline-offset-2">
           T&amp;Cs apply.
