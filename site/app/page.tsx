@@ -88,13 +88,13 @@ const benefits = [
   },
   {
     icon: Repeat,
-    title: "Bigger orders at every visit",
-    body: "“Same again” fills in the store's last order for the rep to add to, and reps mark the products a store doesn't stock, so you can sell them in.",
+    title: "More data",
+    body: "The app prompts your reps from each store's purchase history, and reminds them to take an order when a store hasn't ordered like it usually does.",
   },
   {
     icon: Target,
-    title: "Who's selling, and who owes you",
-    body: "Each rep's sales against their target, every day. Every order becomes an invoice, and you see who still owes you.",
+    title: "Targets for every rep",
+    body: "Give your reps targets, and make sure they achieve them.",
   },
 ];
 
