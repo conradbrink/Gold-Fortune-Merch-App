@@ -319,7 +319,8 @@ export default function Home() {
           </div>
         </section>
 
-        {/* 4. The solution: each benefit with what it means, then the real screens. */}
+        {/* 4. The solution: each benefit with what it means (the live map and
+            dashboard pictures came off, owner 20 Oct 2026). */}
         <section id="benefits" aria-labelledby="benefits-title" className="scroll-mt-28 border-t border-line bg-white">
           <div className={`${wrap} max-w-6xl`}>
             <div className="grid gap-3">
@@ -341,30 +342,6 @@ export default function Home() {
                 </li>
               ))}
             </ul>
-            <div className="grid gap-4 pt-2 lg:grid-cols-2 lg:items-start lg:gap-6">
-              {/* The whole live map is too small to read on a phone, so a phone
-                  gets the close-up of one rep's day instead. */}
-              <Shot
-                src="/demo/dash/site-live-map-panel.webp"
-                alt="Thabo's day on the live map: 19.8 km driven, 3 check-ins, 2 orders, and every arrival and departure since 06:58."
-                width={634}
-                height={905}
-                className="mx-auto w-full max-w-xs sm:hidden"
-              />
-              <Shot
-                src="/demo/dash/site-live-map.webp"
-                alt="The live map: Naledi arrived at Store 22 8 minutes ago, and Thabo's day so far: two stores, two orders, and his arrival at Riverside complex at 11:05."
-                width={1984}
-                height={1139}
-                className="hidden sm:grid"
-              />
-              <Shot
-                src="/demo/dash/site-dashboard.webp"
-                alt="The owner's dashboard: sales by month, each rep's sales against target, and the orders being confirmed, picked, packed and delivered."
-                width={2016}
-                height={1180}
-              />
-            </div>
             <p className={verdict}>If it isn&apos;t in {site.name}, it didn&apos;t happen.</p>
           </div>
         </section>
