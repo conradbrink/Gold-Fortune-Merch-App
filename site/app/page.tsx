@@ -79,7 +79,7 @@ const benefits = [
   {
     icon: ClipboardList,
     title: "Orders straight to your warehouse",
-    body: "Reps take the order on the phone, at the store's own prices. Nobody types up orders from WhatsApp again.",
+    body: "Orders taken by your reps show up on the system automatically.",
   },
   {
     icon: Store,
