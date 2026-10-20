@@ -112,14 +112,14 @@ export async function POST(request: Request) {
   const isManager = role === "manager";
   const tools = toolsFor(toPermissionSet(perms as string[] | null), config.modules, isManager);
   if (tools.length === 0) {
-    return json("There's nothing in your access that Ask can look up yet.", 403);
+    return json("There's nothing in your access that the AI Manager can look up yet.", 403);
   }
 
   // After authorisation, so an anonymous caller learns nothing about the setup.
-  if (!process.env.OPENAI_API_KEY) return json("Ask is not set up on this server yet.", 503);
+  if (!process.env.OPENAI_API_KEY) return json("The AI Manager is not set up on this server yet.", 503);
 
   // The operator's off switch for paid AI, shared with the insights briefing.
-  const live = await requireFeature(supabase, "insights", "Ask");
+  const live = await requireFeature(supabase, "insights", "The AI Manager");
   if (!live.ok) return live.response;
 
   // Every question counts, refused or not, and is counted before anything is

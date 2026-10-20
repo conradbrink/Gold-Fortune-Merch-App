@@ -195,7 +195,7 @@ export function AssistantProvider({ children }: Readonly<{ children: React.React
           // Refused before it started (signed out, limit reached): a JSON error.
           if (!res.ok || !res.body) {
             const raw = await res.text();
-            let message = `Ask could not answer (${res.status}). Try again in a moment.`;
+            let message = `The AI Manager could not answer (${res.status}). Try again in a moment.`;
             try {
               const parsed = JSON.parse(raw) as { error?: string };
               if (parsed.error) message = parsed.error;
@@ -244,7 +244,7 @@ export function AssistantProvider({ children }: Readonly<{ children: React.React
               ? m.text
                 ? undefined
                 : "Stopped."
-              : "Ask couldn't be reached. Check your connection and try again.",
+              : "The AI Manager couldn't be reached. Check your connection and try again.",
           }));
         } finally {
           if (abortRef.current === controller) abortRef.current = null;

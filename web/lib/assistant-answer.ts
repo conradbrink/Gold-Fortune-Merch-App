@@ -204,7 +204,7 @@ export async function answerQuestion(o: AnswerOptions): Promise<void> {
     send({ type: "done", left });
   } catch (reason) {
     if (reason instanceof CheckFailed) {
-      send({ type: "error", text: "Ask couldn't check your question just now. Try again in a moment." });
+      send({ type: "error", text: "The AI Manager couldn't check your question just now. Try again in a moment." });
       send({ type: "done", left });
       return;
     }
