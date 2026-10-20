@@ -85,3 +85,33 @@ test("a body that may already have been read is never sent twice", async () => {
     assert.equal(api.calls.length, 1);
   }
 });
+
+test("in a page render the GET is really sent again, not handed the first refusal back", async () => {
+  // Next's fetch during a render (next/dist/server/lib/dedupe-fetch.js): a GET
+  // it has seen before comes back from its cache unless it carries a signal.
+  let sent = 0;
+  const answers = [issuedAtFuture, ok];
+  const seen = new Map<string, Response>();
+  const nextFetch = (async (input: unknown, init?: RequestInit) => {
+    const key = String(input);
+    if (!init?.signal && seen.has(key)) return seen.get(key)!.clone();
+    sent += 1;
+    const response = answers.shift()!();
+    if (!init?.signal) seen.set(key, response.clone());
+    return response;
+  }) as typeof globalThis.fetch;
+  const { sleep } = sleeper();
+  const response = await withSkewRetry(nextFetch, sleep)("https://x.supabase.co/rest/v1/platform_settings", {
+    method: "GET",
+  });
+  assert.equal(sent, 2);
+  assert.equal(response.status, 200);
+});
+
+test("a caller's own signal is kept on the second request", async () => {
+  const api = scripted(issuedAtFuture, ok);
+  const { sleep } = sleeper();
+  const signal = new AbortController().signal;
+  await withSkewRetry(api.fetch, sleep)("https://x.supabase.co/rest/v1/stores", { signal });
+  assert.equal(api.calls[1].init?.signal, signal);
+});

@@ -33,7 +33,10 @@ export function withSkewRetry(
     // again now rather than whenever it is garbage collected.
     await response.body?.cancel().catch(() => {});
     await sleep(SKEW_RETRY_DELAY_MS);
-    return baseFetch(input, init);
+    // A signal of its own. While a page renders, Next hands back its first
+    // answer to a GET it has already seen (same URL and headers) unless the
+    // request carries a signal, so without one this would get the refusal again.
+    return baseFetch(input, { ...init, signal: init?.signal ?? new AbortController().signal });
   };
 }
 
