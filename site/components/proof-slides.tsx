@@ -42,7 +42,8 @@ const facts: Fact[] = [
   },
   {
     ...proof.atDoor,
-    badge: "Up 20 points",
+    // 65.2% to 84.7% is 30% more, counted like the other badges (owner, 20 Oct 2026).
+    badge: `Up ${Math.round((proof.atDoor.afterN / proof.atDoor.beforeN - 1) * 100)}%`,
     line: "Every visit is checked in at the store, so you can prove it.",
   },
 ];
