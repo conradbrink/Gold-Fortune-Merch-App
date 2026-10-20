@@ -577,10 +577,13 @@ export default function Home() {
                 {site.email}
               </a>
             </p>
-            <nav aria-label="Legal" className="flex flex-wrap gap-x-5 gap-y-1">
-              <a href={`${site.appUrl}/login`} className="py-1 font-semibold hover:text-sand">
-                Customer sign in
+            <p>
+              Already using {site.name}?{" "}
+              <a href={`${site.appUrl}/login`} className="py-1 font-semibold underline underline-offset-4 hover:text-sand">
+                Sign in
               </a>
+            </p>
+            <nav aria-label="Legal" className="flex flex-wrap gap-x-5 gap-y-1">
               <a href="/terms" className="py-1 hover:text-sand">Terms</a>
               <a href="/privacy" className="py-1 hover:text-sand">Privacy</a>
               <a href="/refunds" className="py-1 hover:text-sand">Cancellations and refunds</a>
