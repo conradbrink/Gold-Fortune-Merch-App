@@ -70,7 +70,7 @@ const benefits = [
   {
     icon: MapPin,
     title: "Every visit, proven",
-    body: "Reps check in at the store, and shelf photos can only be taken in the app, with the time and place. A missed store or a check-in away from the store is flagged.",
+    body: "Reps check in at the store, and shelf photos can only be taken in the app, with the time and place. A missed store visit is flagged, to improve your team's efficiency.",
   },
   {
     icon: Navigation,
@@ -312,10 +312,7 @@ export default function Home() {
             </ul>
             <div className="grid gap-3 pt-4 sm:pt-6">
               <h3 className={h3}>Every missed visit is an order you never see.</h3>
-              <p className={lead}>
-                One store that stops ordering at R4,000 a month costs you R48,000 a year. Put in your numbers to see what missed visits
-                could be costing you.
-              </p>
+              <p className={lead}>Put in your numbers to see what missed visits cost you.</p>
             </div>
             <div className="tk-reveal">
               <CostCalculator />

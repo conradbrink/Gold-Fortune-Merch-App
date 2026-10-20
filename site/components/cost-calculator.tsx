@@ -38,17 +38,23 @@ export function CostCalculator() {
   const paysFor = plan && num(order) > 0 ? Math.ceil(plan.monthly / num(order)) : 0;
 
   const field =
-    "w-full min-h-11 rounded-lg bg-mint px-3 py-2.5 ring-1 ring-line focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-700";
+    "w-full min-h-12 rounded-lg bg-mint px-3 py-2 text-lg tabular-nums ring-1 ring-line focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-700";
+  const label = "grid content-start gap-1 text-sm font-medium leading-tight";
+  // Two lines kept for every label, so the three boxes line up.
+  const text = "flex min-h-[2.5em] items-end";
 
+  // Small enough to sit on one phone screen with its heading (owner, 20 Oct
+  // 2026): three boxes on one row, the answer in one sentence, and the price
+  // inside the "pays for itself" line.
   return (
-    <div className="grid gap-8 rounded-2xl bg-white p-5 ring-1 ring-line sm:p-8 md:grid-cols-2">
-      <div className="grid content-start gap-4">
-        <label className="grid gap-1.5 text-sm font-medium">
-          How many reps you have
+    <div className="grid gap-5 rounded-2xl bg-white p-4 ring-1 ring-line sm:p-6 md:grid-cols-2 md:gap-8">
+      <div className="grid grid-cols-3 content-start gap-2 sm:gap-3">
+        <label className={label}>
+          <span className={text}>Reps</span>
           <input className={field} type="number" min={1} max={500} inputMode="numeric" value={reps} onChange={(e) => setReps(e.target.value)} />
         </label>
-        <label className="grid gap-1.5 text-sm font-medium">
-          Stores each rep misses a day
+        <label className={label}>
+          <span className={text}>Missed a day per rep</span>
           <input
             className={field}
             type="number"
@@ -58,18 +64,14 @@ export function CostCalculator() {
             inputMode="decimal"
             value={missed}
             onChange={(e) => setMissed(e.target.value)}
-            aria-describedby="missed-why"
           />
-          <span id="missed-why" className="font-normal text-muted">
-            A late start, a long lunch, or a store skipped on the way.
-          </span>
         </label>
-        <div className="grid gap-1.5 text-sm font-medium">
-          <label htmlFor="order">Your average order from a store</label>
-          <div className="grid grid-cols-[6.5rem_1fr] gap-2">
+        <div className={label}>
+          <span className={`${text} justify-between gap-1`}>
+            <label htmlFor="order">Average order</label>
             <select
               aria-label="Currency"
-              className={field}
+              className="rounded bg-transparent text-sm font-semibold text-teal-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-700"
               value={currency}
               onChange={(e) => {
                 const c = e.target.value as Currency;
@@ -77,45 +79,37 @@ export function CostCalculator() {
                 setOrder(START.order[c]);
               }}
             >
-              <option value="R">ZAR (R)</option>
-              <option value="P">BWP (P)</option>
+              <option value="R">R</option>
+              <option value="P">P</option>
             </select>
-            <input id="order" className={field} type="number" min={0} step={50} inputMode="decimal" value={order} onChange={(e) => setOrder(e.target.value)} />
-          </div>
+          </span>
+          <input id="order" className={field} type="number" min={0} step={50} inputMode="decimal" value={order} onChange={(e) => setOrder(e.target.value)} />
         </div>
-        <p className="text-sm text-muted">{WORKING_DAYS} work days a month.</p>
       </div>
-      <div aria-live="polite" className="grid content-center gap-5 border-t border-line pt-6 md:border-l md:border-t-0 md:pl-8 md:pt-0">
-        <p className="text-xl leading-snug sm:text-2xl">
-          That&apos;s{" "}
-          <strong className="block font-display text-5xl font-extrabold tabular-nums text-flag sm:text-6xl">
+      <div aria-live="polite" className="grid content-center gap-4">
+        <p className="text-lg leading-snug">
+          <strong className="font-display text-4xl font-extrabold tabular-nums text-flag sm:text-5xl">
             {fmt(visits)} {visits === 1 ? "visit" : "visits"}
-          </strong>
-          a month where nobody takes an order. That could be up to{" "}
+          </strong>{" "}
+          a month with no order ({WORKING_DAYS} work days). That&apos;s up to{" "}
           <strong className="tabular-nums text-flag">
             {currency}
             {fmt(orders)}
           </strong>{" "}
-          in orders a month.
+          in orders.
         </p>
-        {currency === "R" && plan && (
-          <p className="flex flex-wrap items-baseline gap-x-2 border-t border-line pt-5 text-lg leading-snug">
-            <span>
-              {site.name} for up to {plan.reps} reps{"founding" in plan ? ", at the founding price" : ""}:
-            </span>
-            <strong className="font-display text-2xl font-extrabold tabular-nums text-teal-900">{rand(plan.monthly)} a month</strong>
-          </p>
-        )}
         {currency === "R" && plan && paysFor > 0 && (
-          <p className="grid gap-1 rounded-2xl bg-teal-900 px-5 py-4 text-sand">
-            <span className="leading-snug text-teal-100">{site.name} pays for itself when your reps win back</span>
-            <strong className="font-display text-3xl font-extrabold tabular-nums text-amber-500 sm:text-4xl">
+          <p className="rounded-xl bg-teal-900 px-4 py-3 leading-snug text-teal-100">
+            At {rand(plan.monthly)} a month{"founding" in plan ? " (founding price)" : ""}, {site.name} pays for itself when your reps win
+            back{" "}
+            <strong className="font-display text-2xl font-extrabold tabular-nums text-amber-500">
               {paysFor} {paysFor === 1 ? "order" : "orders"} a month
             </strong>
+            .
           </p>
         )}
         {currency === "R" && people > biggestPlan.reps && (
-          <p className="border-t border-line pt-5 text-lg leading-snug">
+          <p className="leading-snug">
             More than {biggestPlan.reps} reps?{" "}
             <a
               href={contactHref(`Hi, we have ${people} reps. What would ${site.name} cost us?`)}
