@@ -1,5 +1,6 @@
 import { timingSafeEqual } from "node:crypto";
 import { createClient as createAdminClient } from "@supabase/supabase-js";
+import { supabaseFetch } from "@/lib/supabase/fetch";
 import type { Database } from "@/lib/supabase/types";
 import { brevoConfigured, sendViaBrevo } from "@/lib/email/brevo";
 import { ALERT_TEMPLATES, CLIENT_TEMPLATES, DOCUMENT_TEMPLATES, REPORT_TEMPLATES, TICKD_TEMPLATES, renderEmail, type ReportLine } from "@/lib/email/templates";
@@ -59,6 +60,7 @@ export async function GET(request: Request) {
 
   const admin = createAdminClient<Database>(process.env.NEXT_PUBLIC_SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY, {
     auth: { autoRefreshToken: false, persistSession: false },
+    global: { fetch: supabaseFetch },
   });
   // A row left "sending" by a run that died mid-send may or may not have been
   // delivered. Sending it again could send it twice, so after half an hour it

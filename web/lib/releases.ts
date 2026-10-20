@@ -1,4 +1,5 @@
 import { createClient as createAdminClient } from "@supabase/supabase-js";
+import { supabaseFetch } from "@/lib/supabase/fetch";
 
 export const APP_RELEASES_BUCKET = "app-releases";
 
@@ -80,6 +81,7 @@ export function createReleaseStorageClient() {
 
   return createAdminClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, key, {
     auth: { autoRefreshToken: false, persistSession: false },
+    global: { fetch: supabaseFetch },
   });
 }
 

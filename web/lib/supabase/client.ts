@@ -1,4 +1,5 @@
 import { createBrowserClient } from "@supabase/ssr";
+import { supabaseFetch } from "@/lib/supabase/fetch";
 import type { Database } from "@/lib/supabase/types";
 
 let browserClient:
@@ -19,7 +20,8 @@ export function createClient() {
   if (!browserClient) {
     browserClient = createBrowserClient<Database>(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!
+      process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!,
+      { global: { fetch: supabaseFetch } }
     );
   }
   return browserClient;

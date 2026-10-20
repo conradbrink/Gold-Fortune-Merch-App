@@ -1,5 +1,6 @@
 import { timingSafeEqual } from "node:crypto";
 import { createClient as createAdminClient } from "@supabase/supabase-js";
+import { supabaseFetch } from "@/lib/supabase/fetch";
 import { createClient } from "@/lib/supabase/server";
 import { enforceRateLimit, LIMITS } from "@/lib/rate-limit";
 import { settleRoadDistance, type Budget } from "@/lib/road-distance-settle";
@@ -100,7 +101,7 @@ function adminClient() {
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!,
     // Per-request, so nothing to persist or refresh.
-    { auth: { autoRefreshToken: false, persistSession: false } }
+    { auth: { autoRefreshToken: false, persistSession: false }, global: { fetch: supabaseFetch } }
   );
 }
 
