@@ -119,7 +119,9 @@ const ai = [
   // Added by the owner (20 Oct 2026). Ask answers from the company's own
   // lookups and drafts plans from them; a list it shows can be downloaded
   // (ExportMenu). There is no "send to the team" yet, so it says download.
-  { icon: TrendingUp, text: "Ask it how to grow your sales in an area, and it draws up a plan." },
+  // "Implements it" (owner): the drafted visits go into the schedule with one
+  // tap (draft_visit_plan, then Add to schedule), so that is what it says.
+  { icon: TrendingUp, text: "Ask it how to grow your sales in an area. It draws up a plan, and puts the visits into your reps' schedule with one tap." },
   { icon: Users, text: "Ask about each rep's performance, and download the report to share with your team." },
 ];
 
