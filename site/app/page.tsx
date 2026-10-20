@@ -6,7 +6,6 @@ import {
   MapPin,
   MessageSquareText,
   MessagesSquare,
-  Navigation,
   PackageX,
   Repeat,
   Store,
@@ -73,9 +72,9 @@ const benefits = [
     body: "Reps check in at the store, and shelf photos can only be taken in the app, with the time and place. A missed store visit is flagged, to improve your team's efficiency.",
   },
   {
-    icon: Navigation,
-    title: "Each rep's day, on one screen",
-    body: "A live map of every rep, and each rep's day store by store, with the kilometres for petrol claims. You know the day is on track without phoning anyone.",
+    icon: CalendarDays,
+    title: "Every store visited, planned ahead",
+    body: "Make sure all your stores are visited, and plan your reps' visits months in advance.",
   },
   {
     icon: ClipboardList,
