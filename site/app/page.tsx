@@ -356,7 +356,7 @@ export default function Home() {
                 <p className="tk-reveal text-sm font-bold uppercase tracking-wide text-teal-700">The {site.name} AI Manager</p>
                 <h2 className={h2}>What do I do about it?</h2>
                 <p className={lead}>
-                  No time to read reports? Ask the AI Manager in your own words, and it answers from your own stores, reps and orders.
+                  Ask any question about your company, and get an instant answer from your real data, so you can make decisions.
                 </p>
               </div>
               <Points items={ai} badge="bg-teal-900 text-amber-500" />
