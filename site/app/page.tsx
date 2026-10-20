@@ -3,14 +3,11 @@ import {
   Check,
   Compass,
   LayoutDashboard,
-  MessageSquareText,
   MessagesSquare,
   PackageCheck,
   PackageX,
   Route,
-  Store,
   TrendingUp,
-  Users,
 } from "lucide-react";
 import Image from "next/image";
 import { CostCalculator } from "@/components/cost-calculator";
@@ -101,19 +98,6 @@ const benefits = [
   },
 ];
 
-// The AI Manager, live on main: Ask answers from the company's own data (the
-// tools in the app's lib/assistant-tools.ts), plans a rep's month of visits
-// (#186), and every report has its summary (/api/insights).
-const ai = [
-  { icon: MessageSquareText, text: "Ask about your stores, reps, sales, orders and stock, and get the answer in seconds." },
-  // Added by the owner (20 Oct 2026). Ask answers from the company's own
-  // lookups and drafts plans from them; a list it shows can be downloaded
-  // (ExportMenu). There is no "send to the team" yet, so it says download.
-  // "Implements it" (owner): the drafted visits go into the schedule with one
-  // tap (draft_visit_plan, then Add to schedule), so that is what it says.
-  { icon: TrendingUp, text: "Ask it how to grow your sales in an area. It draws up a plan, and puts the visits into your reps' schedule with one tap." },
-  { icon: Users, text: "Ask about each rep's performance, and download the report to share with your team." },
-];
 
 // What the form at the foot of the page gets them, in three lines.
 const youGet = [
@@ -157,20 +141,6 @@ const verdict = "font-display text-2xl font-extrabold leading-snug text-balance 
 const pilotButton =
   "flex min-h-14 w-full items-center justify-center text-balance text-center rounded-full bg-amber-500 px-6 py-4 text-lg font-semibold text-teal-950 transition-[background-color,transform] duration-150 ease-out hover:bg-amber-400 active:scale-[0.97] sm:inline-flex sm:w-auto sm:py-3.5";
 
-function Points({ items, badge }: { items: { icon: typeof Store; text: string }[]; badge: string }) {
-  return (
-    <ul className="grid gap-4">
-      {items.map(({ icon: Icon, text }) => (
-        <li key={text} className="tk-reveal tk-timeline flex items-center gap-3.5">
-          <span className={`tk-pop tk-icon-hover grid size-10 shrink-0 place-items-center rounded-xl ${badge}`}>
-            <Icon className="tk-draw size-5" strokeWidth={2.25} aria-hidden="true" />
-          </span>
-          <span className="text-lg leading-snug text-ink">{text}</span>
-        </li>
-      ))}
-    </ul>
-  );
-}
 
 // A real dashboard screenshot (example data), cut to the page's own content
 // edges (public/demo/dash/site-*.webp, cropped from the full screens), so
@@ -363,7 +333,6 @@ export default function Home() {
                   Ask any question about your company, and get an instant answer from your real data, so you can make decisions.
                 </p>
               </div>
-              <Points items={ai} badge="bg-teal-900 text-amber-500" />
               <p className={verdict}>Like a sales manager who has read every report.</p>
             </div>
             {/* One real Ask answer (example data), the owner's pick (20 Oct
