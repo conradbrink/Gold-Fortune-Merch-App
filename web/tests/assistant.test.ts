@@ -9,7 +9,7 @@ import assert from "node:assert/strict";
 import { toModuleSet } from "@/lib/modules";
 import { toPermissionSet } from "@/lib/permissions";
 import { parseTerms } from "@/lib/terms";
-import { TOOLS, exampleQuestions, toolsFor } from "@/lib/assistant-tools";
+import { TOOLS, exampleQuestions, parseArgs, showsTable, toolParameters, toolSpec, toolsFor } from "@/lib/assistant-tools";
 import {
   assistantInstructions,
   guardInput,
@@ -83,7 +83,7 @@ test("a company without a module gets none of its lookups, whoever asks", () => 
 
 test("every lookup's parameters are strict: all keys required, nothing extra", () => {
   for (const spec of TOOLS) {
-    const schema = spec.parameters(gf) as {
+    const schema = toolParameters(spec, gf) as {
       type: string;
       properties: Record<string, unknown>;
       required: string[];
@@ -235,20 +235,26 @@ test("context carries answered questions only, never a refused or failed one", (
 });
 
 // The answer loop, with a stand-in for the AI: the topic check's three
-// outcomes and an answer cut off at the length limit.
+// outcomes, an answer cut off at the length limit, and which lists are shown.
 import { answerQuestion } from "@/lib/assistant-answer";
+import type { ToolResult } from "@/lib/assistant-data";
 import type { AssistantEvent } from "@/lib/assistant-stream";
 
 type Guard = "on" | "off" | "throws";
+type Round = Record<string, unknown>[];
 
-function fakeClient(guard: Guard, events: Record<string, unknown>[]) {
+/** Each answer round streams the next of `rounds`. `inputs` keeps what each round was sent. */
+function fakeClient(guard: Guard, rounds: Round[], inputs: unknown[][] = []) {
+  let next = 0;
   return {
     responses: {
-      create: async (params: { text?: { format?: { name?: string } } }) => {
+      create: async (params: { text?: { format?: { name?: string } }; input?: unknown[] }) => {
         if (params.text?.format?.name === "topic_check") {
           if (guard === "throws") throw new Error("429 from the provider");
           return { output_text: JSON.stringify({ on_topic: guard === "on" }) };
         }
+        inputs.push(structuredClone(params.input ?? []));
+        const events = rounds[Math.min(next++, rounds.length - 1)];
         return (async function* () {
           for (const e of events) yield e;
         })();
@@ -257,16 +263,16 @@ function fakeClient(guard: Guard, events: Record<string, unknown>[]) {
   };
 }
 
-async function run(guard: Guard, events: Record<string, unknown>[]) {
+async function run(guard: Guard, rounds: Round[], result: ToolResult = { model: {} }, inputs: unknown[][] = []) {
   const sent: AssistantEvent[] = [];
   await answerQuestion({
-    client: fakeClient(guard, events) as never,
+    client: fakeClient(guard, rounds, inputs) as never,
     model: "m",
     guardModel: "m",
     ctx: { terms: gf, companyName: "Gold Fortune", merchandising: true, today: "2026-10-19", timeZone: "UTC", currency: "BWP", currencySymbol: "P" },
     tools: toolsFor(toPermissionSet(["admin"]), everything, true),
     turns: [{ role: "user", text: "Sales this month?" }],
-    run: async () => ({ model: {} }),
+    run: async () => result,
     send: (e) => sent.push(e),
     abort: new AbortController(),
     left: { hour: 9, day: 39 },
@@ -280,17 +286,17 @@ const answer = [
 ];
 
 test("an on-topic question is answered; an off-topic one gets only the refusal", async () => {
-  const on = await run("on", answer);
+  const on = await run("on", [answer]);
   assert.ok(on.some((e) => e.type === "text" && e.text === "Sales are P1,000."));
   assert.equal(on.at(-1)?.type, "done");
 
-  const off = await run("off", answer);
+  const off = await run("off", [answer]);
   assert.ok(!off.some((e) => e.type === "text"), "nothing of the answer leaks");
   assert.ok(off.some((e) => e.type === "refused"));
 });
 
 test("a topic check that could not run is an error, never a refusal", async () => {
-  const sent = await run("throws", answer);
+  const sent = await run("throws", [answer]);
   assert.ok(!sent.some((e) => e.type === "refused"));
   assert.ok(!sent.some((e) => e.type === "text"));
   assert.ok(sent.some((e) => e.type === "error" && /couldn't check/.test(e.text)));
@@ -299,13 +305,141 @@ test("a topic check that could not run is an error, never a refusal", async () =
 
 test("an answer stopped at the length limit says it was cut short", async () => {
   const sent = await run("on", [
-    { type: "response.output_text.delta", delta: "- Kiwi: 40" },
-    { type: "response.incomplete", response: { output: [] } },
+    [
+      { type: "response.output_text.delta", delta: "- Kiwi: 40" },
+      { type: "response.incomplete", response: { output: [] } },
+    ],
   ]);
   const text = sent.filter((e) => e.type === "text").map((e) => (e as { text: string }).text).join("");
   assert.match(text, /cut short/);
+  // No list was read, so it offers no table.
+  assert.doesNotMatch(text, /table/);
 });
 
+const textOf = (sent: AssistantEvent[]) =>
+  sent.filter((e) => e.type === "text").map((e) => (e as { text: string }).text).join("");
+
+// The owner, 20 Oct 2026: every question showed a table of all the stores.
+// A lookup's rows are shown only when the person asked to see a list.
+test("a lookup's rows are shown only when the person asked to see a list", () => {
+  const sales = toolSpec("sales")!;
+  assert.equal(showsTable(sales, { group_by: "staff", show_table: true }), true);
+  assert.equal(showsTable(sales, { group_by: "staff", show_table: false }), false);
+  for (const unclear of ["{}", "", "not json", "null", "[]", JSON.stringify({ show_table: "true" })]) {
+    assert.equal(showsTable(sales, parseArgs(unclear)), false, unclear);
+  }
+  // Their stores, read before planning: a table only when asked for.
+  assert.equal(showsTable(toolSpec("staff_sites")!, { staff_name: "Shakes", month: "2026-11", show_table: false }), false);
+  // A drafted plan is the answer itself, so it is always shown.
+  assert.equal(showsTable(toolSpec("draft_visit_plan")!, {}), true);
+  // Finding a store by name returns no table.
+  assert.equal(showsTable(toolSpec("find_sites")!, { name: "Kiwi", show_table: true }), false);
+});
+
+test("show_table is offered exactly for the lookups whose rows can be shown", () => {
+  for (const spec of TOOLS) {
+    const offered = (toolParameters(spec, gf) as { properties: Record<string, unknown> }).properties;
+    assert.equal("show_table" in offered, spec.table === "asked", spec.name);
+    // Declared once, by `table`: never by hand in a lookup's own parameters.
+    assert.ok(!("show_table" in (spec.parameters(gf) as { properties: Record<string, unknown> }).properties), spec.name);
+  }
+});
+
+test("a lookup's arguments: JSON or nothing, and never a throw", () => {
+  assert.deepEqual(parseArgs('{"days":30}'), { days: 30 });
+  assert.deepEqual(parseArgs(""), {});
+  assert.deepEqual(parseArgs("7"), {});
+  assert.equal(parseArgs("{days:"), null);
+});
+
+function lookupThenAnswer(name: string, args: Record<string, unknown>, reply = "Shakes sold the most."): Round[] {
+  const call = { type: "function_call", name, call_id: "c1", arguments: JSON.stringify(args) };
+  return [
+    [{ type: "response.completed", response: { output: [call] } }],
+    [
+      { type: "response.output_text.delta", delta: reply },
+      { type: "response.completed", response: { output: [] } },
+    ],
+  ];
+}
+
+const salesSheet: ToolResult = {
+  model: { rows: [] },
+  sheet: { title: "Sales", filename: "assistant-sales", context: [], columns: [{ header: "Rep", key: "rep" }], rows: [{ rep: "Shakes" }] },
+};
+const perRep = { from: "2026-10-01", to: "2026-10-20", group_by: "staff", site_id: null, staff_name: null };
+
+/** What the model was told a lookup returned, from the round after it. */
+function lookupOutput(inputs: unknown[][]): Record<string, unknown> {
+  const item = inputs[1].find((i) => (i as { type?: string }).type === "function_call_output") as { output: string };
+  return JSON.parse(item.output) as Record<string, unknown>;
+}
+
+test("the answer carries a table only for a lookup that asked for one, and the model is told which", async () => {
+  const quietInputs: unknown[][] = [];
+  const quiet = await run("on", lookupThenAnswer("sales", { ...perRep, show_table: false }), salesSheet, quietInputs);
+  assert.ok(quiet.some((e) => e.type === "text" && e.text === "Shakes sold the most."));
+  assert.ok(!quiet.some((e) => e.type === "table"), "no table for a question that didn't ask for one");
+  assert.equal(lookupOutput(quietInputs).shown_as_table, false);
+
+  const shownInputs: unknown[][] = [];
+  const shown = await run("on", lookupThenAnswer("sales", { ...perRep, show_table: true }), salesSheet, shownInputs);
+  const tables = shown.filter((e) => e.type === "table");
+  assert.equal(tables.length, 1);
+  assert.equal((tables[0] as { href: string }).href, "/sales");
+  assert.equal(lookupOutput(shownInputs).shown_as_table, true);
+});
+
+test("asking for a table of a lookup that has no rows shows none, and the model knows", async () => {
+  const inputs: unknown[][] = [];
+  const sent = await run(
+    "on",
+    lookupThenAnswer("sales", { ...perRep, group_by: "total", show_table: true }),
+    { model: { total: 1 } },
+    inputs
+  );
+  assert.ok(!sent.some((e) => e.type === "table"));
+  assert.deepEqual(lookupOutput(inputs), { total: 1, shown_as_table: false });
+});
+
+test("a drafted plan is always shown, and a lookup without tables is passed through untouched", async () => {
+  const plan = await run("on", lookupThenAnswer("draft_visit_plan", {}), salesSheet);
+  assert.equal(plan.filter((e) => e.type === "table").length, 1);
+
+  const inputs: unknown[][] = [];
+  await run("on", lookupThenAnswer("find_sites", { name: "Kiwi" }), { model: { matches: [] } }, inputs);
+  assert.deepEqual(lookupOutput(inputs), { matches: [] });
+});
+
+test("a cut-short answer offers the table it read but didn't show", async () => {
+  const call = { type: "function_call", name: "sales", call_id: "c1", arguments: JSON.stringify({ ...perRep, show_table: false }) };
+  const cut: Round[] = [
+    [{ type: "response.completed", response: { output: [call] } }],
+    [
+      { type: "response.output_text.delta", delta: "- Shakes: P40" },
+      { type: "response.incomplete", response: { output: [] } },
+    ],
+  ];
+  assert.match(textOf(await run("on", cut, salesSheet)), /ask to see it as a table/);
+  call.arguments = JSON.stringify({ ...perRep, show_table: true });
+  assert.match(textOf(await run("on", cut, salesSheet)), /download the table/);
+});
+
+test("the assistant is told when to show a table, and to read a rep's stores quietly before planning", () => {
+  const ctx: AssistantContext = {
+    terms: gf,
+    companyName: "Gold Fortune",
+    merchandising: true,
+    today: "2026-10-20",
+    timeZone: "Africa/Gaborone",
+    currency: "BWP",
+    currencySymbol: "P",
+  };
+  const text = assistantInstructions(ctx, toolsFor(toPermissionSet(["admin"]), everything, true));
+  assert.match(text, /show_table/);
+  assert.match(text, /shown_as_table/);
+  assert.match(text, /Call staff_sites first[^\n]*show_table false/);
+});
 
 test("a saved plan is in the context, so the assistant knows it was saved", () => {
   const turns = history([

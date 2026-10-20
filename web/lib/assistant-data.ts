@@ -1,7 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/lib/supabase/types";
 import type { ExportColumn, ExportSheet } from "@/lib/export";
-import type { ToolName } from "@/lib/assistant-tools";
+import { parseArgs, type ToolName } from "@/lib/assistant-tools";
 import type { PlanDraft } from "@/lib/assistant-stream";
 import { fetchOrgSettings } from "@/lib/org-settings";
 import { fetchRepStartAnchors } from "@/lib/route-order";
@@ -39,8 +39,9 @@ import { lower, type Terms } from "@/lib/terms";
  * Each lookup returns two things. `model` is what the assistant reads: small,
  * already rounded, with dates in company time, so it has nothing to work out
  * and nothing to get wrong. `sheet` is the full list for the person, shown
- * under the answer and downloadable, so the answer can be checked against the
- * rows it came from.
+ * under the answer and downloadable when they asked to see it
+ * (`showsTable` in lib/assistant-tools.ts), so the answer can be checked
+ * against the rows it came from.
  */
 
 type Client = SupabaseClient<Database>;
@@ -55,7 +56,7 @@ export type ToolEnv = {
 
 export type ToolResult = { model: unknown; sheet?: ExportSheet; plan?: PlanDraft };
 
-/** Rows the assistant reads from one lookup. The table shows them all. */
+/** Rows the assistant reads from one lookup. The table, when shown, has them all. */
 const MODEL_ROWS = 40;
 
 // ---------------------------------------------------------------- helpers
@@ -1234,13 +1235,8 @@ const RUN: Record<ToolName, (args: Record<string, unknown>, env: ToolEnv) => Pro
  * tell the person, because a half-answered question is better than a crash.
  */
 export async function runTool(name: ToolName, rawArgs: string, env: ToolEnv): Promise<ToolResult> {
-  let args: Record<string, unknown>;
-  try {
-    const parsed = JSON.parse(rawArgs || "{}") as unknown;
-    args = parsed !== null && typeof parsed === "object" ? (parsed as Record<string, unknown>) : {};
-  } catch {
-    return { model: { error: "The lookup's arguments could not be read." } };
-  }
+  const args = parseArgs(rawArgs);
+  if (!args) return { model: { error: "The lookup's arguments could not be read." } };
   try {
     return await RUN[name](args, env);
   } catch (reason) {
