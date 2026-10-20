@@ -357,7 +357,7 @@ export default function Home() {
           <div className={`${wrap} max-w-6xl`}>
             <div className="grid gap-3">
               <h2 id="calculator-title" className={h2}>
-                Every missed visit is an order you never see.
+                How much you&apos;re losing without {site.name}.
               </h2>
               <p className={lead}>Put in your numbers to see what missed orders cost you.</p>
             </div>
