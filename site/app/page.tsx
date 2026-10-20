@@ -97,7 +97,7 @@ const benefits = [
   {
     icon: TrendingUp,
     title: "A clear plan to grow",
-    body: "Ask the AI Manager how to grow sales in an area. It draws up a plan from your own data and puts the visits into your reps' schedule. Give each rep a target, and see how they're doing every day.",
+    body: "Ask the AI Manager how to grow your company. It develops a plan from your own data and puts it into action: the visits go straight into your reps' schedule.",
   },
 ];
 
