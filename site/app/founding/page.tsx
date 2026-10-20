@@ -39,7 +39,7 @@ const does = [
 ];
 
 const lookingFor = [
-  "Distributors with 3 to 50 reps.",
+  "Distributors with 3 to 30 reps.",
   "Reps who visit stores, take orders and check the shelves.",
   "You deliver the orders from your own warehouse.",
 ];

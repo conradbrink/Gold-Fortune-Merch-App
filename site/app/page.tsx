@@ -1,6 +1,9 @@
 import {
+  CalendarDays,
   Check,
   CloudOff,
+  FileText,
+  MessageSquareText,
   GraduationCap,
   LayoutDashboard,
   MapPin,
@@ -26,7 +29,7 @@ import { FoundingStart } from "@/components/founding-start";
 import { PricingSection } from "@/components/pricing-section";
 import { ProofSection } from "@/components/proof-section";
 import { SectionViews } from "@/components/analytics";
-import { confirmed, founding, growthPlan, rand, site } from "@/lib/site";
+import { confirmed, founding, growthPlan, proof, rand, site } from "@/lib/site";
 
 // Copy: ~/Downloads/site-copy-final-v7.md, reworked on 8 Oct 2026 with the
 // Hormozi offer skills (audit in the site-offer worktree's OFFER-AUDIT.md),
@@ -36,7 +39,7 @@ import { confirmed, founding, growthPlan, rand, site } from "@/lib/site";
 // print), and as few words as will do. Still no dashes, and only live features.
 // Lines v7 marks [CONFIRM] sit behind `confirmed` in lib/site.ts.
 // On 19 Oct 2026 the owner made the site only for distributors whose reps
-// visit stores, teams of 3 to 50 reps (worksheet: ~/.claude/plans/site-
+// visit stores, teams of 3 to 30 reps (worksheet: ~/.claude/plans/site-
 // distributors), then laid it out as the questions an owner asks: "Did my reps
 // actually go?", "Did they sell?", then the Founding 10 distributors package
 // as a value stack, the pilot form, and the doubts answered just under it.
@@ -50,6 +53,7 @@ import { confirmed, founding, growthPlan, rand, site } from "@/lib/site";
 const nav = [
   { href: "#visits", label: "Did they go?" },
   { href: "#sales", label: "Did they sell?" },
+  { href: "#ai", label: "AI Manager" },
   { href: "#offer", label: "Founding offer" },
   { href: "#faq", label: "Questions" },
 ];
@@ -86,6 +90,25 @@ const sales = [
   { icon: Target, text: "Each rep's sales against their target, every day." },
 ];
 
+// The AI Manager, live on main: Ask answers from the company's own data (the
+// tools in the app's lib/assistant-tools.ts), plans a rep's month of visits
+// (#186), and every report has its summary (/api/insights).
+const ai = [
+  { icon: MessageSquareText, text: "Ask about your stores, reps, sales, orders and stock, and get the answer in seconds." },
+  { icon: CalendarDays, text: "Ask it to plan a rep's month of visits: one town a day, so they drive less and spend less on fuel." },
+  { icon: FileText, text: "Every report comes with a short summary of what stands out." },
+];
+
+// The shelf-photo check (owner, 19 Oct 2026), shown as New.
+const shelfCheck = [
+  "It finds your products on the shelf by reading the pack, and counts how many fronts are showing.",
+  "It says where they stand: on the counter, behind the till, in a cabinet, high or low.",
+  "It reads the price on the shelf tag, and lists the competitor brands next to yours.",
+  "It flags products the store usually buys that are missing, and photos that need a retake.",
+  "You confirm each find with one tap, and every correction teaches it.",
+  "Nothing to set up: it works from your product list, with no product photos.",
+];
+
 // Who does what: the reps work on their phones, the owner runs it from anywhere.
 const teamSteps = [
   ["Start the day.", "One tap starts their day and shows today's stores."],
@@ -100,18 +123,9 @@ const ownerSteps = [
   ["Get paid.", "Every order becomes an invoice, and you see who still owes you."],
 ];
 
-// What the one app takes the place of: the value is the mess it removes.
-const replaces = [
-  "WhatsApp groups for orders and photos",
-  "Paper order books",
-  "Spreadsheets of stores and visits",
-  "A paper logbook for kilometres",
-  "Typing up invoices at night",
-];
-
 // The rest of the questions, after the doubts at the form (lib/site.ts `objections`).
 const faqs: [q: string, a: string][] = [
-  ["Who is it for?", "Distributors with 3 to 50 reps who visit stores, take orders and check the shelves."],
+  ["Who is it for?", "Distributors with 3 to 30 reps who visit stores, take orders and check the shelves."],
   [
     `What happens after the ${founding.priceMonths} founding months?`,
     `You go onto our normal price, ${rand(growthPlan.monthly)} a month for up to ${growthPlan.reps} reps. The other plans are below.`,
@@ -237,6 +251,7 @@ function Shot({
 // pricing_view (one per visit); the normal prices below it don't send it again.
 const SECTION_EVENTS = {
   offer: "pricing_view",
+  ai: "feature_view",
   visits: "feature_view",
   sales: "feature_view",
   how: "feature_view",
@@ -247,7 +262,8 @@ export default function Home() {
     <>
       <header className="sticky top-0 z-40 border-b border-line/70 bg-mint/90 backdrop-blur">
         <div className="bg-teal-900 px-4 py-2 text-center text-sm text-sand">
-          Founding 10 distributors: a free {founding.pilotDays}-day pilot, then {founding.percentOff}% off for {founding.priceMonths} months.{" "}
+          Founding {founding.spots}: free {founding.pilotDays}-day pilot + {founding.percentOff}% off for a year.{" "}
+          <SpotsText short className="font-semibold" />{" "}
           <a href="#apply" className="whitespace-nowrap font-semibold text-amber-500 underline underline-offset-4 hover:text-amber-400">
             Start my free pilot
           </a>
@@ -271,7 +287,7 @@ export default function Home() {
               href="#apply"
               className="rounded-full bg-teal-900 px-4 py-2 text-sm font-semibold text-sand transition-[background-color,transform] duration-150 ease-out hover:bg-teal-800 active:scale-[0.97]"
             >
-              Free pilot
+              Start my free pilot
             </a>
           </div>
         </div>
@@ -283,7 +299,7 @@ export default function Home() {
             outcome, the effort it doesn't take, the way in, and the result. */}
         <section className="mx-auto grid max-w-6xl items-center gap-10 px-4 pb-10 pt-8 sm:px-6 sm:pb-16 sm:pt-12 lg:grid-cols-[1.1fr_0.9fr] lg:gap-14 lg:pt-12">
           <div className="tk-hero grid gap-5 sm:gap-6">
-            <p className="text-sm font-bold uppercase tracking-wide text-teal-700">For distributors with 3 to 50 reps</p>
+            <p className="text-sm font-bold uppercase tracking-wide text-teal-700">For distributors with 3 to 30 reps</p>
             <h1 className="font-display text-[2.6rem] font-extrabold leading-[1.02] tracking-tight text-balance text-teal-900 sm:text-6xl lg:text-[4.25rem]">
               Turn every visit into an{" "}
               <span className="relative whitespace-nowrap">
@@ -294,19 +310,20 @@ export default function Home() {
             <p className="max-w-xl text-lg leading-relaxed text-pretty text-ink sm:text-xl">
               Every store visited. Every visit proven. Your whole sales team on one screen.
             </p>
-            <p className="max-w-xl text-lg font-semibold leading-relaxed text-teal-900">We set everything up. You just add your reps.</p>
-            <div className="grid justify-items-start gap-3">
+            <p className="flex max-w-xl items-start gap-2.5 text-lg font-semibold leading-relaxed text-teal-900">
+              <span aria-hidden="true" className="mt-1 grid size-6 shrink-0 place-items-center rounded-full bg-teal-700 text-white">
+                <Check className="size-4" strokeWidth={3.5} />
+              </span>
+              We set everything up. You just add your reps.
+            </p>
+            <div className="grid justify-items-start gap-2">
               <a href="#apply" className={pilotButton}>
-                See it on your own reps, free for {founding.pilotDays} days
+                Start my free pilot
               </a>
-              <ul className="flex flex-wrap gap-2" aria-label="The pilot">
-                {["No card", "No contract"].map((t) => (
-                  <li key={t} className="flex items-center gap-1.5 rounded-full bg-white px-3 py-1 text-sm font-semibold text-teal-900 ring-1 ring-line">
-                    <Check className="size-4 text-teal-700" strokeWidth={3} aria-hidden="true" />
-                    {t}
-                  </li>
-                ))}
-              </ul>
+              <p className="text-sm font-semibold text-teal-900">No card · No contract</p>
+              <p className="text-sm text-ink">
+                We&apos;ll WhatsApp you within {founding.replyMinutes} minutes to get started, during work hours.
+              </p>
             </div>
             <div className="flex max-w-xl items-center gap-3 border-t border-line pt-5">
               <Image
@@ -320,7 +337,9 @@ export default function Home() {
                 <span className="font-display text-xl font-extrabold text-teal-900">
                   R184k <span aria-label="to">→</span> R340k a month at one retailer
                 </span>
-                <span className="text-sm text-muted">Gold Fortune&apos;s own figures</span>
+                <span className="text-sm text-muted">
+                  Gold Fortune · {proof.reps} reps · {proof.stores} stores
+                </span>
               </p>
             </div>
           </div>
@@ -424,6 +443,64 @@ export default function Home() {
           </div>
         </section>
 
+        {/* 4b. "What do I do about it?" The AI Manager (owner, 19 Oct 2026): Ask
+            and the report summaries are live (#183, #186, /api/insights); the
+            shelf-photo check is built and being rolled out (owner: "mark it as
+            new"), so it says New, and Founding distributors get it first. */}
+        <section id="ai" className="scroll-mt-28 border-t border-line">
+          <div className={`${wrap} max-w-6xl lg:grid-cols-[0.9fr_1.1fr] lg:items-center lg:gap-12`}>
+            <div className="grid content-start gap-6 sm:gap-8">
+              <div className="grid gap-3">
+                <p className="tk-reveal text-sm font-bold uppercase tracking-wide text-teal-700">The {site.name} AI Manager</p>
+                <h2 className={h2}>What do I do about it?</h2>
+                <p className={lead}>
+                  No time to read reports? Ask the AI Manager in your own words, and it answers from your own stores, reps and orders.
+                </p>
+              </div>
+              <Points items={ai} badge="bg-teal-900 text-amber-500" />
+              <p className={verdict}>Like a sales manager who has read every report.</p>
+            </div>
+            {/* Two real Ask answers (example data): what dropped, and a month
+                of visits planned town by town, ready to add to the schedule. */}
+            <div className="grid gap-4 sm:grid-cols-2">
+              <Shot
+                src="/demo/dash/site-ask.webp"
+                alt="The AI Manager answering “Which stores have dropped this month?” with four stores, what each ordered this month against last month, and which of them a rep visits on Thursday."
+                width={800}
+                height={1280}
+                className="mx-auto w-full max-w-xs"
+              />
+              <Shot
+                src="/demo/dash/site-ask-plan.webp"
+                alt="The AI Manager planning Thabo's November so he drives less: 66 visits to 33 stores, one town a day, with a button to add them to the schedule."
+                width={800}
+                height={1280}
+                className="mx-auto w-full max-w-xs"
+              />
+            </div>
+            <div className="tk-reveal grid gap-5 rounded-2xl bg-teal-950 p-6 text-sand sm:p-8 lg:col-span-2">
+              <div className="grid gap-2">
+                <p className="w-fit rounded-full bg-amber-500 px-3 py-1 text-xs font-bold uppercase tracking-wide text-teal-950">New</p>
+                <p className="font-display text-2xl font-bold leading-tight text-sand sm:text-3xl">The shelf-photo check</p>
+                <p className="max-w-2xl leading-relaxed text-teal-100">
+                  After each visit, the AI Manager checks the rep&apos;s shelf photos in the background. The rep does nothing extra.
+                  Founding distributors get it first.
+                </p>
+              </div>
+              <ul className="grid gap-x-8 gap-y-3 sm:grid-cols-2">
+                {shelfCheck.map((r) => (
+                  <li key={r} className="flex items-start gap-3 border-t border-white/15 pt-3 leading-snug">
+                    <span className="mt-0.5 grid size-5 shrink-0 place-items-center rounded-full bg-amber-500 text-teal-950">
+                      <Check className="size-3" strokeWidth={3.5} aria-hidden="true" />
+                    </span>
+                    <span>{r}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </div>
+        </section>
+
         {/* 5. At every store (was "Your trade": the other trades are kept in
             components/trade-tabs.tsx, not shown). */}
         <section id="stores" className="border-t border-line">
@@ -464,27 +541,6 @@ export default function Home() {
                 className="bg-mint ring-teal-100"
                 badge="bg-teal-900 text-sand"
               />
-            </div>
-            <div className="tk-reveal grid gap-6 rounded-2xl bg-teal-950 p-6 text-sand sm:p-8 md:grid-cols-[0.8fr_1.2fr] md:items-center md:gap-10">
-              <div className="grid gap-2">
-                <p className="font-display text-2xl font-bold leading-tight text-amber-500 sm:text-3xl">One app instead of five.</p>
-                <p className="leading-relaxed text-teal-100">
-                  {site.name} replaces all of these. If you need HR later, you can add it.
-                </p>
-              </div>
-              <ul className="grid gap-x-8 gap-y-3 sm:grid-cols-2">
-                {replaces.map((r) => (
-                  <li key={r} className="tk-reveal-late tk-timeline flex items-start gap-3 border-t border-white/15 pt-3 font-medium leading-snug">
-                    <span className="tk-pop mt-0.5 grid size-5 shrink-0 place-items-center rounded-full bg-amber-500 text-teal-950">
-                      <Check className="tk-draw size-3" strokeWidth={3.5} aria-hidden="true" />
-                    </span>
-                    <span>
-                      <span className="sr-only">Replaces </span>
-                      {r}
-                    </span>
-                  </li>
-                ))}
-              </ul>
             </div>
           </div>
         </section>

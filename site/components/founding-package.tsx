@@ -37,7 +37,7 @@ export function FoundingStack({ applyHref }: { applyHref: string }) {
         </p>
         <p className="text-sm leading-snug text-teal-100">
           For {founding.priceMonths} months. That&apos;s {founding.percentOff}% off our Growth plan (
-          <span className="line-through">{rand(growthPlan.monthly)}</span> a month), with the setup and the bonuses included.
+          <span className="line-through">{rand(growthPlan.monthly)}</span> a month), with the AI Manager, the setup and the bonuses included.
         </p>
       </div>
       <a

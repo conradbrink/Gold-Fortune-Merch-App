@@ -5,7 +5,7 @@ export const site = {
   name: "Tickd",
   tagline: "Proof, not promises.",
   // The plain answer to "what is this?", for anyone landing cold. The site is
-  // only for distributors with 3 to 50 reps since 19 Oct 2026 (owner); the
+  // only for distributors with 3 to 30 reps since 19 Oct 2026 (owner); the
   // other trades are still in the app, for later.
   whatItIs: "The app for distributors and their reps.",
   url: "https://tickd.co.za",
@@ -104,7 +104,8 @@ export const growthPlan: Plan = planFor(founding.reps) ?? biggestPlan;
 // What a founder gets, each with what it is worth (owner, 19 Oct 2026). Each
 // bonus answers one doubt: the audit "I don't know if I have a problem", the
 // templates "I don't know how to set up call cycles", the WhatsApp line "what
-// if I get stuck?". Tickd AI is left off until it ships. The templates are
+// if I get stuck?". The AI Manager (R7,188 for the year, the owner's figure)
+// went back on once Ask shipped (#183). The templates are
 // Gold Fortune's, the owner's own family business, so the line says "the
 // team we built Tickd with", never "a client".
 export const foundingStack: { name: string; note: string; worth: number }[] = [
@@ -115,6 +116,7 @@ export const foundingStack: { name: string; note: string; worth: number }[] = [
   },
   { name: "Done-for-you setup", note: "Your stores, products and reps, loaded for you", worth: pricing.setupValue },
   { name: "A rep training day, by video call", note: "Your reps learn the app, and you learn the dashboard", worth: pricing.trainingValue },
+  { name: `The AI Manager, for ${founding.priceMonths} months`, note: "Ask about your business, and the shelf-photo check when it launches", worth: 599 * 12 },
   { name: "Bonus: the Rep Leak Audit", note: "A report on the store visits your reps miss", worth: 1500 },
   { name: "Bonus: call-cycle and route templates", note: "From the merchandising team we built Tickd with", worth: 1000 },
   { name: "Bonus: 60 days of WhatsApp support from our team", note: "A direct line if you get stuck", worth: 5000 },
