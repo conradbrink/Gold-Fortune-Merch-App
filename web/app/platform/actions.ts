@@ -3,7 +3,7 @@
 import { after } from "next/server";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { moduleDependencies, platformAdminClient, templateDefaults } from "@/lib/platform";
+import { moduleDependencies, platformAdminClient, templateDefaults, trialDays } from "@/lib/platform";
 import { queueWelcomeEmail } from "@/lib/welcome-email";
 import { OUTCOME_RELATED_KIND, isFoundingStatus, outcomePayload, outcomeTemplate } from "@/lib/founding-outcome";
 import {
@@ -205,7 +205,7 @@ export async function previewTemplates(
  */
 export async function createCompanyAction(
   input: AddCompanyInput
-): Promise<{ ok: true; orgId: string } | { ok: false; error: string }> {
+): Promise<{ ok: true; orgId: string; pilotEndsAt: string | null; pilotError?: string } | { ok: false; error: string }> {
   const actor = await operatorId();
   if (!actor) return { ok: false, error: "Not allowed." };
 
@@ -255,10 +255,43 @@ export async function createCompanyAction(
       templates: input.templates,
     })
   );
-  return { ok: true, orgId };
+  if (!input.pilot) return { ok: true, orgId, pilotEndsAt: null };
+  // The free pilot: trial_days from now, as the self-serve sign-up does. The
+  // company exists either way; if this part fails the operator is told and
+  // can set it with Extend on the company page.
+  const pilot = await startPilot(admin, actor, orgId);
+  return "error" in pilot
+    ? { ok: true, orgId, pilotEndsAt: null, pilotError: pilot.error }
+    : { ok: true, orgId, pilotEndsAt: pilot.endsAt };
 }
 
 // ------------------------------------------------------------ Trials (Stage 5)
+
+/** Puts a new company on the free pilot: `trial_days` from now, with its audit row first. */
+async function startPilot(
+  admin: ReturnType<typeof platformAdminClient>,
+  actor: string,
+  orgId: string
+): Promise<{ endsAt: string } | { error: string }> {
+  try {
+    const days = await trialDays();
+    const endsAt = new Date(Date.now() + days * 24 * 60 * 60 * 1000).toISOString();
+    const { error: auditError } = await admin.from("platform_audit_log").insert({
+      actor_id: actor,
+      action: "trial.start",
+      target_org_id: orgId,
+      detail: { days, to: endsAt },
+    });
+    if (auditError) return { error: `the audit log could not be written (${auditError.message})` };
+    const { error } = await admin
+      .from("company_account")
+      .upsert({ org_id: orgId, trial_ends_at: endsAt, updated_at: new Date().toISOString() }, { onConflict: "org_id" });
+    if (error) return { error: error.message };
+    return { endsAt };
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : String(e) };
+  }
+}
 
 /**
  * Extends a company's free trial by a number of days, from its current end or

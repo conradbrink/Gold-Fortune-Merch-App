@@ -72,6 +72,7 @@ export function AddCompanyWizard({
   terms: termLabels,
   preview,
   create: createCompany,
+  pilotDays,
 }: {
   templates: IndustryTemplate[];
   modules: CatalogueModule[];
@@ -80,6 +81,8 @@ export function AddCompanyWizard({
   terms: TermLabel[];
   preview: typeof previewTemplates;
   create: typeof createCompanyAction;
+  /** `trial_days`: how long the free pilot lasts. */
+  pilotDays: number;
 }) {
   const [step, setStep] = useState(0);
 
@@ -111,6 +114,9 @@ export function AddCompanyWizard({
   const [forms, setForms] = useState<string[]>([]);
 
   const [owner, setOwner] = useState({ fullName: "", email: "", password: "" });
+  // The Founding offer is a free pilot (owner, 20 Oct 2026); on unless the
+  // company is free by arrangement.
+  const [pilot, setPilot] = useState(true);
   const [copied, setCopied] = useState(false);
 
   const [creating, setCreating] = useState(false);
@@ -118,7 +124,13 @@ export function AddCompanyWizard({
   // re-renders the button disabled, and would try to create the login twice.
   const submitting = useRef(false);
   const [createError, setCreateError] = useState<string | null>(null);
-  const [created, setCreated] = useState<{ orgId: string; email: string; password: string } | null>(null);
+  const [created, setCreated] = useState<{
+    orgId: string;
+    email: string;
+    password: string;
+    pilotEndsAt: string | null;
+    pilotError?: string;
+  } | null>(null);
 
   // Until the operator types one, the timezone is their own.
   const company = timezoneEdited ? details : { ...details, timezone: browser.zone };
@@ -140,6 +152,7 @@ export function AddCompanyWizard({
     checklists,
     forms,
     owner,
+    pilot,
   };
   const problems = addCompanyProblems(input, dependencies);
 
@@ -197,7 +210,13 @@ export function AddCompanyWizard({
       setCreateError(res.error);
       return;
     }
-    setCreated({ orgId: res.orgId, email: owner.email.trim().toLowerCase(), password: owner.password });
+    setCreated({
+      orgId: res.orgId,
+      email: owner.email.trim().toLowerCase(),
+      password: owner.password,
+      pilotEndsAt: res.pilotEndsAt,
+      pilotError: res.pilotError,
+    });
   }
 
   async function copy(text: string) {
@@ -225,7 +244,21 @@ export function AddCompanyWizard({
             <dd className="font-mono">{created.email}</dd>
             <dt className="text-muted-foreground">Password</dt>
             <dd className="font-mono">{created.password}</dd>
+            <dt className="text-muted-foreground">Free pilot</dt>
+            <dd>
+              {created.pilotEndsAt
+                ? `Until ${new Date(created.pilotEndsAt).toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" })}`
+                : created.pilotError
+                  ? "Not set"
+                  : "None: free by arrangement"}
+            </dd>
           </dl>
+          {created.pilotError && (
+            <p className="text-sm text-destructive">
+              The company was made, but its free pilot was not set ({created.pilotError}). Open the company and
+              extend its free days by {pilotDays}.
+            </p>
+          )}
           <div className="flex flex-wrap items-center gap-3">
             <Button
               variant="outline"
@@ -646,6 +679,16 @@ export function AddCompanyWizard({
                 {owner.fullName.trim() || "—"} · {owner.email.trim() || "—"}
               </dd>
             </dl>
+            <label className="flex items-start gap-2 rounded-lg border border-border p-3 text-sm">
+              <input type="checkbox" className="mt-0.5 size-4" checked={pilot} onChange={(e) => setPilot(e.target.checked)} />
+              <span>
+                <span className="font-medium text-foreground">Start on the free {pilotDays}-day pilot</span>
+                <span className="block text-muted-foreground">
+                  The free days start now. After them the account is read-only until a plan is chosen. Untick for a
+                  company that is free by arrangement.
+                </span>
+              </span>
+            </label>
             {problems.length > 0 && (
               <ul className="list-disc space-y-1 rounded-md border border-destructive/40 bg-destructive/10 py-2 pr-3 pl-7 text-sm text-destructive">
                 {problems.map((p) => (

@@ -44,8 +44,8 @@ export default async function PlansPage() {
             {trial.kind === "none"
               ? "Your plan"
               : trial.kind === "ended"
-                ? "Your free trial has ended"
-                : `${trial.daysLeft} ${trial.daysLeft === 1 ? "day" : "days"} left in your free trial`}
+                ? "Your free pilot has ended"
+                : `${trial.daysLeft} ${trial.daysLeft === 1 ? "day" : "days"} left in your free pilot`}
           </CardTitle>
           <CardDescription>
             {trial.kind !== "none" && account?.trial_ends_at
