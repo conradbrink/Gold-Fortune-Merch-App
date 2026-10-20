@@ -387,8 +387,8 @@ export const FORM_FIELDS = [
   ["first_name", "First name"],
   ["last_name", "Last name"],
   ["business_name", "Business name"],
-  // Asked from 19 Oct 2026, when the email box came off the form; the email row
-  // stays for the applications before it.
+  // Asked from 19 Oct 2026. The email box came off the form that day and came
+  // back on 20 Oct 2026, last, after WhatsApp.
   ["distributes", "What they distribute"],
   ["team_size", "How many reps"],
   ["whatsapp", "WhatsApp number"],

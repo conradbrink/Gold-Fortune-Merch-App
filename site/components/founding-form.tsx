@@ -10,9 +10,10 @@ import { firstVisit } from "@/lib/first-visit";
 // It is posted to the app (`founding.apiUrl`), which saves it, emails the owner
 // and lists it under /platform/founding. All required: the applicant's first
 // and last name (sent as one `name`), the business's name, what they
-// distribute, how many reps and WhatsApp. On 11 Oct 2026 the owner cut it from
-// eleven answers; on 19 Oct 2026 the email box came off and "What do you
-// distribute?" went on (the owner's short form for distributors).
+// distribute, how many reps, WhatsApp and email. On 11 Oct 2026 the owner cut it
+// from eleven answers; on 19 Oct 2026 the email box came off and "What do you
+// distribute?" went on (the owner's short form for distributors); on 20 Oct
+// 2026 the email box came back.
 
 type Option = [label: string, value: string];
 
@@ -52,15 +53,16 @@ const products = [
   "Something else",
 ];
 
+// The owner's bands (20 Oct 2026; were 11 to 25, 26 to 50 and 50+). The app
+// and the database take these and the old ones.
 const sizes: Option[] = [
   ["1 to 4", "1-4"],
   ["5 to 10", "5-10"],
-  ["11 to 25", "11-25"],
-  ["26 to 50", "26-50"],
-  ["50+", "50+"],
+  ["11 to 15", "11-15"],
+  ["20 to 50+", "20-50+"],
 ];
 
-type Field = "name" | "businessName" | "distributes" | "teamSize" | "whatsapp";
+type Field = "name" | "businessName" | "distributes" | "teamSize" | "whatsapp" | "email";
 
 // Where visitors stop (the owner's ask, 11 Oct 2026, after 3 started and none
 // sent): each box sends `signup_field` the first time it takes focus and
@@ -73,6 +75,7 @@ const boxKey: Record<string, string> = {
   lastName: "last_name",
   businessName: "business_name",
   whatsapp: "whatsapp",
+  email: "email",
 };
 const issueKey: Record<Field, string> = {
   name: "first_name",
@@ -80,6 +83,7 @@ const issueKey: Record<Field, string> = {
   distributes: "distributes",
   teamSize: "team_size",
   whatsapp: "whatsapp",
+  email: "email",
 };
 type Issue = { field: Field; message: string };
 type State =
@@ -303,6 +307,7 @@ export function FoundingForm() {
           teamSize,
           trade,
           whatsapp: text("whatsapp"),
+          email: text("email"),
           website: text("website"),
           source: src,
           attribution: firstVisit(),
@@ -379,6 +384,26 @@ export function FoundingForm() {
           maxLength={25}
           autoComplete="tel"
           placeholder="082 123 4567"
+          className={input}
+        />
+      </Labelled>
+      {/* Back on the form (owner, 20 Oct 2026): the app emails the applicant a
+          confirmation (application_received) when there is an address. */}
+      <Labelled
+        label="Email address"
+        htmlFor={`${id}-email`}
+        hint="We email you a confirmation."
+        error={problem("email")}
+      >
+        <input
+          id={`${id}-email`}
+          name="email"
+          type="email"
+          inputMode="email"
+          required
+          maxLength={254}
+          autoComplete="email"
+          placeholder="you@yourbusiness.co.za"
           className={input}
         />
       </Labelled>

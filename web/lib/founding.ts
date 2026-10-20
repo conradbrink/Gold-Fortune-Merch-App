@@ -10,7 +10,8 @@
 
 import { escapeHtml } from "@/lib/email/templates";
 
-export const TEAM_SIZES = ["1-4", "5-10", "11-25", "26-50", "50+"] as const;
+/** The form's bands since 20 Oct 2026, then the ones before (older applications, and an old page still open). */
+export const TEAM_SIZES = ["1-4", "5-10", "11-15", "20-50+", "11-25", "26-50", "50+"] as const;
 export type TeamSize = (typeof TEAM_SIZES)[number];
 
 export const HOW_RUN = ["whatsapp", "paper", "app", "memory"] as const;
