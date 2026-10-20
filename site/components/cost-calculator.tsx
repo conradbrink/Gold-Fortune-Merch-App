@@ -2,7 +2,7 @@
 
 import { ChevronDown } from "lucide-react";
 import { useState } from "react";
-import { biggestPlan, contactHref, planFor, site } from "@/lib/site";
+import { biggestPlan, contactHref, site } from "@/lib/site";
 
 const WORKING_DAYS = 22;
 // Starting values (19 Oct 2026, for distributors): 5 reps, one order a day that
@@ -22,13 +22,6 @@ export function CostCalculator() {
   const people = Math.floor(num(reps));
   const missedOrders = people * num(missed) * WORKING_DAYS;
   const lost = missedOrders * num(order);
-  // The anchor: what this many reps would pay, at the plan's normal price (the
-  // founding discount is only for the first 3 months, so the lasting price is
-  // the honest one). Prices are in rand, so only beside rand. Said as the
-  // orders a month that pay for it: Tickd shows which stores were missed; the
-  // reps still have to go and sell.
-  const plan = people <= 0 ? null : planFor(people);
-  const paysFor = plan && num(order) > 0 ? Math.ceil(plan.monthly / num(order)) : 0;
 
   // One look for the three boxes: the same height, big digits, a one-line
   // label above each (owner, 20 Oct 2026: "missed orders", then "order value").
@@ -100,29 +93,25 @@ export function CostCalculator() {
       </div>
 
       <div aria-live="polite" className="grid gap-4 border-t border-line pt-5">
-        <p className="grid gap-1">
-          <span className="flex flex-wrap items-baseline gap-x-2 font-display font-extrabold leading-tight text-flag">
-            <strong className="text-5xl tabular-nums sm:text-6xl">{fmt(missedOrders)}</strong>
-            <span className="text-2xl">missed {missedOrders === 1 ? "order" : "orders"} a month</span>
-          </span>
-          <span className="text-lg leading-snug text-ink">
-            That&apos;s up to{" "}
-            <strong className="tabular-nums text-teal-900">
+        {/* Two numbers, the missed orders and what they are worth, the same
+            size (owner, 20 Oct 2026: the price line came off, the sales went up). */}
+        <div className="grid gap-4 sm:grid-cols-2">
+          <p className="grid gap-1">
+            <strong className="font-display text-5xl font-extrabold leading-none tabular-nums text-flag sm:text-6xl">
+              {fmt(missedOrders)}
+            </strong>
+            <span className="font-display text-xl font-bold leading-snug text-teal-900">
+              missed {missedOrders === 1 ? "order" : "orders"} a month
+            </span>
+          </p>
+          <p className="grid gap-1">
+            <strong className="font-display text-5xl font-extrabold leading-none tabular-nums text-flag sm:text-6xl">
               {currency}
               {fmt(lost)}
-            </strong>{" "}
-            in sales you don&apos;t make.
-          </span>
-        </p>
-        {currency === "R" && plan && paysFor > 0 && (
-          <p className="rounded-xl bg-teal-900 px-4 py-3.5 leading-snug text-teal-100">
-            {site.name} pays for itself with{" "}
-            <strong className="whitespace-nowrap font-display text-xl font-extrabold text-amber-500">
-              {paysFor} {paysFor === 1 ? "order" : "orders"} a month
             </strong>
-            .
+            <span className="font-display text-xl font-bold leading-snug text-teal-900">in sales missed a month</span>
           </p>
-        )}
+        </div>
         {currency === "R" && people > biggestPlan.reps && (
           <p className="leading-snug text-ink">
             More than {biggestPlan.reps} reps?{" "}
