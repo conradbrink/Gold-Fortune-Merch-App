@@ -2,7 +2,7 @@
 
 import { ChevronDown } from "lucide-react";
 import { useState } from "react";
-import { biggestPlan, contactHref, planFor, rand, site } from "@/lib/site";
+import { biggestPlan, contactHref, planFor, site } from "@/lib/site";
 
 const WORKING_DAYS = 22;
 // Starting values (19 Oct 2026, for distributors): 5 reps, one order a day that
@@ -116,7 +116,7 @@ export function CostCalculator() {
         </p>
         {currency === "R" && plan && paysFor > 0 && (
           <p className="rounded-xl bg-teal-900 px-4 py-3.5 leading-snug text-teal-100">
-            {site.name} costs {rand(plan.monthly)} a month for up to {plan.reps} reps. It pays for itself when your reps win back{" "}
+            {site.name} pays for itself with{" "}
             <strong className="whitespace-nowrap font-display text-xl font-extrabold text-amber-500">
               {paysFor} {paysFor === 1 ? "order" : "orders"} a month
             </strong>
