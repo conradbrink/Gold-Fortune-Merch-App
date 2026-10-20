@@ -74,7 +74,7 @@ export function PricingSection() {
           <ul className="grid gap-2">
             <Item>Everything: store visits, orders, photos, routes and kilometres, invoices and reports</Item>
             <Item>
-              <strong>The AI Manager:</strong> Ask about your business, and get a plan to grow
+              <strong>Our AI Manager:</strong> Ask about your business, and get a plan to grow
             </Item>
             <Item>
               <strong>Your stores, products and price lists:</strong> We load them for you

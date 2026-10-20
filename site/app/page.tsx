@@ -79,22 +79,22 @@ const benefits = [
   {
     icon: LayoutDashboard,
     title: "Every rep, on one dashboard",
-    body: "Reps check in at each store and take photos and orders in their mobile app. It shows on your dashboard instantly. A missed store visit is flagged. Ask the AI Manager who went where and what they sold, and get the answer in seconds.",
+    body: "Reps check in at each store and take photos and orders in their mobile app. It shows on your dashboard instantly. A missed store visit is flagged. Ask our AI Manager who went where and what they sold, and get the answer in seconds.",
   },
   {
     icon: PackageCheck,
     title: "Reps never miss an order",
-    body: "Tickd learns how often each store orders, and reminds the rep to take an order when it's due. The AI Manager shows you which stores are due or have dropped, before a competitor takes the shelf.",
+    body: "Tickd learns how often each store orders, and reminds the rep to take an order when it's due. Our AI Manager shows you which stores are due or have dropped, before a competitor takes the shelf.",
   },
   {
     icon: Route,
     title: "More store visits a day, less fuel",
-    body: "The AI Manager plans each rep's month one town a day, so they drive less. Orders are taken on the phone at the store's own prices, so there's no typing up at night, and the kilometres are logged for petrol claims.",
+    body: "Our AI Manager plans each rep's month one town a day, so they drive less. Orders are taken on the phone at the store's own prices, so there's no typing up at night, and the kilometres are logged for petrol claims.",
   },
   {
     icon: TrendingUp,
     title: "A clear plan to grow",
-    body: "Ask the AI Manager how to grow your company. It develops a plan from your own data and puts it into action: the visits go straight into your reps' schedule.",
+    body: "Ask our AI Manager how to grow your company. It develops a plan from your own data and puts it into action: the visits go straight into your reps' schedule.",
   },
 ];
 
@@ -224,7 +224,7 @@ export default function Home() {
               to manage your reps, orders and invoices.
             </h1>
             <p className="max-w-xl text-lg leading-relaxed text-pretty text-ink sm:text-xl">
-              Your reps visit the stores you&apos;ve planned, and {site.name} helps them sell more at each one. The AI Manager then
+              Your reps visit the stores you&apos;ve planned, and {site.name} helps them sell more at each one. Our AI Manager then
               tells you how to grow your business.
             </p>
             <p className="flex max-w-xl items-start gap-2.5 text-lg font-semibold leading-relaxed text-teal-900">
@@ -327,7 +327,7 @@ export default function Home() {
           <div className={`${wrap} max-w-6xl lg:grid-cols-[0.9fr_1.1fr] lg:items-center lg:gap-12`}>
             <div className="grid content-start gap-6 sm:gap-8">
               <div className="grid gap-3">
-                <p className="tk-reveal text-sm font-bold uppercase tracking-wide text-teal-700">The {site.name} AI Manager</p>
+                <p className="tk-reveal text-sm font-bold uppercase tracking-wide text-teal-700">Our AI Manager</p>
                 <h2 className={h2}>How do I grow my business?</h2>
                 <p className={lead}>
                   Ask any question about your company, and get an instant answer from your real data, so you can make decisions.
@@ -339,7 +339,7 @@ export default function Home() {
                 2026): how to improve sales in an area. */}
             <Shot
               src="/demo/dash/site-ask-sales.webp"
-              alt="The AI Manager answering “How can we improve sales in Riverside?”: sales are down to R18,400 from R24,100, a store that hasn't ordered and is due, a store that ordered less, two stores without a visit in three weeks, and putting Riverside on one day for the rep."
+              alt="Our AI Manager answering “How can we improve sales in Riverside?”: sales are down to R18,400 from R24,100, a store that hasn't ordered and is due, a store that ordered less, two stores without a visit in three weeks, and putting Riverside on one day for the rep."
               width={800}
               height={1125}
               className="mx-auto w-full max-w-sm"
