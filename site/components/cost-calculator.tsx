@@ -112,7 +112,7 @@ export function CostCalculator() {
             <span className="font-display text-xl font-bold leading-snug text-teal-900">in sales missed a month</span>
           </p>
         </div>
-        {currency === "R" && people > biggestPlan.reps && (
+        {people > biggestPlan.reps && (
           <p className="leading-snug text-ink">
             More than {biggestPlan.reps} reps?{" "}
             <a

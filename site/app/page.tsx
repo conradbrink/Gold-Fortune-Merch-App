@@ -31,9 +31,10 @@ import { confirmed, firstPlan, founding, foundingFrom, proof, rand, site } from 
 // that is the owner's own family business, so no line calls it a client.
 //
 // On 20 Oct 2026 the owner set the page's order (worksheet:
-// ~/.claude/plans/site-landing/worksheet.md): hero, proof, the problem, the
-// benefits, how it works, the doubts (the Founding package, the prices, the
-// questions), then the form to close. One focus: the header has no links but
+// ~/.claude/plans/site-landing/worksheet.md, then reordered live): hero, the
+// problem, the benefits (one for each problem), the AI Manager, Gold Fortune's
+// results, the calculator, the Founding package, the prices, the questions,
+// then the form to close. One focus: the header has no links but
 // the one button, and "Sign in" for customers is in the footer. There are no
 // reviews or client logos yet, so the trust shown is Gold Fortune's real result.
 // Mobile first: every style below is the phone's; sm:/md:/lg: only add room.
