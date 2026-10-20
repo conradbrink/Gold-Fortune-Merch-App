@@ -171,7 +171,7 @@ export function SignupForm({
     >
       <header className="space-y-2">
         <h1 className="text-2xl font-bold tracking-tight text-balance text-foreground sm:text-3xl">
-          Start your {trialDays}-day free trial
+          Start your free {trialDays}-day pilot
         </h1>
         <p className="text-pretty text-muted-foreground">
           No card needed. Your account is set up for your kind of work as soon as you finish.
@@ -353,7 +353,7 @@ export function SignupForm({
           className="h-11 w-full gap-2 bg-[#f5a524] px-6 text-[15px] font-semibold text-[#0f3d3e] hover:bg-[#f8b84e] active:scale-[0.98] sm:w-auto"
         >
           {busy && <Loader2 className="size-4 animate-spin motion-reduce:animate-none" aria-hidden="true" />}
-          {step < STEPS.length - 1 ? "Continue" : busy ? "Setting up your account…" : "Start my free trial"}
+          {step < STEPS.length - 1 ? "Continue" : busy ? "Setting up your account…" : "Start my free pilot"}
         </Button>
       </div>
 

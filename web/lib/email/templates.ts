@@ -449,8 +449,8 @@ const TEMPLATES: Record<string, Renderer> = {
     const { html, text } = layout(ctx, {
       heading: "Confirm your email address",
       preheader: "One click, and your invoices and quotes can go to clients.",
-      bodyHtml: `<p style="margin:0">Thanks for starting your free trial of Tickd.</p><p style="margin:16px 0 0">Please confirm this is your email address. Until you do, ${escapeHtml(ctx.companyName)} can use everything in Tickd, but cannot email invoices, quotes, statements or job reports to clients.</p>`,
-      bodyText: `Thanks for starting your free trial of Tickd.\n\nPlease confirm this is your email address. Until you do, ${ctx.companyName} can use everything in Tickd, but cannot email invoices, quotes, statements or job reports to clients.`,
+      bodyHtml: `<p style="margin:0">Thanks for starting your free pilot of Tickd.</p><p style="margin:16px 0 0">Please confirm this is your email address. Until you do, ${escapeHtml(ctx.companyName)} can use everything in Tickd, but cannot email invoices, quotes, statements or job reports to clients.</p>`,
+      bodyText: `Thanks for starting your free pilot of Tickd.\n\nPlease confirm this is your email address. Until you do, ${ctx.companyName} can use everything in Tickd, but cannot email invoices, quotes, statements or job reports to clients.`,
       button: { label: "Confirm my email address", url },
       closing: {
         html: `<p style="margin:16px 0 0">If you did not sign up for Tickd, you can ignore this email.</p>`,

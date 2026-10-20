@@ -9,12 +9,12 @@ import { SignupForm } from "@/components/signup/signup-form";
 import { PRODUCT_MARK, PRODUCT_NAME, PRODUCT_TAGLINE } from "@/lib/product";
 
 /**
- * Where "Start free trial" lands. Public in `proxy.ts`; someone already signed
+ * Where "Start my free pilot" lands. Public in `proxy.ts`; someone already signed
  * in is sent to their dashboard.
  *
  * While self-serve sign-up is closed (`SELF_SERVE_SIGNUP_OPEN`), this is the
- * Founding offer: 60 days free, set up for you, and a button to the
- * application on the sales site. Open, it is the three-step trial form.
+ * Founding offer: a free 14-day pilot, set up for you, and a button to the
+ * application on the sales site. Open, it is the three-step pilot form.
  *
  * Laid out like the sales site the person just left: on a wide screen the
  * Tickd panel (teal, the tagline, three reasons) sits beside the page; on a
