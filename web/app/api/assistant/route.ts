@@ -9,7 +9,7 @@ import { toolsFor } from "@/lib/assistant-tools";
 import type { AssistantContext } from "@/lib/assistant-prompt";
 import { runTool, type ToolEnv } from "@/lib/assistant-data";
 import { answerQuestion } from "@/lib/assistant-answer";
-import { encodeEvent, parseConversation, type QuestionsLeft } from "@/lib/assistant-stream";
+import { encodeEvent, parseConversation, questionsLeft } from "@/lib/assistant-stream";
 
 /**
  * Ask: questions about the company's own business, answered from its data.
@@ -77,8 +77,7 @@ export async function GET() {
     quotaLeft(supabase, LIMITS.assistantHour),
     quotaLeft(supabase, LIMITS.assistantDay),
   ]);
-  const left: QuestionsLeft | null = hour === null || day === null ? null : { hour: Math.min(hour, day), day };
-  return Response.json({ left }, { headers: { "Cache-Control": "no-store" } });
+  return Response.json({ left: questionsLeft(hour, day) }, { headers: { "Cache-Control": "no-store" } });
 }
 
 export async function POST(request: Request) {
@@ -129,10 +128,7 @@ export async function POST(request: Request) {
   if (!hour.ok) return limitReached(hour.response, "hour");
   const dayGate = await enforceRateLimit(supabase, LIMITS.assistantDay, 1, { failClosed: true });
   if (!dayGate.ok) return limitReached(dayGate.response, "day");
-  const left: QuestionsLeft | null =
-    hour.remaining === null || dayGate.remaining === null
-      ? null
-      : { hour: Math.min(hour.remaining, dayGate.remaining), day: dayGate.remaining };
+  const left = questionsLeft(hour.remaining, dayGate.remaining);
 
   const today = new Intl.DateTimeFormat("en-CA", { timeZone: config.timezone }).format(new Date());
   const ctx: AssistantContext = {

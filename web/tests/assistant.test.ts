@@ -18,7 +18,7 @@ import {
   refusalText,
   type AssistantContext,
 } from "@/lib/assistant-prompt";
-import { decodeEvents, encodeEvent, history, parseConversation, MAX_QUESTION_CHARS } from "@/lib/assistant-stream";
+import { decodeEvents, encodeEvent, history, parseConversation, questionsLeft, MAX_QUESTION_CHARS } from "@/lib/assistant-stream";
 import { parseAnswer } from "@/lib/assistant-text";
 
 const everything = toModuleSet({
@@ -313,4 +313,11 @@ test("a saved plan is in the context, so the assistant knows it was saved", () =
     { role: "assistant", text: "Draft done.", planSaved: { added: 68, already: 2 } },
   ]);
   assert.match(turns[1].text, /pressed Add to schedule: 68 added, 2 were already there/);
+});
+
+test("questions left: nobody has more left this hour than today", () => {
+  assert.deepEqual(questionsLeft(6, 3), { hour: 3, day: 3 });
+  assert.deepEqual(questionsLeft(4, 30), { hour: 4, day: 30 });
+  assert.equal(questionsLeft(null, 30), null);
+  assert.equal(questionsLeft(4, null), null);
 });

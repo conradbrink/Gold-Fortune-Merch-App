@@ -18,17 +18,10 @@ export const WIDE_VIEW: MapView = { center: { lat: 10, lng: 20 }, zoom: 2 };
 
 type Point = { lat: number | null; lng: number | null };
 
-/** The middle of the points that have a position, or null when none do. */
-export function centreOf(points: Point[]): { lat: number; lng: number } | null {
-  const located = points.filter(
-    (p): p is { lat: number; lng: number } => p.lat !== null && p.lng !== null
-  );
-  if (located.length === 0) return null;
-  return {
-    lat: located.reduce((n, p) => n + p.lat, 0) / located.length,
-    lng: located.reduce((n, p) => n + p.lng, 0) / located.length,
-  };
-}
+// The middle of the points that have a position, or null when none do. Lives
+// in geo.ts, which is pure, so the server-side planner can use it too.
+import { centreOf } from "@/lib/geo";
+export { centreOf };
 
 /** A regional zoom on the sites' middle, or the wide view. */
 export function viewFor(points: Point[]): MapView {

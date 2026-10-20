@@ -25,6 +25,14 @@ export type AssistantEvent =
 
 export type QuestionsLeft = { hour: number; day: number };
 
+/**
+ * Questions left, from what is left this hour and today: nobody has more
+ * left this hour than today. Null when either could not be counted.
+ */
+export function questionsLeft(hour: number | null, day: number | null): QuestionsLeft | null {
+  return hour === null || day === null ? null : { hour: Math.min(hour, day), day };
+}
+
 /** What "Add to schedule" saves: the new visits, by day, for one person. */
 export type PlanDraft = {
   staffId: string;

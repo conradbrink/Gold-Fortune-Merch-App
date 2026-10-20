@@ -4,6 +4,7 @@ import type { ExportColumn, ExportSheet } from "@/lib/export";
 import type { ToolName } from "@/lib/assistant-tools";
 import type { PlanDraft } from "@/lib/assistant-stream";
 import { fetchOrgSettings } from "@/lib/org-settings";
+import { fetchRepStartAnchors } from "@/lib/route-order";
 import {
   NO_TOWN,
   addDays,
@@ -879,12 +880,23 @@ async function assignedSites(
   env: ToolEnv,
   staffId: string
 ): Promise<{ sites: PlanSite[]; othersPrimary: number; withCycleDays: number }> {
-  type Store = { name: string; city: string | null; active: boolean; visit_frequency: string; lat: number | null; lng: number | null };
+  type Store = {
+    name: string;
+    city: string | null;
+    active: boolean;
+    visit_frequency: string;
+    lat: number | null;
+    lng: number | null;
+    geocode_source: string | null;
+    location_confirmed_at: string | null;
+  };
   type Row = { store_id: string; is_primary: boolean; day_of_week: number | null; stores: Store | Store[] | null };
   const { rows } = await allRows<Row>((a, b) =>
     env.supabase
       .from("store_assignments")
-      .select("id, store_id, is_primary, day_of_week, stores(name, city, active, visit_frequency, lat, lng)")
+      .select(
+        "id, store_id, is_primary, day_of_week, stores(name, city, active, visit_frequency, lat, lng, geocode_source, location_confirmed_at)"
+      )
       .eq("rep_id", staffId)
       .order("id")
       .range(a, b)
@@ -920,9 +932,53 @@ async function assignedSites(
           : "weekly") as PlanFrequency,
         lat: store.lat,
         lng: store.lng,
+        trusted: vouched(store),
       };
     }),
   };
+}
+
+/**
+ * A location a person set or confirmed: a rep on site, a manager by hand, or
+ * one confirmed on the Stores page. The same test the store review uses.
+ */
+function vouched(store: { geocode_source: string | null; location_confirmed_at: string | null }): boolean {
+  return store.geocode_source === "rep" || store.geocode_source === "manual" || store.location_confirmed_at !== null;
+}
+
+/**
+ * Every located, active store of the company, to judge where each town really
+ * is: one person's few stores in a town are not enough to tell a wrong pin.
+ */
+async function companyLocatedSites(env: ToolEnv): Promise<PlanSite[]> {
+  type Row = {
+    id: string;
+    name: string;
+    city: string | null;
+    lat: number;
+    lng: number;
+    geocode_source: string | null;
+    location_confirmed_at: string | null;
+  };
+  const { rows } = await allRows<Row>((a, b) =>
+    env.supabase
+      .from("stores")
+      .select("id, name, city, lat, lng, geocode_source, location_confirmed_at")
+      .eq("active", true)
+      .not("lat", "is", null)
+      .not("lng", "is", null)
+      .order("id")
+      .range(a, b)
+  );
+  return rows.map((r) => ({
+    id: r.id,
+    name: r.name,
+    town: r.city,
+    frequency: "weekly" as const,
+    lat: r.lat,
+    lng: r.lng,
+    trusted: vouched(r),
+  }));
 }
 
 /**
@@ -932,10 +988,18 @@ async function assignedSites(
  */
 async function plannedVisits(env: ToolEnv, staffId: string, fromDay: string, toDay: string) {
   const { from, to } = wholeWeeks(fromDay, toDay);
-  const { rows } = await allRows<{ id: string; store_id: string; scheduled_date: string; source: string }>((a, b) =>
+  type Row = {
+    id: string;
+    store_id: string;
+    scheduled_date: string;
+    source: string;
+    sequence_order: number | null;
+    stores: { lat: number | null; lng: number | null } | { lat: number | null; lng: number | null }[] | null;
+  };
+  const { rows } = await allRows<Row>((a, b) =>
     env.supabase
       .from("routes")
-      .select("id, store_id, scheduled_date, source")
+      .select("id, store_id, scheduled_date, source, sequence_order, stores!routes_store_id_fkey(lat, lng)")
       .eq("rep_id", staffId)
       .gte("scheduled_date", from)
       .lte("scheduled_date", to)
@@ -1072,10 +1136,13 @@ async function draftVisitPlan(args: Record<string, unknown>, env: ToolEnv): Prom
   fail(error);
   if (!person) throw new LookupError(`That ${lower(t.staff.one)} wasn't found, or is no longer active.`);
 
-  const [{ sites }, settings, planned] = await Promise.all([
+  const [{ sites }, settings, planned, reference, anchors] = await Promise.all([
     assignedSites(env, staffId),
     fetchOrgSettings(env.supabase),
     plannedVisits(env, staffId, m.from, m.to),
+    companyLocatedSites(env),
+    // Where they usually start the day; without it, a day starts at one end.
+    fetchRepStartAnchors(env.supabase as unknown as SupabaseClient, staffId).catch(() => new Map()),
   ]);
   const plannedInMonth = planned.filter((p) => p.scheduled_date >= m.from && p.scheduled_date <= m.to).length;
   if (sites.length === 0) throw new LookupError(`They have no ${lower(t.site.many)} assigned, so there is nothing to plan.`);
@@ -1092,7 +1159,12 @@ async function draftVisitPlan(args: Record<string, unknown>, env: ToolEnv): Prom
     from: m.from,
     to: m.to,
     daysOff,
-    existing: planned.map((p) => ({ siteId: p.store_id, date: p.scheduled_date })),
+    existing: planned.map((p) => {
+      const at = one(p.stores);
+      return { siteId: p.store_id, date: p.scheduled_date, lat: at?.lat ?? null, lng: at?.lng ?? null, sequence: p.sequence_order };
+    }),
+    reference,
+    start: anchors.get(staffId) ?? null,
   });
 
   const nameOf = new Map(sites.map((s) => [s.id, s]));
@@ -1134,9 +1206,17 @@ async function draftVisitPlan(args: Record<string, unknown>, env: ToolEnv): Prom
       towns_with_no_assigned_sites: plan.unknownTowns,
       towns_short_of_days: plan.short,
       spare_working_days: plan.spareDays.map(niceDay),
-      // Days are grouped by where sites are; these could not be.
-      sites_with_no_map_location: plan.noLocation.map((x) => `${x.name} (${x.town})`).slice(0, 20),
-      map_location_far_from_its_town: plan.farFromTown.map((x) => `${x.name} (${x.town}, ${x.km} km away)`).slice(0, 20),
+      // Days are grouped by where sites are; these could not be. The counts
+      // are the whole story; the names are the first few.
+      sites_with_no_map_location_count: plan.noLocation.length,
+      sites_with_no_map_location: plan.noLocation.slice(0, MODEL_ROWS).map((x) => `${x.name} (${x.town})`),
+      map_location_far_from_its_town_count: plan.farFromTown.length,
+      map_location_far_from_its_town: plan.farFromTown
+        .slice(0, MODEL_ROWS)
+        .map((x) => `${x.name} (${x.town}, ${x.km} km away)`),
+      // Towns whose days fall in fewer of the month's whole weeks than it has:
+      // their weekly sites are visited only in those weeks.
+      towns_in_fewer_weeks: plan.fewerWeeks,
       already_planned_before: plannedInMonth,
       saved: false,
       note: "A draft. It is saved only when the person presses Add to schedule under it.",

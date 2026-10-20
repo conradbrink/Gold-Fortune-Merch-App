@@ -104,6 +104,15 @@ begin
   insert into public.visits (org_id, rep_id, store_id, status, checkin_at, checkin_lat, checkin_lng, client_generated_id)
   values (v_org, v_rep2, v_store, 'checked_out', now() - interval '2 days', -24.6, 25.9, gen_random_uuid());
 
+  -- Counters for check 15b, seeded as the owner (nobody else can write
+  -- them): one question spent by this rep in the current minute, five by
+  -- the other rep in the same bucket, and five by this rep in the minute
+  -- before. now() is fixed for the transaction, so the windows line up.
+  insert into public.rate_limits (bucket, subject, window_start, count) values
+    ('regression_left', v_rep::text, to_timestamp(floor(extract(epoch from now()) / 60) * 60), 1),
+    ('regression_left_other', v_rep2::text, to_timestamp(floor(extract(epoch from now()) / 60) * 60), 5),
+    ('regression_left_old', v_rep::text, to_timestamp(floor(extract(epoch from now()) / 60) * 60) - interval '60 seconds', 5);
+
   -- Everything below runs AS A FIELD REP.
   perform set_config('request.jwt.claims',
     json_build_object('sub', v_rep, 'role', 'authenticated')::text, true);
@@ -218,11 +227,26 @@ begin
     v_fail := v_fail || '15. the rate limiter allowed a 4th call past a limit of 3' || E'\n';
   end if;
 
-  -- 15b. What is left is read without spending any, and only the caller's own:
-  --      the 3 spent above leave 0, and asking twice does not change it.
-  if public.rate_limit_left('regression_test', 3, 60) <> 0
-     or public.rate_limit_left('regression_test', 3, 60) <> 0 then
+  -- 15b. What is left is read without spending any, and only the caller's
+  --      own count in the current window:
+  --        * the window spent above reads 0;
+  --        * one spent of 5 reads 4, and still 4 when asked again (a read
+  --          that spent would read 3 the second time);
+  --        * the other rep's 5 in the same bucket are not this rep's;
+  --        * the minute before's 5 are an old window, not this one;
+  --        * a bucket nobody used reads the full limit.
+  if public.rate_limit_left('regression_test', 3, 60) <> 0 then
     v_fail := v_fail || '15b. rate_limit_left did not report 0 left after a spent window' || E'\n';
+  end if;
+  if public.rate_limit_left('regression_left', 5, 60) <> 4
+     or public.rate_limit_left('regression_left', 5, 60) <> 4 then
+    v_fail := v_fail || '15b. rate_limit_left misread, or spent, the caller''s own count' || E'\n';
+  end if;
+  if public.rate_limit_left('regression_left_other', 5, 60) <> 5 then
+    v_fail := v_fail || '15b. rate_limit_left counted another user''s questions' || E'\n';
+  end if;
+  if public.rate_limit_left('regression_left_old', 5, 60) <> 5 then
+    v_fail := v_fail || '15b. rate_limit_left counted an earlier window' || E'\n';
   end if;
   if public.rate_limit_left('regression_test_untouched', 5, 60) <> 5 then
     v_fail := v_fail || '15b. rate_limit_left counted a bucket nobody used' || E'\n';
