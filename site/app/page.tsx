@@ -303,9 +303,6 @@ export default function Home() {
           </figure>
         </section>
 
-        {/* 2. Social proof: Gold Fortune's real numbers, straight under the hero. */}
-        <ProofSection applyHref="#apply" />
-
         {/* 3. The problem: the old way, then what it costs (the calculator). */}
         <section id="problem" aria-labelledby="problem-title">
           <div className={`${wrap} max-w-6xl`}>
@@ -367,6 +364,10 @@ export default function Home() {
             <p className={verdict}>If it isn&apos;t in {site.name}, it didn&apos;t happen.</p>
           </div>
         </section>
+
+        {/* Social proof: Gold Fortune's real numbers, between the benefits and
+            the AI Manager (owner, 20 Oct 2026). */}
+        <ProofSection applyHref="#apply" />
 
         {/* 4b. "What do I do about it?" The AI Manager (owner, 19 Oct 2026): Ask
             and the report summaries are live (#183, #186, /api/insights). The
