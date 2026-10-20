@@ -414,6 +414,7 @@ const fieldLabel = (key: string | null) => FORM_FIELDS.find(([k]) => k === key)?
 
 function errorLabel(section: string | null): string {
   if (section === "network") return "No signal (the phone couldn't reach us)";
+  if (section === "already") return "Had already applied";
   if (section?.startsWith("server-")) return `Our server said no (${section.slice(7)})`;
   return fieldLabel(section) ?? "Something else";
 }

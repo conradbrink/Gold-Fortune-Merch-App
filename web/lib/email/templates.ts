@@ -474,7 +474,7 @@ const TEMPLATES: Record<string, Renderer> = {
             label: "After the pilot",
             value: foundingLine,
           },
-          ...(whatsapp ? [{ label: "We will WhatsApp you on", value: `+${whatsapp}` }] : []),
+          ...(whatsapp ? [{ label: "Your WhatsApp number", value: `+${whatsapp}` }] : []),
         ];
     const body = stack([
       para(`Hello${first ? ` ${first}` : ""},`, true),
@@ -487,13 +487,13 @@ const TEMPLATES: Record<string, Renderer> = {
       para(
         waitlist
           ? "You are first in line if a place opens, and first for the next round. We will let you know as soon as it does."
-          : `We will WhatsApp you within ${FOUNDING_OFFER.replyMinutes} minutes during work hours. Then we load your stores, products and reps, and your free ${FOUNDING_OFFER.pilotDays}-day pilot starts.`
+          : `We will email you to set up your pilot. Then we load your stores, products and reps, and your free ${FOUNDING_OFFER.pilotDays}-day pilot starts.`
       ),
       para("There is nothing to pay during the pilot, and we do not need a card."),
     ]);
     const { html, text } = layout(ctx, {
       heading: waitlist ? "You are on the waiting list" : "Thank you, we have your application",
-      preheader: waitlist ? "You are first in line if a place opens." : `We will WhatsApp you within ${FOUNDING_OFFER.replyMinutes} minutes during work hours.`,
+      preheader: waitlist ? "You are first in line if a place opens." : "We will email you to set up your free pilot.",
       bodyHtml: body.html,
       bodyText: body.text,
       closing: para("Thank you,\nThe Tickd team"),

@@ -622,7 +622,9 @@ test("an application received says what happens next, in the applicant's words, 
   assert.match(e.html, /Shine Cleaning/);
   assert.match(e.html, /14 days, set up for you/);
   assert.match(e.html, /40% off your plan for 3 months, from R1,197 a month/);
-  assert.match(e.html, /WhatsApp you within 5 minutes during work hours/);
+  // No reply time is promised (owner, 20 Oct 2026: "we will email them, dont put a deadline").
+  assert.match(e.html, /We will email you to set up your pilot/);
+  assert.doesNotMatch(e.html, /within \d+ minutes/);
   assert.ok(!e.html.includes("60 days") && !e.html.includes("October"));
   assert.ok(!e.html.includes("If you are picked") && !e.html.includes("next round"));
   assert.match(e.html, /\+27821234567/);

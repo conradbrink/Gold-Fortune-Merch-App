@@ -14,6 +14,9 @@
 --   F6  The short form (11 Oct 2026): an application with only the name,
 --       business, team size and WhatsApp saves, with nulls for everything not
 --       asked; a blank town or biggest_cost is still refused.
+--   F7  One application per person (20261020200000): a second application
+--       with the same WhatsApp number, or the same email in any case, is
+--       refused; a different number and email is not.
 --
 -- HOW TO RUN: paste into execute_sql (or psql -f). One DO block that always
 -- ends in `raise exception`, so nothing survives.
@@ -129,7 +132,7 @@ begin
   update public.founding_applications set organization_id = v_org where id = v_id;
   insert into public.founding_applications
     (name, business_name, whatsapp, trade, team_size, town, how_run, biggest_cost, whole_team, video_review, marketing_ok)
-  values ('Second Owner', 'Second Co', '27821234568', 'cleaning', '5-10', 'Gaborone', 'whatsapp', 'x', true, true, true)
+  values ('Second Owner', 'Second Co', '27821234569', 'cleaning', '5-10', 'Gaborone', 'whatsapp', 'x', true, true, true)
   returning id into v_id2;
   begin
     update public.founding_applications set organization_id = v_org where id = v_id2;
@@ -139,6 +142,26 @@ begin
   delete from public.organizations where id = v_org;
   if not exists (select 1 from public.founding_applications where id = v_id and organization_id is null) then
     v_fail := v_fail || 'F5 deleting the company did not leave the application with no link' || E'\n';
+  end if;
+
+  ------------------------------------------------------------ F7 one per person
+  if to_regclass('public.founding_applications_one_per_number') is not null then
+    insert into public.founding_applications (name, business_name, whatsapp, team_size, email)
+    values ('Seven Owner', 'Seven Co', '27821230007', '1-4', 'seven@example.com');
+    begin
+      insert into public.founding_applications (name, business_name, whatsapp, team_size)
+      values ('Seven Again', 'Seven Co', '27821230007', '1-4');
+      v_fail := v_fail || 'F7 a second application with the same WhatsApp number was saved' || E'\n';
+    exception when unique_violation then null;
+    end;
+    begin
+      insert into public.founding_applications (name, business_name, whatsapp, team_size, email)
+      values ('Seven Again', 'Seven Co', '27821230008', '1-4', 'Seven@Example.com');
+      v_fail := v_fail || 'F7 a second application with the same email was saved' || E'\n';
+    exception when unique_violation then null;
+    end;
+    insert into public.founding_applications (name, business_name, whatsapp, team_size, email)
+    values ('Eight Owner', 'Eight Co', '27821230009', '1-4', 'eight@example.com');
   end if;
 
   if v_fail <> '' then

@@ -93,8 +93,6 @@ export const founding = {
   // After the pilot: this much off the plan that fits, for this many months.
   percentOff: 40,
   priceMonths: 3,
-  // How soon we WhatsApp an applicant back, in work hours.
-  replyMinutes: 5,
   // The guarantee: run it this many days; its conditions are on /terms#guarantee.
   guaranteeDays: 30,
   // The app's endpoint. NEXT_PUBLIC_FOUNDING_API points a local site at a local app.

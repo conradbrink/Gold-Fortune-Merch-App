@@ -15,8 +15,6 @@ export const FOUNDING_OFFER = {
   /** After the pilot: this much off the plan that fits, for this many months. */
   percentOff: 40,
   priceMonths: 3,
-  /** How soon we WhatsApp an applicant back, in work hours. */
-  replyMinutes: 5,
   /** Where the application is. */
   applyUrl: "https://tickd.co.za/founding",
 } as const;
