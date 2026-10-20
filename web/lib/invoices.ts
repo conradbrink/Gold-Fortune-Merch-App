@@ -1,6 +1,17 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database, Json } from "@/lib/supabase/types";
-import { drawMoneyPdf, money, type PdfSpec } from "@/lib/money-pdf";
+import {
+  drawMoneyPdf,
+  invoiceStatus,
+  money,
+  paperDate,
+  paperLines,
+  paperMoney,
+  termsText,
+  vatRows,
+  type Paper,
+  type PdfSpec,
+} from "@/lib/money-pdf";
 import { formatQty } from "@/lib/money-docs";
 import { periodLabel } from "@/lib/contract-periods";
 
@@ -348,13 +359,15 @@ export function invoiceHeading(inv: Pick<Invoice, "vat_rate">) {
   return Number(inv.vat_rate) > 0 ? "TAX INVOICE" : "INVOICE";
 }
 
-function totalsOf(inv: Invoice, subtotal: number, vat: number, total: number, credit = false): [string, string][] {
-  const rate = Number(inv.vat_rate);
-  if (rate === 0) return [[credit ? "Total credited" : "Total", money(total)]];
+function totalsOf(
+  inv: Invoice,
+  amounts: { subtotal: number; vat: number; total: number },
+  fmt: (n: number) => string,
+  totalLabel = "Total"
+): PdfSpec["totals"] {
   return [
-    ["Subtotal (excl. VAT)", money(subtotal)],
-    [inv.prices_include_vat ? `VAT ${rate}% (included)` : `VAT ${rate}%`, money(vat)],
-    [credit ? "Total credited" : "Total", money(total)],
+    ...vatRows(Number(inv.vat_rate), inv.prices_include_vat, amounts.subtotal, amounts.vat, fmt),
+    [totalLabel, fmt(amounts.total)],
   ];
 }
 
@@ -374,85 +387,129 @@ export function customerPoText(
   return inv.customer_po_date ? `${inv.customer_po_number} of ${day(inv.customer_po_date)}` : inv.customer_po_number;
 }
 
-/** The invoice as the PDF drawer takes it; pure, so the client's page builds the same one from its own data. */
-export function invoicePdfSpec(detail: Pick<InvoiceDetail, "invoice" | "lines" | "visits">): PdfSpec {
+/** What has been taken off an invoice and what is still owed. */
+type Settled = Pick<Balance, "credited" | "paid" | "outstanding">;
+
+/**
+ * The invoice as the PDF drawer takes it; pure, so the client's page builds
+ * the same one from its own data. With what has been credited and paid, it
+ * ends with the amount still due and whether it is paid or overdue.
+ */
+export function invoicePdfSpec(
+  detail: Pick<InvoiceDetail, "invoice" | "lines" | "visits"> & { balance?: Settled },
+  paper: Paper
+): PdfSpec {
   const inv = detail.invoice;
-  const meta: [string, string][] = [
-    ["Invoice no", inv.invoice_number],
-    ["Date", inv.issue_date],
-    ["Due", inv.due_date],
-  ];
+  const fmt = paperMoney(paper);
+  const meta: [string, string][] = [["Invoice no.", inv.invoice_number]];
+  const terms = termsText(inv.issue_date, inv.due_date);
+  if (terms) meta.push(["Terms", terms]);
+  meta.push(["Invoice date", paperDate(inv.issue_date)], ["Due date", paperDate(inv.due_date)]);
   const period = invoicePeriod(inv);
   if (period) meta.push(["Period", period]);
-  if (inv.order_number) meta.push(["Order", inv.order_number]);
-  else if (inv.source === "quote" && inv.reference) meta.push(["Quote", inv.reference]);
-  else if (inv.reference) meta.push(["Reference", inv.reference]);
-  const po = customerPoText(inv);
+  if (inv.order_number) meta.push(["Order no.", inv.order_number]);
+  else if (inv.source === "quote" && inv.reference) {
+    // A deposit or the final balance says which part of the quote it is.
+    meta.push([inv.kind === "deposit" ? "Deposit on quote" : inv.kind === "final" ? "Balance of quote" : "Quote no.", inv.reference]);
+  } else if (inv.reference) meta.push(["Reference", inv.reference]);
+  const po = customerPoText(inv, paperDate);
   if (po) meta.push(["Your PO", po]);
   const notes: string[] = [];
-  if (inv.status === "void") notes.push(`VOID — ${inv.void_reason}`);
-  if (detail.visits.length > 0) {
-    notes.push(
-      `For the work done on ${detail.visits
-        .map((v) => (v.checkin_at ? v.checkin_at.slice(0, 10) : "—"))
-        .join(", ")}.`
-    );
+  if (inv.status === "void") notes.push(`This invoice is void: ${inv.void_reason}`);
+  const days = [...new Set(detail.visits.map((v) => v.checkin_at?.slice(0, 10)).filter((d): d is string => !!d))].sort();
+  if (days.length > 0 && days.length <= 6) notes.push(`For the work done on ${days.map(paperDate).join(", ")}.`);
+  else if (days.length > 6) notes.push(`For the work done on ${days.length} days, ${paperDate(days[0])} to ${paperDate(days[days.length - 1])}.`);
+  const totals = totalsOf(inv, { subtotal: Number(inv.subtotal), vat: Number(inv.vat), total: Number(inv.total) }, fmt);
+  // A balance that does not exist yet is an invoice nobody has paid or credited.
+  const settled = detail.balance ?? { credited: 0, paid: 0, outstanding: Number(inv.total) };
+  const credited = Number(settled.credited);
+  const paid = Number(settled.paid);
+  if (credited > 0 || paid > 0) {
+    const [label, value] = totals[totals.length - 1];
+    totals[totals.length - 1] = [label, value, true];
+    if (credited > 0) totals.push(["Credit notes", fmt(-credited)]);
+    if (paid > 0) totals.push(["Paid", fmt(-paid)]);
+    // Paid over the total is a credit the banner speaks of; nothing is due.
+    totals.push(["Amount due", fmt(Math.max(0, Number(settled.outstanding)))]);
   }
   return {
     heading: invoiceHeading(inv),
     fileName: inv.invoice_number,
     seller: sellerOf(inv),
+    metaTitle: "Invoice details",
     meta,
-    billTo: { name: inv.customer_name, address: inv.customer_address, email: inv.customer_email },
-    head: ["Description", "Code", "Qty", "Unit price", "Amount"],
-    numeric: [2, 3, 4],
-    rows: detail.lines.map((l) => [
-      l.description,
-      l.sku ?? "",
-      qtyCell(Number(l.qty), l.unit),
-      money(Number(l.unit_price)),
-      money(Number(l.line_total)),
-    ]),
-    totals: totalsOf(inv, Number(inv.subtotal), Number(inv.vat), Number(inv.total)),
+    billTo: { label: "Bill to", name: inv.customer_name, address: inv.customer_address, email: inv.customer_email },
+    ...paperLines(
+      detail.lines.map((l) => ({
+        code: l.sku,
+        description: l.description,
+        qty: qtyCell(Number(l.qty), l.unit),
+        rate: fmt(Number(l.unit_price)),
+        amount: fmt(Number(l.line_total)),
+      })),
+      Number(inv.vat_rate) > 0
+    ),
+    totals,
+    status: invoiceStatus(inv, { outstanding: Number(settled.outstanding), paid, credited }, paper.today),
     notes,
     payTo: inv.bank_details,
     footer: inv.footer,
   };
 }
 
+/** The company's currency and today, for a document drawn in the signed-in app. */
+async function signedInPaper(): Promise<Paper> {
+  const { loadPaper } = await import("@/lib/document-look");
+  return loadPaper();
+}
+
 export async function downloadInvoicePdf(detail: InvoiceDetail) {
-  await drawMoneyPdf(invoicePdfSpec(detail));
+  await drawMoneyPdf(invoicePdfSpec(detail, await signedInPaper()));
 }
 
 export function creditNotePdfSpec(
   detail: Pick<InvoiceDetail, "invoice" | "lines">,
-  credit: CreditNote & { lines: CreditNoteLine[] }
+  credit: CreditNote & { lines: CreditNoteLine[] },
+  paper: Paper
 ): PdfSpec {
   const byId = new Map(detail.lines.map((l) => [l.id, l]));
   const inv = detail.invoice;
+  const fmt = paperMoney(paper);
   return {
     heading: "CREDIT NOTE",
     fileName: credit.credit_number,
     seller: sellerOf(inv),
+    metaTitle: "Credit note details",
     meta: [
-      ["Credit note no", credit.credit_number],
-      ["Date", credit.issue_date],
+      ["Credit note no.", credit.credit_number],
+      ["Date", paperDate(credit.issue_date)],
       ["Against invoice", inv.invoice_number],
     ],
-    billTo: { name: inv.customer_name, address: inv.customer_address, email: inv.customer_email },
-    head: ["Description", "Code", "Qty", "Unit price", "Amount"],
-    numeric: [2, 3, 4],
-    rows: credit.lines.map((l) => {
-      const line = byId.get(l.invoice_line_id);
-      return [
-        line?.description ?? "",
-        line?.sku ?? "",
-        qtyCell(Number(l.qty), line?.unit),
-        money(Number(l.unit_price)),
-        money(Number(l.line_total)),
-      ];
-    }),
-    totals: totalsOf(inv, Number(credit.subtotal), Number(credit.vat), Number(credit.total), true),
+    billTo: { label: "Credit to", name: inv.customer_name, address: inv.customer_address, email: inv.customer_email },
+    ...paperLines(
+      credit.lines.length > 0
+        ? credit.lines.map((l) => {
+            const line = byId.get(l.invoice_line_id);
+            return {
+              code: line?.sku,
+              description: line?.description ?? "",
+              qty: qtyCell(Number(l.qty), line?.unit),
+              rate: fmt(Number(l.unit_price)),
+              amount: fmt(Number(l.line_total)),
+            };
+          })
+        : // A rebate (or any credit for an amount) has no lines of its own: one line says what it is for.
+          [
+            {
+              description: credit.reason,
+              qty: "1",
+              rate: fmt(Number(inv.prices_include_vat ? credit.total : credit.subtotal)),
+              amount: fmt(Number(inv.prices_include_vat ? credit.total : credit.subtotal)),
+            },
+          ],
+      Number(inv.vat_rate) > 0
+    ),
+    totals: totalsOf(inv, { subtotal: Number(credit.subtotal), vat: Number(credit.vat), total: Number(credit.total) }, fmt, "Total credited"),
     notes: [`Reason: ${credit.reason}`],
     footer: inv.footer,
   };
@@ -462,7 +519,7 @@ export async function downloadCreditNotePdf(
   detail: InvoiceDetail,
   credit: CreditNote & { lines: CreditNoteLine[] }
 ) {
-  await drawMoneyPdf(creditNotePdfSpec(detail, credit));
+  await drawMoneyPdf(creditNotePdfSpec(detail, credit, await signedInPaper()));
 }
 
 const PROOF_STATUS: Record<string, string> = { done: "Done", caught_up: "Caught up later", missed: "Missed" };
@@ -481,19 +538,20 @@ export async function downloadProofOfServicePdf(
     iso ? new Date(iso).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" }) : "";
   const done = rows.filter((r) => r.status === "done");
   const minutes = done.reduce((n, r) => n + (r.minutes ?? 0), 0);
-  const meta: [string, string][] = [["Invoice no", inv.invoice_number]];
+  const meta: [string, string][] = [["Invoice no.", inv.invoice_number]];
   const period = invoicePeriod(inv);
   if (period) meta.push(["Period", period]);
   await drawMoneyPdf({
     heading: "PROOF OF SERVICE",
     fileName: `${inv.invoice_number} proof of service`,
     seller: sellerOf(inv),
+    metaTitle: "Details",
     meta,
-    billTo: { label: "FOR", name: inv.customer_name, address: inv.customer_address },
+    billTo: { label: "For", name: inv.customer_name, address: inv.customer_address },
     head: ["Date", words.staff, "In", "Out", "Minutes", "GPS", "Forms", "Photos", ""],
     numeric: [4, 6, 7],
     rows: rows.map((r) => [
-      r.day,
+      paperDate(r.day),
       r.staff_name ?? "",
       time(r.checkin_at),
       time(r.checkout_at),

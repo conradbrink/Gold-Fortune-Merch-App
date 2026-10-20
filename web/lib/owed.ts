@@ -1,6 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/lib/supabase/types";
-import { drawMoneyPdf, money, type PdfSpec } from "@/lib/money-pdf";
+import { drawMoneyPdf, paperDate, paperMoney, statementStatus, type Paper, type PdfSpec } from "@/lib/money-pdf";
 import { AGEING_COLUMNS } from "@/lib/money-docs";
 import type { ExportSheet } from "@/lib/export";
 
@@ -152,14 +152,36 @@ export async function fetchStatementSeller(supabase: Client): Promise<StatementS
   return data as StatementSeller;
 }
 
+/** What is owed by how late, as the statement's strip shows it (`debtors_ageing_json`, or the client's page). */
+export type StatementAgeing = Partial<Record<(typeof AGEING_COLUMNS)[number]["key"], number>>;
+
+/** "Invoice INV-0042", "Payment for INV-0042": what a statement row was, by the document it moved. */
+export function statementActivity(r: Pick<StatementRow, "entry_kind" | "document_number">): string {
+  const kind = STATEMENT_KIND_LABELS[r.entry_kind] ?? r.entry_kind;
+  if (!r.document_number) return kind;
+  return r.entry_kind === "payment" ? `${kind} for ${r.document_number}` : `${kind} ${r.document_number}`;
+}
+
+/**
+ * The statement as the PDF drawer takes it: the account's activity in the
+ * period from the balance brought forward, what is owed by how late (when the
+ * ageing is known), the balance due, and whether any of it is overdue.
+ */
 export function statementPdfSpec(
   seller: StatementSeller,
   client: StatementClient & { address?: string | null },
   from: string,
   to: string,
-  rows: StatementRow[]
+  rows: StatementRow[],
+  paper: Paper,
+  ageing: StatementAgeing | null = null
 ): PdfSpec {
-  const closing = rows.length ? rows[rows.length - 1].balance : 0;
+  const closing = rows.length ? Number(rows[rows.length - 1].balance) : 0;
+  const fmt = paperMoney(paper);
+  const amount = (n: number | null) => (n !== null && Number(n) !== 0 ? fmt(Number(n)) : "");
+  const overdue = ageing
+    ? AGEING_COLUMNS.filter((c) => c.key !== "not_due").reduce((n, c) => n + Number(ageing[c.key] ?? 0), 0)
+    : null;
   return {
     heading: "STATEMENT",
     fileName: `Statement ${client.name} ${to}`,
@@ -173,24 +195,30 @@ export function statementPdfSpec(
       email: seller.support_email,
       logoPath: seller.logo_path,
     },
+    metaTitle: "Statement details",
     meta: [
-      ["Date", to],
-      ["From", from],
-      ["To", to],
+      ["Statement date", paperDate(to)],
+      ["Period", `${paperDate(from)} to ${paperDate(to)}`],
+      ["Amount due", fmt(Math.max(0, closing))],
     ],
-    billTo: { label: "STATEMENT FOR", name: client.name, address: client.address ?? null },
-    head: ["Date", "Type", "Number", "Detail", "Debit", "Credit", "Balance"],
-    numeric: [4, 5, 6],
-    rows: rows.map((r) => [
-      r.entry_date,
-      STATEMENT_KIND_LABELS[r.entry_kind] ?? r.entry_kind,
-      r.document_number ?? "",
-      statementDetail(r),
-      r.debit === null ? "" : money(r.debit),
-      r.credit === null ? "" : money(r.credit),
-      money(r.balance),
-    ]),
-    totals: [["Balance due", money(closing)]],
+    billTo: { label: "Statement for", name: client.name, address: client.address ?? null },
+    head: ["Date", "Activity", "Charged", "Paid or credited", "Balance"],
+    numeric: [2, 3, 4],
+    rows: rows.map((r) => {
+      const detail = statementDetail(r);
+      return [
+        paperDate(r.entry_date),
+        detail ? `${statementActivity(r)}\n${detail}` : statementActivity(r),
+        amount(r.debit),
+        amount(r.credit),
+        fmt(Number(r.balance)),
+      ];
+    }),
+    ageing: ageing
+      ? AGEING_COLUMNS.map((c) => [c.key === "not_due" ? c.label : `${c.label} overdue`, fmt(Number(ageing[c.key] ?? 0))])
+      : null,
+    totals: [["Balance due", fmt(closing)]],
+    status: statementStatus(closing, overdue, fmt),
     payTo: seller.bank_details,
   };
 }
@@ -200,7 +228,9 @@ export async function downloadStatementPdf(
   client: StatementClient & { address?: string | null },
   from: string,
   to: string,
-  rows: StatementRow[]
+  rows: StatementRow[],
+  ageing: StatementAgeing | null = null
 ) {
-  await drawMoneyPdf(statementPdfSpec(seller, client, from, to, rows));
+  const { loadPaper } = await import("@/lib/document-look");
+  await drawMoneyPdf(statementPdfSpec(seller, client, from, to, rows, await loadPaper(), ageing));
 }

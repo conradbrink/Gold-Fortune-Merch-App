@@ -1,13 +1,10 @@
 import type { ReactNode } from "react";
 import { CircleCheck, Clock, Info, TriangleAlert } from "lucide-react";
-import { hexToRgb, onWhite, readableOn, tint, type PdfLook, type Rgb } from "@/lib/document-style";
+import { brandText, hexToRgb, mix, readableOn, tint, wash, type DocumentStyle, type PdfLook, type Rgb } from "@/lib/document-style";
 import {
-  ageingParts,
-  dayText,
   documentLook,
   invoiceBanner,
   moneyIn,
-  periodText,
   quoteBanner,
   sellerOf,
   statementBanner,
@@ -17,12 +14,13 @@ import {
   type DocumentView,
   type InvoiceView,
   type QuoteView,
-  type Seller,
   type StatementView,
 } from "@/lib/client-document";
-import { customerPoText, invoiceHeading, PAYMENT_METHODS } from "@/lib/invoices";
+import { invoiceViewPdfSpec, quoteViewPdfSpec, statementViewPdfSpec } from "@/lib/client-document-pdf";
+import { paperDate, type PdfSpec, type PdfStatus } from "@/lib/money-pdf";
+import { PAYMENT_METHODS } from "@/lib/invoices";
 import { formatQty, lineTotal } from "@/lib/money-docs";
-import { statementDetail, STATEMENT_KIND_LABELS } from "@/lib/owed";
+import { statementActivity, statementDetail } from "@/lib/owed";
 import { DownloadPdfButton } from "@/components/client-document/download-pdf-button";
 
 /**
@@ -30,23 +28,32 @@ import { DownloadPdfButton } from "@/components/client-document/download-pdf-but
  * what `document_link_view()` returns. Rendered by /c/doc/[token];
  * presentational, so it can be checked with example data.
  *
- * It reads as the paper document does, in the company's own look: `classic` is
- * neutral with a dark heading, `bold` a band of the company's colour, `clean`
- * centred with thin lines. The paper is always light, so the company's colours
- * mean what they mean on its PDF whatever the reader's theme.
+ * It reads as the paper document does, from the same spec the PDF is drawn
+ * from and in the company's look: the heading and the company at the top, who
+ * it is for and the document's numbers, the lines, then a note to the customer
+ * beside the totals. `classic` puts who it is for on a light band of the brand
+ * colour; `bold` the heading in a band of it, the table's heading and the
+ * amount due on it too; `clean` centres the letterhead and keeps to thin
+ * lines. Above the paper, a banner says in words what the client owes or what
+ * the quote is. The paper is always light, so the company's colours mean what
+ * they mean on its PDF whatever the reader's theme.
  */
 
 const css = (c: Rgb) => `rgb(${c[0]} ${c[1]} ${c[2]})`;
 
 function palette(look: PdfLook) {
   const primary = hexToRgb(look.primary);
+  const band = wash(primary);
   return {
+    style: look.style as DocumentStyle,
     primary: look.primary,
     accent: look.accent,
     onPrimary: css(readableOn(primary)),
-    /** The company's colour as text on white. */
-    text: css(onWhite(primary)),
-    wash: css(tint(primary, 0.93)),
+    /** The company's colour as text on white and on its band. */
+    text: css(brandText(primary)),
+    wash: css(band),
+    stripe: css(tint(primary, 0.95)),
+    rule: css(mix(band, [33, 33, 33], 0.2)),
   };
 }
 type Palette = ReturnType<typeof palette>;
@@ -55,31 +62,35 @@ const lines = (s: string | null | undefined) => (s ?? "").trim();
 
 // ------------------------------------------------------------ the letterhead
 
-/** Short facts side by side, each kept whole when the line wraps. */
-function Spaced({ items, centre }: { items: string[]; centre: boolean }) {
-  return (
-    <p className={`flex flex-wrap gap-x-3 gap-y-0.5 ${centre ? "justify-center" : ""}`}>
-      {items.map((t) => (
-        <span key={t} className="break-words">
-          {t}
-        </span>
-      ))}
-    </p>
-  );
-}
-
-function SellerDetails({ s, centre = false }: { s: Seller; centre?: boolean }) {
+/** The company's name, address and numbers, and how to reach it in a column beside them. */
+function SellerColumns({ spec, withName }: { spec: PdfSpec; withName: boolean }) {
+  const s = spec.seller;
   const numbers = [
-    s.registrationNumber && `Reg no: ${s.registrationNumber}`,
-    s.taxNumber && `TIN: ${s.taxNumber}`,
     s.vatNumber && `VAT no: ${s.vatNumber}`,
+    s.taxNumber && `TIN: ${s.taxNumber}`,
+    s.registrationNumber && `Reg no: ${s.registrationNumber}`,
   ].filter(Boolean) as string[];
-  const contact = [s.phone, s.email].filter(Boolean) as string[];
+  const contact = [s.email, s.phone].filter(Boolean) as string[];
   return (
-    <div className={`space-y-0.5 text-xs text-neutral-600 ${centre ? "text-center" : ""}`}>
-      {lines(s.address) && <p className="whitespace-pre-line">{lines(s.address)}</p>}
-      {numbers.length > 0 && <Spaced items={numbers} centre={centre} />}
-      {contact.length > 0 && <Spaced items={contact} centre={centre} />}
+    <div className="grid gap-x-10 gap-y-2 text-xs text-neutral-600 sm:grid-cols-[minmax(0,15rem)_auto]">
+      <div className="space-y-0.5">
+        {withName && <p className="font-semibold break-words text-neutral-900">{s.name}</p>}
+        {lines(s.address) && <p className="whitespace-pre-line">{lines(s.address)}</p>}
+        {numbers.map((n) => (
+          <p key={n} className="break-words">
+            {n}
+          </p>
+        ))}
+      </div>
+      {contact.length > 0 && (
+        <div className="space-y-0.5">
+          {contact.map((c) => (
+            <p key={c} className="break-words">
+              {c}
+            </p>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -89,123 +100,119 @@ function Logo({ src, className }: { src: string | null; className: string }) {
   return src ? <img src={src} alt="" className={className} /> : null;
 }
 
-function Meta({ rows, align = "left" }: { rows: [string, string][]; align?: "left" | "right" | "centre" }) {
-  if (rows.length === 0) return null;
-  const place = align === "right" ? "justify-start sm:justify-end" : align === "centre" ? "justify-center" : "justify-start";
-  return (
-    <dl className={`grid grid-cols-[auto_auto] gap-x-4 gap-y-1 text-sm ${place}`}>
-      {rows.map(([k, v]) => (
-        <div key={k} className="contents">
-          <dt className="text-neutral-600">{k}</dt>
-          <dd className="font-medium tabular-nums text-neutral-900">{v}</dd>
+function Masthead({ p, spec, logo }: { p: Palette; spec: PdfSpec; logo: string | null }) {
+  const s = spec.seller;
+  if (p.style === "bold") {
+    return (
+      <header>
+        <div className="flex items-center justify-between gap-4 px-5 py-5 sm:px-8 sm:py-6" style={{ background: p.primary, color: p.onPrimary }}>
+          {logo ? (
+            <span className="inline-flex shrink-0 rounded-md bg-white p-2">
+              <Logo src={logo} className="h-10 w-auto max-w-36 object-contain" />
+            </span>
+          ) : (
+            <p className="min-w-0 text-lg font-bold text-balance break-words">{s.name}</p>
+          )}
+          <h1 className="text-right text-xl font-bold tracking-[0.04em] text-balance sm:text-2xl">{spec.heading}</h1>
         </div>
-      ))}
-    </dl>
+        <div className="h-1" style={{ background: p.accent }} />
+        <div className="px-5 py-6 sm:px-8">
+          <SellerColumns spec={spec} withName={!!logo} />
+        </div>
+      </header>
+    );
+  }
+  if (p.style === "clean") {
+    const numbers = [
+      s.vatNumber && `VAT no: ${s.vatNumber}`,
+      s.taxNumber && `TIN: ${s.taxNumber}`,
+      s.registrationNumber && `Reg no: ${s.registrationNumber}`,
+    ].filter(Boolean) as string[];
+    const contact = [s.email, s.phone].filter(Boolean) as string[];
+    return (
+      <header className="px-5 pt-8 sm:px-8">
+        <div className="flex flex-col items-center gap-1.5 text-center">
+          <Logo src={logo} className="mb-1 h-14 w-auto max-w-44 object-contain" />
+          <p className="text-base font-semibold text-balance text-neutral-900">{s.name}</p>
+          <div className="space-y-0.5 text-xs text-neutral-600">
+            {lines(s.address) && <p className="text-balance">{lines(s.address).split(/\s*\n\s*/).join(", ")}</p>}
+            {numbers.length > 0 && <p>{numbers.join("  ·  ")}</p>}
+            {contact.length > 0 && <p className="break-words">{contact.join("  ·  ")}</p>}
+          </div>
+        </div>
+        <div className="mt-5 h-px" style={{ background: p.text }} />
+        <h1 className="pt-7 text-xl font-light tracking-[0.18em] text-balance sm:text-2xl" style={{ color: p.text }}>
+          {spec.heading}
+        </h1>
+      </header>
+    );
+  }
+  return (
+    <header className="flex items-start justify-between gap-6 px-5 pt-6 pb-6 sm:px-8 sm:pt-8">
+      <div className="min-w-0 space-y-3">
+        <h1 className="text-lg font-bold tracking-[0.06em] text-balance" style={{ color: p.text }}>
+          {spec.heading}
+        </h1>
+        <SellerColumns spec={spec} withName />
+      </div>
+      <Logo src={logo} className="h-16 w-auto max-w-32 shrink-0 object-contain sm:h-20 sm:max-w-40" />
+    </header>
   );
 }
 
-/** "TAX INVOICE" to "Tax invoice": the PDF shouts, the page does not. */
-const sentence = (s: string) => s.charAt(0) + s.slice(1).toLowerCase();
-
-function Masthead({
-  look,
-  p,
-  seller,
-  logo,
-  heading,
-  number,
-  meta,
-}: {
-  look: PdfLook;
-  p: Palette;
-  seller: Seller;
-  logo: string | null;
-  heading: string;
-  number: string | null;
-  meta: [string, string][];
-}) {
-  if (look.style === "bold") {
-    return (
-      <header>
-        <div className="flex flex-col gap-4 px-5 py-6 sm:flex-row sm:items-center sm:justify-between sm:px-8" style={{ background: p.primary, color: p.onPrimary }}>
-          {logo ? (
-            <span className="inline-flex self-start rounded-md bg-white p-2">
-              <Logo src={logo} className="h-10 w-auto max-w-40 object-contain" />
-            </span>
-          ) : (
-            <p className="text-lg font-semibold text-balance">{seller.name}</p>
-          )}
-          <div className="sm:text-right">
-            <h1 className="text-2xl font-bold text-balance sm:text-3xl">{heading}</h1>
-            {number && <p className="text-sm tabular-nums opacity-90">{number}</p>}
-          </div>
-        </div>
-        <div className="h-1" style={{ background: p.accent }} />
-        <div className="grid gap-5 px-5 pt-6 sm:grid-cols-2 sm:px-8">
-          <div className="space-y-1">
-            {logo && <p className="text-sm font-semibold text-neutral-900">{seller.name}</p>}
-            <SellerDetails s={seller} />
-          </div>
-          <Meta rows={meta} align="right" />
-        </div>
-      </header>
-    );
-  }
-  if (look.style === "clean") {
-    return (
-      <header className="space-y-5 px-5 pt-8 sm:px-8">
-        <div className="flex flex-col items-center gap-2">
-          <Logo src={logo} className="h-12 w-auto max-w-44 object-contain" />
-          <p className="text-base font-semibold text-neutral-900">{seller.name}</p>
-          <SellerDetails s={seller} centre />
-        </div>
-        <div className="h-px" style={{ background: p.text }} />
-        <div className="flex flex-col items-center gap-2 text-center">
-          <h1 className="text-xl font-light tracking-[0.18em] text-balance uppercase sm:text-2xl" style={{ color: p.text }}>
-            {heading}
-          </h1>
-          {number && <p className="text-sm font-medium tabular-nums text-neutral-900">{number}</p>}
-          <Meta rows={meta} align="centre" />
-        </div>
-      </header>
-    );
-  }
+/** Who it is for, where it goes, and the document's numbers and dates, on the band. */
+function Band({ p, spec }: { p: Palette; spec: PdfSpec }) {
+  const bill = [lines(spec.billTo.address), lines(spec.billTo.email)].filter(Boolean).join("\n");
+  const ship = lines(spec.shipTo?.address);
   return (
-    <header className="grid gap-6 px-5 pt-6 sm:grid-cols-2 sm:px-8 sm:pt-8">
-      <div className="space-y-2">
-        <Logo src={logo} className="h-12 w-auto max-w-44 object-contain" />
-        <p className="text-base font-semibold text-neutral-900">{seller.name}</p>
-        <SellerDetails s={seller} />
+    <section className={p.style === "clean" ? "px-5 pt-4 pb-2 sm:px-8" : "px-5 py-6 sm:px-8"} style={p.style === "clean" ? undefined : { background: p.wash }}>
+      <div className="grid gap-4 sm:grid-cols-[11fr_9fr]">
+        <div className="min-w-0">
+          <p className="text-lg break-words" style={{ color: p.text }}>
+            {spec.billTo.name}
+          </p>
+          {bill && (
+            <>
+              <p className="mt-0.5 text-xs font-semibold text-neutral-900">{spec.billTo.label ?? "Bill to"}</p>
+              <p className="text-sm break-words whitespace-pre-line text-neutral-700">{bill}</p>
+            </>
+          )}
+        </div>
+        {ship && (
+          <div className="min-w-0 sm:pt-7">
+            <p className="text-xs font-semibold text-neutral-900">{spec.shipTo?.label ?? "Ship to"}</p>
+            <p className="text-sm break-words whitespace-pre-line text-neutral-700">{ship}</p>
+          </div>
+        )}
       </div>
-      <div className="space-y-2 sm:text-right">
-        <h1 className="text-2xl font-bold text-balance text-neutral-900 sm:text-3xl">{heading}</h1>
-        {number && <p className="text-sm font-medium tabular-nums text-neutral-900">{number}</p>}
-        <Meta rows={meta} align="right" />
-      </div>
-    </header>
+      <div className="my-5 border-t border-dashed" style={{ borderColor: p.style === "clean" ? "rgb(218 218 218)" : p.rule }} />
+      <h2 className="text-xs font-semibold text-neutral-900">{spec.metaTitle ?? "Details"}</h2>
+      <ul className={`mt-1.5 space-y-0.5 text-sm text-neutral-700 ${spec.meta.length > 5 ? "sm:columns-2" : ""}`}>
+        {spec.meta.map(([k, v]) => (
+          <li key={k}>
+            {k}: <span className="tabular-nums">{v}</span>
+          </li>
+        ))}
+      </ul>
+    </section>
   );
 }
 
 // ----------------------------------------------------------------- pieces
 
 const TONES: Record<Banner["tone"], { icon: typeof Clock; box: string }> = {
-  paid: { icon: CircleCheck, box: "bg-emerald-50 text-emerald-900" },
-  overdue: { icon: TriangleAlert, box: "bg-red-50 text-red-900" },
-  ended: { icon: Info, box: "bg-neutral-100 text-neutral-800" },
-  due: { icon: Clock, box: "" },
-  info: { icon: Clock, box: "" },
+  paid: { icon: CircleCheck, box: "bg-emerald-50 text-emerald-900 ring-emerald-200" },
+  overdue: { icon: TriangleAlert, box: "bg-red-50 text-red-900 ring-red-200" },
+  ended: { icon: Info, box: "bg-neutral-100 text-neutral-800 ring-neutral-200" },
+  due: { icon: Clock, box: "bg-white text-neutral-900 ring-foreground/10" },
+  info: { icon: Clock, box: "bg-white text-neutral-900 ring-foreground/10" },
 };
 
-function BannerBox({ banner, p }: { banner: Banner; p: Palette }) {
+function BannerBox({ banner }: { banner: Banner }) {
   const tone = TONES[banner.tone];
   const Icon = tone.icon;
-  const brand = banner.tone === "due" || banner.tone === "info";
   return (
-    <div
-      role="status"
-      className={`flex items-start gap-3 rounded-lg px-4 py-3 ${tone.box}`}
-      style={brand ? { background: p.wash, color: p.text } : undefined}
-    >
+    <div role="status" className={`flex items-start gap-3 rounded-xl px-4 py-3 ring-1 ${tone.box}`}>
       <Icon aria-hidden className="mt-0.5 size-5 shrink-0" />
       <div className="min-w-0">
         <p className="text-base font-semibold text-balance">{banner.headline}</p>
@@ -224,38 +231,50 @@ function Block({ title, children }: { title: string; children: ReactNode }) {
   );
 }
 
-function Who({ label, name, address }: { label: string; name: string; address: string | null }) {
-  return (
-    <Block title={label}>
-      <p className="text-base font-semibold text-neutral-900">{name}</p>
-      {lines(address) && <p className="text-sm whitespace-pre-line text-neutral-700">{lines(address)}</p>}
-    </Block>
-  );
-}
-
 type Row = { title: string; sub: string | null; code: string | null; qty: string; price: string; amount: string };
 
-/** The lines: stacked on a phone, a table from a tablet up. */
-function Lines({ rows, p, look }: { rows: Row[]; p: Palette; look: PdfLook }) {
+/** The table's heading and rows in the company's look: plain (classic), on the brand colour with stripes (bold), under a rule of it (clean). */
+function tableLook(p: Palette) {
+  if (p.style === "bold") {
+    return {
+      th: "font-semibold",
+      headRow: "",
+      head: { background: p.primary, color: p.onPrimary },
+      row: "",
+      stripe: (i: number) => (i % 2 === 1 ? { background: p.stripe } : undefined),
+      edge: "pl-2",
+      edgeRight: "pr-2",
+    };
+  }
+  return {
+    th: p.style === "clean" ? "text-xs font-semibold" : "font-normal",
+    headRow: p.style === "clean" ? "border-b" : "border-b border-neutral-200 text-neutral-900",
+    head: p.style === "clean" ? { color: p.text, borderColor: p.text } : undefined,
+    row: "border-b border-neutral-200",
+    stripe: () => undefined,
+    edge: "pl-0",
+    edgeRight: "pr-0",
+  };
+}
+
+/** The lines: stacked on a phone, a table from a tablet up, numbered as on the paper. */
+function Lines({ rows, taxed, p }: { rows: Row[]; taxed: boolean; p: Palette }) {
   const hasCode = rows.some((r) => r.code);
-  const head =
-    look.style === "bold"
-      ? { background: p.primary, color: p.onPrimary }
-      : look.style === "clean"
-        ? { color: p.text, borderBottom: `1px solid ${p.text}` }
-        : { background: "rgb(30 41 59)", color: "rgb(255 255 255)" };
-  const cell = look.style === "clean" ? "border-b border-neutral-200" : "border-b border-neutral-200";
+  const look = tableLook(p);
+  const th = `px-2 py-2.5 whitespace-nowrap ${look.th}`;
+  const td = "px-2 py-3 align-top";
   return (
     <section aria-label="Lines">
       <ul className="divide-y divide-neutral-200 border-y border-neutral-200 sm:hidden">
         {rows.map((r, i) => (
           <li key={i} className="flex items-start justify-between gap-4 py-3">
             <div className="min-w-0 space-y-0.5">
-              <p className="text-sm font-medium break-words text-neutral-900">{r.title}</p>
+              {r.code && <p className="text-sm font-semibold break-words text-neutral-900">{r.code}</p>}
+              <p className={`text-sm break-words text-neutral-900 ${r.code ? "" : "font-medium"}`}>{r.title}</p>
               {r.sub && <p className="text-xs text-neutral-600">{r.sub}</p>}
               <p className="text-xs text-neutral-600 tabular-nums">
                 {r.qty} at {r.price}
-                {r.code ? `, ${r.code}` : ""}
+                {taxed ? ", VAT" : ""}
               </p>
             </div>
             <p className="shrink-0 text-sm font-semibold tabular-nums text-neutral-900">{r.amount}</p>
@@ -264,25 +283,38 @@ function Lines({ rows, p, look }: { rows: Row[]; p: Palette; look: PdfLook }) {
       </ul>
       <table className="hidden w-full text-sm sm:table">
         <thead>
-          <tr className="text-left text-xs font-semibold" style={head}>
-            <th className="px-3 py-2">Description</th>
-            {hasCode && <th className="px-3 py-2 whitespace-nowrap">Code</th>}
-            <th className="px-3 py-2 text-right whitespace-nowrap">Qty</th>
-            <th className="px-3 py-2 text-right whitespace-nowrap">Unit price</th>
-            <th className="px-3 py-2 text-right">Amount</th>
+          <tr className={`text-left ${look.headRow}`} style={look.head}>
+            <th className={`${th} w-8 ${look.edge}`}>#</th>
+            <th className={th}>Product or service</th>
+            {hasCode && <th className={th}>Description</th>}
+            <th className={`${th} text-right`}>Qty</th>
+            <th className={`${th} text-right`}>Rate</th>
+            <th className={`${th} text-right`}>Amount</th>
+            {taxed && <th className={`${th} text-right ${look.edgeRight}`}>Tax</th>}
           </tr>
         </thead>
         <tbody>
           {rows.map((r, i) => (
-            <tr key={i} className={cell} style={look.style === "bold" && i % 2 === 1 ? { background: p.wash } : undefined}>
-              <td className="px-3 py-2.5 align-top text-neutral-900">
-                <span className="break-words">{r.title}</span>
-                {r.sub && <span className="block text-xs text-neutral-600">{r.sub}</span>}
-              </td>
-              {hasCode && <td className="px-3 py-2.5 align-top whitespace-nowrap text-neutral-700">{r.code}</td>}
-              <td className="px-3 py-2.5 text-right align-top whitespace-nowrap tabular-nums text-neutral-900">{r.qty}</td>
-              <td className="px-3 py-2.5 text-right align-top whitespace-nowrap tabular-nums text-neutral-900">{r.price}</td>
-              <td className="px-3 py-2.5 text-right align-top font-medium whitespace-nowrap tabular-nums text-neutral-900">{r.amount}</td>
+            <tr key={i} className={`text-neutral-900 ${look.row}`} style={look.stripe(i)}>
+              <td className={`${td} ${look.edge} text-xs text-neutral-600 tabular-nums`}>{i + 1}.</td>
+              {hasCode ? (
+                <>
+                  <td className={`${td} font-semibold break-words`}>{r.code}</td>
+                  <td className={td}>
+                    <span className="break-words">{r.title}</span>
+                    {r.sub && <span className="block text-xs text-neutral-600">{r.sub}</span>}
+                  </td>
+                </>
+              ) : (
+                <td className={td}>
+                  <span className="break-words">{r.title}</span>
+                  {r.sub && <span className="block text-xs text-neutral-600">{r.sub}</span>}
+                </td>
+              )}
+              <td className={`${td} text-right whitespace-nowrap tabular-nums`}>{r.qty}</td>
+              <td className={`${td} text-right whitespace-nowrap tabular-nums`}>{r.price}</td>
+              <td className={`${td} text-right whitespace-nowrap tabular-nums`}>{r.amount}</td>
+              {taxed && <td className={`${td} text-right ${look.edgeRight}`}>VAT</td>}
             </tr>
           ))}
         </tbody>
@@ -291,48 +323,78 @@ function Lines({ rows, p, look }: { rows: Row[]; p: Palette; look: PdfLook }) {
   );
 }
 
-type Total = [label: string, value: string];
+const STATUS_COLOUR: Record<PdfStatus["tone"], string> = {
+  overdue: "rgb(196 78 8)",
+  due: "rgb(23 23 23)",
+  paid: "rgb(21 128 61)",
+  void: "rgb(185 28 28)",
+};
 
-/** The totals, the last of them (what is due) made large in the company's style. */
-function Totals({ rows, p, look }: { rows: Total[]; p: Palette; look: PdfLook }) {
-  const last = rows.length - 1;
+/** The amounts on the right, as on the paper: VAT small, the amount to pay large, then whether it is paid. */
+function Totals({ spec, p }: { spec: Pick<PdfSpec, "totals" | "status">; p: Palette }) {
+  const last = spec.totals.length - 1;
   return (
-    <dl className="ml-auto w-full space-y-1 text-sm sm:max-w-xs">
-      {rows.map(([k, v], i) => {
-        if (i < last) {
-          return (
-            <div key={k} className="flex justify-between gap-4">
-              <dt className="text-neutral-600">{k}</dt>
-              <dd className="tabular-nums text-neutral-900">{v}</dd>
-            </div>
-          );
-        }
-        if (look.style === "bold") {
-          return (
-            <div key={k} className="mt-2 flex items-center justify-between gap-4 rounded-md px-3 py-2.5 text-base font-semibold" style={{ background: p.primary, color: p.onPrimary }}>
-              <dt>{k}</dt>
-              <dd className="tabular-nums">{v}</dd>
-            </div>
-          );
-        }
-        if (look.style === "clean") {
-          return (
-            <div key={k} className="mt-2 flex items-baseline justify-between gap-4 pt-2" style={{ borderTop: `1px solid ${p.text}` }}>
-              <dt className="text-neutral-600">{k}</dt>
-              <dd className="text-xl font-bold tabular-nums" style={{ color: p.text }}>
-                {v}
-              </dd>
-            </div>
-          );
-        }
-        return (
-          <div key={k} className={`flex justify-between gap-4 text-base font-bold ${rows.length > 1 ? "border-t border-neutral-300 pt-2" : ""}`}>
-            <dt className="text-neutral-900">{k}</dt>
+    <dl className="w-full text-sm">
+      {spec.totals.map(([k, v, strong], i) =>
+        i < last ? (
+          <div key={k} className={`flex justify-between gap-4 py-1 ${strong ? "mt-2 border-t border-neutral-200 pt-3 font-semibold" : ""}`}>
+            <dt className={strong ? "text-neutral-900" : "text-neutral-600"}>{k}</dt>
             <dd className="tabular-nums text-neutral-900">{v}</dd>
           </div>
-        );
-      })}
+        ) : p.style === "bold" ? (
+          <div key={k} className="my-2 flex items-center justify-between gap-4 rounded-md px-3 py-2.5" style={{ background: p.primary, color: p.onPrimary }}>
+            <dt className="font-semibold">{k}</dt>
+            <dd className="text-xl font-bold tabular-nums">{v}</dd>
+          </div>
+        ) : p.style === "clean" ? (
+          <div key={k} className={`flex items-baseline justify-between gap-4 py-3 ${last > 0 ? "mt-2 border-t" : ""}`} style={{ borderColor: p.text }}>
+            <dt className="text-neutral-600">{k}</dt>
+            <dd className="text-2xl font-bold tabular-nums" style={{ color: p.text }}>
+              {v}
+            </dd>
+          </div>
+        ) : (
+          <div key={k} className={`flex items-baseline justify-between gap-4 py-3 ${last > 0 ? "mt-2 border-t border-neutral-200" : ""}`}>
+            <dt className="font-semibold text-neutral-900">{k}</dt>
+            <dd className="text-2xl font-bold tabular-nums text-neutral-900">{v}</dd>
+          </div>
+        )
+      )}
+      {spec.status && (
+        <div className="flex items-baseline justify-between gap-4 border-t border-neutral-200 pt-3">
+          <dt className="text-base font-bold" style={{ color: STATUS_COLOUR[spec.status.tone] }}>
+            {spec.status.label}
+          </dt>
+          {spec.status.detail && <dd className="tabular-nums text-neutral-600">{spec.status.detail}</dd>}
+        </div>
+      )}
     </dl>
+  );
+}
+
+/** Under the lines: the note to the customer on the left, the totals on the right. */
+function Bottom({ spec, notes, p }: { spec: Pick<PdfSpec, "totals" | "status">; notes: string[]; p: Palette }) {
+  const said = notes.map(lines).filter(Boolean);
+  return (
+    <div className="grid gap-6 sm:grid-cols-[minmax(0,1fr)_minmax(0,17rem)] sm:gap-10">
+      <div className="order-2 min-w-0 space-y-1 sm:order-1 sm:pt-3 sm:pl-8">
+        {said.length > 0 && (
+          <>
+            <h2 className="text-base text-neutral-900" style={p.style === "classic" ? undefined : { color: p.text }}>
+              Note to customer
+            </h2>
+            {said.map((n, i) => (
+              <p key={i} className="text-sm break-words whitespace-pre-line text-neutral-700">
+                {n}
+              </p>
+            ))}
+          </>
+        )}
+      </div>
+      <div className="order-1 sm:order-2">
+        <Totals spec={spec} p={p} />
+      </div>
+    </div>
   );
 }
 
@@ -366,47 +428,21 @@ function List({ title, items }: { title: string; items: { key: string; main: str
   );
 }
 
-function vatLabel(rate: number, included: boolean) {
-  return included ? `VAT ${rate}% (included)` : `VAT ${rate}%`;
-}
-
 // ---------------------------------------------------------------- invoice
 
-function Invoice({ v, logo, today, look, p }: { v: InvoiceView; logo: string | null; today: string; look: PdfLook; p: Palette }) {
+function Invoice({ v, logo, today, p }: { v: InvoiceView; logo: string | null; today: string; p: Palette }) {
   const inv = v.invoice;
   const money = moneyIn(v.look.currency);
   const seller = sellerOf(v);
-  const banner = invoiceBanner({ outstanding: v.outstanding, due_date: inv.due_date }, today, money);
-  const meta: [string, string][] = [
-    ["Date", dayText(inv.issue_date)],
-    ["Due", dayText(inv.due_date)],
-  ];
-  if (inv.period_start && inv.period_end) meta.push(["Period", periodText(inv.period_start, inv.period_end)]);
-  if (inv.order_number) meta.push(["Order", inv.order_number]);
-  else if (inv.source === "quote" && inv.reference) meta.push(["Quote", inv.reference]);
-  else if (inv.reference) meta.push(["Reference", inv.reference]);
-  const po = customerPoText(inv, dayText);
-  if (po) meta.push(["Your PO", po]);
-  const rate = Number(inv.vat_rate);
-  const totals: Total[] = rate === 0 ? [] : [["Subtotal (excl. VAT)", money(inv.subtotal)], [vatLabel(rate, inv.prices_include_vat), money(inv.vat)]];
-  const settled = v.credited > 0 || v.paid > 0;
-  if (settled) {
-    totals.push(["Total", money(inv.total)]);
-    if (v.credited > 0) totals.push(["Credit notes", money(-v.credited)]);
-    if (v.paid > 0) totals.push(["Paid", money(-v.paid)]);
-    totals.push(["Still to pay", money(Math.max(0, v.outstanding))]);
-  } else {
-    totals.push(["Total", money(inv.total)]);
-  }
+  const spec = invoiceViewPdfSpec(v, today);
   return (
     <>
-      <Masthead look={look} p={p} seller={seller} logo={logo} heading={sentence(invoiceHeading(inv))} number={inv.invoice_number} meta={meta} />
-      <div className="space-y-6 px-5 pt-6 pb-8 sm:px-8">
-        <BannerBox banner={banner} p={p} />
-        <Who label="Billed to" name={inv.customer_name} address={inv.customer_address} />
+      <Masthead p={p} spec={spec} logo={logo} />
+      <Band p={p} spec={spec} />
+      <div className="space-y-8 px-5 pt-6 pb-8 sm:px-8">
         <Lines
           p={p}
-          look={look}
+          taxed={Number(inv.vat_rate) > 0}
           rows={v.lines.map((l) => ({
             title: l.description,
             sub: null,
@@ -416,12 +452,12 @@ function Invoice({ v, logo, today, look, p }: { v: InvoiceView; logo: string | n
             amount: money(l.line_total),
           }))}
         />
-        <Totals rows={totals} p={p} look={look} />
+        <Bottom p={p} spec={spec} notes={[...(spec.notes ?? []), spec.footer ?? ""]} />
         <List
           title="Payments received"
           items={v.payments.map((x) => ({
             key: x.id,
-            main: dayText(x.paid_on),
+            main: paperDate(x.paid_on),
             sub: [PAYMENT_METHODS[x.method] ?? x.method, x.reference].filter(Boolean).join(", "),
             amount: money(x.amount),
           }))}
@@ -430,13 +466,12 @@ function Invoice({ v, logo, today, look, p }: { v: InvoiceView; logo: string | n
           title="Credit notes"
           items={v.credit_notes.map((c) => ({
             key: c.id,
-            main: `${c.credit_number}, ${dayText(c.issue_date)}`,
+            main: `${c.credit_number}, ${paperDate(c.issue_date)}`,
             sub: c.reason,
             amount: money(-c.total),
           }))}
         />
         {v.outstanding > 0 && <HowToPay details={seller.bankDetails} reference={inv.invoice_number} />}
-        {lines(inv.footer) && <p className="text-sm whitespace-pre-line text-neutral-700">{lines(inv.footer)}</p>}
       </div>
     </>
   );
@@ -450,24 +485,19 @@ function discountText(l: QuoteView["lines"][number], money: (n: number) => strin
   return null;
 }
 
-function Quote({ v, logo, today, look, p }: { v: QuoteView; logo: string | null; today: string; look: PdfLook; p: Palette }) {
+function Quote({ v, logo, today, p }: { v: QuoteView; logo: string | null; today: string; p: Palette }) {
   const q = v.quote;
   const money = moneyIn(v.look.currency);
   const seller = sellerOf(v);
-  const banner = quoteBanner(q, today);
-  const meta: [string, string][] = [["Date", dayText(q.created_at.slice(0, 10))]];
-  if (q.valid_until) meta.push(["Valid until", dayText(q.valid_until)]);
-  const rate = Number(q.vat_rate);
-  const totals: Total[] = rate === 0 ? [["Total", money(v.total)]] : [["Subtotal (excl. VAT)", money(v.subtotal)], [vatLabel(rate, q.prices_include_vat), money(v.vat)], ["Total", money(v.total)]];
+  const spec = quoteViewPdfSpec(v, today);
   return (
     <>
-      <Masthead look={look} p={p} seller={seller} logo={logo} heading="Quote" number={q.quote_number} meta={meta} />
-      <div className="space-y-6 px-5 pt-6 pb-8 sm:px-8">
-        {banner && <BannerBox banner={banner} p={p} />}
-        <Who label="Quote for" name={v.customer_name ?? ""} address={v.customer_address} />
+      <Masthead p={p} spec={spec} logo={logo} />
+      <Band p={p} spec={spec} />
+      <div className="space-y-8 px-5 pt-6 pb-8 sm:px-8">
         <Lines
           p={p}
-          look={look}
+          taxed={Number(q.vat_rate) > 0}
           rows={v.lines.map((l) => ({
             title: l.description,
             sub: discountText(l, money),
@@ -477,12 +507,7 @@ function Quote({ v, logo, today, look, p }: { v: QuoteView; logo: string | null;
             amount: money(lineTotal(l.qty, l.unit_price)),
           }))}
         />
-        <Totals rows={totals} p={p} look={look} />
-        {lines(q.notes) && (
-          <Block title="Notes">
-            <p className="text-sm whitespace-pre-line text-neutral-800">{lines(q.notes)}</p>
-          </Block>
-        )}
+        <Bottom p={p} spec={spec} notes={spec.notes ?? []} />
         <HowToPay details={seller.bankDetails} reference={q.quote_number} />
       </div>
     </>
@@ -491,47 +516,59 @@ function Quote({ v, logo, today, look, p }: { v: QuoteView; logo: string | null;
 
 // -------------------------------------------------------------- statement
 
-function Statement({ v, logo, look, p }: { v: StatementView; logo: string | null; look: PdfLook; p: Palette }) {
+/** A statement's ageing, as on its PDF: what is owed by how late, in a strip of cells. */
+function AgeingStrip({ cells, p }: { cells: [string, string][]; p: Palette }) {
+  return (
+    <dl
+      aria-label="What is owed, by how late"
+      className={`grid grid-cols-2 gap-px overflow-hidden sm:grid-cols-5 ${p.style === "clean" ? "border-t border-b border-neutral-200" : "rounded-md"}`}
+      style={p.style === "clean" ? { borderTopColor: p.text } : { background: p.wash }}
+    >
+      {cells.map(([label, value]) => (
+        <div key={label} className="px-3 py-2.5">
+          <dt className="text-xs text-neutral-600">{label}</dt>
+          <dd className="text-sm font-semibold tabular-nums text-neutral-900">{value}</dd>
+        </div>
+      ))}
+    </dl>
+  );
+}
+
+function Statement({ v, logo, today, p }: { v: StatementView; logo: string | null; today: string; p: Palette }) {
   const s = v.statement;
   const money = moneyIn(v.look.currency);
   const seller = sellerOf(v);
+  const spec = statementViewPdfSpec(v, today);
   const closing = statementClosing(s.rows);
   const { opening, moves } = statementParts(s.rows);
-  const banner = statementBanner(closing, s.to, money);
-  const ageing = ageingParts(s.ageing);
-  const label = (r: (typeof moves)[number]) => {
-    const kind = STATEMENT_KIND_LABELS[r.entry_kind] ?? r.entry_kind;
-    if (!r.document_number) return kind;
-    return r.entry_kind === "payment" ? `${kind} for ${r.document_number}` : `${kind} ${r.document_number}`;
-  };
-  const head =
-    look.style === "bold"
-      ? { background: p.primary, color: p.onPrimary }
-      : look.style === "clean"
-        ? { color: p.text, borderBottom: `1px solid ${p.text}` }
-        : { background: "rgb(30 41 59)", color: "rgb(255 255 255)" };
+  const look = tableLook(p);
+  const th = `px-2 py-2.5 whitespace-nowrap ${look.th}`;
   return (
     <>
-      <Masthead look={look} p={p} seller={seller} logo={logo} heading="Statement" number={null} meta={[["Period", periodText(s.from, s.to)]]} />
-      <div className="space-y-6 px-5 pt-6 pb-8 sm:px-8">
-        <BannerBox banner={banner} p={p} />
-        <Who label="Statement for" name={s.client_name} address={s.client_address} />
-
+      <Masthead p={p} spec={spec} logo={logo} />
+      <Band p={p} spec={spec} />
+      <div className="space-y-8 px-5 pt-6 pb-8 sm:px-8">
         <section aria-label="Account">
-          <p className="flex justify-between gap-4 border-b border-neutral-200 py-2 text-sm">
-            <span className="text-neutral-600">Balance brought forward</span>
-            <span className="font-medium tabular-nums text-neutral-900">{money(opening)}</span>
-          </p>
           {moves.length === 0 ? (
-            <p className="border-b border-neutral-200 py-3 text-sm text-neutral-600">Nothing happened on the account in this period.</p>
+            <>
+              <p className="flex justify-between gap-4 border-b border-neutral-200 py-2.5 text-sm">
+                <span className="text-neutral-600">Balance brought forward</span>
+                <span className="tabular-nums text-neutral-900">{money(opening)}</span>
+              </p>
+              <p className="border-b border-neutral-200 py-3 text-sm text-neutral-600">Nothing happened on the account in this period.</p>
+            </>
           ) : (
             <>
-              <ul className="divide-y divide-neutral-200 border-b border-neutral-200 sm:hidden">
+              <ul className="divide-y divide-neutral-200 border-y border-neutral-200 sm:hidden">
+                <li className="flex justify-between gap-4 py-3 text-sm">
+                  <span className="text-neutral-600">Balance brought forward</span>
+                  <span className="tabular-nums text-neutral-900">{money(opening)}</span>
+                </li>
                 {moves.map((r, i) => (
                   <li key={i} className="flex items-start justify-between gap-4 py-3">
                     <div className="min-w-0 space-y-0.5">
-                      <p className="text-xs tabular-nums text-neutral-600">{dayText(r.entry_date)}</p>
-                      <p className="text-sm font-medium break-words text-neutral-900">{label(r)}</p>
+                      <p className="text-xs tabular-nums text-neutral-600">{paperDate(r.entry_date)}</p>
+                      <p className="text-sm font-medium break-words text-neutral-900">{statementActivity(r)}</p>
                       {statementDetail(r) && <p className="text-xs break-words text-neutral-600">{statementDetail(r)}</p>}
                     </div>
                     <div className="shrink-0 text-right tabular-nums">
@@ -543,25 +580,25 @@ function Statement({ v, logo, look, p }: { v: StatementView; logo: string | null
               </ul>
               <table className="hidden w-full text-sm sm:table">
                 <thead>
-                  <tr className="text-left text-xs font-semibold" style={head}>
-                    <th className="px-3 py-2">Date</th>
-                    <th className="px-3 py-2">Details</th>
-                    <th className="px-3 py-2 text-right">Charged</th>
-                    <th className="px-3 py-2 text-right">Paid or credited</th>
-                    <th className="px-3 py-2 text-right">Balance</th>
+                  <tr className={`text-left ${look.headRow}`} style={look.head}>
+                    <th className={`${th} ${look.edge}`}>Date</th>
+                    <th className={th}>Activity</th>
+                    <th className={`${th} text-right`}>Charged</th>
+                    <th className={`${th} text-right`}>Paid or credited</th>
+                    <th className={`${th} text-right ${look.edgeRight}`}>Balance</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {moves.map((r, i) => (
-                    <tr key={i} className="border-b border-neutral-200" style={look.style === "bold" && i % 2 === 1 ? { background: p.wash } : undefined}>
-                      <td className="px-3 py-2.5 align-top whitespace-nowrap tabular-nums text-neutral-900">{dayText(r.entry_date)}</td>
-                      <td className="px-3 py-2.5 align-top text-neutral-900">
-                        <span className="break-words">{label(r)}</span>
-                        {statementDetail(r) && <span className="block text-xs break-words text-neutral-600">{statementDetail(r)}</span>}
+                  {[null, ...moves].map((r, i) => (
+                    <tr key={i} className={`text-neutral-900 ${look.row}`} style={look.stripe(i)}>
+                      <td className={`px-2 py-3 align-top whitespace-nowrap tabular-nums ${look.edge}`}>{paperDate(r ? r.entry_date : s.from)}</td>
+                      <td className="px-2 py-3 align-top">
+                        <span className="break-words">{r ? statementActivity(r) : "Balance brought forward"}</span>
+                        {r && statementDetail(r) && <span className="block text-xs break-words text-neutral-600">{statementDetail(r)}</span>}
                       </td>
-                      <td className="px-3 py-2.5 text-right align-top tabular-nums text-neutral-900">{r.debit !== null && r.debit !== 0 ? money(r.debit) : ""}</td>
-                      <td className="px-3 py-2.5 text-right align-top tabular-nums text-neutral-900">{r.credit !== null && r.credit !== 0 ? money(r.credit) : ""}</td>
-                      <td className="px-3 py-2.5 text-right align-top font-medium tabular-nums text-neutral-900">{money(r.balance)}</td>
+                      <td className="px-2 py-3 text-right align-top tabular-nums">{r && r.debit !== null && r.debit !== 0 ? money(r.debit) : ""}</td>
+                      <td className="px-2 py-3 text-right align-top tabular-nums">{r && r.credit !== null && r.credit !== 0 ? money(r.credit) : ""}</td>
+                      <td className={`px-2 py-3 text-right align-top tabular-nums ${look.edgeRight}`}>{money(r ? r.balance : opening)}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -570,20 +607,9 @@ function Statement({ v, logo, look, p }: { v: StatementView; logo: string | null
           )}
         </section>
 
-        <Totals rows={[[`Balance at ${dayText(s.to)}`, money(closing)]]} p={p} look={look} />
+        {spec.ageing && <AgeingStrip cells={spec.ageing} p={p} />}
 
-        {ageing.length > 0 && (
-          <Block title="What is owed, by age">
-            <dl className="divide-y divide-neutral-200 border-y border-neutral-200 text-sm">
-              {ageing.map((w) => (
-                <div key={w.key} className="flex justify-between gap-4 py-2">
-                  <dt className="text-neutral-700">{w.label}</dt>
-                  <dd className={`font-semibold tabular-nums ${w.key === "not_due" ? "text-neutral-900" : "text-red-800"}`}>{money(w.amount)}</dd>
-                </div>
-              ))}
-            </dl>
-          </Block>
-        )}
+        <Bottom p={p} spec={spec} notes={[]} />
 
         {closing > 0 && <HowToPay details={seller.bankDetails} reference="the number of the invoice you are paying" />}
       </div>
@@ -593,24 +619,35 @@ function Statement({ v, logo, look, p }: { v: StatementView; logo: string | null
 
 // ------------------------------------------------------------------- page
 
+/** What the banner above the paper says: what is owed and when, or where a quote stands. */
+function bannerOf(v: DocumentView, today: string): Banner | null {
+  const money = moneyIn(v.look.currency);
+  if (v.kind === "invoice") return invoiceBanner({ outstanding: v.outstanding, due_date: v.invoice.due_date }, today, money);
+  if (v.kind === "quote") return quoteBanner(v.quote, today);
+  return statementBanner(statementClosing(v.statement.rows), v.statement.to, money);
+}
+
 export function ClientDocument({ v, logo, today }: { v: DocumentView; logo: string | null; today: string }) {
-  const look = documentLook(v.look);
-  const p = palette(look);
+  const p = palette(documentLook(v.look));
   const seller = sellerOf(v);
   const contact = [seller.phone, seller.email].filter(Boolean).join(", ");
+  const banner = bannerOf(v, today);
   return (
     <main className="min-h-dvh bg-secondary/40 px-4 py-6 sm:py-10 print:bg-white print:p-0">
       <div className="mx-auto w-full max-w-3xl space-y-4">
-        <div className="flex justify-end">
-          <DownloadPdfButton view={v} />
+        <div className="flex flex-col-reverse gap-3 sm:flex-row sm:items-start sm:justify-between print:hidden">
+          <div className="min-w-0 flex-1">{banner && <BannerBox banner={banner} />}</div>
+          <div className="flex justify-end">
+            <DownloadPdfButton view={v} />
+          </div>
         </div>
         <article className="overflow-hidden rounded-xl bg-white text-neutral-900 ring-1 ring-foreground/10 print:rounded-none print:ring-0">
           {v.kind === "invoice" ? (
-            <Invoice v={v} logo={logo} today={today} look={look} p={p} />
+            <Invoice v={v} logo={logo} today={today} p={p} />
           ) : v.kind === "quote" ? (
-            <Quote v={v} logo={logo} today={today} look={look} p={p} />
+            <Quote v={v} logo={logo} today={today} p={p} />
           ) : (
-            <Statement v={v} logo={logo} look={look} p={p} />
+            <Statement v={v} logo={logo} today={today} p={p} />
           )}
         </article>
         <footer className="pb-6 text-center text-xs text-muted-foreground print:hidden">

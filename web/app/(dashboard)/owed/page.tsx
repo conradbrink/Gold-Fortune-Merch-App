@@ -177,7 +177,7 @@ export default function OwedPage() {
     setBusy(true);
     try {
       const seller = await fetchStatementSeller(supabase);
-      await downloadStatementPdf(seller, statementClient, statement.from, statement.to, statement.rows);
+      await downloadStatementPdf(seller, statementClient, statement.from, statement.to, statement.rows, client);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {

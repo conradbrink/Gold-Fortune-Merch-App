@@ -82,7 +82,7 @@ export type StatementView = Common & {
 
 export type DocumentView = InvoiceView | QuoteView | StatementView;
 
-/** The look the page and the PDF draw in: anything unknown is the classic style in the product's colours. */
+/** The look the page and the PDF draw in: an unknown style is classic, a colour that is not one the product's own. */
 export function documentLook(look: Common["look"] | null | undefined): PdfLook {
   const brand = parseBranding({ primary: look?.primary, accent: look?.accent });
   return {

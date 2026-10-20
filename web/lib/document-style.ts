@@ -1,8 +1,12 @@
 /**
  * The look of the company's paperwork: invoices, credit notes, quotes and
- * statements. `classic` is the layout they have always had (and the default);
- * `bold` and `clean` use the company's own brand colours. Pure, so the PDF
- * drawer, the settings page and the tests share one set of rules.
+ * statements. Every look has one layout (the owner's, 20 Oct: modelled on the
+ * QuickBooks invoice their clients already know) and the company picks how it
+ * is dressed: `classic` (the default) is that invoice, with the brand colour
+ * in a light band; `bold` puts the heading and logo in a band of the brand
+ * colour; `clean` centres the letterhead and keeps to thin lines. Pure, so the
+ * PDF drawer, the client's page, the settings page and the tests share one set
+ * of rules.
  */
 
 export const DOCUMENT_STYLES = ["classic", "bold", "clean"] as const;
@@ -14,7 +18,7 @@ export function isDocumentStyle(v: unknown): v is DocumentStyle {
   return typeof v === "string" && (DOCUMENT_STYLES as readonly string[]).includes(v);
 }
 
-/** What a PDF needs to know to look like the company's: a style and two colours. */
+/** What a document needs to know to look like the company's: a style and two colours. */
 export type PdfLook = { style: DocumentStyle; primary: string; accent: string };
 
 export type Rgb = [number, number, number];
@@ -59,7 +63,45 @@ export function onWhite(colour: Rgb): Rgb {
   return c;
 }
 
-/** The look from `my_company_config()`: anything unknown is classic in the product's colours. */
+/**
+ * The brand colour as small text on the paper and on its wash: darkened until
+ * it is at least 4.5 times darker than the band, as body text must be.
+ */
+export function brandText(colour: Rgb): Rgb {
+  let c = colour;
+  for (let i = 0; i < 12 && luminance(c) > 0.15; i++) c = mix(c, [0, 0, 0], 0.15);
+  return c;
+}
+
+/**
+ * The band behind who the document is for: the brand's own hue, very light.
+ * Mixing a dark brand colour with white turns it grey (navy becomes a cool
+ * grey); keeping the hue and some of its saturation keeps it the brand's.
+ */
+export function wash([r, g, b]: Rgb): Rgb {
+  const R = r / 255;
+  const G = g / 255;
+  const B = b / 255;
+  const max = Math.max(R, G, B);
+  const min = Math.min(R, G, B);
+  const d = max - min;
+  const l = (max + min) / 2;
+  let h = 0;
+  let s = 0;
+  if (d > 0) {
+    s = d / (1 - Math.abs(2 * l - 1));
+    h = max === R ? ((G - B) / d + 6) % 6 : max === G ? (B - R) / d + 2 : (R - G) / d + 4;
+  }
+  const light = 0.955;
+  const c = (1 - Math.abs(2 * light - 1)) * Math.min(s, 0.6);
+  const x = c * (1 - Math.abs((h % 2) - 1));
+  const m = light - c / 2;
+  const [r1, g1, b1] =
+    h < 1 ? [c, x, 0] : h < 2 ? [x, c, 0] : h < 3 ? [0, c, x] : h < 4 ? [0, x, c] : h < 5 ? [x, 0, c] : [c, 0, x];
+  return [r1, g1, b1].map((v) => Math.round((v + m) * 255)) as Rgb;
+}
+
+/** The look from `my_company_config()`: anything unknown is classic. */
 export function lookFrom(settings: { document_style?: unknown }, branding: { primary: string; accent: string }): PdfLook {
   return {
     style: isDocumentStyle(settings.document_style) ? settings.document_style : DEFAULT_DOCUMENT_STYLE,
