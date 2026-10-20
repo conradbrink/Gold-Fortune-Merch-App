@@ -45,9 +45,9 @@ function fmt(value: number, measure: Measure) {
  * One month's targets, set and tracked on one screen.
  *
  * Targets are typed straight into the table and saved together, because a
- * manager sets a month for the whole team at once. Progress counts delivered
- * orders only — an order still on the van is not a sale yet, which is the
- * Sales page's rule and has to be this page's too.
+ * manager sets a month for the whole team at once. Progress counts invoices
+ * less credit notes, the Sales page's rule (owner, 20 Oct 2026), so a rep's
+ * figure here is the one they see there.
  */
 export default function TargetsPage() {
   const supabase = createClient();
@@ -161,8 +161,8 @@ export default function TargetsPage() {
         <div>
           <h1 className="text-xl font-semibold tracking-tight text-foreground">Sales targets</h1>
           <p className="text-sm text-muted-foreground">
-            A monthly target per {lower(t.staff.one)}. Progress counts delivered orders, excluding VAT, less
-            returns.
+            A monthly target per {lower(t.staff.one)}. Progress counts the invoices for their orders, excluding
+            VAT, less credit notes.
           </p>
         </div>
         <div className="flex items-center gap-2">

@@ -205,7 +205,7 @@ export function PlannedVsCompletedChart({ days, jobs }: { days: RepDay[]; jobs: 
 }
 
 /**
- * Delivered sales per day.
+ * Sales per day: invoices on the day they were issued, less credit notes.
  *
  * A line, with every day on the axis including the ones worth nothing — a
  * chart drawn only through the days that sold makes a fortnight of silence
@@ -232,7 +232,7 @@ export function DailySalesChart({ days, currency }: { days: RepDay[]; currency: 
 
   return (
     <svg viewBox={`0 0 ${W} ${H}`} className="rr-chart" role="img"
-         aria-label={`Delivered sales in ${currencyName(currency)}, by day`}>
+         aria-label={`Sales in ${currencyName(currency)}, by day`}>
       {ticks.map((t) => {
         const y = p.y + p.h - (t / max) * p.h;
         return (

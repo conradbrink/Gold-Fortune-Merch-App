@@ -11,37 +11,42 @@ function fail(error: { message: string } | null) {
 /**
  * What a sale is, here.
  *
- * **Counted on the day it was delivered**, not the day the rep took it. The
- * owner's call, and the right one: an order is a request until the goods are
- * with the shop, and the POD is what proves the week's figure. An order taken
- * on Friday and delivered on Monday belongs to next week.
+ * **An invoice, on the day it was issued** (owner, 20 Oct 2026: "Invoiced").
+ * Counting only orders somebody had marked delivered left out everything on
+ * the road or waiting for its proof, and all the history brought over from
+ * QuickBooks, so the dashboard showed a quarter of what had been invoiced.
  *
- * **Valued on what actually arrived**, `qty_delivered` less `qty_returned`, not
- * on what was ordered. A line short-picked or brought back is not revenue, and
- * a sales figure that counts it is one nobody can reconcile to an invoice.
+ * **Less credit notes, on theirs**: a credit note is a sale with a minus, so
+ * goods sent back or short reduce the day they were credited.
  *
- * **At the order's own VAT rate**, frozen onto it at capture — orders taken
- * before the rate was set carry 0%, which is correct and not a gap to patch.
+ * **Excluding VAT** for the revenue figure, with the invoice's own total
+ * beside it. A company that does not invoice in Tickd still counts delivered
+ * orders, the rule before this one.
+ *
+ * The rule itself lives in the database (`sales_documents`, migration
+ * 20261020213700), so this page, the dashboard, targets, the rep report and
+ * the AI Manager cannot disagree.
  */
-export type SoldLine = {
-  qty: number;
-  unitPrice: number;
-  vatRate: number;
-};
+export type SaleKind = "invoice" | "credit_note" | "order";
 
 export type Sale = {
-  orderId: string;
-  orderNumber: string;
-  deliveredAt: string;
+  id: string;
+  kind: SaleKind;
+  /** The invoice, credit note or order number. */
+  number: string;
+  /** Where it opens: the invoice (a credit note shows on its invoice), or the order. */
+  href: string;
+  /** The start of the day it was issued, in the company's time. */
+  at: string;
   repId: string | null;
   repName: string;
   storeId: string | null;
   storeName: string;
   units: number;
-  /** Excluding VAT — the revenue figure. */
+  /** Excluding VAT: the revenue figure. Negative for a credit note. */
   net: number;
   vat: number;
-  /** Including VAT — what the shop was invoiced. */
+  /** Including VAT: what the invoice says. */
   gross: number;
 };
 
@@ -111,22 +116,23 @@ export function periodsFor(now: Date) {
 }
 
 export function within(sale: Sale, period: Period): boolean {
-  const t = new Date(sale.deliveredAt).getTime();
+  const t = new Date(sale.at).getTime();
   return t >= period.from.getTime() && t <= period.to.getTime();
 }
 
-export type Totals = { orders: number; units: number; net: number; gross: number };
+/** `count` is the invoices (or orders); a credit note changes the money, not the count. */
+export type Totals = { count: number; units: number; net: number; gross: number };
 
 export function totalsFor(sales: Sale[], period?: Period): Totals {
   const rows = period ? sales.filter((s) => within(s, period)) : sales;
   return rows.reduce<Totals>(
     (acc, s) => ({
-      orders: acc.orders + 1,
+      count: acc.count + (s.kind === "credit_note" ? 0 : 1),
       units: acc.units + s.units,
       net: acc.net + s.net,
       gross: acc.gross + s.gross,
     }),
-    { orders: 0, units: 0, net: 0, gross: 0 }
+    { count: 0, units: 0, net: 0, gross: 0 }
   );
 }
 
@@ -137,10 +143,10 @@ export function byRep(sales: Sale[], period?: Period) {
     const key = s.repId ?? "none";
     const acc =
       map.get(key) ??
-      { repName: s.repName, orders: 0, units: 0, net: 0, gross: 0 };
+      { repName: s.repName, count: 0, units: 0, net: 0, gross: 0 };
     map.set(key, {
       repName: acc.repName,
-      orders: acc.orders + 1,
+      count: acc.count + (s.kind === "credit_note" ? 0 : 1),
       units: acc.units + s.units,
       net: acc.net + s.net,
       gross: acc.gross + s.gross,
@@ -149,88 +155,58 @@ export function byRep(sales: Sale[], period?: Period) {
   return [...map.values()].sort((a, b) => b.net - a.net);
 }
 
+/** What one sale is called, and the plural, for counts and empty lists. */
+export function saleWord(n: number, invoices: boolean): string {
+  if (invoices) return n === 1 ? "invoice" : "invoices";
+  return n === 1 ? "delivery" : "deliveries";
+}
+
 /**
- * Every delivered order, valued.
+ * Every sale, valued: one row per invoice, credit note or (for a company that
+ * does not invoice) delivered order, from `sales_documents`.
  *
- * Aggregated here rather than in a database function on purpose: three reps and
- * a few hundred orders is nothing to sum in the browser, and a reporting RPC is
- * a migration against production for a number that changes shape the first time
- * somebody asks a slightly different question. If this ever gets slow, that is
- * the moment for the RPC — and by then the questions will have settled.
+ * Paged to exhaustion rather than capped: the API returns at most a thousand
+ * rows a call, and a figure that silently stops at the newest thousand is
+ * wrong in the one direction nobody checks. Ordered by day *and* id so a page
+ * boundary can neither repeat nor skip a row.
  */
 export async function fetchSales(supabase: Client, t: Terms): Promise<Sale[]> {
-  type Row = {
-    id: string;
-    order_number: string;
-    delivered_at: string;
-    rep_id: string | null;
-    store_id: string | null;
-    vat_rate: number | null;
-    stores: { name: string } | { name: string }[] | null;
-    profiles: { full_name: string } | { full_name: string }[] | null;
-    order_lines:
-      | { qty_delivered: number; qty_returned: number; unit_price: number | null }[]
-      | null;
-  };
-
-  // Paged to exhaustion rather than capped.
-  //
-  // A single `.limit()` silently discarded everything past the newest N and
-  // labelled the result "All time" — a figure that is wrong in the one
-  // direction nobody checks, quietly under-reporting as the business grows.
-  // Ordered by `delivered_at` *and* `id` because ties are not hypothetical:
-  // several orders are marked delivered in the same second when a driver
-  // closes a run, and an unstable sort can repeat or skip rows across pages.
   const PAGE = 1000;
+  type Row = Database["public"]["Functions"]["sales_documents"]["Returns"][number];
   const rows: Row[] = [];
   for (let from = 0; ; from += PAGE) {
     const { data, error } = await supabase
-      .from("orders")
-      .select(
-        `id, order_number, delivered_at, rep_id, store_id, vat_rate,
-         stores(name), profiles!orders_rep_id_fkey(full_name),
-         order_lines(qty_delivered, qty_returned, unit_price)`
-      )
-      .eq("status", "delivered")
-      .not("delivered_at", "is", null)
-      .order("delivered_at", { ascending: false })
-      .order("id", { ascending: false })
+      .rpc("sales_documents", {})
+      .order("issued_on", { ascending: false })
+      .order("doc_id", { ascending: false })
       .range(from, from + PAGE - 1);
     fail(error);
-
-    const page = (data ?? []) as unknown as Row[];
+    const page = (data ?? []) as Row[];
     rows.push(...page);
     if (page.length < PAGE) break;
   }
 
-  const one = <T,>(v: T | T[] | null): T | null =>
-    Array.isArray(v) ? (v[0] ?? null) : v;
-
   return rows.map((r) => {
-    const rate = Number(r.vat_rate ?? 0);
-    let units = 0;
-    let net = 0;
-    for (const l of r.order_lines ?? []) {
-      const qty = l.qty_delivered - l.qty_returned;
-      if (qty <= 0) continue;
-      units += qty;
-      net += qty * (l.unit_price == null ? 0 : Number(l.unit_price));
-    }
-    const vat = net * (rate / 100);
+    const net = Number(r.revenue_excl_vat);
+    const gross = Number(r.revenue_incl_vat);
+    const kind = r.doc_kind as SaleKind;
     return {
-      orderId: r.id,
-      orderNumber: r.order_number,
-      deliveredAt: r.delivered_at,
+      id: r.doc_id,
+      kind,
+      number: r.doc_number,
+      href: kind === "order" ? `/orders/${r.order_id}` : `/invoices/${r.invoice_id}`,
+      at: r.issued_at,
       repId: r.rep_id,
-      // An order nobody was responsible for still has to land in a row of the
-      // per-person table; it reads "No rep" in the company's own word.
-      repName: one(r.profiles)?.full_name ?? `No ${lower(t.staff.one)}`,
+      // A sale nobody was responsible for (QuickBooks history, an invoice
+      // typed in at the office) still has to land in a row of the per-person
+      // table; it reads "No rep" in the company's own word.
+      repName: r.rep_name ?? `No ${lower(t.staff.one)}`,
       storeId: r.store_id,
-      storeName: one(r.stores)?.name ?? "—",
-      units,
+      storeName: r.store_name ?? "—",
+      units: Number(r.units),
       net,
-      vat,
-      gross: net + vat,
+      vat: gross - net,
+      gross,
     };
   });
 }

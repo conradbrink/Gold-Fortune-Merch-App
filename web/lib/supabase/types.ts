@@ -7230,6 +7230,51 @@ export type Database = {
           uncosted_units: number
         }[]
       }
+      sales_documents: {
+        Args: { p_from?: string | null; p_to?: string | null }
+        Returns: {
+          doc_id: string
+          doc_kind: string
+          doc_number: string
+          invoice_id: string | null
+          order_id: string | null
+          rep_id: string | null
+          rep_name: string | null
+          store_id: string | null
+          store_name: string | null
+          store_city: string | null
+          issued_on: string
+          issued_at: string
+          units: number
+          revenue_excl_vat: number
+          revenue_incl_vat: number
+          gross_profit: number
+          uncosted_units: number
+        }[]
+      }
+      sales_lines: {
+        Args: { p_from?: string | null; p_to?: string | null }
+        Returns: {
+          line_id: string
+          doc_id: string
+          doc_kind: string
+          doc_number: string
+          invoice_id: string | null
+          order_id: string | null
+          rep_id: string | null
+          rep_name: string | null
+          store_id: string | null
+          store_name: string | null
+          store_city: string | null
+          issued_on: string
+          product_id: string | null
+          product_name: string | null
+          units: number
+          net: number
+          cost: number | null
+          doc_gross: number | null
+        }[]
+      }
       commissions_recalculate: {
         Args: { p_from: string; p_to: string }
         Returns: number

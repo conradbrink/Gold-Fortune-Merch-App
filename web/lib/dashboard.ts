@@ -459,13 +459,15 @@ export function formatDuration(seconds: number): string {
  * signed-in person could already read row by row, so a section they cannot see
  * comes back as zeros rather than as somebody else's figures.
  *
- * Revenue is the Sales page's definition — delivered, on the local delivery
- * date, net of returns and line discounts, excluding VAT.
+ * Revenue is the Sales page's definition, `sales_documents`: invoices on the
+ * day they were issued, less credit notes, excluding VAT (owner, 20 Oct 2026),
+ * or delivered orders for a company that does not invoice in Tickd.
  */
 export type BusinessSummary = {
   revenue: {
     current: number;
     previous: number;
+    /** Invoices in the period (credit notes are not counted), or delivered orders. */
     orders: number;
     /** First day of the current calendar month, YYYY-MM-DD, org time. */
     month_start: string;

@@ -172,26 +172,26 @@ test("Gold Fortune's management summary reads as it always did", () => {
   const score = computeScore(summary, stores, missed, goldFortune);
   assert.equal(
     managementSummary(summary, score, missed, "BWP", goldFortune),
-    "Atang generated P101,223.50 from 17 delivered orders and served 36 of 40 planned visits (90%), 6 of them by going back on an unscheduled visit. Merchandising compliance was 75% across 12 audits, but 10 planned visits were missed on the day, 6 of which the rep went back for — 1 store with more than P5,000 in previous sales was never returned to. The score of 85 out of 100 excludes sales performance, which this database cannot measure, and re-weights the rest."
+    "Atang generated P101,223.50 from 17 invoices and served 36 of 40 planned visits (90%), 6 of them by going back on an unscheduled visit. Merchandising compliance was 75% across 12 audits, but 10 planned visits were missed on the day, 6 of which the rep went back for — 1 store with more than P5,000 in previous sales was never returned to. The score of 85 out of 100 excludes sales performance, which this database cannot measure, and re-weights the rest."
   );
 
   const q = computeScore(quiet, [store("B")], quietMissed, goldFortune);
   assert.equal(
     managementSummary(quiet, q, quietMissed, "BWP", goldFortune),
-    "The rep recorded no delivered sales in this period and completed 3 of 4 planned visits (75%). 1 planned visit was missed. The score of 84 out of 100 excludes sales performance, merchandising execution and app / data compliance, which this database cannot measure, and re-weights the rest."
+    "The rep recorded no sales in this period and completed 3 of 4 planned visits (75%). 1 planned visit was missed. The score of 84 out of 100 excludes sales performance, merchandising execution and app / data compliance, which this database cannot measure, and re-weights the rest."
   );
 
   const idle = { ...quiet, plannedVisits: 0, missedVisits: 0, completedPlanned: 0 };
   assert.equal(
     managementSummary(idle, computeScore(idle, [], [], goldFortune), [], "BWP", goldFortune),
-    "The rep recorded no delivered sales in this period and had no visits planned in this period."
+    "The rep recorded no sales in this period and had no visits planned in this period."
   );
 
   const twoShops = [miss("A", null, 6000), miss("G", null, 7000)];
   const two = { ...summary, missedVisits: 2, availabilityPct: null, planogramPct: null };
   assert.equal(
     managementSummary(two, computeScore(two, stores, twoShops, goldFortune), twoShops, "BWP", goldFortune),
-    "Atang generated P101,223.50 from 17 delivered orders and completed 30 of 40 planned visits (75%). 2 planned visits were missed — 2 stores with more than P5,000 in previous sales were never returned to. The score of 80 out of 100 excludes sales performance and merchandising execution, which this database cannot measure, and re-weights the rest."
+    "Atang generated P101,223.50 from 17 invoices and completed 30 of 40 planned visits (75%). 2 planned visits were missed — 2 stores with more than P5,000 in previous sales were never returned to. The score of 80 out of 100 excludes sales performance and merchandising execution, which this database cannot measure, and re-weights the rest."
   );
 });
 
@@ -213,12 +213,12 @@ test("the neutral words reach every sentence", () => {
   assert.equal(reasons[4], "1 planned job never made — P700.00 in recent sales");
   assert.equal(
     managementSummary(summary, score, missed, "BWP", t),
-    "Atang generated P101,223.50 from 17 delivered orders and served 36 of 40 planned jobs (90%), 6 of them by going back on an unscheduled job. Merchandising compliance was 75% across 12 audits, but 10 planned jobs were missed on the day, 6 of which the staff member went back for — 1 site with more than P5,000 in previous sales was never returned to. The score of 85 out of 100 excludes sales performance, which this database cannot measure, and re-weights the rest."
+    "Atang generated P101,223.50 from 17 invoices and served 36 of 40 planned jobs (90%), 6 of them by going back on an unscheduled job. Merchandising compliance was 75% across 12 audits, but 10 planned jobs were missed on the day, 6 of which the staff member went back for — 1 site with more than P5,000 in previous sales was never returned to. The score of 85 out of 100 excludes sales performance, which this database cannot measure, and re-weights the rest."
   );
   const q = computeScore(quiet, [store("B")], quietMissed, t);
   assert.equal(
     managementSummary(quiet, q, quietMissed, "BWP", t),
-    "The staff member recorded no delivered sales in this period and completed 3 of 4 planned jobs (75%). 1 planned job was missed. The score of 84 out of 100 excludes sales performance, merchandising execution and app / data compliance, which this database cannot measure, and re-weights the rest."
+    "The staff member recorded no sales in this period and completed 3 of 4 planned jobs (75%). 1 planned job was missed. The score of 84 out of 100 excludes sales performance, merchandising execution and app / data compliance, which this database cannot measure, and re-weights the rest."
   );
 });
 

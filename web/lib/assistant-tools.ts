@@ -132,8 +132,8 @@ export const TOOLS: readonly ToolSpec[] = [
     name: "sales",
     page: "/sales",
     description: (t) =>
-      `Sales in a date range, counted on the day the order was delivered and valued on what ` +
-      `arrived, excluding VAT. Group by ${lower(t.staff.one)}, ${lower(t.site.one)}, month or ` +
+      `Sales in a date range: invoices on the day they were issued, less credit notes, excluding ` +
+      `VAT. Group by ${lower(t.staff.one)}, ${lower(t.site.one)}, month or ` +
       `product, or get the total. Can filter to one ${lower(t.site.one)} or one ${lower(t.staff.one)}.`,
     parameters: (t) =>
       object({

@@ -31,9 +31,10 @@ import { localDay } from "@/lib/dashboard-numbers";
 import type { ExportSheet } from "@/lib/export";
 import { formatMoney, formatMoneyShort } from "@/lib/money";
 import { lower } from "@/lib/terms";
+import { moduleEnabled } from "@/lib/modules";
 import { useCompanyConfig, useTerms } from "@/lib/use-company-config";
 import { achievedFor, fetchTargetProgress, type Measure, type TargetProgress } from "@/lib/targets";
-import { fetchSales, totalsFor, within, type Period, type Sale } from "@/lib/sales";
+import { fetchSales, saleWord, totalsFor, within, type Period, type Sale } from "@/lib/sales";
 import { useStoreGroupFilter } from "@/lib/use-store-group-filter";
 import { StoreGroupChip, StoreGroupPicker } from "@/components/dashboard/store-group-picker";
 
@@ -72,7 +73,7 @@ function monthName(first: string, style: "short" | "long"): string {
   );
 }
 
-type SortKey = "delivered" | "net" | "order";
+type SortKey = "date" | "net" | "number";
 
 /** The picker's presets as a period is named on this page. */
 const PRESET_NAMES: [RangePreset, string][] = [
@@ -92,8 +93,11 @@ const NONE = "none";
  * The dates are chosen in the dashboard's own picker (owner, 13 Oct 2026: "i'd
  * like there to be a place where you can select the dates"), and the card's
  * months sit under the totals, each one a period to choose; then who sold it
- * and where it went; then every delivery behind the figure. Counted on the day the goods were delivered and valued on what
- * arrived, excluding VAT: the dashboard's revenue, the same rule.
+ * and where it went; then every invoice behind the figure. Each invoice counts
+ * on the day it was issued and each credit note takes off on its own, excluding
+ * VAT (owner, 20 Oct 2026): the dashboard's revenue, the same rule
+ * (`sales_documents`). A company that does not invoice in Tickd sees its
+ * delivered orders instead, so the words follow the invoicing module.
  *
  * Opened from the dashboard with its dates (`?from=&to=`), a month bar, or a
  * person's line (`&rep=`), so the figure on top is the one that was clicked.
@@ -107,10 +111,13 @@ export default function SalesPage() {
   const moneyShort = (n: number) => formatMoneyShort(n, currency);
   /**
    * Weeks and months are the company's, as on the dashboard's Sales card (its
-   * month bars are counted in the company's timezone): a delivery just after
-   * midnight belongs to the company's day, wherever the page is opened.
+   * month bars are counted in the company's timezone): a sale belongs to the
+   * company's day, wherever the page is opened.
    */
   const zone = config?.timezone ?? Intl.DateTimeFormat().resolvedOptions().timeZone;
+  /** Whether sales are invoices here, or delivered orders for a company that does not invoice. */
+  const invoices = config ? moduleEnabled(config.modules, "invoicing") : true;
+  const word = (n: number) => saleWord(n, invoices);
 
   const [sales, setSales] = useState<Sale[]>([]);
   const [targets, setTargets] = useState<TargetProgress[]>([]);
@@ -119,7 +126,7 @@ export default function SalesPage() {
   const [error, setError] = useState<string | null>(null);
   /** The dates chosen in the picker (or carried by a link): the viewer's days, end exclusive. */
   const [range, setRange] = useState<DateRange>(() => rangeForPreset("month"));
-  /** "All time" in the picker: every delivery, whatever the dates say. */
+  /** "All time" in the picker: every sale, whatever the dates say. */
   const [allTime, setAllTime] = useState(false);
   /**
    * A month bar chosen: that month in the company's time, exactly as the card's
@@ -129,18 +136,18 @@ export default function SalesPage() {
   const [rep, setRep] = useState("");
   /**
    * The person's name from their profile: somebody who has sold nothing yet
-   * has no delivery to take it from, and the page should still say whose it is.
+   * has no sale to take it from, and the page should still say whose it is.
    */
   const [profileName, setProfileName] = useState<string | null>(null);
   const [store, setStore] = useState("");
   const [search, setSearch] = useState("");
-  const [sort, setSort] = useState<SortState<SortKey>>({ key: "delivered", dir: "desc" });
+  const [sort, setSort] = useState<SortState<SortKey>>({ key: "date", dir: "desc" });
 
   /**
-   * One store group's deliveries, or every delivery: what the figures, the
-   * month bars, the panels and the list count. A store belongs to one group,
-   * so a store picked under another group is let go. No numbers on the picker:
-   * it would count every delivery ever, not the period on screen.
+   * One store group's sales, or every sale: what the figures, the month bars,
+   * the panels and the list count. A store belongs to one group, so a store
+   * picked under another group is let go. No numbers on the picker: it would
+   * count every sale ever, not the period on screen.
    */
   const storeGroup = useStoreGroupFilter(sales, t, { key: "storeId", onChoose: () => setStore(""), counted: false });
   const inStoreGroup = storeGroup.rows;
@@ -211,7 +218,7 @@ export default function SalesPage() {
     remember(null);
   }
 
-  // The company's words only name a delivery nobody took; they change identity
+  // The company's words only name a sale nobody took; they change identity
   // when the config arrives, and reading every sale again for that would page
   // the whole table twice. So the read waits for the config and keys on the
   // words themselves.
@@ -349,7 +356,7 @@ export default function SalesPage() {
       cur.net += s.net;
       cur.gross += s.gross;
       cur.units += s.units;
-      cur.n += 1;
+      if (s.kind !== "credit_note") cur.n += 1;
       m.set(id, cur);
     }
     return [...m.entries()].sort((a, b) => b[1].net - a[1].net);
@@ -363,7 +370,7 @@ export default function SalesPage() {
       const id = s.storeId ?? NONE;
       const cur = m.get(id) ?? { name: s.storeName, net: 0, n: 0 };
       cur.net += s.net;
-      cur.n += 1;
+      if (s.kind !== "credit_note") cur.n += 1;
       m.set(id, cur);
     }
     return [...m.entries()].sort((a, b) => b[1].net - a[1].net);
@@ -396,21 +403,21 @@ export default function SalesPage() {
       if (rep && (s.repId ?? NONE) !== rep) return false;
       if (store && (s.storeId ?? NONE) !== store) return false;
       if (!q) return true;
-      return s.orderNumber.toLowerCase().includes(q) || s.storeName.toLowerCase().includes(q) || s.repName.toLowerCase().includes(q);
+      return s.number.toLowerCase().includes(q) || s.storeName.toLowerCase().includes(q) || s.repName.toLowerCase().includes(q);
     });
     const sign = sort.dir === "asc" ? 1 : -1;
     return filtered.sort((a, b) =>
       sort.key === "net"
         ? sign * (a.net - b.net)
-        : sort.key === "order"
-          ? sign * a.orderNumber.localeCompare(b.orderNumber)
-          : sign * (new Date(a.deliveredAt).getTime() - new Date(b.deliveredAt).getTime())
+        : sort.key === "number"
+          ? sign * a.number.localeCompare(b.number)
+          : sign * (new Date(a.at).getTime() - new Date(b.at).getTime())
     );
   }, [inPeriod, rep, store, search, sort]);
   const shownTotals = totalsFor(shown);
 
   function chooseSort(key: SortKey) {
-    setSort((s) => (s.key === key ? { key, dir: s.dir === "asc" ? "desc" : "asc" } : { key, dir: key === "order" ? "asc" : "desc" }));
+    setSort((s) => (s.key === key ? { key, dir: s.dir === "asc" ? "desc" : "asc" } : { key, dir: key === "number" ? "asc" : "desc" }));
   }
 
   const totals = totalsFor(inPeriod);
@@ -420,31 +427,33 @@ export default function SalesPage() {
       value: moneyShort(totals.net),
       sub: before ? comparison(totals.net, totalsFor(inStoreGroup, before.period).net, before.label) : periodName,
     },
-    { label: "Deliveries", value: totals.orders, sub: `${totals.units} units` },
-    { label: "Including VAT", value: moneyShort(totals.gross), sub: "At each order's own rate" },
+    { label: invoices ? "Invoices" : "Deliveries", value: totals.count, sub: `${totals.units} units` },
+    { label: "Including VAT", value: moneyShort(totals.gross), sub: invoices ? "As invoiced" : "At each order's own rate" },
   ];
 
   const filteredBy = [repName, storeName].filter(Boolean).join(", ");
-  const meaning = `${periodName}${storeGroup.phrase ? `, ${storeGroup.phrase}` : ""}${filteredBy ? `, ${filteredBy}` : ""}: ${money(shownTotals.net)} excluding VAT from ${shownTotals.orders} ${
-    shownTotals.orders === 1 ? "delivery" : "deliveries"
-  }, ${money(shownTotals.gross)} with VAT.`;
+  const meaning = `${periodName}${storeGroup.phrase ? `, ${storeGroup.phrase}` : ""}${filteredBy ? `, ${filteredBy}` : ""}: ${money(shownTotals.net)} excluding VAT from ${shownTotals.count} ${word(
+    shownTotals.count
+  )}, ${money(shownTotals.gross)} with VAT.`;
 
-  /** Every delivery in view, valued: the working behind the totals. */
+  /** Every sale in view, valued: the working behind the totals. */
   function buildSalesSheet(): ExportSheet {
     return {
-      title: "Sales by delivery",
+      title: invoices ? "Sales by invoice" : "Sales by delivery",
       context: [
         periodName,
         ...storeGroup.context,
         ...(repName ? [`${t.staff.one}: ${repName}`] : []),
         ...(storeName ? [`${t.site.one}: ${storeName}`] : []),
-        `${shown.length} deliveries`,
-        "Counted on the day the goods were delivered, valued on what actually arrived.",
+        `${shown.length} ${invoices ? "invoices and credit notes" : "deliveries"}`,
+        invoices
+          ? "Counted on the day each invoice was issued, less credit notes on theirs."
+          : "Counted on the day the goods were delivered, valued on what actually arrived.",
       ],
       filename: "sales",
       columns: [
-        { header: "Order", key: "order" },
-        { header: "Delivered", key: "delivered" },
+        { header: invoices ? "Number" : "Order", key: "number" },
+        { header: invoices ? "Date" : "Delivered", key: "date" },
         { header: t.site.one, key: "store" },
         { header: t.staff.one, key: "rep" },
         { header: "Units", key: "units", numeric: true },
@@ -453,8 +462,8 @@ export default function SalesPage() {
         { header: "Incl. VAT", key: "gross", numeric: true },
       ],
       rows: shown.map((r) => ({
-        order: r.orderNumber,
-        delivered: toLocalDate(r.deliveredAt),
+        number: r.number,
+        date: toLocalDate(r.at),
         store: r.storeName,
         rep: r.repName,
         units: r.units,
@@ -473,7 +482,11 @@ export default function SalesPage() {
     <div className="space-y-4">
       <DetailHeader
         title="Sales"
-        subtitle="Counted on the day the goods were delivered, and valued on what actually arrived, excluding VAT. Short-picked and returned units are not in these figures."
+        subtitle={
+          invoices
+            ? "Every invoice on the day it was issued, less credit notes on theirs, excluding VAT."
+            : "Counted on the day the goods were delivered, and valued on what actually arrived, excluding VAT. Short-picked and returned units are not in these figures."
+        }
         action={<ExportMenu build={buildSalesSheet} disabled={loading} />}
       />
 
@@ -497,7 +510,9 @@ export default function SalesPage() {
         <StatTiles tiles={stats} loading={loading} />
         {!loading && months.length > 0 && (
           <div className="flex flex-col gap-1 border-t pt-4">
-            <span className="pb-1 text-xs text-muted-foreground">Delivered sales by month, excluding VAT. Tap a month to open it.</span>
+            <span className="pb-1 text-xs text-muted-foreground">
+              {invoices ? "Invoiced sales" : "Delivered sales"} by month, excluding VAT. Tap a month to open it.
+            </span>
             <div className="grid grid-cols-[2.5rem_1fr_6rem] gap-x-3 gap-y-0.5 text-sm">
               {months.map((m) => {
                 const on = selectedMonth === m.key;
@@ -538,9 +553,9 @@ export default function SalesPage() {
               return {
                 id,
                 label: r.name,
-                // What the old By rep table showed, so nothing is lost: deliveries,
+                // What the old By rep table showed, so nothing is lost: invoices,
                 // units and the figure with VAT.
-                sub: `${r.n} ${r.n === 1 ? "delivery" : "deliveries"} · ${r.units} units · ${moneyShort(r.gross)} with VAT`,
+                sub: `${r.n} ${word(r.n)} · ${r.units} units · ${moneyShort(r.gross)} with VAT`,
                 value: pct === undefined ? moneyShort(r.net) : `${moneyShort(r.net)} · ${Math.round(pct * 100)}%`,
                 bar: pct === undefined ? r.net / Math.max(1, ...byRep.map(([, y]) => y.net)) : pct,
                 aside: id === NONE ? "muted" : undefined,
@@ -549,12 +564,12 @@ export default function SalesPage() {
             active={rep}
             onToggle={(id) => setRep(rep === id ? "" : id)}
             limit={8}
-            empty={storeGroup.within("Nothing was delivered in this period.")}
+            empty={storeGroup.within(invoices ? "Nothing was invoiced in this period." : "Nothing was delivered in this period.")}
             moreHint="Search the list below to find one."
             footnote={
               targetFor.size > 0
-                ? "The bar is how far each one is towards this month's target. Tap a name to see only their deliveries."
-                : "Tap a name to see only their deliveries and where they went."
+                ? `The bar is how far each one is towards this month's target. Tap a name to see only their ${word(2)}.`
+                : `Tap a name to see only their ${word(2)} and where they went.`
             }
           />
           <InsightPanel
@@ -563,20 +578,24 @@ export default function SalesPage() {
             lines={byStore.map(([id, s]) => ({
               id,
               label: s.name,
-              sub: `${s.n} ${s.n === 1 ? "delivery" : "deliveries"}`,
+              sub: `${s.n} ${word(s.n)}`,
               value: moneyShort(s.net),
               bar: s.net / Math.max(1, ...byStore.map(([, y]) => y.net)),
             }))}
             active={store}
             onToggle={(id) => setStore(store === id ? "" : id)}
-            empty={storeGroup.within("Nothing was delivered in this period.")}
+            empty={storeGroup.within(invoices ? "Nothing was invoiced in this period." : "Nothing was delivered in this period.")}
             moreHint="Search the list below to find one."
-            footnote={`Who bought the most. Tap one to see its deliveries and who sold them.`}
+            footnote={`Who bought the most. Tap one to see its ${word(2)} and who sold them.`}
           />
         </div>
       )}
 
-      <ListTools search={search} onSearch={setSearch} placeholder={`Find an order, ${lower(t.site.one)} or ${lower(t.staff.one)}`}>
+      <ListTools
+        search={search}
+        onSearch={setSearch}
+        placeholder={`Find ${invoices ? "an invoice" : "an order"}, ${lower(t.site.one)} or ${lower(t.staff.one)}`}
+      >
         <StoreGroupChip filter={storeGroup} />
         {rep && <FilterChip onClear={() => setRep("")}>{repName ?? `One ${lower(t.staff.one)}`} only · everyone</FilterChip>}
         {store && <FilterChip onClear={() => setStore("")}>{storeName ?? `One ${lower(t.site.one)}`} only · every {lower(t.site.one)}</FilterChip>}
@@ -586,8 +605,8 @@ export default function SalesPage() {
         <Table>
           <TableHeader>
             <TableRow className="hover:bg-transparent">
-              <SortHead label="Order" sortKey="order" sort={sort} onSort={chooseSort} />
-              <SortHead label="Delivered" sortKey="delivered" sort={sort} onSort={chooseSort} className="hidden sm:table-cell" />
+              <SortHead label={invoices ? "Invoice" : "Order"} sortKey="number" sort={sort} onSort={chooseSort} />
+              <SortHead label={invoices ? "Date" : "Delivered"} sortKey="date" sort={sort} onSort={chooseSort} className="hidden sm:table-cell" />
               <TableHead>{t.site.one}</TableHead>
               <TableHead className="hidden md:table-cell">{t.staff.one}</TableHead>
               <TableHead className="hidden text-right sm:table-cell">Units</TableHead>
@@ -605,10 +624,10 @@ export default function SalesPage() {
               <TableRow>
                 <TableCell colSpan={6} className="py-10 text-center text-sm text-muted-foreground">
                   {inPeriod.length === 0 ? (
-                    storeGroup.within("Nothing was delivered in this period.")
+                    storeGroup.within(invoices ? "Nothing was invoiced in this period." : "Nothing was delivered in this period.")
                   ) : (
                     <>
-                      No deliveries match.{" "}
+                      No {word(2)} match.{" "}
                       <Button
                         variant="link"
                         className="h-auto p-0"
@@ -626,15 +645,16 @@ export default function SalesPage() {
               </TableRow>
             ) : (
               shown.slice(0, SHOW).map((s) => (
-                <TableRow key={s.orderId}>
+                <TableRow key={s.id}>
                   <TableCell>
-                    <Link href={`/orders/${s.orderId}`} className="font-medium text-primary hover:underline">
-                      {s.orderNumber}
+                    <Link href={s.href} className="font-medium text-primary hover:underline">
+                      {s.number}
                     </Link>
+                    {s.kind === "credit_note" && <span className="ml-1.5 text-xs text-muted-foreground">Credit note</span>}
                     {/* On a phone the date rides under the number; it has its own column from sm up. */}
-                    <span className="block text-xs text-muted-foreground sm:hidden">{toLocalDate(s.deliveredAt)}</span>
+                    <span className="block text-xs text-muted-foreground sm:hidden">{toLocalDate(s.at)}</span>
                   </TableCell>
-                  <TableCell className="hidden whitespace-nowrap text-muted-foreground sm:table-cell">{toLocalDate(s.deliveredAt)}</TableCell>
+                  <TableCell className="hidden whitespace-nowrap text-muted-foreground sm:table-cell">{toLocalDate(s.at)}</TableCell>
                   <TableCell className="min-w-[120px] whitespace-normal">
                     {s.storeName}
                     <span className="block text-xs text-muted-foreground md:hidden">{s.repName}</span>
@@ -652,8 +672,8 @@ export default function SalesPage() {
       {!loading && !error && shown.length > 0 && (
         <p className="text-xs text-muted-foreground">
           {shown.length > SHOW
-            ? `The first ${SHOW} of ${shown.length} deliveries. Export for all of them.`
-            : `${shown.length} ${shown.length === 1 ? "delivery" : "deliveries"}.`}{" "}
+            ? `The first ${SHOW} of ${shown.length}. Export for all of them.`
+            : `${shown.length} ${invoices ? (shown.length === 1 ? "invoice or credit note" : "invoices and credit notes") : word(shown.length)}.`}{" "}
           Sales exclude VAT.
         </p>
       )}

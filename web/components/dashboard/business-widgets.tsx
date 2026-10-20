@@ -89,6 +89,17 @@ function useSells(): boolean {
 }
 
 /**
+ * Whether sales are invoices (owner, 20 Oct 2026), or delivered orders for a
+ * company that does not invoice in Tickd: the words follow the figure, which
+ * `sales_documents` decides by the same module. Assumed on until the config
+ * loads.
+ */
+function useInvoices(): boolean {
+  const config = useCompanyConfig();
+  return config ? moduleEnabled(config.modules, "invoicing") : true;
+}
+
+/**
  * Whether money owed belongs on this person's headline without Distribution:
  * every trade can invoice now (Stage 7 Part 1), but only someone who may read
  * invoices should see the total, or they would see a confident zero.
@@ -259,6 +270,7 @@ export function Headline({
   const t = useTerms();
   const { money } = useMoney();
   const sells = useSells();
+  const invoices = useInvoices();
   const seesOwed = useSeesOwed();
   const owed = sells || seesOwed;
   const r = business.revenue;
@@ -286,13 +298,13 @@ export function Headline({
       {sells && (
       <Tile
         primary
-        // The deliveries behind the figure, over the same days.
+        // The invoices behind the figure, over the same days.
         href={salesHref(rangeQuery(range))}
         label={`Revenue, last ${days} days`}
         value={money(r.current)}
         sub={
           <>
-            {r.orders} orders delivered
+            {r.orders} {invoices ? (r.orders === 1 ? "invoice" : "invoices") : "orders delivered"}
             {r.previous > 0 && (
               <>
                 {" · "}
@@ -358,6 +370,7 @@ export function SalesCard({
   targets: TargetProgress[];
 }) {
   const t = useTerms();
+  const invoices = useInvoices();
   const { money: fmtMoney, moneyShort: fmtMoneyShort } = useMoney();
   const r = business.revenue;
   // From the first month with any sales: months before the app took orders are
@@ -379,12 +392,14 @@ export function SalesCard({
   return (
     <SectionCard title="Sales" href="/sales" linkLabel="Sales">
       <div className="flex flex-col gap-2.5">
-        <span className="text-xs text-muted-foreground">Delivered revenue by month, excluding VAT</span>
+        <span className="text-xs text-muted-foreground">
+          {invoices ? "Invoiced sales" : "Delivered revenue"} by month, excluding VAT
+        </span>
         <div className="grid grid-cols-[2.5rem_1fr_6rem] gap-x-3 gap-y-0.5 text-sm">
           {months.map((m) => {
             const isCurrent = m.month === r.month_start;
             return (
-              // Each month opens its deliveries; this month's run to today.
+              // Each month opens its sales; this month's run to today.
               <Link
                 key={m.month}
                 href={salesHref({ from: m.month, to: isCurrent ? dayAfter(r.today) : nextMonth(m.month) })}
@@ -438,7 +453,7 @@ export function SalesCard({
               const pct = hasTarget ? achieved / Number(t.target) : achieved / leader;
               const money = MEASURES.find((m) => m.value === measure)?.money ?? true;
               return (
-                // Each person opens their own deliveries this month.
+                // Each person opens their own sales this month.
                 <Link
                   key={t.rep_id}
                   href={salesHref({ from: r.month_start, to: dayAfter(r.today) }, t.rep_id)}

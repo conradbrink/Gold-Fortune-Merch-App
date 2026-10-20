@@ -70,28 +70,34 @@ test("a dispatch that could not be handed over says so in the company's words", 
   );
 });
 
-/** A one-page `orders` read for fetchSales: one order with nobody on it. */
+/** A one-page `sales_documents` read for fetchSales: one invoice with nobody on it. */
 function salesClient() {
   const rows = [
     {
-      id: "o1",
-      order_number: "ORD-1",
-      delivered_at: "2026-10-01T10:00:00Z",
+      doc_id: "i1",
+      doc_kind: "invoice",
+      doc_number: "1870",
+      invoice_id: "i1",
+      order_id: null,
       rep_id: null,
-      vat_rate: 15,
-      stores: { name: "Spar Riverside" },
-      profiles: null,
-      order_lines: [{ qty_delivered: 2, qty_returned: 0, unit_price: 10 }],
+      rep_name: null,
+      store_id: "s1",
+      store_name: "Spar Riverside",
+      store_city: null,
+      issued_on: "2026-10-01",
+      issued_at: "2026-10-01T10:00:00Z",
+      units: 2,
+      revenue_excl_vat: 20,
+      revenue_incl_vat: 23,
+      gross_profit: 20,
+      uncosted_units: 2,
     },
   ];
   const chain = {
-    select: () => chain,
-    eq: () => chain,
-    not: () => chain,
     order: () => chain,
     range: async () => ({ data: rows, error: null }),
   };
-  return { from: () => chain } as never;
+  return { rpc: () => chain } as never;
 }
 
 test("a sale nobody was responsible for is filed under the company's word", async () => {
