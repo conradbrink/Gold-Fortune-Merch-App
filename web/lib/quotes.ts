@@ -1,7 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/lib/supabase/types";
 import { documentTotals, formatQty, lineTotal } from "@/lib/money-docs";
-import { drawMoneyPdf, money, type PdfSpec } from "@/lib/money-pdf";
+import { drawMoneyPdf, paperDate, paperLines, paperMoney, vatRows, type Paper, type PdfSpec } from "@/lib/money-pdf";
 
 /**
  * Everything the quote screens read and do.
@@ -347,18 +347,21 @@ export type QuotePdfInput = {
   >;
   storeName: string | null;
   storeAddress: string | null;
-  lines: { label: string; brand: string | null; unit: string | null; qty: number; unit_price: number | null }[];
+  lines: { label: string; brand: string | null; sku?: string | null; unit: string | null; qty: number; unit_price: number | null }[];
 };
 
-export function quotePdfSpec(detail: QuotePdfInput, seller: QuoteSeller): PdfSpec {
+export function quotePdfSpec(detail: QuotePdfInput, seller: QuoteSeller, paper: Paper): PdfSpec {
   const q = detail.quote;
   const totals = quoteTotals(detail);
-  const rate = Number(q.vat_rate);
+  const fmt = paperMoney(paper);
   const meta: [string, string][] = [
-    ["Quote no", q.quote_number],
-    ["Date", q.created_at.slice(0, 10)],
+    ["Quote no.", q.quote_number],
+    ["Quote date", paperDate(q.created_at)],
   ];
-  if (q.valid_until) meta.push(["Valid until", q.valid_until]);
+  if (q.valid_until) meta.push(["Valid until", paperDate(q.valid_until)]);
+  const address = q.customer_address ?? q.delivery_address ?? detail.storeAddress;
+  // Where the goods go, beside who pays, when the quote names both and they differ.
+  const deliverTo = q.customer_address && q.delivery_address && q.delivery_address.trim() !== q.customer_address.trim() ? q.delivery_address : null;
   return {
     heading: "QUOTE",
     fileName: q.quote_number,
@@ -372,34 +375,27 @@ export function quotePdfSpec(detail: QuotePdfInput, seller: QuoteSeller): PdfSpe
       email: seller.support_email,
       logoPath: seller.logo_path,
     },
+    metaTitle: "Quote details",
     meta,
-    billTo: {
-      label: "QUOTE FOR",
-      name: quoteClientName(q, detail.storeName),
-      address: q.customer_address ?? q.delivery_address ?? detail.storeAddress,
-      email: q.contact_email,
-    },
-    head: ["Description", "Qty", "Unit price", "Amount"],
-    numeric: [1, 2, 3],
-    rows: detail.lines.map((l) => [
-      l.brand ? `${l.label} — ${l.brand}` : l.label,
-      l.unit ? `${formatQty(Number(l.qty))} ${l.unit}` : formatQty(Number(l.qty)),
-      money(Number(l.unit_price ?? 0)),
-      money(lineTotal(Number(l.qty), Number(l.unit_price ?? 0))),
-    ]),
-    totals:
-      rate === 0
-        ? [["Total", money(totals.total)]]
-        : [
-            ["Subtotal (excl. VAT)", money(totals.subtotal)],
-            [q.prices_include_vat ? `VAT ${rate}% (included)` : `VAT ${rate}%`, money(totals.vat)],
-            ["Total", money(totals.total)],
-          ],
+    billTo: { label: "Quote for", name: quoteClientName(q, detail.storeName), address, email: q.contact_email },
+    shipTo: deliverTo ? { label: "Deliver to", address: deliverTo } : null,
+    ...paperLines(
+      detail.lines.map((l) => ({
+        code: l.sku,
+        description: l.brand ? `${l.label} — ${l.brand}` : l.label,
+        qty: l.unit ? `${formatQty(Number(l.qty))} ${l.unit}` : formatQty(Number(l.qty)),
+        rate: fmt(Number(l.unit_price ?? 0)),
+        amount: fmt(lineTotal(Number(l.qty), Number(l.unit_price ?? 0))),
+      })),
+      Number(q.vat_rate) > 0
+    ),
+    totals: [...vatRows(Number(q.vat_rate), q.prices_include_vat, totals.subtotal, totals.vat, fmt), ["Total", fmt(totals.total)]],
     notes: q.notes ? [q.notes] : [],
     payTo: seller.bank_details,
   };
 }
 
 export async function downloadQuotePdf(detail: QuoteDetail, seller: QuoteSeller) {
-  await drawMoneyPdf(quotePdfSpec(detail, seller));
+  const { loadPaper } = await import("@/lib/document-look");
+  await drawMoneyPdf(quotePdfSpec(detail, seller, await loadPaper()));
 }

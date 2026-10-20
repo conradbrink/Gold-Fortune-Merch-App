@@ -4,7 +4,7 @@ import type { DateRange } from "@/lib/date-range";
 import type { ExportSheet } from "@/lib/export";
 import { lower, type Terms } from "@/lib/terms";
 import { fileSlug } from "@/lib/export-filename";
-import { drawMoneyPdf } from "@/lib/money-pdf";
+import { drawMoneyPdf, paperDate } from "@/lib/money-pdf";
 import { fetchQuoteSeller } from "@/lib/quotes";
 import { companyTime } from "@/lib/company-time";
 import { allPages } from "@/lib/all-pages";
@@ -141,15 +141,16 @@ export async function downloadServiceLogPdf(
       email: seller.support_email,
       logoPath: seller.logo_path,
     },
+    metaTitle: "Details",
     meta: [
-      ["From", period.from],
-      ["To", period.to],
+      ["From", paperDate(period.from)],
+      ["To", paperDate(period.to)],
     ],
-    billTo: { label: "FOR", name: first.store_name, address: first.store_address },
+    billTo: { label: "For", name: first.store_name, address: first.store_address },
     head: ["Date", t.staff.one, "In", "Out", "Minutes", "GPS", "Forms", "Photos"],
     numeric: [4, 6, 7],
     rows: rows.map((r) => [
-      r.day,
+      paperDate(r.day),
       r.staff_name ?? "",
       time(r.checkin_at),
       time(r.checkout_at),

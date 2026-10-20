@@ -163,7 +163,7 @@ export default function StatementsPage() {
     setActionError(null);
     try {
       const seller = await fetchStatementSeller(supabase);
-      await downloadStatementPdf(seller, statementClient, loaded.from, loaded.to, loaded.rows);
+      await downloadStatementPdf(seller, statementClient, loaded.from, loaded.to, loaded.rows, loaded.ageing);
     } catch (e) {
       setActionError(errorText(e));
     } finally {

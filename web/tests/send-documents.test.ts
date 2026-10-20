@@ -21,7 +21,7 @@ import {
 } from "@/lib/client-document";
 import { documentPdfSpec, invoiceViewPdfSpec, quoteViewPdfSpec, statementViewPdfSpec } from "@/lib/client-document-pdf";
 import { buildMoneyPdf } from "@/lib/money-pdf";
-import { customerPoText, invoicePdfSpec, type Invoice, type InvoiceLine } from "@/lib/invoices";
+import { invoicePdfSpec, type Invoice, type InvoiceLine } from "@/lib/invoices";
 import type { StatementRow } from "@/lib/owed";
 import type { QuoteRow } from "@/lib/quotes";
 
@@ -329,25 +329,41 @@ const invoiceView = {
   outstanding: 535,
 } as unknown as InvoiceView;
 
-test("the invoice's PDF is the signed-in one, then the credit and payment taken off it", () => {
-  const spec = invoiceViewPdfSpec(invoiceView);
-  const plain = invoicePdfSpec({ invoice, lines: invoiceLines, visits: [] });
+test("the invoice's PDF is the signed-in one, then the credit and payment taken off it, and whether it is overdue", () => {
+  const today = "2026-10-20";
+  const spec = invoiceViewPdfSpec(invoiceView, today);
+  const plain = invoicePdfSpec({ invoice, lines: invoiceLines, visits: [] }, { currency: "ZAR", today });
   assert.equal(spec.heading, "TAX INVOICE");
   assert.equal(spec.fileName, "INV-0042");
   assert.deepEqual(spec.rows, plain.rows);
   assert.deepEqual(spec.meta, plain.meta);
+  assert.deepEqual(spec.meta, [
+    ["Invoice no.", "INV-0042"],
+    ["Terms", "Net 30"],
+    ["Invoice date", "09/10/2026"],
+    ["Due date", "08/11/2026"],
+    ["Reference", "PO 5521"],
+  ]);
+  // A code on one line: the codes have a column, and every line pays VAT.
+  assert.deepEqual(spec.head, ["Product or service", "Description", "Qty", "Rate", "Amount", "Tax"]);
+  assert.deepEqual(spec.rows[0], ["", "Office clean", "2 visits", "R300.00", "R600.00", "VAT"]);
+  assert.deepEqual(spec.rows[1], ["WIN", "Window clean", "1", "R400.00", "R400.00", "VAT"]);
   assert.equal(spec.payTo, "First National Bank\nAccount 123456");
   assert.deepEqual(spec.look, { style: "bold", primary: "#0F3D3E", accent: "#F5A524" });
-  assert.deepEqual(spec.totals.slice(0, plain.totals.length), plain.totals);
+  const words = (t: typeof spec.totals) => t.map(([k, v]) => [k, v]);
+  assert.deepEqual(words(spec.totals.slice(0, plain.totals.length)), words(plain.totals));
   assert.deepEqual(
-    spec.totals.slice(plain.totals.length).map(([k]) => k),
-    ["Credit notes", "Paid", "Amount due"]
+    spec.totals.map(([k, , strong]) => (strong ? `${k}*` : k)),
+    ["Subtotal", "VAT @ 15% on R1,000.00", "Total*", "Credit notes", "Paid", "Amount due"]
   );
-  assert.match(spec.totals.at(-1)![1], /535\.00$/);
-  assert.match(spec.totals.at(-3)![1], /^-.*115\.00$/);
-  assert.match(spec.totals.at(-2)![1], /^-.*500\.00$/);
+  assert.equal(spec.totals.at(-1)![1], "R535.00");
+  assert.equal(spec.totals.at(-3)![1], "-R115.00");
+  assert.equal(spec.totals.at(-2)![1], "-R500.00");
+  assert.deepEqual(spec.status, { label: "Due", tone: "due", detail: "08/11/2026" });
+  assert.equal(invoiceViewPdfSpec(invoiceView, "2026-11-09").status?.label, "Overdue");
+  assert.equal(invoiceViewPdfSpec({ ...invoiceView, paid: 1035, outstanding: 0 }, today).status?.label, "Paid");
   // Nothing taken off: the totals are the invoice's own.
-  const fresh = invoiceViewPdfSpec({ ...invoiceView, credit_notes: [], payments: [], paid: 0, credited: 0, outstanding: 1150 });
+  const fresh = invoiceViewPdfSpec({ ...invoiceView, credit_notes: [], payments: [], paid: 0, credited: 0, outstanding: 1150 }, today);
   assert.deepEqual(fresh.totals, plain.totals);
 });
 
@@ -379,20 +395,22 @@ const quoteView = {
 } as unknown as QuoteView;
 
 test("a quote's PDF has the amount-discounted unit price, the page's own client address and the company's bank", () => {
-  const spec = quoteViewPdfSpec(quoteView);
+  const spec = quoteViewPdfSpec(quoteView, "2026-10-20");
   assert.equal(spec.heading, "QUOTE");
   assert.equal(spec.fileName, "QU-0007");
   assert.deepEqual(spec.meta, [
-    ["Quote no", "QU-0007"],
-    ["Date", "2026-10-09"],
-    ["Valid until", "2026-11-15"],
+    ["Quote no.", "QU-0007"],
+    ["Quote date", "09/10/2026"],
+    ["Valid until", "15/11/2026"],
   ]);
   assert.equal(spec.billTo.name, "Sandton Office Park");
   assert.equal(spec.billTo.address, "5 Rivonia Rd");
-  assert.deepEqual(spec.rows[0], ["Deep clean", "3 visit", "380.00", "1,140.00"]);
-  assert.deepEqual(spec.rows[1], ["Carpets", "1", "250.00", "250.00"]);
-  assert.deepEqual(spec.totals.map(([k]) => k), ["Subtotal (excl. VAT)", "VAT 15%", "Total"]);
-  assert.equal(spec.totals[2][1], "1,598.50");
+  assert.equal(spec.shipTo, null);
+  assert.deepEqual(spec.rows[0], ["Deep clean", "3 visit", "R380.00", "R1,140.00", "VAT"]);
+  assert.deepEqual(spec.rows[1], ["Carpets", "1", "R250.00", "R250.00", "VAT"]);
+  assert.deepEqual(spec.totals.map(([k]) => k), ["Subtotal", "VAT @ 15% on R1,390.00", "Total"]);
+  assert.equal(spec.totals[2][1], "R1,598.50");
+  assert.equal(spec.status, undefined);
   assert.deepEqual(spec.notes, ["Prices hold for the month."]);
   assert.equal(spec.payTo, seller.bank_details);
 });
@@ -418,14 +436,30 @@ const statementView = {
 } as unknown as StatementView;
 
 test("a statement's PDF has every row, the closing balance and what is owed by age", () => {
-  const spec = statementViewPdfSpec(statementView);
+  const spec = statementViewPdfSpec(statementView, "2026-10-31");
   assert.equal(spec.heading, "STATEMENT");
   assert.equal(spec.fileName, "Statement Sandton Office Park 2026-10-31");
   assert.equal(spec.rows.length, 4);
-  assert.deepEqual(spec.rows[3], ["2026-10-20", "Payment", "INV-0042", "EFT · FNB 88", "", "500.00", "835.00"]);
-  assert.deepEqual(spec.totals, [["Balance due", "835.00"]]);
-  assert.match(spec.notes?.[0] ?? "", /Not yet due 835\.00/);
-  assert.equal(spec.look?.style, "bold");
+  assert.deepEqual(spec.head, ["Date", "Activity", "Charged", "Paid or credited", "Balance"]);
+  assert.deepEqual(spec.rows[0], ["01/10/2026", "Balance brought forward", "", "", "R300.00"]);
+  assert.deepEqual(spec.rows[1], ["09/10/2026", "Invoice INV-0042\nPO 5521", "R1,150.00", "", "R1,450.00"]);
+  assert.deepEqual(spec.rows[3], ["20/10/2026", "Payment for INV-0042\nEFT · FNB 88", "", "R500.00", "R835.00"]);
+  assert.deepEqual(spec.meta, [
+    ["Statement date", "31/10/2026"],
+    ["Period", "01/10/2026 to 31/10/2026"],
+    ["Amount due", "R835.00"],
+  ]);
+  assert.deepEqual(spec.totals, [["Balance due", "R835.00"]]);
+  assert.deepEqual(spec.ageing, [
+    ["Not yet due", "R835.00"],
+    ["1–30 days overdue", "R0.00"],
+    ["31–60 days overdue", "R0.00"],
+    ["61–90 days overdue", "R0.00"],
+    ["Over 90 days overdue", "R0.00"],
+  ]);
+  assert.deepEqual(spec.status, { label: "Not yet due", tone: "due" });
+  assert.equal(spec.notes, undefined);
+  assert.deepEqual(spec.look, { style: "bold", primary: "#0F3D3E", accent: "#F5A524" });
   assert.deepEqual(statementParts(statementView.statement.rows).opening, 300);
   assert.equal(statementParts(statementView.statement.rows).moves.length, 3);
 });
@@ -437,7 +471,7 @@ test("each kind of page draws its PDF in every look, with no login and no logo",
       const spec = documentPdfSpec(v);
       assert.equal(spec.look?.style, style);
       const doc = await buildMoneyPdf(spec, spec.look!, null);
-      assert.ok(doc.getNumberOfPages() >= 1, `${view.kind} ${style}`);
+      assert.equal(doc.getNumberOfPages(), 1, `${view.kind} ${style}`);
     }
   }
 });
@@ -658,18 +692,4 @@ test("the founding answer: the accepted one gives the pilot and the price, and w
   assert.match(bare.html, /Hello,/);
   assert.match(bare.html, /Your business is one of/);
   assert.equal(renderEmail("founding_declined", {}, tickd), null);
-});
-
-test("an invoice states the customer's PO under its order number, so the chain can pay it", () => {
-  const ordered = { ...invoice, order_number: "SO-000189", customer_po_number: "1001160022257", customer_po_date: "2026-10-16" } as Invoice;
-  const meta = invoicePdfSpec({ invoice: ordered, lines: invoiceLines, visits: [] }).meta;
-  assert.deepEqual(meta.slice(-2), [
-    ["Order", "SO-000189"],
-    ["Your PO", "1001160022257 of 2026-10-16"],
-  ]);
-  assert.equal(customerPoText(ordered, () => "16 Oct 2026"), "1001160022257 of 16 Oct 2026");
-  assert.equal(customerPoText({ customer_po_number: "PO-7", customer_po_date: null }), "PO-7");
-  // No PO, no line: the meta is what it was before.
-  assert.equal(customerPoText(invoice), null);
-  assert.ok(!invoicePdfSpec({ invoice, lines: invoiceLines, visits: [] }).meta.some(([k]) => k === "Your PO"));
 });

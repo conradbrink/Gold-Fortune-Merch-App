@@ -1,8 +1,8 @@
-import { drawMoneyPdf, money, type PdfSpec } from "@/lib/money-pdf";
+import { drawMoneyPdf, type Paper, type PdfSpec } from "@/lib/money-pdf";
 import { invoicePdfSpec } from "@/lib/invoices";
 import { quotePdfSpec } from "@/lib/quotes";
 import { statementPdfSpec } from "@/lib/owed";
-import { ageingParts, documentLook, type DocumentView, type InvoiceView, type QuoteView, type StatementView } from "@/lib/client-document";
+import { documentLook, todayIn, type DocumentView, type InvoiceView, type QuoteView, type StatementView } from "@/lib/client-document";
 
 /**
  * The client's page as a PDF: the same drawer the signed-in screens use, fed
@@ -10,19 +10,21 @@ import { ageingParts, documentLook, type DocumentView, type InvoiceView, type Qu
  * so nothing here reads a company setting.
  */
 
-/** The invoice, then what has been taken off it and what is still to pay. */
-export function invoiceViewPdfSpec(v: InvoiceView): PdfSpec {
-  const spec = invoicePdfSpec({ invoice: v.invoice, lines: v.lines, visits: [] });
-  const totals = [...spec.totals];
-  if (v.credited > 0 || v.paid > 0) {
-    if (v.credited > 0) totals.push(["Credit notes", `-${money(v.credited)}`]);
-    if (v.paid > 0) totals.push(["Paid", `-${money(v.paid)}`]);
-    totals.push(["Amount due", money(v.outstanding)]);
-  }
-  return { ...spec, totals, look: documentLook(v.look) };
+/** The page's currency, and today on the company's clock (or the day given). */
+function paperOf(v: DocumentView, today?: string): Paper {
+  return { currency: v.look.currency, today: today ?? todayIn(v.timezone) };
 }
 
-export function quoteViewPdfSpec(v: QuoteView): PdfSpec {
+/** The invoice, then what has been taken off it, what is still to pay, and whether it is overdue. */
+export function invoiceViewPdfSpec(v: InvoiceView, today?: string): PdfSpec {
+  const spec = invoicePdfSpec(
+    { invoice: v.invoice, lines: v.lines, visits: [], balance: { credited: v.credited, paid: v.paid, outstanding: v.outstanding } },
+    paperOf(v, today)
+  );
+  return { ...spec, look: documentLook(v.look) };
+}
+
+export function quoteViewPdfSpec(v: QuoteView, today?: string): PdfSpec {
   const c = v.company;
   const spec = quotePdfSpec(
     {
@@ -30,7 +32,7 @@ export function quoteViewPdfSpec(v: QuoteView): PdfSpec {
       quote: { ...v.quote, customer_address: v.customer_address, delivery_address: null },
       storeName: v.customer_name,
       storeAddress: null,
-      lines: v.lines.map((l) => ({ label: l.description, brand: null, unit: l.unit, qty: l.qty, unit_price: l.unit_price })),
+      lines: v.lines.map((l) => ({ label: l.description, brand: null, sku: l.sku, unit: l.unit, qty: l.qty, unit_price: l.unit_price })),
     },
     {
       name: c.name,
@@ -43,14 +45,16 @@ export function quoteViewPdfSpec(v: QuoteView): PdfSpec {
       support_email: c.email,
       logo_path: c.logo_path,
       bank_details: c.bank_details,
-    }
+    },
+    paperOf(v, today)
   );
   return { ...spec, look: documentLook(v.look) };
 }
 
-export function statementViewPdfSpec(v: StatementView): PdfSpec {
+export function statementViewPdfSpec(v: StatementView, today?: string): PdfSpec {
   const c = v.company;
   const s = v.statement;
+  const paper = paperOf(v, today);
   const spec = statementPdfSpec(
     {
       name: c.name,
@@ -67,15 +71,15 @@ export function statementViewPdfSpec(v: StatementView): PdfSpec {
     { storeId: null, name: s.client_name, address: s.client_address },
     s.from,
     s.to,
-    s.rows
+    s.rows,
+    paper,
+    s.ageing
   );
-  const owing = ageingParts(s.ageing);
-  const notes = owing.length ? [`What is owed at ${s.to}: ${owing.map((p) => `${p.label} ${money(p.amount)}`).join(", ")}.`] : [];
-  return { ...spec, notes, look: documentLook(v.look) };
+  return { ...spec, look: documentLook(v.look) };
 }
 
-export function documentPdfSpec(v: DocumentView): PdfSpec {
-  return v.kind === "invoice" ? invoiceViewPdfSpec(v) : v.kind === "quote" ? quoteViewPdfSpec(v) : statementViewPdfSpec(v);
+export function documentPdfSpec(v: DocumentView, today?: string): PdfSpec {
+  return v.kind === "invoice" ? invoiceViewPdfSpec(v, today) : v.kind === "quote" ? quoteViewPdfSpec(v, today) : statementViewPdfSpec(v, today);
 }
 
 export async function downloadDocumentPdf(v: DocumentView) {
