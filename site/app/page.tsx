@@ -10,6 +10,8 @@ import {
   Repeat,
   Store,
   Target,
+  TrendingUp,
+  Users,
   UserX,
 } from "lucide-react";
 import Image from "next/image";
@@ -105,6 +107,12 @@ const ai = [
   { icon: MessageSquareText, text: "Ask about your stores, reps, sales, orders and stock, and get the answer in seconds." },
   { icon: CalendarDays, text: "Ask it to plan a rep's month of visits: one town a day, so they drive less and spend less on fuel." },
   { icon: FileText, text: "Every report comes with a short summary of what stands out." },
+  // Added by the owner (20 Oct 2026). Ask answers from the company's own
+  // lookups and drafts plans from them; a list it shows can be downloaded
+  // (ExportMenu). There is no "send to the team" yet, so it says download.
+  { icon: TrendingUp, text: "Ask it how to grow your sales in an area, and it draws up a plan." },
+  { icon: Store, text: "Ask it which stores need more attention." },
+  { icon: Users, text: "Ask about each rep's performance, and download the report to share with your team." },
 ];
 
 // What the form at the foot of the page gets them, in three lines.
