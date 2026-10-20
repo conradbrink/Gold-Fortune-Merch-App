@@ -457,82 +457,59 @@ async function sales(args: Record<string, unknown>, env: ToolEnv): Promise<ToolR
     ? String(args.group_by)
     : "total";
 
-  type Row = {
-    id: string;
-    delivered_at: string;
-    store_id: string | null;
-    rep_id: string | null;
-    stores: { name: string; city: string | null } | { name: string; city: string | null }[] | null;
-    rep: { full_name: string } | { full_name: string }[] | null;
-    order_lines:
-      | {
-          qty_delivered: number;
-          qty_returned: number;
-          unit_price: number | null;
-          product_id: string;
-          products: { name: string } | { name: string }[] | null;
-        }[]
-      | null;
-  };
+  type Row = Database["public"]["Functions"]["sales_lines"]["Returns"][number];
 
-  // Counted and valued exactly as the Sales page does (`lib/sales.ts`): on the
-  // day it was delivered, on what arrived less what came back, excluding VAT.
+  // Counted exactly as the Sales page counts (`sales_documents`, which adds up
+  // these same lines): invoices on the day they were issued, less credit notes
+  // on theirs, excluding VAT. Paged by line so nothing repeats or drops out.
   const PAGE = 1000;
-  const orders: Row[] = [];
+  const lines: Row[] = [];
   for (let start = 0; ; start += PAGE) {
     let q = env.supabase
-      .from("orders")
-      .select(
-        `id, delivered_at, store_id, rep_id, stores(name, city), rep:profiles!orders_rep_id_fkey(full_name),
-         order_lines(qty_delivered, qty_returned, unit_price, product_id, products(name))`
-      )
-      .eq("status", "delivered")
-      .gte("delivered_at", r.from.toISOString())
-      .lt("delivered_at", r.to.toISOString())
-      .order("delivered_at", { ascending: false })
-      .order("id", { ascending: false })
+      .rpc("sales_lines", { p_from: r.from.toISOString(), p_to: r.to.toISOString() })
+      .order("line_id", { ascending: true })
       .range(start, start + PAGE - 1);
     if (siteId) q = q.eq("store_id", siteId);
     if (reps) q = q.in("rep_id", reps);
     const { data, error } = await q;
     fail(error);
-    const page = (data ?? []) as unknown as Row[];
-    orders.push(...page);
+    const page = (data ?? []) as Row[];
+    lines.push(...page);
     if (page.length < PAGE) break;
   }
 
-  // Keyed by id, not name: two branches called "Choppies" are two rows.
-  type Group = { name: string; town: string | null; orders: Set<string>; units: number; net: number };
+  // Keyed by id, not name: two branches called "Choppies" are two rows. A
+  // credit note changes the money and units, not the number of invoices.
+  type Group = { name: string; town: string | null; invoices: Set<string>; units: number; net: number };
   const groups = new Map<string, Group>();
-  const add = (key: string, name: string, town: string | null, orderId: string, units: number, net: number) => {
-    const g = groups.get(key) ?? { name, town, orders: new Set<string>(), units: 0, net: 0 };
-    g.orders.add(orderId);
-    g.units += units;
-    g.net += net;
+  const add = (key: string, name: string, town: string | null, l: Row) => {
+    const g = groups.get(key) ?? { name, town, invoices: new Set<string>(), units: 0, net: 0 };
+    if (l.doc_kind !== "credit_note") g.invoices.add(l.doc_id);
+    g.units += Number(l.units);
+    g.net += Number(l.net);
     groups.set(key, g);
   };
 
   let units = 0;
   let net = 0;
-  for (const o of orders) {
-    const month = localDay(o.delivered_at, env.timeZone).slice(0, 7);
-    for (const l of o.order_lines ?? []) {
-      const qty = l.qty_delivered - l.qty_returned;
-      if (qty <= 0) continue;
-      const value = qty * (l.unit_price == null ? 0 : Number(l.unit_price));
-      units += qty;
-      net += value;
-      const store = one(o.stores);
-      if (groupBy === "staff") {
-        add(o.rep_id ?? "", one(o.rep)?.full_name ?? `No ${lower(t.staff.one)}`, null, o.id, qty, value);
-      } else if (groupBy === "site") {
-        add(o.store_id ?? "", store?.name ?? "", store?.city ?? null, o.id, qty, value);
-      } else if (groupBy === "month") {
-        const label = new Date(`${month}-15T12:00:00Z`).toLocaleDateString("en-GB", { month: "long", year: "numeric", timeZone: "UTC" });
-        add(month, label, null, o.id, qty, value);
-      } else if (groupBy === "product") {
-        add(l.product_id, one(l.products)?.name ?? "", null, o.id, qty, value);
-      }
+  const invoices = new Set<string>();
+  for (const l of lines) {
+    units += Number(l.units);
+    net += Number(l.net);
+    if (l.doc_kind !== "credit_note") invoices.add(l.doc_id);
+    if (groupBy === "staff") {
+      add(l.rep_id ?? "", l.rep_name ?? `No ${lower(t.staff.one)}`, null, l);
+    } else if (groupBy === "site") {
+      add(l.store_id ?? "", l.store_name ?? "", l.store_city ?? null, l);
+    } else if (groupBy === "month") {
+      const month = l.issued_on.slice(0, 7);
+      const label = new Date(`${month}-15T12:00:00Z`).toLocaleDateString("en-GB", { month: "long", year: "numeric", timeZone: "UTC" });
+      add(month, label, null, l);
+    } else if (groupBy === "product") {
+      // QuickBooks history often names a product without linking it, and a
+      // rebate or rounding row has neither: those read as typed, or "Other".
+      const key = l.product_id ? `p:${l.product_id}` : l.product_name ? `d:${l.product_name}` : "other";
+      add(key, l.product_name ?? "Other (no product)", null, l);
     }
   }
 
@@ -542,7 +519,7 @@ async function sales(args: Record<string, unknown>, env: ToolEnv): Promise<ToolR
   const list = [...groups.values()]
     .map((g) => ({
       name: (seen.get(g.name) ?? 0) > 1 && g.town ? `${g.name} (${g.town})` : g.name,
-      orders: g.orders.size,
+      invoices: g.invoices.size,
       units: g.units,
       sales_excl_vat: money(g.net),
     }))
@@ -561,7 +538,7 @@ async function sales(args: Record<string, unknown>, env: ToolEnv): Promise<ToolR
   return {
     model: {
       period: r.label,
-      total: { orders: orders.length, units, sales_excl_vat: money(net) },
+      total: { invoices: invoices.size, units, sales_excl_vat: money(net) },
       group_by: groupBy,
       groups: list.slice(0, MODEL_ROWS),
       groups_total: list.length,
@@ -572,10 +549,10 @@ async function sales(args: Record<string, unknown>, env: ToolEnv): Promise<ToolR
         : sheet(
             `Sales per ${lower(byLabel[groupBy])}`,
             `sales-${groupBy}`,
-            [r.label, "Delivered orders, excluding VAT"],
+            [r.label, "Invoices less credit notes, excluding VAT"],
             [
               { header: byLabel[groupBy], key: "name" },
-              { header: "Orders", key: "orders", numeric: true },
+              { header: "Invoices", key: "invoices", numeric: true },
               { header: "Units", key: "units", numeric: true },
               { header: "Sales excl. VAT", key: "sales_excl_vat", numeric: true },
             ],

@@ -5,9 +5,9 @@ import type { Database } from "@/lib/supabase/types";
  * Monthly sales targets per rep.
  *
  * Progress comes from `sales_target_progress`, which counts a sale exactly as
- * the Sales page does — delivered, on the local delivery date, valued on what
- * arrived less returns, excluding VAT — so the two can never show a rep
- * different figures for the same month.
+ * the Sales page does (`sales_documents`: invoices on the day they were issued,
+ * less credit notes, excluding VAT), so the two can never show a rep different
+ * figures for the same month. A rep's sales are the invoices for their orders.
  */
 
 type Client = SupabaseClient<Database>;
@@ -18,7 +18,7 @@ export const MEASURES: { value: Measure; label: string; money: boolean }[] = [
   { value: "revenue", label: "Revenue (excl. VAT)", money: true },
   { value: "gross_profit", label: "Gross profit", money: true },
   { value: "units", label: "Units sold", money: false },
-  { value: "orders", label: "Orders delivered", money: false },
+  { value: "orders", label: "Invoices", money: false },
 ];
 
 export type TargetProgress =

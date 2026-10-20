@@ -277,7 +277,7 @@ export const WIDGETS: WidgetDefinition[] = [
     id: "sales",
     title: () => "Sales",
     description: (t) =>
-      `Delivered revenue by month with this month's pace, and each ${lower(t.staff.one)} against target.`,
+      `Sales by month with this month's pace, and each ${lower(t.staff.one)} against target.`,
     span: 2,
     source: "business",
     module: "distribution",

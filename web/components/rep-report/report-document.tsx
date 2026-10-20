@@ -151,7 +151,7 @@ export function RepPerformanceReport({
               value={money(summary.salesNet, currency)}
               note={
                 summary.salesOrders > 0
-                  ? `${summary.salesOrders} delivered order${summary.salesOrders === 1 ? "" : "s"}`
+                  ? `${summary.salesOrders} invoice${summary.salesOrders === 1 ? "" : "s"}`
                   : "No sales recorded during this period"
               }
             />
@@ -311,7 +311,7 @@ export function RepPerformanceReport({
         <section className="rr-block">
           <h2 className="rr-h2">
             Sales generated per day
-            <span className="rr-h2-note">delivered orders, excluding VAT, in {currencyName(currency)}</span>
+            <span className="rr-h2-note">invoices less credit notes, excluding VAT, in {currencyName(currency)}</span>
           </h2>
           <DailySalesChart days={days} currency={currency} />
         </section>

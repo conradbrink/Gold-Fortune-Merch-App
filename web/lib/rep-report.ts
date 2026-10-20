@@ -71,7 +71,7 @@ export type RepSummary = {
   storesVisited: number;
   completedVisits: number;
   unplannedVisits: number;
-  /** Excluding VAT, delivered only — the same figure the Sales page shows. */
+  /** Invoices less credit notes, excluding VAT: the same figure the Sales page shows. */
   salesNet: number;
   salesOrders: number;
   storesWithSales: number;
@@ -667,8 +667,8 @@ export function managementSummary(
   if (sells) {
     first.push(
       s.salesNet > 0
-        ? `${who} generated ${money(s.salesNet, currency)} from ${s.salesOrders} delivered order${s.salesOrders === 1 ? "" : "s"}`
-        : `${who} recorded no delivered sales in this period`
+        ? `${who} generated ${money(s.salesNet, currency)} from ${s.salesOrders} invoice${s.salesOrders === 1 ? "" : "s"}`
+        : `${who} recorded no sales in this period`
     );
   }
   // Without the sales clause the sentence starts here, so it needs its subject.
