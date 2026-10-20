@@ -379,7 +379,7 @@ export default function Home() {
                 {founding.priceMonths} months, from {rand(foundingFrom)} a month.
               </p>
               {/* The reveal on the wrapper, the glow and wiggle on the badge: one animation each. */}
-              <span className="tk-reveal grid justify-items-start pt-1">
+              <span className="tk-reveal grid justify-items-center py-2">
                 <SpotsText
                   urgent
                   className="inline-block w-fit rounded-full bg-amber-500 px-4 py-1.5 text-sm font-extrabold uppercase tracking-wide text-teal-950"
