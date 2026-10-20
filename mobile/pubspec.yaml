@@ -60,6 +60,10 @@ dependencies:
   package_info_plus: ^10.2.1
   url_launcher: ^6.3.2
   sentry_flutter: ^9.26.0
+  # SkewRetryClient wraps the client Supabase sends every request through. The
+  # tests also use its `MockClient` to stand a fake PostgREST behind a real
+  # `SupabaseClient`.
+  http: ^1.6.0
 
 dev_dependencies:
   flutter_test:
@@ -72,9 +76,6 @@ dev_dependencies:
   # rules and activating additional ones.
   flutter_lints: ^6.0.0
   drift_dev: ^2.34.0
-  # Only for `MockClient`, so a sync-engine test can stand a fake PostgREST
-  # behind a real `SupabaseClient` and see exactly what the phone sends.
-  http: ^1.6.0
   build_runner: ^2.15.1
   flutter_launcher_icons: ^0.14.4
 
