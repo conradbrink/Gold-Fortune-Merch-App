@@ -15,9 +15,10 @@ import { PlansView } from "@/components/plans/plans-view";
  * opens a ready-written message to our team (`sales_whatsapp`, else
  * `sales_email`, the service's own settings), who set the plan up. The plans
  * are the site's three (lib/plans.ts), in the company's own word for its
- * people (its `staff` term: "Reps" for a distributor). The Founding price shows to a company
- * on, or past, its free pilot while self-serve sign-up is closed, since the
- * Founding application is then the only way onto a pilot. Behind
+ * people (its `staff` term: "Reps" for a distributor). The Founding price
+ * shows to a distributor on, or past, its free pilot while self-serve sign-up
+ * is closed, since the Founding application is then the only way onto a
+ * pilot. Behind
  * `company_settings` in the proxy's permission map.
  */
 
@@ -34,7 +35,7 @@ export default async function PlansPage() {
 
   const [{ data: account }, { data: org }, { count: reps, error: repsError }, { data: config }, contact] = await Promise.all([
     supabase.from("company_account").select("trial_ends_at").maybeSingle(),
-    supabase.from("organizations").select("name").maybeSingle(),
+    supabase.from("organizations").select("name, industries, timezone").maybeSingle(),
     supabase.from("profiles").select("id", { count: "exact", head: true }).eq("role", "rep").eq("is_active", true),
     supabase.rpc("my_company_config"),
     salesContact(),
@@ -45,10 +46,11 @@ export default async function PlansPage() {
     <PlansView
       trial={trial}
       trialEndsAt={account?.trial_ends_at ?? null}
-      founding={!SELF_SERVE_SIGNUP_OPEN && trial.kind !== "none"}
+      founding={!SELF_SERVE_SIGNUP_OPEN && trial.kind !== "none" && (org?.industries ?? []).includes("distribution")}
       reps={repsError ? null : (reps ?? null)}
       terms={parseCompanyConfig(config)?.terms ?? DEFAULT_TERMS}
       company={org?.name ?? null}
+      timezone={org?.timezone || "UTC"}
       contact={{ email: contact.email, whatsapp: contact.whatsapp }}
     />
   );

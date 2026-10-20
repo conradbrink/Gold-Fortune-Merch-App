@@ -8,8 +8,6 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 
-const dateFormat = new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "long", year: "numeric" });
-
 export type PlansViewProps = {
   trial: TrialState;
   trialEndsAt: string | null;
@@ -20,6 +18,8 @@ export type PlansViewProps = {
   /** The company's own words: plans are priced by its `staff` term ("Reps" for a distributor). */
   terms: Terms;
   company: string | null;
+  /** The company's time zone, so the end date is the day the day-10 email names. */
+  timezone: string;
   contact: { email: string | null; whatsapp: string | null };
 };
 
@@ -28,14 +28,14 @@ export type PlansViewProps = {
  * the pilot, the three plans, and a button on each that opens a ready-written
  * message to our team. Presentational, so it can be rendered without a session.
  */
-export function PlansView({ trial, trialEndsAt, founding, reps, terms: t, company, contact }: PlansViewProps) {
+export function PlansView({ trial, trialEndsAt, founding, reps, terms: t, company, timezone, contact }: PlansViewProps) {
   const staff = lower(t.staff.many);
   const fits = reps && reps > 0 ? planFor(reps) : null;
   const tooBig = reps !== null && reps > biggestPlan.reps;
   const foundingFits = reps === null || reps <= FOUNDING_OFFER.reps;
   const link = (choice: PlanChoice, subject: string) => contactLink(contact, planMessage(choice, company, t), subject);
-  const noContact = !contact.email && !contact.whatsapp?.replace(/\D/g, "");
-  const ends = trialEndsAt ? dateFormat.format(new Date(trialEndsAt)) : null;
+  const noContact = contactLink(contact, "", "") === null;
+  const ends = trialEndsAt ? endDate(trialEndsAt, timezone) : null;
 
   return (
     <div className="mx-auto max-w-3xl space-y-6">
@@ -137,7 +137,7 @@ export function PlansView({ trial, trialEndsAt, founding, reps, terms: t, compan
             <span className="font-medium">
               More than {biggestPlan.reps} {staff}?
             </span>{" "}
-            {tooBig ? `You have ${reps}. ` : ""}We&apos;ll give you a price for your team.
+            {tooBig ? `You have ${count(t, "staff", reps ?? 0)}. ` : ""}We&apos;ll give you a price for your team.
           </p>
           <ChooseButton href={link({ kind: "bigger" }, `More than ${count(t, "staff", biggestPlan.reps)}`)} primary={tooBig}>
             Ask us for a price
@@ -145,18 +145,30 @@ export function PlansView({ trial, trialEndsAt, founding, reps, terms: t, compan
         </CardContent>
       </Card>
 
-      <ul className="space-y-2 text-sm text-foreground">
-        <Point>The button opens a message to our team with your plan filled in. Send it and we set the plan up with you.</Point>
-        <Point>
-          Nothing changes in the app. Your team, {lower(t.site.many)}, orders and reports carry on as they are.
-        </Point>
-      </ul>
-
-      {noContact && (
+      {noContact ? (
         <p className="text-sm text-muted-foreground">The details for choosing a plan have not been added yet.</p>
+      ) : (
+        <ul className="space-y-2 text-sm text-foreground">
+          <Point>
+            The button opens a message to our team with your plan filled in. Send it and we set the plan up with you.
+          </Point>
+          <Point>
+            Nothing changes in the app. Your team, {lower(t.site.many)}, orders and reports carry on as they are.
+          </Point>
+        </ul>
       )}
     </div>
   );
+}
+
+/** "24 October 2026" in the company's time zone; the server's (UTC) if that zone is not one the runtime knows. */
+function endDate(iso: string, timezone: string): string {
+  const options = { day: "numeric", month: "long", year: "numeric" } as const;
+  try {
+    return new Intl.DateTimeFormat("en-GB", { ...options, timeZone: timezone }).format(new Date(iso));
+  } catch {
+    return new Intl.DateTimeFormat("en-GB", options).format(new Date(iso));
+  }
 }
 
 function Point({ children }: { children: ReactNode }) {

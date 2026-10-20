@@ -352,17 +352,13 @@ export async function trialDays(): Promise<number> {
   return n;
 }
 
-export type SalesContact = { email: string | null; whatsapp: string | null; pricingUrl: string | null };
+export type SalesContact = { email: string | null; whatsapp: string | null };
 
 /** Where "Talk to us" and "View plans" point; each null when not set. */
 export async function salesContact(): Promise<SalesContact> {
-  const [email, whatsapp, pricingUrl] = await Promise.all([
-    platformSetting("sales_email"),
-    platformSetting("sales_whatsapp"),
-    platformSetting("pricing_url"),
-  ]);
+  const [email, whatsapp] = await Promise.all([platformSetting("sales_email"), platformSetting("sales_whatsapp")]);
   const text = (v: Json | null) => (typeof v === "string" && v.trim() ? v.trim() : null);
-  return { email: text(email), whatsapp: text(whatsapp), pricingUrl: text(pricingUrl) };
+  return { email: text(email), whatsapp: text(whatsapp) };
 }
 
 /** A company's trial end, or null when it is not on a trial. */

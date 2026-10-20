@@ -1,4 +1,5 @@
 import { FOUNDING_OFFER } from "@/lib/founding-offer";
+import { PRODUCT_NAME } from "@/lib/product";
 import { count, type Terms } from "@/lib/terms";
 
 /**
@@ -57,7 +58,7 @@ export function planMessage(choice: PlanChoice, company: string | null, t: Terms
       return `Hi, we'd like the plan for up to ${staff(choice.reps)}${who}${plan ? ` (${rand(plan.monthly)} a month)` : ""}.`;
     }
     case "bigger":
-      return `Hi, ${company?.trim() ? `this is ${company.trim()}. We` : "we"} have more than ${staff(biggestPlan.reps)}. What would Tickd cost us?`;
+      return `Hi, ${company?.trim() ? `this is ${company.trim()}. We` : "we"} have more than ${staff(biggestPlan.reps)}. What would ${PRODUCT_NAME} cost us?`;
   }
 }
 
