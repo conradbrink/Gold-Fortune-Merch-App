@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import type { KeyboardEvent, ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
@@ -82,7 +82,11 @@ export function SaveRow({
   );
 }
 
-/** A small set of choices shown side by side, one of them chosen: days, distances. */
+/**
+ * A small set of choices shown side by side: days (each one on or off) or a
+ * distance (one of them). As one choice it behaves as a radio group: one tab
+ * stop, the arrow keys move and choose.
+ */
 export function ChoiceButtons<T extends string | number>({
   options,
   value,
@@ -100,18 +104,33 @@ export function ChoiceButtons<T extends string | number>({
   multiple?: boolean;
 }) {
   const on = (v: T) => (Array.isArray(value) ? value.includes(v) : value === v);
+  const chosen = options.findIndex((o) => on(o.value));
+
+  function onKeyDown(e: KeyboardEvent<HTMLButtonElement>, i: number) {
+    if (multiple) return;
+    const step = e.key === "ArrowRight" || e.key === "ArrowDown" ? 1 : e.key === "ArrowLeft" || e.key === "ArrowUp" ? -1 : 0;
+    if (step === 0) return;
+    e.preventDefault();
+    const next = (i + step + options.length) % options.length;
+    onChange(options[next].value);
+    const buttons = e.currentTarget.parentElement?.querySelectorAll<HTMLButtonElement>("button");
+    buttons?.[next]?.focus();
+  }
+
   return (
     <div role={multiple ? "group" : "radiogroup"} aria-label={label} className="flex flex-wrap gap-1.5">
-      {options.map((o) => (
+      {options.map((o, i) => (
         <button
           key={String(o.value)}
           type="button"
           role={multiple ? undefined : "radio"}
           aria-checked={multiple ? undefined : on(o.value)}
           aria-pressed={multiple ? on(o.value) : undefined}
+          tabIndex={multiple ? undefined : i === (chosen >= 0 ? chosen : 0) ? 0 : -1}
           title={o.title}
           disabled={disabled}
           onClick={() => onChange(o.value)}
+          onKeyDown={(e) => onKeyDown(e, i)}
           className={cn(
             "inline-flex h-9 min-w-12 items-center justify-center rounded-lg border px-3 text-sm font-medium tabular-nums transition-colors duration-150 outline-none",
             "focus-visible:ring-3 focus-visible:ring-ring/50 active:translate-y-px disabled:cursor-not-allowed disabled:opacity-50",

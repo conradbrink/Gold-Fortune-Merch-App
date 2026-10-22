@@ -112,9 +112,13 @@ export default function TeamSettingsPage() {
     if (!Number.isInteger(stores) || stores < 1 || stores > 50) {
       return setError(`${t.site.many} per day is a whole number from 1 to 50.`);
     }
-    if (draft.autoEnd && !/^([01][0-9]|2[0-3]):[0-5][0-9]$/.test(draft.autoEndTime)) {
+    const timeOk = /^([01][0-9]|2[0-3]):[0-5][0-9]$/.test(draft.autoEndTime);
+    if (draft.autoEnd && !timeOk) {
       return setError("Choose a time, such as 19:30, to end the workday.");
     }
+    // With automatic ending off the time is not used; a cleared one keeps the
+    // saved time rather than sending a value the database refuses.
+    const endTime = timeOk ? draft.autoEndTime : saved.autoEndTime;
     setBusy(true);
     const supabase = createClient();
     const week = draft.workingDays.join(",") !== saved.workingDays.join(",") || draft.storesPerDay !== saved.storesPerDay;
@@ -135,7 +139,7 @@ export default function TeamSettingsPage() {
         [
           { org_id: orgId, key: "checkin_radius_m", value: draft.checkinMetres },
           { org_id: orgId, key: "auto_end_enabled", value: draft.autoEnd },
-          { org_id: orgId, key: "auto_end_time", value: draft.autoEndTime },
+          { org_id: orgId, key: "auto_end_time", value: endTime },
         ],
         { onConflict: "org_id,key" }
       );
@@ -149,7 +153,8 @@ export default function TeamSettingsPage() {
       refreshCompanyConfig();
     }
     setBusy(false);
-    setSaved(draft);
+    setSaved({ ...draft, autoEndTime: endTime });
+    setDraft({ ...draft, autoEndTime: endTime });
     setDone(true);
   }
 

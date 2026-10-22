@@ -110,7 +110,7 @@ export function BillingPanel(props: Props) {
       <CheckoutNotice note={props.checkout} cardUpdated={props.cardUpdated} />
       {props.checkout === "pending" ? <AutoRefresh /> : (props.checkout || props.cardUpdated) && <ForgetNotice />}
 
-      <PlanSummary {...props} onUpgrade={upgrade && !open ? openUpgrade : null} />
+      <PlanSummary {...props} canUpgrade={upgrade !== null} onUpgrade={upgrade && !open ? openUpgrade : null} />
       {owing && <PaymentFailed {...props} />}
       {open && (
         <div id="upgrade" className="scroll-mt-4">
@@ -238,8 +238,12 @@ function contactHref(contact: SalesContact): string | null {
  * includes. The name is the price list's ("Plan for up to 10 reps"), never a
  * made-up tier; a pilot is the free pilot, and a plan agreed by hand says so.
  */
-function PlanSummary(props: Props & { onUpgrade: (() => void) | null }) {
-  const { account, period, plan, nextCents, nextLabel, customPriceCents, activeReps, contact, onUpgrade } = props;
+function PlanSummary(props: Props & { canUpgrade: boolean; onUpgrade: (() => void) | null }) {
+  const { account, period, planNext, nextCents, nextLabel, customPriceCents, activeReps, contact, canUpgrade, onUpgrade } = props;
+  // The name and price are quoted for the plan of the next period (a change
+  // of reps already made takes effect then), so the reps it includes are
+  // that plan's too, and the summary says from when.
+  const plan = planNext ?? props.plan;
   const t = useTerms();
   const config = useCompanyConfig();
   const includes = config ? planIncludes(config.modules) : [];
@@ -273,8 +277,10 @@ function PlanSummary(props: Props & { onUpgrade: (() => void) | null }) {
 
   const reps =
     plan && paying && customPriceCents === null
-      ? `${plan.seats} ${noun(t, "staff", plan.seats).toLowerCase()} included, ${activeReps} active`
-      : `${activeReps} active ${noun(t, "staff", activeReps).toLowerCase()}`;
+      ? `${count(t, "staff", plan.seats)} included, ${activeReps} active${
+          planNext && props.periodEnd ? `, from ${formatDate(props.periodEnd)}` : ""
+        }`
+      : `${activeReps} active ${lower(noun(t, "staff", activeReps))}`;
 
   return (
     <section aria-labelledby="your-plan" className="rounded-xl border border-border bg-card">
@@ -326,22 +332,26 @@ function PlanSummary(props: Props & { onUpgrade: (() => void) | null }) {
               Contact Tickd
             </Button>
           )}
-          <Button variant="link" className="text-muted-foreground" nativeButton={false} render={<Link href="/plans" />}>
-            View plans
-          </Button>
+          {canUpgrade && (
+            <Button variant="link" className="text-muted-foreground" nativeButton={false} render={<Link href="/plans" />}>
+              View plans
+            </Button>
+          )}
         </div>
       </div>
+      {(canUpgrade || reach) && (
       <p className="border-t border-border px-5 py-3 text-sm text-muted-foreground sm:px-6">
-        Need more {staff} or features? Upgrade your plan or{" "}
+        Need more {staff} or features? {canUpgrade ? "Upgrade your plan or" : ""}{" "}
         {reach ? (
           <a href={reach} className="underline underline-offset-2 hover:text-foreground" target={reach.startsWith("http") ? "_blank" : undefined} rel="noopener noreferrer">
-            contact Tickd
+            {canUpgrade ? "contact Tickd" : "Contact Tickd"}
           </a>
         ) : (
           "contact Tickd"
         )}
         .
       </p>
+      )}
     </section>
   );
 }
@@ -717,7 +727,7 @@ function ChangeReps({ plan, period, periodEnd, activeReps, card }: Props) {
         >
           {pending ? "Saving…" : chargeNow ? `Pay ${formatRand(preview.totalCents)} and add the ${staff}` : "Save the change"}
         </Button>
-        {chargeNow && !card && <p className="text-xs text-muted-foreground">Add a card above first.</p>}
+        {chargeNow && !card && <p className="text-xs text-muted-foreground">Add a card under Payment first.</p>}
       </CardContent>
     </Card>
   );
