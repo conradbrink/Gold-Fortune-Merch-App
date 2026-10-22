@@ -6,6 +6,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../core/providers.dart';
 import '../../core/theme.dart';
 import '../../data/models/hr.dart';
+import '../../shared/widgets/message_panel.dart';
 import 'leave_request_sheet.dart';
 
 /// The rep's own HR record: leave, and anything on their file.
@@ -41,7 +42,7 @@ class MyHrScreen extends ConsumerWidget {
         ),
         body: employeeId.when(
           loading: () => const Center(child: CircularProgressIndicator()),
-          error: (e, _) => _Message(
+          error: (e, _) => MessagePanel(
             icon: Icons.wifi_off_outlined,
             title: 'This needs a connection',
             body:
@@ -54,7 +55,7 @@ class MyHrScreen extends ConsumerWidget {
               // login, and somebody can have an account before anyone has made
               // them an employee — showing a balance of zero would read as "you
               // have no leave", which is a different and much worse claim.
-              return const _Message(
+              return const MessagePanel(
                 icon: Icons.badge_outlined,
                 title: 'No employee record yet',
                 body:
@@ -114,7 +115,7 @@ class _LeaveTab extends ConsumerWidget {
         child: ListView(
           padding: const EdgeInsets.fromLTRB(16, 16, 16, 96),
           children: [
-            const _SectionTitle('Your balance'),
+            const SectionTitle('Your balance'),
             balances.when(
               loading: () => const LinearProgressIndicator(),
               error: (e, _) => const Text('Your balance could not be loaded.'),
@@ -126,7 +127,7 @@ class _LeaveTab extends ConsumerWidget {
                   : Column(children: [for (final b in rows) _BalanceCard(b)]),
             ),
             const SizedBox(height: 24),
-            const _SectionTitle('Your requests'),
+            const SectionTitle('Your requests'),
             requests.when(
               loading: () => const LinearProgressIndicator(),
               error: (e, _) => const Text('Your requests could not be loaded.'),
@@ -410,7 +411,7 @@ class _FileTab extends ConsumerWidget {
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (e, _) => ListView(children: const [
           SizedBox(height: 60),
-          _Message(
+          MessagePanel(
             icon: Icons.wifi_off_outlined,
             title: 'This needs a connection',
             body: 'Your file is not kept on the phone.',
@@ -419,7 +420,7 @@ class _FileTab extends ConsumerWidget {
         data: (rows) => rows.isEmpty
             ? ListView(children: const [
                 SizedBox(height: 60),
-                _Message(
+                MessagePanel(
                   icon: Icons.verified_outlined,
                   title: 'Nothing on your file',
                   body: 'No warnings have been issued to you.',
@@ -483,63 +484,6 @@ class _FileTab extends ConsumerWidget {
                     ),
                 ],
               ),
-      ),
-    );
-  }
-}
-
-class _SectionTitle extends StatelessWidget {
-  const _SectionTitle(this.text);
-
-  final String text;
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
-      child: Text(
-        text,
-        style: const TextStyle(
-          fontWeight: FontWeight.w700,
-          color: AppColors.textPrimary,
-        ),
-      ),
-    );
-  }
-}
-
-class _Message extends StatelessWidget {
-  const _Message({
-    required this.icon,
-    required this.title,
-    required this.body,
-  });
-
-  final IconData icon;
-  final String title;
-  final String body;
-
-  @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(32),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(icon, size: 40, color: AppColors.textMuted),
-            const SizedBox(height: 12),
-            Text(title,
-                style: const TextStyle(
-                    fontWeight: FontWeight.w600, fontSize: 16)),
-            const SizedBox(height: 6),
-            Text(
-              body,
-              textAlign: TextAlign.center,
-              style: const TextStyle(color: AppColors.textMuted),
-            ),
-          ],
-        ),
       ),
     );
   }

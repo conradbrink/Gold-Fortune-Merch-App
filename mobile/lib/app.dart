@@ -16,6 +16,7 @@ import 'features/auth/company_closed_screen.dart';
 import 'features/auth/login_screen.dart';
 import 'features/auth/manager_notice_screen.dart';
 import 'features/deliveries/deliveries_screen.dart';
+import 'features/deliveries/delivery_detail_screen.dart';
 import 'features/files/files_screen.dart';
 import 'features/hr/my_hr_screen.dart';
 import 'features/orders/order_capture_route.dart';
@@ -146,6 +147,16 @@ final routerProvider = Provider<GoRouter>((ref) {
             // all, so an empty screen is the correct answer rather than a gate.
             path: 'deliveries',
             builder: (context, state) => const DeliveriesScreen(),
+            routes: [
+              GoRoute(
+                // The dispatch id, not the card's data in `extra`, which does
+                // not survive the stack being rebuilt (see 'visit/:key').
+                path: ':dispatchId',
+                builder: (context, state) => DeliveryDetailScreen(
+                  dispatchId: state.pathParameters['dispatchId']!,
+                ),
+              ),
+            ],
           ),
           GoRoute(
             path: 'workday-summary',

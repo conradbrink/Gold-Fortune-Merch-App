@@ -162,11 +162,27 @@ final deliveryRepositoryProvider = Provider<DeliveryRepository>((ref) {
   return DeliveryRepository(supabase);
 });
 
+/// No automatic retry for the two delivery screens. Riverpod's default tries
+/// a failed fetch ten more times over about 38 seconds, showing a spinner the
+/// whole while, which cannot be pulled; the screens say what went wrong at
+/// once instead, and a pull is the retry.
+Duration? _noRetry(int retryCount, Object error) => null;
+
 /// Consignments assigned to this rep. Narrowed by RLS, not by a filter here.
 final myDeliveriesProvider = FutureProvider<List<Delivery>>((ref) {
   ref.watch(currentUserProvider);
   return ref.watch(deliveryRepositoryProvider).myDeliveries();
-});
+}, retry: _noRetry);
+
+/// One delivery with its products, for the screen a card opens. Null when the
+/// dispatch is not this rep's. Online only, like the list, and dropped when
+/// the screen closes, so reopening a delivery asks again rather than showing
+/// "in transit" for one the warehouse has since recorded.
+final deliveryDetailProvider = FutureProvider.autoDispose
+    .family<DeliveryDetail?, String>((ref, dispatchId) {
+  ref.watch(currentUserProvider);
+  return ref.watch(deliveryRepositoryProvider).delivery(dispatchId);
+}, retry: _noRetry);
 
 /// How many are still on the road, for the badge on the home screen.
 ///
