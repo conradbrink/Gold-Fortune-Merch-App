@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -534,6 +535,14 @@ export default function CompanySettingsPage() {
 
         {/* ---------------------------------------------------------- Plan */}
         <TabsContent value="plan" className="mt-4 space-y-4">
+          <Card size="sm">
+            <CardContent className="flex flex-wrap items-center justify-between gap-3 text-sm">
+              <p className="text-foreground">Your plan, the card you pay with, and your invoices from Tickd.</p>
+              <Button variant="outline" size="sm" nativeButton={false} render={<Link href="/billing" />}>
+                Open Plan and billing
+              </Button>
+            </CardContent>
+          </Card>
           <ModulesCard />
         </TabsContent>
       </Tabs>

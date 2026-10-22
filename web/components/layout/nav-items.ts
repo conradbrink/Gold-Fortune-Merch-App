@@ -395,7 +395,7 @@ const COMPANY_SETTINGS: ItemDef = {
     { href: "/hr/settings", label: "HR", permission: "hr_settings" },
     { href: "/warehouse/settings", label: "Warehouse", permission: "warehouse" },
   ],
-  also: ["/plans"],
+  also: ["/plans", "/billing"],
 };
 
 const FORMS: ItemDef = { href: "/forms", label: "Forms", icon: FileText, permission: "resources" };

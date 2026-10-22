@@ -9,7 +9,7 @@ import { legal, site } from "@/lib/site";
 export function LegalPage({ title, children }: { title: string; children: React.ReactNode }) {
   const details = [
     site.legalName,
-    legal.registrationNumber && `Registered in ${legal.registeredIn}, UIN ${legal.registrationNumber}`,
+    legal.registrationNumber && `Registered in ${legal.registeredIn}, registration number ${legal.registrationNumber}`,
     legal.address,
     legal.phone && `Phone ${legal.phone}`,
     site.email,

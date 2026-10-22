@@ -6,14 +6,16 @@ import { SELF_SERVE_SIGNUP_OPEN } from "@/lib/signup";
 import { parseCompanyConfig } from "@/lib/company-config";
 import { DEFAULT_TERMS } from "@/lib/terms";
 import { PlansView } from "@/components/plans/plans-view";
+import { paystackConfig } from "@/lib/billing/paystack";
 
 /**
  * "View plans" from the pilot banner, and where the day-10 email's "Choose
  * your plan" lands.
  *
- * Until billing exists (Stage 6) nothing is bought here: each plan's button
- * opens a ready-written message to our team (`sales_whatsapp`, else
- * `sales_email`, the service's own settings), who set the plan up. The plans
+ * Each plan's button opens Plan and billing, to pay by card (Paystack), once
+ * PAYSTACK_SECRET_KEY is set; until then a ready-written message to our team
+ * (`sales_whatsapp`, else `sales_email`, the service's own settings), who set
+ * the plan up. The plans
  * are the site's three (lib/plans.ts), in the company's own word for its
  * people (its `staff` term: "Reps" for a distributor). The Founding price
  * shows to a distributor on, or past, its free pilot while self-serve sign-up
@@ -52,6 +54,7 @@ export default async function PlansPage() {
       company={org?.name ?? null}
       timezone={org?.timezone || "UTC"}
       contact={{ email: contact.email, whatsapp: contact.whatsapp }}
+      payByCard={paystackConfig() !== null}
     />
   );
 }

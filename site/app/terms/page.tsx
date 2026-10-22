@@ -12,7 +12,7 @@ export default function TermsPage() {
     <LegalPage title="Terms of use">
       <p>
         These terms are the agreement between you (the business that signs up) and {site.legalName}, a company
-        registered in {legal.registeredIn} (UIN {legal.registrationNumber}) (&ldquo;we&rdquo;), the business behind{" "}
+        registered in {legal.registeredIn} (registration number {legal.registrationNumber}) (&ldquo;we&rdquo;), the business behind{" "}
         {site.name}. By signing up or using {site.name}, you agree to them.
       </p>
 

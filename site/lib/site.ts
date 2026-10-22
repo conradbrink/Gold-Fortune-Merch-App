@@ -14,8 +14,9 @@ export const site = {
   // in for now: the self-serve free trial was taken off (owner, 10 Oct 2026).
   foundingPath: "/founding",
   // Legal entity shown in the footer and named in the terms and privacy
-  // pages (owner, 8 Oct 2026; CIPA extract BW00005187820).
-  legalName: "Mobill Media (Pty) Ltd",
+  // pages (owner, 22 Oct 2026: Demibuzz, the business Paystack pays; CIPC
+  // certificate, reg. no. 2014/019073/07).
+  legalName: "Demibuzz (Pty) Ltd",
   email: "hello@tickd.co.za",
   // International format without "+" or spaces, e.g. "27821234567".
   // Empty until the WhatsApp Business line exists; the buttons fall back to email.
@@ -187,11 +188,11 @@ export const proof = {
 // The details the legal pages need, in one place. Each must be the owner's
 // real details before the site goes live; an empty one is left off the page.
 export const legal = {
-  // Registered in Botswana (CIPA). Unique identification number.
-  registeredIn: "Botswana",
-  registrationNumber: "BW00005187820",
-  // Physical address for notices (owner, 8 Oct 2026).
-  address: "Plot 51572, Phakalane, Gaborone, Botswana",
+  // Registered in South Africa (CIPC). The company registration number.
+  registeredIn: "South Africa",
+  registrationNumber: "2014/019073/07",
+  // Physical address for notices: the registered office (CIPC certificate).
+  address: "109 Rosenheim, Serfontein Street, Fichardtpark, Bloemfontein, 9301, South Africa",
   // A telephone number for the business (ECTA s43).
   phone: "",
   // Who answers privacy requests (Botswana: data protection officer; POPIA:
@@ -200,7 +201,7 @@ export const legal = {
   informationOfficer: "",
   // Where the app's data is hosted (Supabase, AWS eu-west-3).
   dataLocation: "Paris, France",
-  lastUpdated: "20 October 2026",
+  lastUpdated: "22 October 2026",
 } as const;
 
 export function rand(amount: number): string {

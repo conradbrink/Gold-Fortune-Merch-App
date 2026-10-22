@@ -19,14 +19,14 @@ export default function PrivacyPage() {
     <LegalPage title="Privacy policy">
       <p>
         This policy explains what personal information {site.name} collects, why, where it is kept and what you can do
-        about it. It follows Botswana&apos;s Data Protection Act and, for businesses and people in South Africa, the
-        Protection of Personal Information Act (POPIA).
+        about it. It follows South Africa&apos;s Protection of Personal Information Act (POPIA) and, for businesses
+        and people in Botswana, Botswana&apos;s Data Protection Act.
       </p>
 
       <h2>Who is responsible</h2>
       <ul>
         <li>
-          {site.legalName}, registered in {legal.registeredIn} (UIN {legal.registrationNumber}), {legal.address}, is
+          {site.legalName}, registered in {legal.registeredIn} (registration number {legal.registrationNumber}), {legal.address}, is
           responsible for the information about the businesses that sign up and the people who manage their accounts.
         </li>
         <li>

@@ -59,6 +59,14 @@ export const LIMITS = {
   assistantDay: { bucket: QUESTION_BUCKETS.day, limit: QUESTIONS_PER_DAY, windowSeconds: 86_400 },
   /** Saving a plan Ask drafted. Free to run, but it writes the schedule. */
   assistantPlanSave: { bucket: "assistant_plan_save", limit: 20, windowSeconds: 3600 },
+  /**
+   * Opening Paystack's page to pay or to save a card. A person pays once or
+   * twice; a loop here is someone testing cards through our account, which
+   * can get it flagged by Paystack.
+   */
+  billingCheckout: { bucket: "billing_checkout", limit: 10, windowSeconds: 3600 },
+  /** Charging the saved card by hand ("Try again now", more reps). */
+  billingCharge: { bucket: "billing_charge", limit: 6, windowSeconds: 3600 },
 } satisfies Record<string, Limit>;
 
 type Verdict =

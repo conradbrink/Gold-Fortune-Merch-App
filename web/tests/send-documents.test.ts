@@ -676,7 +676,7 @@ test("the offer to sign up fully says how many free days are left and where to c
 });
 
 test("emails from Tickd itself are their own set, and none of them is a client email", () => {
-  assert.deepEqual([...TICKD_TEMPLATES].sort(), ["application_received", "founding_accepted", "trial_offer", "welcome"]);
+  assert.deepEqual([...TICKD_TEMPLATES].sort(), ["application_received", "billing_payment_failed", "founding_accepted", "trial_offer", "welcome"]);
   for (const t of TICKD_TEMPLATES) assert.ok(!CLIENT_TEMPLATES.has(t) && !DOCUMENT_TEMPLATES.has(t), t);
 });
 
