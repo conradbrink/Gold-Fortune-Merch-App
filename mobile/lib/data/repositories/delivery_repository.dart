@@ -20,9 +20,8 @@ class DeliveryRepository {
   final SupabaseClient _client;
 
   /// `dispatch_lines` is embedded for the count and the units. The product
-  /// names are deliberately not: naming them means reading `order_lines`, whose
-  /// policy is its own and which carries the pricing. A rep assigned somebody
-  /// else's delivery has no business with what the shop is paying for it.
+  /// names come only on the delivery screen, from `delivery_contents()` (see
+  /// [delivery]).
   ///
   /// `drivers` and `vehicles` are **not** embedded either, and that is a fact
   /// about the database rather than a choice about the screen: both are gated
@@ -50,6 +49,40 @@ lines:dispatch_lines(qty)
     return [
       for (final r in rows as List) Delivery.fromMap(r as Map<String, dynamic>),
     ];
+  }
+
+  /// No `dispatch_lines` embed: the products and their counts come from
+  /// `delivery_contents()`, one row per order line.
+  static const _detailSelect = '''
+id, dispatch_number, status, dispatched_at, expected_delivery_on, delivered_at,
+carrier_name, tracking_reference, notes, failure_reason, received_by_name,
+order:orders(order_number, customer_po_number, customer_po_expires_on,
+  contact_name, contact_phone, delivery_address, notes,
+  store:stores(name, address, city, state, zip, lat, lng))
+''';
+
+  /// One delivery with what is in it, or null when it is not this rep's
+  /// (any more): reassigned, or a link from somebody else's phone.
+  ///
+  /// The dispatch, its order and the place come through RLS as the list does;
+  /// the products from `delivery_contents()`, which leaves the prices out
+  /// (its migration says why). The two are asked at once — each needs only
+  /// the id — and the products' failure is caught on its own: a delivery whose
+  /// address and phone number came back is worth showing without them.
+  Future<DeliveryDetail?> delivery(String dispatchId) async {
+    final lines = _client
+        .rpc('delivery_contents', params: {'p_dispatch': dispatchId})
+        .then<List<dynamic>?>(
+          (rows) => rows as List,
+          onError: (Object _) => null,
+        );
+    final row = await _client
+        .from('dispatches')
+        .select(_detailSelect)
+        .eq('id', dispatchId)
+        .maybeSingle();
+    if (row == null) return null;
+    return DeliveryDetail.fromMaps(row, await lines);
   }
 
   /// How many are still on the road.

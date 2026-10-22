@@ -193,6 +193,8 @@ begin
     union all select id::text from public.stores where org_id = a_org
     union all select name from public.stores where org_id = a_org and length(name) >= 6
     union all select id::text from public.form_templates where org_id = a_org
+    -- Product names: what delivery_contents(<A's dispatch>) would print.
+    union all select name from public.products where org_id = a_org and length(name) >= 6
   ) s;
 
   -- Parameter-name hint -> an A id, for T5. Longest hints first is not needed:
@@ -208,6 +210,7 @@ begin
                    where ft.org_id = a_org limit 1),
     'employee',  a_emp,
     'order',     (select id from public.orders where org_id = a_org limit 1),
+    'dispatch',  (select id from public.dispatches where org_id = a_org limit 1),
     'territory', (select id from public.territories where org_id = a_org limit 1),
     'file',      a_file,
     'visit',     (select id from public.visits where org_id = a_org limit 1),

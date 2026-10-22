@@ -409,20 +409,4 @@ class OrderRepository {
         if (i is Map) (name: '${i['name']}', qty: (i['qty'] as num?)?.toInt() ?? 1),
     ];
   }
-
-  /// Orders this rep has taken at a store, newest first. Server-only: an order
-  /// still in the outbox is shown by the screen from its own queue state.
-  Future<List<Map<String, dynamic>>> ordersForStore(String storeId) async {
-    try {
-      final rows = await _client
-          .from('orders')
-          .select('id, order_number, status, created_at')
-          .eq('store_id', storeId)
-          .order('created_at', ascending: false)
-          .limit(10);
-      return (rows as List).cast<Map<String, dynamic>>();
-    } catch (_) {
-      return const [];
-    }
-  }
 }
