@@ -91,22 +91,6 @@ export async function fetchOrgSettings(
   };
 }
 
-export async function updateOrgSettings(
-  supabase: SupabaseClient,
-  orgId: string,
-  settings: OrgSettings
-): Promise<void> {
-  const { error } = await supabase
-    .from("organizations")
-    .update({
-      stores_per_day: settings.storesPerDay,
-      working_days: settings.workingDays,
-      default_visit_frequency: settings.defaultVisitFrequency,
-    })
-    .eq("id", orgId);
-  if (error) throw new Error(error.message);
-}
-
 /**
  * Visits one store generates per four-week cycle.
  *

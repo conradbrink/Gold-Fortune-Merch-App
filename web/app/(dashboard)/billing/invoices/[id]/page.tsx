@@ -46,8 +46,8 @@ export default async function InvoicePage({ params }: { params: Promise<{ id: st
   return (
     <div className="mx-auto max-w-3xl space-y-4">
       <div className="flex items-center justify-between print:hidden">
-        <Link href="/billing" className="text-sm text-muted-foreground hover:underline">
-          ← Plan and billing
+        <Link href="/settings/plan" className="text-sm text-muted-foreground hover:underline">
+          ← Plan
         </Link>
         <PrintButton />
       </div>

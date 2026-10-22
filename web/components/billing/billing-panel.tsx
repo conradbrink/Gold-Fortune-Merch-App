@@ -3,7 +3,7 @@
 import { useEffect, useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { CreditCard, FileText, Lock, Minus, Plus } from "lucide-react";
+import { Check, CreditCard, FileText, Lock, Minus, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -30,7 +30,8 @@ import {
   type Quote,
 } from "@/lib/billing";
 import type { SalesContact } from "@/lib/platform";
-import { useTerms } from "@/lib/use-company-config";
+import { useCompanyConfig, useTerms } from "@/lib/use-company-config";
+import { planIncludes } from "@/lib/plan-features";
 import { count, lower, noun } from "@/lib/terms";
 
 export type InvoiceRow = {
@@ -64,10 +65,21 @@ type Props = {
   checkout: CheckoutNote | null;
   cardUpdated: boolean;
   contact: SalesContact;
+  /**
+   * Open the part that changes the plan straight away: from View plans
+   * ("plans"), or back from a payment that did not go through ("retry",
+   * which only reopens choosing a plan).
+   */
+  openChooser: "plans" | "retry" | null;
 };
 
 /**
- * The Billing page's moving parts (Stage 6; Paystack since 22 Oct 2026).
+ * Settings > Plan (Stage 6; Paystack since 22 Oct 2026; one page with the
+ * plan since 22 Oct 2026). The plan first, in a glance: its name, its price,
+ * the reps it includes and what it includes. "Upgrade plan" opens the part
+ * that changes it (choosing and paying for a plan, or more reps), and the
+ * payment details sit quietly below.
+ *
  * Every amount it shows comes back from the database (`billing_quote`,
  * `billing_preview_change`); it only asks. Paying, a failed payment and
  * "Update card" all go to Paystack's own page through /api/paystack/checkout,
@@ -79,18 +91,34 @@ export function BillingPanel(props: Props) {
     account.status === "trial" || account.status === "read_only" || account.status === "cancelled" ||
     (account.status === "exempt" && props.customPriceCents !== null);
   const owing = (account.status === "past_due" || account.status === "read_only") && props.unpaid !== null;
+  const canChange =
+    account.status === "active" && props.plan !== null && props.customPriceCents === null && !props.unpaid &&
+    props.periodEnd !== null && new Date(props.periodEnd) > new Date();
+  const upgrade: "choose" | "change" | null = canChoose && !owing ? "choose" : canChange ? "change" : null;
+  const [open, setOpen] = useState(
+    (props.openChooser === "plans" && upgrade !== null) || (props.openChooser === "retry" && upgrade === "choose")
+  );
+
+  function openUpgrade() {
+    setOpen(true);
+    // After the part has rendered, bring it into view.
+    requestAnimationFrame(() => document.getElementById("upgrade")?.scrollIntoView({ block: "start" }));
+  }
 
   return (
     <>
       <CheckoutNotice note={props.checkout} cardUpdated={props.cardUpdated} />
       {props.checkout === "pending" ? <AutoRefresh /> : (props.checkout || props.cardUpdated) && <ForgetNotice />}
 
-      <CurrentPlan {...props} />
+      <PlanSummary {...props} onUpgrade={upgrade && !open ? openUpgrade : null} />
       {owing && <PaymentFailed {...props} />}
-      {canChoose && !owing && <ChoosePlan {...props} />}
-      {account.status === "active" && props.plan && props.customPriceCents === null && !props.unpaid &&
-        props.periodEnd !== null && new Date(props.periodEnd) > new Date() && <ChangeReps {...props} />}
-      {account.status === "exempt" && props.customPriceCents === null && <ManagedByUs contact={props.contact} />}
+      {open && (
+        <div id="upgrade" className="scroll-mt-4">
+          {upgrade === "choose" && <ChoosePlan {...props} />}
+          {upgrade === "change" && <ChangeReps {...props} />}
+        </div>
+      )}
+      <Payment {...props} />
       <Invoices invoices={props.invoices} />
     </>
   );
@@ -198,15 +226,136 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
   );
 }
 
-function CurrentPlan(props: Props) {
-  const { account, period, plan, planNext, periodEnd, nextCents, nextLabel, customPriceCents, activeReps, card, cardsReady } = props;
+/** WhatsApp, else email, else nothing: how to reach Tickd about the plan. */
+function contactHref(contact: SalesContact): string | null {
+  const whatsapp = contact.whatsapp?.replace(/\D/g, "") || null;
+  if (whatsapp) return `https://wa.me/${whatsapp}`;
+  return contact.email ? `mailto:${contact.email}` : null;
+}
+
+/**
+ * The plan at a glance: its name, its price, the reps it includes and what it
+ * includes. The name is the price list's ("Plan for up to 10 reps"), never a
+ * made-up tier; a pilot is the free pilot, and a plan agreed by hand says so.
+ */
+function PlanSummary(props: Props & { onUpgrade: (() => void) | null }) {
+  const { account, period, plan, nextCents, nextLabel, customPriceCents, activeReps, contact, onUpgrade } = props;
+  const t = useTerms();
+  const config = useCompanyConfig();
+  const includes = config ? planIncludes(config.modules) : [];
+  const paying = account.status === "active" || account.status === "past_due";
+  const staff = lower(t.staff.many);
+  const reach = contactHref(contact);
+
+  const name =
+    account.status === "trial"
+      ? "Free pilot"
+      : account.status === "cancelled"
+        ? "No plan"
+        : account.status === "exempt" && customPriceCents === null
+          ? "Arranged with Tickd"
+          : customPriceCents !== null
+            ? "Your own plan"
+            : (nextLabel ?? (plan ? `Plan for up to ${count(t, "staff", plan.seats)}` : "Your plan"));
+
+  const price =
+    account.status === "trial" ? (
+      <>
+        <span className="text-2xl font-semibold tracking-tight">Free</span>
+        {account.trialEndsAt && <span className="text-sm text-muted-foreground"> until {formatDate(account.trialEndsAt)}</span>}
+      </>
+    ) : (paying || account.status === "read_only") && nextCents !== null && period ? (
+      <>
+        <span className="text-2xl font-semibold tracking-tight tabular-nums">{formatRand(nextCents)}</span>
+        <span className="text-sm text-muted-foreground"> / {periodWord(period)}</span>
+      </>
+    ) : null;
+
+  const reps =
+    plan && paying && customPriceCents === null
+      ? `${plan.seats} ${noun(t, "staff", plan.seats).toLowerCase()} included, ${activeReps} active`
+      : `${activeReps} active ${noun(t, "staff", activeReps).toLowerCase()}`;
+
+  return (
+    <section aria-labelledby="your-plan" className="rounded-xl border border-border bg-card">
+      <div className="space-y-5 p-5 sm:p-6">
+        <div className="space-y-1">
+          <p id="your-plan" className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
+            Your plan
+          </p>
+          <h2 className="text-lg font-semibold text-balance text-foreground">{name}</h2>
+          {(account.status === "past_due" || account.status === "read_only") && (
+            <p className="text-sm font-medium text-destructive">{STATUS_LABEL[account.status]}</p>
+          )}
+          {price && <p className="text-foreground">{price}</p>}
+          {account.status === "exempt" && customPriceCents === null && (
+            <p className="text-sm text-foreground">Your plan is arranged with Tickd, outside the app.</p>
+          )}
+          <p className="text-sm text-muted-foreground">
+            {reps}
+            {account.status === "active" && account.cancelAtPeriodEnd && props.periodEnd
+              ? `. Ends on ${formatDate(props.periodEnd)}.`
+              : ""}
+          </p>
+        </div>
+
+        {includes.length > 0 && (
+          <div className="space-y-2">
+            <p className="text-sm font-medium text-foreground">Your plan includes</p>
+            <ul className="grid gap-x-6 gap-y-1.5 text-sm text-foreground sm:grid-cols-2">
+              {includes.map((f) => (
+                <li key={f} className="flex items-center gap-2">
+                  <Check className="size-4 shrink-0 text-primary" aria-hidden />
+                  {f}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
+        <div className="flex flex-wrap items-center gap-2">
+          {onUpgrade && (
+            <Button onClick={onUpgrade}>{account.status === "active" ? "Upgrade plan" : "Choose a plan"}</Button>
+          )}
+          {reach && (
+            <Button
+              variant="outline"
+              nativeButton={false}
+              render={<a href={reach} target={reach.startsWith("http") ? "_blank" : undefined} rel="noopener noreferrer" />}
+            >
+              Contact Tickd
+            </Button>
+          )}
+          <Button variant="link" className="text-muted-foreground" nativeButton={false} render={<Link href="/plans" />}>
+            View plans
+          </Button>
+        </div>
+      </div>
+      <p className="border-t border-border px-5 py-3 text-sm text-muted-foreground sm:px-6">
+        Need more {staff} or features? Upgrade your plan or{" "}
+        {reach ? (
+          <a href={reach} className="underline underline-offset-2 hover:text-foreground" target={reach.startsWith("http") ? "_blank" : undefined} rel="noopener noreferrer">
+            contact Tickd
+          </a>
+        ) : (
+          "contact Tickd"
+        )}
+        .
+      </p>
+    </section>
+  );
+}
+
+/** How the plan is paid: the next payment, the card, and ending the plan. Only once there is something to show. */
+function Payment(props: Props) {
+  const { account, period, planNext, periodEnd, nextCents, card, cardsReady } = props;
   const [pending, start] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const router = useRouter();
   const checkout = useCheckout();
   const t = useTerms();
   const paying = account.status === "active" || account.status === "past_due";
-  const places = plan?.seats ?? null;
+  if (!paying && !card) return null;
 
   function toggleCancel(cancel: boolean) {
     setError(null);
@@ -220,28 +369,10 @@ function CurrentPlan(props: Props) {
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="text-base">Your plan</CardTitle>
-        <CardDescription>
-          {STATUS_LABEL[account.status]}
-          {account.status === "trial" && account.trialEndsAt ? `, until ${formatDate(account.trialEndsAt)}` : ""}
-        </CardDescription>
+        <CardTitle className="text-base">Payment</CardTitle>
       </CardHeader>
       <CardContent className="text-sm">
         <dl className="divide-y divide-border">
-          {paying && plan && period && (
-            <Row label="Plan">
-              {customPriceCents !== null ? "Your price, as agreed with us" : (nextLabel ?? `Plan for ${count(t, "staff", places ?? 0)}`)}, paid every {periodWord(period)}
-            </Row>
-          )}
-          <Row label={t.staff.many}>
-            {activeReps} active {noun(t, "staff", activeReps)}
-            {places !== null && paying && customPriceCents === null && (
-              <span className="text-muted-foreground">
-                {" "}
-                of {places} {places === 1 ? "place" : "places"} on your plan
-              </span>
-            )}
-          </Row>
           {account.status === "active" && periodEnd && nextCents !== null && (
             <Row label="Next payment">
               {account.cancelAtPeriodEnd ? (
@@ -254,22 +385,20 @@ function CurrentPlan(props: Props) {
               )}
             </Row>
           )}
-          {(card || paying) && (
-            <Row label="Card">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <span className="flex items-center gap-2">
-                  <CreditCard className="size-4 text-muted-foreground" aria-hidden />
-                  {card ? cardText(card) : "No card on file"}
-                </span>
-                {cardsReady && paying && (
-                  <Button size="sm" variant="outline" disabled={checkout.pending} onClick={() => checkout.go({})}>
-                    {checkout.pending ? "Opening Paystack…" : card ? "Update card" : "Add a card"}
-                  </Button>
-                )}
-              </div>
-              {checkout.error && <p className="mt-2 text-destructive">{checkout.error}</p>}
-            </Row>
-          )}
+          <Row label="Card">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <span className="flex items-center gap-2">
+                <CreditCard className="size-4 text-muted-foreground" aria-hidden />
+                {card ? cardText(card) : "No card on file"}
+              </span>
+              {cardsReady && paying && (
+                <Button size="sm" variant="outline" disabled={checkout.pending} onClick={() => checkout.go({})}>
+                  {checkout.pending ? "Opening Paystack…" : card ? "Update card" : "Add a card"}
+                </Button>
+              )}
+            </div>
+            {checkout.error && <p className="mt-2 text-destructive">{checkout.error}</p>}
+          </Row>
         </dl>
 
         {paying && period && (
@@ -589,29 +718,6 @@ function ChangeReps({ plan, period, periodEnd, activeReps, card }: Props) {
           {pending ? "Saving…" : chargeNow ? `Pay ${formatRand(preview.totalCents)} and add the ${staff}` : "Save the change"}
         </Button>
         {chargeNow && !card && <p className="text-xs text-muted-foreground">Add a card above first.</p>}
-      </CardContent>
-    </Card>
-  );
-}
-
-function ManagedByUs({ contact }: { contact: SalesContact }) {
-  const whatsapp = contact.whatsapp?.replace(/\D/g, "") || null;
-  return (
-    <Card>
-      <CardContent className="space-y-2 py-5 text-sm">
-        <p>Your company&apos;s plan is managed by us, outside the app.</p>
-        <div className="flex flex-wrap gap-3">
-          {whatsapp && (
-            <a className="underline" href={`https://wa.me/${whatsapp}`} target="_blank" rel="noopener noreferrer">
-              Talk to us on WhatsApp
-            </a>
-          )}
-          {contact.email && (
-            <a className="underline" href={`mailto:${contact.email}`}>
-              Email us
-            </a>
-          )}
-        </div>
       </CardContent>
     </Card>
   );

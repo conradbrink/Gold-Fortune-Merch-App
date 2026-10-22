@@ -215,7 +215,7 @@ export function accountNotice(a: Account, now: Date = new Date()): { tone: "red"
 export function billingErrorMessage(error: { message?: string; hint?: string | null; code?: string } | null): string | null {
   if (!error) return null;
   if (error.hint === "read_only") return "Your account is read-only until the plan is paid. Open Billing to choose a plan.";
-  if (error.hint === "user_limit") return `${error.message ?? "All places on your plan are taken."} Add places on the Plan and billing page.`;
+  if (error.hint === "user_limit") return `${error.message ?? "All places on your plan are taken."} Add places on Settings > Plan.`;
   if (error.hint === "quote") return error.message ?? "This is priced on request. Talk to us.";
   return error.message ?? "Something went wrong.";
 }

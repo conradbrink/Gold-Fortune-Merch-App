@@ -89,9 +89,6 @@ const LINKED_FROM: Record<string, string> = {
   "/inventory/receive": "app/(dashboard)/inventory/page.tsx",
   "/hr/me": "components/layout/top-bar.tsx",
   "/plans": "components/dashboard/account-cards.tsx",
-  // Plan and billing: the Plan tab of Company settings opens it (and the
-  // Plans page's buttons, once card payments are on).
-  "/billing": "app/(dashboard)/settings/company/page.tsx",
   // One person's full report: their name on Reports → Team or the summary.
   "/reports/rep-performance": "app/(dashboard)/reports/page.tsx",
   // The dashboard's Store health card as a list; its numbers open it too.
@@ -120,6 +117,16 @@ const BUILT_BY: Record<string, () => string> = {
   "/stores/range": storeRangeHref,
 };
 
+/**
+ * Old addresses kept for the links already out there, which only forward to
+ * where the page went: Company settings is Settings (22 Oct 2026), and Plan
+ * and billing is Settings > Plan.
+ */
+const FORWARDS: Record<string, string> = {
+  "/settings/company": "/settings/business",
+  "/billing": "/settings/plan",
+};
+
 test("every page in the app is in the menu or linked from a named page", () => {
   const offered = new Set([
     ...hrefs(visibleNavGroups(admin, distributor, undefined, allSwitches)),
@@ -131,6 +138,10 @@ test("every page in the app is in the menu or linked from a named page", () => {
     // "not part of your plan" notice is reached from its list, not a menu.
     if (route.includes("[") || route.endsWith("/new") || route === "/not-enabled") continue;
     if (offered.has(route)) continue;
+    if (FORWARDS[route]) {
+      const page = readFileSync(join(web, "app", "(dashboard)", ...route.split("/").filter(Boolean), "page.tsx"), "utf8");
+      if (page.includes("redirect(") && offered.has(FORWARDS[route])) continue;
+    }
     const from = LINKED_FROM[route];
     const source = from ? readFileSync(join(web, from), "utf8") : "";
     if (from && (source.includes(`"${route}`) || source.includes(`\`${route}`))) continue;
@@ -149,7 +160,7 @@ test("everything the old menu offered is still offered, to an administrator", ()
     "/price-list", "/warehouse", "/orders", "/recurring-orders", "/inventory", "/products",
     "/warehouse/settings", "/representatives", "/hr", "/hr/employees", "/hr/attendance",
     "/hr/leave", "/hr/documents", "/hr/performance", "/hr/disciplinary", "/hr/settings",
-    "/settings/users", "/settings/company", "/forms", "/files",
+    "/settings/users", "/settings/business", "/forms", "/files",
   ];
   const offered = new Set(hrefs(visibleNavGroups(admin, distributor, undefined, allSwitches)));
   assert.deepEqual(old.filter((h) => !offered.has(h)), []);
@@ -161,7 +172,8 @@ test("the service layout keeps every service page; the sales pages stay with dis
     "/stores", "/stores/review", "/territories", "/schedule", "/visits", "/activities", "/visits/off-site",
     "/tracking", "/logbook", "/representatives", "/quotes", "/invoices", "/contracts", "/statements",
     "/price-list", "/owed", "/reports", "/hr", "/hr/settings",
-    "/settings/users", "/settings/company", "/forms", "/files",
+    "/settings/users", "/settings/business", "/settings/team", "/settings/notifications", "/settings/plan",
+    "/forms", "/files",
   ]) {
     assert.ok(offered.has(h), `${h} missing from the service menu`);
   }
@@ -191,11 +203,15 @@ test("the item that lights up for a page", () => {
   assert.equal(at("/"), "/");
   assert.equal(at("/warehouse"), "/warehouse");
   assert.equal(at("/warehouse/insights"), "/reports");
-  assert.equal(at("/warehouse/settings"), "/settings/company");
-  assert.equal(at("/hr/settings"), "/settings/company");
+  assert.equal(at("/warehouse/settings"), "/settings/business");
+  assert.equal(at("/hr/settings"), "/settings/business");
+  assert.equal(at("/settings/team"), "/settings/business");
+  assert.equal(at("/settings/plan"), "/settings/business");
+  assert.equal(at("/settings/company"), "/settings/business");
+  assert.equal(at("/billing/invoices/abc"), "/settings/business");
   assert.equal(at("/hr"), "/hr/employees");
   assert.equal(at("/hr/employees/42"), "/hr/employees");
-  assert.equal(at("/plans"), "/settings/company");
+  assert.equal(at("/plans"), "/settings/business");
   assert.equal(at("/invoices/abc"), "/invoices");
   assert.equal(at("/statements"), "/invoices");
   assert.equal(at("/visits/off-site"), "/visits");
@@ -220,8 +236,11 @@ test("the tab row is drawn on the pages it lists, not on a record", () => {
   );
   assert.deepEqual(
     tabsFor(groups, "/hr/settings")?.tabs.map((t) => t.label),
-    ["Company", "HR", "Warehouse"]
+    ["Business", "Team & Work", "Notifications", "Plan", "HR", "Warehouse"]
   );
+  assert.equal(tabsFor(groups, "/settings/notifications")?.current, "/settings/notifications");
+  // A plan's invoice is a record: no tab row.
+  assert.equal(tabsFor(groups, "/billing/invoices/abc"), null);
 });
 
 test("each trade reads its own words", () => {
@@ -252,15 +271,15 @@ test("each trade reads its own words", () => {
 });
 
 test("each person sees only what their permissions open", () => {
-  // An HR manager: People, and Company settings opening on HR settings.
+  // An HR manager: People, and Settings opening on HR settings.
   const hrManager = visibleNavGroups(toPermissionSet(["hr", "hr_settings", "workday"]), distributor);
   assert.deepEqual(hrManager.map((g) => g.label), ["People", "Admin"]);
-  const settings = hrManager.flatMap((g) => g.items).find((i) => i.id === "/settings/company");
+  const settings = hrManager.flatMap((g) => g.items).find((i) => i.id === "/settings/business");
   assert.equal(settings?.href, "/hr/settings");
   assert.deepEqual(settings?.tabs.map((t) => t.href), ["/hr/settings"]);
 
   // Gold Fortune's warehouse clerk: the orders and stock, and the warehouse
-  // setup they could open before, now under Company settings.
+  // setup they could open before, now under Settings.
   const clerk = visibleNavGroups(toPermissionSet(["warehouse", "workday", "invoicing"]), distributor);
   const clerkPages = hrefs(clerk);
   for (const h of ["/orders", "/inventory", "/warehouse", "/recurring-orders", "/warehouse/settings", "/invoices"]) {

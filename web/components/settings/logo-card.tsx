@@ -6,19 +6,11 @@ import { ImageOff } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
 import { createClient } from "@/lib/supabase/client";
 import { refreshCompanyConfig } from "@/lib/use-company-config";
 import { logoUrl } from "@/lib/branding";
 import {
   LOGO_ACCEPT,
-  LOGO_MAX_SIDE,
   LOGO_TYPES,
   fitWithin,
   logoFileError,
@@ -203,25 +195,5 @@ export function LogoUpload({
           </p>
         )}
     </div>
-  );
-}
-
-/** The logo on the settings page: the upload above, explained. */
-export function LogoCard(props: { orgId: string; initialLogoPath: string | null; canEdit: boolean }) {
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="text-base">Logo</CardTitle>
-        <CardDescription>
-          Shown in the sidebar and printed on invoices. PNG, JPEG or WebP; an image
-          bigger than {LOGO_MAX_SIDE} px is shrunk before upload, and the file must
-          come to 1 MB or less. A square logo on a transparent background works best.
-          Invoices already issued keep the logo they were issued with.
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
-        <LogoUpload {...props} />
-      </CardContent>
-    </Card>
   );
 }

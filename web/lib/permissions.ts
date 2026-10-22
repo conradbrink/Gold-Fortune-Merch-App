@@ -92,6 +92,12 @@ const PATH_PERMISSIONS: { prefix: string; permission: PermissionCode }[] = [
   { prefix: "/stores/review", permission: "field_ops" },
   { prefix: "/hr/settings", permission: "hr_settings" },
   { prefix: "/settings/users", permission: "admin" },
+  // Settings (22 Oct 2026): Business, Team & Work, Notifications and Plan,
+  // and the old Company settings address that now leads to them.
+  { prefix: "/settings/business", permission: "company_settings" },
+  { prefix: "/settings/team", permission: "company_settings" },
+  { prefix: "/settings/notifications", permission: "company_settings" },
+  { prefix: "/settings/plan", permission: "company_settings" },
   { prefix: "/settings/company", permission: "company_settings" },
   // The pilot's plans page (Stage 5), and paying for the plan (Stage 6):
   // whoever runs the company.
@@ -212,7 +218,7 @@ export function homeFor(
     // /rep-notice from the site root while /hr/settings would have loaded for
     // them — a landing page that contradicts the proxy standing next to it.
     ["hr_settings", ["/hr/settings"]],
-    ["company_settings", ["/settings/company"]],
+    ["company_settings", ["/settings/business"]],
   ];
   for (const [permission, hrefs] of order) {
     if (!can(permissions, permission)) continue;
