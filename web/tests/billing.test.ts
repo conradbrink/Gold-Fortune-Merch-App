@@ -449,7 +449,7 @@ test("the account line: red when it cannot save or a payment failed, amber when 
 
 test("refusals from the database are put in words for the screen", () => {
   assert.match(billingErrorMessage({ message: "x", hint: "read_only" })!, /read-only/);
-  assert.match(billingErrorMessage({ message: "All 5 places on your plan are taken.", hint: "user_limit" })!, /Add places on the Plan and billing page/);
+  assert.match(billingErrorMessage({ message: "All 5 places on your plan are taken.", hint: "user_limit" })!, /Add places on Settings > Plan/);
   assert.equal(billingErrorMessage({ message: "Choose monthly or yearly." }), "Choose monthly or yearly.");
   assert.equal(billingErrorMessage(null), null);
 });

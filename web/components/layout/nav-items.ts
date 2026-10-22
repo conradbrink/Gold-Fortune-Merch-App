@@ -43,6 +43,7 @@ import {
 import { canReachPath, moduleEnabled, type ModuleSet } from "@/lib/modules";
 import { DEFAULT_TERMS, type Terms } from "@/lib/terms";
 import type { CompanySettings } from "@/lib/company-config";
+import { SETTINGS_PAGES } from "@/lib/settings-tabs";
 import { switchesOf, usesPriceList } from "@/lib/money-workflow";
 
 /**
@@ -382,20 +383,21 @@ const PEOPLE_AND_PERMISSIONS: ItemDef = {
 };
 
 const COMPANY_SETTINGS: ItemDef = {
-  href: "/settings/company",
-  label: "Company settings",
+  href: "/settings/business",
+  label: "Settings",
   icon: Settings,
   permission: "company_settings",
-  // Every kind of setting in one place. Each tab keeps its own permission: an
-  // HR manager reaches HR settings here, and a warehouse clerk the warehouse
-  // setup (suppliers, drivers, vehicles), exactly as before; the item opens
-  // whichever of them they may see first.
+  // Business, Team & Work, Notifications and Plan (`lib/settings-tabs.ts`),
+  // and beside them HR settings and the warehouse setup for the companies
+  // that have them. Each tab keeps its own permission: an HR manager reaches
+  // HR settings here, and a warehouse clerk the warehouse setup (suppliers,
+  // drivers, vehicles); the item opens whichever of them they may see first.
   tabs: [
-    { href: "/settings/company", label: "Company", permission: "company_settings" },
+    ...SETTINGS_PAGES.map((p) => ({ href: p.href, label: p.label, permission: "company_settings" as const })),
     { href: "/hr/settings", label: "HR", permission: "hr_settings" },
     { href: "/warehouse/settings", label: "Warehouse", permission: "warehouse" },
   ],
-  also: ["/plans", "/billing"],
+  also: ["/settings/company", "/plans", "/billing"],
 };
 
 const FORMS: ItemDef = { href: "/forms", label: "Forms", icon: FileText, permission: "resources" };

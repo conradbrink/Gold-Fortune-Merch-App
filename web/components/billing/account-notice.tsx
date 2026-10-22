@@ -22,8 +22,8 @@ export function AccountNotice({ account }: { account: Account }) {
         {notice.text}
       </span>
       {account.canManage ? (
-        <Link href="/billing" className="rounded-md border border-current px-3 py-1 text-xs font-medium hover:bg-background/40">
-          Open Plan and billing
+        <Link href="/settings/plan" className="rounded-md border border-current px-3 py-1 text-xs font-medium hover:bg-background/40">
+          Open your plan
         </Link>
       ) : (
         !account.writable && <span className="text-xs">Ask your administrator to choose a plan.</span>

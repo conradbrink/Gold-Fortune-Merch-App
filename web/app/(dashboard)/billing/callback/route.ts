@@ -19,7 +19,7 @@ export const dynamic = "force-dynamic";
 
 export async function GET(request: Request) {
   const url = new URL(request.url);
-  const back = (q: string) => NextResponse.redirect(new URL(`/billing?${q}`, url), { status: 303 });
+  const back = (q: string) => NextResponse.redirect(new URL(`/settings/plan?${q}`, url), { status: 303 });
   const config = paystackConfig();
   const reference = url.searchParams.get("reference") ?? url.searchParams.get("trxref");
   if (!config || !reference || !parseReference(reference)) return back("checkout=unknown");

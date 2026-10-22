@@ -177,7 +177,7 @@ export async function POST(request: Request) {
     includes_setup_fee: Array.isArray(charge.lines) && charge.lines.some((l) => (l as { code?: unknown })?.code === "setup"),
     method: "checkout",
     purpose,
-    cancel_action: `${origin}/billing?checkout=cancelled`,
+    cancel_action: `${origin}/settings/plan?checkout=cancelled`,
   };
   const started = await initializeTransaction(
     config,

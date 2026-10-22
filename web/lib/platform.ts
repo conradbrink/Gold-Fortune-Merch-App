@@ -4,6 +4,7 @@ import { createClient as createAdminClient } from "@supabase/supabase-js";
 import { supabaseFetch } from "@/lib/supabase/fetch";
 import type { Database, Json } from "@/lib/supabase/types";
 import { toPlatformUsers, type LoginRow, type PlatformUser } from "@/lib/platform-users";
+import { CONTROL_CENTRE_SETTINGS, RECORD_FIELDS, type RecordField } from "@/lib/control-centre";
 
 /**
  * The platform operator's view: every company on the service.
@@ -270,26 +271,31 @@ export async function settingDefinitions(): Promise<SettingDefinition[]> {
   }));
 }
 
-/** One of Tickd's own settings, as it stands at one company. */
+/** One of the settings the Control Centre changes, as it stands at one company. */
 export type InternalSetting = SettingDefinition & {
   /** The company's value, or null when it uses the default. */
   value: Json | null;
   defaultValue: Json;
+  /** internal: only Tickd changes it. owner: the customer can too, in a simpler form. */
+  audience: string;
+  /** The database's pattern for a text value, if it has one. */
+  pattern: string | null;
 };
 
 /**
- * The settings Tickd keeps for itself (`setting_definitions.audience =
- * 'internal'`): GPS timing, distance thresholds, report formulas. Customers
- * never see these and the database refuses their writes; the operator
- * changes them on the company's page.
+ * The settings Tickd sets up for a company (`lib/control-centre.ts`): its
+ * own (`setting_definitions.audience = 'internal'`: GPS timing, distance
+ * thresholds, report formulas), the rules moved off the customer's Settings
+ * (overtime, order timing, ranges, dashboard numbers), and the detail behind
+ * the customer's simpler switches (how they get paid, the exact alert rules).
  */
 export async function companyInternalSettings(orgId: string): Promise<InternalSetting[]> {
   const admin = platformAdminClient();
   const [defs, values] = await Promise.all([
     admin
       .from("setting_definitions")
-      .select("key, label, description, value_type, min_value, max_value, default_value")
-      .eq("audience", "internal")
+      .select("key, label, description, value_type, min_value, max_value, default_value, audience, pattern")
+      .or(`audience.eq.internal,key.in.(${CONTROL_CENTRE_SETTINGS.join(",")})`)
       .order("sort_order"),
     admin.from("company_settings").select("key, value").eq("org_id", orgId),
   ]);
@@ -304,7 +310,88 @@ export async function companyInternalSettings(orgId: string): Promise<InternalSe
     min: d.min_value,
     max: d.max_value,
     defaultValue: d.default_value,
+    audience: d.audience,
+    pattern: d.pattern,
     value: mine.has(d.key) ? (mine.get(d.key) as Json) : null,
+  }));
+}
+
+/** The details Tickd keeps on a company's record: tax numbers, invoicing, the visit default. */
+export type CompanyRecord = Record<RecordField, string | number | boolean | null>;
+
+export async function companyRecord(orgId: string): Promise<CompanyRecord | null> {
+  const { data, error } = await platformAdminClient()
+    .from("organizations")
+    .select(RECORD_FIELDS.join(", "))
+    .eq("id", orgId)
+    .maybeSingle();
+  if (error) throw error;
+  return (data as CompanyRecord | null) ?? null;
+}
+
+export type CompanyTerm = {
+  key: string;
+  description: string;
+  /** The catalogue's words, which the company has unless it has its own. */
+  singular: string;
+  plural: string;
+  article: "a" | "an" | null;
+  /** The company's own words, or null when it uses the catalogue's. */
+  own: { singular: string; plural: string; article: "a" | "an" | null } | null;
+};
+
+const article = (v: string | null): "a" | "an" | null => (v === "a" || v === "an" ? v : null);
+
+/** Each word Tickd uses, with the company's own where it has one. */
+export async function companyTerms(orgId: string): Promise<CompanyTerm[]> {
+  const admin = platformAdminClient();
+  const [defs, rows] = await Promise.all([
+    admin.from("term_definitions").select("key, singular, plural, article, description").order("sort_order"),
+    admin.from("company_terminology").select("key, singular, plural, article").eq("org_id", orgId),
+  ]);
+  if (defs.error) throw defs.error;
+  if (rows.error) throw rows.error;
+  const own = new Map((rows.data ?? []).map((r) => [r.key, r]));
+  return (defs.data ?? []).map((d) => {
+    const o = own.get(d.key);
+    return {
+      key: d.key,
+      description: d.description,
+      singular: d.singular,
+      plural: d.plural,
+      article: article(d.article),
+      own: o ? { singular: o.singular, plural: o.plural, article: article(o.article) } : null,
+    };
+  });
+}
+
+export type OutboxRow = {
+  id: string;
+  toAddress: string;
+  template: string;
+  status: string;
+  lastError: string | null;
+  createdAt: string;
+  sentAt: string | null;
+};
+
+/** The company's last emails and what happened to each, for "the client never got it". */
+export async function companyRecentEmails(orgId: string, limit = 20): Promise<OutboxRow[]> {
+  const { data, error } = await platformAdminClient()
+    .from("message_outbox")
+    .select("id, to_address, template, status, last_error, created_at, sent_at")
+    .eq("org_id", orgId)
+    .order("created_at", { ascending: false })
+    .limit(limit);
+  if (error) throw error;
+  return (data ?? []).map((r) => ({
+    id: r.id,
+    toAddress: r.to_address,
+    template: r.template,
+    status: r.status,
+    lastError: r.last_error,
+    createdAt: r.created_at,
+    sentAt: r.sent_at,
   }));
 }
 

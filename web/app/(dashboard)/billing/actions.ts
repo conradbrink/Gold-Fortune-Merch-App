@@ -68,12 +68,12 @@ export async function changePlanAction(
   if (!gate.ok) return { ok: false, error: "Too many tries for now. Wait a while, then try again." };
   const { data, error } = await supabase.rpc("billing_request_change", { p_seats: plan.seats, p_addons: plan.addons });
   if (error) return { ok: false, error: billingErrorMessage(error) ?? "The plan could not be changed." };
-  revalidatePath("/billing");
+  revalidatePath("/settings/plan");
   if (!data) return { ok: true, value: { charged: false, message: "Saved. The change applies from your next payment." } };
   if (!config) return { ok: false, error: "Card payments are not switched on yet. Talk to us to change your plan." };
 
   const outcome = await chargeSaved(platformAdminClient(), config, (data as { charge_id: string }).charge_id);
-  revalidatePath("/billing");
+  revalidatePath("/settings/plan");
   switch (outcome.kind) {
     case "paid":
       return { ok: true, value: { charged: true, message: "Paid. Your plan is updated." } };
@@ -92,7 +92,7 @@ export async function setCancelAction(cancel: boolean): Promise<Result<null>> {
   const supabase = await createClient();
   const { error } = await supabase.rpc("billing_set_cancel", { p_cancel: cancel });
   if (error) return { ok: false, error: billingErrorMessage(error) ?? "Not saved." };
-  revalidatePath("/billing");
+  revalidatePath("/settings/plan");
   return { ok: true, value: null };
 }
 
@@ -107,7 +107,7 @@ export async function retryNowAction(): Promise<Result<string>> {
   const gate = await enforceRateLimit(supabase, LIMITS.billingCharge);
   if (!gate.ok) return { ok: false, error: "Too many tries for now. Wait a while, or pay with a card instead." };
   const outcome = await chargeSaved(platformAdminClient(), config, (data as { charge_id: string }).charge_id);
-  revalidatePath("/billing");
+  revalidatePath("/settings/plan");
   if (outcome.kind === "paid") return { ok: true, value: "Paid. Thank you." };
   if (outcome.kind === "pending") {
     return { ok: true, value: "A payment for this is already under way, on Paystack's page or from your card. If it does not go through, try again in an hour." };

@@ -223,5 +223,20 @@
     "file": "components/client-document/client-document.tsx",
     "text": "Note to customer",
     "reason": "Same heading as the PDF (lib/money-pdf.ts): the client's page reads as the paper does."
+  },
+  {
+    "file": "app/(dashboard)/settings/team/page.tsx",
+    "text": "realistically visit in a day?",
+    "reason": "\"visit\" is the verb here (go to them), as the owner worded the question; the site and staff words in the same sentence come from the terms."
+  },
+  {
+    "file": "app/platform/companies/[id]/page.tsx",
+    "text": "Default visit frequency",
+    "reason": "Operator-only Control Centre label for the organizations.default_visit_frequency column; Tickd staff, not the company, read it, so it names the column the way the code does."
+  },
+  {
+    "file": "lib/control-centre.ts",
+    "text": "Choose the default visit frequency.",
+    "reason": "Operator-only Control Centre error for organizations.default_visit_frequency; read by Tickd staff, not the company."
   }
 ]

@@ -21,14 +21,14 @@ export type PlansViewProps = {
   /** The company's time zone, so the end date is the day the day-10 email names. */
   timezone: string;
   contact: { email: string | null; whatsapp: string | null };
-  /** Card payments are on (Paystack): each plan's button opens Plan and billing to pay by card. */
+  /** Card payments are on (Paystack): each plan's button opens Settings > Plan to pay by card. */
   payByCard?: boolean;
 };
 
 /**
  * The plans page: where the pilot stands, the Founding price for a company on
  * the pilot, the three plans, and a button on each that opens a ready-written
- * message to our team, or, once card payments are on, Plan and billing to pay
+ * message to our team, or, once card payments are on, Settings > Plan to pay
  * by card. The Founding price stays a message: we set it on the company's
  * account before it pays. Presentational, so it can be rendered without a
  * session.
@@ -126,7 +126,7 @@ export function PlansView({ trial, trialEndsAt, founding, reps, terms: t, compan
                   <CardContent className="mt-auto space-y-3">
                     {isFit && reps !== null && <FitsNote reps={reps} t={t} />}
                     <ChooseButton
-                      href={payByCard ? "/billing" : link({ kind: "plan", reps: p.reps }, `The plan for up to ${count(t, "staff", p.reps)}`)}
+                      href={payByCard ? "/settings/plan?choose=1" : link({ kind: "plan", reps: p.reps }, `The plan for up to ${count(t, "staff", p.reps)}`)}
                       primary={isFit && !founding}
                     >
                       {payByCard ? "Pay by card" : "Choose this plan"}

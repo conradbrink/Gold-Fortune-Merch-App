@@ -12,7 +12,7 @@ import { paystackConfig } from "@/lib/billing/paystack";
  * "View plans" from the pilot banner, and where the day-10 email's "Choose
  * your plan" lands.
  *
- * Each plan's button opens Plan and billing, to pay by card (Paystack), once
+ * Each plan's button opens Settings > Plan, to pay by card (Paystack), once
  * PAYSTACK_SECRET_KEY is set; until then a ready-written message to our team
  * (`sales_whatsapp`, else `sales_email`, the service's own settings), who set
  * the plan up. The plans

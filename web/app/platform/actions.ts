@@ -3,9 +3,19 @@
 import { after } from "next/server";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import type { Json } from "@/lib/supabase/types";
 import { moduleDependencies, platformAdminClient, templateDefaults, trialDays } from "@/lib/platform";
 import { queueWelcomeEmail } from "@/lib/welcome-email";
 import { OUTCOME_RELATED_KIND, isFoundingStatus, outcomePayload, outcomeTemplate } from "@/lib/founding-outcome";
+import {
+  operatorMayChange,
+  parseCompanyRecord,
+  parseSettingValue,
+  RECORD_FIELDS,
+  type CompanyRecordUpdate,
+} from "@/lib/control-centre";
+import { planTermChanges, type TermDraft } from "@/lib/branding-settings";
+import { TERM_KEYS, type TermKey } from "@/lib/terms";
 import {
   addCompanyProblems,
   choicesPayload,
@@ -94,10 +104,11 @@ export async function setCompanyModule(formData: FormData): Promise<void> {
 
 /** The caller's user id if they are a platform operator; null otherwise. */
 /**
- * Change one of Tickd's own settings for a company (GPS timing, distance
- * thresholds, report formulas). Operator only, logged first like a module
- * change, and only for internal settings: a business setting is the
- * company's to change, on its own Company settings.
+ * Change one of the settings Tickd sets up for a company (`lib/control-centre.ts`:
+ * its own, the rules moved off the customer's Settings, and the detail behind
+ * the customer's simpler switches). Operator only, logged first like a module
+ * change. A setting the customer owns outright (their colours, their
+ * check-in distance) is theirs, on their own Settings.
  */
 export async function setCompanySetting(formData: FormData): Promise<void> {
   const orgId = String(formData.get("orgId") ?? "");
@@ -118,18 +129,14 @@ export async function setCompanySetting(formData: FormData): Promise<void> {
     .eq("key", key)
     .maybeSingle();
   if (defError || !def) redirect(`${back}?error=${encodeURIComponent("No such setting.")}`);
-  if (def.audience !== "internal") {
-    redirect(`${back}?error=${encodeURIComponent("That is the company's own setting, changed on its Company settings.")}`);
+  if (!operatorMayChange(def.key, def.audience)) {
+    redirect(`${back}?error=${encodeURIComponent("That is the company's own setting, changed on its Settings.")}`);
   }
 
   // The database validates the value (range, pattern) and says what is wrong.
-  let value: string | number | boolean = raw;
-  if (def.value_type === "integer") {
-    if (!/^-?\d+$/.test(raw)) redirect(`${back}?error=${encodeURIComponent("Enter a whole number.")}`);
-    value = Number(raw);
-  } else if (def.value_type === "boolean") {
-    value = raw === "true";
-  }
+  const parsed = parseSettingValue(def.value_type, raw);
+  if ("error" in parsed) redirect(`${back}?setting=${key}&error=${encodeURIComponent(parsed.error)}#settings`);
+  const value = parsed.value;
 
   const { data: before } = await admin
     .from("company_settings")
@@ -159,9 +166,143 @@ export async function setCompanySetting(formData: FormData): Promise<void> {
       .from("platform_audit_log")
       .update({ detail: { key, from: before?.value ?? null, to: value, refused: error.message } })
       .eq("id", audit.id);
-    redirect(`${back}?error=${encodeURIComponent(error.message)}`);
+    redirect(`${back}?setting=${key}&error=${encodeURIComponent(error.message)}#settings`);
   }
-  redirect(back);
+  redirect(`${back}?setting=${key}#settings`);
+}
+
+/**
+ * The details Tickd keeps on a company's record (`RECORD_FIELDS`): the
+ * numbers on its tax invoices, its VAT, numbering, terms, bank details and
+ * footer, and how often a new store is visited. Operator only and logged.
+ * Invoices already issued keep the details they were issued with.
+ */
+export async function setCompanyRecord(formData: FormData): Promise<void> {
+  const orgId = String(formData.get("orgId") ?? "");
+  const back = `/platform/companies/${encodeURIComponent(orgId)}`;
+  const actor = await operatorId();
+  if (!actor) redirect("/");
+  if (!/^[0-9a-f-]{36}$/i.test(orgId)) redirect(`${back}?error=${encodeURIComponent("That request was not understood.")}`);
+
+  const parsed = parseCompanyRecord((k) => String(formData.get(k) ?? ""));
+  if ("error" in parsed) redirect(`${back}?error=${encodeURIComponent(parsed.error)}#record`);
+
+  const admin = platformAdminClient();
+  const { data: before, error: readError } = await admin
+    .from("organizations")
+    .select(RECORD_FIELDS.join(", "))
+    .eq("id", orgId)
+    .maybeSingle();
+  if (readError || !before) redirect(`${back}?error=${encodeURIComponent("No such company.")}`);
+  const was = before as unknown as Record<string, unknown>;
+  const changed: Partial<CompanyRecordUpdate> = Object.fromEntries(
+    Object.entries(parsed.update).filter(([k, v]) => (k === "vat_rate" ? Number(was[k]) !== v : was[k] !== v))
+  );
+  if (Object.keys(changed).length === 0) redirect(`${back}#record`);
+
+  const { data: audit, error: auditError } = await admin
+    .from("platform_audit_log")
+    .insert({
+      actor_id: actor,
+      action: "company.record_change",
+      target_org_id: orgId,
+      detail: {
+        from: Object.fromEntries(Object.keys(changed).map((k) => [k, was[k] ?? null])),
+        to: changed,
+        refused: null,
+      } as Json,
+    })
+    .select("id")
+    .single();
+  if (auditError) {
+    redirect(`${back}?error=${encodeURIComponent(`Not changed: the audit log could not be written (${auditError.message}).`)}`);
+  }
+  const { error } = await admin.from("organizations").update(changed).eq("id", orgId);
+  if (error) {
+    await admin
+      .from("platform_audit_log")
+      .update({ detail: { to: changed, refused: error.message } as Json })
+      .eq("id", audit.id);
+    redirect(`${back}?error=${encodeURIComponent(error.message)}#record`);
+  }
+  redirect(`${back}#record`);
+}
+
+/**
+ * The words Tickd uses for a company ("Store" or "Site", "Rep" or
+ * "Cleaner"). Operator only and logged. A word set back to the catalogue's
+ * has its own row removed, so a later change to the catalogue reaches it
+ * (`planTermChanges`, the same rules the customer screen used).
+ */
+export async function setCompanyTerms(formData: FormData): Promise<void> {
+  const orgId = String(formData.get("orgId") ?? "");
+  const back = `/platform/companies/${encodeURIComponent(orgId)}`;
+  const actor = await operatorId();
+  if (!actor) redirect("/");
+  if (!/^[0-9a-f-]{36}$/i.test(orgId)) redirect(`${back}?error=${encodeURIComponent("That request was not understood.")}`);
+
+  const admin = platformAdminClient();
+  const [defs, rows] = await Promise.all([
+    admin.from("term_definitions").select("key, singular, plural, article"),
+    admin.from("company_terminology").select("key, singular, plural, article").eq("org_id", orgId),
+  ]);
+  if (defs.error || rows.error) {
+    redirect(`${back}?error=${encodeURIComponent(`Not changed: ${(defs.error ?? rows.error)!.message}`)}#words`);
+  }
+  const known = (k: string): k is TermKey => (TERM_KEYS as readonly string[]).includes(k);
+  const art = (v: unknown): "a" | "an" | null => (v === "a" || v === "an" ? v : null);
+  const definitions = defs.data
+    .filter((d) => known(d.key))
+    .map((d) => ({ key: d.key as TermKey, singular: d.singular, plural: d.plural, article: art(d.article) }));
+  const overrides = rows.data
+    .filter((r) => known(r.key))
+    .map((r) => ({ key: r.key as TermKey, one: r.singular, many: r.plural, article: art(r.article) }));
+  const drafts: Partial<Record<TermKey, TermDraft>> = {};
+  for (const d of definitions) {
+    if (!formData.has(`${d.key}.one`)) continue;
+    drafts[d.key] = {
+      one: String(formData.get(`${d.key}.one`) ?? ""),
+      many: String(formData.get(`${d.key}.many`) ?? ""),
+      article: art(formData.get(`${d.key}.article`)),
+    };
+  }
+  const plan = planTermChanges(definitions, overrides, drafts);
+  const problem = Object.entries(plan.errors)[0];
+  if (problem) redirect(`${back}?error=${encodeURIComponent(`${problem[0]}: ${problem[1]}`)}#words`);
+  if (plan.upserts.length === 0 && plan.deletes.length === 0) redirect(`${back}#words`);
+
+  const { data: audit, error: auditError } = await admin
+    .from("platform_audit_log")
+    .insert({
+      actor_id: actor,
+      action: "company.terms_change",
+      target_org_id: orgId,
+      detail: { upserts: plan.upserts, deletes: plan.deletes, refused: null } as Json,
+    })
+    .select("id")
+    .single();
+  if (auditError) {
+    redirect(`${back}?error=${encodeURIComponent(`Not changed: the audit log could not be written (${auditError.message}).`)}`);
+  }
+  let refused: string | null = null;
+  if (plan.deletes.length > 0) {
+    const { error } = await admin.from("company_terminology").delete().eq("org_id", orgId).in("key", plan.deletes);
+    if (error) refused = error.message;
+  }
+  if (!refused && plan.upserts.length > 0) {
+    const { error } = await admin
+      .from("company_terminology")
+      .upsert(plan.upserts.map((u) => ({ org_id: orgId, ...u, updated_by: actor })), { onConflict: "org_id,key" });
+    if (error) refused = error.message;
+  }
+  if (refused) {
+    await admin
+      .from("platform_audit_log")
+      .update({ detail: { upserts: plan.upserts, deletes: plan.deletes, refused } as Json })
+      .eq("id", audit.id);
+    redirect(`${back}?error=${encodeURIComponent(refused)}#words`);
+  }
+  redirect(`${back}#words`);
 }
 
 async function operatorId(): Promise<string | null> {

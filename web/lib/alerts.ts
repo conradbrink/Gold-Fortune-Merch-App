@@ -50,6 +50,52 @@ export function rulesSetting(rules: readonly AlertRule[]): string {
   return ALERT_RULES.filter((r) => rules.includes(r)).join(",");
 }
 
+/**
+ * The three switches on Settings > Notifications, over the two settings the
+ * database reads (`alerts_on`, `alerts_email`). The owner says what they want
+ * to hear about; which exact rules that means, and an email per alert rather
+ * than one a day, are Tickd's to fine-tune in the Control Centre.
+ *
+ *   missed      planned work not done (`missed_planned`)
+ *   important   something off at a check-in: away from the site, a very
+ *               short visit, a long gap between rounds, no location
+ *   summary     one email at the end of the day (`alerts_email = digest`)
+ */
+export type AlertSwitches = { missed: boolean; important: boolean; summary: boolean };
+
+export const IMPORTANT_RULES: readonly AlertRule[] = ["off_site_checkin", "short_job", "patrol_gap", "no_gps"];
+
+/** The important rules switched on for a company that had none: the trades' usual pair. */
+export const IMPORTANT_DEFAULT: readonly AlertRule[] = ["off_site_checkin", "short_job"];
+
+export function alertSwitches(rules: readonly AlertRule[], email: AlertEmailMode): AlertSwitches {
+  return {
+    missed: rules.includes("missed_planned"),
+    important: rules.some((r) => IMPORTANT_RULES.includes(r)),
+    summary: email === "digest",
+  };
+}
+
+/**
+ * The settings for a set of switches, worked out from what is saved now.
+ * Turning important alerts on keeps the important rules the company already
+ * had (a security company's patrol gap), so off-then-on before saving loses
+ * nothing. Turning the summary off stops alert emails, unless Tickd set them
+ * to go one by one, which is left as it is.
+ */
+export function applyAlertSwitches(
+  saved: { rules: readonly AlertRule[]; email: AlertEmailMode },
+  next: AlertSwitches
+): { rules: AlertRule[]; email: AlertEmailMode } {
+  const had = saved.rules.filter((r) => IMPORTANT_RULES.includes(r));
+  const rules: readonly AlertRule[] = [
+    ...(next.missed ? (["missed_planned"] as const) : []),
+    ...(next.important ? (had.length > 0 ? had : IMPORTANT_DEFAULT) : []),
+  ];
+  const email: AlertEmailMode = next.summary ? "digest" : saved.email === "digest" ? "off" : saved.email;
+  return { rules: ALERT_RULES.filter((r) => rules.includes(r)), email };
+}
+
 /** Each rule's name and one line on what it catches, in the company's words. */
 export function ruleLabels(t: Terms): Record<AlertRule, { label: string; explain: string }> {
   const site = lower(t.site.one);
@@ -62,7 +108,7 @@ export function ruleLabels(t: Terms): Record<AlertRule, { label: string; explain
     },
     short_job: {
       label: `Short ${job}`,
-      explain: `A finished ${job} shorter than the shortest normal ${job} set on Operations.`,
+      explain: `A finished ${job} shorter than the shortest normal ${job}.`,
     },
     missed_planned: {
       label: `Planned ${job} not done`,
