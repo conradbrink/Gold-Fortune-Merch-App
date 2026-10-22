@@ -21,14 +21,19 @@ export type PlansViewProps = {
   /** The company's time zone, so the end date is the day the day-10 email names. */
   timezone: string;
   contact: { email: string | null; whatsapp: string | null };
+  /** Card payments are on (Paystack): each plan's button opens Plan and billing to pay by card. */
+  payByCard?: boolean;
 };
 
 /**
  * The plans page: where the pilot stands, the Founding price for a company on
  * the pilot, the three plans, and a button on each that opens a ready-written
- * message to our team. Presentational, so it can be rendered without a session.
+ * message to our team, or, once card payments are on, Plan and billing to pay
+ * by card. The Founding price stays a message: we set it on the company's
+ * account before it pays. Presentational, so it can be rendered without a
+ * session.
  */
-export function PlansView({ trial, trialEndsAt, founding, reps, terms: t, company, timezone, contact }: PlansViewProps) {
+export function PlansView({ trial, trialEndsAt, founding, reps, terms: t, company, timezone, contact, payByCard = false }: PlansViewProps) {
   const staff = lower(t.staff.many);
   const fits = reps && reps > 0 ? planFor(reps) : null;
   const tooBig = reps !== null && reps > biggestPlan.reps;
@@ -121,10 +126,10 @@ export function PlansView({ trial, trialEndsAt, founding, reps, terms: t, compan
                   <CardContent className="mt-auto space-y-3">
                     {isFit && reps !== null && <FitsNote reps={reps} t={t} />}
                     <ChooseButton
-                      href={link({ kind: "plan", reps: p.reps }, `The plan for up to ${count(t, "staff", p.reps)}`)}
+                      href={payByCard ? "/billing" : link({ kind: "plan", reps: p.reps }, `The plan for up to ${count(t, "staff", p.reps)}`)}
                       primary={isFit && !founding}
                     >
-                      Choose this plan
+                      {payByCard ? "Pay by card" : "Choose this plan"}
                     </ChooseButton>
                   </CardContent>
                 </Card>
@@ -151,7 +156,16 @@ export function PlansView({ trial, trialEndsAt, founding, reps, terms: t, compan
         </CardContent>
       </Card>
 
-      {noContact ? (
+      {payByCard ? (
+        <ul className="space-y-2 text-sm text-foreground">
+          <Point>
+            Pay by card on Paystack&apos;s secure page. We never see your card number, and the card is kept for your next payments.
+          </Point>
+          <Point>
+            Nothing changes in the app. Your team, {lower(t.site.many)}, orders and reports carry on as they are.
+          </Point>
+        </ul>
+      ) : noContact ? (
         <p className="text-sm text-muted-foreground">The details for choosing a plan have not been added yet.</p>
       ) : (
         <ul className="space-y-2 text-sm text-foreground">

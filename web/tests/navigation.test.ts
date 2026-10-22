@@ -89,6 +89,9 @@ const LINKED_FROM: Record<string, string> = {
   "/inventory/receive": "app/(dashboard)/inventory/page.tsx",
   "/hr/me": "components/layout/top-bar.tsx",
   "/plans": "components/dashboard/account-cards.tsx",
+  // Plan and billing: the Plan tab of Company settings opens it (and the
+  // Plans page's buttons, once card payments are on).
+  "/billing": "app/(dashboard)/settings/company/page.tsx",
   // One person's full report: their name on Reports → Team or the summary.
   "/reports/rep-performance": "app/(dashboard)/reports/page.tsx",
   // The dashboard's Store health card as a list; its numbers open it too.

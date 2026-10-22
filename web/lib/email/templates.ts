@@ -13,6 +13,7 @@ import { parseTerms } from "@/lib/terms";
 import { PROMO, TICKD_LOGO_FILE, emailAssetUrl } from "@/lib/email/brand";
 import { FOUNDING_OFFER } from "@/lib/founding-offer";
 import { foundingLine } from "@/lib/plans";
+import { formatRand } from "@/lib/billing";
 import { ageingParts, amountText, dayText as dateText, overdueText, periodText } from "@/lib/client-document";
 
 export type EmailContext = {
@@ -601,6 +602,44 @@ const TEMPLATES: Record<string, Renderer> = {
     });
     return { subject: ends ? `Your free days end on ${ends}${first ? `, ${first}` : ""}` : "Ready to sign up fully?", html, text };
   },
+  // To a company's owner when a card payment for Tickd fails (billing_record_failure):
+  // what is due, when the card is tried again, and a link to pay with any card.
+  billing_payment_failed: (payload, ctx) => {
+    const first = str(payload.first_name);
+    const company = str(payload.company_name);
+    const amount = typeof payload.amount_cents === "number" && Number.isFinite(payload.amount_cents) ? formatRand(payload.amount_cents) : "";
+    const retry = str(payload.retry_on) ? dateText(str(payload.retry_on)) : "";
+    const lockOn = str(payload.read_only_on) ? dateText(str(payload.read_only_on)) : "";
+    const reason = str(payload.reason).replace(/^Paystack:\s*/, "");
+    const appUrl = (str(payload.app_url) || "https://app.tickd.co.za").replace(/\/$/, "");
+    const facts: Fact[] = [
+      ...(amount ? [{ label: "Amount due", value: amount, strong: true }] : []),
+      ...(reason ? [{ label: "What the bank said", value: reason }] : []),
+      ...(retry ? [{ label: "We try your card again on", value: retry }] : []),
+      ...(lockOn ? [{ label: "Read-only from", value: lockOn }] : []),
+    ];
+    const body = stack([
+      para(`Hello${first ? ` ${first}` : ""},`, true),
+      para(`We tried to take this month's payment for Tickd${company ? ` for ${company}` : ""} from your card, but it did not go through.`),
+      factsBlock(facts),
+      para(
+        lockOn
+          ? `Everything keeps working for now. If it is still unpaid on ${lockOn}, your account becomes read-only: your team can see everything but cannot add or change anything until it is paid.`
+          : "Your account is read-only until it is paid: your team can see everything but cannot add or change anything."
+      ),
+      para("To pay now, open Tickd and pay with any card. The card you use is saved for your next payments."),
+      para("If you think this is a mistake, just reply to this email."),
+    ]);
+    const { html, text } = layout(ctx, {
+      heading: "Your payment did not go through",
+      preheader: amount ? `${amount} is due for Tickd.` : "A payment for Tickd is due.",
+      bodyHtml: body.html,
+      bodyText: body.text,
+      closing: para("Thank you,\nThe Tickd team"),
+      button: { label: "Pay now", url: `${appUrl}/billing` },
+    });
+    return { subject: amount ? `Your Tickd payment of ${amount} did not go through` : "Your Tickd payment did not go through", html, text };
+  },
   test: (_payload, ctx) => {
     const { html, text } = layout(ctx, {
       heading: "Your emails are working",
@@ -628,7 +667,7 @@ export const REPORT_TEMPLATES = new Set<string>(["job_report", "job_reports_day"
 export const ALERT_TEMPLATES = new Set<string>(["alert", "alerts_digest"]);
 
 /** Emails from Tickd itself, to a company's owner or an applicant: sent as Tickd, replies go to the Tickd team, no advert and no stop link. */
-export const TICKD_TEMPLATES = new Set<string>(["application_received", "welcome", "trial_offer", "founding_accepted"]);
+export const TICKD_TEMPLATES = new Set<string>(["application_received", "welcome", "trial_offer", "founding_accepted", "billing_payment_failed"]);
 
 /** Invoices, quotes, statements and reminders: their payload holds a link id the sender looks up before rendering, and turns into the page's address. */
 export const DOCUMENT_TEMPLATES = new Set<string>(["invoice", "quote", "statement", "payment_reminder"]);

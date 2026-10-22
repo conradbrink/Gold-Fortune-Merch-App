@@ -147,11 +147,11 @@ function AccountCardsFor() {
           <span className="flex items-center gap-2 font-medium">
             <Clock className="size-4" aria-hidden />
             {trial.kind === "ended"
-              ? "Your free pilot has ended. Talk to us to keep going."
+              ? "Your free pilot has ended. Choose a plan to keep going."
               : `${trial.daysLeft} ${trial.daysLeft === 1 ? "day" : "days"} left in your free pilot`}
           </span>
           <Button variant="outline" size="sm" nativeButton={false} render={<Link href="/plans" />}>
-            {trial.kind === "ended" ? "Talk to us" : "View plans"}
+            {trial.kind === "ended" ? "Choose a plan" : "View plans"}
           </Button>
         </div>
       )}

@@ -2,6 +2,7 @@ import { createClient as createAdminClient } from "@supabase/supabase-js";
 import { supabaseFetch } from "@/lib/supabase/fetch";
 import { createClient } from "@/lib/supabase/server";
 import { enforceRateLimit, LIMITS } from "@/lib/rate-limit";
+import { billingErrorMessage } from "@/lib/billing";
 import { parseCompanyConfig } from "@/lib/company-config";
 import { loginPhone, normalisePhone, phoneLogin } from "@/lib/phone-login";
 
@@ -307,6 +308,11 @@ export async function POST(request: Request) {
       // null, so RLS denies everything — a dead account nobody can fix from the
       // UI. Roll the auth user back rather than leaving that behind.
       await admin.auth.admin.deleteUser(invited.user.id);
+      // The plan's places for reps are full (profiles_user_limit): say so,
+      // and where to add one, rather than a rolled-back 500.
+      if (profileError.hint === "user_limit") {
+        return Response.json({ error: billingErrorMessage(profileError) }, { status: 409 });
+      }
       return Response.json(
         { error: `Account creation rolled back: ${profileError.message}` },
         { status: 500 }
