@@ -21,6 +21,14 @@ type Source = "checkout" | "webhook" | "verify" | "charge" | "refund";
 type Outcome = "paid" | "failed" | "refused" | "duplicate" | "queued" | "event" | "refunded";
 
 /**
+ * How long a try at a charge is given before another may be made. Paystack
+ * answers a saved-card charge within seconds or queues it; a payment page can
+ * be finished a while after it was opened. Within this window a try that
+ * Paystack cannot find yet, or a page left open, is not taken as dead.
+ */
+export const TRY_WINDOW_MS = 60 * 60 * 1000;
+
+/**
  * What became of a Paystack transaction once it was put to the database.
  * `error` means the database could not be reached or refused for a reason a
  * later try may not have: the webhook answers 500 so Paystack sends it again.
@@ -28,6 +36,7 @@ type Outcome = "paid" | "failed" | "refused" | "duplicate" | "queued" | "event" 
 export type SettleOutcome =
   | { kind: "paid"; reason: string; invoiceId: string | null; cardSaved: boolean }
   | { kind: "duplicate"; reason: string }
+  | { kind: "refunded"; why: string }
   | { kind: "refused" }
   | { kind: "failed"; message: string }
   | { kind: "open" }
@@ -74,7 +83,9 @@ export async function logPaystack(
  * webhook, the callback's verify or our own charge. Safe to run any number of
  * times for the same reference: `billing_paystack_paid` records a payment
  * once, checks the amount and currency against the charge, and keeps the card
- * only when Paystack says it can be charged again.
+ * only when Paystack says it can be charged again. Money that bought nothing
+ * (a second payment for one charge, a payment for a replaced charge, the
+ * wrong amount) is refunded here, and a card check once the card is kept.
  */
 export async function settle(
   admin: Admin,
@@ -88,7 +99,7 @@ export async function settle(
 
   const { data: charge, error: chargeError } = await admin
     .from("billing_charges")
-    .select("id, org_id, reason, status, total_cents")
+    .select("id, org_id, reason, status, total_cents, provider_reference")
     .eq("id", ref.chargeId)
     .maybeSingle();
   if (chargeError) return { kind: "error", message: chargeError.message };
@@ -101,11 +112,17 @@ export async function settle(
   }
 
   if (tx.status === "success") {
+    // Paystack always sends both; without them nothing is decided (and above
+    // all nothing is refunded): the webhook is sent again, the page waits.
+    if (tx.amountCents === null || !tx.currency) {
+      console.error("[paystack] success without an amount or currency", tx.reference);
+      return { kind: "error", message: "The payment's amount could not be read." };
+    }
     const { data, error } = await admin.rpc("billing_paystack_paid", {
       p_charge: charge.id,
       p_reference: tx.reference!,
-      p_amount_cents: tx.amountCents ?? -1,
-      p_currency: tx.currency ?? "",
+      p_amount_cents: tx.amountCents,
+      p_currency: tx.currency,
       p_card: (tx.card?.reusable ? tx.card : null) as Json,
       p_source: source,
       p_payload: loggable(raw) as Json,
@@ -120,23 +137,26 @@ export async function settle(
       console.error("[paystack] payment not recorded", tx.reference, error.message);
       return { kind: "error", message: error.message };
     }
-    const r = (data ?? {}) as { outcome?: string; reason?: string; invoice_id?: string | null; card_saved?: boolean };
-    if (r.outcome === "refused") {
-      console.warn("[paystack] amount or currency is not the charge's", tx.reference, tx.amountCents, tx.currency);
-      return { kind: "refused" };
+    const r = (data ?? {}) as { outcome?: string; reason?: string; why?: string; invoice_id?: string | null; card_saved?: boolean };
+    if (r.outcome === "refund") {
+      const why = r.why ?? "Not owed.";
+      console.warn("[paystack] payment not owed, refunding", tx.reference, why);
+      await refundPayment(admin, config, charge, tx.reference!, tx.amountCents, why);
+      return { kind: "refunded", why };
     }
     if (r.outcome === "duplicate") return { kind: "duplicate", reason: r.reason ?? charge.reason };
-    if (r.reason === "card") await refundCardCheck(admin, config, charge, tx.reference!);
+    if (r.reason === "card") await refundPayment(admin, config, charge, tx.reference!, tx.amountCents, "Card check");
     return { kind: "paid", reason: r.reason ?? charge.reason, invoiceId: r.invoice_id ?? null, cardSaved: r.card_saved === true };
   }
 
   if (stillOpen(tx)) return { kind: "open" };
 
-  // Failed, abandoned or reversed. A charge we put to the saved card counts
-  // as a failed try (retry days, grace period, an email); a try on Paystack's
-  // page is only logged, since the customer can simply try again there.
+  // Failed, abandoned or reversed. Only our own charge of the saved card
+  // counts as a failed try (retry days, grace period, an email), and only
+  // for the try the charge is waiting on; a reload of the callback or a try
+  // on Paystack's page is logged and nothing more.
   const message = tx.gatewayResponse ?? tx.status ?? "Not paid";
-  if (tx.metadata.method === "saved_card" && charge.status === "pending") {
+  if (source === "charge" && tx.metadata.method === "saved_card" && charge.status === "pending" && tx.reference === charge.provider_reference) {
     const { error } = await admin.rpc("billing_record_failure", {
       p_charge: charge.id,
       p_outcome: "failed",
@@ -155,39 +175,65 @@ export async function settle(
 }
 
 /**
- * A card check (`billing_start_card_check`) has done its job once the card is
- * kept: give the money back at once. A refund Paystack refuses is logged for
- * someone to do by hand; the card is kept either way.
+ * Gives back money that bought nothing: a card check once the card is kept,
+ * or a payment the database refused. A refund Paystack refuses is logged
+ * loudly for someone to do by hand; nothing else waits on it.
  */
-async function refundCardCheck(
+async function refundPayment(
   admin: Admin,
   config: PaystackConfig,
-  charge: { id: string; org_id: string | null; total_cents: number },
-  reference: string
+  charge: { id: string; org_id: string | null },
+  reference: string,
+  amountCents: number | null,
+  why: string
 ): Promise<void> {
   const r = await refundTransaction(config, reference);
   await logPaystack(admin, {
     chargeId: charge.id, orgId: charge.org_id, source: "refund", outcome: r.ok ? "refunded" : "event",
-    reference, amountCents: charge.total_cents,
-    detail: r.ok ? `Card check refunded: ${r.message}` : `Card check NOT refunded, refund by hand: ${r.message}`,
+    reference, amountCents,
+    detail: r.ok ? `Refunded (${why}): ${r.message}` : `NOT refunded, refund by hand (${why}): ${r.message}`,
     payload: loggable(r.data),
   });
-  if (!r.ok) console.error("[paystack] card check not refunded", reference, r.message);
+  if (!r.ok) console.error("[paystack] refund failed, refund by hand", reference, why, r.message);
+}
+
+/**
+ * Whether a failed try at a charge is already counted (`billing_record_failure`
+ * logs it once). A counted try is over, even one Paystack has no record of
+ * (refused outright, say), so it never holds up the next.
+ */
+export async function failureRecorded(admin: Admin, chargeId: string, reference: string): Promise<boolean> {
+  const { data } = await admin
+    .from("billing_payments")
+    .select("id")
+    .eq("charge_id", chargeId)
+    .eq("provider_payment_id", reference)
+    .in("outcome", ["failed", "cancelled"])
+    .limit(1);
+  return (data ?? []).length > 0;
 }
 
 /**
  * Puts one pending charge to the company's saved card: the daily renewal,
  * more reps, "Try again now". The amount is the charge's, from the database.
  *
- * Never charges twice for one charge: an earlier try that Paystack still
- * holds (queued) is looked up first, and a new try is only made by whoever
- * swaps the charge's reference (two runs at once: one charges, the other
- * waits).
+ * Never charges twice for one charge. The last try is looked up first: paid
+ * (recorded now), still with Paystack, a payment page opened within the hour,
+ * or a try Paystack cannot find yet within the hour all mean "wait". A queued
+ * try that failed is counted as that day's failed try, and the next waits for
+ * its retry day. A new try is only made by whoever swaps the charge's
+ * reference (two runs at once: one charges, the other waits), and anything
+ * paid twice regardless is refunded by `settle`.
  */
-export async function chargeSaved(admin: Admin, config: PaystackConfig, chargeId: string): Promise<ChargeOutcome> {
+export async function chargeSaved(
+  admin: Admin,
+  config: PaystackConfig,
+  chargeId: string,
+  now: Date = new Date()
+): Promise<ChargeOutcome> {
   const { data: charge, error: chargeError } = await admin
     .from("billing_charges")
-    .select("id, org_id, reason, status, total_cents, period, plan_after, lines, provider_reference")
+    .select("id, org_id, reason, status, total_cents, period, plan_after, lines, provider_reference, provider_tried_at")
     .eq("id", chargeId)
     .maybeSingle();
   if (chargeError || !charge?.org_id) return { kind: "error", message: chargeError?.message ?? "No such charge." };
@@ -201,29 +247,51 @@ export async function chargeSaved(admin: Admin, config: PaystackConfig, chargeId
   if (cardError) return { kind: "error", message: cardError.message };
   if (!card) return { kind: "no_card" };
 
-  // The last try first: paid without us hearing, or still queued.
+  const recent = charge.provider_tried_at !== null && now.getTime() - new Date(charge.provider_tried_at).getTime() < TRY_WINDOW_MS;
   if (charge.provider_reference) {
     const v = await verifyTransaction(config, charge.provider_reference);
     if (v.ok) {
       const tx = readTransaction(v.data);
       if (tx.status === "success") {
         const s = await settle(admin, config, tx, v.data, "verify");
-        return s.kind === "paid" || s.kind === "duplicate"
-          ? { kind: "paid", invoiceId: s.kind === "paid" ? s.invoiceId : null }
-          : s.kind === "error"
-            ? { kind: "error", message: s.message }
-            : { kind: "error", message: "The last payment could not be recorded." };
+        if (s.kind === "paid" || s.kind === "duplicate") return { kind: "paid", invoiceId: s.kind === "paid" ? s.invoiceId : null };
+        return { kind: "error", message: s.kind === "error" ? s.message : "The last payment could not be recorded." };
       }
-      if (stillOpen(tx)) return { kind: "pending" };
+      // Our own queued charge is waited for. A payment page (left at the
+      // bank's check, or just open) is waited for within the hour only; after
+      // that it counts as abandoned, and if it is finished later anyway the
+      // second payment is refunded.
+      const page = tx.metadata.method !== "saved_card";
+      if (stillOpen(tx) && (!page || recent)) return { kind: "pending" };
+      if (page && tx.status === "abandoned" && recent) return { kind: "pending" };
+      // Our own queued try that failed: that is this round's failed try.
+      if (tx.metadata.method === "saved_card" && !(await failureRecorded(admin, charge.id, charge.provider_reference))) {
+        const { error } = await admin.rpc("billing_record_failure", {
+          p_charge: charge.id,
+          p_outcome: "failed",
+          p_detail: `Paystack: ${tx.gatewayResponse ?? tx.status}`.slice(0, 500),
+          p_source: "verify",
+          p_payload: loggable(v.data) as Json,
+        });
+        if (error) return { kind: "error", message: error.message };
+        return { kind: "failed", message: tx.gatewayResponse ?? tx.status };
+      }
     } else if (v.status === 0 || v.status >= 500) {
       // Paystack cannot say: never risk a second charge.
       return { kind: "error", message: `Paystack could not be asked about the last try: ${v.message}` };
+    } else if (recent && !(await failureRecorded(admin, charge.id, charge.provider_reference))) {
+      // Not on Paystack's books yet, and not known to have failed: wait.
+      return { kind: "pending" };
     }
-    // Not found, failed or abandoned: a new try.
+    // Failed, abandoned long ago, or never reached Paystack: a new try.
   }
 
-  const reference = makeReference(charge.org_id, charge.id);
-  const claim = admin.from("billing_charges").update({ provider_reference: reference }).eq("id", charge.id).eq("status", "pending");
+  const reference = makeReference(charge.org_id, charge.id, now);
+  const claim = admin
+    .from("billing_charges")
+    .update({ provider_reference: reference, provider_tried_at: now.toISOString() })
+    .eq("id", charge.id)
+    .eq("status", "pending");
   const { data: claimed, error: claimError } = await (charge.provider_reference
     ? claim.eq("provider_reference", charge.provider_reference)
     : claim.is("provider_reference", null)
@@ -292,9 +360,13 @@ export async function chargeSaved(admin: Admin, config: PaystackConfig, chargeId
   return { kind: "failed", message };
 }
 
-/** This deployment's own address, for Paystack's callback and the cancel link. */
-export function originFrom(h: Headers): string {
-  const configured = process.env.BILLING_PUBLIC_URL?.trim().replace(/\/$/, "");
+/**
+ * This deployment's own address, for Paystack's callback and the cancel link:
+ * BILLING_PUBLIC_URL, else the app's address (NEXT_PUBLIC_APP_URL); the
+ * request's host only when neither is set (a developer's machine).
+ */
+export function originFrom(h: Headers, env: Record<string, string | undefined> = process.env): string {
+  const configured = (env.BILLING_PUBLIC_URL?.trim() || env.NEXT_PUBLIC_APP_URL?.trim() || "").replace(/\/$/, "");
   if (configured) return configured;
   const host = h.get("x-forwarded-host") ?? h.get("host") ?? "localhost:3000";
   const proto = h.get("x-forwarded-proto") ?? (/^(localhost|127\.0\.0\.1)(:|$)/.test(host) ? "http" : "https");

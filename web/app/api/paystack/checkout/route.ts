@@ -1,6 +1,7 @@
 import { headers } from "next/headers";
 import { createClient } from "@/lib/supabase/server";
 import { platformAdminClient } from "@/lib/platform";
+import { enforceRateLimit, LIMITS } from "@/lib/rate-limit";
 import { billingErrorMessage, parseAccount } from "@/lib/billing";
 import {
   initializeBody,
@@ -13,7 +14,7 @@ import {
   type ChargeMetadata,
   type CheckoutPurpose,
 } from "@/lib/billing/paystack";
-import { logPaystack, originFrom, settle } from "@/lib/billing/server";
+import { TRY_WINDOW_MS, failureRecorded, logPaystack, originFrom, settle } from "@/lib/billing/server";
 
 /**
  * POST /api/paystack/checkout — pays on Paystack's page, by card.
@@ -72,6 +73,9 @@ export async function POST(request: Request) {
   if (!account.canManage) {
     return Response.json({ error: "Only someone who manages the company settings can pay for the plan." }, { status: 403 });
   }
+  // Counted before anything reaches Paystack.
+  const gate = await enforceRateLimit(supabase, LIMITS.billingCheckout);
+  if (!gate.ok) return gate.response;
   const email = offered || row?.billing_email || user.email || "";
   if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email) || /@staff\.tickd\.co\.za$/i.test(email)) {
     return Response.json({ error: "Enter the email address for receipts." }, { status: 400 });
@@ -112,7 +116,7 @@ export async function POST(request: Request) {
   const admin = platformAdminClient();
   const { data: charge, error: chargeError } = await admin
     .from("billing_charges")
-    .select("id, org_id, reason, status, total_cents, period, plan_after, lines, provider_reference")
+    .select("id, org_id, reason, status, total_cents, period, plan_after, lines, provider_reference, provider_tried_at")
     .eq("id", chargeId)
     .maybeSingle();
   if (chargeError || !charge?.org_id || charge.status !== "pending") {
@@ -120,30 +124,39 @@ export async function POST(request: Request) {
   }
 
   // A renewal the daily run already put to the saved card: ask Paystack about
-  // that try first, so paying here can never be a second payment for it.
+  // that try first, so paying here is never a second payment for it (and if
+  // it is anyway, the second is refunded when it lands).
   if (purpose === "pay_due" && charge.provider_reference) {
+    const recent = charge.provider_tried_at !== null && Date.now() - new Date(charge.provider_tried_at).getTime() < TRY_WINDOW_MS;
     const v = await verifyTransaction(config, charge.provider_reference);
+    const busy = Response.json(
+      { error: "Paystack is still processing a payment from your saved card. Try again in a few minutes." },
+      { status: 409 }
+    );
     if (v.ok) {
       const tx = readTransaction(v.data);
       if (tx.status === "success") {
         await settle(admin, config, tx, v.data, "verify");
         return Response.json({ error: "This payment has already gone through. Refresh the page." }, { status: 409 });
       }
-      if (stillOpen(tx) && tx.metadata.method === "saved_card") {
-        return Response.json(
-          { error: "Paystack is still processing a payment from your saved card. Try again in a few minutes." },
-          { status: 409 }
-        );
-      }
+      if (stillOpen(tx) && tx.metadata.method === "saved_card") return busy;
     } else if (v.status === 0 || v.status >= 500) {
       return Response.json({ error: "Paystack could not be reached. Try again in a few minutes." }, { status: 502 });
+    } else if (recent && !(await failureRecorded(admin, charge.id, charge.provider_reference))) {
+      // A try made moments ago that Paystack has not got on its books yet
+      // (one it refused outright is already counted as failed).
+      return busy;
     }
   }
 
   const reference = makeReference(charge.org_id, charge.id);
   // Swapped only from the reference just looked at: a try the daily run starts
   // meanwhile wins, and this page is not opened.
-  const swap = admin.from("billing_charges").update({ provider_reference: reference }).eq("id", charge.id).eq("status", "pending");
+  const swap = admin
+    .from("billing_charges")
+    .update({ provider_reference: reference, provider_tried_at: new Date().toISOString() })
+    .eq("id", charge.id)
+    .eq("status", "pending");
   const { data: swapped, error: refError } = await (charge.provider_reference
     ? swap.eq("provider_reference", charge.provider_reference)
     : swap.is("provider_reference", null)

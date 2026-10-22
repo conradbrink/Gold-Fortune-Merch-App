@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { platformAdminClient } from "@/lib/platform";
+import { enforceRateLimit, LIMITS } from "@/lib/rate-limit";
 import { paystackConfig } from "@/lib/billing/paystack";
 import { chargeSaved } from "@/lib/billing/server";
 import {
@@ -62,6 +63,9 @@ export async function changePlanAction(
   const config = paystackConfig();
   const plan = normalisePlan(reps, addons);
   const supabase = await createClient();
+  // Counted before the database writes a charge, so a refusal leaves nothing behind.
+  const gate = await enforceRateLimit(supabase, LIMITS.billingCharge);
+  if (!gate.ok) return { ok: false, error: "Too many tries for now. Wait a while, then try again." };
   const { data, error } = await supabase.rpc("billing_request_change", { p_seats: plan.seats, p_addons: plan.addons });
   if (error) return { ok: false, error: billingErrorMessage(error) ?? "The plan could not be changed." };
   revalidatePath("/billing");
@@ -74,7 +78,7 @@ export async function changePlanAction(
     case "paid":
       return { ok: true, value: { charged: true, message: "Paid. Your plan is updated." } };
     case "pending":
-      return { ok: true, value: { charged: false, message: "Paystack is processing the payment. Your plan changes once it is paid." } };
+      return { ok: true, value: { charged: false, message: "A payment for this is already under way. Your plan changes once it is paid." } };
     case "failed":
       return { ok: false, error: `Your card was declined (${outcome.message}). Nothing changed; update your card and try again.` };
     case "no_card":
@@ -100,10 +104,14 @@ export async function retryNowAction(): Promise<Result<string>> {
   const { data, error } = await supabase.rpc("billing_retry_now");
   if (error) return { ok: false, error: billingErrorMessage(error) ?? "Not tried." };
   if (!data) return { ok: true, value: "There is nothing to pay." };
+  const gate = await enforceRateLimit(supabase, LIMITS.billingCharge);
+  if (!gate.ok) return { ok: false, error: "Too many tries for now. Wait a while, or pay with a card instead." };
   const outcome = await chargeSaved(platformAdminClient(), config, (data as { charge_id: string }).charge_id);
   revalidatePath("/billing");
   if (outcome.kind === "paid") return { ok: true, value: "Paid. Thank you." };
-  if (outcome.kind === "pending") return { ok: true, value: "Paystack is processing the payment. This page updates once it is paid." };
+  if (outcome.kind === "pending") {
+    return { ok: true, value: "A payment for this is already under way, on Paystack's page or from your card. If it does not go through, try again in an hour." };
+  }
   if (outcome.kind === "failed") return { ok: false, error: `Your card was declined (${outcome.message}). Pay with another card instead.` };
   if (outcome.kind === "no_card") return { ok: false, error: "There is no card on file. Pay with a card instead." };
   return { ok: false, error: outcome.message };

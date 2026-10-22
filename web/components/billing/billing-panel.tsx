@@ -44,7 +44,7 @@ export type InvoiceRow = {
   paidMethod: string | null;
 };
 
-type CheckoutNote = "paid" | "pending" | "failed" | "refused" | "cancelled" | "unknown";
+type CheckoutNote = "paid" | "pending" | "failed" | "refused" | "refunded" | "cancelled" | "unknown";
 
 type Props = {
   account: Account;
@@ -88,7 +88,8 @@ export function BillingPanel(props: Props) {
       <CurrentPlan {...props} />
       {owing && <PaymentFailed {...props} />}
       {canChoose && !owing && <ChoosePlan {...props} />}
-      {account.status === "active" && props.plan && props.customPriceCents === null && <ChangeReps {...props} />}
+      {account.status === "active" && props.plan && props.customPriceCents === null && !props.unpaid &&
+        props.periodEnd !== null && new Date(props.periodEnd) > new Date() && <ChangeReps {...props} />}
       {account.status === "exempt" && props.customPriceCents === null && <ManagedByUs contact={props.contact} />}
       <Invoices invoices={props.invoices} />
     </>
@@ -120,6 +121,8 @@ function CheckoutNotice({ note, cardUpdated }: { note: CheckoutNote | null; card
       return <Notice tone="error" text="The payment did not go through, so nothing was charged. Try again, or use another card." />;
     case "refused":
       return <Notice tone="error" text="The amount paid was not what was due, so we did not accept it. Talk to us and we will sort it out." />;
+    case "refunded":
+      return <Notice tone="warn" text="That payment was for a bill that was already paid or had been replaced, so we have refunded it to your card. Nothing more is due for it." />;
     case "cancelled":
       return <Notice tone="warn" text="You cancelled the payment. Nothing was charged." />;
     case "unknown":
@@ -516,19 +519,28 @@ function ChangeReps({ plan, period, periodEnd, activeReps, card }: Props) {
   const router = useRouter();
   const t = useTerms();
   const staff = lower(t.staff.many);
-  const changed = reps !== plan!.seats;
+  const seats = plan!.seats;
+  const addons = plan!.addons;
+  const changed = reps !== seats;
 
   // Nothing changed: nothing to preview (the last answer is kept, not shown).
   const preview = changed ? fetched : null;
 
+  function choose(n: number) {
+    setMessage(null);
+    setReps(n);
+  }
+
+  // Asked again when the number changes, not when the page re-reads the plan
+  // after saving (that would wipe the answer the save gave).
+  const addonsKey = JSON.stringify(addons);
   useEffect(() => {
     if (!changed) return;
     let live = true;
-    void previewChangeAction(reps, plan!.addons).then((r) => {
+    void previewChangeAction(reps, JSON.parse(addonsKey) as Record<string, number>).then((r) => {
       if (!live) return;
       if (r.ok) {
         setPreview(r.value);
-        setMessage(null);
       } else {
         setPreview(null);
         setMessage({ ok: false, text: r.error });
@@ -537,7 +549,7 @@ function ChangeReps({ plan, period, periodEnd, activeReps, card }: Props) {
     return () => {
       live = false;
     };
-  }, [reps, changed, plan]);
+  }, [reps, changed, addonsKey]);
 
   const chargeNow = preview && preview.more && preview.totalCents > 0;
 
@@ -555,7 +567,7 @@ function ChangeReps({ plan, period, periodEnd, activeReps, card }: Props) {
             <p className="text-sm font-medium">Places for {staff}</p>
             <p className="text-xs text-muted-foreground">You have {activeReps} active {noun(t, "staff", activeReps)} now.</p>
           </div>
-          <Stepper value={reps} min={Math.max(activeReps, 1)} label={staff} onChange={setReps} />
+          <Stepper value={reps} min={Math.max(activeReps, 1)} label={staff} onChange={choose} />
         </div>
         {chargeNow && <LinesTable lines={preview.lines} totalCents={preview.totalCents} note="today" />}
         {preview && (
@@ -568,7 +580,7 @@ function ChangeReps({ plan, period, periodEnd, activeReps, card }: Props) {
           disabled={!changed || pending || !preview || (Boolean(chargeNow) && !card)}
           onClick={() =>
             start(async () => {
-              const r = await changePlanAction(reps, plan!.addons);
+              const r = await changePlanAction(reps, addons);
               setMessage(r.ok ? { ok: true, text: r.value.message } : { ok: false, text: r.error });
               router.refresh();
             })

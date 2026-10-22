@@ -23,12 +23,34 @@ export const CURRENCY = "ZAR";
 
 export type PaystackConfig = { secretKey: string; publicKey: string | null; test: boolean };
 
-/** From the server's environment; null until the secret key is set. */
+/** Whether the app's database is a copy on this machine (the local QA stack), not the real one. */
+export function localDatabase(env: Record<string, string | undefined> = process.env): boolean {
+  try {
+    const host = new URL(env.NEXT_PUBLIC_SUPABASE_URL ?? "").hostname;
+    return host === "127.0.0.1" || host === "localhost" || host === "::1" || host === "[::1]";
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * From the server's environment; null until the secret key is set, and null
+ * when the key does not suit the database:
+ *  - a TEST key only with a local database, so a test card can never make a
+ *    company "paid" (with a real invoice number) in the real one, unless
+ *    PAYSTACK_ALLOW_TEST_KEYS is "true" on purpose;
+ *  - a LIVE key never with a local database, so a test run cannot take real
+ *    money.
+ */
 export function paystackConfig(env: Record<string, string | undefined> = process.env): PaystackConfig | null {
   const secretKey = env.PAYSTACK_SECRET_KEY?.trim();
   if (!secretKey || !/^sk_(test|live)_[A-Za-z0-9]+$/.test(secretKey)) return null;
+  const test = secretKey.startsWith("sk_test_");
+  const local = localDatabase(env);
+  if (test && !local && env.PAYSTACK_ALLOW_TEST_KEYS?.trim() !== "true") return null;
+  if (!test && local) return null;
   const publicKey = env.PAYSTACK_PUBLIC_KEY?.trim() || null;
-  return { secretKey, publicKey, test: secretKey.startsWith("sk_test_") };
+  return { secretKey, publicKey, test };
 }
 
 // ---------------------------------------------------------------- references

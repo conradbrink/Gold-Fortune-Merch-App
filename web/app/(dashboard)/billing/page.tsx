@@ -19,7 +19,7 @@ import { BillingPanel, type InvoiceRow } from "@/components/billing/billing-pane
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Plan and billing" };
 
-const CHECKOUT_NOTES = ["paid", "pending", "failed", "refused", "cancelled", "unknown"] as const;
+const CHECKOUT_NOTES = ["paid", "pending", "failed", "refused", "refunded", "cancelled", "unknown"] as const;
 type CheckoutNote = (typeof CHECKOUT_NOTES)[number];
 
 export default async function BillingPage({

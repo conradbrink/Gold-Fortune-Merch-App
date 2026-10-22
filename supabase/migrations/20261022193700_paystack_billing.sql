@@ -17,9 +17,11 @@
 --      (`billing_charges.provider_reference`), so a payment that is still
 --      queued is looked up before the same charge is tried again.
 --   3. `billing_paystack_paid` records a successful Paystack payment once:
---      the amount must be the charge's and the currency ZAR, or it is
---      refused and the refusal is logged (and kept: it returns instead of
---      raising). The same reference twice gives one invoice.
+--      the same reference twice gives one invoice. Money that buys nothing is
+--      refused, logged and handed back to the caller to refund: the wrong
+--      amount or currency, a second payment for a charge already paid (under
+--      another reference, or by EFT), a payment for a cancelled charge. It
+--      returns instead of raising, so the log row stays.
 --   4. "Update card" with nothing to pay: a small card check
 --      (`card_check_cents`), refunded at once, saves the new card
 --      (`billing_start_card_check`, reason 'card'; no invoice).
@@ -28,7 +30,13 @@
 --   6. A failed renewal is tried again on days 3 and 7 (`retry_days`), and
 --      the company is emailed each time with a link to pay; the retry and
 --      grace dates fall on whole days, so the daily run never misses one by
---      a few seconds. `grace_days` stays the platform setting it was.
+--      a few seconds. A try is counted once, however often its failure is
+--      reported. `grace_days` stays the platform setting it was, and the
+--      account is not locked on a morning its card is still to be tried.
+--   8. The daily run deals with each company on its own: one company's
+--      pricing error is reported and the others are still renewed.
+--   9. More reps cannot be added while the next payment is due (they would
+--      cost nothing), nor while a payment for more reps is under way.
 --   7. The end of a free pilot locks nothing unless the operator turns on
 --      `trial_end_read_only` (owner, 22 Oct: "keep it working").
 --
@@ -58,6 +66,8 @@ alter table public.billing_charges add column provider_reference text
   check (provider_reference is null or provider_reference ~ '^TKD-[0-9a-f]{8}-[0-9a-f]{32}-[0-9]{10,16}$');
 create unique index billing_charges_provider_reference
   on public.billing_charges (provider_reference) where provider_reference is not null;
+-- When that try was made: a new one waits until Paystack has had time to answer.
+alter table public.billing_charges add column provider_tried_at timestamptz;
 
 insert into public.platform_settings (key, value, description) values
   ('trial_end_read_only', 'false'::jsonb,
@@ -228,6 +238,7 @@ declare
   c        public.billing_charges;
   v_inv    uuid;
   v_saved  boolean := false;
+  v_why    text;
 begin
   select * into c from public.billing_charges where id = p_charge for update;
   if c.id is null then
@@ -239,17 +250,33 @@ begin
     raise exception 'Reference % is not for this charge.', p_reference using errcode = '22023';
   end if;
 
-  if p_currency is distinct from 'ZAR' or p_amount_cents is distinct from c.total_cents then
-    insert into public.billing_payments (charge_id, org_id, provider, source, outcome, provider_payment_id, amount_cents, detail, payload)
-    values (c.id, c.org_id, 'paystack', p_source, 'refused', p_reference, p_amount_cents,
-            format('Paid %s %s; the charge is %s ZAR.', p_amount_cents, coalesce(p_currency, '?'), c.total_cents), p_payload);
-    return jsonb_build_object('outcome', 'refused', 'reason', c.reason);
-  end if;
-
-  if c.status = 'paid' then
+  -- The same payment reported again (webhook after verify, say): nothing new.
+  if c.status = 'paid' and exists (select 1 from public.billing_payments
+                                    where charge_id = c.id and outcome = 'paid' and provider_payment_id = p_reference) then
     insert into public.billing_payments (charge_id, org_id, provider, source, outcome, provider_payment_id, amount_cents, payload)
     values (c.id, c.org_id, 'paystack', p_source, 'duplicate', p_reference, p_amount_cents, p_payload);
     return jsonb_build_object('outcome', 'duplicate', 'reason', c.reason, 'invoice_id', c.invoice_id);
+  end if;
+
+  -- A refused payment reported again: refunded the first time, not again.
+  if exists (select 1 from public.billing_payments
+              where charge_id = c.id and outcome = 'refused' and provider_payment_id = p_reference) then
+    insert into public.billing_payments (charge_id, org_id, provider, source, outcome, provider_payment_id, amount_cents, detail, payload)
+    values (c.id, c.org_id, 'paystack', p_source, 'duplicate', p_reference, p_amount_cents, 'Refused before; already refunded.', p_payload);
+    return jsonb_build_object('outcome', 'duplicate', 'reason', c.reason);
+  end if;
+
+  -- Money that buys nothing goes back: the caller refunds it.
+  v_why := case
+    when p_currency is distinct from 'ZAR' or p_amount_cents is distinct from c.total_cents
+      then format('Paid %s %s; the charge is %s ZAR.', p_amount_cents, coalesce(p_currency, '?'), c.total_cents)
+    when c.status = 'paid' then 'A second payment for a charge already paid.'
+    when c.status = 'cancelled' then 'A payment for a charge that was replaced or cancelled.'
+  end;
+  if v_why is not null then
+    insert into public.billing_payments (charge_id, org_id, provider, source, outcome, provider_payment_id, amount_cents, detail, payload)
+    values (c.id, c.org_id, 'paystack', p_source, 'refused', p_reference, p_amount_cents, v_why || ' Refunding.', p_payload);
+    return jsonb_build_object('outcome', 'refund', 'reason', c.reason, 'why', v_why);
   end if;
   if c.org_id is null then
     raise exception 'The company of this charge no longer exists.' using errcode = '22023';
@@ -409,6 +436,14 @@ begin
   if c.id is null then
     raise exception 'No such charge.' using errcode = '22023';
   end if;
+  -- One try, one failure: reported again (a reload, a resent answer), it
+  -- counts nothing more and emails nobody.
+  if c.provider_reference is not null
+     and exists (select 1 from public.billing_payments
+                  where charge_id = c.id and outcome in ('failed', 'cancelled')
+                    and provider_payment_id = c.provider_reference) then
+    return;
+  end if;
 
   insert into public.billing_payments (charge_id, org_id, provider, source, outcome, provider_payment_id, detail, payload)
   values (c.id, c.org_id, 'paystack', p_source, p_outcome, c.provider_reference, p_detail, p_payload);
@@ -477,10 +512,13 @@ end;
 $$;
 
 ---------------------------------------------------------------- 1, 7. prepare_due
--- As 20261008091250, with three changes: an ended pilot becomes read-only
--- only when `trial_end_read_only` is on; "has a card" means a Paystack card
--- in billing_cards; and each charge handed out names the reference of its
--- last try, which the caller looks up before trying again.
+-- As 20261008091250, with these changes: an ended pilot becomes read-only
+-- only when `trial_end_read_only` is on; a grace period that ran out locks
+-- the account only once no try of its card is due that day; "has a card"
+-- means a Paystack card in billing_cards; each company's renewal is written
+-- on its own (an error is reported in `errors`, the others go on); and each
+-- charge handed out names the reference of its last try, which the caller
+-- looks up before trying again.
 create or replace function public.billing_prepare_due(p_now timestamp with time zone default now())
 returns jsonb
 language plpgsql
@@ -498,6 +536,7 @@ declare
   v_q        jsonb;
   v_step     interval;
   v_due      jsonb;
+  v_errors   jsonb := '[]'::jsonb;
 begin
   if coalesce((public.platform_setting('trial_end_read_only') #>> '{}')::boolean, false) then
     update public.company_account
@@ -506,9 +545,14 @@ begin
     get diagnostics v_trials = row_count;
   end if;
 
-  update public.company_account
+  update public.company_account a0
      set status = 'read_only', read_only_since = p_now, updated_at = now()
-   where status = 'past_due' and grace_ends_at <= p_now;
+   where a0.status = 'past_due' and a0.grace_ends_at <= p_now
+     and not exists (select 1 from public.billing_charges c
+                      where c.org_id = a0.org_id and c.reason = 'renewal' and c.status = 'pending'
+                        -- today's try only: a retry day that has passed unsettled locks.
+                        and date_trunc('day', c.next_retry_at) = date_trunc('day', p_now)
+                        and exists (select 1 from public.billing_cards k where k.org_id = a0.org_id));
   get diagnostics v_grace = row_count;
 
   update public.company_account
@@ -524,17 +568,24 @@ begin
     continue when exists (select 1 from public.billing_charges
                            where org_id = a.org_id and reason = 'renewal'
                              and period_start = a.period_end and status <> 'cancelled');
-    v_plan := coalesce(a.plan_next, a.plan);
-    -- Reps added since a smaller plan was asked for are paid for, not dropped.
-    v_used := public.billing_seats_used(a.org_id, v_plan);
-    v_plan := public.billing_plan(greatest((v_plan->>'seats')::int, v_used), v_plan->'addons');
-    v_q := public.billing_lines(a.org_id, a.period, v_plan, false);
-    v_step := case a.period when 'yearly' then interval '1 year' else interval '1 month' end;
-    insert into public.billing_charges
-      (org_id, reason, period, plan_after, period_start, period_end, lines, total_cents, billing_email)
-    values (a.org_id, 'renewal', a.period, v_plan, a.period_end, a.period_end + v_step,
-            v_q->'lines', (v_q->>'total_cents')::bigint, a.billing_email);
-    v_renew := v_renew + 1;
+    -- One company's error (a price missing, a plan priced on request) is
+    -- reported, and the others are still renewed.
+    begin
+      v_plan := coalesce(a.plan_next, a.plan);
+      -- Reps added since a smaller plan was asked for are paid for, not dropped.
+      v_used := public.billing_seats_used(a.org_id, v_plan);
+      v_plan := public.billing_plan(greatest((v_plan->>'seats')::int, v_used), v_plan->'addons');
+      v_q := public.billing_lines(a.org_id, a.period, v_plan, false);
+      v_step := case a.period when 'yearly' then interval '1 year' else interval '1 month' end;
+      insert into public.billing_charges
+        (org_id, reason, period, plan_after, period_start, period_end, lines, total_cents, billing_email)
+      values (a.org_id, 'renewal', a.period, v_plan, a.period_end, a.period_end + v_step,
+              v_q->'lines', (v_q->>'total_cents')::bigint, a.billing_email);
+      v_renew := v_renew + 1;
+    exception when others then
+      v_errors := v_errors || jsonb_build_object('org_id', a.org_id, 'error', left(sqlerrm, 300));
+      raise warning 'billing: renewal for % not written: %', a.org_id, sqlerrm;
+    end;
   end loop;
 
   -- Pending renewals due now, for companies with a card. Without one (paid by
@@ -561,6 +612,76 @@ begin
                   where c.org_id = a3.org_id and c.reason = 'renewal' and c.status = 'pending');
 
   return jsonb_build_object('trials_ended', v_trials, 'grace_ended', v_grace, 'cancelled', v_ended,
-                            'renewals_written', v_renew, 'charge', v_due);
+                            'renewals_written', v_renew, 'charge', v_due, 'errors', v_errors);
 end;
 $$;
+
+---------------------------------------------------------------- 9. request_change
+-- As 20261008091250, with two refusals: while the next payment is due (the
+-- period has ended, or a renewal is unpaid) more reps would cost nothing for
+-- a period nobody has paid; and while a payment for more reps is under way,
+-- a second one would charge the card again.
+create or replace function public.billing_request_change(p_seats integer, p_addons jsonb)
+returns jsonb
+language plpgsql
+volatile
+security definer
+set search_path to 'public'
+as $function$
+declare
+  v_org  uuid := public.billing_my_org();
+  a      public.company_account;
+  v_plan jsonb := public.billing_plan(p_seats, p_addons);
+  v_c    jsonb;
+  v_used int;
+  v_id   uuid;
+begin
+  select * into a from public.company_account where org_id = v_org for update;
+  if a.status <> 'active' then
+    raise exception 'The plan can be changed once the account is paid up.' using errcode = '22023';
+  end if;
+  if a.period_end is null or a.period_end <= now()
+     or exists (select 1 from public.billing_charges
+                 where org_id = v_org and reason = 'renewal' and status in ('pending', 'failed')) then
+    raise exception 'Your next payment is due. Once it is paid, you can change the number of places.'
+      using errcode = '22023';
+  end if;
+  if exists (select 1 from public.billing_charges
+              where org_id = v_org and reason = 'change' and status = 'pending'
+                and provider_tried_at > now() - interval '30 minutes') then
+    raise exception 'A payment for more places is still being processed. Try again in a few minutes.'
+      using errcode = '22023';
+  end if;
+  v_used := public.billing_seats_used(v_org, v_plan);
+  if (v_plan->>'seats')::int < v_used then
+    raise exception 'Your company has % active reps; deactivate some before choosing fewer.', v_used
+      using errcode = '22023';
+  end if;
+
+  v_c := public.billing_change_lines(v_org, v_plan, now());
+
+  if not (v_c->>'more')::boolean then
+    update public.company_account
+       set plan_next = case when (v_c->>'less')::boolean then v_c->'plan_next' end, updated_at = now()
+     where org_id = v_org;
+    return null;
+  end if;
+  if (v_c->>'total_cents')::bigint <= 0 then
+    -- More, but nothing left of the period to charge for.
+    update public.company_account
+       set plan = v_c->'plan_after', plan_next = v_c->'plan_next', updated_at = now()
+     where org_id = v_org;
+    return null;
+  end if;
+
+  update public.billing_charges set status = 'cancelled', updated_at = now()
+   where org_id = v_org and reason = 'change' and status = 'pending';
+  insert into public.billing_charges
+    (org_id, reason, period, plan_after, plan_next, period_start, period_end, lines, total_cents, billing_email)
+  values (v_org, 'change', a.period, v_c->'plan_after', v_c->'plan_next', a.period_start, a.period_end,
+          v_c->'lines', (v_c->>'total_cents')::bigint, a.billing_email)
+  returning id into v_id;
+  return jsonb_build_object('charge_id', v_id, 'total_cents', (v_c->>'total_cents')::bigint,
+    'item_name', public.platform_setting('billing_item_name') #>> '{}');
+end;
+$function$;

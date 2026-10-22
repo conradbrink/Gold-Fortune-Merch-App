@@ -23,7 +23,7 @@ import {
   type ChargeMetadata,
   type PaystackConfig,
 } from "@/lib/billing/paystack";
-import { settle } from "@/lib/billing/server";
+import { TRY_WINDOW_MS, chargeSaved, originFrom, settle } from "@/lib/billing/server";
 import {
   accountNotice,
   billingErrorMessage,
@@ -48,12 +48,33 @@ const REF = `TKD-71170c8a-0b9f6c1e2c354a7e9a592f8d3c1b7e01-1761150000000`;
 
 // ---------------------------------------------------------------- configuration
 
+const LOCAL = { NEXT_PUBLIC_SUPABASE_URL: "http://127.0.0.1:55321" };
+const REAL = { NEXT_PUBLIC_SUPABASE_URL: "https://rxtlnetlzmbqirqaalkw.supabase.co" };
+
 test("configuration needs a secret key that looks like one; test mode from its prefix", () => {
-  assert.equal(paystackConfig({}), null);
-  assert.equal(paystackConfig({ PAYSTACK_SECRET_KEY: "  " }), null);
-  assert.equal(paystackConfig({ PAYSTACK_SECRET_KEY: "pk_test_abc" }), null, "a public key in the secret's place");
-  assert.deepEqual(paystackConfig({ PAYSTACK_SECRET_KEY: ` ${SECRET} `, PAYSTACK_PUBLIC_KEY: "pk_test_x" }), config);
-  assert.equal(paystackConfig({ PAYSTACK_SECRET_KEY: "sk_live_abc123" })!.test, false);
+  assert.equal(paystackConfig({ ...LOCAL }), null);
+  assert.equal(paystackConfig({ ...LOCAL, PAYSTACK_SECRET_KEY: "  " }), null);
+  assert.equal(paystackConfig({ ...LOCAL, PAYSTACK_SECRET_KEY: "pk_test_abc" }), null, "a public key in the secret's place");
+  assert.deepEqual(paystackConfig({ ...LOCAL, PAYSTACK_SECRET_KEY: ` ${SECRET} `, PAYSTACK_PUBLIC_KEY: "pk_test_x" }), config);
+  assert.equal(paystackConfig({ ...REAL, PAYSTACK_SECRET_KEY: "sk_live_abc123" })!.test, false);
+});
+
+test("a key only works with the database it suits", () => {
+  // A test card must never make a company "paid" in the real database...
+  assert.equal(paystackConfig({ ...REAL, PAYSTACK_SECRET_KEY: SECRET }), null);
+  assert.equal(paystackConfig({ PAYSTACK_SECRET_KEY: SECRET }), null, "no database named: not local");
+  // ...unless someone says so on purpose.
+  assert.equal(paystackConfig({ ...REAL, PAYSTACK_SECRET_KEY: SECRET, PAYSTACK_ALLOW_TEST_KEYS: "true" })!.test, true);
+  // And a test run on a laptop can never take real money.
+  assert.equal(paystackConfig({ ...LOCAL, PAYSTACK_SECRET_KEY: "sk_live_abc123" }), null);
+  assert.equal(paystackConfig({ NEXT_PUBLIC_SUPABASE_URL: "http://localhost:54321", PAYSTACK_SECRET_KEY: "sk_live_abc123" }), null);
+});
+
+test("Paystack's callback goes to the app's own address, not the request's host", () => {
+  const h = new Headers({ host: "evil.example", "x-forwarded-proto": "https" });
+  assert.equal(originFrom(h, { BILLING_PUBLIC_URL: "https://app.tickd.co.za/" }), "https://app.tickd.co.za");
+  assert.equal(originFrom(h, { NEXT_PUBLIC_APP_URL: "https://app.tickd.co.za" }), "https://app.tickd.co.za");
+  assert.equal(originFrom(new Headers({ host: "localhost:3310" }), {}), "http://localhost:3310");
 });
 
 // ---------------------------------------------------------------- webhook signature
@@ -193,9 +214,10 @@ type Call = [string, Record<string, unknown>];
  * for a charge is "paid", any later one "duplicate", a wrong amount or
  * currency "refused" (supabase/tests/billing_paystack.sql proves the real one).
  */
-function fakeDatabase(charge: { id: string; org_id: string; reason: string; status: string; total_cents: number }) {
+function fakeDatabase(charge: { id: string; org_id: string; reason: string; status: string; total_cents: number; provider_reference?: string | null }) {
   const calls: Call[] = [];
   const logged: Record<string, unknown>[] = [];
+  const paidBy = new Set<string>();
   let invoices = 0;
   const admin = {
     from(table: string) {
@@ -213,11 +235,16 @@ function fakeDatabase(charge: { id: string; org_id: string; reason: string; stat
     async rpc(name: string, args: Record<string, unknown>) {
       calls.push([name, args]);
       if (name === "billing_paystack_paid") {
-        if (args.p_currency !== "ZAR" || args.p_amount_cents !== charge.total_cents) {
-          return { data: { outcome: "refused", reason: charge.reason }, error: null };
+        if (charge.status === "paid" && paidBy.has(args.p_reference as string)) {
+          return { data: { outcome: "duplicate", reason: charge.reason }, error: null };
         }
-        if (charge.status === "paid") return { data: { outcome: "duplicate", reason: charge.reason }, error: null };
+        if (args.p_currency !== "ZAR" || args.p_amount_cents !== charge.total_cents) {
+          return { data: { outcome: "refund", reason: charge.reason, why: "amount" }, error: null };
+        }
+        if (charge.status === "paid") return { data: { outcome: "refund", reason: charge.reason, why: "second" }, error: null };
+        if (charge.status === "cancelled") return { data: { outcome: "refund", reason: charge.reason, why: "cancelled" }, error: null };
         charge.status = "paid";
+        paidBy.add(args.p_reference as string);
         invoices += charge.reason === "card" ? 0 : 1;
         return {
           data: { outcome: "paid", reason: charge.reason, invoice_id: charge.reason === "card" ? null : "inv-1", card_saved: args.p_card !== null },
@@ -251,12 +278,58 @@ test("the same successful reference from the webhook, the callback and our own c
   }
 });
 
-test("a success for another amount or currency is refused, not paid", async () => {
+/** Stands in for Paystack's refund call; returns the references refunded. */
+async function withRefunds<T>(run: () => Promise<T>): Promise<{ result: T; refunds: string[] }> {
+  const refunds: string[] = [];
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = (async (url: string, init: RequestInit) => {
+    assert.match(String(url), /^https:\/\/api\.paystack\.co\/refund$/);
+    refunds.push(JSON.parse(String(init.body)).transaction);
+    return new Response(JSON.stringify({ status: true, message: "Refund has been queued for processing", data: {} }), { status: 200 });
+  }) as typeof fetch;
+  try {
+    return { result: await run(), refunds };
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+}
+
+test("a success for another amount or currency is refunded, not paid", async () => {
   const db = fakeDatabase({ id: CHARGE, org_id: ORG, reason: "subscribe", status: "pending", total_cents: 449500 });
-  assert.equal((await settle(db.admin, config, readTransaction({ ...paystackTx, amount: 100 }), paystackTx, "webhook")).kind, "refused");
-  assert.equal((await settle(db.admin, config, readTransaction({ ...paystackTx, currency: "NGN" }), paystackTx, "webhook")).kind, "refused");
+  const { refunds } = await withRefunds(async () => {
+    assert.equal((await settle(db.admin, config, readTransaction({ ...paystackTx, amount: 100 }), paystackTx, "webhook")).kind, "refunded");
+    assert.equal((await settle(db.admin, config, readTransaction({ ...paystackTx, currency: "NGN" }), paystackTx, "webhook")).kind, "refunded");
+  });
+  assert.deepEqual(refunds, [REF, REF]);
   assert.equal(db.charge.status, "pending");
   assert.equal(db.invoices(), 0);
+});
+
+test("a second payment for a paid charge, or one for a replaced charge, is refunded", async () => {
+  const db = fakeDatabase({ id: CHARGE, org_id: ORG, reason: "renewal", status: "pending", total_cents: 449500 });
+  const second = REF.replace(/-\d+$/, "-1761150009999");
+  const { refunds } = await withRefunds(async () => {
+    assert.equal((await settle(db.admin, config, readTransaction(paystackTx), paystackTx, "charge")).kind, "paid");
+    // A payment page left open, finished after the saved card was charged.
+    assert.equal((await settle(db.admin, config, readTransaction({ ...paystackTx, reference: second }), paystackTx, "webhook")).kind, "refunded");
+    // The first payment reported again: nothing more, nothing refunded.
+    assert.equal((await settle(db.admin, config, readTransaction(paystackTx), paystackTx, "webhook")).kind, "duplicate");
+  });
+  assert.deepEqual(refunds, [second]);
+  assert.equal(db.invoices(), 1);
+
+  const replaced = fakeDatabase({ id: CHARGE, org_id: ORG, reason: "change", status: "cancelled", total_cents: 449500 });
+  const r = await withRefunds(() => settle(replaced.admin, config, readTransaction(paystackTx), paystackTx, "webhook"));
+  assert.equal(r.result.kind, "refunded");
+  assert.deepEqual(r.refunds, [REF]);
+  assert.equal(replaced.invoices(), 0);
+});
+
+test("a success whose amount or currency cannot be read decides nothing and refunds nothing", async () => {
+  const db = fakeDatabase({ id: CHARGE, org_id: ORG, reason: "subscribe", status: "pending", total_cents: 449500 });
+  assert.equal((await settle(db.admin, config, readTransaction({ ...paystackTx, amount: "449500" }), paystackTx, "webhook")).kind, "error");
+  assert.equal((await settle(db.admin, config, readTransaction({ ...paystackTx, currency: undefined }), paystackTx, "webhook")).kind, "error");
+  assert.equal(db.calls.length, 0);
 });
 
 test("a card Paystack cannot charge again is not handed to the database to keep", async () => {
@@ -275,11 +348,15 @@ test("not our reference: left alone, nothing recorded", async () => {
 
 test("a failed saved-card charge is a failed try; a failure on Paystack's page is only logged", async () => {
   const failed = { ...paystackTx, status: "failed", gateway_response: "Insufficient Funds" };
-  const renewal = fakeDatabase({ id: CHARGE, org_id: ORG, reason: "renewal", status: "pending", total_cents: 199500 });
-  const r = await settle(renewal.admin, config, readTransaction({ ...failed, metadata: { ...metadata, method: "saved_card" } }), failed, "charge");
+  const renewal = fakeDatabase({ id: CHARGE, org_id: ORG, reason: "renewal", status: "pending", total_cents: 199500, provider_reference: REF });
+  const savedCardFailed = readTransaction({ ...failed, metadata: { ...metadata, method: "saved_card" } });
+  const r = await settle(renewal.admin, config, savedCardFailed, failed, "charge");
   assert.deepEqual(r, { kind: "failed", message: "Insufficient Funds" });
   assert.equal(renewal.calls[0][0], "billing_record_failure");
   assert.equal(renewal.calls[0][1].p_detail, "Paystack: Insufficient Funds");
+  // The callback reloaded with that reference: logged, not counted again.
+  await settle(renewal.admin, config, savedCardFailed, failed, "verify");
+  assert.equal(renewal.calls.length, 1);
 
   const page = fakeDatabase({ id: CHARGE, org_id: ORG, reason: "subscribe", status: "pending", total_cents: 449500 });
   await settle(page.admin, config, readTransaction(failed), failed, "verify");
@@ -383,4 +460,220 @@ test("only whoever manages the company settings opens Billing and its callback",
   assert.equal(canAccessPath(toPermissionSet(["company_settings"]), "/billing/invoices/0b9f6c1e-2c35-4a7e-9a59-2f8d3c1b7e01"), true);
   assert.equal(canAccessPath(toPermissionSet(["team"]), "/billing"), false);
   assert.equal(canAccessPath(toPermissionSet([]), "/plans"), false);
+});
+
+// ---------------------------------------------------------------- the saved card, never twice
+
+type Row = Record<string, unknown>;
+
+/**
+ * A small stand-in for the service-role client with real filtering, so the
+ * reference swap in `chargeSaved` either matches the row or does not.
+ */
+function fakeStore(tables: Record<string, Row[]>) {
+  const calls: Call[] = [];
+  class Q {
+    filters: ((r: Row) => boolean)[] = [];
+    patch: Row | null = null;
+    table: string;
+    constructor(table: string) {
+      this.table = table;
+    }
+    select() { return this; }
+    limit() { return this; }
+    eq(k: string, v: unknown) { this.filters.push((r) => r[k] === v); return this; }
+    is(k: string, v: unknown) { this.filters.push((r) => (r[k] ?? null) === v); return this; }
+    in(k: string, vs: unknown[]) { this.filters.push((r) => vs.includes(r[k])); return this; }
+    update(p: Row) { this.patch = p; return this; }
+    async insert(row: Row) { (tables[this.table] ??= []).push(row); return { error: null }; }
+    rows() { return (tables[this.table] ?? []).filter((r) => this.filters.every((f) => f(r))); }
+    async maybeSingle() {
+      const row = this.rows()[0];
+      return { data: row ? { ...row } : null, error: null };
+    }
+    then(ok: (v: unknown) => unknown, bad?: (e: unknown) => unknown) {
+      const rows = this.rows();
+      if (this.patch) rows.forEach((r) => Object.assign(r, this.patch));
+      return Promise.resolve({ data: rows.map((r) => ({ ...r })), error: null }).then(ok, bad);
+    }
+  }
+  const admin = {
+    from: (t: string) => new Q(t),
+    async rpc(name: string, args: Row) {
+      calls.push([name, args]);
+      const charge = tables.billing_charges.find((c) => c.id === args.p_charge)!;
+      if (name === "billing_record_failure") {
+        (tables.billing_payments ??= []).push({ charge_id: charge.id, outcome: "failed", provider_payment_id: charge.provider_reference });
+        charge.attempts = Number(charge.attempts ?? 0) + 1;
+        return { data: null, error: null };
+      }
+      if (name === "billing_paystack_paid") {
+        charge.status = "paid";
+        return { data: { outcome: "paid", reason: charge.reason, invoice_id: "inv-1", card_saved: false }, error: null };
+      }
+      return { data: null, error: null };
+    },
+  };
+  return { admin: admin as never, calls, tables };
+}
+
+const NOW = new Date("2026-10-25T06:00:00Z");
+const minutesAgo = (m: number) => new Date(NOW.getTime() - m * 60_000).toISOString();
+const OLD_REF = REF;
+
+function dueRenewal(extra: Row = {}): Record<string, Row[]> {
+  return {
+    billing_charges: [{
+      id: CHARGE, org_id: ORG, reason: "renewal", status: "pending", total_cents: 199500, period: "monthly",
+      plan_after: { seats: 4, addons: {} }, lines: [], provider_reference: OLD_REF, provider_tried_at: minutesAgo(3 * 24 * 60),
+      attempts: 1, ...extra,
+    }],
+    billing_cards: [{ org_id: ORG, authorization_code: "AUTH_saved", email: "owner@example.com" }],
+    billing_payments: [],
+  };
+}
+
+/** Stands in for Paystack: what verify says about the last try, and what a new charge answers. */
+async function withPaystack<T>(
+  verify: { status: number; body: unknown },
+  charge: { status: number; body: unknown },
+  run: () => Promise<T>,
+  onVerify?: () => void
+): Promise<{ result: T; charges: number; chargedRefs: string[] }> {
+  const chargedRefs: string[] = [];
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = (async (url: string, init?: RequestInit) => {
+    const u = String(url);
+    if (u.includes("/transaction/verify/")) {
+      onVerify?.();
+      return new Response(JSON.stringify(verify.body), { status: verify.status });
+    }
+    if (u.endsWith("/transaction/charge_authorization")) {
+      chargedRefs.push(JSON.parse(String(init!.body)).reference);
+      return new Response(JSON.stringify(charge.body), { status: charge.status });
+    }
+    throw new Error(`unexpected call ${u}`);
+  }) as typeof fetch;
+  try {
+    return { result: await run(), charges: chargedRefs.length, chargedRefs };
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+}
+
+const verifyFound = (status: string, method = "saved_card", extra: Row = {}) => ({
+  status: 200,
+  body: { status: true, message: "Verification successful", data: { ...paystackTx, reference: OLD_REF, amount: 199500, status, metadata: { ...metadata, method }, ...extra } },
+});
+const verifyMissing = { status: 400, body: { status: false, message: "Transaction reference not found" } };
+const chargeOk = { status: 200, body: { status: true, message: "Charge attempted", data: { ...paystackTx, amount: 199500, status: "success" } } };
+
+test("the last try still with Paystack: wait, never charge again", async () => {
+  for (const status of ["queued", "ongoing", "pending", "processing"]) {
+    const db = fakeStore(dueRenewal());
+    const r = await withPaystack(verifyFound(status), chargeOk, () => chargeSaved(db.admin, config, CHARGE, NOW));
+    assert.deepEqual(r.result, { kind: "pending" }, status);
+    assert.equal(r.charges, 0, status);
+  }
+});
+
+test("the last try paid without us hearing: recorded, not charged again", async () => {
+  const db = fakeStore(dueRenewal());
+  const r = await withPaystack(verifyFound("success"), chargeOk, () => chargeSaved(db.admin, config, CHARGE, NOW));
+  assert.equal(r.result.kind, "paid");
+  assert.equal(r.charges, 0);
+  assert.equal(db.calls[0][0], "billing_paystack_paid");
+  assert.equal(db.calls[0][1].p_reference, OLD_REF);
+});
+
+test("a try Paystack cannot find yet: wait within the hour, charge after it", async () => {
+  const fresh = fakeStore(dueRenewal({ provider_tried_at: minutesAgo(5) }));
+  const a = await withPaystack(verifyMissing, chargeOk, () => chargeSaved(fresh.admin, config, CHARGE, NOW));
+  assert.deepEqual(a.result, { kind: "pending" });
+  assert.equal(a.charges, 0);
+
+  const stale = fakeStore(dueRenewal({ provider_tried_at: minutesAgo(TRY_WINDOW_MS / 60_000 + 1) }));
+  const b = await withPaystack(verifyMissing, chargeOk, () => chargeSaved(stale.admin, config, CHARGE, NOW));
+  assert.equal(b.result.kind, "paid");
+  assert.equal(b.charges, 1);
+  // The new try is on the charge before Paystack is asked, with its time.
+  assert.notEqual(b.chargedRefs[0], OLD_REF);
+  assert.equal(stale.tables.billing_charges[0].provider_tried_at, NOW.toISOString());
+});
+
+test("a recent try Paystack refused outright is over: it does not hold up the next", async () => {
+  const tables = dueRenewal({ provider_tried_at: minutesAgo(2) });
+  tables.billing_payments.push({ charge_id: CHARGE, outcome: "failed", provider_payment_id: OLD_REF });
+  const r = await withPaystack(verifyMissing, chargeOk, () => chargeSaved(fakeStore(tables).admin, config, CHARGE, NOW));
+  assert.equal(r.result.kind, "paid");
+  assert.equal(r.charges, 1);
+});
+
+test("a payment page opened recently may still be finished: the saved card waits", async () => {
+  const fresh = fakeStore(dueRenewal({ provider_tried_at: minutesAgo(10) }));
+  const a = await withPaystack(verifyFound("abandoned", "checkout"), chargeOk, () => chargeSaved(fresh.admin, config, CHARGE, NOW));
+  assert.deepEqual(a.result, { kind: "pending" });
+  assert.equal(a.charges, 0);
+
+  const stale = fakeStore(dueRenewal({ provider_tried_at: minutesAgo(180) }));
+  const b = await withPaystack(verifyFound("abandoned", "checkout"), chargeOk, () => chargeSaved(stale.admin, config, CHARGE, NOW));
+  assert.equal(b.charges, 1);
+});
+
+test("a payment page still open after the hour (left at the bank's check) no longer holds up the saved card", async () => {
+  const fresh = fakeStore(dueRenewal({ provider_tried_at: minutesAgo(20) }));
+  const a = await withPaystack(verifyFound("ongoing", "checkout"), chargeOk, () => chargeSaved(fresh.admin, config, CHARGE, NOW));
+  assert.deepEqual(a.result, { kind: "pending" });
+  assert.equal(a.charges, 0);
+
+  const stale = fakeStore(dueRenewal({ provider_tried_at: minutesAgo(180) }));
+  const b = await withPaystack(verifyFound("send_otp", "checkout"), chargeOk, () => chargeSaved(stale.admin, config, CHARGE, NOW));
+  assert.equal(b.result.kind, "paid");
+  assert.equal(b.charges, 1);
+
+  // Our own queued charge is still waited for, however long.
+  const queued = fakeStore(dueRenewal({ provider_tried_at: minutesAgo(600) }));
+  const c = await withPaystack(verifyFound("queued", "saved_card"), chargeOk, () => chargeSaved(queued.admin, config, CHARGE, NOW));
+  assert.deepEqual(c.result, { kind: "pending" });
+  assert.equal(c.charges, 0);
+});
+
+test("a queued try that failed is that round's failed try, counted once, and is not retried at once", async () => {
+  const db = fakeStore(dueRenewal());
+  const declined = verifyFound("failed", "saved_card", { gateway_response: "Insufficient Funds" });
+  const a = await withPaystack(declined, chargeOk, () => chargeSaved(db.admin, config, CHARGE, NOW));
+  assert.deepEqual(a.result, { kind: "failed", message: "Insufficient Funds" });
+  assert.equal(a.charges, 0);
+  assert.deepEqual(db.calls.map((c) => c[0]), ["billing_record_failure"]);
+  // On its retry day the counted failure is not counted again, and the card is tried.
+  const b = await withPaystack(declined, chargeOk, () => chargeSaved(db.admin, config, CHARGE, NOW));
+  assert.equal(b.charges, 1);
+  assert.equal(db.calls.filter((c) => c[0] === "billing_record_failure").length, 1);
+});
+
+test("two runs at once: whoever swaps the reference charges; the other waits", async () => {
+  const db = fakeStore(dueRenewal());
+  // Another run claims the charge while this one asks Paystack about the last try.
+  const r = await withPaystack(verifyMissing, chargeOk, () => chargeSaved(db.admin, config, CHARGE, NOW), () => {
+    db.tables.billing_charges[0].provider_reference = "TKD-71170c8a-0b9f6c1e2c354a7e9a592f8d3c1b7e01-1761150000111";
+  });
+  assert.deepEqual(r.result, { kind: "pending" });
+  assert.equal(r.charges, 0);
+});
+
+test("no answer from Paystack to a charge: the reference is kept for the next run to look up", async () => {
+  const db = fakeStore(dueRenewal());
+  const r = await withPaystack(verifyMissing, { status: 502, body: {} }, () => chargeSaved(db.admin, config, CHARGE, NOW));
+  assert.equal(r.result.kind, "error");
+  assert.equal(r.charges, 1);
+  assert.equal(db.tables.billing_charges[0].provider_reference, r.chargedRefs[0]);
+  assert.equal(db.calls.filter((c) => c[0] === "billing_record_failure").length, 0);
+});
+
+test("no card on file: nothing is tried", async () => {
+  const tables = dueRenewal();
+  tables.billing_cards = [];
+  const r = await withPaystack(verifyMissing, chargeOk, () => chargeSaved(fakeStore(tables).admin, config, CHARGE, NOW));
+  assert.deepEqual(r.result, { kind: "no_card" });
+  assert.equal(r.charges, 0);
 });

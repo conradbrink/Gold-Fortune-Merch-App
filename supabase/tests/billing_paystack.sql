@@ -4,8 +4,8 @@
 --       first monthly payment only, no VAT while the seller has no VAT number,
 --       whole cents; fewer places than active reps refused.
 --   P2  A payment in the wrong currency, or for the wrong amount, is refused,
---       logged, and leaves the charge unpaid; a reference for another charge
---       is refused outright.
+--       logged, handed back to refund, and leaves the charge unpaid; a
+--       reference for another charge is refused outright.
 --   P3  The first payment: one invoice, the company active with the paid
 --       period, setup marked paid, the card kept; the same reference again
 --       (webhook after verify) is one invoice and one payment, logged as a
@@ -23,6 +23,15 @@
 --   P8  The end of a pilot locks nothing unless trial_end_read_only is on.
 --   P9  Grants: the service-role functions and the card table are out of a
 --       signed-in caller's reach.
+--   P10 Money that buys nothing is handed back to refund: a second payment
+--       for a paid charge (another reference), a payment for a replaced
+--       charge; neither issues an invoice or keeps the card.
+--   P11 One try, one failure: the same failed try reported again counts
+--       nothing and emails nobody; the account is not locked on a morning
+--       its card is still to be tried.
+--   P12 More reps cannot be added while the next payment is due, nor while
+--       a payment for more reps is under way.
+--   P13 One company's renewal error is reported; the daily run goes on.
 --
 -- HOW TO RUN: as rep_plans.sql. One DO block that always ends in
 -- `raise exception`, so nothing survives. Gold Fortune stands in for a
@@ -40,6 +49,7 @@ declare
     'exp_year', '2030', 'brand', 'Visa', 'card_type', 'visa DEBIT', 'bank', 'TEST BANK', 'country_code', 'ZA',
     'signature', 'SIG_test', 'email', 'Pay@Example.com', 'customer_code', 'CUS_test');
   v_modules_before text; v_modules_after text;
+  v_old uuid; v_cards text; v_emails int; v_att int;
 begin
   if to_regclass('public.billing_cards') is null then
     raise exception 'BILLING PAYSTACK: SKIPPED (20261022193700 is not on this database)';
@@ -100,10 +110,11 @@ begin
   update public.billing_charges set provider_reference = v_ref where id = v_charge;
 
   ---------------------------------------------------------------- P2 refusals
-  v_j := public.billing_paystack_paid(v_charge, v_ref, v_band + 250000, 'NGN', v_card, 'webhook', '{}'::jsonb);
-  if v_j->>'outcome' <> 'refused' then v_fail := v_fail || format('P2 another currency: %s', v_j) || E'\n'; end if;
-  v_j := public.billing_paystack_paid(v_charge, v_ref, v_band + 249999, 'ZAR', v_card, 'webhook', '{}'::jsonb);
-  if v_j->>'outcome' <> 'refused' then v_fail := v_fail || format('P2 another amount: %s', v_j) || E'\n'; end if;
+  -- Each its own transaction (reference), as Paystack reports them.
+  v_j := public.billing_paystack_paid(v_charge, replace(v_ref, '-1761150000000', '-1761150000020'), v_band + 250000, 'NGN', v_card, 'webhook', '{}'::jsonb);
+  if v_j->>'outcome' <> 'refund' then v_fail := v_fail || format('P2 another currency: %s', v_j) || E'\n'; end if;
+  v_j := public.billing_paystack_paid(v_charge, replace(v_ref, '-1761150000000', '-1761150000021'), v_band + 249999, 'ZAR', v_card, 'webhook', '{}'::jsonb);
+  if v_j->>'outcome' <> 'refund' then v_fail := v_fail || format('P2 another amount: %s', v_j) || E'\n'; end if;
   if (select status from public.billing_charges where id = v_charge) <> 'pending'
      or exists (select 1 from public.billing_invoices where charge_id = v_charge)
      or exists (select 1 from public.billing_cards where org_id = c_gf) then
@@ -147,6 +158,19 @@ begin
      or (select count(*) from public.billing_payments where charge_id = v_charge and outcome = 'duplicate') <> 1 then
     v_fail := v_fail || 'P3 not one payment and one duplicate in the log' || E'\n';
   end if;
+  ---------------------------------------------------------------- P10 money back (a second payment)
+  v_j := public.billing_paystack_paid(v_charge, replace(v_ref, '-1761150000000', '-1761150000009'),
+                                      v_band + 250000, 'ZAR', v_card, 'webhook', '{}'::jsonb);
+  if v_j->>'outcome' <> 'refund' or (select count(*) from public.billing_invoices where charge_id = v_charge) <> 1 then
+    v_fail := v_fail || format('P10 a second payment for a paid charge: %s', v_j) || E'\n';
+  end if;
+  -- Reported again (a webhook resent): refunded once, not twice.
+  v_j := public.billing_paystack_paid(v_charge, replace(v_ref, '-1761150000000', '-1761150000009'),
+                                      v_band + 250000, 'ZAR', v_card, 'webhook', '{}'::jsonb);
+  if v_j->>'outcome' <> 'duplicate' then
+    v_fail := v_fail || format('P10 a refused payment reported again was refunded again: %s', v_j) || E'\n';
+  end if;
+
   select md5(string_agg(module_code || enabled::text, ',' order by module_code)) into v_modules_after
     from public.company_modules where org_id = c_gf;
   if v_modules_after is distinct from v_modules_before then
@@ -181,6 +205,8 @@ begin
   end;
 
   ---------------------------------------------------------------- P5 the card check
+  -- A first card check, replaced by a second before it was paid (P10).
+  v_old := (public.billing_start_card_check('first@example.com')->>'charge_id')::uuid;
   v_j := public.billing_start_card_check('cards@example.com');
   reset role;
   perform set_config('request.jwt.claims', '', true);
@@ -188,6 +214,14 @@ begin
   if (v_j->>'total_cents')::bigint <> 100
      or (select reason from public.billing_charges where id = v_charge) <> 'card' then
     v_fail := v_fail || format('P5 card check: %s', v_j) || E'\n';
+  end if;
+  select md5(string_agg(authorization_code, ',')) into v_cards from public.billing_cards where org_id = c_gf;
+  v_j := public.billing_paystack_paid(v_old,
+           'TKD-' || left(replace(c_gf::text, '-', ''), 8) || '-' || replace(v_old::text, '-', '') || '-1761150000010',
+           100, 'ZAR', v_card || '{"authorization_code": "AUTH_pstestold"}'::jsonb, 'webhook', '{}'::jsonb);
+  if (select status from public.billing_charges where id = v_old) <> 'cancelled' or v_j->>'outcome' <> 'refund'
+     or (select md5(string_agg(authorization_code, ',')) from public.billing_cards where org_id = c_gf) is distinct from v_cards then
+    v_fail := v_fail || format('P10 a payment for a replaced charge: %s', v_j) || E'\n';
   end if;
   select count(*) into v_n from public.billing_invoices where org_id = c_gf;
   v_ref := 'TKD-' || left(replace(c_gf::text, '-', ''), 8) || '-' || replace(v_charge::text, '-', '') || '-1761150000001';
@@ -250,6 +284,14 @@ begin
                     and provider = 'paystack' and provider_payment_id like 'TKD-%') then
     v_fail := v_fail || 'P7 the failure was not logged with its reference' || E'\n';
   end if;
+  -- P11 the same try reported failed again: nothing more.
+  select attempts into v_att from public.billing_charges where id = v_renewal;
+  select count(*) into v_emails from public.message_outbox where related_id = v_renewal;
+  perform public.billing_record_failure(v_renewal, 'failed', 'Insufficient funds', 'verify', null);
+  if (select attempts from public.billing_charges where id = v_renewal) <> v_att
+     or (select count(*) from public.message_outbox where related_id = v_renewal) <> v_emails then
+    v_fail := v_fail || 'P11 one failed try was counted or emailed twice' || E'\n';
+  end if;
   v_j := public.billing_prepare_due(now());
   if exists (select 1 from jsonb_array_elements(v_j->'charge') x where (x->>'charge_id')::uuid = v_renewal) then
     v_fail := v_fail || 'P7 a failed renewal was tried again the same day' || E'\n';
@@ -258,10 +300,30 @@ begin
   if not exists (select 1 from jsonb_array_elements(v_j->'charge') x where (x->>'charge_id')::uuid = v_renewal) then
     v_fail := v_fail || 'P7 the day-3 retry was not handed out' || E'\n';
   end if;
+  update public.billing_charges set provider_reference =
+    'TKD-' || left(replace(c_gf::text, '-', ''), 8) || '-' || replace(v_renewal::text, '-', '') || '-1761150000004'
+   where id = v_renewal;
   perform public.billing_record_failure(v_renewal, 'failed', 'Insufficient funds', 'charge', null);
   if (select next_retry_at from public.billing_charges where id = v_renewal) <> v_day + interval '7 days' then
     v_fail := v_fail || 'P7 the second retry is not on day 7' || E'\n';
   end if;
+  -- P11 day 7: the grace period has run out, but the card is still to be
+  -- tried that morning, so the account is not locked yet.
+  v_j := public.billing_prepare_due(v_day + interval '7 days' + interval '6 hours');
+  if (select status from public.company_account where org_id = c_gf) <> 'past_due'
+     or not exists (select 1 from jsonb_array_elements(v_j->'charge') x where (x->>'charge_id')::uuid = v_renewal) then
+    v_fail := v_fail || format('P11 day 7: locked before the last try, or not tried: %s', (select status from public.company_account where org_id = c_gf)) || E'\n';
+  end if;
+  -- ...but a retry day that passed unsettled (stuck with Paystack, say)
+  -- does not keep the account open.
+  v_j := public.billing_prepare_due(v_day + interval '8 days' + interval '6 hours');
+  if (select status from public.company_account where org_id = c_gf) <> 'read_only' then
+    v_fail := v_fail || 'P11 a retry day that passed unsettled kept the account open' || E'\n';
+  end if;
+  update public.company_account set status = 'past_due', read_only_since = null where org_id = c_gf;
+  update public.billing_charges set provider_reference =
+    'TKD-' || left(replace(c_gf::text, '-', ''), 8) || '-' || replace(v_renewal::text, '-', '') || '-1761150000005'
+   where id = v_renewal;
   perform public.billing_record_failure(v_renewal, 'failed', 'Insufficient funds', 'charge', null);
   if (select status from public.billing_charges where id = v_renewal) <> 'failed'
      or (select next_retry_at from public.billing_charges where id = v_renewal) is not null then
@@ -281,6 +343,50 @@ begin
                        and period_start >= v_ts and period_end = period_start + interval '1 month') then
     v_fail := v_fail || format('P7 paying after the lapse: %s', v_j) || E'\n';
   end if;
+
+  ---------------------------------------------------------------- P12 more reps
+  perform set_config('request.jwt.claims', json_build_object('sub', v_admin, 'role', 'authenticated')::text, true);
+  set local role authenticated;
+  -- 6 places: always the next band up from a company of 1 to 5 reps.
+  v_j := public.billing_request_change(6, '{}'::jsonb);
+  reset role;
+  if v_j is null then
+    v_fail := v_fail || 'P12 more reps mid-period were not charged' || E'\n';
+  else
+    update public.billing_charges set provider_tried_at = now() where id = (v_j->>'charge_id')::uuid;
+    set local role authenticated;
+    begin
+      perform public.billing_request_change(7, '{}'::jsonb);
+      v_fail := v_fail || 'P12 a second change while one is being paid was accepted' || E'\n';
+    exception when sqlstate '22023' then null;
+    end;
+    reset role;
+  end if;
+  update public.billing_charges set status = 'cancelled' where org_id = c_gf and reason = 'change' and status = 'pending';
+  update public.company_account set period_start = now() - interval '1 month', period_end = now() - interval '1 minute'
+   where org_id = c_gf;
+  set local role authenticated;
+  begin
+    perform public.billing_request_change(6, '{}'::jsonb);
+    v_fail := v_fail || 'P12 more reps were accepted after the period ended (free)' || E'\n';
+  exception when sqlstate '22023' then null;
+  end;
+  reset role;
+  perform set_config('request.jwt.claims', '', true);
+
+  ---------------------------------------------------------------- P13 one company's error
+  update public.company_account
+     set status = 'active', plan = public.billing_plan(16, '{}'::jsonb), cancel_at_period_end = false,
+         period_start = now() - interval '1 month', period_end = now() - interval '2 minutes'
+   where org_id = c_gf;
+  begin
+    v_j := public.billing_prepare_due(now());
+    if not exists (select 1 from jsonb_array_elements(v_j->'errors') e where (e->>'org_id')::uuid = c_gf) then
+      v_fail := v_fail || format('P13 a renewal that cannot be priced was not reported: %s', v_j) || E'\n';
+    end if;
+  exception when others then
+    v_fail := v_fail || format('P13 one company''s error stopped the daily run: %s', sqlerrm) || E'\n';
+  end;
 
   ---------------------------------------------------------------- P8 pilot end
   update public.company_account set status = 'trial', trial_ends_at = now() - interval '1 hour' where org_id = c_gf;

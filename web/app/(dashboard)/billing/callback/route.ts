@@ -38,6 +38,8 @@ export async function GET(request: Request) {
       return back(outcome.reason === "card" ? "card=updated" : "checkout=paid");
     case "failed":
       return back("checkout=failed");
+    case "refunded":
+      return back("checkout=refunded");
     case "refused":
       return back("checkout=refused");
     default:

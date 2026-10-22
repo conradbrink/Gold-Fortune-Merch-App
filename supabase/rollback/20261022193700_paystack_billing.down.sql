@@ -29,6 +29,7 @@ update public.platform_settings set value = '[1, 3, 7]'::jsonb,
 
 drop index public.billing_charges_provider_reference;
 alter table public.billing_charges drop column provider_reference;
+alter table public.billing_charges drop column provider_tried_at;
 alter table public.billing_charges drop constraint billing_charges_reason_check;
 alter table public.billing_charges add constraint billing_charges_reason_check
   check (reason = any (array['subscribe'::text, 'renewal'::text, 'change'::text]));
@@ -295,5 +296,62 @@ begin
 
   return jsonb_build_object('trials_ended', v_trials, 'grace_ended', v_grace, 'cancelled', v_ended,
                             'renewals_written', v_renew, 'charge', v_due);
+end;
+$function$;
+
+-- Changes the plan. Less takes effect at the next renewal (recorded now);
+-- more is a pending charge for the rest of this period, which the server
+-- charges to the card at once. Returns the charge, or null when nothing is
+-- charged today.
+create or replace function public.billing_request_change(p_seats integer, p_addons jsonb)
+returns jsonb
+language plpgsql
+volatile
+security definer
+set search_path to 'public'
+as $function$
+declare
+  v_org  uuid := public.billing_my_org();
+  a      public.company_account;
+  v_plan jsonb := public.billing_plan(p_seats, p_addons);
+  v_c    jsonb;
+  v_used int;
+  v_id   uuid;
+begin
+  select * into a from public.company_account where org_id = v_org for update;
+  if a.status <> 'active' then
+    raise exception 'The plan can be changed once the account is paid up.' using errcode = '22023';
+  end if;
+  v_used := public.billing_seats_used(v_org, v_plan);
+  if (v_plan->>'seats')::int < v_used then
+    raise exception 'Your company has % active users; deactivate some before choosing fewer.', v_used
+      using errcode = '22023';
+  end if;
+
+  v_c := public.billing_change_lines(v_org, v_plan, now());
+
+  if not (v_c->>'more')::boolean then
+    update public.company_account
+       set plan_next = case when (v_c->>'less')::boolean then v_c->'plan_next' end, updated_at = now()
+     where org_id = v_org;
+    return null;
+  end if;
+  if (v_c->>'total_cents')::bigint <= 0 then
+    -- More, but nothing left of the period to charge for.
+    update public.company_account
+       set plan = v_c->'plan_after', plan_next = v_c->'plan_next', updated_at = now()
+     where org_id = v_org;
+    return null;
+  end if;
+
+  update public.billing_charges set status = 'cancelled', updated_at = now()
+   where org_id = v_org and reason = 'change' and status = 'pending';
+  insert into public.billing_charges
+    (org_id, reason, period, plan_after, plan_next, period_start, period_end, lines, total_cents, billing_email)
+  values (v_org, 'change', a.period, v_c->'plan_after', v_c->'plan_next', a.period_start, a.period_end,
+          v_c->'lines', (v_c->>'total_cents')::bigint, a.billing_email)
+  returning id into v_id;
+  return jsonb_build_object('charge_id', v_id, 'total_cents', (v_c->>'total_cents')::bigint,
+    'item_name', public.platform_setting('billing_item_name') #>> '{}');
 end;
 $function$;

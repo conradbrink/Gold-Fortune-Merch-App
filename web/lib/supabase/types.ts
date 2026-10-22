@@ -1263,6 +1263,7 @@ export type Database = {
           plan_after: Json
           plan_next: Json | null
           provider_reference: string | null
+          provider_tried_at: string | null
           reason: string
           status: string
           total_cents: number
@@ -1284,6 +1285,7 @@ export type Database = {
           plan_after: Json
           plan_next?: Json | null
           provider_reference?: string | null
+          provider_tried_at?: string | null
           reason: string
           status?: string
           total_cents: number
@@ -1305,6 +1307,7 @@ export type Database = {
           plan_after?: Json
           plan_next?: Json | null
           provider_reference?: string | null
+          provider_tried_at?: string | null
           reason?: string
           status?: string
           total_cents?: number
