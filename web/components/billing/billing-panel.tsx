@@ -83,7 +83,7 @@ export function BillingPanel(props: Props) {
   return (
     <>
       <CheckoutNotice note={props.checkout} cardUpdated={props.cardUpdated} />
-      {props.checkout === "pending" && <AutoRefresh />}
+      {props.checkout === "pending" ? <AutoRefresh /> : (props.checkout || props.cardUpdated) && <ForgetNotice />}
 
       <CurrentPlan {...props} />
       {owing && <PaymentFailed {...props} />}
@@ -127,6 +127,17 @@ function CheckoutNotice({ note, cardUpdated }: { note: CheckoutNote | null; card
     default:
       return null;
   }
+}
+
+/**
+ * A notice from the way back from Paystack is said once: the address loses
+ * it, so a later refresh (after changing reps, say) does not repeat it.
+ */
+function ForgetNotice() {
+  useEffect(() => {
+    window.history.replaceState(window.history.state, "", window.location.pathname);
+  }, []);
+  return null;
 }
 
 /** Back from Paystack before the payment was confirmed: look again every few seconds, for a minute. */
@@ -228,7 +239,7 @@ function CurrentPlan(props: Props) {
               </span>
             )}
           </Row>
-          {paying && periodEnd && nextCents !== null && (
+          {account.status === "active" && periodEnd && nextCents !== null && (
             <Row label="Next payment">
               {account.cancelAtPeriodEnd ? (
                 <>Your plan ends on {formatDate(periodEnd)}. Nothing more will be charged.</>
