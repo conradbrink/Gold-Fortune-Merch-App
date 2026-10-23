@@ -22,7 +22,7 @@ import {
   updateServiceItem,
   type ServiceItem,
 } from "@/lib/service-items";
-import { validPrice } from "@/lib/money-docs";
+import { validPrice, validUnit } from "@/lib/money-docs";
 import { formatMoney } from "@/lib/money";
 import { useCompanyConfig, useTerms } from "@/lib/use-company-config";
 import { lower } from "@/lib/terms";
@@ -81,6 +81,8 @@ export default function PriceListPage() {
     if (d.name.trim() === "") return "An item needs a name.";
     if (d.unit.trim() === "") return `Say what it is charged per: each, hour, ${lower(t.job.one)}, m²…`;
     if (d.unit.trim().length > 20) return "A unit is up to 20 characters.";
+    // Every quote, invoice and contract line made from the item copies its unit.
+    if (!validUnit(d.unit)) return "A unit is a word, like each, box or hour, not a price or a number.";
     if (d.price.trim() !== "" && !validPrice(d.price)) return "A price is zero or more, to the cent.";
     return null;
   }

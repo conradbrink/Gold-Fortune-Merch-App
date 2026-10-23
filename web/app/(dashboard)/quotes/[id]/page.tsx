@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { Send } from "lucide-react";
+import { Pencil, Send } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -35,6 +35,7 @@ import {
   quoteClientName,
   quoteTotals,
   setQuoteStatus,
+  whyQuoteIsFixed,
   type QuoteDetail,
 } from "@/lib/quotes";
 import { INVOICE_KIND_LABELS } from "@/lib/invoices";
@@ -47,7 +48,8 @@ import { lower } from "@/lib/terms";
 /**
  * One quote: what was offered, where it stands, and the way to getting paid.
  *
- * The status buttons are only the ones that make sense next. An accepted quote
+ * The status buttons are only the ones that make sense next. A draft or sent
+ * quote can be changed; an accepted or declined one is reopened first. An accepted quote
  * is invoiced here — in full, or as a deposit and then the balance where the
  * company takes deposits — or, for a quote of products, turned into an order
  * for the warehouse. The database checks every step again: an invoiced quote
@@ -95,7 +97,7 @@ export default function QuoteDetailPage() {
     loadSends();
   }, [loadSends]);
 
-  // "Save and send" on the new quote form lands here with ?send=1: open the
+  // "Save and send" on the quote form, new or changed, lands here with ?send=1: open the
   // send box once the quote is on screen, and take the mark out of the address
   // so a refresh does not open it again.
   const status = detail?.quote.status;
@@ -192,6 +194,11 @@ export default function QuoteDetailPage() {
           {q.status !== "declined" && (
             <Button variant={q.status === "draft" ? "default" : "outline"} disabled={busy} onClick={() => setSending(true)}>
               <Send className="mr-1.5 h-4 w-4" /> Send quote
+            </Button>
+          )}
+          {whyQuoteIsFixed(q) === null && (
+            <Button variant="outline" disabled={busy} nativeButton={false} render={<Link href={`/quotes/${q.id}/edit`} />}>
+              <Pencil className="mr-1.5 h-4 w-4" /> Edit
             </Button>
           )}
           <Button
