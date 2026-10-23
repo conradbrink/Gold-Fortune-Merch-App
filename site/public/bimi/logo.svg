@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" version="1.2" baseProfile="tiny-ps" viewBox="0 0 64 64">
+  <title>Tickd</title>
+  <rect width="64" height="64" fill="#165455"/>
+  <path d="M15.5 34l8 8 17-19" fill="none" stroke="#F7F7F2" stroke-width="5.5" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M31.5 42l17-19M27.5 36l4 4" fill="none" stroke="#F5A524" stroke-width="5.5" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>
