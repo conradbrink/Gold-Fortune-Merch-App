@@ -2,6 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/lib/supabase/types";
 import { documentTotals, formatQty, lineTotal } from "@/lib/money-docs";
 import { drawMoneyPdf, paperDate, paperLines, paperMoney, vatRows, type Paper, type PdfSpec } from "@/lib/money-pdf";
+import { billingErrorMessage } from "@/lib/billing";
 
 /**
  * Everything the quote screens read and do.
@@ -10,8 +11,9 @@ import { drawMoneyPdf, paperDate, paperLines, paperMoney, vatRows, type Paper, t
  * address), and its lines are products (Distribution), items from the price
  * list, or free text. An accepted quote becomes an order (`quote_convert`,
  * products only) or is invoiced (`invoice_from_quote`: in full, a deposit, or
- * the final balance). See `20261007095715_quotes.sql` and
- * `20261008180000_invoicing_for_every_trade.sql`.
+ * the final balance). An edited draft or sent quote is saved in one step
+ * (`quote_save`). See `20261007095715_quotes.sql`,
+ * `20261008180000_invoicing_for_every_trade.sql` and `20261023141700_quote_save.sql`.
  */
 
 type Client = SupabaseClient<Database>;
@@ -198,11 +200,7 @@ export type QuoteHeader = {
   notes?: string;
 };
 
-/**
- * The first part of who the quote is for that the database would refuse, in
- * words, or null. Said before saving: an edited quote's lines are written
- * before its header, so a refusal there would come after them.
- */
+/** The first part of who the quote is for that the database would refuse, in words, or null: said before saving. */
 export function quoteHeaderProblem(input: Pick<QuoteHeader, "billTo">): string | null {
   if ("storeId" in input.billTo) return null;
   // Counted in characters, as the database counts them.
@@ -314,120 +312,34 @@ export function whyQuoteIsFixed(q: Pick<QuoteRow, "status">): string | null {
   return `This quote was ${q.status}. Reopen it on its page to change it.`;
 }
 
-type SavedLine = Pick<
-  QuoteLineRow,
-  "id" | "position" | "product_id" | "service_item_id" | "description" | "unit" | "qty" | "list_price" | "discount_pct" | "discount_amount"
->;
-
-/**
- * What saving an edited quote's lines writes, against the lines it has now.
- *
- * A line is the saved one with its id, or for a product the saved line of that
- * product (taken off and put back on is the same line: a quote holds a product
- * once). Anything else is new, written under the id the screen gave it, and a
- * saved line nothing on the screen is anymore goes. Unchanged lines are left alone.
- */
-export function planLineChanges(saved: SavedLine[], lines: (NewQuoteLine & { id: string })[]) {
-  const byId = new Map(saved.map((r) => [r.id, r]));
-  const byProduct = new Map(saved.filter((r) => r.product_id).map((r) => [r.product_id as string, r]));
-  const kept = new Set<string>();
-  const updates: { id: string; columns: ReturnType<typeof lineColumns> }[] = [];
-  const inserts: ({ id: string } & ReturnType<typeof lineColumns>)[] = [];
-  lines.forEach((l, i) => {
-    const columns = lineColumns(l, i + 1);
-    const row = byId.get(l.id) ?? (l.kind === "product" ? byProduct.get(l.productId) : undefined);
-    if (row && !kept.has(row.id)) {
-      kept.add(row.id);
-      // Every column the line writes, so a column added to lineColumns is compared too.
-      // Numerics come back from the database as strings ("2.00").
-      const same = (Object.keys(columns) as (keyof typeof columns)[]).every((k) =>
-        typeof columns[k] === "number" ? Number(row[k]) === columns[k] : row[k] === columns[k]
-      );
-      if (!same) updates.push({ id: row.id, columns });
-    } else {
-      inserts.push({ id: l.id, ...columns });
-    }
-  });
-  return { updates, inserts, deletes: saved.filter((r) => !kept.has(r.id)).map((r) => r.id) };
-}
-
-/** What a save says when a write it made touched nothing: refused by the database's row rules. */
-const NOT_SAVED =
-  "The quote was not saved. Reload the page to see where it stands: it may have just been accepted or changed, or your account may be read-only.";
-
 /**
  * Saves an edited draft or sent quote: who it is for, its details and its
- * lines. Its number, date and VAT rate stay as they were, and a sent quote
- * keeps its client: the link in the client's email shows the quote as it is
- * now, so a quote sent to one client never becomes another's.
+ * lines, in one step (`quote_save`), so a save that fails changes nothing.
+ * Its number, date and VAT rate stay as they were.
  *
- * `loadedAt` is the quote's `updated_at` when the form loaded it. Every save
- * writes the header, which moves it, so a save from a form opened before
- * somebody else's save (or a send, or an accept) is refused rather than
- * undoing theirs.
- *
- * Several requests and no transaction. The lines go first (changes and new
- * lines, then the ones taken off) and the header last, on condition that the
- * quote is still a draft or sent and unchanged since it was loaded; a write
- * the database's row rules turn away is reported, not taken for a success. A
- * failure part-way leaves a line too many rather than one missing, and saving
- * again from the same screen finishes the job: the lines are compared with the
- * database afresh, and a new line carries its own id.
+ * The database checks again that the quote is still a draft or sent and
+ * unchanged since the form loaded it (`loadedAt`, its `updated_at` then), so a
+ * save never undoes somebody else's, and a sent quote keeps its client: the
+ * link in the client's email shows the quote as it is now. Each line goes in
+ * under the id the screen gave it, a saved line under its own.
  */
 export async function updateQuote(
   supabase: Client,
   id: string,
-  input: QuoteHeader & { orgId: string; loadedAt: string; lines: (NewQuoteLine & { id: string })[] }
+  input: QuoteHeader & { loadedAt: string; lines: (NewQuoteLine & { id: string })[] }
 ) {
   if (input.lines.length === 0) {
     throw new Error("Add at least one line before saving the quote.");
   }
   const header = quoteHeaderProblem(input);
   if (header) throw new Error(header);
-  const [q, l] = await Promise.all([
-    supabase.from("quotes").select("status, updated_at").eq("id", id).single(),
-    supabase
-      .from("quote_lines")
-      .select("id, position, product_id, service_item_id, description, unit, qty, list_price, discount_pct, discount_amount")
-      .eq("quote_id", id),
-  ]);
-  fail(q.error);
-  fail(l.error);
-  const saved = q.data as { status: string; updated_at: string };
-  const fixed = whyQuoteIsFixed(saved);
-  if (fixed) throw new Error(fixed);
-  if (saved.updated_at !== input.loadedAt) {
-    throw new Error(
-      "This quote was changed after you opened it, perhaps by someone else or by sending it. Reload the page to see it as it is now, then make your changes again."
-    );
-  }
-
-  const plan = planLineChanges((l.data ?? []) as SavedLine[], input.lines);
-  const [updated, inserted] = await Promise.all([
-    Promise.all(plan.updates.map((u) => supabase.from("quote_lines").update(u.columns).eq("id", u.id).select("id"))),
-    plan.inserts.length > 0
-      ? supabase.from("quote_lines").insert(plan.inserts.map((row) => ({ org_id: input.orgId, quote_id: id, ...row })))
-      : Promise.resolve({ error: null }),
-  ]);
-  fail(updated.find((r) => r.error)?.error ?? null);
-  fail(inserted.error);
-  if (updated.some((r) => (r.data ?? []).length !== 1)) throw new Error(NOT_SAVED);
-  if (plan.deletes.length > 0) {
-    const { data, error } = await supabase.from("quote_lines").delete().in("id", plan.deletes).select("id");
-    fail(error);
-    if ((data ?? []).length !== plan.deletes.length) throw new Error(NOT_SAVED);
-  }
-
-  const { store_id, customer_name, customer_address, contact_email, ...details } = headerColumns(input);
-  const { data, error } = await supabase
-    .from("quotes")
-    .update(saved.status === "sent" ? details : { store_id, customer_name, customer_address, contact_email, ...details })
-    .eq("id", id)
-    .eq("updated_at", input.loadedAt)
-    .in("status", ["draft", "sent"])
-    .select("id");
-  fail(error);
-  if ((data ?? []).length !== 1) throw new Error(NOT_SAVED);
+  const { error } = await supabase.rpc("quote_save", {
+    p_quote: id,
+    p_loaded_at: input.loadedAt,
+    p_header: headerColumns(input),
+    p_lines: input.lines.map((l, i) => ({ id: l.id, ...lineColumns(l, i + 1) })),
+  });
+  if (error) throw new Error(billingErrorMessage(error) ?? error.message);
 }
 
 export async function setQuoteStatus(

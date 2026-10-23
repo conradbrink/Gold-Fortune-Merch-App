@@ -7691,6 +7691,10 @@ export type Database = {
         Args: { p_quote_id: string }
         Returns: string
       }
+      quote_save: {
+        Args: { p_quote: string; p_loaded_at: string; p_header: Json; p_lines: Json }
+        Returns: undefined
+      }
       activity_feed: {
         Args: {
           p_from: string
