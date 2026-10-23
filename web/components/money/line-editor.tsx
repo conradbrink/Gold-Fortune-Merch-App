@@ -4,7 +4,7 @@ import { Plus, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";
-import { documentTotals, lineTotal, validPrice, validQty } from "@/lib/money-docs";
+import { documentTotals, lineTotal, validPrice, validQty, validUnit } from "@/lib/money-docs";
 import { formatMoney } from "@/lib/money";
 import type { ServiceItem } from "@/lib/service-items";
 
@@ -24,11 +24,11 @@ export type EditableLine = {
   price: string;
 };
 
-let seq = 0;
 export function blankLine(item?: Pick<ServiceItem, "id" | "name" | "unit" | "unit_price"> | null): EditableLine {
-  seq += 1;
   return {
-    key: `l${Date.now()}-${seq}`,
+    // A real id, not only a React key: an edited quote saves a new line under
+    // it, so saving again after a failure finds the line instead of adding it twice.
+    key: crypto.randomUUID(),
     serviceItemId: item?.id ?? null,
     description: item?.name ?? "",
     unit: item?.unit ?? "",
@@ -46,6 +46,9 @@ export function lineProblem(lines: EditableLine[]): string | null {
   const chars = (v: string) => [...v.trim()].length;
   if (lines.some((l) => chars(l.description) > 500)) return "A line's description is 500 characters at most.";
   if (lines.some((l) => chars(l.unit ?? "") > 20)) return "A unit is 20 characters at most, like hour or each.";
+  if (lines.some((l) => !validUnit(l.unit ?? ""))) {
+    return "A unit is a word, like each, box or hour. The price goes in the Price box.";
+  }
   if (lines.some((l) => !validQty(l.qty))) return "A quantity is more than zero, to two decimals.";
   if (lines.some((l) => !validPrice(l.price))) return "Every line needs a price, to the cent.";
   return null;
@@ -63,6 +66,8 @@ export function editableTotals(
     inclusive
   );
 }
+
+const phoneLabel = "mb-1 block text-xs font-medium text-muted-foreground sm:hidden";
 
 export function LineEditor({
   lines,
@@ -104,7 +109,7 @@ export function LineEditor({
           {lines.map((l) => (
             <div
               key={l.key}
-              className="grid grid-cols-[1fr_1fr_auto] items-center gap-2 border-b border-border pb-2 sm:grid-cols-[1fr_5rem_5.5rem_7rem_6.5rem_2.5rem] sm:border-0 sm:pb-0"
+              className="grid grid-cols-[1fr_1fr_auto] items-end gap-2 border-b border-border pb-2 sm:grid-cols-[1fr_5rem_5.5rem_7rem_6.5rem_2.5rem] sm:items-center sm:border-0 sm:pb-0"
             >
               <Input
                 className="col-span-3 sm:col-span-1"
@@ -114,34 +119,43 @@ export function LineEditor({
                 aria-label="Description"
                 disabled={disabled}
               />
-              <Input
-                type="number"
-                min={0}
-                step="0.25"
-                value={l.qty}
-                onChange={(e) => update(l.key, { qty: e.target.value })}
-                placeholder="Qty"
-                aria-label="Quantity"
-                disabled={disabled}
-              />
-              <Input
-                className="col-span-2 sm:col-span-1"
-                value={l.unit}
-                onChange={(e) => update(l.key, { unit: e.target.value })}
-                placeholder="each"
-                aria-label="Unit"
-                disabled={disabled}
-              />
-              <Input
-                type="number"
-                min={0}
-                step="0.01"
-                value={l.price}
-                onChange={(e) => update(l.key, { price: e.target.value })}
-                placeholder="0.00"
-                aria-label="Price per unit"
-                disabled={disabled}
-              />
+              {/* On a phone the headings above are hidden, so each box says what it is. */}
+              <label className="block">
+                <span className={phoneLabel}>Qty</span>
+                <Input
+                  type="number"
+                  min={0}
+                  step="0.25"
+                  value={l.qty}
+                  onChange={(e) => update(l.key, { qty: e.target.value })}
+                  placeholder="Qty"
+                  aria-label="Quantity"
+                  disabled={disabled}
+                />
+              </label>
+              <label className="col-span-2 block sm:col-span-1">
+                <span className={phoneLabel}>Unit</span>
+                <Input
+                  value={l.unit}
+                  onChange={(e) => update(l.key, { unit: e.target.value })}
+                  placeholder="each"
+                  aria-label="Unit"
+                  disabled={disabled}
+                />
+              </label>
+              <label className="block">
+                <span className={phoneLabel}>{pricesIncludeVat ? "Price incl. VAT" : "Price"}</span>
+                <Input
+                  type="number"
+                  min={0}
+                  step="0.01"
+                  value={l.price}
+                  onChange={(e) => update(l.key, { price: e.target.value })}
+                  placeholder="0.00"
+                  aria-label="Price per unit"
+                  disabled={disabled}
+                />
+              </label>
               <span className="text-right text-sm tabular-nums max-sm:col-span-1">
                 {formatMoney(lineTotal(Number(l.qty) || 0, Number(l.price) || 0), currency)}
               </span>

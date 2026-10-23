@@ -3,7 +3,7 @@
 // the money suite (supabase/tests/money.sql) checks against the database.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { ageingKey, documentTotals, formatQty, grossPrice, lineTotal, validPrice, validQty } from "@/lib/money-docs";
+import { ageingKey, documentTotals, formatQty, grossPrice, lineTotal, validPrice, validQty, validUnit } from "@/lib/money-docs";
 import { invoiceSources, usesPriceList, workflowPreset, MONEY_WORKFLOWS } from "@/lib/money-workflow";
 import { toModuleSet } from "@/lib/modules";
 import { DEFAULT_TERMS } from "@/lib/terms";
@@ -43,6 +43,12 @@ test("quantities and prices the database takes", () => {
   assert.ok(!validPrice("-1") && !validPrice("1.005") && !validPrice(""));
   assert.equal(formatQty(2), "2");
   assert.equal(formatQty(1.5), "1.5");
+});
+
+test("a unit is a word: a price typed in the unit box is refused", () => {
+  // A quote printed "1 845.50" in the Qty column: the price had gone in the unit box too.
+  assert.ok(!validUnit("845.50") && !validUnit("120.25") && !validUnit("12") && !validUnit(" 1,500.00 "));
+  assert.ok(validUnit("") && validUnit("each") && validUnit("box") && validUnit("hour") && validUnit("m²") && validUnit("1x12"));
 });
 
 test("ageing columns by days past due", () => {

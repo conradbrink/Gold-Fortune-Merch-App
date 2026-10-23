@@ -72,6 +72,15 @@ export function validQty(raw: string): boolean {
   return raw.trim() !== "" && Number.isFinite(n) && n > 0 && Math.abs(Math.round(n * 100) - n * 100) < 1e-6;
 }
 
+/**
+ * Whether a typed unit reads as a unit: a word like each, box or hour. Only
+ * figures (845.50, 12) is a price or a quantity put in the wrong box, and the
+ * document would print it after the quantity: "1 845.50".
+ */
+export function validUnit(raw: string): boolean {
+  return !/^[\d\s.,]+$/.test(raw.trim());
+}
+
 /** Whether a typed price is one the database takes: zero or more, to the cent. */
 export function validPrice(raw: string): boolean {
   const n = Number(raw);

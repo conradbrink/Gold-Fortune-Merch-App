@@ -184,6 +184,63 @@ export type NewQuoteLine =
   | { kind: "service"; serviceItemId: string; description: string; unit: string | null; qty: number; price: number }
   | { kind: "text"; description: string; unit: string | null; qty: number; price: number };
 
+/** Who a quote is for and the rest of its header, as a new quote and an edited one both write it. */
+export type QuoteHeader = {
+  billTo: { storeId: string } | { name: string; address?: string; email?: string };
+  contactName?: string;
+  contactPhone?: string;
+  repId?: string | null;
+  validUntil?: string | null;
+  deliveryAddress?: string | null;
+  notes?: string;
+};
+
+function headerColumns(input: QuoteHeader) {
+  const forStore = "storeId" in input.billTo;
+  return {
+    store_id: forStore ? (input.billTo as { storeId: string }).storeId : null,
+    customer_name: forStore ? null : (input.billTo as { name: string }).name.trim(),
+    customer_address: forStore ? null : (input.billTo as { address?: string }).address?.trim() || null,
+    contact_email: forStore ? null : (input.billTo as { email?: string }).email?.trim() || null,
+    contact_name: input.contactName || null,
+    contact_phone: input.contactPhone || null,
+    rep_id: input.repId || null,
+    valid_until: input.validUntil || null,
+    delivery_address: input.deliveryAddress || null,
+    notes: input.notes || null,
+  };
+}
+
+/**
+ * What a line writes. Every column is spelt out, so an edited line drops what
+ * it no longer has (a discount taken off, a unit cleared) rather than keeping it.
+ */
+export function lineColumns(l: NewQuoteLine, position: number) {
+  return l.kind === "product"
+    ? {
+        position,
+        product_id: l.productId,
+        service_item_id: null,
+        description: null,
+        unit: null,
+        qty: l.qty,
+        list_price: l.listPrice,
+        discount_pct: l.discountAmount > 0 ? 0 : l.discountPct,
+        discount_amount: l.discountAmount,
+      }
+    : {
+        position,
+        product_id: null,
+        service_item_id: l.kind === "service" ? l.serviceItemId : null,
+        description: l.description.trim(),
+        unit: l.unit?.trim() || null,
+        qty: l.qty,
+        list_price: l.price,
+        discount_pct: 0,
+        discount_amount: 0,
+      };
+}
+
 /**
  * Creates a quote and its lines.
  *
@@ -193,18 +250,7 @@ export type NewQuoteLine =
  */
 export async function createQuote(
   supabase: Client,
-  input: {
-    orgId: string;
-    prefix: string;
-    billTo: { storeId: string } | { name: string; address?: string; email?: string };
-    contactName?: string;
-    contactPhone?: string;
-    repId?: string | null;
-    validUntil?: string | null;
-    deliveryAddress?: string | null;
-    notes?: string;
-    lines: NewQuoteLine[];
-  }
+  input: QuoteHeader & { orgId: string; prefix: string; lines: NewQuoteLine[] }
 ): Promise<string> {
   if (input.lines.length === 0) {
     throw new Error("Add at least one line before saving the quote.");
@@ -216,53 +262,17 @@ export async function createQuote(
   });
   fail(numberError);
 
-  const forStore = "storeId" in input.billTo;
   const { data: created, error } = await supabase
     .from("quotes")
-    .insert({
-      org_id: input.orgId,
-      quote_number: number as string,
-      store_id: forStore ? (input.billTo as { storeId: string }).storeId : null,
-      customer_name: forStore ? null : (input.billTo as { name: string }).name.trim(),
-      customer_address: forStore ? null : (input.billTo as { address?: string }).address?.trim() || null,
-      contact_email: forStore ? null : (input.billTo as { email?: string }).email?.trim() || null,
-      contact_name: input.contactName || null,
-      contact_phone: input.contactPhone || null,
-      rep_id: input.repId || null,
-      valid_until: input.validUntil || null,
-      delivery_address: input.deliveryAddress || null,
-      notes: input.notes || null,
-    })
+    .insert({ org_id: input.orgId, quote_number: number as string, ...headerColumns(input) })
     .select("id")
     .single();
   fail(error);
   const quoteId = (created as { id: string }).id;
 
-  const { error: linesError } = await supabase.from("quote_lines").insert(
-    input.lines.map((l, i) =>
-      l.kind === "product"
-        ? {
-            org_id: input.orgId,
-            quote_id: quoteId,
-            position: i + 1,
-            product_id: l.productId,
-            qty: l.qty,
-            list_price: l.listPrice,
-            discount_pct: l.discountAmount > 0 ? 0 : l.discountPct,
-            discount_amount: l.discountAmount,
-          }
-        : {
-            org_id: input.orgId,
-            quote_id: quoteId,
-            position: i + 1,
-            service_item_id: l.kind === "service" ? l.serviceItemId : null,
-            description: l.description.trim(),
-            unit: l.unit?.trim() || null,
-            qty: l.qty,
-            list_price: l.price,
-          }
-    )
-  );
+  const { error: linesError } = await supabase
+    .from("quote_lines")
+    .insert(input.lines.map((l, i) => ({ org_id: input.orgId, quote_id: quoteId, ...lineColumns(l, i + 1) })));
   if (linesError) {
     // Take the empty draft back out, so a retry does not leave a second quote
     // with nothing on it. Its number is spent; a gap in quote numbers is
@@ -271,6 +281,107 @@ export async function createQuote(
     throw new Error(linesError.message);
   }
   return quoteId;
+}
+
+/**
+ * Why a quote can no longer be changed, in words, or null while it is a draft
+ * or sent. The same rule `quote_lines_enforce_org` keeps in the database.
+ */
+export function whyQuoteIsFixed(q: Pick<QuoteRow, "status">): string | null {
+  if (q.status === "draft" || q.status === "sent") return null;
+  if (q.status === "converted") return "This quote is already an order. Change the order instead.";
+  return `This quote was ${q.status}. Reopen it to change it.`;
+}
+
+type SavedLine = Pick<
+  QuoteLineRow,
+  "id" | "position" | "product_id" | "service_item_id" | "description" | "unit" | "qty" | "list_price" | "discount_pct" | "discount_amount"
+>;
+
+/**
+ * What saving an edited quote's lines writes, against the lines it has now.
+ *
+ * A line is the saved one with its id, or for a product the saved line of that
+ * product (taken off and put back on is the same line: a quote holds a product
+ * once). Anything else is new, written under the id the screen gave it, and a
+ * saved line nothing on the screen is anymore goes. Unchanged lines are left alone.
+ */
+export function planLineChanges(saved: SavedLine[], lines: (NewQuoteLine & { id: string })[]) {
+  const byId = new Map(saved.map((r) => [r.id, r]));
+  const byProduct = new Map(saved.filter((r) => r.product_id).map((r) => [r.product_id as string, r]));
+  const kept = new Set<string>();
+  const updates: { id: string; columns: ReturnType<typeof lineColumns> }[] = [];
+  const inserts: ({ id: string } & ReturnType<typeof lineColumns>)[] = [];
+  lines.forEach((l, i) => {
+    const columns = lineColumns(l, i + 1);
+    const row = byId.get(l.id) ?? (l.kind === "product" ? byProduct.get(l.productId) : undefined);
+    if (row && !kept.has(row.id)) {
+      kept.add(row.id);
+      const same =
+        row.position === columns.position &&
+        row.product_id === columns.product_id &&
+        row.service_item_id === columns.service_item_id &&
+        row.description === columns.description &&
+        row.unit === columns.unit &&
+        Number(row.qty) === columns.qty &&
+        Number(row.list_price) === columns.list_price &&
+        Number(row.discount_pct) === columns.discount_pct &&
+        Number(row.discount_amount) === columns.discount_amount;
+      if (!same) updates.push({ id: row.id, columns });
+    } else {
+      inserts.push({ id: l.id, ...columns });
+    }
+  });
+  return { updates, inserts, deletes: saved.filter((r) => !kept.has(r.id)).map((r) => r.id) };
+}
+
+/**
+ * Saves an edited draft or sent quote: who it is for, its details and its
+ * lines. Its number, date and VAT rate stay as they were.
+ *
+ * Line by line and no transaction, as an order's lines are edited. The order
+ * of the writes means a failure part-way leaves a line too many, never one
+ * missing, and saving again from the same screen finishes the job: the lines
+ * are compared with the database afresh each time, and a new line carries its
+ * own id.
+ */
+export async function updateQuote(
+  supabase: Client,
+  id: string,
+  input: QuoteHeader & { orgId: string; lines: (NewQuoteLine & { id: string })[] }
+) {
+  if (input.lines.length === 0) {
+    throw new Error("Add at least one line before saving the quote.");
+  }
+  const [q, l] = await Promise.all([
+    supabase.from("quotes").select("status").eq("id", id).single(),
+    supabase
+      .from("quote_lines")
+      .select("id, position, product_id, service_item_id, description, unit, qty, list_price, discount_pct, discount_amount")
+      .eq("quote_id", id),
+  ]);
+  fail(q.error);
+  fail(l.error);
+  const fixed = whyQuoteIsFixed(q.data as { status: string });
+  if (fixed) throw new Error(fixed);
+
+  const plan = planLineChanges((l.data ?? []) as SavedLine[], input.lines);
+  const updated = await Promise.all(
+    plan.updates.map((u) => supabase.from("quote_lines").update(u.columns).eq("id", u.id))
+  );
+  fail(updated.find((r) => r.error)?.error ?? null);
+  if (plan.inserts.length > 0) {
+    const { error } = await supabase
+      .from("quote_lines")
+      .insert(plan.inserts.map((row) => ({ org_id: input.orgId, quote_id: id, ...row })));
+    fail(error);
+  }
+  if (plan.deletes.length > 0) {
+    const { error } = await supabase.from("quote_lines").delete().in("id", plan.deletes);
+    fail(error);
+  }
+  const { error } = await supabase.from("quotes").update(headerColumns(input)).eq("id", id);
+  fail(error);
 }
 
 export async function setQuoteStatus(
