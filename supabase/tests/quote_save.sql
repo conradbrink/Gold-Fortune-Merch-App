@@ -16,6 +16,8 @@
 --   Q8  An accepted quote is refused with the words the screen shows.
 --   Q9  An active user of another company cannot touch it.
 --   Q10 security invoker, a fixed search_path, no execute for anon or PUBLIC.
+--   Q11 A line that stays keeps when it was added; a new line is added now.
+--   Q12 A converted quote is refused with the words the screen shows.
 --
 -- Every call that should fail runs in its own block, as PostgREST runs each
 -- call in its own transaction, so whatever it did before failing is undone
@@ -216,6 +218,40 @@ begin
   if not exists (select 1 from public.module_assignments where kind = 'function' and name = 'quote_save' and module_code = 'invoicing') then
     v_fail := v_fail || 'Q10 quote_save has no module' || E'\n';
   end if;
+
+  ---------------------------------------------------------------- Q11 when a line was added
+  update public.quote_lines set created_at = timestamptz '2026-01-01 08:00+00' where id = v_a;
+  update public.quotes set status = 'draft' where id = v_q;
+  perform set_config('request.jwt.claims', json_build_object('sub', v_mgr, 'role', 'authenticated')::text, true);
+  set local role authenticated;
+  select updated_at into v_at from public.quotes where id = v_q;
+  perform public.quote_save(v_q, v_at, jsonb_build_object('customer_name', 'New client'), jsonb_build_array(
+    c_good_line, jsonb_build_object('id', v_b, 'description', 'Windows', 'qty', 1, 'list_price', 100)));
+  v_checks := v_checks + 1;
+  if (select created_at from public.quote_lines where id = v_a) <> timestamptz '2026-01-01 08:00+00'
+     or (select created_at from public.quote_lines where id = v_b) <> now() then
+    v_fail := v_fail || 'Q11 a line that stayed lost when it was added, or a new line was not added now' || E'\n';
+  end if;
+  reset role;
+
+  ---------------------------------------------------------------- Q12 converted
+  update public.quotes
+     set status = 'converted',
+         converted_order_id = (select o.id from public.orders o
+                                where o.org_id = c_gf
+                                  and not exists (select 1 from public.quotes x where x.converted_order_id = o.id)
+                                order by o.created_at desc limit 1)
+   where id = v_q;
+  set local role authenticated;
+  begin
+    perform public.quote_save(v_q, v_at, jsonb_build_object('notes', 'an order now'), jsonb_build_array(c_good_line));
+    v_fail := v_fail || 'Q12 a converted quote was saved' || E'\n';
+  exception when others then
+    get stacked diagnostics v_err = message_text;
+    if v_err not like 'This quote is already an order.%' then v_fail := v_fail || 'Q12 refused for another reason: ' || v_err || E'\n'; end if;
+  end;
+  v_checks := v_checks + 1;
+  reset role;
 
   if v_fail = '' then
     raise exception 'quote_save: ALL PASS (% checks)', v_checks;

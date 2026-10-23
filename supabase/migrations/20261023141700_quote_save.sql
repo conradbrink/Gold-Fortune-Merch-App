@@ -13,7 +13,7 @@
 --     quote as it is now and is reused on the next send, so a quote sent to
 --     one client never becomes another's;
 --   * its lines are replaced with the ones given, each under the id the
---     screen gave it (a saved line keeps its own).
+--     screen gave it (a saved line keeps its own, and when it was added).
 --
 -- The caller's own rights apply (security invoker): the quote policies, the
 -- column grants, quote_lines_enforce_org, and the module and billing gates.
@@ -28,6 +28,7 @@ declare
   q record;
   v_status text;
   v_n integer;
+  v_added jsonb;
 begin
   perform public.require_module('invoicing');
   perform public.require_writable();
@@ -76,15 +77,19 @@ begin
     raise exception 'The quote was not saved. Reload the page to see where it stands.' using errcode = '42501';
   end if;
 
+  -- When each saved line was added, so a line that stays keeps it.
+  select jsonb_object_agg(id, created_at) into v_added from public.quote_lines where quote_id = q.id;
   delete from public.quote_lines where quote_id = q.id;
   insert into public.quote_lines
-    (id, org_id, quote_id, position, product_id, service_item_id, description, unit, qty, list_price, discount_pct, discount_amount)
-  select coalesce(nullif(x.l->>'id', '')::uuid, gen_random_uuid()), q.org_id, q.id, x.ord::integer,
-         nullif(x.l->>'product_id', '')::uuid, nullif(x.l->>'service_item_id', '')::uuid,
-         nullif(btrim(x.l->>'description'), ''), nullif(btrim(x.l->>'unit'), ''),
-         (x.l->>'qty')::numeric, (x.l->>'list_price')::numeric,
-         coalesce((x.l->>'discount_pct')::numeric, 0), coalesce((x.l->>'discount_amount')::numeric, 0)
-    from jsonb_array_elements(p_lines) with ordinality as x(l, ord);
+    (id, org_id, quote_id, position, product_id, service_item_id, description, unit, qty, list_price, discount_pct, discount_amount, created_at)
+  select y.id, q.org_id, q.id, y.ord::integer,
+         nullif(y.l->>'product_id', '')::uuid, nullif(y.l->>'service_item_id', '')::uuid,
+         nullif(btrim(y.l->>'description'), ''), nullif(btrim(y.l->>'unit'), ''),
+         (y.l->>'qty')::numeric, (y.l->>'list_price')::numeric,
+         coalesce((y.l->>'discount_pct')::numeric, 0), coalesce((y.l->>'discount_amount')::numeric, 0),
+         coalesce((v_added->>y.id::text)::timestamptz, now())
+    from (select coalesce(nullif(x.l->>'id', '')::uuid, gen_random_uuid()) as id, x.l, x.ord
+            from jsonb_array_elements(p_lines) with ordinality as x(l, ord)) y;
 end;
 $function$;
 
