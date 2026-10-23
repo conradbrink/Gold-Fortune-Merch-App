@@ -97,7 +97,7 @@ export default function QuoteDetailPage() {
     loadSends();
   }, [loadSends]);
 
-  // "Save and send" on the new quote form lands here with ?send=1: open the
+  // "Save and send" on the quote form, new or changed, lands here with ?send=1: open the
   // send box once the quote is on screen, and take the mark out of the address
   // so a refresh does not open it again.
   const status = detail?.quote.status;

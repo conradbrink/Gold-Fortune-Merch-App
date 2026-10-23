@@ -9,7 +9,7 @@ import { StepCard } from "@/components/setup/step-card";
 import { createClient } from "@/lib/supabase/client";
 import { useCompanyConfig } from "@/lib/use-company-config";
 import { moduleEnabled } from "@/lib/modules";
-import { validPrice } from "@/lib/money-docs";
+import { validPrice, validUnit } from "@/lib/money-docs";
 import {
   createServiceItem,
   fetchServiceItems,
@@ -89,6 +89,7 @@ function PriceList({ org, text, icon, onBack, onNext, reload }: StepProps) {
     const added = rows.filter((r) => r.name.trim());
     for (const r of added) {
       if (!r.unit.trim()) return setError(`Give ${r.name.trim()} a unit, like hour or each.`);
+      if (!validUnit(r.unit)) return setError(`The unit for ${r.name.trim()} is a word, like hour or each, not a price.`);
       if (r.price.trim() !== "" && !validPrice(r.price.trim())) {
         return setError(`The price for ${r.name.trim()} is not a price, like 450 or 450.50.`);
       }

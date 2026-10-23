@@ -3,7 +3,19 @@
 // the money suite (supabase/tests/money.sql) checks against the database.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { ageingKey, documentTotals, formatQty, grossPrice, lineTotal, validPrice, validQty, validUnit } from "@/lib/money-docs";
+import {
+  ageingKey,
+  documentTotals,
+  formatQty,
+  grossPrice,
+  lineTotal,
+  netOfVat,
+  priceInBasis,
+  unitProblem,
+  validPrice,
+  validQty,
+  validUnit,
+} from "@/lib/money-docs";
 import { invoiceSources, usesPriceList, workflowPreset, MONEY_WORKFLOWS } from "@/lib/money-workflow";
 import { toModuleSet } from "@/lib/modules";
 import { DEFAULT_TERMS } from "@/lib/terms";
@@ -47,8 +59,36 @@ test("quantities and prices the database takes", () => {
 
 test("a unit is a word: a price typed in the unit box is refused", () => {
   // A quote printed "1 845.50" in the Qty column: the price had gone in the unit box too.
-  assert.ok(!validUnit("845.50") && !validUnit("120.25") && !validUnit("12") && !validUnit(" 1,500.00 "));
-  assert.ok(validUnit("") && validUnit("each") && validUnit("box") && validUnit("hour") && validUnit("m²") && validUnit("1x12"));
+  for (const u of ["845.50", "120.25", "12", " 1,500.00 ", "1000", "-845.50"]) assert.ok(!validUnit(u), u);
+  // Money as the app itself shows it, copied in: a symbol, letters or a code beside the figures.
+  for (const u of ["R845.50", "R 845,50", "P845.50", "N$40", "KSh 500", "$12", "€12", "845.50 ZAR", "zar 12"]) {
+    assert.ok(!validUnit(u), u);
+  }
+  // A unit may carry a number, beside a word.
+  for (const u of ["", "each", "box", "hour", "m²", "1x12", "box of 12", "per 1000", "12 kg", "5L", "A4"]) {
+    assert.ok(validUnit(u), u);
+  }
+});
+
+test("a unit saved before the rule stands until someone changes it, where the screen allows it", () => {
+  const line = { description: "Flyers", unit: "1000" };
+  assert.match(unitProblem([line]) ?? "", /The unit for “Flyers” is a word/);
+  // A contract keeps its saved unit, so it can still be paused.
+  assert.equal(unitProblem([{ ...line, savedUnit: "1000" }]), null);
+  // Typed over, the rule applies again.
+  assert.match(unitProblem([{ ...line, unit: "845.50", savedUnit: "1000" }]) ?? "", /is a word/);
+  assert.equal(unitProblem([{ description: "Flyers", unit: "per 1000" }]), null);
+});
+
+test("a price-list price moved into an edited quote's VAT basis", () => {
+  assert.equal(netOfVat(115, 15), 100);
+  assert.equal(netOfVat(575, 15), 500);
+  // The company now types prices with VAT; the draft was written without it.
+  assert.equal(priceInBasis(575, { inclusive: true, vatRate: 15 }, { inclusive: false, vatRate: 15 }), 500);
+  assert.equal(priceInBasis(500, { inclusive: false, vatRate: 15 }, { inclusive: true, vatRate: 15 }), 575);
+  // Same basis: the price is left exactly as typed.
+  assert.equal(priceInBasis(99.99, { inclusive: true, vatRate: 15 }, { inclusive: true, vatRate: 15 }), 99.99);
+  assert.equal(priceInBasis(99.99, { inclusive: false, vatRate: 15 }, { inclusive: false, vatRate: 14 }), 99.99);
 });
 
 test("ageing columns by days past due", () => {

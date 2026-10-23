@@ -11,7 +11,7 @@ import { Label } from "@/components/ui/label";
 import { NativeSelect } from "@/components/ui/native-select";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ErrorBanner } from "@/components/warehouse/stat-tile";
-import { LineEditor, lineProblem, type EditableLine } from "@/components/money/line-editor";
+import { LineEditor, lineProblem, phoneLabel, type EditableLine } from "@/components/money/line-editor";
 import { BillToPicker, billToProblem, type BillTo } from "@/components/money/bill-to-picker";
 import { DiscountInput, DiscountNote } from "@/components/money/discount-input";
 import { fetchOrgId } from "@/lib/representatives";
@@ -25,10 +25,19 @@ import {
   unitPriceFor,
   type DiscountKind,
 } from "@/lib/orders";
-import { createQuote, fetchQuote, updateQuote, whyQuoteIsFixed, type NewQuoteLine, type QuoteDetail } from "@/lib/quotes";
+import {
+  createQuote,
+  fetchQuote,
+  quoteClientName,
+  quoteHeaderProblem,
+  updateQuote,
+  whyQuoteIsFixed,
+  type NewQuoteLine,
+  type QuoteDetail,
+} from "@/lib/quotes";
 import { fetchServiceItems, type ServiceItem } from "@/lib/service-items";
 import { daysFromToday, fetchDocumentSettings, type DocumentSettings } from "@/lib/document-settings";
-import { grossPrice, validPrice } from "@/lib/money-docs";
+import { grossPrice, priceInBasis, validPrice } from "@/lib/money-docs";
 import { moduleEnabled } from "@/lib/modules";
 import { useCompanyConfig, useTerms } from "@/lib/use-company-config";
 import { lower } from "@/lib/terms";
@@ -154,14 +163,22 @@ export function QuoteForm({ quoteId }: { quoteId?: string }) {
         setPriceBook(book);
         setOrgId(org);
         setDoc(d);
-        // A quote for a store made inactive since still shows that store.
+        // A quote for a store or a rep made inactive since still shows them,
+        // and the store keeps its group's price list.
         setStores(
           q?.quote.store_id && !s.some((x) => x.id === q.quote.store_id)
-            ? [...s, { id: q.quote.store_id, name: q.storeName ?? "—", address: q.storeAddress, city: null, store_group_id: null }]
+            ? [
+                ...s,
+                { id: q.quote.store_id, name: q.storeName ?? "—", address: q.storeAddress, city: null, store_group_id: q.storeGroupId },
+              ]
             : s
         );
         setItems(si);
-        setReps(r);
+        setReps(
+          q?.quote.rep_id && !r.some((x) => x.id === q.quote.rep_id)
+            ? [...r, { id: q.quote.rep_id, full_name: `${q.repName ?? "—"} (no longer active)` }]
+            : r
+        );
         setProducts(p);
         if (q) {
           const f = formFromQuote(q);
@@ -208,8 +225,32 @@ export function QuoteForm({ quoteId }: { quoteId?: string }) {
   );
   const vatRate = Number((existing ? existing.quote.vat_rate : doc?.vat_rate) ?? 0);
   const inclusive = (existing ? existing.quote.prices_include_vat : doc?.prices_include_vat) ?? false;
+  // The price list is in the company's VAT basis as it is now; an edited quote
+  // keeps the basis it was written with, so its prices are moved across.
+  const quoteItems = useMemo(
+    () =>
+      !existing || !doc
+        ? items
+        : items.map((i) =>
+            i.unit_price === null
+              ? i
+              : {
+                  ...i,
+                  unit_price: priceInBasis(
+                    i.unit_price,
+                    { inclusive: doc.prices_include_vat, vatRate: Number(doc.vat_rate) },
+                    { inclusive, vatRate }
+                  ),
+                }
+          ),
+    [items, existing, doc, inclusive, vatRate]
+  );
   // Nothing to save over until the quote has loaded, and nothing once it is past changing.
   const locked = quoteId !== undefined && (existing === null || whyQuoteIsFixed(existing.quote) !== null);
+  // A sent quote stays with its client: the link in their email shows the quote as it is now.
+  const sentTo = existing?.quote.status === "sent" ? quoteClientName(existing.quote, existing.storeName) : null;
+  // Products show on a quote that has them even if the company no longer sells, so they can be taken off.
+  const showProducts = sells || productLines.length > 0;
 
   const listOf = (b: BillTo) =>
     b.mode === "store" ? listForGroup(priceBook, stores.find((s) => s.id === b.storeId)?.store_group_id) : null;
@@ -267,6 +308,12 @@ export function QuoteForm({ quoteId }: { quoteId?: string }) {
     if (!orgId || !doc || locked) return;
     const who = billToProblem(billTo, t);
     if (who) return setError(who);
+    const client =
+      billTo.mode === "store"
+        ? { storeId: billTo.storeId }
+        : { name: billTo.name, email: billTo.email, address: billTo.address };
+    const tooLong = quoteHeaderProblem({ billTo: client });
+    if (tooLong) return setError(tooLong);
     if (productLines.length === 0 && lines.length === 0) return setError("Add at least one line.");
     if (lines.length > 0) {
       const problem = lineProblem(lines);
@@ -297,35 +344,18 @@ export function QuoteForm({ quoteId }: { quoteId?: string }) {
         discountPct: l.discountKind === "pct" ? Number(l.discount) || 0 : 0,
         discountAmount: l.discountKind === "amount" ? Number(l.discount) || 0 : 0,
       })),
-      ...lines.map((l) =>
-        l.serviceItemId
-          ? {
-              id: l.key,
-              kind: "service" as const,
-              serviceItemId: l.serviceItemId,
-              description: l.description,
-              unit: l.unit || null,
-              qty: Number(l.qty),
-              price: Number(l.price),
-            }
-          : {
-              id: l.key,
-              kind: "text" as const,
-              description: l.description,
-              unit: l.unit || null,
-              qty: Number(l.qty),
-              price: Number(l.price),
-            }
-      ),
+      ...lines.map((l) => {
+        const line = { id: l.key, description: l.description, unit: l.unit || null, qty: Number(l.qty), price: Number(l.price) };
+        return l.serviceItemId
+          ? { ...line, kind: "service" as const, serviceItemId: l.serviceItemId }
+          : { ...line, kind: "text" as const };
+      }),
     ];
     setSaving(true);
     setSavingToSend(thenSend);
     const header = {
       orgId,
-      billTo:
-        billTo.mode === "store"
-          ? { storeId: billTo.storeId }
-          : { name: billTo.name, email: billTo.email, address: billTo.address },
+      billTo: client,
       contactName,
       contactPhone,
       repId: repId || null,
@@ -336,7 +366,7 @@ export function QuoteForm({ quoteId }: { quoteId?: string }) {
     };
     try {
       let id = quoteId;
-      if (id) await updateQuote(supabase, id, header);
+      if (id && existing) await updateQuote(supabase, id, { ...header, loadedAt: existing.quote.updated_at });
       else id = await createQuote(supabase, { ...header, prefix: doc.quote_prefix });
       router.push(thenSend ? `/quotes/${id}?send=1` : `/quotes/${id}`);
     } catch (e) {
@@ -351,14 +381,15 @@ export function QuoteForm({ quoteId }: { quoteId?: string }) {
     <div className="mx-auto max-w-4xl space-y-6">
       <div>
         <Link href={back} className="text-sm text-muted-foreground hover:text-foreground">
-          {existing ? `← ${existing.quote.quote_number}` : "← Quotes"}
+          {existing ? `← ${existing.quote.quote_number}` : quoteId ? "← Quote" : "← Quotes"}
         </Link>
         <h1 className="mt-1 text-xl font-semibold tracking-tight text-foreground">
           {existing ? `Change ${existing.quote.quote_number}` : quoteId ? "Change quote" : "New quote"}
         </h1>
-        {existing?.quote.status === "sent" && !locked && (
+        {sentTo && (
           <p className="mt-1 text-sm text-muted-foreground">
-            This quote was sent. The {lower(t.client.one)} has the old one until you send it again.
+            This quote was sent. The link in the {lower(t.client.one)}&apos;s email shows your changes as soon as you
+            save; send it again so they also get the new total by email.
           </p>
         )}
       </div>
@@ -371,19 +402,24 @@ export function QuoteForm({ quoteId }: { quoteId?: string }) {
         </CardHeader>
         <CardContent className="grid gap-4 sm:grid-cols-2">
           <div className="sm:col-span-2">
-            <BillToPicker value={billTo} onChange={changeBillTo} stores={stores} disabled={loading} />
+            <BillToPicker value={billTo} onChange={changeBillTo} stores={stores} disabled={loading || sentTo !== null} />
+            {sentTo && (
+              <p className="mt-2 text-sm text-muted-foreground">
+                Sent to {sentTo}, so it stays theirs. To quote someone else, start a new quote.
+              </p>
+            )}
           </div>
           <div>
             <Label htmlFor="contact">Contact name</Label>
-            <Input id="contact" value={contactName} onChange={(e) => setContactName(e.target.value)} />
+            <Input id="contact" value={contactName} onChange={(e) => setContactName(e.target.value)} disabled={loading} />
           </div>
           <div>
             <Label htmlFor="phone">Contact phone</Label>
-            <Input id="phone" value={contactPhone} onChange={(e) => setContactPhone(e.target.value)} />
+            <Input id="phone" value={contactPhone} onChange={(e) => setContactPhone(e.target.value)} disabled={loading} />
           </div>
           <div>
             <Label htmlFor="rep">{t.staff.one}</Label>
-            <NativeSelect id="rep" value={repId} onChange={(e) => setRepId(e.target.value)}>
+            <NativeSelect id="rep" value={repId} onChange={(e) => setRepId(e.target.value)} disabled={loading}>
               <option value="">{`No ${lower(t.staff.one)}`}</option>
               {reps.map((r) => (
                 <option key={r.id} value={r.id}>
@@ -394,7 +430,7 @@ export function QuoteForm({ quoteId }: { quoteId?: string }) {
           </div>
           <div>
             <Label htmlFor="valid">Valid until</Label>
-            <Input id="valid" type="date" value={validUntil} onChange={(e) => setValidUntil(e.target.value)} />
+            <Input id="valid" type="date" value={validUntil} onChange={(e) => setValidUntil(e.target.value)} disabled={loading} />
           </div>
           {sells && (
             <div className="sm:col-span-2">
@@ -404,6 +440,7 @@ export function QuoteForm({ quoteId }: { quoteId?: string }) {
                 value={deliveryAddress}
                 onChange={(e) => setDeliveryAddress(e.target.value)}
                 placeholder={`Leave blank to deliver to the ${lower(t.site.one)}`}
+                disabled={loading}
               />
             </div>
           )}
@@ -414,57 +451,60 @@ export function QuoteForm({ quoteId }: { quoteId?: string }) {
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
               placeholder="Printed on the quote: what is included, how long the work takes"
+              disabled={loading}
             />
           </div>
         </CardContent>
       </Card>
 
-      {sells && (
+      {showProducts && (
         <Card>
           <CardHeader>
             <CardTitle className="text-base">Products</CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
-            <div className="relative">
-              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-              <Input
-                value={productQuery}
-                onChange={(e) => setProductQuery(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" && productMatches[0]) {
-                    e.preventDefault();
-                    addProduct(productMatches[0]);
-                  }
-                }}
-                placeholder="Search by product name, SKU or barcode"
-                aria-label="Search products"
-                className="pl-9"
-                disabled={loading}
-              />
-              {productQuery.trim() && (
-                <div className="absolute z-10 mt-1 max-h-64 w-full overflow-y-auto rounded-lg border border-border bg-card shadow-md">
-                  {productMatches.map((p) => (
-                    <button
-                      key={p.id}
-                      type="button"
-                      className="flex w-full items-center justify-between gap-3 px-3 py-2 text-left text-sm hover:bg-muted"
-                      onClick={() => addProduct(p)}
-                    >
-                      <span className="min-w-0 truncate">
-                        {p.name}
-                        {p.brand && <span className="text-muted-foreground"> — {p.brand}</span>}
-                      </span>
-                      {p.sku_code && (
-                        <span className="shrink-0 font-mono text-xs text-muted-foreground">{p.sku_code}</span>
-                      )}
-                    </button>
-                  ))}
-                  {productMatches.length === 0 && (
-                    <p className="px-3 py-2 text-sm text-muted-foreground">No product matches.</p>
-                  )}
-                </div>
-              )}
-            </div>
+            {sells && (
+              <div className="relative">
+                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  value={productQuery}
+                  onChange={(e) => setProductQuery(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && productMatches[0]) {
+                      e.preventDefault();
+                      addProduct(productMatches[0]);
+                    }
+                  }}
+                  placeholder="Search by product name, SKU or barcode"
+                  aria-label="Search products"
+                  className="pl-9"
+                  disabled={loading}
+                />
+                {productQuery.trim() && (
+                  <div className="absolute z-10 mt-1 max-h-64 w-full overflow-y-auto rounded-lg border border-border bg-card shadow-md">
+                    {productMatches.map((p) => (
+                      <button
+                        key={p.id}
+                        type="button"
+                        className="flex w-full items-center justify-between gap-3 px-3 py-2 text-left text-sm hover:bg-muted"
+                        onClick={() => addProduct(p)}
+                      >
+                        <span className="min-w-0 truncate">
+                          {p.name}
+                          {p.brand && <span className="text-muted-foreground"> — {p.brand}</span>}
+                        </span>
+                        {p.sku_code && (
+                          <span className="shrink-0 font-mono text-xs text-muted-foreground">{p.sku_code}</span>
+                        )}
+                      </button>
+                    ))}
+                    {productMatches.length === 0 && (
+                      <p className="px-3 py-2 text-sm text-muted-foreground">No product matches.</p>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
             {productLines.length > 0 && (
               <div className="space-y-2">
                 <div className="hidden gap-2 px-1 text-xs font-medium text-muted-foreground sm:grid sm:grid-cols-[1fr_5rem_7rem_7rem_2.5rem]">
@@ -484,22 +524,29 @@ export function QuoteForm({ quoteId }: { quoteId?: string }) {
                           <span className="text-muted-foreground"> — {p ? p.brand : savedNames.get(l.productId)?.brand}</span>
                         )}
                       </span>
-                      <Input
-                        type="number"
-                        min={1}
-                        value={l.qty}
-                        onChange={(e) => updateProduct(l.productId, { qty: e.target.value })}
-                        aria-label="Quantity"
-                      />
-                      <Input
-                        type="number"
-                        min={0}
-                        step="0.01"
-                        value={l.price}
-                        onChange={(e) => updateProduct(l.productId, { price: e.target.value })}
-                        aria-label={inclusive ? "Price per unit, VAT included" : "Price per unit"}
-                      />
+                      <label className="block">
+                        <span className={phoneLabel}>Quantity</span>
+                        <Input
+                          type="number"
+                          min={1}
+                          value={l.qty}
+                          onChange={(e) => updateProduct(l.productId, { qty: e.target.value })}
+                          aria-label="Quantity"
+                        />
+                      </label>
+                      <label className="block">
+                        <span className={phoneLabel}>{inclusive ? "Price incl. VAT" : "Price/unit"}</span>
+                        <Input
+                          type="number"
+                          min={0}
+                          step="0.01"
+                          value={l.price}
+                          onChange={(e) => updateProduct(l.productId, { price: e.target.value })}
+                          aria-label={inclusive ? "Price incl. VAT" : "Price/unit"}
+                        />
+                      </label>
                       <div>
+                        <span className={phoneLabel}>Discount</span>
                         <DiscountInput
                           value={l.discount}
                           kind={l.discountKind}
@@ -534,13 +581,13 @@ export function QuoteForm({ quoteId }: { quoteId?: string }) {
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">{sells ? "Services and other lines" : "Lines"}</CardTitle>
+          <CardTitle className="text-base">{showProducts ? "Services and other lines" : "Lines"}</CardTitle>
         </CardHeader>
         <CardContent>
           <LineEditor
             lines={lines}
             onChange={setLines}
-            items={items}
+            items={quoteItems}
             currency={currency}
             vatRate={vatRate}
             pricesIncludeVat={inclusive}

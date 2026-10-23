@@ -4,7 +4,7 @@ import { Plus, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";
-import { documentTotals, lineTotal, validPrice, validQty, validUnit } from "@/lib/money-docs";
+import { documentTotals, lineTotal, unitProblem, validPrice, validQty } from "@/lib/money-docs";
 import { formatMoney } from "@/lib/money";
 import type { ServiceItem } from "@/lib/service-items";
 
@@ -22,6 +22,8 @@ export type EditableLine = {
   unit: string;
   qty: string;
   price: string;
+  /** The unit as saved, on a screen that lets a saved unit stand: see `unitProblem`. */
+  savedUnit?: string;
 };
 
 export function blankLine(item?: Pick<ServiceItem, "id" | "name" | "unit" | "unit_price"> | null): EditableLine {
@@ -46,9 +48,8 @@ export function lineProblem(lines: EditableLine[]): string | null {
   const chars = (v: string) => [...v.trim()].length;
   if (lines.some((l) => chars(l.description) > 500)) return "A line's description is 500 characters at most.";
   if (lines.some((l) => chars(l.unit ?? "") > 20)) return "A unit is 20 characters at most, like hour or each.";
-  if (lines.some((l) => !validUnit(l.unit ?? ""))) {
-    return "A unit is a word, like each, box or hour. The price goes in the Price box.";
-  }
+  const unit = unitProblem(lines);
+  if (unit) return unit;
   if (lines.some((l) => !validQty(l.qty))) return "A quantity is more than zero, to two decimals.";
   if (lines.some((l) => !validPrice(l.price))) return "Every line needs a price, to the cent.";
   return null;
@@ -67,7 +68,8 @@ export function editableTotals(
   );
 }
 
-const phoneLabel = "mb-1 block text-xs font-medium text-muted-foreground sm:hidden";
+/** A box's name above it on a phone, where a line's column headings are hidden. */
+export const phoneLabel = "mb-1 block text-xs font-medium text-muted-foreground sm:hidden";
 
 export function LineEditor({
   lines,
@@ -90,6 +92,8 @@ export function LineEditor({
   disabled?: boolean;
 }) {
   const totals = editableTotals(lines, vatRate, pricesIncludeVat, otherLines);
+  // The same words on screen and to a screen reader.
+  const priceName = pricesIncludeVat ? "Price incl. VAT" : "Price";
   const byId = new Map(items.map((i) => [i.id, i]));
   const update = (key: string, patch: Partial<EditableLine>) =>
     onChange(lines.map((l) => (l.key === key ? { ...l, ...patch } : l)));
@@ -102,7 +106,7 @@ export function LineEditor({
             <span>Description</span>
             <span>Qty</span>
             <span>Unit</span>
-            <span>{pricesIncludeVat ? "Price incl. VAT" : "Price"}</span>
+            <span>{priceName}</span>
             <span className="text-right">Line total</span>
             <span />
           </div>
@@ -121,7 +125,7 @@ export function LineEditor({
               />
               {/* On a phone the headings above are hidden, so each box says what it is. */}
               <label className="block">
-                <span className={phoneLabel}>Qty</span>
+                <span className={phoneLabel}>Quantity</span>
                 <Input
                   type="number"
                   min={0}
@@ -144,7 +148,7 @@ export function LineEditor({
                 />
               </label>
               <label className="block">
-                <span className={phoneLabel}>{pricesIncludeVat ? "Price incl. VAT" : "Price"}</span>
+                <span className={phoneLabel}>{priceName}</span>
                 <Input
                   type="number"
                   min={0}
@@ -152,7 +156,7 @@ export function LineEditor({
                   value={l.price}
                   onChange={(e) => update(l.key, { price: e.target.value })}
                   placeholder="0.00"
-                  aria-label="Price per unit"
+                  aria-label={priceName}
                   disabled={disabled}
                 />
               </label>

@@ -93,6 +93,9 @@ export default function ContractPage() {
           serviceItemId: l.service_item_id,
           description: l.description,
           unit: l.unit ?? "",
+          // A unit saved before the rule on units stands until it is changed,
+          // so the contract can still be paused or edited without retyping it.
+          savedUnit: l.unit ?? "",
           qty: String(l.qty),
           price: String(l.unit_price),
         }))
