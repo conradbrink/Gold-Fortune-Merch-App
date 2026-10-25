@@ -8,6 +8,7 @@ import {
   inputFromBody,
   type FoundingApplication,
 } from "@/lib/founding";
+import { addToLeadsSheet, alertOwnerOnWhatsapp } from "@/lib/lead-alerts";
 import { listTemplates, platformAdminClient } from "@/lib/platform";
 
 /**
@@ -20,7 +21,8 @@ import { listTemplates, platformAdminClient } from "@/lib/platform";
  *         the application. While no spot is left an application is still
  *         saved, as 'waitlist'. One per person: a WhatsApp number or email
  *         address already on an application saves nothing new and sends no
- *         email; the answer says `already`.
+ *         email; the answer says `already`. A new one also goes to the
+ *         owner on WhatsApp and into their Google Sheet (lib/lead-alerts.ts).
  *
  * Public, so it is checked again here, limited per address and per number, and
  * only the sales site's own origins are answered in a browser. `/api` is
@@ -92,7 +94,8 @@ export async function POST(request: Request) {
   const trap = body && typeof body === "object" ? (body as Record<string, unknown>).website : undefined;
   if (typeof trap === "string" && trap.trim()) return json(request, { ok: true, waitlist: false });
 
-  const checked = checkApplication(inputFromBody(body));
+  const receivedAt = new Date();
+  const checked = checkApplication(inputFromBody(body), receivedAt);
   if (!checked.ok) {
     return json(request, { error: checked.issues.map((i) => i.message).join(" "), issues: checked.issues }, 400);
   }
@@ -143,8 +146,13 @@ export async function POST(request: Request) {
   let { data: saved, error } = await insert(row);
   // Each of these columns came with its own migration. If this code is live
   // before one of them, PostgREST refuses the unknown column (PGRST204): save
-  // the application without it rather than lose it. "What do you distribute?"
-  // (19 Oct 2026) first, as the newest.
+  // the application without it rather than lose it. The role and the consent
+  // (25 Oct 2026) first, as the newest; the alerts still carry them.
+  if (error?.code === "PGRST204" && /role|contact_consent_at/.test(error.message)) {
+    console.error("founding: role or consent column missing, saved without them");
+    row = { ...row, role: undefined, contact_consent_at: undefined };
+    ({ data: saved, error } = await insert(row));
+  }
   if (error?.code === "PGRST204" && error.message.includes("distributes")) {
     console.error("founding: distributes column missing, saved without it");
     row = { ...row, distributes: undefined };
@@ -171,6 +179,8 @@ export async function POST(request: Request) {
   }
 
   after(() => notifyOwner(saved.id, application, waitlist));
+  after(() => alertOwnerOnWhatsapp(saved.id, application, waitlist));
+  after(() => addToLeadsSheet(saved.id, application, waitlist, receivedAt));
   const toEmail = application.email;
   if (emailSaved && toEmail) after(() => confirmToApplicant(saved.id, { ...application, email: toEmail }, waitlist));
 

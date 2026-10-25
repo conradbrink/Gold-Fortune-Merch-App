@@ -1558,6 +1558,7 @@ export type Database = {
 
           biggest_cost: string | null
           business_name: string
+          contact_consent_at: string | null
           created_at: string
           distributes: string | null
           how_run: string | null
@@ -1566,6 +1567,7 @@ export type Database = {
           name: string
           notified_at: string | null
           organization_id: string | null
+          role: string | null
 
           source: string | null
           status: string
@@ -1583,6 +1585,7 @@ export type Database = {
 
           biggest_cost?: string | null
           business_name: string
+          contact_consent_at?: string | null
           created_at?: string
           distributes?: string | null
           how_run?: string | null
@@ -1591,6 +1594,7 @@ export type Database = {
           name: string
           notified_at?: string | null
           organization_id?: string | null
+          role?: string | null
 
           source?: string | null
           status?: string
@@ -1608,6 +1612,7 @@ export type Database = {
 
           biggest_cost?: string | null
           business_name?: string
+          contact_consent_at?: string | null
           created_at?: string
           distributes?: string | null
           how_run?: string | null
@@ -1616,6 +1621,7 @@ export type Database = {
           name?: string
           notified_at?: string | null
           organization_id?: string | null
+          role?: string | null
 
           source?: string | null
           status?: string

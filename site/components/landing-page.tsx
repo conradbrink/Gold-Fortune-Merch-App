@@ -16,14 +16,13 @@ import { FoundingForm } from "@/components/founding-form";
 import { FoundingGuarantee, FoundingStack, Objections } from "@/components/founding-package";
 import { SpotsText } from "@/components/founding-spots";
 import { Logo } from "@/components/logo";
-import { SiteFooter } from "@/components/site-footer";
 import { PricingSection } from "@/components/pricing-section";
 import { ProofSection } from "@/components/proof-section";
 import { SectionViews } from "@/components/analytics";
 import { confirmed, firstPlan, founding, foundingFrom, proof, rand, site } from "@/lib/site";
 
-// The landing page, the main page (app/page.tsx). /founding, where the ads
-// land, is its own short page since 25 Oct 2026 (app/founding/page.tsx).
+// The landing page: the main page (app/page.tsx) and /founding
+// (app/founding/page.tsx) both render it.
 //
 // Copy: ~/Downloads/site-copy-final-v7.md, reworked on 8 Oct 2026 with the
 // Hormozi offer skills, then rewritten on 9 Oct 2026 to read the way you'd say
@@ -189,8 +188,13 @@ const SECTION_EVENTS = {
   ai: "feature_view",
 };
 
-/** The landing page: the main page. */
-export function LandingPage() {
+/**
+ * The landing page, shared by the main page and /founding (owner, 20 Oct
+ * 2026: "the founding page should be redesigned to fit our current landing
+ * page"). Only the hero differs: /founding is where the Founding adverts
+ * land, so it leads with the offer they promised.
+ */
+export function LandingPage({ hero = "home" }: { hero?: "home" | "founding" }) {
   return (
     <>
       {/* One focus: the banner and the one button, both to the form. */}
@@ -227,18 +231,37 @@ export function LandingPage() {
         <section className="mx-auto grid max-w-6xl items-center gap-10 px-4 pb-10 pt-5 sm:px-6 sm:pb-16 sm:pt-12 lg:grid-cols-[1.1fr_0.9fr] lg:gap-14 lg:pt-12">
           <div className="tk-hero grid gap-4 sm:gap-6">
             <p className="text-sm font-bold uppercase tracking-wide text-teal-700">For teams of 3 to 30 reps</p>
-            <h1 className="font-display text-[2.1rem] font-extrabold leading-[1.06] tracking-tight text-balance text-teal-900 sm:text-5xl lg:text-[3.6rem]">
-              Distributors:{" "}
-              <span className="relative whitespace-nowrap">
-                one app
-                <span aria-hidden="true" className="tk-underline absolute inset-x-0 bottom-[-0.02em] h-[0.12em] rounded-full bg-amber-500" />
-              </span>{" "}
-              to manage your reps, orders and invoices.
-            </h1>
-            <p className="max-w-xl text-base leading-relaxed text-pretty text-ink sm:text-xl">
-              Your reps visit the stores you&apos;ve planned, and {site.name} helps them sell more at each one. Our AI Manager then
-              tells you how to grow your business.
-            </p>
+            {hero === "founding" ? (
+              <h1 className="font-display text-[2.1rem] font-extrabold leading-[1.06] tracking-tight text-balance text-teal-900 sm:text-5xl lg:text-[3.6rem]">
+                Become one of our{" "}
+                <span className="relative whitespace-nowrap">
+                  Founding {founding.spots}
+                  <span aria-hidden="true" className="tk-underline absolute inset-x-0 bottom-[-0.02em] h-[0.12em] rounded-full bg-amber-500" />
+                </span>{" "}
+                distributors.
+              </h1>
+            ) : (
+              <h1 className="font-display text-[2.1rem] font-extrabold leading-[1.06] tracking-tight text-balance text-teal-900 sm:text-5xl lg:text-[3.6rem]">
+                Distributors:{" "}
+                <span className="relative whitespace-nowrap">
+                  one app
+                  <span aria-hidden="true" className="tk-underline absolute inset-x-0 bottom-[-0.02em] h-[0.12em] rounded-full bg-amber-500" />
+                </span>{" "}
+                to manage your reps, orders and invoices.
+              </h1>
+            )}
+            {hero === "founding" ? (
+              <p className="max-w-xl text-base leading-relaxed text-pretty text-ink sm:text-xl">
+                A free {founding.pilotDays}-day pilot, set up for you. Then {founding.percentOff}% off your plan for{" "}
+                {founding.priceMonths} months, from {rand(foundingFrom)} a month. Our AI Manager then tells you how to grow your
+                business.
+              </p>
+            ) : (
+              <p className="max-w-xl text-base leading-relaxed text-pretty text-ink sm:text-xl">
+                Your reps visit the stores you&apos;ve planned, and {site.name} helps them sell more at each one. Our AI Manager then
+                tells you how to grow your business.
+              </p>
+            )}
             <p className="flex max-w-xl items-start gap-2.5 text-base font-semibold leading-relaxed text-teal-900 sm:text-lg">
               <span aria-hidden="true" className="mt-0.5 grid size-6 shrink-0 place-items-center rounded-full bg-teal-700 text-white">
                 <Check className="size-4" strokeWidth={3.5} />
@@ -252,6 +275,12 @@ export function LandingPage() {
                 Start my free pilot
               </a>
               <p className="w-full text-center text-sm font-semibold text-teal-900">No card · No contract</p>
+              {hero === "founding" && (
+                <SpotsText
+                  urgent
+                  className="mt-1 inline-block w-fit rounded-full bg-amber-500 px-4 py-1.5 text-sm font-extrabold uppercase tracking-wide text-teal-950"
+                />
+              )}
             </div>
             <div className="flex max-w-xl items-center gap-3 border-t border-line pt-4 sm:pt-5">
               <Image
@@ -456,7 +485,33 @@ export function LandingPage() {
         </section>
       </main>
 
-      <SiteFooter />
+      <footer className="bg-teal-950 text-teal-100">
+        <div className="mx-auto flex max-w-6xl flex-col gap-4 px-4 py-10 sm:px-6 md:flex-row md:items-center md:justify-between">
+          <Logo inverted />
+          <div className="grid gap-2 text-sm md:justify-items-end">
+            <p>
+              {site.tagline} ·{" "}
+              <a href={`mailto:${site.email}`} className="py-1 hover:text-sand">
+                {site.email}
+              </a>
+            </p>
+            <p>
+              Already using {site.name}?{" "}
+              <a href={`${site.appUrl}/login`} className="py-1 font-semibold underline underline-offset-4 hover:text-sand">
+                Sign in
+              </a>
+            </p>
+            <nav aria-label="Legal" className="flex flex-wrap gap-x-5 gap-y-1">
+              <a href="/terms" className="py-1 hover:text-sand">Terms</a>
+              <a href="/privacy" className="py-1 hover:text-sand">Privacy</a>
+              <a href="/refunds" className="py-1 hover:text-sand">Cancellations and refunds</a>
+            </nav>
+            <p className="text-xs text-teal-100/70">
+              © {new Date().getFullYear()} {site.legalName}
+            </p>
+          </div>
+        </div>
+      </footer>
     </>
   );
 }
