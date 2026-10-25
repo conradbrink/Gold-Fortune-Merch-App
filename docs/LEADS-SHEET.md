@@ -1,16 +1,39 @@
-# New leads: WhatsApp alert and Google Sheet
+# New leads: Telegram or WhatsApp alert, and Google Sheet
 
 Every new Founding application is saved in the app (`/platform/founding`) and
 emailed to the owner. Since 25 Oct 2026 it can also:
 
-- **WhatsApp the owner** through CallMeBot, and
+- **message the owner on Telegram**, from their own bot,
+- **WhatsApp the owner** through CallMeBot (it took no new numbers on 25 Oct
+  2026, so Telegram is the one in use), and
 - **add a row to a Google Sheet**, for tracking the calls.
 
 Both live in `web/lib/lead-alerts.ts` and stay off until their settings are in
-Vercel (the `web` project → Settings → Environment Variables, Production). A
+Vercel (the `app` project → Settings → Environment Variables, Production). A
 failed alert never loses the application, and the email still goes.
 
-## 1. WhatsApp alert (CallMeBot)
+## 1. Telegram alert
+
+1. Install Telegram on your phone and sign in.
+2. In Telegram, open **@BotFather** (the blue tick one) and send `/newbot`.
+   - Name: anything, for example `Tickd leads`
+   - Username: must end in `bot`, for example `tickd_leads_bot`
+3. BotFather answers with a **token** (like `123456789:AAH...`). It works like a
+   password: don't share it or post it anywhere.
+4. Open your new bot (BotFather's message links to it) and press **Start**. A
+   bot can only message someone who has pressed Start.
+5. Get your chat ID: open **@userinfobot**, press Start, and it answers with
+   your **Id** (a number like `123456789`).
+6. In Vercel, add (the `app` project → Settings → Environment Variables,
+   Production):
+   - `TELEGRAM_BOT_TOKEN`: the token from BotFather
+   - `TELEGRAM_CHAT_ID`: your Id from @userinfobot
+7. Redeploy the `app` project.
+
+Each lead then arrives as a message from your bot: name, business, reps,
+role, WhatsApp, where they came from, and a wa.me link to answer.
+
+## 1b. WhatsApp alert (CallMeBot), when it takes new numbers again
 
 1. Save **+34 644 71 81 99** in your phone's contacts (CallMeBot's number;
    check it on <https://www.callmebot.com/blog/free-api-whatsapp-messages/>,
@@ -21,7 +44,7 @@ failed alert never loses the application, and the email still goes.
    - `CALLMEBOT_PHONE`: your WhatsApp number with its country code, digits
      only, for example `26776642259`
    - `CALLMEBOT_APIKEY`: the key it sent you
-5. Redeploy the `web` project.
+5. Redeploy the `app` project.
 
 CallMeBot is a free, unofficial service: each lead's name, business, number and
 email pass through it. Move to the WhatsApp Business API once the business line
@@ -39,7 +62,7 @@ exists.
 4. In Vercel, add:
    - `LEADS_SHEET_URL`: the Web app URL
    - `LEADS_SHEET_SECRET`: the same secret word as in the script
-5. Redeploy the `web` project.
+5. Redeploy the `app` project.
 
 The first lead writes the header row. The app decides the columns (see
 `SHEET_HEADERS` in `web/lib/lead-alerts.ts`): when, every answer, the ad's
