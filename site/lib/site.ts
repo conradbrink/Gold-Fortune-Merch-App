@@ -102,10 +102,6 @@ export const founding = {
   // the app (its Telegram card drafts his first WhatsApp); a test checks.
   caller: "Conrad",
   callerNumber: "+267 76 642 259",
-  // The 5-minute video on /founding: the YouTube video's ID (the part after
-  // "v=" in its link). Empty until the owner sends it; the phone demo shows
-  // in its place.
-  videoId: "",
   // The app's endpoint. NEXT_PUBLIC_FOUNDING_API points a local site at a local app.
   apiUrl: process.env.NEXT_PUBLIC_FOUNDING_API || "https://app.tickd.co.za/api/founding",
 } as const;

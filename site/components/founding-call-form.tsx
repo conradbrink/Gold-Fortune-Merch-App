@@ -3,7 +3,7 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { founding, site } from "@/lib/site";
 import { track } from "@/components/analytics";
-import { FoundingVideo } from "@/components/founding-youtube";
+import { FoundingVideo } from "@/components/founding-video";
 import {
   Chips,
   Labelled,
@@ -197,12 +197,10 @@ export function FoundingCallForm() {
             </p>
           </>
         )}
-        {founding.videoId && (
-          <div className="grid gap-3">
-            <p className="font-semibold text-sand">While you wait, watch how it works (5 minutes).</p>
-            <FoundingVideo />
-          </div>
-        )}
+        <div className="grid gap-3">
+          <p className="font-semibold text-sand">While you wait, watch how it works (3 minutes).</p>
+          <FoundingVideo />
+        </div>
       </div>
     );
   }
