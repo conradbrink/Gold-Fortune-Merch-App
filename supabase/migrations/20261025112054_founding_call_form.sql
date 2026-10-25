@@ -6,7 +6,7 @@
 -- the check takes all of them. Both new columns are null for the main page's
 -- form and for older applications.
 --
--- Rollback: supabase/rollback/20261025100000_founding_call_form.down.sql.
+-- Rollback: supabase/rollback/20261025112054_founding_call_form.down.sql.
 
 alter table public.founding_applications
   drop constraint founding_applications_team_size_check,

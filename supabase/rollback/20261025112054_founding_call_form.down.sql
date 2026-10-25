@@ -1,4 +1,4 @@
--- Rollback of 20261025100000_founding_call_form. An application sent with one
+-- Rollback of 20261025112054_founding_call_form. An application sent with one
 -- of /founding's new bands would break the old check, so those are moved to
 -- the main page's band they fall in first ('16-30' and '31+' both to
 -- '20-50+', which is close enough for a list the owner reads by hand).
