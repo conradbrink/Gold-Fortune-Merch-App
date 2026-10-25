@@ -313,9 +313,20 @@ export function allowedOrigins(production: boolean): string[] {
   return production ? live : [...live, "http://localhost:3100", "http://localhost:3110"];
 }
 
+/**
+ * The sales site's own Vercel previews (project tickd-site, team gold-fortune1),
+ * so a change to the form can be tested end to end before it goes live (owner,
+ * 25 Oct 2026: "fill in the forms and submit it ... before anything goes
+ * live"). They sit behind Vercel's sign-in. Another Vercel project named to
+ * look like one could match too; that only lets a browser there read our
+ * answer, which costs nothing: the endpoint is public, and its limits still apply.
+ */
+const SITE_PREVIEW = /^https:\/\/tickd-site-[a-z0-9-]+-gold-fortune1\.vercel\.app$/;
+
 /** The `Access-Control-Allow-Origin` value for this request, or null when the origin is not one of ours. */
 export function corsOrigin(origin: string | null, production: boolean): string | null {
-  return origin && allowedOrigins(production).includes(origin) ? origin : null;
+  if (!origin) return null;
+  return allowedOrigins(production).includes(origin) || SITE_PREVIEW.test(origin) ? origin : null;
 }
 
 /** The owner's email about a new application: everything they said, and a link to answer on WhatsApp. */
