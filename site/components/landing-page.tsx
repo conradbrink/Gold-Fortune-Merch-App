@@ -7,30 +7,27 @@ import {
   PackageCheck,
   PackageX,
   Route,
-  ShieldCheck,
   TrendingUp,
 } from "lucide-react";
 import Image from "next/image";
-import Link from "next/link";
 import { CostCalculator } from "@/components/cost-calculator";
 import { ProductDemo } from "@/components/demo/product-demo";
-import { FoundingCallForm } from "@/components/founding-call-form";
 import { FoundingForm } from "@/components/founding-form";
-import { FoundingVideo } from "@/components/founding-youtube";
 import { FoundingGuarantee, FoundingStack, Objections } from "@/components/founding-package";
 import { SpotsText } from "@/components/founding-spots";
-import { Logo } from "@/components/logo";
 import { SiteFooter } from "@/components/site-footer";
+import { SiteHeader } from "@/components/site-header";
+import { ApplySection } from "@/components/apply-section";
+import { h2, pilotButton, wrap } from "@/components/page-styles";
 import { PricingSection } from "@/components/pricing-section";
 import { ProofSection } from "@/components/proof-section";
 import { SectionViews } from "@/components/analytics";
 import { confirmed, firstPlan, founding, foundingFrom, proof, rand, site } from "@/lib/site";
 
-// The landing page: the main page (app/page.tsx) and /founding
-// (app/founding/page.tsx) both render it. Since 25 Oct 2026 /founding, where
-// the Meta ads land, is only the hero, the video and the form (owner, 25 Oct
-// 2026: so the lead isn't distracted), with its own hero text and the form for
-// the new sales process (Conrad calls within minutes); see `page`.
+// The landing page, the main page (app/page.tsx). /founding, where the Meta ads
+// land, used to render it too; since 25 Oct 2026 it is its own short page
+// (components/founding-page.tsx) built from the same header, form section and
+// footer.
 //
 // Copy: ~/Downloads/site-copy-final-v7.md, reworked on 8 Oct 2026 with the
 // Hormozi offer skills, then rewritten on 9 Oct 2026 to read the way you'd say
@@ -111,13 +108,6 @@ const benefits = [
 ];
 
 
-// What the form at the foot of the page gets them, in three lines.
-const youGet = [
-  "Every store visit, proven.",
-  "Orders on the phone, straight to your warehouse.",
-  "Set up for you, and your reps trained.",
-];
-
 // The rest of the questions, after the doubts (lib/site.ts `objections`).
 const faqs: [q: string, a: string][] = [
   ["Who is it for?", "Distributors with 3 to 30 reps who visit stores, take orders and check the shelves."],
@@ -141,19 +131,10 @@ const faqs: [q: string, a: string][] = [
   ["Who is it not for?", "A one-person business, or a team with no reps visiting stores."],
 ];
 
-// One spacing rhythm for every section: 80px between sections on a phone, 128px
-// from sm up, and 24px (32px) between a heading block and what follows it.
-// Headings are 36px on a phone and 48px from sm; body copy is 18px.
-const wrap = "mx-auto grid gap-6 px-4 py-10 sm:gap-8 sm:px-6 sm:py-16";
-// Section headings on the left again (owner, 21 Oct 2026); a size smaller on a
-// phone, where 36px read too big.
-const h2 = "tk-reveal font-display text-3xl font-bold leading-[1.1] tracking-tight text-balance text-teal-900 sm:text-5xl";
 const lead = "max-w-2xl text-base leading-relaxed text-pretty text-ink sm:text-lg";
 // The one line a section ends on.
 const verdict = "font-display text-xl font-extrabold leading-snug text-balance text-teal-900 sm:text-3xl";
 
-const pilotButton =
-  "flex min-h-12 w-full items-center justify-center text-balance text-center rounded-full bg-amber-500 px-6 py-3 text-lg font-semibold text-teal-950 transition-[background-color,transform] duration-150 ease-out hover:bg-amber-400 active:scale-[0.97] sm:inline-flex sm:w-auto sm:py-3.5";
 
 
 // A real dashboard screenshot (example data), cut to the page's own content
@@ -196,111 +177,13 @@ const SECTION_EVENTS = {
   ai: "feature_view",
 };
 
-/**
- * The close: what they get, in three lines, and the form. At the foot of the
- * main page; straight after the video on /founding, with the form for the new
- * sales process (owner, 25 Oct 2026).
- */
-function Apply({ page }: { page: "home" | "founding" }) {
-  return (
-    <section id="apply" className="scroll-mt-28 px-4 pb-14 sm:px-6 sm:pb-16">
-      <div className="tk-reveal mx-auto grid max-w-3xl gap-6 rounded-2xl bg-teal-900 p-6 text-sand sm:p-10">
-        <div className="grid gap-3">
-          <h2 className="font-display text-3xl font-extrabold leading-[1.1] tracking-tight text-balance sm:text-5xl">
-            Start your free {founding.pilotDays}-day pilot.
-          </h2>
-          <ul className="grid gap-2">
-            {youGet.map((g) => (
-              <li key={g} className="flex items-start gap-2.5 text-lg font-semibold leading-snug">
-                <span aria-hidden="true" className="mt-0.5 grid size-6 shrink-0 place-items-center rounded-full bg-amber-500 text-teal-950">
-                  <Check className="size-4" strokeWidth={3.5} />
-                </span>
-                {g}
-              </li>
-            ))}
-          </ul>
-          <p className="leading-relaxed text-teal-100 sm:text-lg">
-            {page === "founding"
-              ? `It takes a minute. ${founding.caller} will call you himself, usually within minutes. No card, no contract.`
-              : "It takes a minute. We'll email you to set up your pilot. No card, no contract."}
-          </p>
-          <SpotsText className="text-sm font-semibold text-amber-500" />
-        </div>
-        {page === "founding" ? <FoundingCallForm /> : <FoundingForm />}
-      </div>
-    </section>
-  );
-}
-
-/**
- * /founding's hero: the promise every video ad ends on, in the ad's own words,
- * so the page picks up where the video left off (owner, 25 Oct 2026: "the
- * promises we made in the CTA should be there"). Hormozi's hero order: who
- * it's for, the outcome, how little it takes, the risk taken away, then one
- * button, Apply now, to the form, with the spots under it. One centred
- * column, four blocks (the stagger in globals.css), no Gold Fortune line.
- * The ads name no price, so neither does this; the funnel's "viewed the
- * prices" isn't sent on /founding.
- */
-function FoundingHero() {
-  return (
-    <section className="mx-auto max-w-3xl px-4 pb-10 pt-6 sm:px-6 sm:pb-16 sm:pt-12 lg:max-w-5xl lg:pt-16">
-      <div className="tk-hero grid justify-items-center gap-4 text-center sm:gap-6">
-        <p className="text-sm font-bold uppercase tracking-wide text-teal-700">For distributors</p>
-        <h1 className="font-display text-[2.1rem] font-extrabold leading-[1.06] tracking-tight text-balance text-teal-900 sm:text-5xl lg:text-[3.6rem]">
-          Get a{" "}
-          <span className="relative whitespace-nowrap">
-            free {founding.pilotDays}-day pilot
-            <span aria-hidden="true" className="tk-underline absolute inset-x-0 bottom-[-0.02em] h-[0.12em] rounded-full bg-amber-500" />
-          </span>
-          .<span className="block">We set up your entire business.</span>
-        </h1>
-        <div className="grid justify-items-center gap-3">
-          <p className="max-w-xl text-base leading-relaxed text-pretty text-ink sm:text-xl">
-            All your stores included. Then our team helps you grow your business.
-          </p>
-          <p className="flex max-w-xl items-start gap-2 text-left text-base font-semibold leading-snug text-teal-900 sm:text-lg">
-            <ShieldCheck aria-hidden="true" className="mt-0.5 size-5 shrink-0 text-teal-700" strokeWidth={2.5} />
-            <span>
-              Not happy after {founding.guaranteeDays} days? We give you that month&apos;s fee back.{" "}
-              <Link href="/terms#guarantee" className="whitespace-nowrap text-sm font-medium text-muted underline underline-offset-2">
-                T&amp;Cs apply
-              </Link>
-            </span>
-          </p>
-        </div>
-        <div className="grid w-full justify-items-center gap-2 pt-1 sm:w-fit">
-          <a href="#apply" className={pilotButton}>
-            Apply now
-          </a>
-          <p className="text-sm font-semibold text-teal-900">No card · No contract</p>
-          <SpotsText
-            urgent
-            className="mt-1 inline-block w-fit rounded-full bg-amber-500 px-4 py-1.5 text-sm font-extrabold uppercase tracking-wide text-teal-950"
-          />
-        </div>
-      </div>
-    </section>
-  );
-}
-
-/**
- * The landing page, shared by the main page and /founding (owner, 20 Oct
- * 2026: "the founding page should be redesigned to fit our current landing
- * page"). /founding is where the Founding adverts land: the offer they
- * promised, the video and the form, and nothing else (owner, 25 Oct 2026).
- */
-export function LandingPage({ page = "home" }: { page?: "home" | "founding" }) {
+/** The landing page: the main page. */
+export function LandingPage() {
   return (
     <>
-      {/* One focus: the banner and the one button, both to the form. */}
-      {/* Solid, not blurred: a blurred bar over the page as it scrolls is
-          heavy work on an iPhone and made scrolling stutter (owner, 21 Oct 2026). */}
-      <header className="sticky top-0 z-40 border-b border-line/70 bg-mint">
-        {/* The banner carries the offer down the main page. /founding's hero
-            says it all on the first screen, so there it would only be a third
-            "Apply now" (owner, 25 Oct 2026: keep it very simple). */}
-        {page === "home" && (
+      <SiteHeader
+        cta="Start my free pilot"
+        banner={
           <div className="bg-teal-900 px-4 py-1.5 text-center text-[13px] leading-snug text-sand sm:py-2 sm:text-sm">
             Founding {founding.spots}: free {founding.pilotDays}-day pilot + {founding.percentOff}% off for {founding.priceMonths} months.{" "}
             <SpotsText short className="font-semibold" />{" "}
@@ -308,270 +191,225 @@ export function LandingPage({ page = "home" }: { page?: "home" | "founding" }) {
               Start my free pilot
             </a>
           </div>
-        )}
-        <div className="mx-auto flex h-14 max-w-6xl items-center justify-between px-4 sm:h-16 sm:px-6">
-          <a href="#top" aria-label={`${site.name} home`}>
-            <Logo />
-          </a>
-          <a
-            href="#apply"
-            className="flex min-h-11 items-center rounded-full bg-teal-900 px-4 text-sm font-semibold text-sand transition-[background-color,transform] duration-150 ease-out hover:bg-teal-800 active:scale-[0.97]"
-          >
-            {page === "founding" ? "Apply now" : "Start my free pilot"}
-          </a>
-        </div>
-      </header>
+        }
+      />
 
       <SectionViews sections={SECTION_EVENTS} />
       <main id="top">
-        {page === "founding" ? (
-          <FoundingHero />
-        ) : (
-          <>
-            {/* 1. Hero, in the owner's words (20 Oct 2026): who it's for, what it
-                is, how it helps, the effort it doesn't take, the way in, and the
-                first trust signal (Gold Fortune's result). */}
-            {/* A size smaller on a phone (owner, 21 Oct 2026: on an iPhone 16 Pro the
-                Gold Fortune line was under the first screen). */}
-            <section className="mx-auto grid max-w-6xl items-center gap-10 px-4 pb-10 pt-5 sm:px-6 sm:pb-16 sm:pt-12 lg:grid-cols-[1.1fr_0.9fr] lg:gap-14 lg:pt-12">
-              <div className="tk-hero grid gap-4 sm:gap-6">
-                <p className="text-sm font-bold uppercase tracking-wide text-teal-700">For teams of 3 to 30 reps</p>
-                <h1 className="font-display text-[2.1rem] font-extrabold leading-[1.06] tracking-tight text-balance text-teal-900 sm:text-5xl lg:text-[3.6rem]">
-                  Distributors:{" "}
-                  <span className="relative whitespace-nowrap">
-                    one app
-                    <span aria-hidden="true" className="tk-underline absolute inset-x-0 bottom-[-0.02em] h-[0.12em] rounded-full bg-amber-500" />
-                  </span>{" "}
-                  to manage your reps, orders and invoices.
-                </h1>
-                <p className="max-w-xl text-base leading-relaxed text-pretty text-ink sm:text-xl">
-                  Your reps visit the stores you&apos;ve planned, and {site.name} helps them sell more at each one. Our AI Manager then
-                  tells you how to grow your business.
-                </p>
-                <p className="flex max-w-xl items-start gap-2.5 text-base font-semibold leading-relaxed text-teal-900 sm:text-lg">
-                  <span aria-hidden="true" className="mt-0.5 grid size-6 shrink-0 place-items-center rounded-full bg-teal-700 text-white">
-                    <Check className="size-4" strokeWidth={3.5} />
-                  </span>
-                  We set everything up.
-                </p>
-                {/* The button and "No card · No contract" share one width, so the
-                    line sits in the middle under it (owner, 20 Oct 2026). */}
-                <div className="grid w-full justify-items-start gap-2 sm:w-fit">
-                  <a href="#apply" className={pilotButton}>
-                    Start my free pilot
-                  </a>
-                  <p className="w-full text-center text-sm font-semibold text-teal-900">No card · No contract</p>
-                </div>
-                <div className="flex max-w-xl items-center gap-3 border-t border-line pt-4 sm:pt-5">
-                  <Image
-                    src="/gold-fortune-logo.png"
-                    alt="Gold Fortune logo"
-                    width={256}
-                    height={256}
-                    className="size-11 shrink-0 rounded-lg bg-white object-contain p-0.5 ring-1 ring-line"
-                  />
-                  <p className="grid leading-snug">
-                    <span className="font-display text-lg font-extrabold text-teal-900 sm:text-xl">
-                      R184k <span aria-label="to">→</span> R340k a month at one retailer
-                    </span>
-                    <span className="text-sm text-muted">
-                      Gold Fortune · {proof.reps} reps · {proof.stores} stores
-                    </span>
-                  </p>
-                </div>
-              </div>
-              <figure className="tk-hero-demo grid gap-3">
-                <ProductDemo />
-              </figure>
-            </section>
-          </>
-        )}
-
-        {/* /founding: the video, then the form, before everything else (owner,
-            25 Oct 2026). The hero's button goes straight to the form, so
-            nobody has to watch the video first. */}
-        {page === "founding" && (
-          <>
-            <section id="video" aria-labelledby="video-title" className="border-t border-line bg-white">
-              <div className={`${wrap} max-w-4xl`}>
-                <h2 id="video-title" className={`${h2} text-center`}>
-                  {founding.videoId ? "Watch how it works (5 minutes)" : "See how it works"}
-                </h2>
-                {founding.videoId ? (
-                  <FoundingVideo />
-                ) : (
-                  <figure className="mx-auto grid w-full max-w-md gap-3">
-                    <ProductDemo />
-                  </figure>
-                )}
-              </div>
-            </section>
-            <div className="border-t border-line pt-10 sm:pt-16">
-              <Apply page="founding" />
+        {/* 1. Hero, in the owner's words (20 Oct 2026): who it's for, what it
+            is, how it helps, the effort it doesn't take, the way in, and the
+            first trust signal (Gold Fortune's result). */}
+        {/* A size smaller on a phone (owner, 21 Oct 2026: on an iPhone 16 Pro the
+            Gold Fortune line was under the first screen). */}
+        <section className="mx-auto grid max-w-6xl items-center gap-10 px-4 pb-10 pt-5 sm:px-6 sm:pb-16 sm:pt-12 lg:grid-cols-[1.1fr_0.9fr] lg:gap-14 lg:pt-12">
+          <div className="tk-hero grid gap-4 sm:gap-6">
+            <p className="text-sm font-bold uppercase tracking-wide text-teal-700">For teams of 3 to 30 reps</p>
+            <h1 className="font-display text-[2.1rem] font-extrabold leading-[1.06] tracking-tight text-balance text-teal-900 sm:text-5xl lg:text-[3.6rem]">
+              Distributors:{" "}
+              <span className="relative whitespace-nowrap">
+                one app
+                <span aria-hidden="true" className="tk-underline absolute inset-x-0 bottom-[-0.02em] h-[0.12em] rounded-full bg-amber-500" />
+              </span>{" "}
+              to manage your reps, orders and invoices.
+            </h1>
+            <p className="max-w-xl text-base leading-relaxed text-pretty text-ink sm:text-xl">
+              Your reps visit the stores you&apos;ve planned, and {site.name} helps them sell more at each one. Our AI Manager then
+              tells you how to grow your business.
+            </p>
+            <p className="flex max-w-xl items-start gap-2.5 text-base font-semibold leading-relaxed text-teal-900 sm:text-lg">
+              <span aria-hidden="true" className="mt-0.5 grid size-6 shrink-0 place-items-center rounded-full bg-teal-700 text-white">
+                <Check className="size-4" strokeWidth={3.5} />
+              </span>
+              We set everything up.
+            </p>
+            {/* The button and "No card · No contract" share one width, so the
+                line sits in the middle under it (owner, 20 Oct 2026). */}
+            <div className="grid w-full justify-items-start gap-2 sm:w-fit">
+              <a href="#apply" className={pilotButton}>
+                Start my free pilot
+              </a>
+              <p className="w-full text-center text-sm font-semibold text-teal-900">No card · No contract</p>
             </div>
-          </>
-        )}
+            <div className="flex max-w-xl items-center gap-3 border-t border-line pt-4 sm:pt-5">
+              <Image
+                src="/gold-fortune-logo.png"
+                alt="Gold Fortune logo"
+                width={256}
+                height={256}
+                className="size-11 shrink-0 rounded-lg bg-white object-contain p-0.5 ring-1 ring-line"
+              />
+              <p className="grid leading-snug">
+                <span className="font-display text-lg font-extrabold text-teal-900 sm:text-xl">
+                  R184k <span aria-label="to">→</span> R340k a month at one retailer
+                </span>
+                <span className="text-sm text-muted">
+                  Gold Fortune · {proof.reps} reps · {proof.stores} stores
+                </span>
+              </p>
+            </div>
+          </div>
+          <figure className="tk-hero-demo grid gap-3">
+            <ProductDemo />
+          </figure>
+        </section>
 
-        {/* Everything below is the main page's; /founding stops at its form. */}
-        {page === "home" && (
-          <>
-            {/* 3. The problem: the old way. */}
-            <section id="problem" aria-labelledby="problem-title">
-              <div className={`${wrap} max-w-6xl`}>
-                <div className="grid gap-3">
-                  <h2 id="problem-title" className={h2}>
-                    The old way is costing you orders.
-                  </h2>
-                  <p className={lead}>Sound familiar?</p>
-                </div>
-                <ul className="grid gap-x-10 gap-y-6 sm:grid-cols-2">
-                  {pains.map(({ icon: Icon, title, body }) => (
-                    <li
-                      key={title}
-                      className="tk-reveal tk-timeline flex gap-3.5 border-t border-line pt-5 sm:last:odd:col-span-2"
-                    >
-                      <span className="tk-pop grid size-10 shrink-0 place-items-center rounded-xl bg-flag/10 text-flag ring-1 ring-flag/20">
-                        <Icon className="size-5" strokeWidth={2.25} aria-hidden="true" />
-                      </span>
-                      <span className="grid gap-1">
-                        <span className="font-display text-lg font-bold leading-snug text-teal-900 sm:text-xl">{title}</span>
-                        <span className="text-base leading-relaxed text-ink sm:text-lg">{body}</span>
-                      </span>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            </section>
-
-            {/* 4. The solution: each benefit with what it means (the live map and
-                dashboard pictures came off, owner 20 Oct 2026). */}
-            <section id="benefits" aria-labelledby="benefits-title" className="scroll-mt-28 border-t border-line bg-white">
-              <div className={`${wrap} max-w-6xl`}>
-                <div className="grid gap-3">
-                  <h2 id="benefits-title" className={h2}>
-                    {site.name} fixes all {countWords[pains.length] ?? pains.length}.
-                  </h2>
-                  <p className={lead}>
-                    Your reps use the app on their phones. You see it all on your computer.
-                  </p>
-                </div>
-                <ul className="grid gap-4 sm:grid-cols-2">
-                  {benefits.map(({ icon: Icon, title, body }) => (
-                    <li key={title} className="tk-reveal grid content-start gap-3 rounded-2xl bg-mint p-5 ring-1 ring-teal-100 sm:p-6">
-                      {/* The heading beside its icon (owner, 20 Oct 2026). */}
-                      <div className="flex items-center gap-3">
-                        <span className="tk-icon-hover grid size-11 shrink-0 place-items-center rounded-xl bg-teal-900 text-amber-500">
-                          <Icon className="size-5" strokeWidth={2.25} aria-hidden="true" />
-                        </span>
-                        <h3 className="font-display text-lg font-bold leading-snug text-teal-900 sm:text-xl">{title}</h3>
-                      </div>
-                      <p className="text-base leading-relaxed text-ink sm:text-lg">{body}</p>
-                    </li>
-                  ))}
-                </ul>
-                <p className={verdict}>If it isn&apos;t in {site.name}, it didn&apos;t happen.</p>
-              </div>
-            </section>
-
-            {/* 4b. "How do I grow my business?" (was "What do I do about it?") The AI Manager (owner, 19 Oct 2026): Ask
-                and the report summaries are live (#183, #186, /api/insights). The
-                shelf-photo check panel came off the page (owner, 20 Oct 2026). */}
-            <section id="ai" className="scroll-mt-28 border-t border-line">
-              <div className={`${wrap} max-w-6xl lg:grid-cols-[0.9fr_1.1fr] lg:items-center lg:gap-12`}>
-                <div className="grid content-start gap-6 sm:gap-8">
-                  <div className="grid gap-3">
-                    <p className="tk-reveal text-sm font-bold uppercase tracking-wide text-teal-700">Our AI Manager</p>
-                    <h2 className={h2}>How do I grow my business?</h2>
-                    <p className={lead}>
-                      Ask any question about your company, and get an answer from your real data, so you can make instant decisions.
-                    </p>
-                  </div>
-                  <p className={verdict}>Like a sales manager who has read every report.</p>
-                </div>
-                {/* One real Ask answer (example data), the owner's pick (20 Oct
-                    2026): how to improve sales in an area. */}
-                <Shot
-                  src="/demo/dash/site-ask-sales.webp"
-                  alt="Our AI Manager answering “How can we improve sales in Riverside?”: sales are down to R18,400 from R24,100, a store that hasn't ordered and is due, a store that ordered less, two stores without a visit in three weeks, and putting Riverside on one day for the rep."
-                  width={800}
-                  height={1046}
-                  className="mx-auto w-full max-w-sm"
-                />
-              </div>
-            </section>
-
-            {/* Social proof: Gold Fortune's real numbers, after the AI Manager
-                (owner, 20 Oct 2026). */}
-            <ProofSection applyHref="#apply" />
-
-            {/* What missed orders cost: the Rep Leak Calculator, after the AI
-                Manager (owner, 20 Oct 2026). */}
-            <section id="calculator" aria-labelledby="calculator-title" className="border-t border-line bg-white">
-              <div className={`${wrap} max-w-6xl`}>
-                <div className="grid gap-3">
-                  <h2 id="calculator-title" className={h2}>
-                    How much you&apos;re losing without {site.name}.
-                  </h2>
-                  <p className={lead}>Put in your numbers to see what missed orders cost you.</p>
-                </div>
-                <div className="tk-reveal">
-                  <CostCalculator />
-                </div>
-              </div>
-            </section>
-
-            {/* 6. The doubts: the Founding 10 package (the value first, then the
-                price and the promise), the normal prices, and the questions. */}
-            <section id="offer" className="scroll-mt-28 border-t border-line">
-              <div className={`${wrap} max-w-6xl`}>
-                <div className="grid gap-3">
-                  <h2 className={h2}>Want to grow your business?</h2>
-                  <p className={lead}>
-                    Become one of our Founding {founding.spots} distributors. We set {site.name} up for you and train your reps, your
-                    first {founding.pilotDays} days are free, and then you get {founding.percentOff}% off your plan for{" "}
-                    {founding.priceMonths} months, from {rand(foundingFrom)} a month.
-                  </p>
-                  {/* The reveal on the wrapper, the glow and wiggle on the badge: one animation each. */}
-                  <span className="tk-reveal grid justify-items-center py-2">
-                    <SpotsText
-                      urgent
-                      className="inline-block w-fit rounded-full bg-amber-500 px-4 py-1.5 text-sm font-extrabold uppercase tracking-wide text-teal-950"
-                    />
+        {/* 3. The problem: the old way. */}
+        <section id="problem" aria-labelledby="problem-title">
+          <div className={`${wrap} max-w-6xl`}>
+            <div className="grid gap-3">
+              <h2 id="problem-title" className={h2}>
+                The old way is costing you orders.
+              </h2>
+              <p className={lead}>Sound familiar?</p>
+            </div>
+            <ul className="grid gap-x-10 gap-y-6 sm:grid-cols-2">
+              {pains.map(({ icon: Icon, title, body }) => (
+                <li
+                  key={title}
+                  className="tk-reveal tk-timeline flex gap-3.5 border-t border-line pt-5 sm:last:odd:col-span-2"
+                >
+                  <span className="tk-pop grid size-10 shrink-0 place-items-center rounded-xl bg-flag/10 text-flag ring-1 ring-flag/20">
+                    <Icon className="size-5" strokeWidth={2.25} aria-hidden="true" />
                   </span>
-                </div>
-                <div className="grid gap-4 lg:grid-cols-[1.2fr_1fr] lg:items-start lg:gap-6">
-                  <div className="tk-reveal">
-                    <FoundingStack applyHref="#apply" />
+                  <span className="grid gap-1">
+                    <span className="font-display text-lg font-bold leading-snug text-teal-900 sm:text-xl">{title}</span>
+                    <span className="text-base leading-relaxed text-ink sm:text-lg">{body}</span>
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        </section>
+
+        {/* 4. The solution: each benefit with what it means (the live map and
+            dashboard pictures came off, owner 20 Oct 2026). */}
+        <section id="benefits" aria-labelledby="benefits-title" className="scroll-mt-28 border-t border-line bg-white">
+          <div className={`${wrap} max-w-6xl`}>
+            <div className="grid gap-3">
+              <h2 id="benefits-title" className={h2}>
+                {site.name} fixes all {countWords[pains.length] ?? pains.length}.
+              </h2>
+              <p className={lead}>
+                Your reps use the app on their phones. You see it all on your computer.
+              </p>
+            </div>
+            <ul className="grid gap-4 sm:grid-cols-2">
+              {benefits.map(({ icon: Icon, title, body }) => (
+                <li key={title} className="tk-reveal grid content-start gap-3 rounded-2xl bg-mint p-5 ring-1 ring-teal-100 sm:p-6">
+                  {/* The heading beside its icon (owner, 20 Oct 2026). */}
+                  <div className="flex items-center gap-3">
+                    <span className="tk-icon-hover grid size-11 shrink-0 place-items-center rounded-xl bg-teal-900 text-amber-500">
+                      <Icon className="size-5" strokeWidth={2.25} aria-hidden="true" />
+                    </span>
+                    <h3 className="font-display text-lg font-bold leading-snug text-teal-900 sm:text-xl">{title}</h3>
                   </div>
-                  <div className="tk-reveal grid content-start gap-4">
-                    <FoundingGuarantee />
-                  </div>
-                </div>
-              </div>
-            </section>
+                  <p className="text-base leading-relaxed text-ink sm:text-lg">{body}</p>
+                </li>
+              ))}
+            </ul>
+            <p className={verdict}>If it isn&apos;t in {site.name}, it didn&apos;t happen.</p>
+          </div>
+        </section>
 
-            <section id="pricing" className="border-t border-line bg-white">
-              <div className={`${wrap} max-w-6xl`}>
-                <div className="grid gap-3">
-                  <h2 className={h2}>Our prices after the Founding {founding.spots}.</h2>
-                  <p className={lead}>One simple price, with everything included.</p>
-                </div>
-                <div className="tk-reveal">
-                  <PricingSection />
-                </div>
+        {/* 4b. "How do I grow my business?" (was "What do I do about it?") The AI Manager (owner, 19 Oct 2026): Ask
+            and the report summaries are live (#183, #186, /api/insights). The
+            shelf-photo check panel came off the page (owner, 20 Oct 2026). */}
+        <section id="ai" className="scroll-mt-28 border-t border-line">
+          <div className={`${wrap} max-w-6xl lg:grid-cols-[0.9fr_1.1fr] lg:items-center lg:gap-12`}>
+            <div className="grid content-start gap-6 sm:gap-8">
+              <div className="grid gap-3">
+                <p className="tk-reveal text-sm font-bold uppercase tracking-wide text-teal-700">Our AI Manager</p>
+                <h2 className={h2}>How do I grow my business?</h2>
+                <p className={lead}>
+                  Ask any question about your company, and get an answer from your real data, so you can make instant decisions.
+                </p>
               </div>
-            </section>
+              <p className={verdict}>Like a sales manager who has read every report.</p>
+            </div>
+            {/* One real Ask answer (example data), the owner's pick (20 Oct
+                2026): how to improve sales in an area. */}
+            <Shot
+              src="/demo/dash/site-ask-sales.webp"
+              alt="Our AI Manager answering “How can we improve sales in Riverside?”: sales are down to R18,400 from R24,100, a store that hasn't ordered and is due, a store that ordered less, two stores without a visit in three weeks, and putting Riverside on one day for the rep."
+              width={800}
+              height={1046}
+              className="mx-auto w-full max-w-sm"
+            />
+          </div>
+        </section>
 
-            <section id="faq" className="scroll-mt-28 border-t border-line">
-              <div className={`${wrap} max-w-3xl`}>
-                <Objections more={faqs} />
+        {/* Social proof: Gold Fortune's real numbers, after the AI Manager
+            (owner, 20 Oct 2026). */}
+        <ProofSection applyHref="#apply" />
+
+        {/* What missed orders cost: the Rep Leak Calculator, after the AI
+            Manager (owner, 20 Oct 2026). */}
+        <section id="calculator" aria-labelledby="calculator-title" className="border-t border-line bg-white">
+          <div className={`${wrap} max-w-6xl`}>
+            <div className="grid gap-3">
+              <h2 id="calculator-title" className={h2}>
+                How much you&apos;re losing without {site.name}.
+              </h2>
+              <p className={lead}>Put in your numbers to see what missed orders cost you.</p>
+            </div>
+            <div className="tk-reveal">
+              <CostCalculator />
+            </div>
+          </div>
+        </section>
+
+        {/* 6. The doubts: the Founding 10 package (the value first, then the
+            price and the promise), the normal prices, and the questions. */}
+        <section id="offer" className="scroll-mt-28 border-t border-line">
+          <div className={`${wrap} max-w-6xl`}>
+            <div className="grid gap-3">
+              <h2 className={h2}>Want to grow your business?</h2>
+              <p className={lead}>
+                Become one of our Founding {founding.spots} distributors. We set {site.name} up for you and train your reps, your
+                first {founding.pilotDays} days are free, and then you get {founding.percentOff}% off your plan for{" "}
+                {founding.priceMonths} months, from {rand(foundingFrom)} a month.
+              </p>
+              {/* The reveal on the wrapper, the glow and wiggle on the badge: one animation each. */}
+              <span className="tk-reveal grid justify-items-center py-2">
+                <SpotsText
+                  urgent
+                  className="inline-block w-fit rounded-full bg-amber-500 px-4 py-1.5 text-sm font-extrabold uppercase tracking-wide text-teal-950"
+                />
+              </span>
+            </div>
+            <div className="grid gap-4 lg:grid-cols-[1.2fr_1fr] lg:items-start lg:gap-6">
+              <div className="tk-reveal">
+                <FoundingStack applyHref="#apply" />
               </div>
-            </section>
+              <div className="tk-reveal grid content-start gap-4">
+                <FoundingGuarantee />
+              </div>
+            </div>
+          </div>
+        </section>
 
-            {/* 7. The close. */}
-            <Apply page="home" />
-          </>
-        )}
+        <section id="pricing" className="border-t border-line bg-white">
+          <div className={`${wrap} max-w-6xl`}>
+            <div className="grid gap-3">
+              <h2 className={h2}>Our prices after the Founding {founding.spots}.</h2>
+              <p className={lead}>One simple price, with everything included.</p>
+            </div>
+            <div className="tk-reveal">
+              <PricingSection />
+            </div>
+          </div>
+        </section>
+
+        <section id="faq" className="scroll-mt-28 border-t border-line">
+          <div className={`${wrap} max-w-3xl`}>
+            <Objections more={faqs} />
+          </div>
+        </section>
+
+        {/* 7. The close: what they get, in three lines, and the form. */}
+        <ApplySection intro="It takes a minute. We'll email you to set up your pilot. No card, no contract.">
+          <FoundingForm />
+        </ApplySection>
       </main>
 
       <SiteFooter />

@@ -2,18 +2,16 @@
 
 import { useEffect, useId, useRef, useState } from "react";
 import { founding, site } from "@/lib/site";
-import { trackLead } from "@/components/meta-pixel";
 import { track } from "@/components/analytics";
 import { FoundingVideo } from "@/components/founding-youtube";
-import { firstVisit } from "@/lib/first-visit";
 import {
   Chips,
   Labelled,
   MultiChips,
-  errorText,
   input,
   offeredTypes,
   products,
+  sendApplication,
   useFormFunnel,
   type Option,
 } from "@/components/founding-form";
@@ -26,10 +24,12 @@ import {
 // distribute, their email, and the consent to be contacted (ticked to start). The main page
 // keeps the form before it (components/founding-form.tsx); the app takes both.
 
-// The countries we sell in. The number is sent with its country code.
-const countries: [label: string, code: string, example: string][] = [
-  ["🇿🇦 +27", "+27", "082 123 4567"],
-  ["🇧🇼 +267", "+267", "71 234 567"],
+// The countries we sell in, with how many digits a number has after the
+// country code (and without South Africa's leading 0). The number is sent with
+// its country code.
+const countries: { label: string; code: string; digits: number; example: string }[] = [
+  { label: "🇿🇦 +27", code: "+27", digits: 9, example: "082 123 4567" },
+  { label: "🇧🇼 +267", code: "+267", digits: 8, example: "71 234 567" },
 ];
 
 const sizes: Option[] = [
@@ -47,7 +47,7 @@ const roles: Option[] = [
   ["Other", "other"],
 ];
 
-type Field = "name" | "businessName" | "whatsapp" | "teamSize" | "role" | "distributes" | "email" | "contactOk";
+type Field = "name" | "businessName" | "whatsapp" | "teamSize" | "role" | "distributes" | "email";
 
 // The funnel's section for each box (FORM_FIELDS in the app's lib/acquisition.ts).
 const boxKey: Record<string, string> = {
@@ -65,7 +65,6 @@ const issueKey: Record<Field, string> = {
   role: "role",
   distributes: "distributes",
   email: "email",
-  contactOk: "consent",
 };
 type Issue = { field: Field; message: string };
 type State =
@@ -78,18 +77,26 @@ type State =
 // style is full width, which squeezed the number box to nothing).
 const countryPicker = `${input.replace("w-full", "w-auto").replace("px-4", "")} shrink-0 pl-3 pr-8`;
 
-/** The number as typed, with the chosen country code unless they typed their own. */
-function fullNumber(code: string, raw: string): string {
+/**
+ * The number as typed, with the chosen country code unless they typed one: with
+ * a + or 00, or the code's own digits without the + ("27 82 123 4567" is
+ * +27821234567, not +2727821234567, which the app would take and nobody could
+ * reach).
+ */
+function fullNumber(code: string, digits: number, raw: string): string {
   const t = raw.trim();
-  if (t.startsWith("+") || t.replace(/\D/g, "").startsWith("00")) return t;
-  return `${code}${t.replace(/\D/g, "").replace(/^0+/, "")}`;
+  const d = t.replace(/\D/g, "");
+  if (t.startsWith("+") || d.startsWith("00")) return t;
+  const cc = code.replace("+", "");
+  if (d.startsWith(cc) && d.length === cc.length + digits) return `+${d}`;
+  return `${code}${d.replace(/^0+/, "")}`;
 }
 
 export function FoundingCallForm() {
   const id = useId();
   const { started, once, focused, left, invalid } = useFormFunnel(boxKey);
   const [state, setState] = useState<State>({ kind: "idle" });
-  const [country, setCountry] = useState(countries[0][1]);
+  const [country, setCountry] = useState(countries[0].code);
   const [teamSize, setTeamSize] = useState("");
   const [role, setRole] = useState("");
   const [distributes, setDistributes] = useState<string[]>([]);
@@ -139,64 +146,24 @@ export function FoundingCallForm() {
     }
 
     setState({ kind: "sending" });
-    let src = "";
-    try {
-      src = new URLSearchParams(window.location.search).get("src") ?? "";
-    } catch {
-      /* the address is not readable: no source */
-    }
     const name = text("name").trim();
-    const firstName = name.split(/\s+/)[0] ?? "";
-    try {
-      const res = await fetch(founding.apiUrl, {
-        method: "POST",
-        headers: { "content-type": "application/json", accept: "application/json" },
-        body: JSON.stringify({
-          name,
-          businessName: text("businessName"),
-          whatsapp: fullNumber(country, text("whatsapp")),
-          teamSize,
-          role,
-          distributes: distributes.join(", "),
-          email: text("email"),
-          contactOk: form.get("contactOk") === "on",
-          trade,
-          website: text("website"),
-          source: src,
-          attribution: firstVisit(),
-        }),
-      });
-      const body = (await res.json().catch(() => null)) as {
-        ok?: boolean;
-        waitlist?: boolean;
-        already?: boolean;
-        error?: string;
-        issues?: Issue[];
-      } | null;
-      if (res.ok && body?.ok && body.already) {
-        // Not a new lead: no Pixel lead (see components/founding-form.tsx).
-        track("signup_error", { section: "already" });
-        setState({ kind: "done", waitlist: body.waitlist === true, already: true, firstName });
-        return;
-      }
-      if (res.ok && body?.ok) {
-        trackLead();
-        track("signup_completed", { waitlist: body.waitlist === true });
-        setState({ kind: "done", waitlist: body.waitlist === true, already: false, firstName });
-        return;
-      }
-      const turnedBack = body?.issues?.length ? body.issues.map((i) => issueKey[i.field]).filter(Boolean) : [];
-      for (const key of new Set(turnedBack)) track("signup_error", { section: key });
-      if (turnedBack.length === 0) track("signup_error", { section: `server-${res.status}` });
-      setState({
-        kind: "error",
-        message: body?.issues?.length ? "Please check the details marked below." : (body?.error ?? "That did not go through. Please try again."),
-        issues: body?.issues ?? [],
-      });
-    } catch {
-      track("signup_error", { section: "network" });
-      setState({ kind: "error", message: "We could not reach the server. Please check your signal and try again.", issues: [] });
-    }
+    const picked = countries.find((c) => c.code === country) ?? countries[0];
+    const result = await sendApplication(
+      {
+        name,
+        businessName: text("businessName"),
+        whatsapp: fullNumber(picked.code, picked.digits, text("whatsapp")),
+        teamSize,
+        role,
+        distributes: distributes.join(", "),
+        email: text("email"),
+        contactOk: form.get("contactOk") === "on",
+        trade,
+        website: text("website"),
+      },
+      issueKey,
+    );
+    setState(result.kind === "done" ? { ...result, firstName: name.split(/\s+/)[0] ?? "" } : result);
   }
 
   if (state.kind === "done") {
@@ -241,7 +208,7 @@ export function FoundingCallForm() {
   }
 
   const sending = state.kind === "sending";
-  const example = countries.find(([, code]) => code === country)?.[2] ?? "";
+  const example = countries.find((c) => c.code === country)?.example ?? "";
   return (
     <form onSubmit={submit} onFocusCapture={focused} onBlurCapture={left} onInvalidCapture={invalid} className="grid gap-5">
       <Labelled label="Your name" htmlFor={`${id}-name`} error={problem("name")}>
@@ -258,9 +225,9 @@ export function FoundingCallForm() {
             onChange={(e) => setCountry(e.target.value)}
             className={countryPicker}
           >
-            {countries.map(([label, code]) => (
-              <option key={code} value={code}>
-                {label}
+            {countries.map((c) => (
+              <option key={c.code} value={c.code}>
+                {c.label}
               </option>
             ))}
           </select>
@@ -323,11 +290,6 @@ export function FoundingCallForm() {
             </a>
           </span>
         </label>
-        {problem("contactOk") && (
-          <p role="alert" className={errorText}>
-            {problem("contactOk")}
-          </p>
-        )}
       </div>
 
       {/* A trap for scripts: people never see or fill this in. */}

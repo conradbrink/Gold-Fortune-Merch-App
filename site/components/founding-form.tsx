@@ -253,6 +253,66 @@ export function useFormFunnel(boxes: Record<string, string>) {
   return { started, once, focused, left, invalid };
 }
 
+/** What sending an application came to, for the form to show. */
+export type SendResult<F extends string> =
+  | { kind: "done"; waitlist: boolean; already: boolean }
+  | { kind: "error"; message: string; issues: { field: F; message: string }[] };
+
+/**
+ * Sends an application to the app (`founding.apiUrl`) with where the visitor
+ * came from, and counts what happened; both forms use it. A new application
+ * is a Pixel lead and `signup_completed`. One per person (owner, 20 Oct 2026):
+ * an "already" answer is not a new lead, so no Pixel lead and no "sent"; the
+ * Control Centre lists it under what stopped people ("Had already applied").
+ * Anything else that stops it sends `signup_error`, by box where the app says
+ * which (`fields` maps the app's field names to the funnel's sections).
+ */
+export async function sendApplication<F extends string>(
+  body: Record<string, unknown>,
+  fields: Record<F, string>,
+): Promise<SendResult<F>> {
+  let source = "";
+  try {
+    source = new URLSearchParams(window.location.search).get("src") ?? "";
+  } catch {
+    /* the address is not readable: no source */
+  }
+  try {
+    const res = await fetch(founding.apiUrl, {
+      method: "POST",
+      headers: { "content-type": "application/json", accept: "application/json" },
+      body: JSON.stringify({ ...body, source, attribution: firstVisit() }),
+    });
+    const answer = (await res.json().catch(() => null)) as {
+      ok?: boolean;
+      waitlist?: boolean;
+      already?: boolean;
+      error?: string;
+      issues?: { field: F; message: string }[];
+    } | null;
+    if (res.ok && answer?.ok && answer.already) {
+      track("signup_error", { section: "already" });
+      return { kind: "done", waitlist: answer.waitlist === true, already: true };
+    }
+    if (res.ok && answer?.ok) {
+      trackLead();
+      track("signup_completed", { waitlist: answer.waitlist === true });
+      return { kind: "done", waitlist: answer.waitlist === true, already: false };
+    }
+    const turnedBack = answer?.issues?.length ? answer.issues.map((i) => fields[i.field]).filter(Boolean) : [];
+    for (const key of new Set(turnedBack)) track("signup_error", { section: key });
+    if (turnedBack.length === 0) track("signup_error", { section: `server-${res.status}` });
+    return {
+      kind: "error",
+      message: answer?.issues?.length ? "Please check the details marked below." : (answer?.error ?? "That did not go through. Please try again."),
+      issues: answer?.issues ?? [],
+    };
+  } catch {
+    track("signup_error", { section: "network" });
+    return { kind: "error", message: "We could not reach the server. Please check your signal and try again.", issues: [] };
+  }
+}
+
 export function FoundingForm() {
   const id = useId();
   const { started, once, focused, left, invalid } = useFormFunnel(boxKey);
@@ -298,17 +358,9 @@ export function FoundingForm() {
     }
 
     setState({ kind: "sending" });
-    let src = "";
-    try {
-      src = new URLSearchParams(window.location.search).get("src") ?? "";
-    } catch {
-      /* the address is not readable: no source */
-    }
-    try {
-      const res = await fetch(founding.apiUrl, {
-        method: "POST",
-        headers: { "content-type": "application/json", accept: "application/json" },
-        body: JSON.stringify({
+    setState(
+      await sendApplication(
+        {
           name: `${text("firstName").trim()} ${text("lastName").trim()}`.trim(),
           businessName: text("businessName"),
           distributes: distributes.join(", "),
@@ -317,43 +369,10 @@ export function FoundingForm() {
           whatsapp: text("whatsapp"),
           email: text("email"),
           website: text("website"),
-          source: src,
-          attribution: firstVisit(),
-        }),
-      });
-      const body = (await res.json().catch(() => null)) as {
-        ok?: boolean;
-        waitlist?: boolean;
-        already?: boolean;
-        error?: string;
-        issues?: Issue[];
-      } | null;
-      if (res.ok && body?.ok && body.already) {
-        // One application per person (owner, 20 Oct 2026): not a new lead, so
-        // no Pixel lead and no "sent"; the Control Centre lists it under
-        // what stopped people ("Had already applied").
-        track("signup_error", { section: "already" });
-        setState({ kind: "done", waitlist: body.waitlist === true, already: true });
-        return;
-      }
-      if (res.ok && body?.ok) {
-        trackLead();
-        track("signup_completed", { waitlist: body.waitlist === true });
-        setState({ kind: "done", waitlist: body.waitlist === true, already: false });
-        return;
-      }
-      const turnedBack = body?.issues?.length ? body.issues.map((i) => issueKey[i.field]).filter(Boolean) : [];
-      for (const key of new Set(turnedBack)) track("signup_error", { section: key });
-      if (turnedBack.length === 0) track("signup_error", { section: `server-${res.status}` });
-      setState({
-        kind: "error",
-        message: body?.issues?.length ? "Please check the details marked below." : (body?.error ?? "That did not go through. Please try again."),
-        issues: body?.issues ?? [],
-      });
-    } catch {
-      track("signup_error", { section: "network" });
-      setState({ kind: "error", message: "We could not reach the server. Please check your signal and try again.", issues: [] });
-    }
+        },
+        issueKey,
+      ),
+    );
   }
 
   if (state.kind === "done") {
