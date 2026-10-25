@@ -384,6 +384,9 @@ export function campaignSlug(name: string): string {
 
 /** The Founding form's boxes, top to bottom, as the site sends them (site/components/founding-form.tsx). */
 export const FORM_FIELDS = [
+  // /founding asks for the name in one box since 25 Oct 2026; the main page
+  // still asks first and last.
+  ["name", "Your name"],
   ["first_name", "First name"],
   ["last_name", "Last name"],
   ["business_name", "Business name"],
@@ -391,8 +394,11 @@ export const FORM_FIELDS = [
   // back on 20 Oct 2026, last, after WhatsApp.
   ["distributes", "What they distribute"],
   ["team_size", "How many reps"],
+  // /founding only, since 25 Oct 2026.
+  ["role", "Their role"],
   ["whatsapp", "WhatsApp number"],
   ["email", "Email"],
+  ["consent", "Agreed to be contacted"],
 ] as const;
 
 export type FormEventRow = { name: string; visitor_id: string; section: string | null; at: string };

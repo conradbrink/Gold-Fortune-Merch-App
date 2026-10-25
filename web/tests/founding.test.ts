@@ -21,6 +21,8 @@ const good: FoundingInput = {
   whatsapp: "082 123 4567",
   email: "owner@example.com",
   distributes: " Snacks and cold drinks ",
+  role: "",
+  contactOk: false,
   trade: "cleaning",
   teamSize: "5-10",
   town: " Gaborone ",
@@ -58,6 +60,8 @@ test("a good application is trimmed and ready to save", () => {
     whatsapp: "27821234567",
     email: "owner@example.com",
     distributes: "Snacks and cold drinks",
+    role: null,
+    contact_consent_at: null,
     trade: "cleaning",
     team_size: "5-10",
     town: "Gaborone",
@@ -84,6 +88,8 @@ test("the name, business, team size and WhatsApp are required; the rest is check
     whatsapp: "x",
     email: "owner@example.com",
     distributes: "",
+    role: "",
+    contactOk: false,
     trade: "Cleaning",
     teamSize: "9",
     town: "",
@@ -112,6 +118,8 @@ test("an application from the short form saves the unasked answers as null", () 
     whatsapp: "082 123 4567",
     email: "owner@example.com",
     distributes: " ",
+    role: "",
+    contactOk: false,
     trade: "",
     town: " ",
     howRun: "",
@@ -144,10 +152,12 @@ test("an application from the short form saves the unasked answers as null", () 
 });
 
 test("the team sizes and ways of running jobs are exactly the form's", () => {
-  // The bands since 20 Oct 2026, and the older ones still taken.
-  for (const size of ["1-4", "5-10", "11-15", "20-50+", "11-25", "26-50", "50+"]) assert.deepEqual(foundingIssues({ ...good, teamSize: size }), []);
+  // /founding's bands since 25 Oct 2026, the main page's since 20 Oct 2026, and the older ones still taken.
+  for (const size of ["1-2", "3-5", "6-10", "16-30", "31+", "1-4", "5-10", "11-15", "20-50+", "11-25", "26-50", "50+"]) {
+    assert.deepEqual(foundingIssues({ ...good, teamSize: size }), []);
+  }
   for (const how of ["whatsapp", "paper", "app", "memory"]) assert.deepEqual(foundingIssues({ ...good, howRun: how }), []);
-  assert.equal(foundingIssues({ ...good, teamSize: "1-2" })[0]?.field, "teamSize");
+  assert.equal(foundingIssues({ ...good, teamSize: "2-3" })[0]?.field, "teamSize");
 });
 
 test("a body that is not an object, or has the wrong types, never throws", () => {
@@ -167,6 +177,15 @@ test("only the sales site may call from a browser; localhost only outside produc
   assert.equal(corsOrigin("http://localhost:3100", true), null);
   assert.equal(corsOrigin("http://localhost:3100", false), "http://localhost:3100");
   assert.equal(corsOrigin(null, true), null);
+  // The site's own Vercel previews, for testing the form before it goes live.
+  assert.equal(
+    corsOrigin("https://tickd-site-git-founding-form-first-gold-fortune1.vercel.app", true),
+    "https://tickd-site-git-founding-form-first-gold-fortune1.vercel.app"
+  );
+  assert.equal(corsOrigin("https://tickd-site-abc123-gold-fortune1.vercel.app", true), "https://tickd-site-abc123-gold-fortune1.vercel.app");
+  assert.equal(corsOrigin("https://tickd-site-x-gold-fortune1.vercel.app.evil.example", true), null);
+  assert.equal(corsOrigin("https://tickd-site-x-someone-else.vercel.app", true), null);
+  assert.equal(corsOrigin("http://tickd-site-x-gold-fortune1.vercel.app", true), null);
 });
 
 test("the owner's email escapes what the visitor typed, lists every answer and links to WhatsApp", () => {

@@ -10,9 +10,36 @@
 
 import { escapeHtml } from "@/lib/email/templates";
 
-/** The form's bands since 20 Oct 2026, then the ones before (older applications, and an old page still open). */
-export const TEAM_SIZES = ["1-4", "5-10", "11-15", "20-50+", "11-25", "26-50", "50+"] as const;
+/**
+ * The bands of /founding's form since 25 Oct 2026, then the main page's (since
+ * 20 Oct 2026), then the ones before (older applications, and an old page
+ * still open).
+ */
+export const TEAM_SIZES = [
+  "1-2",
+  "3-5",
+  "6-10",
+  "11-15",
+  "16-30",
+  "31+",
+  "1-4",
+  "5-10",
+  "20-50+",
+  "11-25",
+  "26-50",
+  "50+",
+] as const;
 export type TeamSize = (typeof TEAM_SIZES)[number];
+
+/** "Your role" on /founding's form (owner, 25 Oct 2026): who decides. */
+export const ROLES = ["owner", "sales_manager", "other"] as const;
+export type Role = (typeof ROLES)[number];
+
+export const ROLE_LABEL: Record<Role, string> = {
+  owner: "Owner or MD",
+  sales_manager: "Sales manager",
+  other: "Other",
+};
 
 export const HOW_RUN = ["whatsapp", "paper", "app", "memory"] as const;
 export type HowRun = (typeof HOW_RUN)[number];
@@ -36,6 +63,10 @@ export type FoundingInput = {
   email: string;
   /** What they distribute, in their words (asked from 19 Oct 2026; optional here). */
   distributes: string;
+  /** Their role (asked on /founding from 25 Oct 2026; optional here, for the main page's form). */
+  role: string;
+  /** They ticked "Tickd may contact me on WhatsApp, phone and email about my pilot" (/founding, 25 Oct 2026). */
+  contactOk: boolean;
   // Everything below was on the longer form until then. Each is optional:
   // checked only when given, so a visitor still on the old form gets through.
   trade: string;
@@ -62,6 +93,10 @@ export type FoundingApplication = {
   email: string | null;
   /** What they distribute; null when not asked. */
   distributes: string | null;
+  /** Their role; null when not asked. */
+  role: Role | null;
+  /** When they agreed to be contacted about their pilot; null when not asked. */
+  contact_consent_at: string | null;
   /** Null: not asked (the form stopped asking these on 11 Oct 2026). */
   trade: string | null;
   town: string | null;
@@ -173,7 +208,8 @@ export function foundingIssues(input: FoundingInput): FoundingIssue[] {
   const business = input.businessName.trim();
   if (!business) add("businessName", "Please enter your business's name.");
   else if (business.length > 120) add("businessName", "Please use a shorter business name.");
-  if (!(TEAM_SIZES as readonly string[]).includes(input.teamSize)) add("teamSize", "Choose how many staff you have.");
+  if (!(TEAM_SIZES as readonly string[]).includes(input.teamSize)) add("teamSize", "Choose how many reps you have.");
+  if (input.role && !(ROLES as readonly string[]).includes(input.role)) add("role", "Choose your role.");
   if (normaliseWhatsapp(input.whatsapp) === null) {
     add("whatsapp", "Please enter the WhatsApp number we can reach you on, for example 082 123 4567.");
   }
@@ -192,7 +228,8 @@ export function foundingIssues(input: FoundingInput): FoundingIssue[] {
 
 /** The checked application, or the issues. */
 export function checkApplication(
-  input: FoundingInput
+  input: FoundingInput,
+  now: Date = new Date()
 ): { ok: true; application: FoundingApplication } | { ok: false; issues: FoundingIssue[] } {
   const issues = foundingIssues(input);
   if (issues.length > 0) return { ok: false, issues };
@@ -206,6 +243,8 @@ export function checkApplication(
       whatsapp: normaliseWhatsapp(input.whatsapp)!,
       email: input.email.trim() ? input.email.trim().toLowerCase() : null,
       distributes: input.distributes.trim() || null,
+      role: input.role ? (input.role as Role) : null,
+      contact_consent_at: input.contactOk === true ? now.toISOString() : null,
       trade: input.trade || null,
       town: input.town.trim() || null,
       how_run: input.howRun ? (input.howRun as HowRun) : null,
@@ -253,6 +292,8 @@ export function inputFromBody(body: unknown): FoundingInput {
     whatsapp: s("whatsapp"),
     email: s("email"),
     distributes: s("distributes"),
+    role: s("role"),
+    contactOk: o.contactOk === true,
     trade: s("trade"),
     teamSize: s("teamSize"),
     town: s("town"),
@@ -272,9 +313,20 @@ export function allowedOrigins(production: boolean): string[] {
   return production ? live : [...live, "http://localhost:3100", "http://localhost:3110"];
 }
 
+/**
+ * The sales site's own Vercel previews (project tickd-site, team gold-fortune1),
+ * so a change to the form can be tested end to end before it goes live (owner,
+ * 25 Oct 2026: "fill in the forms and submit it ... before anything goes
+ * live"). They sit behind Vercel's sign-in. Another Vercel project named to
+ * look like one could match too; that only lets a browser there read our
+ * answer, which costs nothing: the endpoint is public, and its limits still apply.
+ */
+const SITE_PREVIEW = /^https:\/\/tickd-site-[a-z0-9-]+-gold-fortune1\.vercel\.app$/;
+
 /** The `Access-Control-Allow-Origin` value for this request, or null when the origin is not one of ours. */
 export function corsOrigin(origin: string | null, production: boolean): string | null {
-  return origin && allowedOrigins(production).includes(origin) ? origin : null;
+  if (!origin) return null;
+  return allowedOrigins(production).includes(origin) || SITE_PREVIEW.test(origin) ? origin : null;
 }
 
 /** The owner's email about a new application: everything they said, and a link to answer on WhatsApp. */
@@ -293,6 +345,7 @@ export function applicationEmail(
     ["Business", a.business_name],
     ["What they distribute", a.distributes ?? notAsked],
     ["Reps", a.team_size],
+    ["Role", a.role ? ROLE_LABEL[a.role] : notAsked],
     ["WhatsApp", `+${a.whatsapp}`],
     ["Email", a.email ?? "(none given)"],
     ["Type of work", tradeLabel ?? notAsked],
@@ -302,6 +355,7 @@ export function applicationEmail(
     ["Whole team, every workday, 60 days", a.whole_team === null ? notAsked : yn(a.whole_team)],
     ["60-second video and Google review", a.video_review === null ? notAsked : yn(a.video_review)],
     ["Agreed to marketing use", a.marketing_ok ? "Yes" : notAsked],
+    ["Agreed to be contacted about the pilot", a.contact_consent_at ? "Yes" : notAsked],
     ["Came from", a.source ?? "(not known)"],
     ["How they found us", describeAttribution(a.attribution) ?? "(not known)"],
   ];
