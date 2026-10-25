@@ -1,4 +1,4 @@
-import { checkAttribution, repsLabel, ROLE_LABEL, type Role } from "@/lib/founding";
+import { checkAttribution, consentAnswer, repsLabel, ROLE_LABEL, type Role } from "@/lib/founding";
 
 /**
  * The Founding 10 leads as a spreadsheet file: who they are and how to reach
@@ -70,7 +70,7 @@ export function leadsCsv(rows: LeadRow[], trade: (code: string) => string): stri
       r.role ? (ROLE_LABEL[r.role as Role] ?? r.role) : null,
       r.team_size ? repsLabel(r.team_size) : null,
       r.distributes,
-      r.contact_consent_at ? "Yes" : null,
+      consentAnswer({ role: r.role ?? null, contact_consent_at: r.contact_consent_at ?? null }),
       t?.utm_campaign,
       t?.utm_term,
       t?.utm_content,

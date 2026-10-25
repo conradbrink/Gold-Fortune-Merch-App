@@ -5,6 +5,7 @@ import {
   HOW_RUN_LABEL,
   ROLE_LABEL,
   checkAttribution,
+  consentAnswer,
   describeAttribution,
   repsLabel,
   type HowRun,
@@ -161,7 +162,13 @@ export default async function FoundingApplicationsPage({
                 </div>
                 <Answer
                   label="Agreed to be contacted"
-                  value={a.contact_consent_at ? `Yes, ${dateTime.format(new Date(a.contact_consent_at))}` : notAsked}
+                  value={
+                    a.contact_consent_at
+                      ? `Yes, ${dateTime.format(new Date(a.contact_consent_at))}`
+                      : consentAnswer(a) === "No"
+                        ? "No, they unticked it: don't contact them"
+                        : notAsked
+                  }
                 />
                 <Answer label="How they found us" value={describeAttribution(checkAttribution(a.attribution)) ?? "not known"} />
                 {a.source && <Answer label="Came from" value={a.source} />}

@@ -18,7 +18,7 @@
  */
 
 import { escapeHtml } from "@/lib/email/templates";
-import { describeAttribution, repsLabel, ROLE_LABEL, type FoundingApplication } from "@/lib/founding";
+import { consentAnswer, describeAttribution, repsLabel, ROLE_LABEL, type FoundingApplication } from "@/lib/founding";
 import { FOUNDING_OFFER } from "@/lib/founding-offer";
 
 /** Who calls each lead (the site's `founding.caller`), for the first WhatsApp the card drafts. */
@@ -80,7 +80,9 @@ export function telegramCard(a: FoundingApplication, waitlist: boolean, at: Date
     row("Distributes", a.distributes),
     row("WhatsApp", `+${a.whatsapp}`),
     row("Email", a.email),
-    row("Agreed to be contacted", a.contact_consent_at ? "Yes" : null),
+    consentAnswer(a) === "No"
+      ? "⚠️ <b>Agreed to be contacted: No</b> (they unticked it)"
+      : row("Agreed to be contacted", consentAnswer(a)),
     row("Applied", `${saTime(at)} (SA time)`),
     row("Came from", cameFrom(a)),
     "",
@@ -142,7 +144,7 @@ export function sheetRow(a: FoundingApplication, waitlist: boolean, at: Date): s
     a.role ? ROLE_LABEL[a.role] : "",
     a.distributes ?? "",
     a.email ?? "",
-    a.contact_consent_at ? "Yes" : "",
+    consentAnswer(a) ?? "",
     waitlist ? "Waiting list" : "Founding",
     [t.utm_source, t.utm_medium].filter(Boolean).join(" / "),
     t.utm_campaign ?? "",
