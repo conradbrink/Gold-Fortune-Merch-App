@@ -15,7 +15,7 @@ import { firstVisit } from "@/lib/first-visit";
 // distribute?" went on (the owner's short form for distributors); on 20 Oct
 // 2026 the email box came back.
 
-type Option = [label: string, value: string];
+export type Option = [label: string, value: string];
 
 // What the business does, in the app's own codes (its industry templates).
 // The site is only for distributors since 19 Oct 2026 (owner), so the form
@@ -37,12 +37,12 @@ const businessTypes: Option[] = [
   ["Something else", "generic"],
 ];
 const OFFERED = new Set(["distribution"]);
-const offeredTypes = businessTypes.filter(([, code]) => OFFERED.has(code));
+export const offeredTypes = businessTypes.filter(([, code]) => OFFERED.has(code));
 
 // What they distribute, as tap-to-pick options (owner, 19 Oct 2026); more than
 // one can be picked. Sent as the labels joined with commas, in this order, in
 // the application's `distributes` (free text, up to 200 characters).
-const products = [
+export const products = [
   "Snacks and sweets",
   "Cold drinks and juice",
   "Groceries",
@@ -92,12 +92,12 @@ type State =
   | { kind: "error"; message: string; issues: Issue[] }
   | { kind: "done"; waitlist: boolean; already: boolean };
 
-const input =
+export const input =
   "min-h-12 w-full rounded-xl border-0 bg-white px-4 py-3 text-base text-ink ring-1 ring-white/30 placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-amber-500";
 
-const errorText = "text-sm font-medium text-amber-300";
+export const errorText = "text-sm font-medium text-amber-300";
 
-function Chips({
+export function Chips({
   label,
   options,
   value,
@@ -139,7 +139,7 @@ function Chips({
 }
 
 // Like Chips, but any number can be on (toggle buttons in a group).
-function MultiChips({
+export function MultiChips({
   label,
   options,
   value,
@@ -183,7 +183,7 @@ function MultiChips({
   );
 }
 
-function Labelled({
+export function Labelled({
   label,
   htmlFor,
   hint,
@@ -212,8 +212,110 @@ function Labelled({
   );
 }
 
+/**
+ * The funnel's events for a form (see `boxKey` above), each once per page
+ * load: `started` the first time anything takes focus, `once` for a box's
+ * first focus and first answer. `boxes` maps an input's name to its section.
+ */
+export function useFormFunnel(boxes: Record<string, string>) {
+  const startedRef = useRef(false);
+  const sentRef = useRef(new Set<string>());
+  function started() {
+    if (startedRef.current) return;
+    startedRef.current = true;
+    track("signup_started");
+  }
+  function once(event: "signup_field" | "signup_filled", key: string) {
+    const k = `${event}:${key}`;
+    if (sentRef.current.has(k)) return;
+    sentRef.current.add(k);
+    track(event, { section: key });
+  }
+  const keyOf = (t: EventTarget) => (t instanceof HTMLInputElement ? boxes[t.name] : undefined);
+  function focused(e: React.FocusEvent<HTMLFormElement>) {
+    started();
+    const key = keyOf(e.target);
+    if (key) once("signup_field", key);
+  }
+  // A tick box's value is always there; its answer is counted where it changes.
+  function left(e: React.FocusEvent<HTMLFormElement>) {
+    const key = keyOf(e.target);
+    if (key && e.target instanceof HTMLInputElement && e.target.type !== "checkbox" && e.target.value.trim()) {
+      once("signup_filled", key);
+    }
+  }
+  // The browser's own check (an empty or badly written box) stops Send before
+  // `submit` runs; this is the only sign of it.
+  function invalid(e: React.FormEvent<HTMLFormElement>) {
+    const key = keyOf(e.target);
+    if (key) track("signup_error", { section: key });
+  }
+  return { started, once, focused, left, invalid };
+}
+
+/** What sending an application came to, for the form to show. */
+export type SendResult<F extends string> =
+  | { kind: "done"; waitlist: boolean; already: boolean }
+  | { kind: "error"; message: string; issues: { field: F; message: string }[] };
+
+/**
+ * Sends an application to the app (`founding.apiUrl`) with where the visitor
+ * came from, and counts what happened; both forms use it. A new application
+ * is a Pixel lead and `signup_completed`. One per person (owner, 20 Oct 2026):
+ * an "already" answer is not a new lead, so no Pixel lead and no "sent"; the
+ * Control Centre lists it under what stopped people ("Had already applied").
+ * Anything else that stops it sends `signup_error`, by box where the app says
+ * which (`fields` maps the app's field names to the funnel's sections).
+ */
+export async function sendApplication<F extends string>(
+  body: Record<string, unknown>,
+  fields: Record<F, string>,
+): Promise<SendResult<F>> {
+  let source = "";
+  try {
+    source = new URLSearchParams(window.location.search).get("src") ?? "";
+  } catch {
+    /* the address is not readable: no source */
+  }
+  try {
+    const res = await fetch(founding.apiUrl, {
+      method: "POST",
+      headers: { "content-type": "application/json", accept: "application/json" },
+      body: JSON.stringify({ ...body, source, attribution: firstVisit() }),
+    });
+    const answer = (await res.json().catch(() => null)) as {
+      ok?: boolean;
+      waitlist?: boolean;
+      already?: boolean;
+      error?: string;
+      issues?: { field: F; message: string }[];
+    } | null;
+    if (res.ok && answer?.ok && answer.already) {
+      track("signup_error", { section: "already" });
+      return { kind: "done", waitlist: answer.waitlist === true, already: true };
+    }
+    if (res.ok && answer?.ok) {
+      trackLead();
+      track("signup_completed", { waitlist: answer.waitlist === true });
+      return { kind: "done", waitlist: answer.waitlist === true, already: false };
+    }
+    const turnedBack = answer?.issues?.length ? answer.issues.map((i) => fields[i.field]).filter(Boolean) : [];
+    for (const key of new Set(turnedBack)) track("signup_error", { section: key });
+    if (turnedBack.length === 0) track("signup_error", { section: `server-${res.status}` });
+    return {
+      kind: "error",
+      message: answer?.issues?.length ? "Please check the details marked below." : (answer?.error ?? "That did not go through. Please try again."),
+      issues: answer?.issues ?? [],
+    };
+  } catch {
+    track("signup_error", { section: "network" });
+    return { kind: "error", message: "We could not reach the server. Please check your signal and try again.", issues: [] };
+  }
+}
+
 export function FoundingForm() {
   const id = useId();
+  const { started, once, focused, left, invalid } = useFormFunnel(boxKey);
   const [state, setState] = useState<State>({ kind: "idle" });
   const [teamSize, setTeamSize] = useState("");
   const [distributes, setDistributes] = useState<string[]>([]);
@@ -239,40 +341,6 @@ export function FoundingForm() {
   const issues = state.kind === "error" ? state.issues : [];
   const problem = (f: Field) => missing[f] ?? issues.find((i) => i.field === f)?.message;
 
-  // The funnel's "started applying" step: the first time anything in the form
-  // takes focus, once per page load.
-  const startedRef = useRef(false);
-  function started() {
-    if (startedRef.current) return;
-    startedRef.current = true;
-    track("signup_started");
-  }
-
-  // Each box's first focus and first answer, once per page load.
-  const sentRef = useRef(new Set<string>());
-  function once(event: "signup_field" | "signup_filled", key: string) {
-    const k = `${event}:${key}`;
-    if (sentRef.current.has(k)) return;
-    sentRef.current.add(k);
-    track(event, { section: key });
-  }
-  const keyOf = (t: EventTarget) => (t instanceof HTMLInputElement ? boxKey[t.name] : undefined);
-  function focused(e: React.FocusEvent<HTMLFormElement>) {
-    started();
-    const key = keyOf(e.target);
-    if (key) once("signup_field", key);
-  }
-  function left(e: React.FocusEvent<HTMLFormElement>) {
-    const key = keyOf(e.target);
-    if (key && e.target instanceof HTMLInputElement && e.target.value.trim()) once("signup_filled", key);
-  }
-  // The browser's own check (an empty or badly written box) stops Send before
-  // `submit` runs; this is the only sign of it.
-  function invalid(e: React.FormEvent<HTMLFormElement>) {
-    const key = keyOf(e.target);
-    if (key) track("signup_error", { section: key });
-  }
-
   async function submit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     if (state.kind === "sending") return;
@@ -290,17 +358,9 @@ export function FoundingForm() {
     }
 
     setState({ kind: "sending" });
-    let src = "";
-    try {
-      src = new URLSearchParams(window.location.search).get("src") ?? "";
-    } catch {
-      /* the address is not readable: no source */
-    }
-    try {
-      const res = await fetch(founding.apiUrl, {
-        method: "POST",
-        headers: { "content-type": "application/json", accept: "application/json" },
-        body: JSON.stringify({
+    setState(
+      await sendApplication(
+        {
           name: `${text("firstName").trim()} ${text("lastName").trim()}`.trim(),
           businessName: text("businessName"),
           distributes: distributes.join(", "),
@@ -309,43 +369,10 @@ export function FoundingForm() {
           whatsapp: text("whatsapp"),
           email: text("email"),
           website: text("website"),
-          source: src,
-          attribution: firstVisit(),
-        }),
-      });
-      const body = (await res.json().catch(() => null)) as {
-        ok?: boolean;
-        waitlist?: boolean;
-        already?: boolean;
-        error?: string;
-        issues?: Issue[];
-      } | null;
-      if (res.ok && body?.ok && body.already) {
-        // One application per person (owner, 20 Oct 2026): not a new lead, so
-        // no Pixel lead and no "sent"; the Control Centre lists it under
-        // what stopped people ("Had already applied").
-        track("signup_error", { section: "already" });
-        setState({ kind: "done", waitlist: body.waitlist === true, already: true });
-        return;
-      }
-      if (res.ok && body?.ok) {
-        trackLead();
-        track("signup_completed", { waitlist: body.waitlist === true });
-        setState({ kind: "done", waitlist: body.waitlist === true, already: false });
-        return;
-      }
-      const turnedBack = body?.issues?.length ? body.issues.map((i) => issueKey[i.field]).filter(Boolean) : [];
-      for (const key of new Set(turnedBack)) track("signup_error", { section: key });
-      if (turnedBack.length === 0) track("signup_error", { section: `server-${res.status}` });
-      setState({
-        kind: "error",
-        message: body?.issues?.length ? "Please check the details marked below." : (body?.error ?? "That did not go through. Please try again."),
-        issues: body?.issues ?? [],
-      });
-    } catch {
-      track("signup_error", { section: "network" });
-      setState({ kind: "error", message: "We could not reach the server. Please check your signal and try again.", issues: [] });
-    }
+        },
+        issueKey,
+      ),
+    );
   }
 
   if (state.kind === "done") {

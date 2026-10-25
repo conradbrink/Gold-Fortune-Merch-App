@@ -96,6 +96,15 @@ export const founding = {
   priceMonths: 3,
   // The guarantee: run it this many days; its conditions are on /terms#guarantee.
   guaranteeDays: 30,
+  // Who calls each /founding applicant, usually within minutes, and from which
+  // number (owner, 25 Oct 2026). Only /founding names him; the rest of the site
+  // still says "our team" (owner, 19 Oct 2026).
+  caller: "Conrad",
+  callerNumber: "+267 76 642 259",
+  // The 5-minute video on /founding: the YouTube video's ID (the part after
+  // "v=" in its link). Empty until the owner sends it; the phone demo shows
+  // in its place.
+  videoId: "",
   // The app's endpoint. NEXT_PUBLIC_FOUNDING_API points a local site at a local app.
   apiUrl: process.env.NEXT_PUBLIC_FOUNDING_API || "https://app.tickd.co.za/api/founding",
 } as const;

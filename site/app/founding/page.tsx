@@ -1,23 +1,30 @@
 import type { Metadata } from "next";
-import { LandingPage } from "@/components/landing-page";
-import { founding, foundingFrom, rand, site } from "@/lib/site";
+import { FoundingPage } from "@/components/founding-page";
+import { founding, site } from "@/lib/site";
 
-// The Founding 10 distributors page, where the Founding adverts land. Since
-// 20 Oct 2026 it is the main landing page (components/landing-page.tsx) with
-// a hero that leads with the offer the adverts promise (owner: "the founding
-// page should be redesigned to fit our current landing page"). It used to be
-// its own shorter page with the video at the top (components/founding-video.tsx,
-// kept for a distributor cut of the video).
+// The Founding 10 distributors page, where the Founding adverts land (the Meta
+// ads link here with their own utm_ tags; keep the address). Since 25 Oct 2026
+// it is its own short page: the hero, the video and the form
+// (components/founding-page.tsx). The old video (components/founding-video.tsx,
+// public/founding) stays off (owner, 25 Oct 2026); the new one is a YouTube
+// video, `founding.videoId` in lib/site.ts.
 //
-// The offer: a free 14-day pilot, set up for them, then 40% off the plan that
-// fits for the first 3 months (lib/site.ts `founding`). Only 10 spots; the
-// number left is the owner's, from the database.
+// The offer, as the ads say it: a free 14-day pilot where we set up the whole
+// business, and that month's fee back after 30 days if they're not happy. Only
+// 10 spots; the number left is the owner's, from the database.
+
+// The words a shared link or a search result shows, the same as the hero's, so
+// a WhatsApp or Facebook preview promises what the page does (without its own
+// openGraph the page would show the main page's).
+const title = `A free ${founding.pilotDays}-day pilot. We set up your entire business. | ${site.name}`;
+const description = `For distributors: a free ${founding.pilotDays}-day pilot of ${site.name}, with all your stores set up for you. Not happy after ${founding.guaranteeDays} days? We give you that month's fee back. Only ${founding.spots} founding spots.`;
 
 export const metadata: Metadata = {
-  title: `Become one of our Founding ${founding.spots} distributors | ${site.name}`,
-  description: `A free ${founding.pilotDays}-day pilot of ${site.name}, set up for you. Then ${founding.percentOff}% off your plan for ${founding.priceMonths} months, from ${rand(foundingFrom)} a month. Only ${founding.spots} founding spots.`,
+  title,
+  description,
+  openGraph: { title, description, siteName: site.name, locale: "en_ZA", type: "website", url: `${site.url}${site.foundingPath}` },
 };
 
-export default function FoundingPage() {
-  return <LandingPage hero="founding" />;
+export default function Founding() {
+  return <FoundingPage />;
 }
