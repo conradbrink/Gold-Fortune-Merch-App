@@ -154,7 +154,10 @@ export default function FormDetailPage() {
       .from("form_fields")
       .select("*")
       .eq("form_template_id", params.id)
-      .order("sort_order");
+      // Then by id: questions that share a place show in the order the AI
+      // Manager reads them in, so "place 2" is the same question for both.
+      .order("sort_order")
+      .order("id");
     setFields(fieldRows ?? []);
     setLoading(false);
   }
@@ -400,8 +403,10 @@ export default function FormDetailPage() {
     setSavingRequired(true);
     setTemplateError(null);
     try {
-      await updateForm(supabase, template.id, { required: next });
-      setTemplate({ ...template, required: next });
+      // With the version this page loaded, and keeping the new one for the
+      // next change: a form changed elsewhere since is refused, not overwritten.
+      const updatedAt = await updateForm(supabase, template.id, { required: next }, template.updated_at);
+      setTemplate({ ...template, required: next, updated_at: updatedAt });
     } catch (e) {
       setTemplateError(e instanceof Error ? e.message : String(e));
     } finally {

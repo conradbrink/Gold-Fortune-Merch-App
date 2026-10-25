@@ -2,7 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/lib/supabase/types";
 import type { ExportColumn, ExportSheet } from "@/lib/export";
 import type { LookupName } from "@/lib/assistant-tools";
-import { ACTION_LABELS } from "@/lib/assistant-actions";
+import { actionLabel, outcomeWords } from "@/lib/assistant-actions";
 import { helpTopic } from "@/lib/assistant-help";
 import { CARD_IDS, DASHBOARD_CARDS, cardAvailable, findCard } from "@/lib/dashboard-cards";
 import { fetchLayout, reconcileLayout } from "@/lib/dashboard-layout";
@@ -1268,12 +1268,13 @@ async function promotionsLookup(args: Record<string, unknown>, env: ToolEnv): Pr
   if (id) {
     const detail = await fetchPromotionDetail(env.supabase, id);
     if (!detail) throw new LookupError("There's no promotion with that id. Look it up with promotions first.");
+    // Only the names the assistant is shown; the counts carry the rest.
     const [products, sites] = await Promise.all([
       detail.product_ids.length
-        ? env.supabase.from("products").select("id, name, brand").in("id", detail.product_ids.slice(0, 200))
+        ? env.supabase.from("products").select("id, name, brand").in("id", detail.product_ids.slice(0, MODEL_ROWS))
         : Promise.resolve({ data: [], error: null }),
       detail.store_ids.length
-        ? env.supabase.from("stores").select("id, name, city").in("id", detail.store_ids.slice(0, 200))
+        ? env.supabase.from("stores").select("id, name, city").in("id", detail.store_ids.slice(0, MODEL_ROWS))
         : Promise.resolve({ data: [], error: null }),
     ]);
     fail(products.error);
@@ -1345,24 +1346,27 @@ async function formsLookup(args: Record<string, unknown>, env: ToolEnv): Promise
       },
     };
   }
-  const [{ data: forms, error }, { data: fields, error: fieldsError }] = await Promise.all([
-    env.supabase.from("form_templates").select("id, name, required, active").order("active", { ascending: false }).order("name"),
-    env.supabase.from("form_fields").select("form_template_id"),
-  ]);
+  // Each form with its count of questions, counted by the database: one row
+  // per form, however many questions the company has.
+  const { data: forms, error } = await env.supabase
+    .from("form_templates")
+    .select("id, name, required, active, form_fields(count)")
+    .order("active", { ascending: false })
+    .order("name")
+    .limit(MODEL_ROWS + 1);
   fail(error);
-  fail(fieldsError);
-  const counts = new Map<string, number>();
-  for (const f of fields ?? []) counts.set(f.form_template_id, (counts.get(f.form_template_id) ?? 0) + 1);
+  type Row = { id: string; name: string; required: boolean; active: boolean; form_fields: { count: number }[] | null };
+  const rows = (forms ?? []) as unknown as Row[];
   return {
     model: {
-      forms: (forms ?? []).slice(0, MODEL_ROWS).map((f) => ({
+      forms: rows.slice(0, MODEL_ROWS).map((f) => ({
         id: f.id,
         name: f.name,
         compulsory: f.required,
         archived: !f.active,
-        questions: counts.get(f.id) ?? 0,
+        questions: f.form_fields?.[0]?.count ?? 0,
       })),
-      more: (forms ?? []).length > MODEL_ROWS,
+      more: rows.length > MODEL_ROWS,
     },
   };
 }
@@ -1419,8 +1423,8 @@ async function aiChanges(args: Record<string, unknown>, env: ToolEnv): Promise<T
     day: niceDay(localDay(a.created_at, env.timeZone)),
     time: companyTime(a.created_at, env.timeZone),
     who: one(a.person)?.full_name ?? "",
-    what: ACTION_LABELS[a.action as keyof typeof ACTION_LABELS] ?? a.action,
-    outcome: a.ok === null ? "Did not finish" : a.ok ? "Done" : "Did not go through",
+    what: actionLabel(a.action),
+    outcome: outcomeWords(a.ok),
     detail: a.result ?? "",
   }));
   return {
@@ -1449,6 +1453,10 @@ async function howTo(args: Record<string, unknown>, env: ToolEnv): Promise<ToolR
   // every lookup follows.
   if (!canAccessPath(env.permissions, topic.page) || !canReachPath(env.modules, topic.page)) {
     return { model: { error: "That page isn't part of what this person's access in Tickd shows." } };
+  }
+  // Nor the steps to a change only a manager can make: they would end in a refusal.
+  if (topic.managerOnly && !env.isManager) {
+    return { model: { error: "Only a manager can make that change in Tickd, so this person can't do it themselves." } };
   }
   const page = reachablePages(visibleNavGroups(env.permissions, env.modules, env.terms)).find(
     (p) => p.href === topic.page

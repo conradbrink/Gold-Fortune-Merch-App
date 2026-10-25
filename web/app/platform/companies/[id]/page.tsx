@@ -19,7 +19,7 @@ import { DEFAULT_TERMS } from "@/lib/terms";
 import { termShown } from "@/lib/settings-tabs";
 import { toModuleSet } from "@/lib/modules";
 import { ClosePanel } from "./close-panel";
-import { ACTION_LABELS, type ActionName } from "@/lib/assistant-actions";
+import { actionLabel, outcomeWords } from "@/lib/assistant-actions";
 import { trialState } from "@/lib/onboarding";
 
 /**
@@ -376,13 +376,13 @@ export default async function PlatformCompanyPage({
             {aiChanges.map((c) => (
               <li key={c.id} className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5 px-4 py-2">
                 <span className="min-w-0">
-                  <span className="font-medium text-foreground">{ACTION_LABELS[c.action as ActionName] ?? c.action}</span>
+                  <span className="font-medium text-foreground">{actionLabel(c.action)}</span>
                   <span className="text-muted-foreground"> by {c.person}</span>
                   {c.result && <span className="block text-xs text-muted-foreground">{c.result}</span>}
                 </span>
                 <span className="flex items-baseline gap-2">
                   <span className={c.ok === false ? "text-destructive" : "text-muted-foreground"}>
-                    {c.ok === null ? "did not finish" : c.ok ? "done" : "not done"}
+                    {outcomeWords(c.ok)}
                   </span>
                   <span className="text-xs tabular-nums text-muted-foreground">{dateTime.format(new Date(c.createdAt))}</span>
                 </span>

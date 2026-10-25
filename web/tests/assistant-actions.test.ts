@@ -12,8 +12,9 @@ import { TOOLS, toolsFor, exampleQuestions } from "@/lib/assistant-tools";
 import { ACTIONS, type ActionName } from "@/lib/assistant-actions";
 import { ActionError, applyAction, draftAction, readActionInput } from "@/lib/assistant-act";
 import type { ToolEnv } from "@/lib/assistant-data";
-import { history, type ActionDraft } from "@/lib/assistant-stream";
-import { writeRefusal } from "@/lib/write-refusal";
+import { history, parseConversation, type ActionDraft } from "@/lib/assistant-stream";
+import { dbError, refused, writeRefusal } from "@/lib/write-refusal";
+import { isRealDay } from "@/lib/date-range";
 import { guardInstructions, assistantInstructions } from "@/lib/assistant-prompt";
 import { CARD_IDS } from "@/lib/dashboard-cards";
 import { HELP_TOPICS } from "@/lib/assistant-help";
@@ -148,12 +149,34 @@ test("the assistant hears what pressing each card did, and that an unpressed one
   assert.match(turns[1].text, /Card "Your dashboard": not pressed yet, so nothing has changed\./);
 });
 
-test("refusals from the database become one plain sentence", () => {
-  assert.equal(writeRefusal(new Error("Your company's account is read-only until the plan is paid.")), "Your account is read-only until the plan is paid.");
-  assert.equal(writeRefusal(new Error('new row violates row-level security policy for table "promotions"')), "Your access in Tickd doesn't let you change that.");
-  assert.equal(writeRefusal(new Error("Checklists & forms is not enabled for your company's plan")), "Checklists & forms is not enabled for your company's plan.");
-  assert.equal(writeRefusal(new Error("That form changed since it was shown, or you may not have permission.")), "Your access in Tickd doesn't let you change that.");
+test("refusals become one plain sentence, read from the database's reason, not its words", () => {
+  // The billing gate and the record's start both raise 42501 with hint read_only.
+  assert.equal(
+    writeRefusal(dbError({ message: "anything at all", code: "42501", hint: "read_only" })),
+    "Your account is read-only until the plan is paid. Open Billing to choose a plan."
+  );
+  assert.equal(
+    writeRefusal(dbError({ message: "Checklists & forms is not enabled for your company's plan", code: "42501", hint: "module:checklists_forms" })),
+    "Checklists & forms is not enabled for your company's plan."
+  );
+  assert.equal(
+    writeRefusal(dbError({ message: 'new row violates row-level security policy for table "promotions"', code: "42501" })),
+    "Your access in Tickd doesn't let you change that."
+  );
+  assert.equal(writeRefusal(dbError({ message: 'date/time field value out of range: "2026-11-31"', code: "22008" })), "One of the dates isn't a real day.");
+  // The lib's own: a stale row is never told as missing access, whatever its words say.
+  assert.equal(writeRefusal(refused("Changed, or you may not have permission.", "stale")), "It changed since this was drafted. Ask the AI Manager again.");
+  assert.equal(writeRefusal(refused("Nothing was saved.", "not_written")), "Your access in Tickd doesn't let you change that.");
+  assert.equal(writeRefusal(refused("The form was created but its questions were not.", "partial")), "The form was created but its questions were not.");
   assert.equal(writeRefusal(new Error("connection reset")), null);
+});
+
+test("a real day is a day the calendar has", () => {
+  assert.ok(isRealDay("2026-11-30"));
+  assert.ok(isRealDay("2028-02-29"));
+  for (const bad of ["2026-11-31", "2027-02-29", "2026-04-31", "2026-13-01", "2026-1-01", "", null, 20261101]) {
+    assert.ok(!isRealDay(bad), String(bad));
+  }
 });
 
 // ---------------------------------------------------------------- drafting and pressing, end to end
@@ -228,7 +251,7 @@ async function draftAndPress(name: ActionName, args: unknown, db: FakeDb, env = 
 
 test("drafting writes nothing: only pressing does", async () => {
   const db = company();
-  await draftAction(
+  const drafted = await draftAction(
     "create_promotion",
     JSON.stringify({
       name: "Coke November",
@@ -240,6 +263,7 @@ test("drafting writes nothing: only pressing does", async () => {
     }),
     envFor(db)
   );
+  assert.ok(drafted.action, "a card was drafted");
   assert.deepEqual(db.writes, []);
 });
 
@@ -366,7 +390,7 @@ test("a promotion somebody changed after the card was drafted is not overwritten
     db
   );
   db.tables.promotions[0].updated_at = "2026-10-25T07:00:00Z";
-  await assert.rejects(press(), /reload and try again/);
+  await assert.rejects(press(), (e: Error & { hint?: string }) => e.hint === "stale");
   assert.equal(db.tables.promotions[0].name, "October push");
 });
 
@@ -459,7 +483,11 @@ test("archiving a form, and a form changed since the card was drafted", async ()
 
   const stale = await draftAndPress("change_form", { form_id: ids.form, compulsory: true, active: null }, db);
   db.tables.form_templates[0].updated_at = "2026-10-25T10:30:00Z";
-  await assert.rejects(stale.press(), /changed since/);
+  await assert.rejects(stale.press(), (e: Error & { hint?: string }) => {
+    // Said as changed, not as missing access.
+    assert.equal(writeRefusal(e), "It changed since this was drafted. Ask the AI Manager again.");
+    return true;
+  });
   assert.equal(db.tables.form_templates[0].required, false);
 });
 
@@ -498,11 +526,101 @@ test("resetting a dashboard that was never arranged has nothing to do", async ()
   assert.equal(db.tables.dashboard_layouts.length, 0);
 });
 
-test("a read-only company's refusal reaches the assistant as the plain sentence", async () => {
+test("a write the database refuses reaches the person as the plain sentence", async () => {
   const db = company();
-  db.refuse.set("form_templates:select", { message: "Your company's account is read-only until the plan is paid." });
-  const r = await draftAction("change_form", JSON.stringify({ form_id: ids.form, compulsory: true, active: null }), envFor(db));
-  assert.deepEqual(r.model, { error: "Your account is read-only until the plan is paid." });
+  const { press } = await draftAndPress("change_form", { form_id: ids.form, compulsory: true, active: null }, db);
+  db.refuse.set("form_templates:update", { message: "anything", code: "42501", hint: "read_only" } as never);
+  await assert.rejects(press(), (e) => writeRefusal(e) === "Your account is read-only until the plan is paid. Open Billing to choose a plan.");
+});
+
+test("a card edited to move another form's question is refused", async () => {
+  const db = company();
+  const drafted = await draftAction("move_form_question", JSON.stringify({ form_id: ids.form, question_id: ids.q3, position: 1 }), envFor(db));
+  const input = { ...(drafted.action!.input as Record<string, unknown>), question_id: "99999999-0000-4000-8000-000000000001" };
+  const read = readActionInput("move_form_question", input);
+  assert.ok(read.ok);
+  await assert.rejects(applyAction("move_form_question", read.input, envFor(db)), /isn't on this form/);
+  // And a card whose version was emptied can't skip the check.
+  const cleared = readActionInput("change_form", { form_id: ids.form, seen: "", required: true, active: null });
+  assert.equal(cleared.ok, false);
+});
+
+test("an old promotion whose words pass today's limits can still be switched off", async () => {
+  const db = company();
+  db.tables.promotions[0].brief = "x".repeat(700);
+  const { press } = await draftAndPress(
+    "change_promotion",
+    {
+      promotion_id: ids.promo,
+      name: null,
+      brief: null,
+      starts_on: null,
+      ends_on: null,
+      active: false,
+      products: { change: "keep", product_ids: [], brands: [] },
+      sites: { change: "keep", all: false, groups: [], towns: [], site_ids: [] },
+    },
+    db
+  );
+  await press();
+  assert.equal(db.tables.promotions[0].active, false);
+});
+
+test("adding products to a promotion that has started warns that the sites read as partly checked", async () => {
+  const db = company();
+  const { draft } = await draftAndPress(
+    "change_promotion",
+    {
+      promotion_id: ids.promo,
+      name: null,
+      brief: null,
+      starts_on: null,
+      ends_on: null,
+      active: null,
+      products: { change: "add", product_ids: [ids.fanta], brands: [] },
+      sites: { change: "keep", all: false, groups: [], towns: [], site_ids: [] },
+    },
+    db
+  );
+  assert.match(draft.warnings.join(" "), /already started, and you are adding products/);
+});
+
+test("a card names what it changes, so only a re-draft of the same thing replaces it", async () => {
+  const db = company();
+  const a = await draftAction("change_form", JSON.stringify({ form_id: ids.form, compulsory: true, active: null }), envFor(db));
+  const b = await draftAction(
+    "create_promotion",
+    JSON.stringify({
+      name: "Coke November",
+      brief: null,
+      starts_on: "2026-11-01",
+      ends_on: "2026-11-15",
+      products: { product_ids: [ids.coke], brands: [] },
+      sites: { all: true, groups: [], towns: [], site_ids: [] },
+    }),
+    envFor(db)
+  );
+  assert.equal(a.action!.target, ids.form);
+  assert.equal(b.action!.target, "new:coke november");
+});
+
+test("a failed link write takes a new promotion back out, so pressing again can't leave two", async () => {
+  const db = company();
+  const { press } = await draftAndPress(
+    "create_promotion",
+    {
+      name: "Coke November",
+      brief: null,
+      starts_on: "2026-11-01",
+      ends_on: "2026-11-15",
+      products: { product_ids: [ids.coke], brands: [] },
+      sites: { all: true, groups: [], towns: [], site_ids: [] },
+    },
+    db
+  );
+  db.refuse.set("promotion_stores:insert", { message: "connection reset" });
+  await assert.rejects(press());
+  assert.equal(db.tables.promotions.filter((p) => p.name === "Coke November").length, 0);
 });
 
 test("a card that comes back in the wrong shape is refused before anything is read", () => {
@@ -561,4 +679,64 @@ test("an action the assistant calls is shown as a card, and the assistant is tol
   assert.equal(card.action.button, "Make the change");
   assert.match(JSON.stringify(told), /Nothing has changed\. It happens only if the person presses/);
   assert.equal(db.tables.form_templates[0].active, true, "nothing was archived by the assistant");
+});
+
+test("a long answer gives way to the Done note, and a pressed card under a failed answer still counts", () => {
+  const card = (button: string, done: boolean) => ({
+    draft: { title: "New promotion", button } as ActionDraft,
+    result: done ? ({ done: true, text: '"Coke" is set up.', href: "/promotions" } as const) : undefined,
+  });
+  const long = "x".repeat(5000);
+  const turns = history([
+    { role: "user", text: "Set it up" },
+    { role: "assistant", text: long, actions: [card("Create the promotion", true)] },
+    { role: "user", text: "And the form?" },
+    { role: "assistant", text: "", error: "Something went wrong while answering.", actions: [card("Create the form", true)] },
+    { role: "user", text: "Something else" },
+    { role: "assistant", text: "", error: "Stopped." },
+  ]);
+  // Within the length the route keeps, with the note at the end.
+  const parsed = parseConversation({ messages: [...turns, { role: "user", text: "Did it work?" }] });
+  assert.ok(parsed.ok);
+  assert.match(parsed.turns[1].text, /Done: "Coke" is set up\.\)$/);
+  // The failed answer's pressed card goes back; the failed answer with nothing pressed does not.
+  assert.equal(turns.length, 4);
+  assert.match(turns[3].text, /The answer stopped part-way[\s\S]*pressed "Create the form"\. Done/);
+});
+
+test("no new round starts once the question has taken too long", async () => {
+  let clock = 0;
+  let rounds = 0;
+  const sent: AssistantEvent[] = [];
+  const client = {
+    responses: {
+      create: async (params: { text?: { format?: { name?: string } } }) => {
+        if (params.text?.format?.name === "topic_check") return { output_text: JSON.stringify({ on_topic: true }) };
+        rounds++;
+        clock += 25_000;
+        return (async function* () {
+          yield {
+            type: "response.completed",
+            response: { output: [{ type: "function_call", name: "forms", call_id: `c${rounds}`, arguments: '{"form_id":null}' }] },
+          };
+        })();
+      },
+    },
+  };
+  await answerQuestion({
+    client: client as never,
+    model: "m",
+    guardModel: "m",
+    ctx,
+    tools: toolsFor(toPermissionSet(["admin"]), everything, true),
+    turns: [{ role: "user", text: "Which forms do we have?" }],
+    run: async () => ({ model: {} }),
+    send: (e) => sent.push(e),
+    abort: new AbortController(),
+    left: null,
+    now: () => clock,
+  });
+  assert.equal(rounds, 2);
+  assert.ok(sent.some((e) => e.type === "text" && /taking longer than I can spend/.test(e.text)));
+  assert.equal(sent.at(-1)?.type, "done");
 });

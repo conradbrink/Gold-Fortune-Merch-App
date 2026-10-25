@@ -31,6 +31,13 @@ import type { AssistantEvent, ChatTurn, QuestionsLeft } from "@/lib/assistant-st
  */
 const MAX_ROUNDS = 8;
 
+/**
+ * No new round starts after this long. The route stops at 60 seconds
+ * (`maxDuration`), and a round can take several; past this, saying so beats
+ * an answer cut off mid-sentence.
+ */
+const ROUND_BUDGET_MS = 40_000;
+
 type Verdict = "on" | "off" | "failed";
 
 /** The topic check could not run, so nothing was answered. */
@@ -50,6 +57,8 @@ export type AnswerOptions = {
   /** Aborted when the person goes away, and by a failed topic check. */
   abort: AbortController;
   left: QuestionsLeft | null;
+  /** The clock, for tests. */
+  now?: () => number;
 };
 
 export async function answerQuestion(o: AnswerOptions): Promise<void> {
@@ -120,7 +129,17 @@ export async function answerQuestion(o: AnswerOptions): Promise<void> {
     const instructions = assistantInstructions(ctx, tools);
 
     let wrote = false;
+    const now = o.now ?? Date.now;
+    const started = now();
     for (let round = 0; round < MAX_ROUNDS; round++) {
+      if (round > 0 && now() - started > ROUND_BUDGET_MS) {
+        send({
+          type: "text",
+          text: "That is taking longer than I can spend on one question. Ask it again, or in smaller parts.",
+        });
+        wrote = true;
+        break;
+      }
       const response = await client.responses.create(
         {
           model: o.model,

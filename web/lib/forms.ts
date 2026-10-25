@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { FormFieldType } from "@/lib/metrics";
+import { dbError, refused } from "@/lib/write-refusal";
 
 /**
  * Writing forms and their questions: the one place both the Forms pages and
@@ -123,7 +124,7 @@ export async function createForm(supabase: SupabaseClient, form: NewForm): Promi
     })
     .select("id")
     .single();
-  if (insertError) throw new Error(insertError.message);
+  if (insertError) throw dbError(insertError);
   const id = (created as { id: string }).id;
   if (form.fields.length === 0) return id;
 
@@ -140,10 +141,12 @@ export async function createForm(supabase: SupabaseClient, form: NewForm): Promi
       .eq("id", id)
       .select("id");
     const rolledBack = !undoError && (undone?.length ?? 0) > 0;
-    throw new Error(
-      rolledBack
-        ? `The form was not created — its questions were refused: ${fieldsError.message}`
-        : `The form was created but its questions were not: ${fieldsError.message}. Open it from the list and add them by hand.`
+    if (rolledBack) throw dbError({ ...fieldsError, message: `The form was not created — its questions were refused: ${fieldsError.message}` });
+    // Left behind without its questions: said as it is, and never simply
+    // tried again, or a second empty form joins the first.
+    throw refused(
+      `The form was created but its questions were not: ${fieldsError.message}. Open it from the list and add them by hand.`,
+      "partial"
     );
   }
   return id;
@@ -167,7 +170,7 @@ export async function addFormFields(
     .eq("form_template_id", formId)
     .order("sort_order", { ascending: false })
     .limit(1);
-  if (lastError) throw new Error(lastError.message);
+  if (lastError) throw dbError(lastError);
   const next = ((last ?? []) as { sort_order: number }[])[0]?.sort_order;
   const first = next === undefined ? 0 : next + 1;
 
@@ -177,9 +180,9 @@ export async function addFormFields(
     .from("form_fields")
     .insert(fieldRows(formId, fields, first))
     .select("id");
-  if (error) throw new Error(error.message);
+  if (error) throw dbError(error);
   if ((data?.length ?? 0) !== fields.length) {
-    throw new Error("The questions were not added — you may not have permission to edit this form.");
+    throw refused("The questions were not added — you may not have permission to edit this form.", "not_written");
   }
   return (data as { id: string }[]).map((r) => r.id);
 }
@@ -190,9 +193,9 @@ export async function saveFieldOrder(supabase: SupabaseClient, fieldIds: string[
     fieldIds.map((id, i) => supabase.from("form_fields").update({ sort_order: i }).eq("id", id).select("id"))
   );
   for (const { data, error } of results) {
-    if (error) throw new Error(error.message);
+    if (error) throw dbError(error);
     if ((data?.length ?? 0) === 0) {
-      throw new Error("The new order was not saved — you may not have permission to edit this form.");
+      throw refused("The new order was not saved — you may not have permission to edit this form.", "not_written");
     }
   }
 }
@@ -200,26 +203,31 @@ export async function saveFieldOrder(supabase: SupabaseClient, fieldIds: string[
 export type FormChange = { required?: boolean; active?: boolean };
 
 /**
- * Makes a form compulsory or optional, or archives and restores it.
+ * Makes a form compulsory or optional, or archives and restores it. Resolves
+ * with the form's new `updated_at`, the version the next change carries.
  *
- * `seenUpdatedAt`, when given, is the version the person was shown: a form
- * changed since then is refused rather than changed again on old information.
+ * `seenUpdatedAt` is the version the person was shown: a form changed since
+ * then is refused rather than changed again on old information. Read again to
+ * say which it was, since a write that reached nothing looks the same either
+ * way: changed by somebody else, or not this person's to change.
  */
 export async function updateForm(
   supabase: SupabaseClient,
   formId: string,
   change: FormChange,
   seenUpdatedAt?: string
-): Promise<void> {
+): Promise<string> {
   let query = supabase.from("form_templates").update(change).eq("id", formId);
   if (seenUpdatedAt) query = query.eq("updated_at", seenUpdatedAt);
-  const { data, error } = await query.select("id");
-  if (error) throw new Error(error.message);
-  if ((data?.length ?? 0) === 0) {
-    throw new Error(
-      seenUpdatedAt
-        ? "That form changed since it was shown, or you may not have permission. Reload it and try again."
-        : "Nothing was saved — you may not have permission."
-    );
+  const { data, error } = await query.select("id, updated_at");
+  if (error) throw dbError(error);
+  const row = (data ?? [])[0] as { updated_at: string } | undefined;
+  if (row) return row.updated_at;
+  if (seenUpdatedAt) {
+    const { data: now } = await supabase.from("form_templates").select("updated_at").eq("id", formId).maybeSingle();
+    if (now && (now as { updated_at: string }).updated_at !== seenUpdatedAt) {
+      throw refused("This form was changed by someone else since it was opened. Reload it and try again.", "stale");
+    }
   }
+  throw refused("Nothing was saved — you may not have permission.", "not_written");
 }

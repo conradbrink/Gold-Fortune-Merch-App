@@ -22,7 +22,7 @@ import { ExportMenu } from "@/components/export-menu";
 import { cn } from "@/lib/utils";
 import { lower, type Terms } from "@/lib/terms";
 import { useCompanyConfig, useTerms } from "@/lib/use-company-config";
-import { exampleQuestions, hasActions, type ToolSpec } from "@/lib/assistant-tools";
+import { exampleQuestions, type ToolSpec } from "@/lib/assistant-tools";
 import {
   MAX_QUESTION_CHARS,
   QUESTIONS_PER_DAY,
@@ -38,6 +38,25 @@ import {
   type AskTable,
 } from "@/components/assistant/assistant-provider";
 
+const NOTHING_DOING: ReadonlySet<string> = new Set();
+
+/** What a card changes, for telling a re-draft from a card about something else. */
+function cardKey(a: AskAction): string {
+  return `${a.draft.name}:${a.draft.target ?? ""}`;
+}
+
+/** The things this person can have it set up, in a sentence; null when none. */
+function whatItSetsUp(tools: readonly ToolSpec[]): string | null {
+  const has = (n: string) => tools.some((t) => t.name === n);
+  const things = [
+    has("create_promotion") ? "promotions" : null,
+    has("create_form") ? "forms" : null,
+    has("change_dashboard") ? "the cards on your dashboard" : null,
+  ].filter((x): x is string => x !== null);
+  if (things.length === 0) return null;
+  return things.length === 1 ? things[0] : `${things.slice(0, -1).join(", ")} and ${things[things.length - 1]}`;
+}
+
 /**
  * Ask: the chat window that opens from the round button in the corner.
  *
@@ -47,7 +66,7 @@ import {
  * whose access gives it nothing to look up.
  */
 export function AssistantPanel() {
-  const { open, setOpen, tools, messages, busy, left, ask, savePlan, doAction, stop, reset } = useAssistant();
+  const { open, setOpen, tools, messages, busy, left, ask, savePlan, doAction, doing, stop, reset } = useAssistant();
   const company = useCompanyConfig();
   const t = useTerms();
   if (!open || tools === null || tools.length === 0) return null;
@@ -62,6 +81,7 @@ export function AssistantPanel() {
       onAsk={ask}
       onSavePlan={savePlan}
       onDoAction={doAction}
+      doing={doing}
       onStop={stop}
       onReset={reset}
       onClose={() => setOpen(false)}
@@ -84,6 +104,8 @@ type PanelViewProps = {
   onSavePlan: (messageId: string) => Promise<string | null>;
   /** Makes the change on a card; resolves with an error to show, or null. */
   onDoAction: (messageId: string, draftId: string) => Promise<string | null>;
+  /** Cards being done right now. */
+  doing?: ReadonlySet<string>;
 };
 
 /** The panel itself, from plain props: what `AssistantPanel` shows once it is open. */
@@ -100,6 +122,7 @@ export function AssistantPanelView({
   onClose,
   onSavePlan,
   onDoAction,
+  doing = NOTHING_DOING,
 }: Readonly<PanelViewProps>) {
   const [draft, setDraft] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -111,22 +134,14 @@ export function AssistantPanelView({
   // Only the newest unsaved draft can be added: an earlier one was replaced
   // by it, and saving both would book two different months.
   const newestPlanId = [...messages].reverse().find((m) => m.plan)?.id ?? null;
-  // A card the assistant drafted again later (the same action, changed) is
-  // replaced by the newer one: pressing both would make the change twice.
-  const replacedCards = useMemo(() => {
-    const out = new Set<string>();
-    const later = new Set<string>();
-    for (const m of [...messages].reverse()) {
-      const names = new Set<string>();
-      for (const a of m.actions ?? []) {
-        if (later.has(a.draft.name) && !a.result) out.add(a.draft.id);
-        names.add(a.draft.name);
-      }
-      for (const n of names) later.add(n);
-    }
-    return out;
-  }, [messages]);
-  const doesThings = hasActions(tools);
+  // A card the assistant drafted again later (the same action on the same
+  // promotion, form or dashboard, changed) is replaced by the newer one:
+  // pressing both would make the change twice. A card about something else
+  // stays as it is.
+  const newestCard = new Map<string, string>();
+  for (const m of messages) for (const a of m.actions ?? []) newestCard.set(cardKey(a), m.id);
+  const replaced = (a: AskAction, messageId: string) => newestCard.get(cardKey(a)) !== messageId;
+  const can = whatItSetsUp(tools);
   const lastMessage = messages[messages.length - 1];
   const finished = lastMessage?.role === "assistant" && !lastMessage.pending ? lastMessage : null;
 
@@ -199,10 +214,10 @@ export function AssistantPanelView({
               Ask in your own words about {name}&apos;s {lower(t.site.many)}, sales, orders and more. Answers
               come from your own data in Tickd, and only what your access lets you see.
             </p>
-            {doesThings && (
+            {can && (
               <p className="text-sm leading-relaxed text-foreground">
-                It can also set things up for you, like promotions, forms and the cards on your dashboard. It
-                shows you exactly what it will change, and nothing changes until you press the button.
+                It can also set things up for you: {can}. It shows you exactly what it will change, and nothing
+                changes until you press the button.
               </p>
             )}
             {examples.length > 0 && (
@@ -236,7 +251,8 @@ export function AssistantPanelView({
                     message={m}
                     terms={t}
                     replaced={m.id !== newestPlanId}
-                    replacedCards={replacedCards}
+                    replacedCard={(a) => replaced(a, m.id)}
+                    doing={doing}
                     onSavePlan={onSavePlan}
                     onDoAction={onDoAction}
                   />
@@ -276,7 +292,7 @@ export function AssistantPanelView({
                 submit(draft);
               }
             }}
-            placeholder={doesThings ? "Ask a question, or say what to set up" : "Ask a question"}
+            placeholder={can ? "Ask a question, or say what to set up" : "Ask a question"}
             className="field-sizing-content max-h-40 min-h-8 flex-1 resize-none bg-transparent py-1 text-base text-foreground outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed md:text-sm"
           />
           {busy ? (
@@ -311,7 +327,8 @@ function Answer({
   message,
   terms,
   replaced,
-  replacedCards,
+  replacedCard,
+  doing,
   onSavePlan,
   onDoAction,
 }: Readonly<{
@@ -319,8 +336,9 @@ function Answer({
   terms: Terms;
   /** A newer draft is below this one. */
   replaced: boolean;
-  /** Cards drafted again further down. */
-  replacedCards: ReadonlySet<string>;
+  /** Whether a card was drafted again further down. */
+  replacedCard: (a: AskAction) => boolean;
+  doing: ReadonlySet<string>;
   onSavePlan: (messageId: string) => Promise<string | null>;
   onDoAction: (messageId: string, draftId: string) => Promise<string | null>;
 }>) {
@@ -347,7 +365,8 @@ function Answer({
           <ActionCard
             key={a.draft.id}
             action={a}
-            replaced={replacedCards.has(a.draft.id)}
+            replaced={replacedCard(a)}
+            doing={doing.has(a.draft.id)}
             onDo={() => onDoAction(message.id, a.draft.id)}
           />
         ))}
@@ -444,9 +463,9 @@ function PlanSave({
 function ActionCard({
   action,
   replaced,
+  doing,
   onDo,
-}: Readonly<{ action: AskAction; replaced: boolean; onDo: () => Promise<string | null> }>) {
-  const [doing, setDoing] = useState(false);
+}: Readonly<{ action: AskAction; replaced: boolean; doing: boolean; onDo: () => Promise<string | null> }>) {
   const [error, setError] = useState<string | null>(null);
   const { draft, result } = action;
 
@@ -513,10 +532,8 @@ function ActionCard({
           className="gap-1.5"
           disabled={doing}
           onClick={async () => {
-            setDoing(true);
             setError(null);
             setError(await onDo());
-            setDoing(false);
           }}
         >
           {doing ? <LoaderCircle className="size-3.5 animate-spin motion-reduce:animate-none" aria-hidden /> : <Check className="size-3.5" aria-hidden />}

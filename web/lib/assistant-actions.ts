@@ -34,7 +34,7 @@ export type ActionName =
   | "change_form";
 
 /** What each action did, in a sentence's words: for the record of changes. */
-export const ACTION_LABELS: Record<ActionName, string> = {
+const ACTION_LABELS: Record<ActionName, string> = {
   change_dashboard: "Changed their dashboard",
   reset_dashboard: "Reset their dashboard",
   create_promotion: "Set up a promotion",
@@ -44,6 +44,20 @@ export const ACTION_LABELS: Record<ActionName, string> = {
   move_form_question: "Moved a question on a form",
   change_form: "Changed a form",
 };
+
+/**
+ * A recorded action's words. Looked up as an own key only: a name that is not
+ * an action (the record keeps whatever it was given) reads as itself, never
+ * as something inherited like `constructor`.
+ */
+export function actionLabel(action: string): string {
+  return Object.hasOwn(ACTION_LABELS, action) ? ACTION_LABELS[action as ActionName] : action;
+}
+
+/** How a recorded change ended, in the same words wherever it is shown. */
+export function outcomeWords(ok: boolean | null): string {
+  return ok === null ? "Did not finish" : ok ? "Done" : "Not done";
+}
 
 const CARD = "It is only shown to the person as a card: nothing changes until they press its button.";
 

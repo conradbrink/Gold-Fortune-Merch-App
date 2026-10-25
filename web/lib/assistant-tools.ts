@@ -322,14 +322,15 @@ const LOOKUPS: readonly ToolSpec[] = [
     name: "how_to",
     page: "/",
     everyone: true,
-    description: (t) =>
+    // The topics' ids say what each is for, so they are listed once, in the
+    // enum, rather than again in the description on every round.
+    description: () =>
       "The steps to do something in Tickd by hand, and the page to do it on. Use it when the person asks how " +
-      "to do something, or asks you to do something you have no action for. Topics: " +
-      HELP_TOPICS.map((h) => `${h.id} (${h.title(t)})`).join(", ") +
-      ".",
+      "to do something, or asks you to do something you have no action for. If no topic fits, say you have no " +
+      "steps for that.",
     parameters: () =>
       object({
-        topic: { type: "string", enum: HELP_TOPICS.map((h) => h.id), description: "The topic's id." },
+        topic: { type: "string", enum: HELP_TOPICS.map((h) => h.id), description: "The task's id, like create-form." },
       }),
     working: () => "Finding the steps",
   },
@@ -348,7 +349,6 @@ export function toolAllowed(
   modules: ModuleSet,
   isManager: boolean
 ): boolean {
-  if (spec.everyone) return true;
   return (
     canAccessPath(permissions, spec.page) &&
     canReachPath(modules, spec.page) &&
@@ -364,11 +364,6 @@ export function toolAllowed(
 export function toolsFor(permissions: PermissionSet, modules: ModuleSet, isManager: boolean): ToolSpec[] {
   const own = TOOLS.filter((spec) => !spec.everyone && toolAllowed(spec, permissions, modules, isManager));
   return own.length === 0 ? [] : [...own, ...TOOLS.filter((spec) => spec.everyone)];
-}
-
-/** Whether this person has anything the assistant can do for them, not only look up. */
-export function hasActions(tools: readonly ToolSpec[]): boolean {
-  return tools.some((t) => t.action);
 }
 
 /**

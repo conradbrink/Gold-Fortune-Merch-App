@@ -1,5 +1,18 @@
 export type RangePreset = "7d" | "30d" | "90d" | "month" | "week";
 
+/**
+ * Whether `day` is a real calendar day written as YYYY-MM-DD.
+ *
+ * `Date.parse` alone is not enough: it rolls an impossible day over
+ * ("2026-11-31" reads as 1 December), so the day is written back and must
+ * come out the same.
+ */
+export function isRealDay(day: unknown): day is string {
+  if (typeof day !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(day)) return false;
+  const ms = Date.parse(`${day}T00:00:00Z`);
+  return !Number.isNaN(ms) && new Date(ms).toISOString().slice(0, 10) === day;
+}
+
 export type DateRange = {
   /** Inclusive start. */
   from: Date;

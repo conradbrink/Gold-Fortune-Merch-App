@@ -26,6 +26,13 @@ export type HelpTopic = {
   title: (t: Terms) => string;
   /** The page the steps start on. Access follows it: someone who can't open it isn't given the steps. */
   page: string;
+  /**
+   * The change these steps make is the manager's alone: the table's write
+   * rule asks `current_role() = 'manager'` (forms, promotions, the schedule,
+   * stores and their groups, products, territories, files). Somebody else
+   * who can open the page would follow the steps to a refusal.
+   */
+  managerOnly?: true;
   /** 2 to 6 short steps, in order. Button and tab names exactly as on screen, in quotes. */
   steps: (t: Terms) => string[];
 };
@@ -48,6 +55,7 @@ export const HELP_TOPICS: readonly HelpTopic[] = [
     id: "edit-store",
     title: (t) => `Change ${withArticle(t, "site")}'s details`,
     page: "/stores",
+    managerOnly: true,
     steps: (t) => [
       `Open "${t.site.many}" in the menu.`,
       `Press the three dots at the end of the ${lower(t.site.one)}'s row and choose "Edit ${lower(t.site.one)}".`,
@@ -59,6 +67,7 @@ export const HELP_TOPICS: readonly HelpTopic[] = [
     id: "fix-store-location",
     title: (t) => `Fix ${withArticle(t, "site")}'s location on the map`,
     page: "/stores/review",
+    managerOnly: true,
     steps: (t) => [
       `Open "${t.site.many}" in the menu, then the "Location exceptions" tab.`,
       `Look at the ${lower(t.site.one)} it shows. Press "Skip for now" to go to the next one.`,
@@ -70,6 +79,7 @@ export const HELP_TOPICS: readonly HelpTopic[] = [
     id: "deactivate-store",
     title: (t) => `Turn off ${withArticle(t, "site")}`,
     page: "/stores",
+    managerOnly: true,
     steps: (t) => [
       `Open "${t.site.many}" in the menu.`,
       `Press the three dots at the end of the ${lower(t.site.one)}'s row.`,
@@ -93,6 +103,7 @@ export const HELP_TOPICS: readonly HelpTopic[] = [
     id: "group-stores",
     title: (t) => `Put ${lower(t.site.many)} in ${withArticle(t, "site_group")}`,
     page: "/stores",
+    managerOnly: true,
     steps: (t) => [
       `Open "${t.site.many}" in the menu and press "Groups".`,
       `Type the new ${lower(t.site_group.one)}'s name at the top and press "Add", then close the box.`,
@@ -104,6 +115,7 @@ export const HELP_TOPICS: readonly HelpTopic[] = [
     id: "store-contacts",
     title: (t) => `Add a contact for ${withArticle(t, "site")}`,
     page: "/stores",
+    managerOnly: true,
     steps: (t) => [
       `Open "${t.site.many}" in the menu.`,
       `Press the three dots at the end of the ${lower(t.site.one)}'s row and choose "Contacts".`,
@@ -116,6 +128,7 @@ export const HELP_TOPICS: readonly HelpTopic[] = [
     id: "visit-frequency",
     title: (t) => `Set how often ${withArticle(t, "site")} is visited`,
     page: "/stores",
+    managerOnly: true,
     steps: (t) => [
       `Open "${t.site.many}" in the menu.`,
       `Press the three dots at the end of the ${lower(t.site.one)}'s row and choose "Edit ${lower(t.site.one)}".`,
@@ -130,6 +143,7 @@ export const HELP_TOPICS: readonly HelpTopic[] = [
     id: "assign-stores",
     title: (t) => `Assign ${lower(t.site.many)} to ${withArticle(t, "staff")}`,
     page: "/representatives",
+    managerOnly: true,
     steps: (t) => [
       `Open "${t.staff.many}" in the menu.`,
       `Press "Manage" next to the ${lower(t.staff.one)}.`,
@@ -141,6 +155,7 @@ export const HELP_TOPICS: readonly HelpTopic[] = [
     id: "change-many-stores",
     title: (t) => `Assign or change many ${lower(t.site.many)} at once`,
     page: "/representatives",
+    managerOnly: true,
     steps: (t) => [
       `Open "${t.staff.many}" in the menu and go down to "Coverage".`,
       `Narrow the list with the search and filters, then tick the ${lower(t.site.many)} you want, or press "Select all".`,
@@ -153,6 +168,7 @@ export const HELP_TOPICS: readonly HelpTopic[] = [
     id: "add-territory",
     title: (t) => `Add ${withArticle(t, "territory")}`,
     page: "/territories",
+    managerOnly: true,
     steps: (t) => [
       `Open "${t.territory.many}" in the menu.`,
       `Find the ${lower(t.region.one)} it belongs in and press "${t.territory.one}" with the plus on that row.`,
@@ -178,6 +194,7 @@ export const HELP_TOPICS: readonly HelpTopic[] = [
     id: "deactivate-rep",
     title: (t) => `Turn off ${withArticle(t, "staff")}`,
     page: "/representatives",
+    managerOnly: true,
     steps: (t) => [
       `Open "${t.staff.many}" in the menu.`,
       `Press "Manage" next to the ${lower(t.staff.one)}.`,
@@ -189,6 +206,7 @@ export const HELP_TOPICS: readonly HelpTopic[] = [
     id: "reset-rep-password",
     title: (t) => `Reset ${withArticle(t, "staff")}'s password`,
     page: "/representatives",
+    managerOnly: true,
     steps: (t) => [
       `Open "${t.staff.many}" in the menu.`,
       `Press "Manage" next to the ${lower(t.staff.one)}.`,
@@ -203,6 +221,7 @@ export const HELP_TOPICS: readonly HelpTopic[] = [
     id: "add-product",
     title: () => "Add a product",
     page: "/products",
+    managerOnly: true,
     steps: () => [
       `Open "Products" in the menu and press "New product".`,
       `Fill in the "Name", "Brand" and "Category".`,
@@ -215,6 +234,7 @@ export const HELP_TOPICS: readonly HelpTopic[] = [
     id: "import-products",
     title: () => "Import products from a price card",
     page: "/products",
+    managerOnly: true,
     steps: () => [
       `Open "Products" in the menu and press "Import".`,
       `Choose your spreadsheet, with one row per product.`,
@@ -226,6 +246,7 @@ export const HELP_TOPICS: readonly HelpTopic[] = [
     id: "change-product-price",
     title: () => "Change a product's price",
     page: "/products",
+    managerOnly: true,
     steps: (t) => [
       `Open "Products" in the menu.`,
       `Press the three dots at the end of the product's row and choose "Edit".`,
@@ -252,6 +273,7 @@ export const HELP_TOPICS: readonly HelpTopic[] = [
     id: "schedule-add-visit",
     title: (t) => `Add ${withArticle(t, "job")} to the schedule`,
     page: "/schedule",
+    managerOnly: true,
     steps: (t) => [
       `Open "Schedule" in the menu and press "Plan".`,
       `Choose the ${lower(t.staff.one)} under "${t.staff.one}".`,
@@ -264,6 +286,7 @@ export const HELP_TOPICS: readonly HelpTopic[] = [
     id: "schedule-move-visit",
     title: (t) => `Move or remove ${withArticle(t, "job")}`,
     page: "/schedule",
+    managerOnly: true,
     steps: (t) => [
       `Open "Schedule" in the menu and press "Plan".`,
       `Choose the ${lower(t.staff.one)}, then click the day the ${lower(t.job.one)} is on.`,
@@ -276,6 +299,7 @@ export const HELP_TOPICS: readonly HelpTopic[] = [
     id: "generate-schedule",
     title: (t) => `Generate the schedule from the ${lower(t.schedule_cycle.one)}`,
     page: "/schedule",
+    managerOnly: true,
     steps: (t) => [
       `Open "Schedule" in the menu and press "${t.schedule_cycle.one}".`,
       `Choose a ${lower(t.staff.one)}, press "By ${lower(t.site.one)}", and give each ${lower(t.site.one)} a "Day" and "Frequency".`,
@@ -485,6 +509,7 @@ export const HELP_TOPICS: readonly HelpTopic[] = [
     id: "create-form",
     title: () => "Create a form",
     page: "/forms",
+    managerOnly: true,
     steps: (t) => [
       `Open "Forms" in the menu and press "New form".`,
       `Choose a starting point under "Start from", or keep "A blank form".`,
@@ -497,6 +522,7 @@ export const HELP_TOPICS: readonly HelpTopic[] = [
     id: "add-form-questions",
     title: () => "Add questions to a form",
     page: "/forms",
+    managerOnly: true,
     steps: () => [
       `Open "Forms" in the menu and press "Edit" next to the form.`,
       `Press "Add field".`,
@@ -509,6 +535,7 @@ export const HELP_TOPICS: readonly HelpTopic[] = [
     id: "make-form-compulsory",
     title: () => "Make a form compulsory",
     page: "/forms",
+    managerOnly: true,
     steps: (t) => [
       `Open "Forms" in the menu and press "Edit" next to the form.`,
       `Tick "Compulsory". It saves straight away, and ${lower(t.staff.many)} can't check out until the form is sent in.`,
@@ -519,6 +546,7 @@ export const HELP_TOPICS: readonly HelpTopic[] = [
     id: "archive-form",
     title: () => "Archive a form",
     page: "/forms",
+    managerOnly: true,
     steps: () => [
       `Open "Forms" in the menu.`,
       `Press the bin button next to the form.`,
@@ -533,6 +561,7 @@ export const HELP_TOPICS: readonly HelpTopic[] = [
     id: "create-promotion",
     title: () => "Set up a promotion",
     page: "/promotions",
+    managerOnly: true,
     steps: (t) => [
       `Open "Promotions" in the menu and press "New promotion".`,
       `Type the "Name" and what the ${lower(t.staff.one)} should look for.`,
@@ -679,6 +708,7 @@ export const HELP_TOPICS: readonly HelpTopic[] = [
     id: "share-file",
     title: (t) => `Share a file with your ${lower(t.staff.many)}`,
     page: "/files",
+    managerOnly: true,
     steps: (t) => [
       `Open "Files" in the menu and press "Upload".`,
       `Press "Choose a file" and pick it.`,

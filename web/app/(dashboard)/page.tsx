@@ -298,6 +298,9 @@ export default function InsightsDashboardPage() {
 
         if (saved.status === "fulfilled") {
           setLayout(reconcileLayout(saved.value, WIDGET_IDS, fallback));
+          // Read again after the AI Manager changed it: an earlier failure's
+          // banner no longer describes what is on screen.
+          setLayoutError(null);
           // Only now is editing safe. `NO_SAVED_LAYOUT` counts as a successful
           // read — it means this person has never customised, which is a fact,
           // not a failure.
@@ -306,7 +309,9 @@ export default function InsightsDashboardPage() {
           // Show the default, and say so. But *do not* unlock Customise: the
           // banner explains what you are looking at, it does not stop you saving
           // the default over a layout that exists and simply could not be read.
-          // Explaining is not preventing.
+          // Explaining is not preventing. Locked again if an earlier read had
+          // unlocked it: this is a re-read after the AI Manager changed it.
+          setLayoutLoaded(false);
           setLayout(fallback);
           setLayoutError(
             `Your saved layout could not be read, so this is the default. Customising is disabled until it can be read, so it is not overwritten: ${
@@ -318,6 +323,7 @@ export default function InsightsDashboardPage() {
         }
       } catch (e) {
         if (cancelled) return;
+        setLayoutLoaded(false);
         setLayout(DEFAULT_LAYOUT);
         setLayoutError(
           `Your saved layout could not be read, so this is the default. Customising is disabled until it can be read, so it is not overwritten: ${

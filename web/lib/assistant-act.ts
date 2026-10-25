@@ -3,13 +3,14 @@ import { ACTIONS } from "@/lib/assistant-actions";
 import type { ActionDraft } from "@/lib/assistant-stream";
 import { dashboardNow, type ToolEnv, type ToolResult } from "@/lib/assistant-data";
 import { cardAvailable, findCard } from "@/lib/dashboard-cards";
+import { allPages } from "@/lib/all-pages";
+import { isRealDay } from "@/lib/date-range";
 import { resetLayout, saveLayout } from "@/lib/dashboard-layout";
 import {
   answeredStoreIds,
   createPromotion,
   fetchPromotionDetail,
   promotionProblem,
-  setPromotionActive,
   updatePromotion,
   type PromotionInput,
 } from "@/lib/promotions";
@@ -24,7 +25,7 @@ import {
   type NewFormField,
 } from "@/lib/forms";
 import { fieldTypeLabel } from "@/lib/metrics";
-import { lower, type Terms } from "@/lib/terms";
+import { lower, possessive, type Terms } from "@/lib/terms";
 import { writeRefusal } from "@/lib/write-refusal";
 
 /**
@@ -45,24 +46,18 @@ import { writeRefusal } from "@/lib/write-refusal";
 export class ActionError extends Error {}
 
 type Args = Record<string, unknown>;
-type Line = { label: string; value: string };
+type Line = ActionDraft["lines"][number];
 
-type Drafted<I> = {
-  title: string;
-  lines: Line[];
-  warnings?: string[];
-  button: string;
-  href: string;
-  input: I;
-};
+/** A card as an action drafts it: the draft without the parts `draftAction` adds. */
+type Drafted<I> = Omit<ActionDraft, "id" | "name" | "input"> & { input: I };
 
 /** What a change did: said to the person, kept in the record, and told to the assistant next time. */
 export type Applied = { text: string; href: string; targetId: string | null };
 
 type Action<I> = {
-  draft: (args: Args, env: ToolEnv) => Promise<Drafted<I>>;
-  read: (raw: unknown) => I;
-  apply: (input: I, env: ToolEnv) => Promise<Applied>;
+  draft(args: Args, env: ToolEnv): Promise<Drafted<I>>;
+  read(raw: unknown): I;
+  apply(input: I, env: ToolEnv): Promise<Applied>;
 };
 
 // ---------------------------------------------------------------- words
@@ -94,7 +89,6 @@ function count(n: number, one: string, many: string): string {
 // ---------------------------------------------------------------- reading input
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const DAY = /^\d{4}-\d{2}-\d{2}$/;
 /** More than any company has, and few enough to check in a handful of queries. */
 const MAX_IDS = 5000;
 const MAX_QUESTIONS = 40;
@@ -136,10 +130,15 @@ function ids(value: unknown): string[] {
 }
 
 function day(value: unknown): string {
-  if (typeof value !== "string" || !DAY.test(value) || Number.isNaN(Date.parse(`${value}T00:00:00Z`))) {
-    throw new ActionError(UNREADABLE);
-  }
+  if (!isRealDay(value)) throw new ActionError(UNREADABLE);
   return value;
+}
+
+/** The version a card was drafted on: never empty, or the check it carries would be skipped. */
+function version(value: unknown): string {
+  const v = text(value, 64);
+  if (!v) throw new ActionError(UNREADABLE);
+  return v;
 }
 
 function words(value: unknown): string[] {
@@ -151,30 +150,39 @@ function words(value: unknown): string[] {
 
 /** Every id is one the asker can see at their company, in batches a URL can carry. */
 async function allVisible(env: ToolEnv, table: "stores" | "products", wanted: string[]): Promise<boolean> {
-  let seen = 0;
-  for (let i = 0; i < wanted.length; i += 100) {
-    const { data, error } = await env.supabase.from(table).select("id").in("id", wanted.slice(i, i + 100));
-    if (error) throw new Error(error.message);
-    seen += (data ?? []).length;
-  }
-  return seen === wanted.length;
+  const batches: string[][] = [];
+  for (let i = 0; i < wanted.length; i += 100) batches.push(wanted.slice(i, i + 100));
+  const counts = await Promise.all(
+    batches.map(async (batch) => {
+      const { data, error } = await env.supabase.from(table).select("id").in("id", batch);
+      if (error) throw new Error(error.message);
+      return (data ?? []).length;
+    })
+  );
+  return counts.reduce((a, b) => a + b, 0) === wanted.length;
 }
 
 type SiteRow = { id: string; name: string; city: string | null; store_group_id: string | null; active: boolean };
 
+/** Every site the asker can see, a page at a time: the API answers at most 1,000 rows per request. */
 async function companySites(env: ToolEnv): Promise<SiteRow[]> {
-  const rows: SiteRow[] = [];
-  for (let from = 0; from < MAX_IDS; from += 1000) {
+  return allPages<SiteRow>((from, to) =>
+    env.supabase.from("stores").select("id, name, city, store_group_id, active").order("id").range(from, to)
+  );
+}
+
+/** Just these sites, for a choice made of single sites only. */
+async function sitesById(env: ToolEnv, ids: string[]): Promise<SiteRow[]> {
+  const out: SiteRow[] = [];
+  for (let i = 0; i < ids.length; i += 100) {
     const { data, error } = await env.supabase
       .from("stores")
       .select("id, name, city, store_group_id, active")
-      .order("id")
-      .range(from, from + 999);
+      .in("id", ids.slice(i, i + 100));
     if (error) throw new Error(error.message);
-    rows.push(...((data ?? []) as SiteRow[]));
-    if ((data ?? []).length < 1000) break;
+    out.push(...((data ?? []) as SiteRow[]));
   }
-  return rows;
+  return out;
 }
 
 const same = (a: string | null | undefined, b: string) => (a ?? "").trim().toLowerCase() === b.trim().toLowerCase();
@@ -195,16 +203,22 @@ async function chooseSites(choice: Args, env: ToolEnv): Promise<{ ids: string[];
     if (typeof s !== "string" || !UUID.test(s)) throw new ActionError(`Each site id must come from find_sites.`);
   }
 
-  const sites = await companySites(env);
+  const broad = all || groups.length > 0 || towns.length > 0;
+  // Every site only when the choice is by group, town or all; single sites are read by id.
+  const [sites, groupRows] = await Promise.all([
+    broad ? companySites(env) : sitesById(env, single.map((x) => (x as string).toLowerCase())),
+    groups.length > 0
+      ? env.supabase.from("store_groups").select("id, name").order("name")
+      : Promise.resolve({ data: [], error: null }),
+  ]);
   const names = new Map(sites.map((s) => [s.id, s.name]));
   const chosen = new Set<string>();
 
-  if (all || groups.length > 0 || towns.length > 0) {
+  if (broad) {
     let groupIds: Set<string> | null = null;
     if (groups.length > 0) {
-      const { data, error } = await env.supabase.from("store_groups").select("id, name").order("name");
-      if (error) throw new Error(error.message);
-      const known = (data ?? []) as { id: string; name: string }[];
+      if (groupRows.error) throw new Error(groupRows.error.message);
+      const known = (groupRows.data ?? []) as { id: string; name: string }[];
       groupIds = new Set();
       for (const g of groups) {
         const match = known.find((k) => same(k.name, g));
@@ -246,9 +260,11 @@ async function chooseProducts(choice: Args, env: ToolEnv): Promise<{ ids: string
   for (const p of single) {
     if (typeof p !== "string" || !UUID.test(p)) throw new ActionError("Each product id must come from find_products.");
   }
-  const { data, error } = await env.supabase.from("products").select("id, name, brand, active").order("name").limit(MAX_IDS);
-  if (error) throw new Error(error.message);
-  const products = (data ?? []) as { id: string; name: string; brand: string | null; active: boolean }[];
+  // Every product, a page at a time: past the API's 1,000 rows a later
+  // product would read as not at this company, and a brand would be cut short.
+  const products = await allPages<{ id: string; name: string; brand: string | null; active: boolean }>((from, to) =>
+    env.supabase.from("products").select("id, name, brand, active").order("id").range(from, to)
+  );
   const names = new Map(products.map((p) => [p.id, p.name]));
   const chosen = new Set<string>();
   for (const b of brands) {
@@ -330,6 +346,7 @@ const changeDashboard: Action<DashboardInput> = {
     lines.push({ label: "In this order", value: cardNames(env, next).map((n, i) => `${i + 1}. ${n}`).join("\n") });
     return {
       title: "Your dashboard",
+      target: "dashboard",
       lines,
       warnings: [],
       button: "Change my dashboard",
@@ -365,6 +382,7 @@ const resetDashboard: Action<Record<string, never>> = {
     if (saved === null) throw new ActionError("Their dashboard already shows the company's standard cards.");
     return {
       title: "Your dashboard",
+      target: "dashboard",
       lines: [{ label: "Back to", value: cardNames(env, env.dashboardDefault).join(", ") }],
       warnings: ["The cards you arranged yourself go back to the company's standard set."],
       button: "Reset my dashboard",
@@ -386,13 +404,25 @@ const resetDashboard: Action<Record<string, never>> = {
 
 type PromotionDraftInput = PromotionInput;
 
-async function checkPromotion(input: PromotionInput, env: ToolEnv): Promise<void> {
-  const problem = promotionProblem(input);
+/**
+ * The promotion as typed, and every product and site on it one the asker can
+ * see at their company. `before` is the promotion as it is: its old words are
+ * held to the old rules, and only the products and sites a change adds are
+ * looked up again (the rest are on it already).
+ */
+async function checkPromotion(
+  input: PromotionInput,
+  env: ToolEnv,
+  before?: { name: string; brief: string | null; product_ids: string[]; store_ids: string[] }
+): Promise<void> {
+  const problem = promotionProblem(input, before);
   if (problem) throw new ActionError(problem);
-  if (!(await allVisible(env, "products", input.productIds))) {
-    throw new ActionError("A product on this promotion isn't at your company any more. Ask the AI Manager again.");
-  }
-  if (!(await allVisible(env, "stores", input.storeIds))) {
+  const [products, sites] = await Promise.all([
+    allVisible(env, "products", before ? difference(before.product_ids, input.productIds).added : input.productIds),
+    allVisible(env, "stores", before ? difference(before.store_ids, input.storeIds).added : input.storeIds),
+  ]);
+  if (!products) throw new ActionError("A product on this promotion isn't at your company any more. Ask the AI Manager again.");
+  if (!sites) {
     throw new ActionError(`A ${lower(env.terms.site.one)} on this promotion isn't at your company any more. Ask the AI Manager again.`);
   }
 }
@@ -411,8 +441,10 @@ function readPromotion(r: Args): PromotionInput {
 const createPromotionAction: Action<PromotionDraftInput> = {
   async draft(args, env) {
     const t = env.terms;
-    const products = await chooseProducts(record(args.products ?? {}), env);
-    const sites = await chooseSites(record(args.sites ?? {}), env);
+    const [products, sites] = await Promise.all([
+      chooseProducts(record(args.products ?? {}), env),
+      chooseSites(record(args.sites ?? {}), env),
+    ]);
     if (products.ids.length === 0) throw new ActionError("A promotion needs at least one product. Find them with find_products.");
     if (sites.ids.length === 0) throw new ActionError(`A promotion needs at least one ${lower(t.site.one)}.`);
     const input: PromotionInput = {
@@ -429,6 +461,7 @@ const createPromotionAction: Action<PromotionDraftInput> = {
     if (input.starts_on < env.today) warnings.push("It starts before today.");
     return {
       title: "New promotion",
+      target: `new:${input.name.toLowerCase()}`,
       lines: [
         { label: "Name", value: input.name },
         ...(input.brief ? [{ label: `What ${lower(t.staff.many)} look for`, value: input.brief }] : []),
@@ -464,24 +497,35 @@ type PromotionChangeInput = PromotionInput & { promotion_id: string; seen: strin
 
 function changed(current: string[], change: string, picked: string[]): string[] {
   if (change === "add") return [...new Set([...current, ...picked])];
-  if (change === "remove") return current.filter((x) => !picked.includes(x));
+  if (change === "remove") {
+    const gone = new Set(picked);
+    return current.filter((x) => !gone.has(x));
+  }
   if (change === "replace") return picked;
   return current;
+}
+
+/** What `after` adds to `before`, and what it takes away. Sets: lists run to thousands of sites. */
+function difference(before: string[], after: string[]): { added: string[]; removed: string[] } {
+  const was = new Set(before);
+  const now = new Set(after);
+  return { added: after.filter((x) => !was.has(x)), removed: before.filter((x) => !now.has(x)) };
 }
 
 const changePromotion: Action<PromotionChangeInput> = {
   async draft(args, env) {
     const t = env.terms;
-    const pid = typeof args.promotion_id === "string" && UUID.test(args.promotion_id) ? args.promotion_id : null;
-    const detail = pid ? await fetchPromotionDetail(env.supabase, pid) : null;
-    if (!detail) throw new ActionError("There's no promotion with that id. Look it up with promotions first.");
-
     const productChoice = record(args.products ?? { change: "keep" });
     const siteChoice = record(args.sites ?? { change: "keep" });
     const pChange = typeof productChoice.change === "string" ? productChoice.change : "keep";
     const sChange = typeof siteChoice.change === "string" ? siteChoice.change : "keep";
-    const products = pChange === "keep" ? null : await chooseProducts(productChoice, env);
-    const sites = sChange === "keep" ? null : await chooseSites(siteChoice, env);
+    const pid = typeof args.promotion_id === "string" && UUID.test(args.promotion_id) ? args.promotion_id : null;
+    const [detail, products, sites] = await Promise.all([
+      pid ? fetchPromotionDetail(env.supabase, pid) : Promise.resolve(null),
+      pChange === "keep" ? Promise.resolve(null) : chooseProducts(productChoice, env),
+      sChange === "keep" ? Promise.resolve(null) : chooseSites(siteChoice, env),
+    ]);
+    if (!detail) throw new ActionError("There's no promotion with that id. Look it up with promotions first.");
 
     const productIds = products ? changed(detail.product_ids, pChange, products.ids) : detail.product_ids;
     const storeIds = sites ? changed(detail.store_ids, sChange, sites.ids) : detail.store_ids;
@@ -496,7 +540,8 @@ const changePromotion: Action<PromotionChangeInput> = {
       productIds,
       storeIds,
     };
-    const problem = promotionProblem(next);
+    // Old words longer than today's limits stand while they aren't changed.
+    const problem = promotionProblem(next, detail);
     if (problem) throw new ActionError(problem);
     if (productIds.length === 0) throw new ActionError("That would leave the promotion with no products.");
     if (storeIds.length === 0) throw new ActionError(`That would leave the promotion with no ${lower(t.site.many)}.`);
@@ -508,48 +553,60 @@ const changePromotion: Action<PromotionChangeInput> = {
       lines.push({ label: "Dates", value: `${dayWords(next.starts_on)} to ${dayWords(next.ends_on)}` });
     }
     const names = new Map([...(products?.names ?? []), ...(sites?.names ?? [])]);
-    const diff = (before: string[], after: string[], one: string, many: string) => {
-      const plus = after.filter((x) => !before.includes(x));
-      const minus = before.filter((x) => !after.includes(x));
+    const productDiff = difference(detail.product_ids, productIds);
+    const siteDiff = difference(detail.store_ids, storeIds);
+    const diffLine = (d: { added: string[]; removed: string[] }, total: number, one: string, many: string) => {
       const parts: string[] = [];
-      if (plus.length) parts.push(`adds ${listWords(plus.map((x) => names.get(x) ?? "").filter(Boolean), 3)}`);
-      if (minus.length) parts.push(`takes off ${count(minus.length, one, many)}`);
-      return parts.length ? `${parts.join(", ")}. ${count(after.length, one, many)} in all.` : null;
+      if (d.added.length) parts.push(`adds ${listWords(d.added.map((x) => names.get(x) ?? "").filter(Boolean), 3)}`);
+      if (d.removed.length) parts.push(`takes off ${count(d.removed.length, one, many)}`);
+      return parts.length ? `${parts.join(", ")}. ${count(total, one, many)} in all.` : null;
     };
-    const pLine = diff(detail.product_ids, productIds, "product", "products");
+    const pLine = diffLine(productDiff, productIds.length, "product", "products");
     if (pLine) lines.push({ label: "Products", value: pLine });
-    const sLine = diff(detail.store_ids, storeIds, lower(t.site.one), lower(t.site.many));
+    const sLine = diffLine(siteDiff, storeIds.length, lower(t.site.one), lower(t.site.many));
     if (sLine) lines.push({ label: t.site.many, value: sLine });
     if (next.active !== detail.active) {
       lines.push({ label: "Switched", value: next.active ? "On: it shows on the phones again" : "Off: it leaves every phone" });
     }
     if (lines.length === 1) throw new ActionError("That is already how the promotion is.");
 
+    // The two things the promotion's own dialog warns about before saving.
     const warnings: string[] = [];
-    const removed = detail.store_ids.filter((x) => !storeIds.includes(x));
-    if (removed.length) {
-      const answered = await answeredStoreIds(env.supabase, detail.id);
-      const lost = removed.filter((x) => answered.has(x)).length;
-      if (lost) {
+    if (productDiff.added.length && detail.starts_on <= env.today) {
+      warnings.push(
+        `This promotion has already started, and you are adding products. Every ${lower(t.site.one)} will read as only partly checked until the ${lower(t.staff.many)} check the new ones.`
+      );
+    }
+    if (siteDiff.removed.length) {
+      const answered = await answeredStoreIds(env.supabase, detail.id, siteDiff.removed);
+      if (answered.size) {
         warnings.push(
-          `${count(lost, lower(t.site.one), lower(t.site.many))} you're taking off already ${lost === 1 ? "has" : "have"} answers. Their answers drop out of the promotion's figures.`
+          `${count(answered.size, lower(t.site.one), lower(t.site.many))} you're taking off already ${answered.size === 1 ? "has" : "have"} answers. Their answers drop out of the promotion's figures.`
         );
       }
     }
-    return { title: "Change a promotion", lines, warnings, button: "Make the change", href: "/promotions", input: next };
+    return {
+      title: "Change a promotion",
+      target: detail.id,
+      lines,
+      warnings,
+      button: "Make the change",
+      href: "/promotions",
+      input: next,
+    };
   },
   read(raw) {
     const r = record(raw);
-    return { ...readPromotion(r), promotion_id: id(r.promotion_id), seen: text(r.seen, 64), active: flag(r.active) };
+    return { ...readPromotion(r), promotion_id: id(r.promotion_id), seen: version(r.seen), active: flag(r.active) };
   },
   async apply(input, env) {
     const detail = await fetchPromotionDetail(env.supabase, input.promotion_id);
     if (!detail) throw new ActionError("That promotion isn't there any more.");
-    await checkPromotion(input, env);
-    // The header write carries the version the person was shown, so a
-    // promotion somebody changed in the meantime is refused, not overwritten.
+    await checkPromotion(input, env, detail);
+    // With the version the person was shown, and on or off saved with the
+    // rest: a promotion somebody changed in the meantime is refused, not
+    // overwritten.
     await updatePromotion(env.supabase, input.promotion_id, { ...input, name: input.name.trim() }, input.seen);
-    if (input.active !== detail.active) await setPromotionActive(env.supabase, input.promotion_id, input.active);
     return {
       text: `"${input.name.trim()}" is changed${input.active === detail.active ? "" : input.active ? " and switched on" : " and switched off"}.`,
       href: "/promotions",
@@ -644,6 +701,7 @@ const createFormAction: Action<NewFormInput> = {
     if (problem) throw new ActionError(problem);
     return {
       title: "New form",
+      target: `new:${input.name.toLowerCase()}`,
       lines: [
         { label: "Name", value: input.name },
         ...(input.description ? [{ label: "What it is for", value: input.description }] : []),
@@ -682,6 +740,7 @@ const addFormQuestions: Action<AddQuestionsInput> = {
     checkQuestions(fields);
     return {
       title: "Add questions",
+      target: form.id,
       lines: [
         { label: "Form", value: form.name },
         { label: "Adds at the end", value: questionLines(fields) },
@@ -740,6 +799,7 @@ const moveFormQuestion: Action<MoveInput> = {
     if (sameList(next, order.map((q) => q.id))) throw new ActionError("It is already in that place.");
     return {
       title: "Move a question",
+      target: form.id,
       lines: [
         { label: "Form", value: form.name },
         { label: "Moves", value: `"${order[from].label}" from place ${from + 1} to place ${position}` },
@@ -756,7 +816,9 @@ const moveFormQuestion: Action<MoveInput> = {
     if (typeof position !== "number" || !Number.isInteger(position) || position < 1 || position > 1000) {
       throw new ActionError(UNREADABLE);
     }
-    return { form_id: id(r.form_id), question_id: id(r.question_id), position, seen: ids(r.seen) };
+    const seen = ids(r.seen);
+    if (seen.length === 0) throw new ActionError(UNREADABLE);
+    return { form_id: id(r.form_id), question_id: id(r.question_id), position, seen };
   },
   async apply(input, env) {
     const form = await formRow(env, input.form_id);
@@ -764,6 +826,7 @@ const moveFormQuestion: Action<MoveInput> = {
     if (!sameList(order, input.seen)) {
       throw new ActionError("The form's questions changed since this was drafted. Ask the AI Manager again.");
     }
+    if (!order.includes(input.question_id)) throw new ActionError("That question isn't on this form.");
     await saveFieldOrder(env.supabase, moved(order, input.question_id, input.position));
     return { text: `The question is now in place ${input.position} on "${form.name}".`, href: `/forms/${form.id}`, targetId: form.id };
   },
@@ -783,11 +846,14 @@ const changeForm: Action<FormChangeInput> = {
     if (active !== null) {
       lines.push({
         label: active ? "Brings back" : "Archives",
-        value: active ? `It shows on the ${lower(t.staff.many)}' phones again` : "It leaves the phones. Answers already sent are kept",
+        value: active
+          ? `It shows on the ${possessive(lower(t.staff.many))} phones again`
+          : "It leaves the phones. Answers already sent are kept",
       });
     }
     return {
       title: "Change a form",
+      target: form.id,
       lines,
       warnings: [],
       button: "Make the change",
@@ -797,7 +863,7 @@ const changeForm: Action<FormChangeInput> = {
   },
   read(raw) {
     const r = record(raw);
-    const input = { form_id: id(r.form_id), seen: text(r.seen, 64), required: maybeFlag(r.required), active: maybeFlag(r.active) };
+    const input = { form_id: id(r.form_id), seen: version(r.seen), required: maybeFlag(r.required), active: maybeFlag(r.active) };
     if (input.required === null && input.active === null) throw new ActionError(UNREADABLE);
     return input;
   },
@@ -817,20 +883,19 @@ const changeForm: Action<FormChangeInput> = {
 
 // ---------------------------------------------------------------- the menu
 
-/** Each action with its input's type set aside: the menu holds them all, and `read` is what gives an input its shape. */
-function loose<I>(a: Action<I>): Action<unknown> {
-  return a as unknown as Action<unknown>;
-}
-
+/**
+ * Every action, its input's type set aside: `read` is what gives an input its
+ * shape. (Action's members are methods, so each one fits here as it is.)
+ */
 const ACT: Record<ActionName, Action<unknown>> = {
-  change_dashboard: loose(changeDashboard),
-  reset_dashboard: loose(resetDashboard),
-  create_promotion: loose(createPromotionAction),
-  change_promotion: loose(changePromotion),
-  create_form: loose(createFormAction),
-  add_form_questions: loose(addFormQuestions),
-  move_form_question: loose(moveFormQuestion),
-  change_form: loose(changeForm),
+  change_dashboard: changeDashboard,
+  reset_dashboard: resetDashboard,
+  create_promotion: createPromotionAction,
+  change_promotion: changePromotion,
+  create_form: createFormAction,
+  add_form_questions: addFormQuestions,
+  move_form_question: moveFormQuestion,
+  change_form: changeForm,
 };
 
 export function isAction(name: string): name is ActionName {
@@ -851,16 +916,7 @@ export async function draftAction(name: ActionName, rawArgs: string, env: ToolEn
   }
   try {
     const d = await ACT[name].draft(args, env);
-    const action: ActionDraft = {
-      id: globalThis.crypto.randomUUID(),
-      name,
-      title: d.title,
-      lines: d.lines,
-      warnings: d.warnings ?? [],
-      button: d.button,
-      href: d.href,
-      input: d.input,
-    };
+    const action: ActionDraft = { id: globalThis.crypto.randomUUID(), name, ...d };
     return {
       model: {
         shown_to_the_person_as_a_card: { title: d.title, lines: d.lines, warnings: action.warnings, button: d.button },

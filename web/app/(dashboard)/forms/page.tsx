@@ -183,7 +183,8 @@ export default function FormsPage() {
     setBusy(true);
     setError(null);
     try {
-      await updateForm(supabase, form.id, { active });
+      // With the version the list loaded: one changed since is refused.
+      await updateForm(supabase, form.id, { active }, form.updated_at);
       setPending(null);
       await loadForms();
     } catch (e) {
@@ -409,8 +410,10 @@ export default function FormsPage() {
             <DialogTitle>
               {pending
                 ? pending.submissions > 0
-                  ? `Archive ${pending.name}?`
-                  : `Delete ${pending.name}?`
+                  ? `${pending.active ? "Archive" : "Restore"} ${pending.name}?`
+                  : pending.active
+                    ? `Delete ${pending.name}?`
+                    : `Restore or delete ${pending.name}?`
                 : "Remove form?"}
             </DialogTitle>
           </DialogHeader>
@@ -441,8 +444,11 @@ export default function FormsPage() {
             </div>
           ) : (
             <p className="text-sm text-muted-foreground">
-              Nothing has been submitted against this form, so it can be removed
-              outright. Its fields go with it. This cannot be undone.
+              {/* An archived form nobody has filled in (the AI Manager archives
+                  rather than deletes) can come back, or go for good. */}
+              {pending && !pending.active
+                ? "This form is archived. Restore it, or, since nothing has been submitted against it, delete it outright. Its fields go with it. Deleting cannot be undone."
+                : "Nothing has been submitted against this form, so it can be removed outright. Its fields go with it. This cannot be undone."}
             </p>
           )}
 
@@ -459,13 +465,20 @@ export default function FormsPage() {
                     : "Restore form"}
               </Button>
             ) : (
-              <Button
-                variant="destructive"
-                disabled={busy}
-                onClick={() => pending && handleDelete(pending)}
-              >
-                {busy ? "Deleting…" : "Delete permanently"}
-              </Button>
+              <>
+                {pending && !pending.active && (
+                  <Button disabled={busy} onClick={() => pending && handleSetActive(pending, true)}>
+                    {busy ? "Working…" : "Restore form"}
+                  </Button>
+                )}
+                <Button
+                  variant="destructive"
+                  disabled={busy}
+                  onClick={() => pending && handleDelete(pending)}
+                >
+                  {busy ? "Deleting…" : "Delete permanently"}
+                </Button>
+              </>
             )}
             {/* Disabled while the mutation is out: closing mid-request nulls
                 `pending`, and a failure afterwards would set `error` on a dialog

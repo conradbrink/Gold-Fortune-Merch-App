@@ -65,6 +65,12 @@ export type ActionDraft = {
   name: string;
   /** "New promotion". */
   title: string;
+  /**
+   * What it changes: a promotion's or form's id, "dashboard", or "new:<name>"
+   * for something it creates. A later card for the same action and target
+   * replaces this one; a card for something else leaves it as it is.
+   */
+  target: string;
   /** What will change, a line each: "Dates" / "Sat 1 Nov to Sat 15 Nov". */
   lines: { label: string; value: string }[];
   /** Anything worth a second look before pressing, in plain words. */
@@ -120,13 +126,21 @@ export function history(messages: readonly ShownTurn[]): ChatTurn[] {
     const a = messages[i + 1];
     if (q.role !== "user" || !a || a.role !== "assistant") continue;
     i++;
-    if (a.pending || a.error || a.refused || !a.text.trim()) continue;
+    // A card pressed under an answer that then failed still changed things:
+    // that turn goes back with what pressing did, whatever became of the words.
+    const pressed = (a.actions ?? []).some((x) => x.result);
+    if (a.pending || a.refused) continue;
+    if ((a.error || !a.text.trim()) && !pressed) continue;
     // The assistant cannot see the button: tell it what pressing it did, so
     // "did it save?" gets a true answer.
     const saved = a.planSaved
       ? `\n\n(The person pressed Add to schedule: ${a.planSaved.added} added, ${a.planSaved.already} were already there.)`
       : "";
-    turns.push({ role: "user", text: q.text }, { role: "assistant", text: a.text + saved + actionNotes(a) });
+    const notes = saved + actionNotes(a);
+    // Each turn is cut to MAX_TURN_CHARS on the way in (`parseConversation`),
+    // so a long answer gives way to the notes, never the other way round.
+    const words = (a.text.trim() ? a.text : "(The answer stopped part-way.)").slice(0, Math.max(0, MAX_TURN_CHARS - notes.length));
+    turns.push({ role: "user", text: q.text }, { role: "assistant", text: words + notes });
   }
   return turns.slice(-MAX_HISTORY_TURNS);
 }

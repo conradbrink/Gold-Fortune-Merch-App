@@ -68,6 +68,11 @@ type AssistantState = {
   savePlan: (messageId: string) => Promise<string | null>;
   /** Makes the change on a card. Resolves with an error to show that pressing again may fix, or null. */
   doAction: (messageId: string, draftId: string) => Promise<string | null>;
+  /**
+   * Cards being done right now. Kept here, not in the card, so closing and
+   * reopening the chat mid-press can't offer the button again.
+   */
+  doing: ReadonlySet<string>;
   stop: () => void;
   reset: () => void;
 };
@@ -155,7 +160,15 @@ export function AssistantProvider({ children }: Readonly<{ children: React.React
     if (!orgId || loadedFor !== orgId || session !== signOuts) return;
     // A question whose answer is still coming is left out with it: restored
     // alone it would read as asked and never answered.
-    const done = messages.filter((m, i) => !m.pending && !(m.role === "user" && messages[i + 1]?.pending));
+    const done = messages
+      .filter((m, i) => !m.pending && !(m.role === "user" && messages[i + 1]?.pending))
+      // A card that has been pressed won't be sent again: its input (every id
+      // it covered) needn't ride along in this tab's storage.
+      .map((m) =>
+        m.actions?.some((a) => a.result)
+          ? { ...m, actions: m.actions.map((a) => (a.result ? { ...a, draft: { ...a.draft, input: null } } : a)) }
+          : m
+      );
     save({ orgId, open, left, messages: done });
   }, [orgId, loadedFor, session, open, left, messages]);
 
@@ -312,20 +325,25 @@ export function AssistantProvider({ children }: Readonly<{ children: React.React
     [messages, update]
   );
 
+  const [doing, setDoing] = useState<ReadonlySet<string>>(() => new Set());
   const doAction = useCallback(
     async (messageId: string, draftId: string): Promise<string | null> => {
       const draft = messages.find((m) => m.id === messageId)?.actions?.find((a) => a.draft.id === draftId)?.draft;
       if (!draft) return "That card is no longer here. Ask the AI Manager again.";
+      if (doing.has(draftId)) return null;
+      setDoing((d) => new Set(d).add(draftId));
       const settle = (result: ActionResult) =>
         update(messageId, (m) => ({
           ...m,
           actions: m.actions?.map((a) => (a.draft.id === draftId ? { ...a, result } : a)),
         }));
       try {
+        // The card's own id goes too: the server makes each card's change
+        // once, however often the button reaches it.
         const res = await fetch("/api/assistant/act", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ name: draft.name, input: draft.input }),
+          body: JSON.stringify({ name: draft.name, draftId: draft.id, input: draft.input }),
         });
         const body = (await res.json().catch(() => ({}))) as { error?: string; done?: string; href?: string };
         if (res.ok) {
@@ -344,9 +362,15 @@ export function AssistantProvider({ children }: Readonly<{ children: React.React
         return message;
       } catch {
         return "That couldn't be done. Check your connection and try again.";
+      } finally {
+        setDoing((d) => {
+          const next = new Set(d);
+          next.delete(draftId);
+          return next;
+        });
       }
     },
-    [messages, update]
+    [messages, update, doing]
   );
 
   const stop = useCallback(() => abortRef.current?.abort(), []);
@@ -357,8 +381,8 @@ export function AssistantProvider({ children }: Readonly<{ children: React.React
   }, []);
 
   const value = useMemo<AssistantState>(
-    () => ({ tools, open, setOpen, messages, busy, left, ask, savePlan, doAction, stop, reset }),
-    [tools, open, messages, busy, left, ask, savePlan, doAction, stop, reset]
+    () => ({ tools, open, setOpen, messages, busy, left, ask, savePlan, doAction, doing, stop, reset }),
+    [tools, open, messages, busy, left, ask, savePlan, doAction, doing, stop, reset]
   );
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

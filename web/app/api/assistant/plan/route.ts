@@ -1,8 +1,8 @@
 import { createClient } from "@/lib/supabase/server";
 import { enforceRateLimit, LIMITS } from "@/lib/rate-limit";
-import { parseCompanyConfig } from "@/lib/company-config";
 import { planVisits } from "@/lib/store-reorder";
-import { canAccessPath, toPermissionSet } from "@/lib/permissions";
+import { readAsker } from "@/lib/assistant-session";
+import { toolSpec } from "@/lib/assistant-tools";
 import { readPlanSave } from "@/lib/plan-save";
 
 /**
@@ -30,25 +30,15 @@ export async function POST(request: Request) {
   } = await supabase.auth.getUser();
   if (!user) return json("Not signed in.", 401);
 
-  const [
-    { data: role, error: roleError },
-    { data: rawConfig, error: configError },
-    { data: perms, error: permsError },
-  ] = await Promise.all([
-    supabase.rpc("current_role"),
-    supabase.rpc("my_company_config"),
-    supabase.rpc("my_permissions"),
-  ]);
-  if (roleError || configError || permsError) return json("Your access could not be checked. Try again shortly.", 503);
-  // The same two rules as the drafting lookups: the schedule page, and the
-  // manager role its tables' write policies ask for.
-  if (role !== "manager" || !canAccessPath(toPermissionSet(perms as string[] | null), "/schedule")) {
-    return json("Only a manager with the schedule can change it.", 403);
-  }
-  const config = parseCompanyConfig(rawConfig);
-  if (!config) return json("Your company could not be loaded. Try again shortly.", 503);
+  // The rule that offered the plan, read again now: the schedule page, the
+  // manager role its tables' write policies ask for, and the company's modules.
+  const asked = await readAsker(supabase);
+  if (!asked.ok) return json(asked.error, asked.status);
+  const { env, tools } = asked.asker;
+  const spec = toolSpec("draft_visit_plan");
+  if (!spec || !tools.includes(spec)) return json("Only a manager with the schedule can change it.", 403);
+  const today = env.today;
 
-  const today = new Intl.DateTimeFormat("en-CA", { timeZone: config.timezone }).format(new Date());
   const read = readPlanSave(await request.json().catch(() => null), today);
   if (!read.ok) return json(read.error, 400);
   const { staffId, days, pastDays } = read.save;
@@ -62,7 +52,7 @@ export async function POST(request: Request) {
     .from("profiles")
     .select("id, full_name")
     .eq("id", staffId)
-    .eq("org_id", config.orgId)
+    .eq("org_id", env.orgId)
     .eq("is_active", true)
     .maybeSingle();
   if (personError) return json("The plan could not be checked. Try again shortly.", 503);
@@ -85,7 +75,7 @@ export async function POST(request: Request) {
   let already = 0;
   for (const d of days) {
     try {
-      const r = await planVisits(supabase, config.orgId, staffId, d.siteIds, d.date);
+      const r = await planVisits(supabase, env.orgId, staffId, d.siteIds, d.date);
       added += r.added;
       already += r.already;
     } catch (reason) {
