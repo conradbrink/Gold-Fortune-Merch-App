@@ -2,6 +2,10 @@
  * Where a new Founding application goes besides the owner's email (owner, 25
  * Oct 2026: Conrad calls every lead within minutes):
  *
+ *   - a Telegram message to the owner, from their own bot (Telegram's Bot
+ *     API). Set TELEGRAM_BOT_TOKEN (from @BotFather) and TELEGRAM_CHAT_ID
+ *     (the owner's chat with the bot); see docs/LEADS-SHEET.md. The owner's
+ *     choice of 25 Oct 2026, while CallMeBot took no new numbers.
  *   - a WhatsApp message to the owner, through CallMeBot (callmebot.com). The
  *     owner gets the key by messaging CallMeBot once from their own WhatsApp;
  *     set CALLMEBOT_PHONE (their number, digits only) and CALLMEBOT_APIKEY.
@@ -15,8 +19,8 @@
 
 import { describeAttribution, ROLE_LABEL, type FoundingApplication } from "@/lib/founding";
 
-/** The WhatsApp message about a new application: who, how big, and a link to answer. */
-export function whatsappAlertText(a: FoundingApplication, waitlist: boolean): string {
+/** The owner's message about a new application (Telegram or WhatsApp): who, how big, and a link to answer. */
+export function alertText(a: FoundingApplication, waitlist: boolean): string {
   const lines = [
     `${waitlist ? "Waiting list" : "New Founding lead"}: ${a.name}, ${a.business_name}`,
     `Reps: ${a.team_size}${a.role ? ` · ${ROLE_LABEL[a.role]}` : ""}`,
@@ -98,6 +102,29 @@ export function sheetRow(a: FoundingApplication, waitlist: boolean, at: Date): s
 
 const TIMEOUT_MS = 8000;
 
+/** Sends the owner a Telegram message about a new application, when their bot is set up. */
+export async function alertOwnerOnTelegram(id: string, a: FoundingApplication, waitlist: boolean): Promise<void> {
+  const token = process.env.TELEGRAM_BOT_TOKEN;
+  const chat = process.env.TELEGRAM_CHAT_ID;
+  if (!token || !chat) return;
+  try {
+    const res = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ chat_id: chat, text: alertText(a, waitlist), link_preview_options: { is_disabled: true } }),
+      signal: AbortSignal.timeout(TIMEOUT_MS),
+    });
+    if (!res.ok) {
+      // Telegram says why (a wrong chat, or the owner never pressed Start); never the token.
+      const body = (await res.json().catch(() => null)) as { description?: string } | null;
+      console.error("founding: the owner's Telegram was not sent", id, res.status, body?.description ?? "");
+    }
+  } catch (e) {
+    // A failed fetch's message can carry the address, and the address carries the token.
+    console.error("founding: the owner's Telegram failed", id, e instanceof Error ? e.name : "error");
+  }
+}
+
 /** WhatsApps the owner about a new application, when CallMeBot is set up. */
 export async function alertOwnerOnWhatsapp(id: string, a: FoundingApplication, waitlist: boolean): Promise<void> {
   const phone = process.env.CALLMEBOT_PHONE?.replace(/\D/g, "");
@@ -106,7 +133,7 @@ export async function alertOwnerOnWhatsapp(id: string, a: FoundingApplication, w
   try {
     const url = new URL("https://api.callmebot.com/whatsapp.php");
     url.searchParams.set("phone", phone);
-    url.searchParams.set("text", whatsappAlertText(a, waitlist));
+    url.searchParams.set("text", alertText(a, waitlist));
     url.searchParams.set("apikey", key);
     const res = await fetch(url, { signal: AbortSignal.timeout(TIMEOUT_MS) });
     if (!res.ok) console.error("founding: the owner's WhatsApp was not sent", id, res.status);
