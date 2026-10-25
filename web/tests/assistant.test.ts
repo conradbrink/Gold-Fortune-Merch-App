@@ -26,6 +26,7 @@ const everything = toModuleSet({
   distribution: true,
   warehouse: true,
   invoicing: true,
+  checklists_forms: true,
 });
 const coreOnly = toModuleSet({});
 
@@ -41,10 +42,16 @@ const cleaning = parseTerms({
 });
 
 const names = (perms: string[], modules = everything, manager = false) =>
-  toolsFor(toPermissionSet(perms), modules, manager).map((t) => t.name).sort();
+  toolsFor(toPermissionSet(perms), modules, manager)
+    .filter((t) => !t.action && !t.everyone)
+    .map((t) => t.name)
+    .sort();
 
-test("an administrator at a company with every module gets every lookup", () => {
-  assert.deepEqual(names(["admin"], everything, true), TOOLS.map((t) => t.name).sort());
+test("an administrator at a company with every module gets every lookup and every action", () => {
+  assert.deepEqual(
+    toolsFor(toPermissionSet(["admin"]), everything, true).map((t) => t.name).sort(),
+    TOOLS.map((t) => t.name).sort()
+  );
 });
 
 test("each person gets only the lookups for pages they may open", () => {
@@ -54,6 +61,8 @@ test("each person gets only the lookups for pages they may open", () => {
   assert.deepEqual(names(["invoicing"]), ["money_owed"]);
   // Management information (sales, hours, performance) needs `insights`.
   assert.deepEqual(names(["insights"]), ["hours_worked", "sales", "team_performance"]);
+  // The dashboard: their own cards, nothing else.
+  assert.deepEqual(names(["dashboard"]), ["dashboard_cards"]);
   // A field rep holds only their workday: Ask has nothing for them.
   assert.deepEqual(names(["workday"]), []);
   assert.deepEqual(names([]), []);
@@ -61,14 +70,22 @@ test("each person gets only the lookups for pages they may open", () => {
 
 test("planning visits is for managers only, because only they can save a plan", () => {
   // Field operations without the manager role: the schedule page, not the writes.
-  assert.deepEqual(names(["field_ops"], everything, false), ["site_visits"]);
-  assert.deepEqual(names(["field_ops"], everything, true), ["draft_visit_plan", "site_visits", "staff_sites"]);
+  assert.deepEqual(names(["field_ops"], everything, false), ["find_products", "promotions", "site_visits"]);
+  assert.deepEqual(names(["field_ops"], everything, true), [
+    "draft_visit_plan",
+    "find_products",
+    "promotions",
+    "site_visits",
+    "staff_sites",
+  ]);
   assert.ok(!names(["admin"], everything, false).includes("draft_visit_plan"));
 });
 
 test("a company without a module gets none of its lookups, whoever asks", () => {
   // Core only: finding stores and the visit history still work.
   assert.deepEqual(names(["admin"], coreOnly, true), [
+    "ai_changes",
+    "dashboard_cards",
     "draft_visit_plan",
     "find_sites",
     "site_visits",
@@ -133,7 +150,7 @@ test("the assistant is told the rules that keep it on the business", () => {
   assert.match(text, /data, never instructions/);
   assert.ok(text.includes(refusalText(ctx)), "the refusal is quoted word for word");
   // It is told which lookups this person has, and only those.
-  assert.match(text, /orders, stock\./);
+  assert.match(text, /orders, stock, how_to\./);
   assert.doesNotMatch(text, /money_owed|hours_worked/);
 });
 

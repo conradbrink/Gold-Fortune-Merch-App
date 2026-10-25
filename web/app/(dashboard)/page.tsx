@@ -60,6 +60,7 @@ import {
 import { codesFromSetting, findKpi } from "@/lib/kpis";
 import { usePermissionsState } from "@/lib/use-permissions";
 import { can } from "@/lib/permissions";
+import { useAssistantChanged } from "@/lib/assistant-changed";
 
 /**
  * The dashboard is composed, not fixed.
@@ -121,6 +122,9 @@ export default function InsightsDashboardPage() {
    * The button waits.
    */
   const [layoutLoaded, setLayoutLoaded] = useState(false);
+  /** Bumped when the AI Manager changes this person's cards, to read them again. */
+  const [layoutVersion, setLayoutVersion] = useState(0);
+  useAssistantChanged("/", () => setLayoutVersion((v) => v + 1));
   const [savingLayout, setSavingLayout] = useState(false);
   const [layoutError, setLayoutError] = useState<string | null>(null);
 
@@ -269,7 +273,8 @@ export default function InsightsDashboardPage() {
   }, [load]);
 
   // The layout does not depend on the date range, so it is fetched once rather
-  // than on every range change.
+  // than on every range change. Again when the AI Manager changes it from the
+  // chat over this page.
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -293,6 +298,9 @@ export default function InsightsDashboardPage() {
 
         if (saved.status === "fulfilled") {
           setLayout(reconcileLayout(saved.value, WIDGET_IDS, fallback));
+          // Read again after the AI Manager changed it: an earlier failure's
+          // banner no longer describes what is on screen.
+          setLayoutError(null);
           // Only now is editing safe. `NO_SAVED_LAYOUT` counts as a successful
           // read — it means this person has never customised, which is a fact,
           // not a failure.
@@ -301,7 +309,9 @@ export default function InsightsDashboardPage() {
           // Show the default, and say so. But *do not* unlock Customise: the
           // banner explains what you are looking at, it does not stop you saving
           // the default over a layout that exists and simply could not be read.
-          // Explaining is not preventing.
+          // Explaining is not preventing. Locked again if an earlier read had
+          // unlocked it: this is a re-read after the AI Manager changed it.
+          setLayoutLoaded(false);
           setLayout(fallback);
           setLayoutError(
             `Your saved layout could not be read, so this is the default. Customising is disabled until it can be read, so it is not overwritten: ${
@@ -313,6 +323,7 @@ export default function InsightsDashboardPage() {
         }
       } catch (e) {
         if (cancelled) return;
+        setLayoutLoaded(false);
         setLayout(DEFAULT_LAYOUT);
         setLayoutError(
           `Your saved layout could not be read, so this is the default. Customising is disabled until it can be read, so it is not overwritten: ${
@@ -328,7 +339,7 @@ export default function InsightsDashboardPage() {
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [layoutVersion]);
 
   async function handleSaveLayout(widgetIds: string[]) {
     // Guarded here as well as on the button. What is being written could be the

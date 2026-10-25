@@ -1,8 +1,19 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/lib/supabase/types";
 import type { ExportColumn, ExportSheet } from "@/lib/export";
-import type { ToolName } from "@/lib/assistant-tools";
-import type { PlanDraft } from "@/lib/assistant-stream";
+import type { LookupName } from "@/lib/assistant-tools";
+import { actionLabel, outcomeWords } from "@/lib/assistant-actions";
+import { helpTopic } from "@/lib/assistant-help";
+import { CARD_IDS, DASHBOARD_CARDS, cardAvailable, findCard } from "@/lib/dashboard-cards";
+import { fetchLayout, reconcileLayout } from "@/lib/dashboard-layout";
+import { fetchPromotionDetail, fetchPromotionSummaries } from "@/lib/promotions";
+import { fieldTypeLabel } from "@/lib/metrics";
+import { canAccessPath } from "@/lib/permissions";
+import { canReachPath } from "@/lib/modules";
+import { reachablePages, visibleNavGroups } from "@/components/layout/nav-items";
+import type { ActionDraft, AssistantLink, PlanDraft } from "@/lib/assistant-stream";
+import type { ModuleSet } from "@/lib/modules";
+import type { PermissionSet } from "@/lib/permissions";
 import { fetchOrgSettings } from "@/lib/org-settings";
 import { fetchRepStartAnchors } from "@/lib/route-order";
 import {
@@ -51,9 +62,25 @@ export type ToolEnv = {
   timeZone: string;
   /** YYYY-MM-DD, company time. */
   today: string;
+  /** The asker's company, from their own session (`my_company_config`), never from the model. */
+  orgId: string;
+  /** What the asker may open, for the lookups that answer for more than one page (`how_to`). */
+  permissions: PermissionSet;
+  modules: ModuleSet;
+  isManager: boolean;
+  /** The company's standard dashboard cards (`companyDefaultLayout`). */
+  dashboardDefault: string[];
 };
 
-export type ToolResult = { model: unknown; sheet?: ExportSheet; plan?: PlanDraft };
+export type ToolResult = {
+  model: unknown;
+  sheet?: ExportSheet;
+  plan?: PlanDraft;
+  /** A change drafted as a card, for the person to confirm. */
+  action?: ActionDraft;
+  /** A page to open, already checked against what the asker may open. */
+  link?: AssistantLink;
+};
 
 /** Rows the assistant reads from one lookup. The table shows them all. */
 const MODEL_ROWS = 40;
@@ -121,10 +148,10 @@ function searchText(value: unknown): string {
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-function optionalId(value: unknown, label: string): string | null {
+function optionalId(value: unknown, label: string, source = "find_sites"): string | null {
   if (value === null || value === undefined || value === "") return null;
   if (typeof value !== "string" || !UUID.test(value)) {
-    throw new LookupError(`${label} must be an id from find_sites.`);
+    throw new LookupError(`${label} must be an id from ${source}.`);
   }
   return value;
 }
@@ -1214,7 +1241,234 @@ async function draftVisitPlan(args: Record<string, unknown>, env: ToolEnv): Prom
   };
 }
 
-const RUN: Record<ToolName, (args: Record<string, unknown>, env: ToolEnv) => Promise<ToolResult>> = {
+// ---------------------------------------------------- what the actions need
+
+async function findProducts(args: Record<string, unknown>, env: ToolEnv): Promise<ToolResult> {
+  const text = searchText(args.search);
+  if (!text) throw new LookupError("Give part of a product's name, brand or code.");
+  const { data, error } = await env.supabase
+    .from("products")
+    .select("id, name, brand, sku_code, active")
+    .or(`name.ilike.%${text}%,brand.ilike.%${text}%,sku_code.ilike.%${text}%`)
+    .order("active", { ascending: false })
+    .order("name")
+    .limit(26);
+  fail(error);
+  const found = (data ?? []).slice(0, 25);
+  return {
+    model: {
+      matches: found.map((p) => ({ id: p.id, name: p.name, brand: p.brand, code: p.sku_code, active: p.active })),
+      more_matches: (data ?? []).length > 25,
+    },
+  };
+}
+
+async function promotionsLookup(args: Record<string, unknown>, env: ToolEnv): Promise<ToolResult> {
+  const id = optionalId(args.promotion_id, "promotion_id", "promotions");
+  if (id) {
+    const detail = await fetchPromotionDetail(env.supabase, id);
+    if (!detail) throw new LookupError("There's no promotion with that id. Look it up with promotions first.");
+    // Only the names the assistant is shown; the counts carry the rest.
+    const [products, sites] = await Promise.all([
+      detail.product_ids.length
+        ? env.supabase.from("products").select("id, name, brand").in("id", detail.product_ids.slice(0, MODEL_ROWS))
+        : Promise.resolve({ data: [], error: null }),
+      detail.store_ids.length
+        ? env.supabase.from("stores").select("id, name, city").in("id", detail.store_ids.slice(0, MODEL_ROWS))
+        : Promise.resolve({ data: [], error: null }),
+    ]);
+    fail(products.error);
+    fail(sites.error);
+    return {
+      model: {
+        id: detail.id,
+        name: detail.name,
+        what_to_look_for: detail.brief,
+        starts: niceDay(detail.starts_on),
+        ends: niceDay(detail.ends_on),
+        on: detail.active,
+        products: (products.data ?? []).slice(0, MODEL_ROWS).map((p) => ({ id: p.id, name: p.name, brand: p.brand })),
+        product_count: detail.product_ids.length,
+        sites: (sites.data ?? []).slice(0, MODEL_ROWS).map((x) => ({ id: x.id, name: x.name, town: x.city })),
+        site_count: detail.store_ids.length,
+      },
+    };
+  }
+  const rows = await fetchPromotionSummaries(env.supabase);
+  return {
+    model: {
+      promotions: rows.slice(0, MODEL_ROWS).map((p) => ({
+        id: p.promotion_id,
+        name: p.name,
+        starts: niceDay(p.starts_on),
+        ends: niceDay(p.ends_on),
+        on: p.active,
+        products: p.products,
+        sites: p.stores,
+        sites_checked: p.stores_checked,
+        sites_running_it: p.stores_running,
+      })),
+      more: rows.length > MODEL_ROWS,
+    },
+  };
+}
+
+async function formsLookup(args: Record<string, unknown>, env: ToolEnv): Promise<ToolResult> {
+  const id = optionalId(args.form_id, "form_id", "forms");
+  if (id) {
+    const [{ data: form, error: formError }, { data: fields, error: fieldsError }] = await Promise.all([
+      env.supabase.from("form_templates").select("id, name, description, required, active").eq("id", id).maybeSingle(),
+      env.supabase
+        .from("form_fields")
+        .select("id, label, field_type, required, options, sort_order")
+        .eq("form_template_id", id)
+        .order("sort_order")
+        .order("id"),
+    ]);
+    fail(formError);
+    fail(fieldsError);
+    if (!form) throw new LookupError("There's no form with that id. Look it up with forms first.");
+    return {
+      model: {
+        id: form.id,
+        name: form.name,
+        description: form.description,
+        compulsory: form.required,
+        archived: !form.active,
+        questions: (fields ?? []).map((f, i) => ({
+          id: f.id,
+          place: i + 1,
+          question: f.label,
+          type: fieldTypeLabel(f.field_type),
+          must_answer: f.required,
+          choices: Array.isArray(f.options) ? f.options : null,
+        })),
+      },
+    };
+  }
+  // Each form with its count of questions, counted by the database: one row
+  // per form, however many questions the company has.
+  const { data: forms, error } = await env.supabase
+    .from("form_templates")
+    .select("id, name, required, active, form_fields(count)")
+    .order("active", { ascending: false })
+    .order("name")
+    .limit(MODEL_ROWS + 1);
+  fail(error);
+  type Row = { id: string; name: string; required: boolean; active: boolean; form_fields: { count: number }[] | null };
+  const rows = (forms ?? []) as unknown as Row[];
+  return {
+    model: {
+      forms: rows.slice(0, MODEL_ROWS).map((f) => ({
+        id: f.id,
+        name: f.name,
+        compulsory: f.required,
+        archived: !f.active,
+        questions: f.form_fields?.[0]?.count ?? 0,
+      })),
+      more: rows.length > MODEL_ROWS,
+    },
+  };
+}
+
+/**
+ * This person's dashboard as the page has it: `saved` is their own list (null
+ * when they never arranged it), `layout` the cards in order as the page reads
+ * them, and `shown` the ones on screen. A card they can't see now (its module
+ * off) stays in `layout`, as the Customise panel leaves it.
+ */
+export async function dashboardNow(
+  env: ToolEnv
+): Promise<{ saved: string[] | null; layout: string[]; shown: string[] }> {
+  const saved = await fetchLayout(env.supabase);
+  const layout = reconcileLayout(saved, [...CARD_IDS], env.dashboardDefault);
+  const shown = layout.filter((id) => {
+    const card = findCard(id);
+    return card !== undefined && cardAvailable(card, env.modules, env.permissions);
+  });
+  return { saved, layout, shown };
+}
+
+async function dashboardCards(_args: Record<string, unknown>, env: ToolEnv): Promise<ToolResult> {
+  const { saved, shown } = await dashboardNow(env);
+  const t = env.terms;
+  const describe = (id: string) => {
+    const card = findCard(id)!;
+    return { id, name: card.title(t), shows: card.description(t) };
+  };
+  return {
+    model: {
+      on_the_dashboard: shown.map(describe),
+      can_add: DASHBOARD_CARDS.filter((c) => !shown.includes(c.id) && cardAvailable(c, env.modules, env.permissions)).map(
+        (c) => describe(c.id)
+      ),
+      arranged_by_them: saved !== null,
+    },
+  };
+}
+
+async function aiChanges(args: Record<string, unknown>, env: ToolEnv): Promise<ToolResult> {
+  const r = range(args, env);
+  // Not in the generated types until they are next generated from the database.
+  const { data, error } = await (env.supabase as unknown as SupabaseClient)
+    .from("assistant_actions")
+    .select("action, ok, result, created_at, person:profiles!assistant_actions_user_id_fkey(full_name)")
+    .gte("created_at", r.from.toISOString())
+    .lt("created_at", r.to.toISOString())
+    .order("created_at", { ascending: false })
+    .limit(500);
+  fail(error);
+  type Row = { action: string; ok: boolean | null; result: string | null; created_at: string; person: { full_name: string | null } | { full_name: string | null }[] | null };
+  const rows = ((data ?? []) as Row[]).map((a) => ({
+    day: niceDay(localDay(a.created_at, env.timeZone)),
+    time: companyTime(a.created_at, env.timeZone),
+    who: one(a.person)?.full_name ?? "",
+    what: actionLabel(a.action),
+    outcome: outcomeWords(a.ok),
+    detail: a.result ?? "",
+  }));
+  return {
+    model: { period: r.label, changes: rows.slice(0, MODEL_ROWS), total: rows.length },
+    sheet: sheet(
+      "Changes made by the AI Manager",
+      "ai-changes",
+      [r.label],
+      [
+        { header: "Day", key: "day" },
+        { header: "Time", key: "time" },
+        { header: "Who", key: "who" },
+        { header: "What", key: "what" },
+        { header: "Outcome", key: "outcome" },
+        { header: "Detail", key: "detail" },
+      ],
+      rows
+    ),
+  };
+}
+
+async function howTo(args: Record<string, unknown>, env: ToolEnv): Promise<ToolResult> {
+  const topic = typeof args.topic === "string" ? helpTopic(args.topic) : undefined;
+  if (!topic) throw new LookupError("There are no steps for that topic.");
+  // The steps lead to a page: only for somebody who may open it, the rule
+  // every lookup follows.
+  if (!canAccessPath(env.permissions, topic.page) || !canReachPath(env.modules, topic.page)) {
+    return { model: { error: "That page isn't part of what this person's access in Tickd shows." } };
+  }
+  // Nor the steps to a change only a manager can make: they would end in a refusal.
+  if (topic.managerOnly && !env.isManager) {
+    return { model: { error: "Only a manager can make that change in Tickd, so this person can't do it themselves." } };
+  }
+  const page = reachablePages(visibleNavGroups(env.permissions, env.modules, env.terms)).find(
+    (p) => p.href === topic.page
+  );
+  const label = page ? `Open ${page.label}` : "Open the page";
+  return {
+    model: { title: topic.title(env.terms), steps: topic.steps(env.terms), page_button: label },
+    link: { href: topic.page, label },
+  };
+}
+
+const RUN: Record<LookupName, (args: Record<string, unknown>, env: ToolEnv) => Promise<ToolResult>> = {
   find_sites: findSites,
   site_visits: siteVisits,
   sites_not_visited: sitesNotVisited,
@@ -1227,13 +1481,19 @@ const RUN: Record<ToolName, (args: Record<string, unknown>, env: ToolEnv) => Pro
   money_owed: moneyOwed,
   staff_sites: staffSites,
   draft_visit_plan: draftVisitPlan,
+  find_products: findProducts,
+  promotions: promotionsLookup,
+  forms: formsLookup,
+  dashboard_cards: dashboardCards,
+  ai_changes: aiChanges,
+  how_to: howTo,
 };
 
 /**
  * Runs one lookup. Never throws: a failure becomes something the assistant can
  * tell the person, because a half-answered question is better than a crash.
  */
-export async function runTool(name: ToolName, rawArgs: string, env: ToolEnv): Promise<ToolResult> {
+export async function runTool(name: LookupName, rawArgs: string, env: ToolEnv): Promise<ToolResult> {
   let args: Record<string, unknown>;
   try {
     const parsed = JSON.parse(rawArgs || "{}") as unknown;

@@ -29,6 +29,8 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { createClient } from "@/lib/supabase/client";
 import type { Tables } from "@/lib/supabase/types";
 import { formPresets, findPreset } from "@/lib/form-presets";
+import { createForm, updateForm } from "@/lib/forms";
+import { useAssistantChanged } from "@/lib/assistant-changed";
 import { lower, possessive, withArticle } from "@/lib/terms";
 import { useTerms } from "@/lib/use-company-config";
 
@@ -85,6 +87,9 @@ export default function FormsPage() {
     }
   }
 
+  // A form the AI Manager just created or changed, from the chat over this page.
+  useAssistantChanged("/forms", () => void loadForms());
+
   useEffect(() => {
     // Behind an async boundary so the loader's own `setLoading(true)`
     // is not a synchronous setState in the effect body. Same call, same
@@ -97,84 +102,28 @@ export default function FormsPage() {
 
   /**
    * Creates the template, and its questions too when a preset was chosen.
-   *
-   * Two writes rather than one, because `form_fields` needs the template's id,
-   * and the client has no transaction to put them in. So the second write's
-   * failure undoes the first: a template with no questions is not a form, and
-   * one left behind would be joined by another on the retry the still-open
-   * dialog invites. The manager's typing survives either way — the dialog
-   * stays open with it.
+   * `createForm` undoes the template if its questions are refused; the
+   * manager's typing survives either way, because the dialog stays open.
    */
   async function handleCreate() {
     setSaving(true);
     setError(null);
     try {
-      // Checked, not asserted. An expired session gives `user: null`, and a
-      // profile RLS hides gives `data: null` with an error — the `!` that used
-      // to sit here turned both into "Cannot read properties of null", which
-      // is not a message a manager can act on.
-      const { data: userData } = await supabase.auth.getUser();
-      const userId = userData.user?.id;
-      if (!userId) throw new Error("Your session has expired. Sign in again.");
-      const { data: profileRow, error: profileError } = await supabase
-        .from("profiles")
-        .select("org_id")
-        .eq("id", userId)
-        .single();
-      if (profileError || !profileRow) {
-        throw new Error("Could not read your organisation. Try again.");
-      }
-
       const preset = presetKey ? findPreset(terms, presetKey) : undefined;
-      const { data: created, error: insertError } = await supabase
-        .from("form_templates")
-        .insert({
-          org_id: profileRow.org_id,
-          name,
-          description: description || null,
-          required,
-          created_by: userId,
-        })
-        .select("id")
-        .single();
-      if (insertError) throw new Error(insertError.message);
-
-      if (preset && created) {
-        const { error: fieldsError } = await supabase.from("form_fields").insert(
-          preset.fields.map((f, i) => ({
-            form_template_id: created.id,
-            label: f.label,
-            field_type: f.field_type,
-            required: f.required,
-            options: f.options ?? null,
-            // Never a metric. See the note in lib/form-presets.ts: a
-            // competitor's price is not our price accuracy.
-            metric_key: f.metric_key ?? null,
-            sort_order: i,
-          }))
-        );
-        if (fieldsError) {
-          // Take the empty template back out before saying so. Nothing has
-          // been submitted against it, so the delete cannot be refused for
-          // history, and leaving it would mean the retry the dialog invites
-          // creates a second one beside it. If the delete fails too, the
-          // message says which state the manager is in.
-          // `select("id")`, as `handleDelete` does: a delete RLS filters out
-          // deletes nothing and reports success, and the message below must
-          // not say "not created" over a template that is still there.
-          const { data: undone, error: undoError } = await supabase
-            .from("form_templates")
-            .delete()
-            .eq("id", created.id)
-            .select("id");
-          const rolledBack = !undoError && (undone?.length ?? 0) > 0;
-          throw new Error(
-            rolledBack
-              ? `The form was not created — its questions were refused: ${fieldsError.message}`
-              : `The form was created but its questions were not: ${fieldsError.message}. Open it from the list and add them by hand.`
-          );
-        }
-      }
+      await createForm(supabase, {
+        name,
+        description: description || null,
+        required,
+        // Never a metric. See the note in lib/form-presets.ts: a
+        // competitor's price is not our price accuracy.
+        fields: (preset?.fields ?? []).map((f) => ({
+          label: f.label,
+          field_type: f.field_type,
+          required: f.required,
+          options: f.options ?? null,
+          metric_key: f.metric_key ?? null,
+        })),
+      });
 
       setDialogOpen(false);
       setName("");
@@ -234,15 +183,8 @@ export default function FormsPage() {
     setBusy(true);
     setError(null);
     try {
-      const { data, error: updateError } = await supabase
-        .from("form_templates")
-        .update({ active })
-        .eq("id", form.id)
-        .select("id");
-      if (updateError) throw new Error(updateError.message);
-      if (!data || data.length === 0) {
-        throw new Error("Nothing changed — you may not have permission.");
-      }
+      // With the version the list loaded: one changed since is refused.
+      await updateForm(supabase, form.id, { active }, form.updated_at);
       setPending(null);
       await loadForms();
     } catch (e) {
@@ -468,8 +410,10 @@ export default function FormsPage() {
             <DialogTitle>
               {pending
                 ? pending.submissions > 0
-                  ? `Archive ${pending.name}?`
-                  : `Delete ${pending.name}?`
+                  ? `${pending.active ? "Archive" : "Restore"} ${pending.name}?`
+                  : pending.active
+                    ? `Delete ${pending.name}?`
+                    : `Restore or delete ${pending.name}?`
                 : "Remove form?"}
             </DialogTitle>
           </DialogHeader>
@@ -500,8 +444,11 @@ export default function FormsPage() {
             </div>
           ) : (
             <p className="text-sm text-muted-foreground">
-              Nothing has been submitted against this form, so it can be removed
-              outright. Its fields go with it. This cannot be undone.
+              {/* An archived form nobody has filled in (the AI Manager archives
+                  rather than deletes) can come back, or go for good. */}
+              {pending && !pending.active
+                ? "This form is archived. Restore it, or, since nothing has been submitted against it, delete it outright. Its fields go with it. Deleting cannot be undone."
+                : "Nothing has been submitted against this form, so it can be removed outright. Its fields go with it. This cannot be undone."}
             </p>
           )}
 
@@ -518,13 +465,20 @@ export default function FormsPage() {
                     : "Restore form"}
               </Button>
             ) : (
-              <Button
-                variant="destructive"
-                disabled={busy}
-                onClick={() => pending && handleDelete(pending)}
-              >
-                {busy ? "Deleting…" : "Delete permanently"}
-              </Button>
+              <>
+                {pending && !pending.active && (
+                  <Button disabled={busy} onClick={() => pending && handleSetActive(pending, true)}>
+                    {busy ? "Working…" : "Restore form"}
+                  </Button>
+                )}
+                <Button
+                  variant="destructive"
+                  disabled={busy}
+                  onClick={() => pending && handleDelete(pending)}
+                >
+                  {busy ? "Deleting…" : "Delete permanently"}
+                </Button>
+              </>
             )}
             {/* Disabled while the mutation is out: closing mid-request nulls
                 `pending`, and a failure afterwards would set `error` on a dialog

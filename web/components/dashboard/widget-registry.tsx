@@ -1,8 +1,8 @@
 "use client";
 
-import { moduleEnabled, type ModuleCode, type ModuleSet } from "@/lib/modules";
-import { can, type PermissionCode, type PermissionSet } from "@/lib/permissions";
-import { codesFromSetting } from "@/lib/kpis";
+import type { ModuleSet } from "@/lib/modules";
+import type { PermissionSet } from "@/lib/permissions";
+import { cardAvailable, findCard, type DashboardCard } from "@/lib/dashboard-cards";
 import type { ContractsDue, Numbers, Today } from "@/lib/dashboard-numbers";
 import { MoneyCard, QuotesCard, TodayCard, YourNumbers } from "@/components/dashboard/number-cards";
 import { useCompanyConfig, useTerms } from "@/lib/use-company-config";
@@ -139,32 +139,19 @@ export type WidgetData = {
 // were measured over; landing on the default 30 days would answer a different
 // question from the one that was clicked.
 
-export type WidgetDefinition = {
-  /** Stored in `dashboard_layouts.widget_ids`. Never change one in place. */
-  id: string;
-  /**
-   * In the company's words, so a function of them rather than a string: the
-   * catalogue is shared by every company, the wording is not.
-   */
-  title: (t: Terms) => string;
-  /** What this card tells you. Shown in the Customise panel. */
-  description: (t: Terms) => string;
+export type WidgetDefinition = DashboardCard & {
   /** Columns out of four. 1 = tile, 2 = half width, 4 = full width. */
   span: 1 | 2 | 4;
   source: WidgetSource;
-  /**
-   * The module this card reports on, when it is not core. A company without
-   * it does not see the card or get it offered in Customise — the numbers
-   * would be zeros from a feature they do not have.
-   */
-  module?: ModuleCode;
-  /**
-   * The permission it needs, when not everyone with the dashboard may see what
-   * it shows (money). The database leaves those figures out regardless.
-   */
-  permission?: PermissionCode;
   render: (data: WidgetData) => ReactNode;
 };
+
+/** A card's plain facts, from the catalogue the server reads too (`lib/dashboard-cards.ts`). */
+function card(id: string): DashboardCard {
+  const found = findCard(id);
+  if (!found) throw new Error(`Dashboard card "${id}" is not in lib/dashboard-cards.ts.`);
+  return found;
+}
 
 /** Whether a card belongs on this person's dashboard. Without the permissions yet, permission-bound cards wait. */
 export function widgetAvailable(
@@ -172,9 +159,7 @@ export function widgetAvailable(
   modules: ModuleSet,
   permissions: PermissionSet | null = null
 ): boolean {
-  if (widget.module !== undefined && !moduleEnabled(modules, widget.module)) return false;
-  if (widget.permission !== undefined) return permissions !== null && can(permissions, widget.permission);
-  return true;
+  return cardAvailable(widget, modules, permissions);
 }
 
 function Line({
@@ -225,79 +210,53 @@ function coveragePctOf(summary: DashboardSummary): number | null {
 export const WIDGETS: WidgetDefinition[] = [
   // ---- Each trade's dashboard (Stage 7 Part 3): its numbers, today, money.
   {
-    id: "kpis",
-    title: () => "Your numbers",
-    description: (t) => `The numbers your trade runs on: ${lower(t.job.many)} done, proof, money. Choose them in Settings.`,
+    ...card("kpis"),
     span: 4,
     source: "numbers",
     render: (d) => <YourNumbers codes={d.cardCodes} numbers={d.numbers!} range={d.range} days={d.days} />,
   },
   {
-    id: "today",
-    title: () => "Today",
-    description: (t) => `Today's ${lower(t.job.many)}: who is on site, who has not started, how many are done.`,
+    ...card("today"),
     span: 2,
     source: "today",
     render: (d) => <TodayCard today={d.today!} />,
   },
   {
-    id: "money",
-    title: () => "Money",
-    description: (t) => `Finished ${lower(t.job.many)} not invoiced, what you are owed, what came in, contracts due.`,
+    ...card("money"),
     span: 2,
     source: "numbers",
-    module: "invoicing",
-    permission: "invoicing",
     render: (d) => <MoneyCard numbers={d.numbers!} contractsDue={d.contractsDue} days={d.days} range={d.range} />,
   },
   {
-    id: "quotes",
-    title: () => "Quotes",
-    description: () => "Quotes waiting for an answer, how many you win, and won quotes not yet invoiced.",
+    ...card("quotes"),
     span: 2,
     source: "numbers",
-    module: "invoicing",
-    permission: "invoicing",
     render: (d) => <QuotesCard numbers={d.numbers!} days={d.days} />,
   },
   // ---- The redesigned dashboard (October 2026). Read top to bottom: the five
   // numbers that matter, then where each comes from. Everything after these is
   // the earlier field-only catalogue, kept for anyone who wants it back.
   {
-    id: "headline",
-    title: () => "Headline numbers",
-    description: (t) =>
-      `Revenue, orders needing action, money owed, ${lower(t.site.one)} coverage and ${lower(t.site.many)} needing attention.`,
+    ...card("headline"),
     span: 4,
     source: "business",
     render: (d) =>
       d.business && <Headline business={d.business.summary} summary={d.summary} days={d.days} range={d.range} />,
   },
   {
-    id: "sales",
-    title: () => "Sales",
-    description: (t) =>
-      `Sales by month with this month's pace, and each ${lower(t.staff.one)} against target.`,
+    ...card("sales"),
     span: 2,
     source: "business",
-    module: "distribution",
     render: (d) => d.business && <SalesCard business={d.business.summary} targets={d.business.targets} />,
   },
   {
-    id: "pipeline",
-    title: () => "Orders pipeline",
-    description: () =>
-      "Orders by stage, missing proofs of delivery, quotes, recurring orders, low stock and money owed.",
+    ...card("pipeline"),
     span: 2,
     source: "business",
-    module: "distribution",
     render: (d) => d.business && <PipelineCard business={d.business.summary} range={d.range} />,
   },
   {
-    id: "field_team",
-    title: () => "Field team",
-    description: (t) =>
-      `Where each ${lower(t.staff.one)} last was, who has gone quiet, out-of-stock, planogram and far-from-${lower(t.site.one)} check-ins.`,
+    ...card("field_team"),
     span: 2,
     source: "liveReps",
     render: (d) =>
@@ -306,42 +265,25 @@ export const WIDGETS: WidgetDefinition[] = [
       ),
   },
   {
-    id: "store_health",
-    title: (t) => `${t.site.one} health`,
-    description: (t) =>
-      `${t.site.many} ordering, visited without ordering, and not visited — with the ones to go to first.`,
+    ...card("store_health"),
     span: 2,
     source: "business",
-    module: "distribution",
     render: (d) => d.business && <StoreHealthCard business={d.business.summary} />,
   },
   {
-    id: "store_reorder",
-    title: (t) => `${t.site.many} due for an order`,
-    description: (t) =>
-      `${t.site.many} that have gone their usual time without an order, the ones that stopped ordering, and which to ask first.`,
+    ...card("store_reorder"),
     span: 4,
     source: "reorder",
-    module: "distribution",
     render: (d) => d.reorder && <StoreReorderCard reorder={d.reorder} />,
   },
   {
-    id: "store_range",
-    title: () => "Range",
-    description: (t) =>
-      `Which products each ${lower(t.site.one)} should have, what is missing, and how new products are doing. Tickd works it out from your orders.`,
+    ...card("store_range"),
     span: 2,
     source: "storeRange",
-    module: "distribution",
-    // Management figures with money, like the page it opens (/stores/range).
-    permission: "insights",
     render: (d) => d.storeRange && <StoreRangeCard range={d.storeRange} />,
   },
   {
-    id: "visits_completed",
-    title: (t) => `${t.job.many} completed`,
-    description: (t) =>
-      `Completed ${lower(t.job.many)} in the period, against the period before it.`,
+    ...card("visits_completed"),
     span: 1,
     source: "summary",
     render: ({ summary, days, terms: t }) => {
@@ -360,10 +302,7 @@ export const WIDGETS: WidgetDefinition[] = [
     },
   },
   {
-    id: "store_coverage",
-    title: (t) => `${t.site.one} coverage`,
-    description: (t) =>
-      `Share of active ${lower(t.site.many)} visited at least once in the period.`,
+    ...card("store_coverage"),
     span: 1,
     source: "summary",
     render: ({ summary, range, terms: t }) => {
@@ -382,11 +321,7 @@ export const WIDGETS: WidgetDefinition[] = [
     },
   },
   {
-    id: "oos_rate",
-    module: "distribution",
-    title: () => "Out of stock rate",
-    description: () =>
-      "Share of stock checks answered “no”. Reads the in_stock metric on your forms.",
+    ...card("oos_rate"),
     span: 1,
     source: "summary",
     render: ({ summary, days, range }) => {
@@ -407,11 +342,7 @@ export const WIDGETS: WidgetDefinition[] = [
     },
   },
   {
-    id: "planogram",
-    module: "distribution",
-    title: () => "Planogram compliance",
-    description: () =>
-      "Share of planogram checks answered “yes”. Reads the planogram_ok metric.",
+    ...card("planogram"),
     span: 1,
     source: "summary",
     render: ({ summary, days, range }) => {
@@ -435,19 +366,13 @@ export const WIDGETS: WidgetDefinition[] = [
     },
   },
   {
-    id: "live_reps",
-    title: () => "Where the team is",
-    description: (t) =>
-      `Each ${possessive(lower(t.staff.one))} latest position on a map, with how long ago it arrived. Phones report at the interval set in company settings while the ${lower(t.workday.one)} is open.`,
+    ...card("live_reps"),
     span: 4,
     source: "liveReps",
     render: ({ liveReps }) => (liveReps ? <RepMap data={liveReps} /> : null),
   },
   {
-    id: "working_day",
-    title: () => "Working day",
-    description: (t) =>
-      `When each ${lower(t.staff.one)} starts, closes and how long they work — from the day's evidence, not from what anyone typed.`,
+    ...card("working_day"),
     span: 4,
     source: "dayTimes",
     render: ({ dayTimes, dayDetail, dayDistance, range }) => (
@@ -460,9 +385,7 @@ export const WIDGETS: WidgetDefinition[] = [
     ),
   },
   {
-    id: "visits_trend",
-    title: (t) => `${t.job.many} completed — trend`,
-    description: (t) => `Completed ${lower(t.job.many)} per day across the period.`,
+    ...card("visits_trend"),
     span: 2,
     source: "summary",
     render: ({ summary, days, terms: t }) => {
@@ -497,9 +420,7 @@ export const WIDGETS: WidgetDefinition[] = [
     },
   },
   {
-    id: "coverage_donut",
-    title: (t) => `${t.site.one} coverage — chart`,
-    description: () => "The same coverage figure as a proportion of the estate.",
+    ...card("coverage_donut"),
     span: 2,
     source: "summary",
     render: ({ summary, terms: t }) => {
@@ -531,11 +452,7 @@ export const WIDGETS: WidgetDefinition[] = [
     },
   },
   {
-    id: "forms_submitted",
-    module: "checklists_forms",
-    title: () => "Forms submitted",
-    description: (t) =>
-      `Submissions in the period, and what share of completed ${lower(t.job.many)} carried one.`,
+    ...card("forms_submitted"),
     span: 1,
     source: "summary",
     render: ({ summary, terms: t }) => {
@@ -562,12 +479,7 @@ export const WIDGETS: WidgetDefinition[] = [
     },
   },
   {
-    // From the plan, as the "Missed" number and the reports count it: planned
-    // work on days gone by that nobody did. It used to count visit rows with
-    // status 'missed', which nothing ever writes, so it always read 0.
-    id: "missed_visits",
-    title: (t) => `Missed ${lower(t.job.many)}`,
-    description: (t) => `Planned ${lower(t.job.many)} on days gone by that nobody did.`,
+    ...card("missed_visits"),
     span: 1,
     source: "numbers",
     render: ({ numbers, days, terms: t, range }) => {
@@ -588,10 +500,7 @@ export const WIDGETS: WidgetDefinition[] = [
     },
   },
   {
-    id: "active_reps",
-    title: (t) => `Active ${lower(t.staff.many)}`,
-    description: (t) =>
-      `${t.staff.many} who recorded anything in the period, and the average ${lower(t.job.one)} length.`,
+    ...card("active_reps"),
     span: 1,
     source: "summary",
     render: ({ summary, terms: t }) => {
@@ -608,9 +517,7 @@ export const WIDGETS: WidgetDefinition[] = [
     },
   },
   {
-    id: "unscheduled_visits",
-    title: (t) => `Unscheduled ${lower(t.job.many)}`,
-    description: (t) => `Calls ${withArticle(t, "staff")} started outside the plan.`,
+    ...card("unscheduled_visits"),
     span: 1,
     source: "summary",
     render: ({ summary, terms: t }) => {
@@ -628,10 +535,7 @@ export const WIDGETS: WidgetDefinition[] = [
     },
   },
   {
-    id: "prospecting",
-    module: "distribution",
-    title: () => "Prospecting",
-    description: () => "Sales calls, pipeline stages and follow-ups owed.",
+    ...card("prospecting"),
     span: 2,
     source: "operations",
     render: ({ operations, terms: t }) => {
@@ -669,10 +573,7 @@ export const WIDGETS: WidgetDefinition[] = [
     },
   },
   {
-    id: "territories",
-    title: (t) => t.territory.many,
-    description: (t) =>
-      `The ${lower(t.territory.one)} structure, and ${lower(t.site.many)} that are not in one.`,
+    ...card("territories"),
     span: 1,
     source: "operations",
     render: ({ operations, terms: t }) => {
@@ -708,10 +609,7 @@ export const WIDGETS: WidgetDefinition[] = [
     },
   },
   {
-    id: "confirmed_positions",
-    title: () => "Confirmed positions",
-    description: (t) =>
-      `How much of the estate stands on a position ${withArticle(t, "staff")} measured, rather than a geocoder's guess.`,
+    ...card("confirmed_positions"),
     span: 1,
     source: "operations",
     render: ({ operations, summary, terms: t }) => {
@@ -751,37 +649,10 @@ export const WIDGETS: WidgetDefinition[] = [
 
 export const WIDGET_IDS = WIDGETS.map((w) => w.id);
 
-/**
- * The layout somebody sees before they have customised anything.
- *
- * Written out, no longer derived from the registry: since the October 2026
- * redesign the default is the five summary cards plus the team map, and the
- * fourteen earlier field cards stay in the catalogue for Customise rather than
- * all appearing at once, which was most of the old clutter. A new widget meant
- * for everyone must therefore be added here as well as to `WIDGETS`.
- *
- * Nobody had a saved layout when this changed (checked: `dashboard_layouts`
- * was empty), so every dashboard picked the new default up at once.
- */
-export const DEFAULT_LAYOUT: string[] = [
-  "headline",
-  "sales",
-  "pipeline",
-  "field_team",
-  "store_health",
-  "store_reorder",
-  "store_range",
-  "live_reps",
-];
 
-/**
- * The cards a new user starts with: the company's setting (its trade's, at
- * sign-up), or the default above when the setting names nothing we know.
- */
-export function companyDefaultLayout(settingValue: string | null | undefined): string[] {
-  const ids = codesFromSetting(settingValue ?? "", (id) => BY_ID.has(id));
-  return ids.length > 0 ? ids : DEFAULT_LAYOUT;
-}
+// The default layouts moved with the cards' facts, so the server can reset a
+// dashboard the way the page does. Re-exported for the page.
+export { DEFAULT_LAYOUT, companyDefaultLayout } from "@/lib/dashboard-cards";
 
 /** The codes `dashboard_kpis` must compute for the cards on this layout. */
 export function numberCodesFor(layout: string[], cardCodes: string[]): string[] {

@@ -34,6 +34,8 @@ import {
   metricsForFieldType,
 } from "@/lib/metrics";
 import { useTerms } from "@/lib/use-company-config";
+import { addFormFields, saveFieldOrder, updateForm } from "@/lib/forms";
+import { useAssistantChanged } from "@/lib/assistant-changed";
 import { lower, noun, withArticle } from "@/lib/terms";
 
 type FormTemplate = Tables<"form_templates">;
@@ -152,10 +154,16 @@ export default function FormDetailPage() {
       .from("form_fields")
       .select("*")
       .eq("form_template_id", params.id)
-      .order("sort_order");
+      // Then by id: questions that share a place show in the order the AI
+      // Manager reads them in, so "place 2" is the same question for both.
+      .order("sort_order")
+      .order("id");
     setFields(fieldRows ?? []);
     setLoading(false);
   }
+
+  // Questions the AI Manager just added or moved, from the chat over this page.
+  useAssistantChanged(`/forms/${params.id}`, () => void load());
 
   useEffect(() => {
     // Behind an async boundary so the loader's own `setLoading(true)`
@@ -174,33 +182,23 @@ export default function FormDetailPage() {
     const options =
       newField.field_type === "multiple_choice" && parsed.length ? parsed : null;
 
-    // Select the inserted row back: a write PostgREST filters away answers
-    // with success and no rows, so nothing else would tell us it was refused.
-    const { data, error: insertError } = await supabase
-      .from("form_fields")
-      .insert({
-        form_template_id: params.id,
-        label: newField.label,
-        field_type: newField.field_type,
-        required: newField.required,
-        options,
-        metric_key: newField.metric_key || null,
-        sort_order: fields.length,
-      })
-      .select("id")
-      .maybeSingle();
-
-    setSaving(false);
-    if (insertError || !data) {
-      setAddError(
-        describeWriteError(
-          insertError?.message ?? "",
-          "The field could not be added."
-        )
-      );
+    try {
+      await addFormFields(supabase, params.id, [
+        {
+          label: newField.label,
+          field_type: newField.field_type,
+          required: newField.required,
+          options,
+          metric_key: newField.metric_key || null,
+        },
+      ]);
+    } catch (e) {
+      setSaving(false);
+      setAddError(describeWriteError(e instanceof Error ? e.message : "", "The field could not be added."));
       return;
     }
 
+    setSaving(false);
     setDialogOpen(false);
     setNewField(emptyField);
     load();
@@ -341,11 +339,15 @@ export default function FormDetailPage() {
 
   async function persistOrder(ordered: FormField[]) {
     setFields(ordered);
-    await Promise.all(
-      ordered.map((f, i) =>
-        supabase.from("form_fields").update({ sort_order: i }).eq("id", f.id)
-      )
-    );
+    setRowError(null);
+    try {
+      await saveFieldOrder(supabase, ordered.map((f) => f.id));
+    } catch (e) {
+      // Shown, and the real order read back, rather than a list that only
+      // looks reordered.
+      setRowError(e instanceof Error ? e.message : String(e));
+      load();
+    }
   }
 
   function moveField(index: number, direction: -1 | 1) {
@@ -401,16 +403,10 @@ export default function FormDetailPage() {
     setSavingRequired(true);
     setTemplateError(null);
     try {
-      const { data, error: updateError } = await supabase
-        .from("form_templates")
-        .update({ required: next })
-        .eq("id", template.id)
-        .select("id");
-      if (updateError) throw new Error(updateError.message);
-      if (!data || data.length === 0) {
-        throw new Error("Nothing was saved — you may not have permission.");
-      }
-      setTemplate({ ...template, required: next });
+      // With the version this page loaded, and keeping the new one for the
+      // next change: a form changed elsewhere since is refused, not overwritten.
+      const updatedAt = await updateForm(supabase, template.id, { required: next }, template.updated_at);
+      setTemplate({ ...template, required: next, updated_at: updatedAt });
     } catch (e) {
       setTemplateError(e instanceof Error ? e.message : String(e));
     } finally {

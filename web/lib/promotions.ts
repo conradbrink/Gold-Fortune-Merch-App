@@ -1,5 +1,8 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Tables } from "@/lib/supabase/types";
+import { allPages } from "@/lib/all-pages";
+import { isRealDay } from "@/lib/date-range";
+import { dbError, refused } from "@/lib/write-refusal";
 
 /**
  * Promotions: deals running on named lines at named outlets, confirmed by the
@@ -104,35 +107,36 @@ async function syncLinks(
   promotionId: string,
   next: string[]
 ): Promise<void> {
-  const { data, error } = await supabase
-    .from(table)
-    .select(column)
-    .eq("promotion_id", promotionId);
-  if (error) throw new Error(error.message);
-
-  const current = new Set(
-    ((data ?? []) as Record<string, string>[]).map((r) => r[column])
+  // Every link, a page at a time: past 1,000 the ones not read would be
+  // inserted again and refused as duplicates.
+  const rows = await allPages<Record<string, string>>((from, to) =>
+    supabase.from(table).select(column).eq("promotion_id", promotionId).order(column).range(from, to)
   );
+  const current = new Set(rows.map((r) => r[column]));
   const wanted = new Set(next);
 
   const toAdd = next.filter((id) => !current.has(id));
   const toRemove = Array.from(current).filter((id) => !wanted.has(id));
 
-  if (toRemove.length > 0) {
+  // In batches: a few hundred ids in one URL is more than it carries.
+  for (let i = 0; i < toRemove.length; i += LINK_BATCH) {
     const { error: e } = await supabase
       .from(table)
       .delete()
       .eq("promotion_id", promotionId)
-      .in(column, toRemove);
-    if (e) throw new Error(e.message);
+      .in(column, toRemove.slice(i, i + LINK_BATCH));
+    if (e) throw dbError(e);
   }
-  if (toAdd.length > 0) {
+  for (let i = 0; i < toAdd.length; i += 500) {
     const { error: e } = await supabase
       .from(table)
-      .insert(toAdd.map((id) => ({ promotion_id: promotionId, [column]: id })));
-    if (e) throw new Error(e.message);
+      .insert(toAdd.slice(i, i + 500).map((id) => ({ promotion_id: promotionId, [column]: id })));
+    if (e) throw dbError(e);
   }
 }
+
+/** Ids per `in()` filter: what one request's URL comfortably carries. */
+const LINK_BATCH = 100;
 
 export type PromotionInput = {
   name: string;
@@ -142,6 +146,36 @@ export type PromotionInput = {
   productIds: string[];
   storeIds: string[];
 };
+
+/** Lengths a rep can read on a phone; the database itself has no limit. */
+export const MAX_PROMOTION_NAME = 120;
+export const MAX_PROMOTION_BRIEF = 500;
+
+/**
+ * What is wrong with a promotion as typed, or null. The dialog and the AI
+ * Manager both ask before saving, so a promotion is held to one rule however
+ * it was made.
+ *
+ * `before` is the promotion as it was: a name or brief longer than the limits
+ * (written before they existed) is left alone while it is not being changed,
+ * so an old promotion can still have its dates moved or be switched off.
+ */
+export function promotionProblem(
+  input: PromotionInput,
+  before?: Pick<PromotionInput, "name" | "brief">
+): string | null {
+  const name = input.name.trim();
+  if (!name) return "The promotion needs a name.";
+  if (name.length > MAX_PROMOTION_NAME && name !== before?.name.trim()) {
+    return `Keep the name under ${MAX_PROMOTION_NAME} characters.`;
+  }
+  if ((input.brief ?? "").length > MAX_PROMOTION_BRIEF && input.brief !== before?.brief) {
+    return `Keep what to look for under ${MAX_PROMOTION_BRIEF} characters.`;
+  }
+  if (!isRealDay(input.starts_on) || !isRealDay(input.ends_on)) return "Both dates need to be real days.";
+  if (input.ends_on < input.starts_on) return "The end date is before the start date.";
+  return null;
+}
 
 export async function createPromotion(
   supabase: SupabaseClient,
@@ -159,37 +193,77 @@ export async function createPromotion(
     })
     .select("id")
     .single();
-  if (error) throw new Error(error.message);
+  if (error) throw dbError(error);
 
   const id = (data as { id: string }).id;
-  await syncLinks(supabase, "promotion_products", "product_id", id, input.productIds);
-  await syncLinks(supabase, "promotion_stores", "store_id", id, input.storeIds);
+  try {
+    await syncLinks(supabase, "promotion_products", "product_id", id, input.productIds);
+    await syncLinks(supabase, "promotion_stores", "store_id", id, input.storeIds);
+  } catch (reason) {
+    // A promotion without its lines or outlets is not the one asked for, and
+    // one left behind would be joined by another on the retry. Take it back
+    // out (its links go with it) before saying so.
+    const { data: undone } = await supabase.from("promotions").delete().eq("id", id).select("id");
+    if ((undone?.length ?? 0) > 0) throw reason;
+    throw refused(
+      `The promotion was created, but not everything on it was added. Open it on the Promotions page to finish it: ${
+        reason instanceof Error ? reason.message : String(reason)
+      }`,
+      "partial"
+    );
+  }
   return id;
 }
 
+/**
+ * Saves a changed promotion. `active`, when given, is saved with the rest.
+ *
+ * `seenUpdatedAt`, when given, is the version the person was shown: a
+ * promotion changed since then is refused rather than overwritten with old
+ * information. It is checked before anything is written, and the header,
+ * which moves the version, is written last: a failure part-way through the
+ * products and outlets then leaves the promotion on the version it was, so
+ * saving again finishes the job instead of being refused as changed.
+ */
 export async function updatePromotion(
   supabase: SupabaseClient,
   id: string,
-  input: PromotionInput
+  input: PromotionInput & { active?: boolean },
+  seenUpdatedAt?: string
 ): Promise<void> {
-  const { data, error } = await supabase
+  if (seenUpdatedAt) await checkVersion(supabase, id, seenUpdatedAt);
+
+  await syncLinks(supabase, "promotion_products", "product_id", id, input.productIds);
+  await syncLinks(supabase, "promotion_stores", "store_id", id, input.storeIds);
+
+  let query = supabase
     .from("promotions")
     .update({
       name: input.name,
       brief: input.brief,
       starts_on: input.starts_on,
       ends_on: input.ends_on,
+      ...(input.active === undefined ? {} : { active: input.active }),
     })
-    .eq("id", id)
-    .select("id");
-  if (error) throw new Error(error.message);
+    .eq("id", id);
+  if (seenUpdatedAt) query = query.eq("updated_at", seenUpdatedAt);
+  const { data, error } = await query.select("id");
+  if (error) throw dbError(error);
   // A PostgREST update that matches nothing succeeds silently.
   if ((data?.length ?? 0) === 0) {
-    throw new Error("That promotion could not be updated — reload and try again.");
+    if (seenUpdatedAt) await checkVersion(supabase, id, seenUpdatedAt);
+    throw refused("That promotion could not be updated — reload and try again.", "not_written");
   }
+}
 
-  await syncLinks(supabase, "promotion_products", "product_id", id, input.productIds);
-  await syncLinks(supabase, "promotion_stores", "store_id", id, input.storeIds);
+/** Refuses a promotion changed since `seen`: somebody saved it after it was shown. */
+async function checkVersion(supabase: SupabaseClient, id: string, seen: string): Promise<void> {
+  const { data, error } = await supabase.from("promotions").select("updated_at").eq("id", id).maybeSingle();
+  if (error) throw dbError(error);
+  if (!data) throw refused("That promotion is no longer there.", "not_written");
+  if ((data as { updated_at: string }).updated_at !== seen) {
+    throw refused("This promotion was changed by someone else since it was opened. Reload it and try again.", "stale");
+  }
 }
 
 export async function setPromotionActive(
@@ -197,8 +271,12 @@ export async function setPromotionActive(
   id: string,
   active: boolean
 ): Promise<void> {
-  const { error } = await supabase.from("promotions").update({ active }).eq("id", id);
-  if (error) throw new Error(error.message);
+  // `select`: a switch RLS refused changes nothing and still reports success.
+  const { data, error } = await supabase.from("promotions").update({ active }).eq("id", id).select("id");
+  if (error) throw dbError(error);
+  if ((data?.length ?? 0) === 0) {
+    throw refused("That promotion could not be changed — reload and try again.", "not_written");
+  }
 }
 
 export async function deletePromotion(
@@ -220,14 +298,25 @@ export async function deletePromotion(
  */
 export async function answeredStoreIds(
   supabase: SupabaseClient,
-  promotionId: string
+  promotionId: string,
+  /** Only these outlets, when the question is about a few. */
+  storeIds?: string[]
 ): Promise<Set<string>> {
-  const { data, error } = await supabase
-    .from("promotion_checks")
-    .select("store_id")
-    .eq("promotion_id", promotionId);
-  if (error) throw new Error(error.message);
-  return new Set(((data ?? []) as { store_id: string }[]).map((r) => r.store_id));
+  // One row per line, outlet and visit: a busy promotion passes 1,000 quickly,
+  // so every page is read, ordered on the row's own id.
+  const read = (ids: string[] | null) =>
+    allPages<{ store_id: string }>((from, to) => {
+      let q = supabase.from("promotion_checks").select("id, store_id").eq("promotion_id", promotionId);
+      if (ids) q = q.in("store_id", ids);
+      return q.order("id").range(from, to);
+    });
+  const rows: { store_id: string }[] = [];
+  if (storeIds) {
+    for (let i = 0; i < storeIds.length; i += LINK_BATCH) rows.push(...(await read(storeIds.slice(i, i + LINK_BATCH))));
+  } else {
+    rows.push(...(await read(null)));
+  }
+  return new Set(rows.map((r) => r.store_id));
 }
 
 /** One word for how an outlet is doing, rather than four numbers to decode. */

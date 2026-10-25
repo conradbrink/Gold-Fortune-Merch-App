@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import {
+  companyAiChanges,
   companyClosure,
   companyInternalSettings,
   companyRecentEmails,
@@ -18,6 +19,7 @@ import { DEFAULT_TERMS } from "@/lib/terms";
 import { termShown } from "@/lib/settings-tabs";
 import { toModuleSet } from "@/lib/modules";
 import { ClosePanel } from "./close-panel";
+import { actionLabel, outcomeWords } from "@/lib/assistant-actions";
 import { trialState } from "@/lib/onboarding";
 
 /**
@@ -65,7 +67,7 @@ export default async function PlatformCompanyPage({
   const { id } = await params;
   // Not a company id at all: a 404, not a database cast error and a 500.
   if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) notFound();
-  const [company, trialEndsAt, internal, closure, record, terms, emails] = await Promise.all([
+  const [company, trialEndsAt, internal, closure, record, terms, emails, aiChanges] = await Promise.all([
     getCompany(id),
     companyTrialEnd(id),
     companyInternalSettings(id),
@@ -73,6 +75,7 @@ export default async function PlatformCompanyPage({
     companyRecord(id),
     companyTerms(id),
     companyRecentEmails(id),
+    companyAiChanges(id),
   ]);
   if (!company || !record) notFound();
   const trial = trialState(trialEndsAt);
@@ -357,6 +360,31 @@ export default async function PlatformCompanyPage({
                   <span className="text-xs tabular-nums text-muted-foreground">
                     {dateTime.format(new Date(m.sentAt ?? m.createdAt))}
                   </span>
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+
+      <section id="ai-changes" className="space-y-3">
+        <h2 className="text-sm font-semibold text-foreground">Changes made through the AI Manager (UTC)</h2>
+        {aiChanges.length === 0 ? (
+          <p className="text-sm text-muted-foreground">None yet.</p>
+        ) : (
+          <ul className="divide-y divide-border rounded-lg border border-border bg-card text-sm">
+            {aiChanges.map((c) => (
+              <li key={c.id} className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5 px-4 py-2">
+                <span className="min-w-0">
+                  <span className="font-medium text-foreground">{actionLabel(c.action)}</span>
+                  <span className="text-muted-foreground"> by {c.person}</span>
+                  {c.result && <span className="block text-xs text-muted-foreground">{c.result}</span>}
+                </span>
+                <span className="flex items-baseline gap-2">
+                  <span className={c.ok === false ? "text-destructive" : "text-muted-foreground"}>
+                    {outcomeWords(c.ok)}
+                  </span>
+                  <span className="text-xs tabular-nums text-muted-foreground">{dateTime.format(new Date(c.createdAt))}</span>
                 </span>
               </li>
             ))}

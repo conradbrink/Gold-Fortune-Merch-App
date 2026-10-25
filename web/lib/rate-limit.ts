@@ -60,6 +60,12 @@ export const LIMITS = {
   /** Saving a plan Ask drafted. Free to run, but it writes the schedule. */
   assistantPlanSave: { bucket: "assistant_plan_save", limit: 20, windowSeconds: 3600 },
   /**
+   * Pressing an AI Manager card's button. Not a question (nothing is paid
+   * for), but each one changes something, so a loop can't change a company
+   * faster than a person could check it.
+   */
+  assistantAction: { bucket: "assistant_action", limit: 30, windowSeconds: 3600 },
+  /**
    * Opening Paystack's page to pay or to save a card. A person pays once or
    * twice; a loop here is someone testing cards through our account, which
    * can get it flagged by Paystack.

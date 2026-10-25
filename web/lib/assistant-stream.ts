@@ -17,6 +17,10 @@ export type AssistantEvent =
   | { type: "table"; sheet: ExportSheet; href: string }
   /** A drafted month of visits, saved only when the person presses the button. */
   | { type: "plan"; plan: PlanDraft }
+  /** A change the AI Manager drafted, made only when the person presses its button. */
+  | { type: "action"; action: ActionDraft }
+  /** A page to do something on, offered only when the person may open it. */
+  | { type: "link"; link: AssistantLink }
   /** Not about the business: the fixed refusal, and nothing else. */
   | { type: "refused"; text: string }
   | { type: "error"; text: string }
@@ -45,6 +49,44 @@ export type PlanDraft = {
   visits: number;
 };
 
+/**
+ * A change the AI Manager drafted: what the card shows, and what its button
+ * sends back to `/api/assistant/act`.
+ *
+ * `input` goes to the browser and comes back, so the route reads it as if it
+ * were typed by hand (`readActionInput`) and checks it all again before
+ * anything is written. Nothing in the draft is trusted for having come from
+ * the server.
+ */
+export type ActionDraft = {
+  /** This draft, for the panel. */
+  id: string;
+  /** The action, from `lib/assistant-actions.ts`. */
+  name: string;
+  /** "New promotion". */
+  title: string;
+  /**
+   * What it changes: a promotion's or form's id, "dashboard", or "new:<name>"
+   * for something it creates. A later card for the same action and target
+   * replaces this one; a card for something else leaves it as it is.
+   */
+  target: string;
+  /** What will change, a line each: "Dates" / "Sat 1 Nov to Sat 15 Nov". */
+  lines: { label: string; value: string }[];
+  /** Anything worth a second look before pressing, in plain words. */
+  warnings: string[];
+  /** The button's words: "Create the promotion". */
+  button: string;
+  /** The page where it can be checked or changed by hand. */
+  href: string;
+  input: unknown;
+};
+
+/** What pressing the card's button did. */
+export type ActionResult = { done: true; text: string; href: string } | { done: false; text: string };
+
+export type AssistantLink = { href: string; label: string };
+
 /** One chat turn as the panel keeps it and sends it back for context. */
 export type ChatTurn = { role: "user" | "assistant"; text: string };
 
@@ -67,6 +109,8 @@ export type ShownTurn = ChatTurn & {
   refused?: boolean;
   error?: string;
   planSaved?: { added: number; already: number };
+  /** The cards under the answer, and what pressing each did. */
+  actions?: { draft: Pick<ActionDraft, "button" | "title">; result?: ActionResult }[];
 };
 
 /**
@@ -82,15 +126,40 @@ export function history(messages: readonly ShownTurn[]): ChatTurn[] {
     const a = messages[i + 1];
     if (q.role !== "user" || !a || a.role !== "assistant") continue;
     i++;
-    if (a.pending || a.error || a.refused || !a.text.trim()) continue;
+    // A card pressed under an answer that then failed still changed things:
+    // that turn goes back with what pressing did, whatever became of the words.
+    const pressed = (a.actions ?? []).some((x) => x.result);
+    if (a.pending || a.refused) continue;
+    if ((a.error || !a.text.trim()) && !pressed) continue;
     // The assistant cannot see the button: tell it what pressing it did, so
     // "did it save?" gets a true answer.
     const saved = a.planSaved
       ? `\n\n(The person pressed Add to schedule: ${a.planSaved.added} added, ${a.planSaved.already} were already there.)`
       : "";
-    turns.push({ role: "user", text: q.text }, { role: "assistant", text: a.text + saved });
+    const notes = saved + actionNotes(a);
+    // Each turn is cut to MAX_TURN_CHARS on the way in (`parseConversation`),
+    // so a long answer gives way to the notes, never the other way round.
+    const words = (a.text.trim() ? a.text : "(The answer stopped part-way.)").slice(0, Math.max(0, MAX_TURN_CHARS - notes.length));
+    turns.push({ role: "user", text: q.text }, { role: "assistant", text: words + notes });
   }
   return turns.slice(-MAX_HISTORY_TURNS);
+}
+
+/**
+ * What happened to each card under an answer, in words the assistant reads
+ * next time. It never sees the buttons, so without this "did you do it?" would
+ * get a guess; with it, "Done:" is only there when the database said so.
+ */
+function actionNotes(turn: ShownTurn): string {
+  return (turn.actions ?? [])
+    .map(({ draft, result }) =>
+      !result
+        ? `\n\n(Card "${draft.title}": not pressed yet, so nothing has changed.)`
+        : result.done
+          ? `\n\n(The person pressed "${draft.button}". Done: ${result.text})`
+          : `\n\n(The person pressed "${draft.button}" and it did not go through: ${result.text})`
+    )
+    .join("");
 }
 
 export function encodeEvent(event: AssistantEvent): string {

@@ -3,7 +3,16 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import type { ExportSheet } from "@/lib/export";
 import { toolsFor, type ToolSpec } from "@/lib/assistant-tools";
-import { decodeEvents, history, type PlanDraft, type QuestionsLeft } from "@/lib/assistant-stream";
+import {
+  decodeEvents,
+  history,
+  type ActionDraft,
+  type ActionResult,
+  type AssistantLink,
+  type PlanDraft,
+  type QuestionsLeft,
+} from "@/lib/assistant-stream";
+import { announceChange } from "@/lib/assistant-changed";
 import { usePermissions } from "@/lib/use-permissions";
 import { useIsManager } from "@/lib/use-is-manager";
 import { useCompanyConfig } from "@/lib/use-company-config";
@@ -19,6 +28,13 @@ import { useCompanyConfig } from "@/lib/use-company-config";
 
 export type AskTable = { sheet: ExportSheet; href: string };
 
+/** A card under an answer: what it will change, and what pressing it did. */
+export type AskAction = {
+  draft: ActionDraft;
+  /** Set once pressing it has an answer that stands: done, or refused for good. */
+  result?: ActionResult;
+};
+
 export type AskMessage = {
   id: string;
   role: "user" | "assistant";
@@ -30,6 +46,10 @@ export type AskMessage = {
   /** A drafted month of visits under the answer, and what saving it did. */
   plan?: PlanDraft;
   planSaved?: { added: number; already: number; pastDays?: number };
+  /** Changes the AI Manager drafted, made only when the person presses their buttons. */
+  actions?: AskAction[];
+  /** Pages to do something on by hand. */
+  links?: AssistantLink[];
   /** Not about the business: shown, but not sent back as context. */
   refused?: boolean;
   error?: string;
@@ -46,6 +66,13 @@ type AssistantState = {
   ask: (question: string) => void;
   /** Saves the plan under an answer to the schedule. Resolves with an error to show, or null. */
   savePlan: (messageId: string) => Promise<string | null>;
+  /** Makes the change on a card. Resolves with an error to show that pressing again may fix, or null. */
+  doAction: (messageId: string, draftId: string) => Promise<string | null>;
+  /**
+   * Cards being done right now. Kept here, not in the card, so closing and
+   * reopening the chat mid-press can't offer the button again.
+   */
+  doing: ReadonlySet<string>;
   stop: () => void;
   reset: () => void;
 };
@@ -133,7 +160,15 @@ export function AssistantProvider({ children }: Readonly<{ children: React.React
     if (!orgId || loadedFor !== orgId || session !== signOuts) return;
     // A question whose answer is still coming is left out with it: restored
     // alone it would read as asked and never answered.
-    const done = messages.filter((m, i) => !m.pending && !(m.role === "user" && messages[i + 1]?.pending));
+    const done = messages
+      .filter((m, i) => !m.pending && !(m.role === "user" && messages[i + 1]?.pending))
+      // A card that has been pressed won't be sent again: its input (every id
+      // it covered) needn't ride along in this tab's storage.
+      .map((m) =>
+        m.actions?.some((a) => a.result)
+          ? { ...m, actions: m.actions.map((a) => (a.result ? { ...a, draft: { ...a.draft, input: null } } : a)) }
+          : m
+      );
     save({ orgId, open, left, messages: done });
   }, [orgId, loadedFor, session, open, left, messages]);
 
@@ -221,7 +256,13 @@ export function AssistantProvider({ children }: Readonly<{ children: React.React
               else if (e.type === "text") update(answer.id, (m) => ({ ...m, text: m.text + e.text, status: undefined }));
               else if (e.type === "table") update(answer.id, (m) => ({ ...m, tables: [...m.tables, { sheet: e.sheet, href: e.href }] }));
               else if (e.type === "plan") update(answer.id, (m) => ({ ...m, plan: e.plan }));
-              else if (e.type === "refused") update(answer.id, (m) => ({ ...m, text: e.text, tables: [], refused: true }));
+              else if (e.type === "action") update(answer.id, (m) => ({ ...m, actions: [...(m.actions ?? []), { draft: e.action }] }));
+              else if (e.type === "link")
+                update(answer.id, (m) =>
+                  (m.links ?? []).some((l) => l.href === e.link.href) ? m : { ...m, links: [...(m.links ?? []), e.link] }
+                );
+              else if (e.type === "refused")
+                update(answer.id, (m) => ({ ...m, text: e.text, tables: [], actions: undefined, links: undefined, refused: true }));
               else if (e.type === "error") update(answer.id, (m) => ({ ...m, error: e.text }));
               else if (e.type === "done") {
                 if (e.left) setLeft(e.left);
@@ -284,6 +325,54 @@ export function AssistantProvider({ children }: Readonly<{ children: React.React
     [messages, update]
   );
 
+  const [doing, setDoing] = useState<ReadonlySet<string>>(() => new Set());
+  const doAction = useCallback(
+    async (messageId: string, draftId: string): Promise<string | null> => {
+      const draft = messages.find((m) => m.id === messageId)?.actions?.find((a) => a.draft.id === draftId)?.draft;
+      if (!draft) return "That card is no longer here. Ask the AI Manager again.";
+      if (doing.has(draftId)) return null;
+      setDoing((d) => new Set(d).add(draftId));
+      const settle = (result: ActionResult) =>
+        update(messageId, (m) => ({
+          ...m,
+          actions: m.actions?.map((a) => (a.draft.id === draftId ? { ...a, result } : a)),
+        }));
+      try {
+        // The card's own id goes too: the server makes each card's change
+        // once, however often the button reaches it.
+        const res = await fetch("/api/assistant/act", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name: draft.name, draftId: draft.id, input: draft.input }),
+        });
+        const body = (await res.json().catch(() => ({}))) as { error?: string; done?: string; href?: string };
+        if (res.ok) {
+          settle({ done: true, text: body.done ?? "Done.", href: body.href ?? draft.href });
+          // The page behind the chat reads its data again, so the change shows.
+          announceChange(body.href ?? draft.href);
+          return null;
+        }
+        const message = body.error ?? `That couldn't be done (${res.status}).`;
+        // Refused for good (not allowed, changed since, no longer valid): the
+        // card says so and stays that way. Anything else may work next time.
+        if (res.status === 400 || res.status === 403 || res.status === 409) {
+          settle({ done: false, text: message });
+          return null;
+        }
+        return message;
+      } catch {
+        return "That couldn't be done. Check your connection and try again.";
+      } finally {
+        setDoing((d) => {
+          const next = new Set(d);
+          next.delete(draftId);
+          return next;
+        });
+      }
+    },
+    [messages, update, doing]
+  );
+
   const stop = useCallback(() => abortRef.current?.abort(), []);
 
   const reset = useCallback(() => {
@@ -292,8 +381,8 @@ export function AssistantProvider({ children }: Readonly<{ children: React.React
   }, []);
 
   const value = useMemo<AssistantState>(
-    () => ({ tools, open, setOpen, messages, busy, left, ask, savePlan, stop, reset }),
-    [tools, open, messages, busy, left, ask, savePlan, stop, reset]
+    () => ({ tools, open, setOpen, messages, busy, left, ask, savePlan, doAction, doing, stop, reset }),
+    [tools, open, messages, busy, left, ask, savePlan, doAction, doing, stop, reset]
   );
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

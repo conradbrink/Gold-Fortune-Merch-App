@@ -19,6 +19,7 @@ import {
   answeredStoreIds,
   createPromotion,
   fetchPromotionDetail,
+  promotionProblem,
   updatePromotion,
   type PromotionInput,
 } from "@/lib/promotions";
@@ -66,6 +67,8 @@ export function PromotionDialog({
   const [initialStores, setInitialStores] = useState<Set<string>>(new Set());
   const [initialProducts, setInitialProducts] = useState<Set<string>>(new Set());
   const [started, setStarted] = useState(false);
+  /** The promotion as it was opened: its version, and the words the length limits leave alone. */
+  const [loaded, setLoaded] = useState<{ updatedAt: string; name: string; brief: string | null } | null>(null);
 
   const [query, setQuery] = useState("");
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
@@ -110,6 +113,7 @@ export function PromotionDialog({
     setAnswered(new Set());
     setStarted(false);
     setExpanded(new Set());
+    setLoaded(null);
     setLoadingDetail(promotionId !== null);
 
     // Opening B while A is still in flight must not let A's reply land on B's
@@ -139,6 +143,7 @@ export function PromotionDialog({
             "That promotion could not be read. Close and reopen it, or refresh the list."
           );
         }
+        setLoaded({ updatedAt: detail.updated_at, name: detail.name, brief: detail.brief });
         setName(detail.name);
         setBrief(detail.brief ?? "");
         setStartsOn(detail.starts_on);
@@ -223,8 +228,16 @@ export function PromotionDialog({
       productIds: Array.from(productIds),
       storeIds: Array.from(storeIds),
     };
+    const problem = promotionProblem(input, loaded ?? undefined);
+    if (problem) {
+      setError(problem);
+      setSaving(false);
+      return;
+    }
     try {
-      if (promotionId) await updatePromotion(supabase, promotionId, input);
+      // With the version it opened: a promotion somebody else saved since (or
+      // the AI Manager changed from the chat) is refused, not overwritten.
+      if (promotionId) await updatePromotion(supabase, promotionId, input, loaded?.updatedAt);
       else await createPromotion(supabase, orgId, input);
       onSaved();
       onOpenChange(false);
