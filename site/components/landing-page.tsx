@@ -1,28 +1,36 @@
 import {
   Car,
   Check,
+  ClipboardX,
   Compass,
   LayoutDashboard,
   MessagesSquare,
   PackageCheck,
   PackageX,
   Route,
+  Store,
   TrendingUp,
 } from "lucide-react";
 import Image from "next/image";
 import { CostCalculator } from "@/components/cost-calculator";
 import { ProductDemo } from "@/components/demo/product-demo";
+import { FoundingCallForm } from "@/components/founding-call-form";
 import { FoundingForm } from "@/components/founding-form";
+import { FoundingVideo } from "@/components/founding-youtube";
 import { FoundingGuarantee, FoundingStack, Objections } from "@/components/founding-package";
 import { SpotsText } from "@/components/founding-spots";
 import { Logo } from "@/components/logo";
+import { SiteFooter } from "@/components/site-footer";
 import { PricingSection } from "@/components/pricing-section";
 import { ProofSection } from "@/components/proof-section";
 import { SectionViews } from "@/components/analytics";
 import { confirmed, firstPlan, founding, foundingFrom, proof, rand, site } from "@/lib/site";
 
 // The landing page: the main page (app/page.tsx) and /founding
-// (app/founding/page.tsx) both render it.
+// (app/founding/page.tsx) both render it. Since 25 Oct 2026 /founding, where
+// the Meta ads land, puts the video and the form straight after the hero, and
+// has its own hero text, two more problems (the ones the ads lead with) and the
+// form for the new sales process (Conrad calls within minutes); see `page`.
 //
 // Copy: ~/Downloads/site-copy-final-v7.md, reworked on 8 Oct 2026 with the
 // Hormozi offer skills, then rewritten on 9 Oct 2026 to read the way you'd say
@@ -66,6 +74,21 @@ const pains = [
     icon: Compass,
     title: "No clear plan to grow.",
     body: "You can't see which stores or areas to push, so growth comes down to gut feel.",
+  },
+];
+
+// On /founding, before the four above: the problems the ads lead with
+// (owner, 25 Oct 2026), so the page confirms the visitor is in the right place.
+const adPains = [
+  {
+    icon: Store,
+    title: "You lose shelf space, and you're the last to know.",
+    body: "A competitor moves in, and you find out when the orders stop.",
+  },
+  {
+    icon: ClipboardX,
+    title: "You trust paper sign-in sheets and promos you can't see.",
+    body: "A signature doesn't prove a visit. A promo you paid for may never go up.",
   },
 ];
 
@@ -189,12 +212,56 @@ const SECTION_EVENTS = {
 };
 
 /**
+ * The close: what they get, in three lines, and the form. At the foot of the
+ * main page; straight after the video on /founding, with the form for the new
+ * sales process (owner, 25 Oct 2026).
+ */
+function Apply({ page }: { page: "home" | "founding" }) {
+  return (
+    <section id="apply" className="scroll-mt-28 px-4 pb-14 sm:px-6 sm:pb-16">
+      <div className="tk-reveal mx-auto grid max-w-3xl gap-6 rounded-2xl bg-teal-900 p-6 text-sand sm:p-10">
+        <div className="grid gap-3">
+          <h2 className="font-display text-3xl font-extrabold leading-[1.1] tracking-tight text-balance sm:text-5xl">
+            Start your free {founding.pilotDays}-day pilot.
+          </h2>
+          <ul className="grid gap-2">
+            {youGet.map((g) => (
+              <li key={g} className="flex items-start gap-2.5 text-lg font-semibold leading-snug">
+                <span aria-hidden="true" className="mt-0.5 grid size-6 shrink-0 place-items-center rounded-full bg-amber-500 text-teal-950">
+                  <Check className="size-4" strokeWidth={3.5} />
+                </span>
+                {g}
+              </li>
+            ))}
+          </ul>
+          <p className="leading-relaxed text-teal-100 sm:text-lg">
+            {page === "founding"
+              ? `It takes a minute. ${founding.caller} will call you himself, usually within minutes. No card, no contract.`
+              : "It takes a minute. We'll email you to set up your pilot. No card, no contract."}
+          </p>
+          <SpotsText className="text-sm font-semibold text-amber-500" />
+        </div>
+        {page === "founding" ? <FoundingCallForm /> : <FoundingForm />}
+      </div>
+    </section>
+  );
+}
+
+/**
  * The landing page, shared by the main page and /founding (owner, 20 Oct
  * 2026: "the founding page should be redesigned to fit our current landing
- * page"). Only the hero differs: /founding is where the Founding adverts
- * land, so it leads with the offer they promised.
+ * page"). /founding is where the Founding adverts land: it leads with the
+ * offer they promised, then the video and the form (owner, 25 Oct 2026), and
+ * everything else follows in the same order as the main page.
  */
-export function LandingPage({ hero = "home" }: { hero?: "home" | "founding" }) {
+export function LandingPage({ page = "home" }: { page?: "home" | "founding" }) {
+  const shownPains = page === "founding" ? [...adPains, ...pains] : pains;
+  const shownBenefits =
+    page === "founding"
+      ? benefits.map((b, i) =>
+          i === 0 ? { ...b, body: `${b.body} Every shelf photo and promo check is stamped with the time and place.` } : b,
+        )
+      : benefits;
   return (
     <>
       {/* One focus: the banner and the one button, both to the form. */}
@@ -228,10 +295,14 @@ export function LandingPage({ hero = "home" }: { hero?: "home" | "founding" }) {
             first trust signal (Gold Fortune's result). */}
         {/* A size smaller on a phone (owner, 21 Oct 2026: on an iPhone 16 Pro the
             Gold Fortune line was under the first screen). */}
-        <section className="mx-auto grid max-w-6xl items-center gap-10 px-4 pb-10 pt-5 sm:px-6 sm:pb-16 sm:pt-12 lg:grid-cols-[1.1fr_0.9fr] lg:gap-14 lg:pt-12">
+        <section
+          className={`mx-auto grid max-w-6xl items-center gap-10 px-4 pb-10 pt-5 sm:px-6 sm:pb-16 sm:pt-12 lg:gap-14 lg:pt-12 ${
+            page === "founding" ? "" : "lg:grid-cols-[1.1fr_0.9fr]"
+          }`}
+        >
           <div className="tk-hero grid gap-4 sm:gap-6">
             <p className="text-sm font-bold uppercase tracking-wide text-teal-700">For teams of 3 to 30 reps</p>
-            {hero === "founding" ? (
+            {page === "founding" ? (
               <h1 className="font-display text-[2.1rem] font-extrabold leading-[1.06] tracking-tight text-balance text-teal-900 sm:text-5xl lg:text-[3.6rem]">
                 Become one of our{" "}
                 <span className="relative whitespace-nowrap">
@@ -250,11 +321,10 @@ export function LandingPage({ hero = "home" }: { hero?: "home" | "founding" }) {
                 to manage your reps, orders and invoices.
               </h1>
             )}
-            {hero === "founding" ? (
+            {page === "founding" ? (
               <p className="max-w-xl text-base leading-relaxed text-pretty text-ink sm:text-xl">
-                A free {founding.pilotDays}-day pilot, set up for you. Then {founding.percentOff}% off your plan for{" "}
-                {founding.priceMonths} months, from {rand(foundingFrom)} a month. Our AI Manager then tells you how to grow your
-                business.
+                A free {founding.pilotDays}-day pilot, set up for you. Then {founding.percentOff}% off for {founding.priceMonths}{" "}
+                months, from {rand(foundingFrom)} a month. And an AI Manager that plans how to grow your business.
               </p>
             ) : (
               <p className="max-w-xl text-base leading-relaxed text-pretty text-ink sm:text-xl">
@@ -275,7 +345,7 @@ export function LandingPage({ hero = "home" }: { hero?: "home" | "founding" }) {
                 Start my free pilot
               </a>
               <p className="w-full text-center text-sm font-semibold text-teal-900">No card · No contract</p>
-              {hero === "founding" && (
+              {page === "founding" && (
                 <SpotsText
                   urgent
                   className="mt-1 inline-block w-fit rounded-full bg-amber-500 px-4 py-1.5 text-sm font-extrabold uppercase tracking-wide text-teal-950"
@@ -300,10 +370,37 @@ export function LandingPage({ hero = "home" }: { hero?: "home" | "founding" }) {
               </p>
             </div>
           </div>
-          <figure className="tk-hero-demo grid gap-3">
-            <ProductDemo />
-          </figure>
+          {page === "home" && (
+            <figure className="tk-hero-demo grid gap-3">
+              <ProductDemo />
+            </figure>
+          )}
         </section>
+
+        {/* /founding: the video, then the form, before everything else (owner,
+            25 Oct 2026). The hero's button goes straight to the form, so
+            nobody has to watch the video first. */}
+        {page === "founding" && (
+          <>
+            <section id="video" aria-labelledby="video-title" className="border-t border-line bg-white">
+              <div className={`${wrap} max-w-4xl`}>
+                <h2 id="video-title" className={h2}>
+                  {founding.videoId ? "Watch how it works (5 minutes)" : "See how it works"}
+                </h2>
+                {founding.videoId ? (
+                  <FoundingVideo />
+                ) : (
+                  <figure className="mx-auto grid w-full max-w-md gap-3">
+                    <ProductDemo />
+                  </figure>
+                )}
+              </div>
+            </section>
+            <div className="border-t border-line pt-10 sm:pt-16">
+              <Apply page="founding" />
+            </div>
+          </>
+        )}
 
         {/* 3. The problem: the old way. */}
         <section id="problem" aria-labelledby="problem-title">
@@ -315,7 +412,7 @@ export function LandingPage({ hero = "home" }: { hero?: "home" | "founding" }) {
               <p className={lead}>Sound familiar?</p>
             </div>
             <ul className="grid gap-x-10 gap-y-6 sm:grid-cols-2">
-              {pains.map(({ icon: Icon, title, body }) => (
+              {shownPains.map(({ icon: Icon, title, body }) => (
                 <li
                   key={title}
                   className="tk-reveal tk-timeline flex gap-3.5 border-t border-line pt-5 sm:last:odd:col-span-2"
@@ -339,14 +436,16 @@ export function LandingPage({ hero = "home" }: { hero?: "home" | "founding" }) {
           <div className={`${wrap} max-w-6xl`}>
             <div className="grid gap-3">
               <h2 id="benefits-title" className={h2}>
-                {site.name} fixes all {countWords[pains.length] ?? pains.length}.
+                {page === "founding"
+                  ? `${site.name} fixes all of it.`
+                  : `${site.name} fixes all ${countWords[pains.length] ?? pains.length}.`}
               </h2>
               <p className={lead}>
                 Your reps use the app on their phones. You see it all on your computer.
               </p>
             </div>
             <ul className="grid gap-4 sm:grid-cols-2">
-              {benefits.map(({ icon: Icon, title, body }) => (
+              {shownBenefits.map(({ icon: Icon, title, body }) => (
                 <li key={title} className="tk-reveal grid content-start gap-3 rounded-2xl bg-mint p-5 ring-1 ring-teal-100 sm:p-6">
                   {/* The heading beside its icon (owner, 20 Oct 2026). */}
                   <div className="flex items-center gap-3">
@@ -458,60 +557,11 @@ export function LandingPage({ hero = "home" }: { hero?: "home" | "founding" }) {
           </div>
         </section>
 
-        {/* 7. The close: what they get, in three lines, and the form. */}
-        <section id="apply" className="scroll-mt-28 px-4 pb-14 sm:px-6 sm:pb-16">
-          <div className="tk-reveal mx-auto grid max-w-3xl gap-6 rounded-2xl bg-teal-900 p-6 text-sand sm:p-10">
-            <div className="grid gap-3">
-              <h2 className="font-display text-3xl font-extrabold leading-[1.1] tracking-tight text-balance sm:text-5xl">
-                Start your free {founding.pilotDays}-day pilot.
-              </h2>
-              <ul className="grid gap-2">
-                {youGet.map((g) => (
-                  <li key={g} className="flex items-start gap-2.5 text-lg font-semibold leading-snug">
-                    <span aria-hidden="true" className="mt-0.5 grid size-6 shrink-0 place-items-center rounded-full bg-amber-500 text-teal-950">
-                      <Check className="size-4" strokeWidth={3.5} />
-                    </span>
-                    {g}
-                  </li>
-                ))}
-              </ul>
-              <p className="leading-relaxed text-teal-100 sm:text-lg">
-                It takes a minute. We&apos;ll email you to set up your pilot. No card, no contract.
-              </p>
-              <SpotsText className="text-sm font-semibold text-amber-500" />
-            </div>
-            <FoundingForm />
-          </div>
-        </section>
+        {/* 7. The close on the main page (on /founding it is near the top). */}
+        {page === "home" && <Apply page="home" />}
       </main>
 
-      <footer className="bg-teal-950 text-teal-100">
-        <div className="mx-auto flex max-w-6xl flex-col gap-4 px-4 py-10 sm:px-6 md:flex-row md:items-center md:justify-between">
-          <Logo inverted />
-          <div className="grid gap-2 text-sm md:justify-items-end">
-            <p>
-              {site.tagline} ·{" "}
-              <a href={`mailto:${site.email}`} className="py-1 hover:text-sand">
-                {site.email}
-              </a>
-            </p>
-            <p>
-              Already using {site.name}?{" "}
-              <a href={`${site.appUrl}/login`} className="py-1 font-semibold underline underline-offset-4 hover:text-sand">
-                Sign in
-              </a>
-            </p>
-            <nav aria-label="Legal" className="flex flex-wrap gap-x-5 gap-y-1">
-              <a href="/terms" className="py-1 hover:text-sand">Terms</a>
-              <a href="/privacy" className="py-1 hover:text-sand">Privacy</a>
-              <a href="/refunds" className="py-1 hover:text-sand">Cancellations and refunds</a>
-            </nav>
-            <p className="text-xs text-teal-100/70">
-              © {new Date().getFullYear()} {site.legalName}
-            </p>
-          </div>
-        </div>
-      </footer>
+      <SiteFooter />
     </>
   );
 }
