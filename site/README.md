@@ -17,7 +17,8 @@ npm run dev      # http://localhost:3100
 | Prices and add-ons | `lib/site.ts` (`pricing`) |
 | All page copy | `app/page.tsx` |
 | /founding, where the Meta ads land: hero, video, then the form | `app/founding/page.tsx`, `components/landing-page.tsx` (`page="founding"`), `components/founding-call-form.tsx` |
-| Who calls each /founding lead, his number, and the YouTube video | `lib/site.ts` (`founding.caller`, `callerNumber`, `videoId`) |
+| Who calls each /founding lead, and his number | `lib/site.ts` (`founding.caller`, `callerNumber`) |
+| The /founding video | `components/founding-video.tsx`, `public/founding/vsl-v2-*` |
 | Brand colours and fonts | `app/globals.css` (`@theme`), `app/layout.tsx` |
 | Logo | `components/logo.tsx`, `public/tickd-logo.svg`, `public/tickd-mark.svg`, `app/icon.svg` |
 

@@ -5,9 +5,9 @@ import { founding, site } from "@/lib/site";
 // The Founding 10 distributors page, where the Founding adverts land (the Meta
 // ads link here with their own utm_ tags; keep the address). Since 25 Oct 2026
 // it is its own short page: the hero, the video and the form
-// (components/founding-page.tsx). The old video (components/founding-video.tsx,
-// public/founding) stays off (owner, 25 Oct 2026); the new one is a YouTube
-// video, `founding.videoId` in lib/site.ts.
+// (components/founding-page.tsx). The video is the owner's final 3-minute cut,
+// from this site, not YouTube (owner, 25 Oct 2026): components/founding-video.tsx,
+// public/founding.
 //
 // The offer, as the ads say it: a free 14-day pilot where we set up the whole
 // business, and that month's fee back after 30 days if they're not happy. Only

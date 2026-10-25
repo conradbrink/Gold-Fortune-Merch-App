@@ -2,10 +2,9 @@ import { ShieldCheck } from "lucide-react";
 import Link from "next/link";
 import { SectionViews } from "@/components/analytics";
 import { ApplySection } from "@/components/apply-section";
-import { ProductDemo } from "@/components/demo/product-demo";
 import { FoundingCallForm } from "@/components/founding-call-form";
 import { SpotsText } from "@/components/founding-spots";
-import { FoundingVideo } from "@/components/founding-youtube";
+import { FoundingVideo } from "@/components/founding-video";
 import { h2, pilotButton, wrap } from "@/components/page-styles";
 import { SiteFooter } from "@/components/site-footer";
 import { SiteHeader } from "@/components/site-header";
@@ -86,20 +85,13 @@ export function FoundingPage() {
         <FoundingHero />
 
         {/* The video, then the form. The hero's button goes straight to the
-            form, so nobody has to watch the video first. Until the 5-minute
-            video's ID is set (lib/site.ts founding.videoId), the phone demo. */}
+            form, so nobody has to watch the video first. */}
         <section id="video" aria-labelledby="video-title" className="border-t border-line bg-white">
           <div className={`${wrap} max-w-4xl`}>
             <h2 id="video-title" className={`${h2} text-center`}>
-              {founding.videoId ? "Watch how it works (5 minutes)" : "See how it works"}
+              Watch how it works (3 minutes)
             </h2>
-            {founding.videoId ? (
-              <FoundingVideo />
-            ) : (
-              <figure className="mx-auto grid w-full max-w-md gap-3">
-                <ProductDemo />
-              </figure>
-            )}
+            <FoundingVideo />
           </div>
         </section>
 
