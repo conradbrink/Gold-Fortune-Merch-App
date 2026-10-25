@@ -10,9 +10,8 @@
 -- applications list shows a lead whose ping never came (it was only in the
 -- logs). Both null when the bot wasn't set up, and on older applications.
 --
--- Not applied yet: rename this file to the version Supabase records when it is
--- (supabase/README.md). Rollback:
--- supabase/rollback/20261025150000_founding_consent_and_telegram.down.sql.
+-- Applied 25 Oct 2026. Rollback:
+-- supabase/rollback/20261025130936_founding_consent_and_telegram.down.sql.
 
 alter table public.founding_applications
   add column contact_consent boolean,
