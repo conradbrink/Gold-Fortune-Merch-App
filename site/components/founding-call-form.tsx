@@ -1,6 +1,6 @@
 "use client";
 
-import { useId, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { founding, site } from "@/lib/site";
 import { trackLead } from "@/components/meta-pixel";
 import { track } from "@/components/analytics";
@@ -91,6 +91,16 @@ export function FoundingCallForm() {
   const [distributes, setDistributes] = useState<string[]>([]);
   const [trade] = useState(offeredTypes.length === 1 ? offeredTypes[0][1] : "");
   const [missing, setMissing] = useState<Partial<Record<Field, string>>>({});
+
+  // The thank-you is much shorter than the form, so after Send the page moves
+  // up under the visitor and the message lands above the screen. Bring it back.
+  const doneRef = useRef<HTMLDivElement>(null);
+  const done = state.kind === "done";
+  useEffect(() => {
+    if (!done) return;
+    const reduce = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+    doneRef.current?.scrollIntoView({ block: "center", behavior: reduce ? "auto" : "smooth" });
+  }, [done]);
 
   const pick = (key: "team_size" | "role", field: Field, set: (v: string) => void) => (v: string) => {
     started();
@@ -188,7 +198,7 @@ export function FoundingCallForm() {
   if (state.kind === "done") {
     const thanks = state.firstName ? `Thanks, ${state.firstName}.` : "Thanks.";
     return (
-      <div role="status" className="grid gap-4 rounded-2xl bg-white/10 p-5 ring-1 ring-white/20 sm:p-6">
+      <div ref={doneRef} role="status" className="grid scroll-mt-28 gap-4 rounded-2xl bg-white/10 p-5 ring-1 ring-white/20 sm:p-6">
         {state.already ? (
           <>
             <p className="font-display text-2xl font-bold text-amber-500">You&apos;ve already applied.</p>
