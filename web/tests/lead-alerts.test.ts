@@ -3,7 +3,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { applicationEmail, checkApplication, foundingIssues, inputFromBody, type FoundingInput } from "@/lib/founding";
-import { SHEET_HEADERS, alertOwnerOnTelegram, alertText, saTime, sheetRow } from "@/lib/lead-alerts";
+import { SHEET_HEADERS, alertOwnerOnTelegram, alertText, repsLabel, saTime, sheetRow, telegramCard } from "@/lib/lead-alerts";
 
 const callForm: FoundingInput = {
   name: " Thandi Nkosi ",
@@ -120,17 +120,18 @@ test("the Telegram alert stays off until the bot is set up, then sends the messa
   try {
     delete process.env.TELEGRAM_BOT_TOKEN;
     delete process.env.TELEGRAM_CHAT_ID;
-    await alertOwnerOnTelegram("id-1", r.application, false);
+    await alertOwnerOnTelegram("id-1", r.application, false, at);
     assert.equal(calls.length, 0);
 
     // As pasted into Vercel, with a stray space and line break.
     process.env.TELEGRAM_BOT_TOKEN = " 123:abc\n";
     process.env.TELEGRAM_CHAT_ID = "4567 ";
-    await alertOwnerOnTelegram("id-1", r.application, false);
+    await alertOwnerOnTelegram("id-1", r.application, false, at);
     assert.equal(calls.length, 1);
     assert.equal(calls[0].url, "https://api.telegram.org/bot123:abc/sendMessage");
     assert.equal(calls[0].body.chat_id, "4567");
-    assert.equal(calls[0].body.text, alertText(r.application, false));
+    assert.equal(calls[0].body.text, telegramCard(r.application, false, at));
+    assert.equal(calls[0].body.parse_mode, "HTML");
   } finally {
     globalThis.fetch = realFetch;
     delete process.env.TELEGRAM_BOT_TOKEN;
@@ -151,7 +152,7 @@ test("a failed Telegram alert never throws, and never logs the bot's token", asy
   try {
     process.env.TELEGRAM_BOT_TOKEN = "123:secret-token";
     process.env.TELEGRAM_CHAT_ID = "4567";
-    await alertOwnerOnTelegram("id-2", r.application, false);
+    await alertOwnerOnTelegram("id-2", r.application, false, at);
     assert.equal(logged.length, 1);
     assert.ok(!logged[0].includes("secret-token"), logged[0]);
   } finally {
@@ -160,4 +161,61 @@ test("a failed Telegram alert never throws, and never logs the bot's token", asy
     delete process.env.TELEGRAM_BOT_TOKEN;
     delete process.env.TELEGRAM_CHAT_ID;
   }
+});
+
+test("the Telegram card has every answer, when, where from, and a WhatsApp link with a first message", () => {
+  const r = checkApplication(
+    {
+      ...callForm,
+      distributes: "Groceries, Liquor",
+      email: "t@example.com",
+      attribution: { utm_source: "meta", utm_campaign: "distributors-oct", utm_term: "Broad SA", utm_content: "H07" },
+    },
+    at
+  );
+  assert.ok(r.ok);
+  const hello = encodeURIComponent(
+    "Hi Thandi, it's Conrad from Tickd. Thanks for applying for the free 14-day pilot. Is now a good time for a quick call?"
+  ).replace(/'/g, "%27");
+  assert.equal(
+    telegramCard(r.application, false, at),
+    [
+      "🔔 <b>New Founding lead</b>",
+      "<b>Thandi Nkosi</b> · Nkosi Snacks",
+      "",
+      "Role: Owner or MD",
+      "Reps: 3 to 5",
+      "Distributes: Groceries, Liquor",
+      "WhatsApp: +26771234567",
+      "Email: t@example.com",
+      "Agreed to be contacted: Yes",
+      "Applied: 2026-10-25 10:14:03 (SA time)",
+      "Came from: meta · campaign distributors-oct · ad set Broad SA · ad H07",
+      "",
+      `💬 <a href="https://wa.me/26771234567?text=${hello}">WhatsApp Thandi</a>`,
+    ].join("\n")
+  );
+});
+
+test("the card leaves out what wasn't asked, and escapes what the applicant typed", () => {
+  const r = checkApplication(
+    { ...callForm, name: "<b>Tom</b> & Co", businessName: "A<script>", role: "", contactOk: false, attribution: undefined },
+    at
+  );
+  assert.ok(r.ok);
+  const card = telegramCard(r.application, true, at);
+  assert.ok(card.startsWith("🕒 <b>Waiting list</b>"));
+  assert.ok(card.includes("<b>&lt;b&gt;Tom&lt;/b&gt; &amp; Co</b> · A&lt;script&gt;"));
+  assert.ok(!card.includes("Role:"));
+  assert.ok(!card.includes("Email:"));
+  assert.ok(!card.includes("Agreed to be contacted"));
+  assert.ok(card.includes("Came from: not known"));
+  assert.ok(!card.includes("<script>"));
+});
+
+test("the rep bands read the way the form shows them", () => {
+  assert.equal(repsLabel("1-2"), "1 to 2");
+  assert.equal(repsLabel("16-30"), "16 to 30");
+  assert.equal(repsLabel("31+"), "More than 30");
+  assert.equal(repsLabel("20-50+"), "20 to 50+");
 });

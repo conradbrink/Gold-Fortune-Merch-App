@@ -180,7 +180,7 @@ export async function POST(request: Request) {
   }
 
   after(() => notifyOwner(saved.id, application, waitlist));
-  after(() => alertOwnerOnTelegram(saved.id, application, waitlist));
+  after(() => alertOwnerOnTelegram(saved.id, application, waitlist, receivedAt));
   after(() => alertOwnerOnWhatsapp(saved.id, application, waitlist));
   after(() => addToLeadsSheet(saved.id, application, waitlist, receivedAt));
   const toEmail = application.email;
