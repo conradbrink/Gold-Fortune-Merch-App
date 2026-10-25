@@ -17,4 +17,7 @@ export const FOUNDING_OFFER = {
   priceMonths: 3,
   /** Where the application is. */
   applyUrl: "https://tickd.co.za/founding",
+  /** Who calls each /founding applicant, and from which number (owner, 25 Oct 2026). */
+  caller: "Conrad",
+  callerNumber: "+267 76 642 259",
 } as const;

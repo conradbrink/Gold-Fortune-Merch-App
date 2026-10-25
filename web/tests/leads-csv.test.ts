@@ -104,6 +104,7 @@ test("a /founding lead who unticked the consent says No", () => {
         role: "owner",
         team_size: "3-5",
         distributes: null,
+        contact_consent: false,
         contact_consent_at: null,
       },
     ],

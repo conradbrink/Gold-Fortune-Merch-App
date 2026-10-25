@@ -53,7 +53,7 @@ const SENDER = { email: "applications@tickd.co.za", name: "Tickd applications" }
 const isProduction = () => process.env.NODE_ENV === "production";
 
 function headersFor(request: Request, extra: Record<string, string> = {}): Record<string, string> {
-  const origin = corsOrigin(request.headers.get("origin"), isProduction());
+  const origin = corsOrigin(request.headers.get("origin"), isProduction(), true);
   return { ...extra, Vary: "Origin", ...(origin ? { "Access-Control-Allow-Origin": origin } : {}) };
 }
 
@@ -86,7 +86,7 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   const origin = request.headers.get("origin");
-  if (origin && !corsOrigin(origin, isProduction())) {
+  if (origin && !corsOrigin(origin, isProduction(), true)) {
     return json(request, { error: "Not allowed." }, 403);
   }
   const body = (await request.json().catch(() => null)) as unknown;
@@ -149,9 +149,9 @@ export async function POST(request: Request) {
   // before one of them, PostgREST refuses the unknown column (PGRST204): save
   // the application without it rather than lose it. The role and the consent
   // (25 Oct 2026) first, as the newest; the alerts still carry them.
-  if (error?.code === "PGRST204" && /role|contact_consent_at/.test(error.message)) {
+  if (error?.code === "PGRST204" && /role|contact_consent/.test(error.message)) {
     console.error("founding: role or consent column missing, saved without them");
-    row = { ...row, role: undefined, contact_consent_at: undefined };
+    row = { ...row, role: undefined, contact_consent: undefined, contact_consent_at: undefined };
     ({ data: saved, error } = await insert(row));
   }
   if (error?.code === "PGRST204" && error.message.includes("distributes")) {
@@ -180,7 +180,7 @@ export async function POST(request: Request) {
   }
 
   after(() => notifyOwner(saved.id, application, waitlist));
-  after(() => alertOwnerOnTelegram(saved.id, application, waitlist, receivedAt));
+  after(() => telegramOwner(saved.id, application, waitlist, receivedAt));
   after(() => alertOwnerOnWhatsapp(saved.id, application, waitlist));
   after(() => addToLeadsSheet(saved.id, application, waitlist, receivedAt));
   const toEmail = application.email;
@@ -253,6 +253,21 @@ async function confirmToApplicant(id: string, a: FoundingApplication & { email: 
   } catch (e) {
     console.error("founding: the applicant's confirmation failed", id, e instanceof Error ? e.message : e);
   }
+}
+
+/**
+ * Sends the owner the Telegram card, then notes how it went on the row
+ * (`telegram_sent_at`, or `telegram_error`), so /platform/founding can show a
+ * lead whose ping never came. Never throws: the application is already saved.
+ */
+async function telegramOwner(id: string, a: FoundingApplication, waitlist: boolean, at: Date) {
+  const result = await alertOwnerOnTelegram(id, a, waitlist, at);
+  if (!result) return;
+  const { error } = await platformAdminClient()
+    .from("founding_applications")
+    .update(result.ok ? { telegram_sent_at: new Date().toISOString(), telegram_error: null } : { telegram_error: result.error })
+    .eq("id", id);
+  if (error) console.error("founding: could not note the Telegram alert", id, error.message);
 }
 
 /** Emails the owner, then marks the row. Never throws: the application is already saved. */

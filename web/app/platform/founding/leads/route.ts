@@ -21,7 +21,7 @@ export async function GET() {
     platformAdminClient()
       .from("founding_applications")
       .select(
-        "created_at, name, email, whatsapp, business_name, trade, town, status, source, role, team_size, distributes, contact_consent_at, attribution"
+        "created_at, name, email, whatsapp, business_name, trade, town, status, source, role, team_size, distributes, contact_consent, contact_consent_at, attribution"
       )
       .order("created_at", { ascending: false }),
     listTemplates().catch(() => []),

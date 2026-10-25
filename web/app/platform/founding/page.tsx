@@ -132,6 +132,7 @@ export default async function FoundingApplicationsPage({
                     {FOUNDING_STATUS_LABEL[a.status as keyof typeof FOUNDING_STATUS_LABEL] ?? a.status}
                   </span>
                   {a.notified_at ? "" : " · email not sent"}
+                  {a.telegram_error ? ` · Telegram not sent (${a.telegram_error})` : ""}
                 </p>
               </div>
               {/* /founding's form, in its order (25 Oct 2026); then the answers

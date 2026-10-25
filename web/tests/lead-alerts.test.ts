@@ -3,7 +3,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { applicationEmail, checkApplication, consentAnswer, foundingIssues, inputFromBody, repsLabel, type FoundingInput } from "@/lib/founding";
-import { SHEET_HEADERS, alertOwnerOnTelegram, alertText, saTime, sheetRow, telegramCard } from "@/lib/lead-alerts";
+import { SHEET_HEADERS, alertOwnerOnTelegram, alertOwnerOnWhatsapp, alertText, saTime, sheetRow, telegramCard } from "@/lib/lead-alerts";
 
 const callForm: FoundingInput = {
   name: " Thandi Nkosi ",
@@ -45,7 +45,7 @@ test("the new bands and roles are taken, and the consent is kept with its time",
 });
 
 test("the main page's form, without a role or consent, still gets through", () => {
-  const r = checkApplication({ ...callForm, role: "", contactOk: false, teamSize: "5-10" }, at);
+  const r = checkApplication({ ...callForm, role: "", contactOk: null, teamSize: "5-10" }, at);
   assert.ok(r.ok);
   assert.equal(r.application.role, null);
   assert.equal(r.application.contact_consent_at, null);
@@ -54,7 +54,10 @@ test("the main page's form, without a role or consent, still gets through", () =
 test("the body's role and consent are read, and only a real true is consent", () => {
   assert.equal(inputFromBody({ role: "sales_manager", contactOk: true }).role, "sales_manager");
   assert.equal(inputFromBody({ contactOk: true }).contactOk, true);
-  assert.equal(inputFromBody({ contactOk: "true" }).contactOk, false);
+  assert.equal(inputFromBody({ contactOk: false }).contactOk, false);
+  // Not asked (the main page's form) or not a real yes or no: null, never a "No".
+  assert.equal(inputFromBody({}).contactOk, null);
+  assert.equal(inputFromBody({ contactOk: "true" }).contactOk, null);
   assert.equal(inputFromBody({ role: 3 }).role, "");
 });
 
@@ -73,7 +76,7 @@ test("the owner's message says who, how big, where from, and how to answer", () 
     alertText(r.application, false),
     [
       "New Founding lead: Thandi Nkosi, Nkosi Snacks",
-      "Reps: 3-5 · Owner or MD",
+      "Reps: 3 to 5 · Owner or MD",
       "WhatsApp: +26771234567",
       "From: meta, campaign distributors-oct, ad H07, clicked from Facebook or Instagram",
       "Answer: https://wa.me/26771234567",
@@ -120,13 +123,13 @@ test("the Telegram alert stays off until the bot is set up, then sends the messa
   try {
     delete process.env.TELEGRAM_BOT_TOKEN;
     delete process.env.TELEGRAM_CHAT_ID;
-    await alertOwnerOnTelegram("id-1", r.application, false, at);
+    assert.equal(await alertOwnerOnTelegram("id-1", r.application, false, at), null);
     assert.equal(calls.length, 0);
 
     // As pasted into Vercel, with a stray space and line break.
     process.env.TELEGRAM_BOT_TOKEN = " 123:abc\n";
     process.env.TELEGRAM_CHAT_ID = "4567 ";
-    await alertOwnerOnTelegram("id-1", r.application, false, at);
+    assert.deepEqual(await alertOwnerOnTelegram("id-1", r.application, false, at), { ok: true });
     assert.equal(calls.length, 1);
     assert.equal(calls[0].url, "https://api.telegram.org/bot123:abc/sendMessage");
     assert.equal(calls[0].body.chat_id, "4567");
@@ -152,9 +155,12 @@ test("a failed Telegram alert never throws, and never logs the bot's token", asy
   try {
     process.env.TELEGRAM_BOT_TOKEN = "123:secret-token";
     process.env.TELEGRAM_CHAT_ID = "4567";
-    await alertOwnerOnTelegram("id-2", r.application, false, at);
+    const result = await alertOwnerOnTelegram("id-2", r.application, false, at);
     assert.equal(logged.length, 1);
     assert.ok(!logged[0].includes("secret-token"), logged[0]);
+    // What the route notes on the application: why, never the token.
+    assert.equal(result?.ok, false);
+    assert.ok(result && !result.ok && !result.error.includes("secret-token"), JSON.stringify(result));
   } finally {
     globalThis.fetch = realFetch;
     console.error = realError;
@@ -199,7 +205,7 @@ test("the Telegram card has every answer, when, where from, and a WhatsApp link 
 
 test("the card leaves out what wasn't asked, and escapes what the applicant typed", () => {
   const r = checkApplication(
-    { ...callForm, name: "<b>Tom</b> & Co", businessName: "A<script>", role: "", contactOk: false, attribution: undefined },
+    { ...callForm, name: "<b>Tom</b> & Co", businessName: "A<script>", role: "", contactOk: null, attribution: undefined },
     at
   );
   assert.ok(r.ok);
@@ -231,5 +237,62 @@ test("an unticked consent on /founding's form reads No everywhere, so nobody cal
   const ticked = checkApplication(callForm, at);
   assert.ok(ticked.ok);
   assert.equal(consentAnswer(ticked.application), "Yes");
-  assert.equal(consentAnswer({ role: null, contact_consent_at: null }), null);
+  assert.equal(consentAnswer({ contact_consent: null, contact_consent_at: null }), null);
+  // A role without the consent box (a form that asks one but not the other) is not a "No".
+  const roleOnly = checkApplication({ ...callForm, contactOk: null }, at);
+  assert.ok(roleOnly.ok);
+  assert.equal(consentAnswer(roleOnly.application), null);
+});
+
+test("Telegram says why it didn't send, for the applications list", async () => {
+  const r = checkApplication(callForm, at);
+  assert.ok(r.ok);
+  const realFetch = globalThis.fetch;
+  const realError = console.error;
+  console.error = () => {};
+  globalThis.fetch = (async () =>
+    new Response(JSON.stringify({ ok: false, description: "Bad Request: chat not found" }), { status: 400 })) as typeof fetch;
+  try {
+    process.env.TELEGRAM_BOT_TOKEN = "123:abc";
+    process.env.TELEGRAM_CHAT_ID = "4567";
+    assert.deepEqual(await alertOwnerOnTelegram("id-3", r.application, false, at), { ok: false, error: "Bad Request: chat not found" });
+  } finally {
+    globalThis.fetch = realFetch;
+    console.error = realError;
+    delete process.env.TELEGRAM_BOT_TOKEN;
+    delete process.env.TELEGRAM_CHAT_ID;
+  }
+});
+
+test("the WhatsApp alert warns about an unticked consent, like the Telegram card", () => {
+  const r = checkApplication({ ...callForm, contactOk: false }, at);
+  assert.ok(r.ok);
+  assert.ok(alertText(r.application, false).includes("⚠️ Agreed to be contacted: No (they unticked it)"));
+  const ticked = checkApplication(callForm, at);
+  assert.ok(ticked.ok);
+  assert.ok(!alertText(ticked.application, false).includes("Agreed to be contacted"));
+});
+
+test("a failed WhatsApp alert never logs CallMeBot's key", async () => {
+  const r = checkApplication(callForm, at);
+  assert.ok(r.ok);
+  const realFetch = globalThis.fetch;
+  const realError = console.error;
+  const logged: string[] = [];
+  console.error = (...args: unknown[]) => void logged.push(args.map(String).join(" "));
+  globalThis.fetch = (async (url: string | URL) => {
+    throw new TypeError(`Failed to parse URL from ${String(url)}`);
+  }) as typeof fetch;
+  try {
+    process.env.CALLMEBOT_PHONE = "26776642259";
+    process.env.CALLMEBOT_APIKEY = "secret-key-123";
+    await alertOwnerOnWhatsapp("id-4", r.application, false);
+    assert.equal(logged.length, 1);
+    assert.ok(!logged[0].includes("secret-key-123"), logged[0]);
+  } finally {
+    globalThis.fetch = realFetch;
+    console.error = realError;
+    delete process.env.CALLMEBOT_PHONE;
+    delete process.env.CALLMEBOT_APIKEY;
+  }
 });

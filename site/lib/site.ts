@@ -98,7 +98,8 @@ export const founding = {
   guaranteeDays: 30,
   // Who calls each /founding applicant, usually within minutes, and from which
   // number (owner, 25 Oct 2026). Only /founding names him; the rest of the site
-  // still says "our team" (owner, 19 Oct 2026).
+  // still says "our team" (owner, 19 Oct 2026). The same as FOUNDING_OFFER in
+  // the app (its Telegram card drafts his first WhatsApp); a test checks.
   caller: "Conrad",
   callerNumber: "+267 76 642 259",
   // The 5-minute video on /founding: the YouTube video's ID (the part after

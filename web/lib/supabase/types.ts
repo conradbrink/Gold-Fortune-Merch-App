@@ -1558,6 +1558,7 @@ export type Database = {
 
           biggest_cost: string | null
           business_name: string
+          contact_consent: boolean | null
           contact_consent_at: string | null
           created_at: string
           distributes: string | null
@@ -1572,6 +1573,8 @@ export type Database = {
           source: string | null
           status: string
           status_changed_at: string | null
+          telegram_error: string | null
+          telegram_sent_at: string | null
           team_size: string
           town: string | null
           trade: string | null
@@ -1585,6 +1588,7 @@ export type Database = {
 
           biggest_cost?: string | null
           business_name: string
+          contact_consent?: boolean | null
           contact_consent_at?: string | null
           created_at?: string
           distributes?: string | null
@@ -1599,6 +1603,8 @@ export type Database = {
           source?: string | null
           status?: string
           status_changed_at?: string | null
+          telegram_error?: string | null
+          telegram_sent_at?: string | null
           team_size: string
           town?: string | null
           trade?: string | null
@@ -1612,6 +1618,7 @@ export type Database = {
 
           biggest_cost?: string | null
           business_name?: string
+          contact_consent?: boolean | null
           contact_consent_at?: string | null
           created_at?: string
           distributes?: string | null
@@ -1626,6 +1633,8 @@ export type Database = {
           source?: string | null
           status?: string
           status_changed_at?: string | null
+          telegram_error?: string | null
+          telegram_sent_at?: string | null
           team_size?: string
           town?: string | null
           trade?: string | null

@@ -19,6 +19,7 @@ export type LeadRow = {
   role?: string | null;
   team_size?: string | null;
   distributes?: string | null;
+  contact_consent?: boolean | null;
   contact_consent_at?: string | null;
   attribution?: unknown;
 };
@@ -70,7 +71,7 @@ export function leadsCsv(rows: LeadRow[], trade: (code: string) => string): stri
       r.role ? (ROLE_LABEL[r.role as Role] ?? r.role) : null,
       r.team_size ? repsLabel(r.team_size) : null,
       r.distributes,
-      consentAnswer({ role: r.role ?? null, contact_consent_at: r.contact_consent_at ?? null }),
+      consentAnswer({ contact_consent: r.contact_consent ?? null, contact_consent_at: r.contact_consent_at ?? null }),
       t?.utm_campaign,
       t?.utm_term,
       t?.utm_content,

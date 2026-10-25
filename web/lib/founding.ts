@@ -39,11 +39,11 @@ export type Role = (typeof ROLES)[number];
  * Their answer to "Tickd may contact me on WhatsApp, phone and email about my
  * pilot": "Yes", "No" (they unticked it: don't contact them), or null when
  * their form didn't ask. /founding's form asks it, ticked to start (owner, 25
- * Oct 2026), and always asks the role, so a role with no consent is a "No".
+ * Oct 2026); the answer is stored as it was given (`contact_consent`).
  */
-export function consentAnswer(a: { role: string | null; contact_consent_at: string | null }): "Yes" | "No" | null {
-  if (a.contact_consent_at) return "Yes";
-  return a.role ? "No" : null;
+export function consentAnswer(a: { contact_consent: boolean | null; contact_consent_at: string | null }): "Yes" | "No" | null {
+  if (a.contact_consent === true || a.contact_consent_at) return "Yes";
+  return a.contact_consent === false ? "No" : null;
 }
 
 /** A rep band as the form shows it: "3-5" reads "3 to 5", "31+" reads "More than 30". */
@@ -82,8 +82,11 @@ export type FoundingInput = {
   distributes: string;
   /** Their role (asked on /founding from 25 Oct 2026; optional here, for the main page's form). */
   role: string;
-  /** They ticked "Tickd may contact me on WhatsApp, phone and email about my pilot" (/founding, 25 Oct 2026). */
-  contactOk: boolean;
+  /**
+   * Their answer to "Tickd may contact me on WhatsApp, phone and email about my
+   * pilot" (/founding, 25 Oct 2026); null when their form didn't ask.
+   */
+  contactOk: boolean | null;
   // Everything below was on the longer form until then. Each is optional:
   // checked only when given, so a visitor still on the old form gets through.
   trade: string;
@@ -112,7 +115,9 @@ export type FoundingApplication = {
   distributes: string | null;
   /** Their role; null when not asked. */
   role: Role | null;
-  /** When they agreed to be contacted about their pilot; null when not asked. */
+  /** Their answer to being contacted about their pilot; null when not asked. */
+  contact_consent: boolean | null;
+  /** When they agreed to be contacted about their pilot; null when not asked or they didn't. */
   contact_consent_at: string | null;
   /** Null: not asked (the form stopped asking these on 11 Oct 2026). */
   trade: string | null;
@@ -261,6 +266,7 @@ export function checkApplication(
       email: input.email.trim() ? input.email.trim().toLowerCase() : null,
       distributes: input.distributes.trim() || null,
       role: input.role ? (input.role as Role) : null,
+      contact_consent: input.contactOk,
       contact_consent_at: input.contactOk === true ? now.toISOString() : null,
       trade: input.trade || null,
       town: input.town.trim() || null,
@@ -312,7 +318,7 @@ export function inputFromBody(body: unknown): FoundingInput {
     email: s("email"),
     distributes: s("distributes"),
     role: s("role"),
-    contactOk: o.contactOk === true,
+    contactOk: typeof o.contactOk === "boolean" ? o.contactOk : null,
     trade: s("trade"),
     teamSize: s("teamSize"),
     town: s("town"),
@@ -342,10 +348,16 @@ export function allowedOrigins(production: boolean): string[] {
  */
 const SITE_PREVIEW = /^https:\/\/tickd-site-[a-z0-9-]+-gold-fortune1\.vercel\.app$/;
 
-/** The `Access-Control-Allow-Origin` value for this request, or null when the origin is not one of ours. */
-export function corsOrigin(origin: string | null, production: boolean): string | null {
+/**
+ * The `Access-Control-Allow-Origin` value for this request, or null when the
+ * origin is not one of ours. `previews` lets the site's own Vercel previews in
+ * too: only /api/founding passes it, so a test application can be sent from a
+ * preview; /api/events doesn't, so a preview's visits never count as the
+ * site's.
+ */
+export function corsOrigin(origin: string | null, production: boolean, previews = false): string | null {
   if (!origin) return null;
-  return allowedOrigins(production).includes(origin) || SITE_PREVIEW.test(origin) ? origin : null;
+  return allowedOrigins(production).includes(origin) || (previews && SITE_PREVIEW.test(origin)) ? origin : null;
 }
 
 /** The owner's email about a new application: everything they said, and a link to answer on WhatsApp. */
