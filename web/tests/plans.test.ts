@@ -9,7 +9,7 @@ import { PLANS, contactLink, foundingFrom, foundingLine, foundingPrice, planFor,
 const sitePath = new URL("../../site/lib/site.ts", import.meta.url).href;
 const site = (await import(sitePath)) as {
   pricing: { plans: readonly { reps: number; monthly: number }[]; popularReps: number; yearlyMonths: number; setupValue: number };
-  founding: { pilotDays: number; pilotReps: number; priceMonths: number; percentOff: number; spots: number };
+  founding: { pilotDays: number; pilotReps: number; priceMonths: number; percentOff: number; spots: number; caller: string; callerNumber: string };
   foundingPrice: (plan: { reps: number; monthly: number }) => number;
   foundingFrom: number;
   foundingStack: { name: string; worth: number }[];
@@ -26,7 +26,7 @@ test("the app's plans are the site's plans", () => {
 });
 
 test("the founding price is the site's: 40% off the plan that fits, for the first 3 months", () => {
-  for (const k of ["pilotDays", "pilotReps", "priceMonths", "percentOff", "spots"] as const) {
+  for (const k of ["pilotDays", "pilotReps", "priceMonths", "percentOff", "spots", "caller", "callerNumber"] as const) {
     assert.equal(FOUNDING_OFFER[k], site.founding[k], k);
   }
   assert.equal(FOUNDING_OFFER.percentOff, 40);

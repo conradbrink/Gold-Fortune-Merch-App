@@ -22,7 +22,7 @@ const good: FoundingInput = {
   email: "owner@example.com",
   distributes: " Snacks and cold drinks ",
   role: "",
-  contactOk: false,
+  contactOk: null,
   trade: "cleaning",
   teamSize: "5-10",
   town: " Gaborone ",
@@ -61,6 +61,7 @@ test("a good application is trimmed and ready to save", () => {
     email: "owner@example.com",
     distributes: "Snacks and cold drinks",
     role: null,
+    contact_consent: null,
     contact_consent_at: null,
     trade: "cleaning",
     team_size: "5-10",
@@ -89,7 +90,7 @@ test("the name, business, team size and WhatsApp are required; the rest is check
     email: "owner@example.com",
     distributes: "",
     role: "",
-    contactOk: false,
+    contactOk: null,
     trade: "Cleaning",
     teamSize: "9",
     town: "",
@@ -119,7 +120,7 @@ test("an application from the short form saves the unasked answers as null", () 
     email: "owner@example.com",
     distributes: " ",
     role: "",
-    contactOk: false,
+    contactOk: null,
     trade: "",
     town: " ",
     howRun: "",
@@ -179,13 +180,16 @@ test("only the sales site may call from a browser; localhost only outside produc
   assert.equal(corsOrigin(null, true), null);
   // The site's own Vercel previews, for testing the form before it goes live.
   assert.equal(
-    corsOrigin("https://tickd-site-git-founding-form-first-gold-fortune1.vercel.app", true),
+    corsOrigin("https://tickd-site-git-founding-form-first-gold-fortune1.vercel.app", true, true),
     "https://tickd-site-git-founding-form-first-gold-fortune1.vercel.app"
   );
-  assert.equal(corsOrigin("https://tickd-site-abc123-gold-fortune1.vercel.app", true), "https://tickd-site-abc123-gold-fortune1.vercel.app");
-  assert.equal(corsOrigin("https://tickd-site-x-gold-fortune1.vercel.app.evil.example", true), null);
-  assert.equal(corsOrigin("https://tickd-site-x-someone-else.vercel.app", true), null);
-  assert.equal(corsOrigin("http://tickd-site-x-gold-fortune1.vercel.app", true), null);
+  assert.equal(corsOrigin("https://tickd-site-abc123-gold-fortune1.vercel.app", true, true), "https://tickd-site-abc123-gold-fortune1.vercel.app");
+  assert.equal(corsOrigin("https://tickd-site-x-gold-fortune1.vercel.app.evil.example", true, true), null);
+  assert.equal(corsOrigin("https://tickd-site-x-someone-else.vercel.app", true, true), null);
+  assert.equal(corsOrigin("http://tickd-site-x-gold-fortune1.vercel.app", true, true), null);
+  // Only where previews are asked for (/api/founding): /api/events never counts a preview's visits.
+  assert.equal(corsOrigin("https://tickd-site-abc123-gold-fortune1.vercel.app", true), null);
+  assert.equal(corsOrigin("https://tickd-site-abc123-gold-fortune1.vercel.app", false), null);
 });
 
 test("the owner's email escapes what the visitor typed, lists every answer and links to WhatsApp", () => {

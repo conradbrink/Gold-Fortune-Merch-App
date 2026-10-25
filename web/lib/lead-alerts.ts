@@ -21,15 +21,14 @@ import { escapeHtml } from "@/lib/email/templates";
 import { consentAnswer, describeAttribution, repsLabel, ROLE_LABEL, type FoundingApplication } from "@/lib/founding";
 import { FOUNDING_OFFER } from "@/lib/founding-offer";
 
-/** Who calls each lead (the site's `founding.caller`), for the first WhatsApp the card drafts. */
-const CALLER = "Conrad";
-
-/** The owner's message about a new application (Telegram or WhatsApp): who, how big, and a link to answer. */
+/** The owner's WhatsApp (CallMeBot) about a new application: who, how big, and a link to answer. */
 export function alertText(a: FoundingApplication, waitlist: boolean): string {
   const lines = [
     `${waitlist ? "Waiting list" : "New Founding lead"}: ${a.name}, ${a.business_name}`,
-    `Reps: ${a.team_size}${a.role ? ` · ${ROLE_LABEL[a.role]}` : ""}`,
+    `Reps: ${repsLabel(a.team_size)}${a.role ? ` · ${ROLE_LABEL[a.role]}` : ""}`,
     `WhatsApp: +${a.whatsapp}`,
+    // The same warning as the Telegram card, so nobody calls someone who opted out.
+    consentAnswer(a) === "No" ? "⚠️ Agreed to be contacted: No (they unticked it)" : null,
     a.distributes ? `Distributes: ${a.distributes}` : null,
     a.email ? `Email: ${a.email}` : null,
     `From: ${describeAttribution(a.attribution) ?? "not known"}`,
@@ -54,7 +53,7 @@ export function cameFrom(a: FoundingApplication): string {
 export function whatsappLink(a: FoundingApplication): string {
   const first = a.name.split(/\s+/)[0] ?? "";
   const hello =
-    `Hi ${first}, it's ${CALLER} from Tickd. Thanks for applying for the free ${FOUNDING_OFFER.pilotDays}-day pilot. ` +
+    `Hi ${first}, it's ${FOUNDING_OFFER.caller} from Tickd. Thanks for applying for the free ${FOUNDING_OFFER.pilotDays}-day pilot. ` +
     "Is now a good time for a quick call?";
   // encodeURIComponent leaves ' as it is; %27 keeps the link clean inside the card's HTML.
   return `https://wa.me/${a.whatsapp}?text=${encodeURIComponent(hello).replace(/'/g, "%27")}`;
@@ -163,16 +162,23 @@ const TIMEOUT_MS = 8000;
 /** A setting from Vercel, without the space or line break a pasted value can carry; "" when unset. */
 const setting = (name: string): string => process.env[name]?.trim() ?? "";
 
-/** Sends the owner a Telegram card about a new application, when their bot is set up. */
+/** What a Telegram alert came to: sent, or why not; null when the bot isn't set up. */
+export type AlertResult = { ok: true } | { ok: false; error: string } | null;
+
+/**
+ * Sends the owner a Telegram card about a new application, when their bot is
+ * set up, and says how it went, so the route can note it on the application
+ * (a ping that never came would otherwise only be in the logs).
+ */
 export async function alertOwnerOnTelegram(
   id: string,
   a: FoundingApplication,
   waitlist: boolean,
   at: Date
-): Promise<void> {
+): Promise<AlertResult> {
   const token = setting("TELEGRAM_BOT_TOKEN");
   const chat = setting("TELEGRAM_CHAT_ID");
-  if (!token || !chat) return;
+  if (!token || !chat) return null;
   try {
     const res = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
       method: "POST",
@@ -185,14 +191,17 @@ export async function alertOwnerOnTelegram(
       }),
       signal: AbortSignal.timeout(TIMEOUT_MS),
     });
-    if (!res.ok) {
-      // Telegram says why (a wrong chat, or the owner never pressed Start); never the token.
-      const body = (await res.json().catch(() => null)) as { description?: string } | null;
-      console.error("founding: the owner's Telegram was not sent", id, res.status, body?.description ?? "");
-    }
+    if (res.ok) return { ok: true };
+    // Telegram says why (a wrong chat, or the owner never pressed Start); never the token.
+    const body = (await res.json().catch(() => null)) as { description?: string } | null;
+    const error = (body?.description ?? `Telegram answered ${res.status}`).slice(0, 200);
+    console.error("founding: the owner's Telegram was not sent", id, res.status, error);
+    return { ok: false, error };
   } catch (e) {
     // A failed fetch's message can carry the address, and the address carries the token.
-    console.error("founding: the owner's Telegram failed", id, e instanceof Error ? e.name : "error");
+    const error = e instanceof Error ? e.name : "error";
+    console.error("founding: the owner's Telegram failed", id, error);
+    return { ok: false, error: error === "TimeoutError" ? "Telegram didn't answer in time" : `could not reach Telegram (${error})` };
   }
 }
 
@@ -209,7 +218,8 @@ export async function alertOwnerOnWhatsapp(id: string, a: FoundingApplication, w
     const res = await fetch(url, { signal: AbortSignal.timeout(TIMEOUT_MS) });
     if (!res.ok) console.error("founding: the owner's WhatsApp was not sent", id, res.status);
   } catch (e) {
-    console.error("founding: the owner's WhatsApp failed", id, e instanceof Error ? e.message : e);
+    // Not the message: a failed fetch's message can carry the address, and the address carries the key.
+    console.error("founding: the owner's WhatsApp failed", id, e instanceof Error ? e.name : "error");
   }
 }
 
