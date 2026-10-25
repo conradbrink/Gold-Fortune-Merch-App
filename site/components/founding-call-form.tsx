@@ -22,8 +22,8 @@ import {
 // Oct 2026: Conrad calls each applicant within minutes, so the form asks for
 // as little as it can and who decides (their role), and the thank-you screen
 // says who will call and from which number. Required: their name (one box),
-// the business, WhatsApp, how many reps, their role, and the consent to be
-// contacted. Optional: what they distribute and their email. The main page
+// the business, WhatsApp, how many reps and their role. Optional: what they
+// distribute, their email, and the consent to be contacted (ticked to start). The main page
 // keeps the form before it (components/founding-form.tsx); the app takes both.
 
 // The countries we sell in. The number is sent with its country code.
@@ -73,6 +73,10 @@ type State =
   | { kind: "sending" }
   | { kind: "error"; message: string; issues: Issue[] }
   | { kind: "done"; waitlist: boolean; already: boolean; firstName: string };
+
+// The country picker sits beside the number box at its own width (the boxes' own
+// style is full width, which squeezed the number box to nothing).
+const countryPicker = `${input.replace("w-full", "w-auto").replace("px-4", "")} shrink-0 pl-3 pr-8`;
 
 /** The number as typed, with the chosen country code unless they typed their own. */
 function fullNumber(code: string, raw: string): string {
@@ -252,7 +256,7 @@ export function FoundingCallForm() {
             aria-label="Country code"
             value={country}
             onChange={(e) => setCountry(e.target.value)}
-            className={`${input} w-auto shrink-0 pr-8`}
+            className={countryPicker}
           >
             {countries.map(([label, code]) => (
               <option key={code} value={code}>
@@ -269,7 +273,7 @@ export function FoundingCallForm() {
             maxLength={25}
             autoComplete="tel-national"
             placeholder={example}
-            className={input}
+            className={`${input} min-w-0 flex-1`}
           />
         </div>
       </Labelled>
@@ -302,11 +306,14 @@ export function FoundingCallForm() {
       </Labelled>
       <div className="grid gap-1.5">
         <label className="flex items-start gap-3 text-sm leading-snug text-teal-100">
+          {/* Ticked to start with; they can untick it and still apply (owner,
+              25 Oct 2026). The app records the answer either way. */}
           <input
             name="contactOk"
             type="checkbox"
-            required
-            onChange={(e) => e.target.checked && once("signup_filled", "consent")}
+            defaultChecked
+            // Already ticked, so "answered" here means they touched it.
+            onChange={() => once("signup_filled", "consent")}
             className="mt-0.5 size-5 shrink-0 accent-amber-500"
           />
           <span>
@@ -345,7 +352,7 @@ export function FoundingCallForm() {
         disabled={sending}
         className="w-full rounded-full bg-amber-500 px-6 py-4 text-center text-lg font-semibold text-teal-950 transition-[background-color,transform] duration-150 ease-out hover:bg-amber-400 active:scale-[0.97] disabled:opacity-70 sm:w-auto sm:py-3.5 sm:text-base"
       >
-        {sending ? "Sending..." : `Start my free ${founding.pilotDays}-day pilot`}
+        {sending ? "Sending..." : "Apply now"}
       </button>
     </form>
   );
