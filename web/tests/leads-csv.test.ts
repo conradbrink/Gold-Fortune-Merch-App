@@ -87,3 +87,27 @@ test("a lead from /founding's form has its role, reps, products, consent and ad"
     'Thandi Nkosi,,26771234567,Nkosi Snacks,Distributor,,new,,2026-10-25 12:26,Sales manager,More than 30,"Groceries, Liquor",Yes,distributors-oct,Broad SA,H07'
   );
 });
+
+test("a /founding lead who unticked the consent says No", () => {
+  const csv = leadsCsv(
+    [
+      {
+        created_at: "2026-10-25T12:26:40.000Z",
+        name: "A",
+        email: null,
+        whatsapp: "27820000000",
+        business_name: "B",
+        trade: null,
+        town: null,
+        status: "new",
+        source: null,
+        role: "owner",
+        team_size: "3-5",
+        distributes: null,
+        contact_consent_at: null,
+      },
+    ],
+    (c) => c,
+  );
+  assert.ok(csv.includes("Owner or MD,3 to 5,,No,"));
+});

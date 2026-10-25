@@ -35,6 +35,17 @@ export type TeamSize = (typeof TEAM_SIZES)[number];
 export const ROLES = ["owner", "sales_manager", "other"] as const;
 export type Role = (typeof ROLES)[number];
 
+/**
+ * Their answer to "Tickd may contact me on WhatsApp, phone and email about my
+ * pilot": "Yes", "No" (they unticked it: don't contact them), or null when
+ * their form didn't ask. /founding's form asks it, ticked to start (owner, 25
+ * Oct 2026), and always asks the role, so a role with no consent is a "No".
+ */
+export function consentAnswer(a: { role: string | null; contact_consent_at: string | null }): "Yes" | "No" | null {
+  if (a.contact_consent_at) return "Yes";
+  return a.role ? "No" : null;
+}
+
 /** A rep band as the form shows it: "3-5" reads "3 to 5", "31+" reads "More than 30". */
 export function repsLabel(band: string): string {
   if (band === "31+") return "More than 30";
@@ -363,7 +374,7 @@ export function applicationEmail(
     ["Whole team, every workday, 60 days", a.whole_team === null ? notAsked : yn(a.whole_team)],
     ["60-second video and Google review", a.video_review === null ? notAsked : yn(a.video_review)],
     ["Agreed to marketing use", a.marketing_ok ? "Yes" : notAsked],
-    ["Agreed to be contacted about the pilot", a.contact_consent_at ? "Yes" : notAsked],
+    ["Agreed to be contacted about the pilot", consentAnswer(a) ?? notAsked],
     ["Came from", a.source ?? "(not known)"],
     ["How they found us", describeAttribution(a.attribution) ?? "(not known)"],
   ];

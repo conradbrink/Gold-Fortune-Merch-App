@@ -2,7 +2,7 @@
 // the owner's Telegram or WhatsApp message and the row for their Google Sheet.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { applicationEmail, checkApplication, foundingIssues, inputFromBody, repsLabel, type FoundingInput } from "@/lib/founding";
+import { applicationEmail, checkApplication, consentAnswer, foundingIssues, inputFromBody, repsLabel, type FoundingInput } from "@/lib/founding";
 import { SHEET_HEADERS, alertOwnerOnTelegram, alertText, saTime, sheetRow, telegramCard } from "@/lib/lead-alerts";
 
 const callForm: FoundingInput = {
@@ -218,4 +218,18 @@ test("the rep bands read the way the form shows them", () => {
   assert.equal(repsLabel("16-30"), "16 to 30");
   assert.equal(repsLabel("31+"), "More than 30");
   assert.equal(repsLabel("20-50+"), "20 to 50+");
+});
+
+test("an unticked consent on /founding's form reads No everywhere, so nobody calls them", () => {
+  const r = checkApplication({ ...callForm, contactOk: false }, at);
+  assert.ok(r.ok);
+  assert.equal(consentAnswer(r.application), "No");
+  assert.ok(telegramCard(r.application, false, at).includes("⚠️ <b>Agreed to be contacted: No</b> (they unticked it)"));
+  assert.ok(applicationEmail(r.application, null, false).text.includes("Agreed to be contacted about the pilot: No"));
+  assert.equal(sheetRow(r.application, false, at)[SHEET_HEADERS.indexOf("Agreed to be contacted")], "No");
+  // Ticked: Yes. The main page's form (no role) never asked: null.
+  const ticked = checkApplication(callForm, at);
+  assert.ok(ticked.ok);
+  assert.equal(consentAnswer(ticked.application), "Yes");
+  assert.equal(consentAnswer({ role: null, contact_consent_at: null }), null);
 });
