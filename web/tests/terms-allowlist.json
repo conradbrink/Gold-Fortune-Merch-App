@@ -220,6 +220,11 @@
     "reason": "Tickd's own words to distributors (its platform screens, its own emails and its application), not a company's screen: there are no company terms here, and Tickd sells only to distributors since 19 Oct 2026 (owner)."
   },
   {
+    "file": "lib/leads-csv.ts",
+    "text": "Reps",
+    "reason": "Tickd's own words to distributors (its platform screens, its own emails and its application), not a company's screen: there are no company terms here, and Tickd sells only to distributors since 19 Oct 2026 (owner)."
+  },
+  {
     "file": "lib/money-pdf.ts",
     "text": "Note to customer",
     "reason": "The heading of the note on an invoice, credit note or quote, in the words of the QuickBooks invoice the owner asked the layout to copy (20 Oct). It is read by the person the document is addressed to, so it names its reader; the company's own client word would read oddly on a document sent to that client."

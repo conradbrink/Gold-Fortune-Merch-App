@@ -1,9 +1,9 @@
 // /founding's form for the new sales process (25 Oct 2026): the new answers,
-// the owner's WhatsApp message and the row for their Google Sheet.
+// the owner's Telegram or WhatsApp message and the row for their Google Sheet.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { applicationEmail, checkApplication, foundingIssues, inputFromBody, type FoundingInput } from "@/lib/founding";
-import { SHEET_HEADERS, saTime, sheetRow, whatsappAlertText } from "@/lib/lead-alerts";
+import { applicationEmail, checkApplication, consentAnswer, foundingIssues, inputFromBody, repsLabel, type FoundingInput } from "@/lib/founding";
+import { SHEET_HEADERS, alertOwnerOnTelegram, alertText, saTime, sheetRow, telegramCard } from "@/lib/lead-alerts";
 
 const callForm: FoundingInput = {
   name: " Thandi Nkosi ",
@@ -66,20 +66,20 @@ test("the owner's email shows the role and the consent", () => {
   assert.ok(mail.text.includes("Agreed to be contacted about the pilot: Yes"));
 });
 
-test("the WhatsApp message says who, how big, where from, and how to answer", () => {
+test("the owner's message says who, how big, where from, and how to answer", () => {
   const r = checkApplication(callForm, at);
   assert.ok(r.ok);
   assert.equal(
-    whatsappAlertText(r.application, false),
+    alertText(r.application, false),
     [
       "New Founding lead: Thandi Nkosi, Nkosi Snacks",
       "Reps: 3-5 · Owner or MD",
       "WhatsApp: +26771234567",
-      "From: meta, campaign distributors-oct, clicked from Facebook or Instagram",
+      "From: meta, campaign distributors-oct, ad H07, clicked from Facebook or Instagram",
       "Answer: https://wa.me/26771234567",
     ].join("\n")
   );
-  assert.ok(whatsappAlertText(r.application, true).startsWith("Waiting list: "));
+  assert.ok(alertText(r.application, true).startsWith("Waiting list: "));
 });
 
 test("the sheet's time is South African, to the second", () => {
@@ -106,4 +106,130 @@ test("the sheet row lines up with the headers, with the owner's columns left emp
   assert.equal(cell("Ad set"), "");
   assert.equal(cell("Ad"), "H07");
   for (const h of ["First call at", "Reached", "Score", "Sales call booked", "Notes"] as const) assert.equal(cell(h), "");
+});
+
+test("the Telegram alert stays off until the bot is set up, then sends the message to the owner's chat", async () => {
+  const r = checkApplication(callForm, at);
+  assert.ok(r.ok);
+  const realFetch = globalThis.fetch;
+  const calls: { url: string; body: Record<string, unknown> }[] = [];
+  globalThis.fetch = (async (url: string | URL, init?: RequestInit) => {
+    calls.push({ url: String(url), body: JSON.parse(String(init?.body)) });
+    return new Response(JSON.stringify({ ok: true }), { status: 200 });
+  }) as typeof fetch;
+  try {
+    delete process.env.TELEGRAM_BOT_TOKEN;
+    delete process.env.TELEGRAM_CHAT_ID;
+    await alertOwnerOnTelegram("id-1", r.application, false, at);
+    assert.equal(calls.length, 0);
+
+    // As pasted into Vercel, with a stray space and line break.
+    process.env.TELEGRAM_BOT_TOKEN = " 123:abc\n";
+    process.env.TELEGRAM_CHAT_ID = "4567 ";
+    await alertOwnerOnTelegram("id-1", r.application, false, at);
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0].url, "https://api.telegram.org/bot123:abc/sendMessage");
+    assert.equal(calls[0].body.chat_id, "4567");
+    assert.equal(calls[0].body.text, telegramCard(r.application, false, at));
+    assert.equal(calls[0].body.parse_mode, "HTML");
+  } finally {
+    globalThis.fetch = realFetch;
+    delete process.env.TELEGRAM_BOT_TOKEN;
+    delete process.env.TELEGRAM_CHAT_ID;
+  }
+});
+
+test("a failed Telegram alert never throws, and never logs the bot's token", async () => {
+  const r = checkApplication(callForm, at);
+  assert.ok(r.ok);
+  const realFetch = globalThis.fetch;
+  const realError = console.error;
+  const logged: string[] = [];
+  console.error = (...args: unknown[]) => void logged.push(args.map(String).join(" "));
+  globalThis.fetch = (async (url: string | URL) => {
+    throw new TypeError(`fetch failed for ${String(url)}`);
+  }) as typeof fetch;
+  try {
+    process.env.TELEGRAM_BOT_TOKEN = "123:secret-token";
+    process.env.TELEGRAM_CHAT_ID = "4567";
+    await alertOwnerOnTelegram("id-2", r.application, false, at);
+    assert.equal(logged.length, 1);
+    assert.ok(!logged[0].includes("secret-token"), logged[0]);
+  } finally {
+    globalThis.fetch = realFetch;
+    console.error = realError;
+    delete process.env.TELEGRAM_BOT_TOKEN;
+    delete process.env.TELEGRAM_CHAT_ID;
+  }
+});
+
+test("the Telegram card has every answer, when, where from, and a WhatsApp link with a first message", () => {
+  const r = checkApplication(
+    {
+      ...callForm,
+      distributes: "Groceries, Liquor",
+      email: "t@example.com",
+      attribution: { utm_source: "meta", utm_campaign: "distributors-oct", utm_term: "Broad SA", utm_content: "H07" },
+    },
+    at
+  );
+  assert.ok(r.ok);
+  const hello = encodeURIComponent(
+    "Hi Thandi, it's Conrad from Tickd. Thanks for applying for the free 14-day pilot. Is now a good time for a quick call?"
+  ).replace(/'/g, "%27");
+  assert.equal(
+    telegramCard(r.application, false, at),
+    [
+      "🔔 <b>New Founding lead</b>",
+      "<b>Thandi Nkosi</b> · Nkosi Snacks",
+      "",
+      "Role: Owner or MD",
+      "Reps: 3 to 5",
+      "Distributes: Groceries, Liquor",
+      "WhatsApp: +26771234567",
+      "Email: t@example.com",
+      "Agreed to be contacted: Yes",
+      "Applied: 2026-10-25 10:14:03 (SA time)",
+      "Came from: meta · campaign distributors-oct · ad set Broad SA · ad H07",
+      "",
+      `💬 <a href="https://wa.me/26771234567?text=${hello}">WhatsApp Thandi</a>`,
+    ].join("\n")
+  );
+});
+
+test("the card leaves out what wasn't asked, and escapes what the applicant typed", () => {
+  const r = checkApplication(
+    { ...callForm, name: "<b>Tom</b> & Co", businessName: "A<script>", role: "", contactOk: false, attribution: undefined },
+    at
+  );
+  assert.ok(r.ok);
+  const card = telegramCard(r.application, true, at);
+  assert.ok(card.startsWith("🕒 <b>Waiting list</b>"));
+  assert.ok(card.includes("<b>&lt;b&gt;Tom&lt;/b&gt; &amp; Co</b> · A&lt;script&gt;"));
+  assert.ok(!card.includes("Role:"));
+  assert.ok(!card.includes("Email:"));
+  assert.ok(!card.includes("Agreed to be contacted"));
+  assert.ok(card.includes("Came from: not known"));
+  assert.ok(!card.includes("<script>"));
+});
+
+test("the rep bands read the way the form shows them", () => {
+  assert.equal(repsLabel("1-2"), "1 to 2");
+  assert.equal(repsLabel("16-30"), "16 to 30");
+  assert.equal(repsLabel("31+"), "More than 30");
+  assert.equal(repsLabel("20-50+"), "20 to 50+");
+});
+
+test("an unticked consent on /founding's form reads No everywhere, so nobody calls them", () => {
+  const r = checkApplication({ ...callForm, contactOk: false }, at);
+  assert.ok(r.ok);
+  assert.equal(consentAnswer(r.application), "No");
+  assert.ok(telegramCard(r.application, false, at).includes("⚠️ <b>Agreed to be contacted: No</b> (they unticked it)"));
+  assert.ok(applicationEmail(r.application, null, false).text.includes("Agreed to be contacted about the pilot: No"));
+  assert.equal(sheetRow(r.application, false, at)[SHEET_HEADERS.indexOf("Agreed to be contacted")], "No");
+  // Ticked: Yes. The main page's form (no role) never asked: null.
+  const ticked = checkApplication(callForm, at);
+  assert.ok(ticked.ok);
+  assert.equal(consentAnswer(ticked.application), "Yes");
+  assert.equal(consentAnswer({ role: null, contact_consent_at: null }), null);
 });

@@ -8,7 +8,7 @@ import {
   inputFromBody,
   type FoundingApplication,
 } from "@/lib/founding";
-import { addToLeadsSheet, alertOwnerOnWhatsapp } from "@/lib/lead-alerts";
+import { addToLeadsSheet, alertOwnerOnTelegram, alertOwnerOnWhatsapp } from "@/lib/lead-alerts";
 import { listTemplates, platformAdminClient } from "@/lib/platform";
 
 /**
@@ -22,7 +22,8 @@ import { listTemplates, platformAdminClient } from "@/lib/platform";
  *         saved, as 'waitlist'. One per person: a WhatsApp number or email
  *         address already on an application saves nothing new and sends no
  *         email; the answer says `already`. A new one also goes to the
- *         owner on WhatsApp and into their Google Sheet (lib/lead-alerts.ts).
+ *         owner on Telegram or WhatsApp and into their Google Sheet
+ *         (lib/lead-alerts.ts).
  *
  * Public, so it is checked again here, limited per address and per number, and
  * only the sales site's own origins are answered in a browser. `/api` is
@@ -179,6 +180,7 @@ export async function POST(request: Request) {
   }
 
   after(() => notifyOwner(saved.id, application, waitlist));
+  after(() => alertOwnerOnTelegram(saved.id, application, waitlist, receivedAt));
   after(() => alertOwnerOnWhatsapp(saved.id, application, waitlist));
   after(() => addToLeadsSheet(saved.id, application, waitlist, receivedAt));
   const toEmail = application.email;
