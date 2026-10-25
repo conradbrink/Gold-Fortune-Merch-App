@@ -7,9 +7,11 @@ import {
   PackageCheck,
   PackageX,
   Route,
+  ShieldCheck,
   TrendingUp,
 } from "lucide-react";
 import Image from "next/image";
+import Link from "next/link";
 import { CostCalculator } from "@/components/cost-calculator";
 import { ProductDemo } from "@/components/demo/product-demo";
 import { FoundingCallForm } from "@/components/founding-call-form";
@@ -231,6 +233,58 @@ function Apply({ page }: { page: "home" | "founding" }) {
 }
 
 /**
+ * /founding's hero: the promise every video ad ends on, in the ad's own words,
+ * so the page picks up where the video left off (owner, 25 Oct 2026: "the
+ * promises we made in the CTA should be there"). Hormozi's hero order: who
+ * it's for, the outcome, how little it takes, the risk taken away, then one
+ * button, Apply now, to the form, with the spots under it. One centred
+ * column, four blocks (the stagger in globals.css), no Gold Fortune line.
+ * The ads name no price, so neither does this; the funnel's "viewed the
+ * prices" isn't sent on /founding.
+ */
+function FoundingHero() {
+  return (
+    <section className="mx-auto max-w-3xl px-4 pb-10 pt-6 sm:px-6 sm:pb-16 sm:pt-12 lg:max-w-5xl lg:pt-16">
+      <div className="tk-hero grid justify-items-center gap-4 text-center sm:gap-6">
+        <p className="text-sm font-bold uppercase tracking-wide text-teal-700">For distributors</p>
+        <h1 className="font-display text-[2.1rem] font-extrabold leading-[1.06] tracking-tight text-balance text-teal-900 sm:text-5xl lg:text-[3.6rem]">
+          Get a{" "}
+          <span className="relative whitespace-nowrap">
+            free {founding.pilotDays}-day pilot
+            <span aria-hidden="true" className="tk-underline absolute inset-x-0 bottom-[-0.02em] h-[0.12em] rounded-full bg-amber-500" />
+          </span>
+          .<span className="block">We set up your entire business.</span>
+        </h1>
+        <div className="grid justify-items-center gap-3">
+          <p className="max-w-xl text-base leading-relaxed text-pretty text-ink sm:text-xl">
+            All your stores included. Then our team helps you grow your business.
+          </p>
+          <p className="flex max-w-xl items-start gap-2 text-left text-base font-semibold leading-snug text-teal-900 sm:text-lg">
+            <ShieldCheck aria-hidden="true" className="mt-0.5 size-5 shrink-0 text-teal-700" strokeWidth={2.5} />
+            <span>
+              Not happy after {founding.guaranteeDays} days? We give you that month&apos;s fee back.{" "}
+              <Link href="/terms#guarantee" className="whitespace-nowrap text-sm font-medium text-muted underline underline-offset-2">
+                T&amp;Cs apply
+              </Link>
+            </span>
+          </p>
+        </div>
+        <div className="grid w-full justify-items-center gap-2 pt-1 sm:w-fit">
+          <a href="#apply" className={pilotButton}>
+            Apply now
+          </a>
+          <p className="text-sm font-semibold text-teal-900">No card · No contract</p>
+          <SpotsText
+            urgent
+            className="mt-1 inline-block w-fit rounded-full bg-amber-500 px-4 py-1.5 text-sm font-extrabold uppercase tracking-wide text-teal-950"
+          />
+        </div>
+      </div>
+    </section>
+  );
+}
+
+/**
  * The landing page, shared by the main page and /founding (owner, 20 Oct
  * 2026: "the founding page should be redesigned to fit our current landing
  * page"). /founding is where the Founding adverts land: the offer they
@@ -243,13 +297,18 @@ export function LandingPage({ page = "home" }: { page?: "home" | "founding" }) {
       {/* Solid, not blurred: a blurred bar over the page as it scrolls is
           heavy work on an iPhone and made scrolling stutter (owner, 21 Oct 2026). */}
       <header className="sticky top-0 z-40 border-b border-line/70 bg-mint">
-        <div className="bg-teal-900 px-4 py-1.5 text-center text-[13px] leading-snug text-sand sm:py-2 sm:text-sm">
-          Founding {founding.spots}: free {founding.pilotDays}-day pilot + {founding.percentOff}% off for {founding.priceMonths} months.{" "}
-          <SpotsText short className="font-semibold" />{" "}
-          <a href="#apply" className="whitespace-nowrap font-semibold text-amber-500 underline underline-offset-4 hover:text-amber-400">
-            Start my free pilot
-          </a>
-        </div>
+        {/* The banner carries the offer down the main page. /founding's hero
+            says it all on the first screen, so there it would only be a third
+            "Apply now" (owner, 25 Oct 2026: keep it very simple). */}
+        {page === "home" && (
+          <div className="bg-teal-900 px-4 py-1.5 text-center text-[13px] leading-snug text-sand sm:py-2 sm:text-sm">
+            Founding {founding.spots}: free {founding.pilotDays}-day pilot + {founding.percentOff}% off for {founding.priceMonths} months.{" "}
+            <SpotsText short className="font-semibold" />{" "}
+            <a href="#apply" className="whitespace-nowrap font-semibold text-amber-500 underline underline-offset-4 hover:text-amber-400">
+              Start my free pilot
+            </a>
+          </div>
+        )}
         <div className="mx-auto flex h-14 max-w-6xl items-center justify-between px-4 sm:h-16 sm:px-6">
           <a href="#top" aria-label={`${site.name} home`}>
             <Logo />
@@ -258,109 +317,75 @@ export function LandingPage({ page = "home" }: { page?: "home" | "founding" }) {
             href="#apply"
             className="flex min-h-11 items-center rounded-full bg-teal-900 px-4 text-sm font-semibold text-sand transition-[background-color,transform] duration-150 ease-out hover:bg-teal-800 active:scale-[0.97]"
           >
-            Start my free pilot
+            {page === "founding" ? "Apply now" : "Start my free pilot"}
           </a>
         </div>
       </header>
 
       <SectionViews sections={SECTION_EVENTS} />
       <main id="top">
-        {/* 1. Hero, in the owner's words (20 Oct 2026): who it's for, what it
-            is, how it helps, the effort it doesn't take, the way in, and the
-            first trust signal (Gold Fortune's result). */}
-        {/* A size smaller on a phone (owner, 21 Oct 2026: on an iPhone 16 Pro the
-            Gold Fortune line was under the first screen). */}
-        {/* On /founding the price is in the hero, so it is the funnel's "viewed the prices". */}
-        <section
-          id={page === "founding" ? "offer" : undefined}
-          className={`mx-auto grid max-w-6xl items-center gap-10 px-4 pb-10 pt-5 sm:px-6 sm:pb-16 sm:pt-12 lg:gap-14 lg:pt-12 ${
-            page === "founding" ? "" : "lg:grid-cols-[1.1fr_0.9fr]"
-          }`}
-        >
-          {/* /founding's hero is one centred column: the offer, the button and
-              the spots, without the Gold Fortune line (owner, 25 Oct 2026). */}
-          <div
-            className={`tk-hero grid gap-4 sm:gap-6 ${page === "founding" ? "mx-auto max-w-3xl justify-items-center text-center" : ""}`}
-          >
-            <p className="text-sm font-bold uppercase tracking-wide text-teal-700">For teams of 3 to 30 reps</p>
-            {page === "founding" ? (
-              <h1 className="font-display text-[2.1rem] font-extrabold leading-[1.06] tracking-tight text-balance text-teal-900 sm:text-5xl lg:text-[3.6rem]">
-                Become one of our{" "}
-                <span className="relative whitespace-nowrap">
-                  Founding {founding.spots}
-                  <span aria-hidden="true" className="tk-underline absolute inset-x-0 bottom-[-0.02em] h-[0.12em] rounded-full bg-amber-500" />
-                </span>{" "}
-                distributors.
-              </h1>
-            ) : (
-              <h1 className="font-display text-[2.1rem] font-extrabold leading-[1.06] tracking-tight text-balance text-teal-900 sm:text-5xl lg:text-[3.6rem]">
-                Distributors:{" "}
-                <span className="relative whitespace-nowrap">
-                  one app
-                  <span aria-hidden="true" className="tk-underline absolute inset-x-0 bottom-[-0.02em] h-[0.12em] rounded-full bg-amber-500" />
-                </span>{" "}
-                to manage your reps, orders and invoices.
-              </h1>
-            )}
-            {page === "founding" ? (
-              <p className="max-w-xl text-base leading-relaxed text-pretty text-ink sm:text-xl">
-                A free {founding.pilotDays}-day pilot, set up for you. Then {founding.percentOff}% off for {founding.priceMonths}{" "}
-                months, from {rand(foundingFrom)} a month. And an AI Manager that plans how to grow your business.
-              </p>
-            ) : (
-              <p className="max-w-xl text-base leading-relaxed text-pretty text-ink sm:text-xl">
-                Your reps visit the stores you&apos;ve planned, and {site.name} helps them sell more at each one. Our AI Manager then
-                tells you how to grow your business.
-              </p>
-            )}
-            <p className="flex max-w-xl items-start gap-2.5 text-base font-semibold leading-relaxed text-teal-900 sm:text-lg">
-              <span aria-hidden="true" className="mt-0.5 grid size-6 shrink-0 place-items-center rounded-full bg-teal-700 text-white">
-                <Check className="size-4" strokeWidth={3.5} />
-              </span>
-              We set everything up.
-            </p>
-            {/* The button and "No card · No contract" share one width, so the
-                line sits in the middle under it (owner, 20 Oct 2026). */}
-            <div
-              className={`grid w-full gap-2 sm:w-fit ${page === "founding" ? "justify-items-center" : "justify-items-start"}`}
-            >
-              <a href="#apply" className={pilotButton}>
-                Start my free pilot
-              </a>
-              <p className="w-full text-center text-sm font-semibold text-teal-900">No card · No contract</p>
-              {page === "founding" && (
-                <SpotsText
-                  urgent
-                  className="mt-1 inline-block w-fit rounded-full bg-amber-500 px-4 py-1.5 text-sm font-extrabold uppercase tracking-wide text-teal-950"
-                />
-              )}
-            </div>
-            {page === "home" && (
-              <div className="flex max-w-xl items-center gap-3 border-t border-line pt-4 sm:pt-5">
-                <Image
-                  src="/gold-fortune-logo.png"
-                  alt="Gold Fortune logo"
-                  width={256}
-                  height={256}
-                  className="size-11 shrink-0 rounded-lg bg-white object-contain p-0.5 ring-1 ring-line"
-                />
-                <p className="grid leading-snug">
-                  <span className="font-display text-lg font-extrabold text-teal-900 sm:text-xl">
-                    R184k <span aria-label="to">→</span> R340k a month at one retailer
-                  </span>
-                  <span className="text-sm text-muted">
-                    Gold Fortune · {proof.reps} reps · {proof.stores} stores
-                  </span>
+        {page === "founding" ? (
+          <FoundingHero />
+        ) : (
+          <>
+            {/* 1. Hero, in the owner's words (20 Oct 2026): who it's for, what it
+                is, how it helps, the effort it doesn't take, the way in, and the
+                first trust signal (Gold Fortune's result). */}
+            {/* A size smaller on a phone (owner, 21 Oct 2026: on an iPhone 16 Pro the
+                Gold Fortune line was under the first screen). */}
+            <section className="mx-auto grid max-w-6xl items-center gap-10 px-4 pb-10 pt-5 sm:px-6 sm:pb-16 sm:pt-12 lg:grid-cols-[1.1fr_0.9fr] lg:gap-14 lg:pt-12">
+              <div className="tk-hero grid gap-4 sm:gap-6">
+                <p className="text-sm font-bold uppercase tracking-wide text-teal-700">For teams of 3 to 30 reps</p>
+                <h1 className="font-display text-[2.1rem] font-extrabold leading-[1.06] tracking-tight text-balance text-teal-900 sm:text-5xl lg:text-[3.6rem]">
+                  Distributors:{" "}
+                  <span className="relative whitespace-nowrap">
+                    one app
+                    <span aria-hidden="true" className="tk-underline absolute inset-x-0 bottom-[-0.02em] h-[0.12em] rounded-full bg-amber-500" />
+                  </span>{" "}
+                  to manage your reps, orders and invoices.
+                </h1>
+                <p className="max-w-xl text-base leading-relaxed text-pretty text-ink sm:text-xl">
+                  Your reps visit the stores you&apos;ve planned, and {site.name} helps them sell more at each one. Our AI Manager then
+                  tells you how to grow your business.
                 </p>
+                <p className="flex max-w-xl items-start gap-2.5 text-base font-semibold leading-relaxed text-teal-900 sm:text-lg">
+                  <span aria-hidden="true" className="mt-0.5 grid size-6 shrink-0 place-items-center rounded-full bg-teal-700 text-white">
+                    <Check className="size-4" strokeWidth={3.5} />
+                  </span>
+                  We set everything up.
+                </p>
+                {/* The button and "No card · No contract" share one width, so the
+                    line sits in the middle under it (owner, 20 Oct 2026). */}
+                <div className="grid w-full justify-items-start gap-2 sm:w-fit">
+                  <a href="#apply" className={pilotButton}>
+                    Start my free pilot
+                  </a>
+                  <p className="w-full text-center text-sm font-semibold text-teal-900">No card · No contract</p>
+                </div>
+                <div className="flex max-w-xl items-center gap-3 border-t border-line pt-4 sm:pt-5">
+                  <Image
+                    src="/gold-fortune-logo.png"
+                    alt="Gold Fortune logo"
+                    width={256}
+                    height={256}
+                    className="size-11 shrink-0 rounded-lg bg-white object-contain p-0.5 ring-1 ring-line"
+                  />
+                  <p className="grid leading-snug">
+                    <span className="font-display text-lg font-extrabold text-teal-900 sm:text-xl">
+                      R184k <span aria-label="to">→</span> R340k a month at one retailer
+                    </span>
+                    <span className="text-sm text-muted">
+                      Gold Fortune · {proof.reps} reps · {proof.stores} stores
+                    </span>
+                  </p>
+                </div>
               </div>
-            )}
-          </div>
-          {page === "home" && (
-            <figure className="tk-hero-demo grid gap-3">
-              <ProductDemo />
-            </figure>
-          )}
-        </section>
+              <figure className="tk-hero-demo grid gap-3">
+                <ProductDemo />
+              </figure>
+            </section>
+          </>
+        )}
 
         {/* /founding: the video, then the form, before everything else (owner,
             25 Oct 2026). The hero's button goes straight to the form, so
