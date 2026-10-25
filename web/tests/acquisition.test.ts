@@ -199,13 +199,16 @@ test("the form report: boxes reached and answered, where people stopped, and wha
   assert.equal(r.sent, 1);
   assert.equal(r.pressedSend, 2);
   assert.deepEqual(r.fields.map((f) => [f.key, f.reached, f.filled]), [
+    ["name", 0, 0],
     ["first_name", 1, 1],
     ["last_name", 1, 0],
     ["business_name", 0, 0],
     ["distributes", 0, 0],
     ["team_size", 0, 0],
+    ["role", 0, 0],
     ["whatsapp", 1, 1],
     ["email", 1, 0],
+    ["consent", 0, 0],
   ]);
   assert.deepEqual(r.stopped, [
     { label: "Answered: WhatsApp number", people: 1 },

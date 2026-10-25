@@ -1,0 +1,137 @@
+/**
+ * Where a new Founding application goes besides the owner's email (owner, 25
+ * Oct 2026: Conrad calls every lead within minutes):
+ *
+ *   - a WhatsApp message to the owner, through CallMeBot (callmebot.com). The
+ *     owner gets the key by messaging CallMeBot once from their own WhatsApp;
+ *     set CALLMEBOT_PHONE (their number, digits only) and CALLMEBOT_APIKEY.
+ *   - a row in the owner's Google Sheet, through the Apps Script in
+ *     docs/LEADS-SHEET.md; set LEADS_SHEET_URL (the script's web app link) and
+ *     LEADS_SHEET_SECRET (the same secret word as in the script).
+ *
+ * Each is off while its settings are empty, and neither ever throws: the
+ * application is already saved, and the owner's email still goes.
+ */
+
+import { describeAttribution, ROLE_LABEL, type FoundingApplication } from "@/lib/founding";
+
+/** The WhatsApp message about a new application: who, how big, and a link to answer. */
+export function whatsappAlertText(a: FoundingApplication, waitlist: boolean): string {
+  const lines = [
+    `${waitlist ? "Waiting list" : "New Founding lead"}: ${a.name}, ${a.business_name}`,
+    `Reps: ${a.team_size}${a.role ? ` · ${ROLE_LABEL[a.role]}` : ""}`,
+    `WhatsApp: +${a.whatsapp}`,
+    a.distributes ? `Distributes: ${a.distributes}` : null,
+    a.email ? `Email: ${a.email}` : null,
+    `From: ${describeAttribution(a.attribution) ?? "not known"}`,
+    `Answer: https://wa.me/${a.whatsapp}`,
+  ];
+  return lines.filter((l): l is string => l !== null).join("\n");
+}
+
+/** The time in South Africa, to the second, the way a sheet reads it: "2026-10-25 10:14:03". */
+export function saTime(at: Date): string {
+  return new Intl.DateTimeFormat("sv-SE", {
+    timeZone: "Africa/Johannesburg",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  }).format(at);
+}
+
+/**
+ * The sheet's columns, in order: when, every answer on the form, the ad's tags
+ * (Meta's ad set goes in utm_term when the ad links carry it), then the
+ * owner's own columns, left empty for them to fill in.
+ */
+export const SHEET_HEADERS = [
+  "Submitted (SA time)",
+  "Name",
+  "Business",
+  "WhatsApp",
+  "Reps",
+  "Role",
+  "What they distribute",
+  "Email",
+  "Agreed to be contacted",
+  "List",
+  "Source",
+  "Campaign",
+  "Ad set",
+  "Ad",
+  "First call at",
+  "Reached",
+  "Score",
+  "Sales call booked",
+  "Notes",
+] as const;
+
+/** One application as a row under SHEET_HEADERS. */
+export function sheetRow(a: FoundingApplication, waitlist: boolean, at: Date): string[] {
+  const t = a.attribution ?? {};
+  return [
+    saTime(at),
+    a.name,
+    a.business_name,
+    `+${a.whatsapp}`,
+    a.team_size,
+    a.role ? ROLE_LABEL[a.role] : "",
+    a.distributes ?? "",
+    a.email ?? "",
+    a.contact_consent_at ? "Yes" : "",
+    waitlist ? "Waiting list" : "Founding",
+    [t.utm_source, t.utm_medium].filter(Boolean).join(" / "),
+    t.utm_campaign ?? "",
+    t.utm_term ?? "",
+    t.utm_content ?? "",
+    "",
+    "",
+    "",
+    "",
+    "",
+  ];
+}
+
+const TIMEOUT_MS = 8000;
+
+/** WhatsApps the owner about a new application, when CallMeBot is set up. */
+export async function alertOwnerOnWhatsapp(id: string, a: FoundingApplication, waitlist: boolean): Promise<void> {
+  const phone = process.env.CALLMEBOT_PHONE?.replace(/\D/g, "");
+  const key = process.env.CALLMEBOT_APIKEY;
+  if (!phone || !key) return;
+  try {
+    const url = new URL("https://api.callmebot.com/whatsapp.php");
+    url.searchParams.set("phone", phone);
+    url.searchParams.set("text", whatsappAlertText(a, waitlist));
+    url.searchParams.set("apikey", key);
+    const res = await fetch(url, { signal: AbortSignal.timeout(TIMEOUT_MS) });
+    if (!res.ok) console.error("founding: the owner's WhatsApp was not sent", id, res.status);
+  } catch (e) {
+    console.error("founding: the owner's WhatsApp failed", id, e instanceof Error ? e.message : e);
+  }
+}
+
+/** Adds the application to the owner's Google Sheet, when it is set up. */
+export async function addToLeadsSheet(id: string, a: FoundingApplication, waitlist: boolean, at: Date): Promise<void> {
+  const url = process.env.LEADS_SHEET_URL;
+  const secret = process.env.LEADS_SHEET_SECRET;
+  if (!url || !secret) return;
+  try {
+    const res = await fetch(url, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ secret, headers: SHEET_HEADERS, row: sheetRow(a, waitlist, at) }),
+      signal: AbortSignal.timeout(TIMEOUT_MS),
+    });
+    const body = (await res.json().catch(() => null)) as { ok?: boolean; error?: string } | null;
+    if (!res.ok || body?.ok !== true) {
+      console.error("founding: the lead was not added to the sheet", id, res.status, body?.error ?? "");
+    }
+  } catch (e) {
+    console.error("founding: the lead sheet failed", id, e instanceof Error ? e.message : e);
+  }
+}
