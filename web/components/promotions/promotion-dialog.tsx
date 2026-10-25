@@ -19,6 +19,7 @@ import {
   answeredStoreIds,
   createPromotion,
   fetchPromotionDetail,
+  promotionProblem,
   updatePromotion,
   type PromotionInput,
 } from "@/lib/promotions";
@@ -223,6 +224,12 @@ export function PromotionDialog({
       productIds: Array.from(productIds),
       storeIds: Array.from(storeIds),
     };
+    const problem = promotionProblem(input);
+    if (problem) {
+      setError(problem);
+      setSaving(false);
+      return;
+    }
     try {
       if (promotionId) await updatePromotion(supabase, promotionId, input);
       else await createPromotion(supabase, orgId, input);

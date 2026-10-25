@@ -25,8 +25,11 @@ import type { AssistantEvent, ChatTurn, QuestionsLeft } from "@/lib/assistant-st
  * `run` does the lookups; `send` writes each event to the person.
  */
 
-/** Lookup rounds per question. Enough to find a name and then ask about it. */
-const MAX_ROUNDS = 5;
+/**
+ * Lookup rounds per question. Enough to find a name and then ask about it, or
+ * to find the products and the sites for a change and then draft it.
+ */
+const MAX_ROUNDS = 8;
 
 type Verdict = "on" | "off" | "failed";
 
@@ -183,6 +186,10 @@ export async function answerQuestion(o: AnswerOptions): Promise<void> {
         const result = await o.run(spec.name, call.arguments);
         if (result.sheet) send({ type: "table", sheet: result.sheet, href: spec.page });
         if (result.plan) send({ type: "plan", plan: result.plan });
+        // A drafted change: shown as a card. Nothing is written until the
+        // person presses it, and `/api/assistant/act` checks it all again.
+        if (result.action) send({ type: "action", action: result.action });
+        if (result.link) send({ type: "link", link: result.link });
         input.push({
           type: "function_call_output",
           call_id: call.call_id,

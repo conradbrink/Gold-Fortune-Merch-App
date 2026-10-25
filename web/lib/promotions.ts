@@ -143,6 +143,31 @@ export type PromotionInput = {
   storeIds: string[];
 };
 
+/** Lengths a rep can read on a phone; the database itself has no limit. */
+export const MAX_PROMOTION_NAME = 120;
+export const MAX_PROMOTION_BRIEF = 500;
+
+const DAY = /^\d{4}-\d{2}-\d{2}$/;
+
+/**
+ * What is wrong with a promotion as typed, or null. The dialog and the AI
+ * Manager both ask before saving, so a promotion is held to one rule however
+ * it was made.
+ */
+export function promotionProblem(input: PromotionInput): string | null {
+  const name = input.name.trim();
+  if (!name) return "The promotion needs a name.";
+  if (name.length > MAX_PROMOTION_NAME) return `Keep the name under ${MAX_PROMOTION_NAME} characters.`;
+  if ((input.brief ?? "").length > MAX_PROMOTION_BRIEF) {
+    return `Keep what to look for under ${MAX_PROMOTION_BRIEF} characters.`;
+  }
+  for (const d of [input.starts_on, input.ends_on]) {
+    if (!DAY.test(d) || Number.isNaN(Date.parse(`${d}T00:00:00Z`))) return "Both dates need to be real days.";
+  }
+  if (input.ends_on < input.starts_on) return "The end date is before the start date.";
+  return null;
+}
+
 export async function createPromotion(
   supabase: SupabaseClient,
   orgId: string,
@@ -167,12 +192,18 @@ export async function createPromotion(
   return id;
 }
 
+/**
+ * `seenUpdatedAt`, when given, is the version the person was shown: a
+ * promotion changed since then is refused rather than overwritten with old
+ * information.
+ */
 export async function updatePromotion(
   supabase: SupabaseClient,
   id: string,
-  input: PromotionInput
+  input: PromotionInput,
+  seenUpdatedAt?: string
 ): Promise<void> {
-  const { data, error } = await supabase
+  let query = supabase
     .from("promotions")
     .update({
       name: input.name,
@@ -180,8 +211,9 @@ export async function updatePromotion(
       starts_on: input.starts_on,
       ends_on: input.ends_on,
     })
-    .eq("id", id)
-    .select("id");
+    .eq("id", id);
+  if (seenUpdatedAt) query = query.eq("updated_at", seenUpdatedAt);
+  const { data, error } = await query.select("id");
   if (error) throw new Error(error.message);
   // A PostgREST update that matches nothing succeeds silently.
   if ((data?.length ?? 0) === 0) {
@@ -197,8 +229,12 @@ export async function setPromotionActive(
   id: string,
   active: boolean
 ): Promise<void> {
-  const { error } = await supabase.from("promotions").update({ active }).eq("id", id);
+  // `select`: a switch RLS refused changes nothing and still reports success.
+  const { data, error } = await supabase.from("promotions").update({ active }).eq("id", id).select("id");
   if (error) throw new Error(error.message);
+  if ((data?.length ?? 0) === 0) {
+    throw new Error("That promotion could not be changed — reload and try again.");
+  }
 }
 
 export async function deletePromotion(

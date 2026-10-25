@@ -17,6 +17,10 @@ export type AssistantEvent =
   | { type: "table"; sheet: ExportSheet; href: string }
   /** A drafted month of visits, saved only when the person presses the button. */
   | { type: "plan"; plan: PlanDraft }
+  /** A change the AI Manager drafted, made only when the person presses its button. */
+  | { type: "action"; action: ActionDraft }
+  /** A page to do something on, offered only when the person may open it. */
+  | { type: "link"; link: AssistantLink }
   /** Not about the business: the fixed refusal, and nothing else. */
   | { type: "refused"; text: string }
   | { type: "error"; text: string }
@@ -45,6 +49,38 @@ export type PlanDraft = {
   visits: number;
 };
 
+/**
+ * A change the AI Manager drafted: what the card shows, and what its button
+ * sends back to `/api/assistant/act`.
+ *
+ * `input` goes to the browser and comes back, so the route reads it as if it
+ * were typed by hand (`readActionInput`) and checks it all again before
+ * anything is written. Nothing in the draft is trusted for having come from
+ * the server.
+ */
+export type ActionDraft = {
+  /** This draft, for the panel. */
+  id: string;
+  /** The action, from `lib/assistant-actions.ts`. */
+  name: string;
+  /** "New promotion". */
+  title: string;
+  /** What will change, a line each: "Dates" / "Sat 1 Nov to Sat 15 Nov". */
+  lines: { label: string; value: string }[];
+  /** Anything worth a second look before pressing, in plain words. */
+  warnings: string[];
+  /** The button's words: "Create the promotion". */
+  button: string;
+  /** The page where it can be checked or changed by hand. */
+  href: string;
+  input: unknown;
+};
+
+/** What pressing the card's button did. */
+export type ActionResult = { done: true; text: string; href: string } | { done: false; text: string };
+
+export type AssistantLink = { href: string; label: string };
+
 /** One chat turn as the panel keeps it and sends it back for context. */
 export type ChatTurn = { role: "user" | "assistant"; text: string };
 
@@ -67,6 +103,8 @@ export type ShownTurn = ChatTurn & {
   refused?: boolean;
   error?: string;
   planSaved?: { added: number; already: number };
+  /** The cards under the answer, and what pressing each did. */
+  actions?: { draft: Pick<ActionDraft, "button" | "title">; result?: ActionResult }[];
 };
 
 /**
@@ -88,9 +126,26 @@ export function history(messages: readonly ShownTurn[]): ChatTurn[] {
     const saved = a.planSaved
       ? `\n\n(The person pressed Add to schedule: ${a.planSaved.added} added, ${a.planSaved.already} were already there.)`
       : "";
-    turns.push({ role: "user", text: q.text }, { role: "assistant", text: a.text + saved });
+    turns.push({ role: "user", text: q.text }, { role: "assistant", text: a.text + saved + actionNotes(a) });
   }
   return turns.slice(-MAX_HISTORY_TURNS);
+}
+
+/**
+ * What happened to each card under an answer, in words the assistant reads
+ * next time. It never sees the buttons, so without this "did you do it?" would
+ * get a guess; with it, "Done:" is only there when the database said so.
+ */
+function actionNotes(turn: ShownTurn): string {
+  return (turn.actions ?? [])
+    .map(({ draft, result }) =>
+      !result
+        ? `\n\n(Card "${draft.title}": not pressed yet, so nothing has changed.)`
+        : result.done
+          ? `\n\n(The person pressed "${draft.button}". Done: ${result.text})`
+          : `\n\n(The person pressed "${draft.button}" and it did not go through: ${result.text})`
+    )
+    .join("");
 }
 
 export function encodeEvent(event: AssistantEvent): string {

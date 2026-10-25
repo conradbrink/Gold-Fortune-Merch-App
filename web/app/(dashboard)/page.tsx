@@ -60,6 +60,7 @@ import {
 import { codesFromSetting, findKpi } from "@/lib/kpis";
 import { usePermissionsState } from "@/lib/use-permissions";
 import { can } from "@/lib/permissions";
+import { useAssistantChanged } from "@/lib/assistant-changed";
 
 /**
  * The dashboard is composed, not fixed.
@@ -121,6 +122,9 @@ export default function InsightsDashboardPage() {
    * The button waits.
    */
   const [layoutLoaded, setLayoutLoaded] = useState(false);
+  /** Bumped when the AI Manager changes this person's cards, to read them again. */
+  const [layoutVersion, setLayoutVersion] = useState(0);
+  useAssistantChanged("/", () => setLayoutVersion((v) => v + 1));
   const [savingLayout, setSavingLayout] = useState(false);
   const [layoutError, setLayoutError] = useState<string | null>(null);
 
@@ -269,7 +273,8 @@ export default function InsightsDashboardPage() {
   }, [load]);
 
   // The layout does not depend on the date range, so it is fetched once rather
-  // than on every range change.
+  // than on every range change. Again when the AI Manager changes it from the
+  // chat over this page.
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -328,7 +333,7 @@ export default function InsightsDashboardPage() {
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [layoutVersion]);
 
   async function handleSaveLayout(widgetIds: string[]) {
     // Guarded here as well as on the button. What is being written could be the

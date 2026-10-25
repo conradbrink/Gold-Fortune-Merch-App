@@ -1,13 +1,12 @@
 import OpenAI from "openai";
 import { createClient } from "@/lib/supabase/server";
 import { enforceRateLimit, quotaLeft, requireFeature, LIMITS } from "@/lib/rate-limit";
-import { parseCompanyConfig } from "@/lib/company-config";
 import { moduleEnabled } from "@/lib/modules";
 import { currencySymbol } from "@/lib/money";
-import { toPermissionSet } from "@/lib/permissions";
-import { toolsFor } from "@/lib/assistant-tools";
+import { readAsker } from "@/lib/assistant-session";
+import { draftAction, isAction } from "@/lib/assistant-act";
 import type { AssistantContext } from "@/lib/assistant-prompt";
-import { runTool, type ToolEnv } from "@/lib/assistant-data";
+import { runTool } from "@/lib/assistant-data";
 import { answerQuestion } from "@/lib/assistant-answer";
 import { encodeEvent, parseConversation, questionsLeft } from "@/lib/assistant-stream";
 
@@ -93,24 +92,9 @@ export async function POST(request: Request) {
   if (!conversation.ok) return json(conversation.error, 400);
 
   // Who is asking and what they may see, from the database with their session.
-  const [
-    { data: perms, error: permsError },
-    { data: rawConfig, error: configError },
-    { data: role, error: roleError },
-  ] = await Promise.all([
-    supabase.rpc("my_permissions"),
-    supabase.rpc("my_company_config"),
-    // The function the schedule's write policies ask (see use-is-manager.ts).
-    supabase.rpc("current_role"),
-  ]);
-  if (permsError || configError || roleError) {
-    return json("Your access could not be checked. Try again shortly.", 503);
-  }
-  const config = parseCompanyConfig(rawConfig);
-  if (!config) return json("Your company could not be loaded. Try again shortly.", 503);
-
-  const isManager = role === "manager";
-  const tools = toolsFor(toPermissionSet(perms as string[] | null), config.modules, isManager);
+  const read = await readAsker(supabase);
+  if (!read.ok) return json(read.error, read.status);
+  const { env, tools, config } = read.asker;
   if (tools.length === 0) {
     return json("There's nothing in your access that Ask can look up yet.", 403);
   }
@@ -130,17 +114,15 @@ export async function POST(request: Request) {
   if (!dayGate.ok) return limitReached(dayGate.response, "day");
   const left = questionsLeft(hour.remaining, dayGate.remaining);
 
-  const today = new Intl.DateTimeFormat("en-CA", { timeZone: config.timezone }).format(new Date());
   const ctx: AssistantContext = {
     terms: config.terms,
     companyName: config.branding.name ?? "",
     merchandising: moduleEnabled(config.modules, "distribution"),
-    today,
+    today: env.today,
     timeZone: config.timezone,
     currency: config.settings.currency_code,
     currencySymbol: currencySymbol(config.settings.currency_code),
   };
-  const env: ToolEnv = { supabase, terms: ctx.terms, timeZone: config.timezone, today };
 
   const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
   const abort = new AbortController();
@@ -157,7 +139,8 @@ export async function POST(request: Request) {
           ctx,
           tools,
           turns: conversation.turns,
-          run: (name, args) => runTool(name, args, env),
+          // An action only drafts its card here; nothing is written until the person presses it.
+          run: (name, args) => (isAction(name) ? draftAction(name, args, env) : runTool(name, args, env)),
           send: (event) => {
             try {
               controller.enqueue(encoder.encode(encodeEvent(event)));

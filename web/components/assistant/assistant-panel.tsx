@@ -3,14 +3,17 @@
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
+  ArrowRight,
   ArrowUp,
   CalendarPlus,
   Check,
+  CircleAlert,
   ExternalLink,
   LoaderCircle,
   Sparkles,
   Square,
   SquarePen,
+  TriangleAlert,
   UserRound,
   X,
 } from "lucide-react";
@@ -19,15 +22,21 @@ import { ExportMenu } from "@/components/export-menu";
 import { cn } from "@/lib/utils";
 import { lower, type Terms } from "@/lib/terms";
 import { useCompanyConfig, useTerms } from "@/lib/use-company-config";
-import { exampleQuestions, type ToolSpec } from "@/lib/assistant-tools";
+import { exampleQuestions, hasActions, type ToolSpec } from "@/lib/assistant-tools";
 import {
   MAX_QUESTION_CHARS,
   QUESTIONS_PER_DAY,
   QUESTIONS_PER_HOUR,
+  type AssistantLink,
   type QuestionsLeft,
 } from "@/lib/assistant-stream";
 import { parseAnswer, type Span } from "@/lib/assistant-text";
-import { useAssistant, type AskMessage, type AskTable } from "@/components/assistant/assistant-provider";
+import {
+  useAssistant,
+  type AskAction,
+  type AskMessage,
+  type AskTable,
+} from "@/components/assistant/assistant-provider";
 
 /**
  * Ask: the chat window that opens from the round button in the corner.
@@ -38,7 +47,7 @@ import { useAssistant, type AskMessage, type AskTable } from "@/components/assis
  * whose access gives it nothing to look up.
  */
 export function AssistantPanel() {
-  const { open, setOpen, tools, messages, busy, left, ask, savePlan, stop, reset } = useAssistant();
+  const { open, setOpen, tools, messages, busy, left, ask, savePlan, doAction, stop, reset } = useAssistant();
   const company = useCompanyConfig();
   const t = useTerms();
   if (!open || tools === null || tools.length === 0) return null;
@@ -52,6 +61,7 @@ export function AssistantPanel() {
       left={left}
       onAsk={ask}
       onSavePlan={savePlan}
+      onDoAction={doAction}
       onStop={stop}
       onReset={reset}
       onClose={() => setOpen(false)}
@@ -72,6 +82,8 @@ type PanelViewProps = {
   onClose: () => void;
   /** Saves the drafted plan under an answer; resolves with an error to show, or null. */
   onSavePlan: (messageId: string) => Promise<string | null>;
+  /** Makes the change on a card; resolves with an error to show, or null. */
+  onDoAction: (messageId: string, draftId: string) => Promise<string | null>;
 };
 
 /** The panel itself, from plain props: what `AssistantPanel` shows once it is open. */
@@ -87,6 +99,7 @@ export function AssistantPanelView({
   onReset,
   onClose,
   onSavePlan,
+  onDoAction,
 }: Readonly<PanelViewProps>) {
   const [draft, setDraft] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -98,6 +111,22 @@ export function AssistantPanelView({
   // Only the newest unsaved draft can be added: an earlier one was replaced
   // by it, and saving both would book two different months.
   const newestPlanId = [...messages].reverse().find((m) => m.plan)?.id ?? null;
+  // A card the assistant drafted again later (the same action, changed) is
+  // replaced by the newer one: pressing both would make the change twice.
+  const replacedCards = useMemo(() => {
+    const out = new Set<string>();
+    const later = new Set<string>();
+    for (const m of [...messages].reverse()) {
+      const names = new Set<string>();
+      for (const a of m.actions ?? []) {
+        if (later.has(a.draft.name) && !a.result) out.add(a.draft.id);
+        names.add(a.draft.name);
+      }
+      for (const n of names) later.add(n);
+    }
+    return out;
+  }, [messages]);
+  const doesThings = hasActions(tools);
   const lastMessage = messages[messages.length - 1];
   const finished = lastMessage?.role === "assistant" && !lastMessage.pending ? lastMessage : null;
 
@@ -109,12 +138,15 @@ export function AssistantPanelView({
   // Follow the answer as it arrives, unless the person has scrolled up to read.
   const lastText = messages[messages.length - 1]?.text.length ?? 0;
   const lastTables = messages[messages.length - 1]?.tables.length ?? 0;
+  // A card (and its button) appears once the answer has finished: follow it down.
+  const lastCards = messages[messages.length - 1]?.actions?.length ?? 0;
+  const lastPending = messages[messages.length - 1]?.pending ?? false;
   const count = messages.length;
   const pinned = useRef(true);
   useEffect(() => {
     const el = scrollRef.current;
     if (el && pinned.current) el.scrollTop = el.scrollHeight;
-  }, [count, lastText, lastTables]);
+  }, [count, lastText, lastTables, lastCards, lastPending]);
 
   function submit(text: string) {
     if (busy || !text.trim()) return;
@@ -167,6 +199,12 @@ export function AssistantPanelView({
               Ask in your own words about {name}&apos;s {lower(t.site.many)}, sales, orders and more. Answers
               come from your own data in Tickd, and only what your access lets you see.
             </p>
+            {doesThings && (
+              <p className="text-sm leading-relaxed text-foreground">
+                It can also set things up for you, like promotions, forms and the cards on your dashboard. It
+                shows you exactly what it will change, and nothing changes until you press the button.
+              </p>
+            )}
             {examples.length > 0 && (
               <div className="space-y-2">
                 <p className="text-xs font-medium text-muted-foreground">Try one of these</p>
@@ -194,7 +232,14 @@ export function AssistantPanelView({
                 {m.role === "user" ? (
                   <Question text={m.text} />
                 ) : (
-                  <Answer message={m} terms={t} replaced={m.id !== newestPlanId} onSavePlan={onSavePlan} />
+                  <Answer
+                    message={m}
+                    terms={t}
+                    replaced={m.id !== newestPlanId}
+                    replacedCards={replacedCards}
+                    onSavePlan={onSavePlan}
+                    onDoAction={onDoAction}
+                  />
                 )}
               </li>
             ))}
@@ -231,7 +276,7 @@ export function AssistantPanelView({
                 submit(draft);
               }
             }}
-            placeholder="Ask a question"
+            placeholder={doesThings ? "Ask a question, or say what to set up" : "Ask a question"}
             className="field-sizing-content max-h-40 min-h-8 flex-1 resize-none bg-transparent py-1 text-base text-foreground outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed md:text-sm"
           />
           {busy ? (
@@ -266,13 +311,18 @@ function Answer({
   message,
   terms,
   replaced,
+  replacedCards,
   onSavePlan,
+  onDoAction,
 }: Readonly<{
   message: AskMessage;
   terms: Terms;
   /** A newer draft is below this one. */
   replaced: boolean;
+  /** Cards drafted again further down. */
+  replacedCards: ReadonlySet<string>;
   onSavePlan: (messageId: string) => Promise<string | null>;
+  onDoAction: (messageId: string, draftId: string) => Promise<string | null>;
 }>) {
   return (
     <div className="space-y-3">
@@ -290,6 +340,19 @@ function Answer({
       {!message.refused && message.tables.map((table, i) => <AnswerTable key={i} table={table} />)}
       {!message.refused && !message.pending && message.plan && (
         <PlanSave message={message} terms={terms} replaced={replaced} onSave={() => onSavePlan(message.id)} />
+      )}
+      {!message.refused &&
+        !message.pending &&
+        message.actions?.map((a) => (
+          <ActionCard
+            key={a.draft.id}
+            action={a}
+            replaced={replacedCards.has(a.draft.id)}
+            onDo={() => onDoAction(message.id, a.draft.id)}
+          />
+        ))}
+      {!message.refused && !message.pending && message.links && message.links.length > 0 && (
+        <PageLinks links={message.links} />
       )}
       {message.error && (
         <p role="alert" className="rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
@@ -369,6 +432,124 @@ function PlanSave({
           {error}
         </p>
       )}
+    </div>
+  );
+}
+
+/**
+ * A change the AI Manager got ready. Until the button is pressed it is a
+ * description and nothing more; pressing it makes the change as the person,
+ * and the card then says what happened, in the database's words.
+ */
+function ActionCard({
+  action,
+  replaced,
+  onDo,
+}: Readonly<{ action: AskAction; replaced: boolean; onDo: () => Promise<string | null> }>) {
+  const [doing, setDoing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const { draft, result } = action;
+
+  if (result?.done) {
+    return (
+      <div className="rounded-lg border border-border bg-muted/40 px-3 py-2.5 text-sm">
+        <p className="flex items-start gap-2 font-medium text-foreground">
+          <Check className="mt-0.5 size-4 shrink-0 text-primary" aria-hidden />
+          <span className="text-pretty">{result.text}</span>
+        </p>
+        <Link href={result.href} className="mt-1.5 ml-6 inline-flex items-center gap-1 text-primary hover:underline">
+          Open it
+          <ExternalLink className="size-3" aria-hidden />
+        </Link>
+      </div>
+    );
+  }
+
+  if (result) {
+    return (
+      <div className="rounded-lg border border-border bg-muted/40 px-3 py-2.5 text-sm">
+        <p className="flex items-start gap-2 text-foreground">
+          <CircleAlert className="mt-0.5 size-4 shrink-0 text-muted-foreground" aria-hidden />
+          <span className="text-pretty">
+            <span className="font-medium">{draft.title}: not done.</span> {result.text}
+          </span>
+        </p>
+      </div>
+    );
+  }
+
+  if (replaced) {
+    return (
+      <p className="text-sm text-muted-foreground">
+        {draft.title}: a newer version is below. Use that one instead.
+      </p>
+    );
+  }
+
+  return (
+    <div className="overflow-hidden rounded-lg border border-primary/30 bg-primary/5 text-sm">
+      <p className="border-b border-primary/15 px-3 py-2 font-semibold text-foreground">{draft.title}</p>
+      <dl className="space-y-2 px-3 py-2.5">
+        {draft.lines.map((line, i) => (
+          <div key={i}>
+            <dt className="text-xs text-muted-foreground">{line.label}</dt>
+            <dd className="leading-relaxed whitespace-pre-line text-foreground">{line.value}</dd>
+          </div>
+        ))}
+      </dl>
+      {draft.warnings.length > 0 && (
+        <ul className="mx-3 mb-2.5 space-y-1 rounded-md bg-amber-50 px-2.5 py-2 text-amber-900 dark:bg-amber-950/60 dark:text-amber-200">
+          {draft.warnings.map((w, i) => (
+            <li key={i} className="flex items-start gap-2">
+              <TriangleAlert className="mt-0.5 size-3.5 shrink-0" aria-hidden />
+              <span className="text-pretty">{w}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-t border-primary/15 px-3 py-2.5">
+        <Button
+          size="sm"
+          className="gap-1.5"
+          disabled={doing}
+          onClick={async () => {
+            setDoing(true);
+            setError(null);
+            setError(await onDo());
+            setDoing(false);
+          }}
+        >
+          {doing ? <LoaderCircle className="size-3.5 animate-spin motion-reduce:animate-none" aria-hidden /> : <Check className="size-3.5" aria-hidden />}
+          {doing ? "Doing it…" : draft.button}
+        </Button>
+        <Link href={draft.href} className="text-xs text-muted-foreground hover:text-foreground hover:underline">
+          Or do it on the page
+        </Link>
+        <p className="w-full text-xs text-muted-foreground">Nothing changes until you press the button.</p>
+        {error && (
+          <p role="alert" className="w-full text-destructive">
+            {error}
+          </p>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/** The page to do something on by hand, under steps the AI Manager gave. */
+function PageLinks({ links }: Readonly<{ links: AssistantLink[] }>) {
+  return (
+    <div className="flex flex-wrap gap-2">
+      {links.map((l) => (
+        <Link
+          key={l.href}
+          href={l.href}
+          className="inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-sm font-medium text-foreground transition-colors hover:bg-muted focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none"
+        >
+          {l.label}
+          <ArrowRight className="size-3.5" aria-hidden />
+        </Link>
+      ))}
     </div>
   );
 }

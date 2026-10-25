@@ -395,6 +395,54 @@ export async function companyRecentEmails(orgId: string, limit = 20): Promise<Ou
   }));
 }
 
+export type AiChangeRow = {
+  id: string;
+  person: string;
+  action: string;
+  ok: boolean | null;
+  result: string | null;
+  createdAt: string;
+};
+
+/**
+ * The changes the company's people had the AI Manager make, newest first, for
+ * "the AI changed my form". Only the change is kept, never the chat. A read
+ * that fails leaves the section empty rather than the page: it is support
+ * information, not something the page needs to work.
+ */
+export async function companyAiChanges(orgId: string, limit = 20): Promise<AiChangeRow[]> {
+  // Not in the generated types until they are next generated from the database.
+  const { data, error } = await (platformAdminClient() as unknown as ReturnType<typeof createAdminClient>)
+    .from("assistant_actions")
+    .select("id, action, ok, result, created_at, person:profiles!assistant_actions_user_id_fkey(full_name)")
+    .eq("org_id", orgId)
+    .order("created_at", { ascending: false })
+    .limit(limit);
+  if (error) {
+    console.error("platform: AI Manager changes could not be read", error.message);
+    return [];
+  }
+  type Row = {
+    id: string;
+    action: string;
+    ok: boolean | null;
+    result: string | null;
+    created_at: string;
+    person: { full_name: string | null } | { full_name: string | null }[] | null;
+  };
+  return ((data ?? []) as Row[]).map((r) => {
+    const person = Array.isArray(r.person) ? r.person[0] : r.person;
+    return {
+      id: r.id,
+      person: person?.full_name ?? "Someone",
+      action: r.action,
+      ok: r.ok,
+      result: r.result,
+      createdAt: r.created_at,
+    };
+  });
+}
+
 /** Every module a company can have (not `core`, which is always on). */
 export async function moduleCatalogue(): Promise<{ code: string; name: string; built: boolean; planType: string }[]> {
   const { data, error } = await platformAdminClient()

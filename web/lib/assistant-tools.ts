@@ -1,6 +1,9 @@
 import { canAccessPath, type PermissionSet } from "@/lib/permissions";
 import { canReachPath, type ModuleSet } from "@/lib/modules";
 import { lower, type Terms } from "@/lib/terms";
+import { ACTIONS, type ActionName } from "@/lib/assistant-actions";
+import { HELP_TOPICS } from "@/lib/assistant-help";
+import { DATE, nullableString, object, type JsonSchema } from "@/lib/assistant-schema";
 
 /**
  * What the assistant may look up, and who may have it look.
@@ -20,7 +23,7 @@ import { lower, type Terms } from "@/lib/terms";
  * (server) both read it.
  */
 
-export type ToolName =
+export type LookupName =
   | "find_sites"
   | "site_visits"
   | "sites_not_visited"
@@ -32,9 +35,15 @@ export type ToolName =
   | "team_performance"
   | "money_owed"
   | "staff_sites"
-  | "draft_visit_plan";
+  | "draft_visit_plan"
+  | "find_products"
+  | "promotions"
+  | "forms"
+  | "dashboard_cards"
+  | "ai_changes"
+  | "how_to";
 
-type JsonSchema = Record<string, unknown>;
+export type ToolName = LookupName | ActionName;
 
 export type ToolSpec = {
   name: ToolName;
@@ -46,6 +55,16 @@ export type ToolSpec = {
   /** Shown while it runs: "Looking up sales". */
   working: (t: Terms) => string;
   /**
+   * Does something in the app rather than look something up
+   * (`lib/assistant-actions.ts`): drafts a card the person confirms.
+   */
+  action?: true;
+  /**
+   * Offered to anybody Ask has anything else for, whatever page they may
+   * open: it checks each answer's own page itself (`how_to`).
+   */
+  everyone?: true;
+  /**
    * Only for managers. Planning writes the schedule, and the schedule's tables
    * still let only `current_role() = 'manager'` write (see `use-is-manager.ts`);
    * offering it to anybody else would draft a plan they could never save.
@@ -53,29 +72,12 @@ export type ToolSpec = {
   managerOnly?: boolean;
 };
 
-const DATE = "A date as YYYY-MM-DD, in the company's time zone.";
-
 const dateRange = {
   from: { type: "string", description: `First day, inclusive. ${DATE}` },
   to: { type: "string", description: `Last day, inclusive. ${DATE}` },
 };
 
-/** Strict structured tools need every key listed as required, nullable instead of optional. */
-function object(properties: Record<string, JsonSchema>): JsonSchema {
-  return {
-    type: "object",
-    properties,
-    required: Object.keys(properties),
-    additionalProperties: false,
-  };
-}
-
-const nullableString = (description: string): JsonSchema => ({
-  type: ["string", "null"],
-  description,
-});
-
-export const TOOLS: readonly ToolSpec[] = [
+const LOOKUPS: readonly ToolSpec[] = [
   {
     name: "find_sites",
     page: "/stores",
@@ -259,19 +261,94 @@ export const TOOLS: readonly ToolSpec[] = [
     parameters: () => object({}),
     working: () => "Looking up money owed",
   },
+  {
+    name: "find_products",
+    // For promotions, the one place an action needs products by id.
+    page: "/promotions",
+    description: () =>
+      "Find products by part of the name, brand or code. Returns each match's id, name, brand, code and " +
+      "whether it is active. Use it to get product ids for a promotion.",
+    parameters: () =>
+      object({
+        search: { type: "string", description: "Part of a product's name, brand or code." },
+      }),
+    working: () => "Finding the products",
+  },
+  {
+    name: "promotions",
+    page: "/promotions",
+    description: (t) =>
+      `The company's promotions: id, name, dates, on or off, how many products and ${lower(t.site.many)} ` +
+      `each covers, and how many were checked and are running it. With a promotion_id, the products and ` +
+      `${lower(t.site.many)} it covers.`,
+    parameters: () =>
+      object({
+        promotion_id: nullableString("One promotion's id for its products and sites, or null for the list."),
+      }),
+    working: () => "Looking up promotions",
+  },
+  {
+    name: "forms",
+    page: "/forms",
+    description: (t) =>
+      `The company's forms that ${lower(t.staff.many)} fill in: id, name, compulsory or not, archived or not, ` +
+      `how many questions. With a form_id, its questions in order with their ids.`,
+    parameters: () =>
+      object({
+        form_id: nullableString("One form's id for its questions, or null for the list."),
+      }),
+    working: () => "Looking up forms",
+  },
+  {
+    name: "dashboard_cards",
+    page: "/",
+    description: () =>
+      "This person's own dashboard: the cards on it in order, and the cards they could add, each with its id " +
+      "and what it shows. Use it before changing their dashboard.",
+    parameters: () => object({}),
+    working: () => "Looking at your dashboard",
+  },
+  {
+    name: "ai_changes",
+    page: "/",
+    managerOnly: true,
+    description: () =>
+      "What people at the company had the AI Manager change in a date range: who, what, when, and whether it " +
+      "went through.",
+    parameters: () => object({ ...dateRange }),
+    working: () => "Looking up the AI Manager's changes",
+  },
+  {
+    name: "how_to",
+    page: "/",
+    everyone: true,
+    description: (t) =>
+      "The steps to do something in Tickd by hand, and the page to do it on. Use it when the person asks how " +
+      "to do something, or asks you to do something you have no action for. Topics: " +
+      HELP_TOPICS.map((h) => `${h.id} (${h.title(t)})`).join(", ") +
+      ".",
+    parameters: () =>
+      object({
+        topic: { type: "string", enum: HELP_TOPICS.map((h) => h.id), description: "The topic's id." },
+      }),
+    working: () => "Finding the steps",
+  },
 ];
+
+export const TOOLS: readonly ToolSpec[] = [...LOOKUPS, ...ACTIONS];
 
 export function toolSpec(name: string): ToolSpec | undefined {
   return TOOLS.find((t) => t.name === name);
 }
 
-/** Whether this person, at this company, may have the assistant run a lookup. */
+/** Whether this person, at this company, may have the assistant run a lookup or an action. */
 export function toolAllowed(
   spec: ToolSpec,
   permissions: PermissionSet,
   modules: ModuleSet,
   isManager: boolean
 ): boolean {
+  if (spec.everyone) return true;
   return (
     canAccessPath(permissions, spec.page) &&
     canReachPath(modules, spec.page) &&
@@ -279,21 +356,35 @@ export function toolAllowed(
   );
 }
 
-/** The lookups this person may use. Empty means the assistant has nothing to offer them. */
+/**
+ * The lookups and actions this person may use. Empty means the assistant has
+ * nothing to offer them: the steps for somebody else's pages are not enough
+ * to put the button on their screen.
+ */
 export function toolsFor(permissions: PermissionSet, modules: ModuleSet, isManager: boolean): ToolSpec[] {
-  return TOOLS.filter((spec) => toolAllowed(spec, permissions, modules, isManager));
+  const own = TOOLS.filter((spec) => !spec.everyone && toolAllowed(spec, permissions, modules, isManager));
+  return own.length === 0 ? [] : [...own, ...TOOLS.filter((spec) => spec.everyone)];
+}
+
+/** Whether this person has anything the assistant can do for them, not only look up. */
+export function hasActions(tools: readonly ToolSpec[]): boolean {
+  return tools.some((t) => t.action);
 }
 
 /**
  * Questions to start from, matched to what this person can look up.
  *
  * The first answer is one tap away: somebody who opens the panel and does not
- * know what to ask still gets something useful.
+ * know what to ask still gets something useful. One of them is something it
+ * can do, so the person learns it does more than answer.
  */
 export function exampleQuestions(tools: readonly ToolSpec[], t: Terms): string[] {
   const has = (n: ToolName) => tools.some((s) => s.name === n);
   const out: string[] = [];
   if (has("draft_visit_plan")) out.push(`Help me plan a ${lower(t.staff.one)}'s ${lower(t.job.many)} for next month`);
+  if (has("create_promotion")) out.push("Set up a new promotion");
+  else if (has("create_form")) out.push(`Make a new form for the ${lower(t.staff.many)}`);
+  else if (has("change_dashboard")) out.push("Add a card to my dashboard");
   if (has("sales")) out.push(`What are sales this month per ${lower(t.staff.one)}?`);
   if (has("sites_due_for_order")) out.push(`Which ${lower(t.site.many)} are due for an order?`);
   if (has("sites_not_visited")) out.push(`Which ${lower(t.site.many)} haven't been visited in 30 days?`);

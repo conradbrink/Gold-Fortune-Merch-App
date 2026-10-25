@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useAssistantChanged } from "@/lib/assistant-changed";
 import { BadgePercent, MoreHorizontal, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -85,6 +86,9 @@ export default function PromotionsPage() {
       setLoading(false);
     }
   }, [supabase]);
+
+  // A promotion the AI Manager just set up or changed, from the chat over this page.
+  useAssistantChanged("/promotions", () => void load());
 
   useEffect(() => {
     // Behind an async boundary so the loader's own `setLoading(true)`
@@ -246,7 +250,11 @@ export default function PromotionsPage() {
                       </DropdownMenuItem>
                       <DropdownMenuItem
                         onClick={async () => {
-                          await setPromotionActive(supabase, p.promotion_id, !p.active);
+                          try {
+                            await setPromotionActive(supabase, p.promotion_id, !p.active);
+                          } catch (e) {
+                            setError(e instanceof Error ? e.message : String(e));
+                          }
                           load();
                         }}
                       >
@@ -292,7 +300,11 @@ export default function PromotionsPage() {
               size="sm"
               variant="outline"
               onClick={async () => {
-                await setPromotionActive(supabase, confirmDelete.promotion_id, false);
+                try {
+                  await setPromotionActive(supabase, confirmDelete.promotion_id, false);
+                } catch (e) {
+                  setError(e instanceof Error ? e.message : String(e));
+                }
                 setConfirmDelete(null);
                 load();
               }}
