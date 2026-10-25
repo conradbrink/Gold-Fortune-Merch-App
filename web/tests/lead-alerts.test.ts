@@ -123,8 +123,9 @@ test("the Telegram alert stays off until the bot is set up, then sends the messa
     await alertOwnerOnTelegram("id-1", r.application, false);
     assert.equal(calls.length, 0);
 
-    process.env.TELEGRAM_BOT_TOKEN = "123:abc";
-    process.env.TELEGRAM_CHAT_ID = "4567";
+    // As pasted into Vercel, with a stray space and line break.
+    process.env.TELEGRAM_BOT_TOKEN = " 123:abc\n";
+    process.env.TELEGRAM_CHAT_ID = "4567 ";
     await alertOwnerOnTelegram("id-1", r.application, false);
     assert.equal(calls.length, 1);
     assert.equal(calls[0].url, "https://api.telegram.org/bot123:abc/sendMessage");

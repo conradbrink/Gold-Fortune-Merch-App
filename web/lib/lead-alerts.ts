@@ -102,10 +102,13 @@ export function sheetRow(a: FoundingApplication, waitlist: boolean, at: Date): s
 
 const TIMEOUT_MS = 8000;
 
+/** A setting from Vercel, without the space or line break a pasted value can carry; "" when unset. */
+const setting = (name: string): string => process.env[name]?.trim() ?? "";
+
 /** Sends the owner a Telegram message about a new application, when their bot is set up. */
 export async function alertOwnerOnTelegram(id: string, a: FoundingApplication, waitlist: boolean): Promise<void> {
-  const token = process.env.TELEGRAM_BOT_TOKEN;
-  const chat = process.env.TELEGRAM_CHAT_ID;
+  const token = setting("TELEGRAM_BOT_TOKEN");
+  const chat = setting("TELEGRAM_CHAT_ID");
   if (!token || !chat) return;
   try {
     const res = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
@@ -127,8 +130,8 @@ export async function alertOwnerOnTelegram(id: string, a: FoundingApplication, w
 
 /** WhatsApps the owner about a new application, when CallMeBot is set up. */
 export async function alertOwnerOnWhatsapp(id: string, a: FoundingApplication, waitlist: boolean): Promise<void> {
-  const phone = process.env.CALLMEBOT_PHONE?.replace(/\D/g, "");
-  const key = process.env.CALLMEBOT_APIKEY;
+  const phone = setting("CALLMEBOT_PHONE").replace(/\D/g, "");
+  const key = setting("CALLMEBOT_APIKEY");
   if (!phone || !key) return;
   try {
     const url = new URL("https://api.callmebot.com/whatsapp.php");
@@ -144,8 +147,8 @@ export async function alertOwnerOnWhatsapp(id: string, a: FoundingApplication, w
 
 /** Adds the application to the owner's Google Sheet, when it is set up. */
 export async function addToLeadsSheet(id: string, a: FoundingApplication, waitlist: boolean, at: Date): Promise<void> {
-  const url = process.env.LEADS_SHEET_URL;
-  const secret = process.env.LEADS_SHEET_SECRET;
+  const url = setting("LEADS_SHEET_URL");
+  const secret = setting("LEADS_SHEET_SECRET");
   if (!url || !secret) return;
   try {
     const res = await fetch(url, {
