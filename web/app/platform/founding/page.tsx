@@ -1,7 +1,15 @@
 import Link from "next/link";
 import { requireOperator } from "@/lib/operator";
 import { listTemplates, platformAdminClient } from "@/lib/platform";
-import { HOW_RUN_LABEL, checkAttribution, describeAttribution, type HowRun } from "@/lib/founding";
+import {
+  HOW_RUN_LABEL,
+  ROLE_LABEL,
+  checkAttribution,
+  describeAttribution,
+  repsLabel,
+  type HowRun,
+  type Role,
+} from "@/lib/founding";
 import { linkFoundingApplication, setFoundingStatus } from "@/app/platform/actions";
 import { FOUNDING_STATUSES, FOUNDING_STATUS_LABEL, OUTCOME_RELATED_KIND } from "@/lib/founding-outcome";
 import { NativeSelect } from "@/components/ui/native-select";
@@ -32,8 +40,17 @@ const dateTime = new Intl.DateTimeFormat("en-GB", {
 });
 
 const yn = (b: boolean) => (b ? "Yes" : "No");
-// The answers the form stopped asking on 11 Oct 2026.
+// An answer the applicant's form didn't ask (the main page's form asks no role or consent).
 const notAsked = "not asked";
+
+function Answer({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <dt className="text-muted-foreground">{label}</dt>
+      <dd className="whitespace-pre-wrap">{value}</dd>
+    </div>
+  );
+}
 
 export default async function FoundingApplicationsPage({
   searchParams,
@@ -116,7 +133,20 @@ export default async function FoundingApplicationsPage({
                   {a.notified_at ? "" : " · email not sent"}
                 </p>
               </div>
+              {/* /founding's form, in its order (25 Oct 2026); then the answers
+                  older forms asked, only where the applicant gave one. */}
               <dl className="grid gap-x-6 gap-y-1 sm:grid-cols-2 lg:grid-cols-3">
+                <Answer label="Role" value={a.role ? (ROLE_LABEL[a.role as Role] ?? a.role) : notAsked} />
+                <Answer label="Reps" value={repsLabel(a.team_size)} />
+                <Answer label="What they distribute" value={a.distributes ?? notAsked} />
+                <div>
+                  <dt className="text-muted-foreground">WhatsApp</dt>
+                  <dd>
+                    <a className="underline" href={`https://wa.me/${a.whatsapp}`} target="_blank" rel="noreferrer">
+                      +{a.whatsapp}
+                    </a>
+                  </dd>
+                </div>
                 <div>
                   <dt className="text-muted-foreground">Email</dt>
                   <dd>
@@ -129,55 +159,24 @@ export default async function FoundingApplicationsPage({
                     )}
                   </dd>
                 </div>
-                <div>
-                  <dt className="text-muted-foreground">WhatsApp</dt>
-                  <dd>
-                    <a className="underline" href={`https://wa.me/${a.whatsapp}`} target="_blank" rel="noreferrer">
-                      +{a.whatsapp}
-                    </a>
-                  </dd>
-                </div>
-                <div>
-                  <dt className="text-muted-foreground">Type of work</dt>
-                  <dd>{a.trade ? trade(a.trade) : notAsked}</dd>
-                </div>
-                <div>
-                  <dt className="text-muted-foreground">What they distribute</dt>
-                  <dd>{a.distributes ?? notAsked}</dd>
-                </div>
-                <div>
-                  <dt className="text-muted-foreground">Reps</dt>
-                  <dd>{a.team_size}</dd>
-                </div>
-                <div>
-                  <dt className="text-muted-foreground">Town or city</dt>
-                  <dd>{a.town ?? notAsked}</dd>
-                </div>
-                <div>
-                  <dt className="text-muted-foreground">Runs jobs on</dt>
-                  <dd>{a.how_run ? (HOW_RUN_LABEL[a.how_run as HowRun] ?? a.how_run) : notAsked}</dd>
-                </div>
-                <div>
-                  <dt className="text-muted-foreground">Came from</dt>
-                  <dd>{a.source ?? "not known"}</dd>
-                </div>
-                <div>
-                  <dt className="text-muted-foreground">How they found us</dt>
-                  <dd>{describeAttribution(checkAttribution(a.attribution)) ?? "not known"}</dd>
-                </div>
-                <div>
-                  <dt className="text-muted-foreground">Whole team, every workday</dt>
-                  <dd>{a.whole_team === null ? notAsked : yn(a.whole_team)}</dd>
-                </div>
-                <div>
-                  <dt className="text-muted-foreground">Video and Google review</dt>
-                  <dd>{a.video_review === null ? notAsked : yn(a.video_review)}</dd>
-                </div>
+                <Answer
+                  label="Agreed to be contacted"
+                  value={a.contact_consent_at ? `Yes, ${dateTime.format(new Date(a.contact_consent_at))}` : notAsked}
+                />
+                <Answer label="How they found us" value={describeAttribution(checkAttribution(a.attribution)) ?? "not known"} />
+                {a.source && <Answer label="Came from" value={a.source} />}
+                {a.trade && a.trade !== "distribution" && <Answer label="Type of work" value={trade(a.trade)} />}
+                {a.town && <Answer label="Town or city" value={a.town} />}
+                {a.how_run && <Answer label="Runs jobs on" value={HOW_RUN_LABEL[a.how_run as HowRun] ?? a.how_run} />}
+                {a.whole_team !== null && <Answer label="Whole team, every workday" value={yn(a.whole_team)} />}
+                {a.video_review !== null && <Answer label="Video and Google review" value={yn(a.video_review)} />}
               </dl>
-              <p>
-                <span className="text-muted-foreground">Costs them the most: </span>
-                <span className="whitespace-pre-wrap">{a.biggest_cost ?? notAsked}</span>
-              </p>
+              {a.biggest_cost && (
+                <p>
+                  <span className="text-muted-foreground">Costs them the most: </span>
+                  <span className="whitespace-pre-wrap">{a.biggest_cost}</span>
+                </p>
+              )}
               <form action={setFoundingStatus} className="flex flex-wrap items-center gap-2 border-t border-border pt-3">
                 <input type="hidden" name="applicationId" value={a.id} />
                 <label htmlFor={`status-${a.id}`} className="text-muted-foreground">

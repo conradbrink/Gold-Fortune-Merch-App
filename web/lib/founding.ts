@@ -35,6 +35,12 @@ export type TeamSize = (typeof TEAM_SIZES)[number];
 export const ROLES = ["owner", "sales_manager", "other"] as const;
 export type Role = (typeof ROLES)[number];
 
+/** A rep band as the form shows it: "3-5" reads "3 to 5", "31+" reads "More than 30". */
+export function repsLabel(band: string): string {
+  if (band === "31+") return "More than 30";
+  return band.replace("-", " to ");
+}
+
 export const ROLE_LABEL: Record<Role, string> = {
   owner: "Owner or MD",
   sales_manager: "Sales manager",
@@ -274,6 +280,8 @@ export function describeAttribution(a: Attribution | null | undefined): string |
   const via = [a.utm_source, a.utm_medium].filter(Boolean).join(" / ");
   if (via) parts.push(via);
   if (a.utm_campaign) parts.push(`campaign ${a.utm_campaign}`);
+  if (a.utm_term) parts.push(`ad set ${a.utm_term}`);
+  if (a.utm_content) parts.push(`ad ${a.utm_content}`);
   if (a.click_id) parts.push(`clicked from ${CLICK_LABEL[a.click_id]}`);
   if (a.referrer) parts.push(`sent by ${a.referrer}`);
   if (!via && !a.click_id && !a.referrer) parts.push("came straight to the site");
@@ -344,7 +352,7 @@ export function applicationEmail(
     ["Name", a.name],
     ["Business", a.business_name],
     ["What they distribute", a.distributes ?? notAsked],
-    ["Reps", a.team_size],
+    ["Reps", repsLabel(a.team_size)],
     ["Role", a.role ? ROLE_LABEL[a.role] : notAsked],
     ["WhatsApp", `+${a.whatsapp}`],
     ["Email", a.email ?? "(none given)"],

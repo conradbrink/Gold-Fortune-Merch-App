@@ -18,7 +18,7 @@
  */
 
 import { escapeHtml } from "@/lib/email/templates";
-import { describeAttribution, ROLE_LABEL, type FoundingApplication } from "@/lib/founding";
+import { describeAttribution, repsLabel, ROLE_LABEL, type FoundingApplication } from "@/lib/founding";
 import { FOUNDING_OFFER } from "@/lib/founding-offer";
 
 /** Who calls each lead (the site's `founding.caller`), for the first WhatsApp the card drafts. */
@@ -36,12 +36,6 @@ export function alertText(a: FoundingApplication, waitlist: boolean): string {
     `Answer: https://wa.me/${a.whatsapp}`,
   ];
   return lines.filter((l): l is string => l !== null).join("\n");
-}
-
-/** A rep band as the form shows it: "3-5" reads "3 to 5", "31+" reads "More than 30". */
-export function repsLabel(band: string): string {
-  if (band === "31+") return "More than 30";
-  return band.replace("-", " to ");
 }
 
 /** Where the lead came from, in one line: source, campaign, ad set and ad when the link carried them. */

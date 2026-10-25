@@ -198,7 +198,7 @@ test("the owner's email escapes what the visitor typed, lists every answer and l
   assert.ok(mail.html.includes("https://wa.me/27821234567"));
   assert.ok(mail.subject.startsWith("New Founding application: "));
   assert.ok(mail.subject.includes("Gaborone"));
-  for (const bit of ["+27821234567", "WhatsApp", "5-10", "Whole team", "video and Google review", "marketing"]) {
+  for (const bit of ["+27821234567", "WhatsApp", "Reps: 5 to 10", "Whole team", "video and Google review", "marketing"]) {
     assert.ok(mail.text.includes(bit), bit);
   }
   assert.ok(applicationEmail(ok.application, "Pools", true).subject.startsWith("Waiting list: "));
