@@ -2,8 +2,8 @@
 // the owner's Telegram or WhatsApp message and the row for their Google Sheet.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { applicationEmail, checkApplication, foundingIssues, inputFromBody, type FoundingInput } from "@/lib/founding";
-import { SHEET_HEADERS, alertOwnerOnTelegram, alertText, repsLabel, saTime, sheetRow, telegramCard } from "@/lib/lead-alerts";
+import { applicationEmail, checkApplication, foundingIssues, inputFromBody, repsLabel, type FoundingInput } from "@/lib/founding";
+import { SHEET_HEADERS, alertOwnerOnTelegram, alertText, saTime, sheetRow, telegramCard } from "@/lib/lead-alerts";
 
 const callForm: FoundingInput = {
   name: " Thandi Nkosi ",
@@ -75,7 +75,7 @@ test("the owner's message says who, how big, where from, and how to answer", () 
       "New Founding lead: Thandi Nkosi, Nkosi Snacks",
       "Reps: 3-5 · Owner or MD",
       "WhatsApp: +26771234567",
-      "From: meta, campaign distributors-oct, clicked from Facebook or Instagram",
+      "From: meta, campaign distributors-oct, ad H07, clicked from Facebook or Instagram",
       "Answer: https://wa.me/26771234567",
     ].join("\n")
   );

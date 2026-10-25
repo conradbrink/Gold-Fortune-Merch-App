@@ -47,11 +47,43 @@ test("the file has the header, a line per lead, and the trade's name", () => {
     (c) => (c === "cleaning" ? "Cleaning" : c),
   );
   const lines = csv.replace("﻿", "").trim().split("\r\n");
-  assert.equal(lines[0], "Name,Email,WhatsApp (with country code),Business,Type of work,Town or city,Status,Came from,Applied (UTC)");
-  assert.equal(lines[1], "Thandi Nkosi,thandi@example.com,27820000000,Nkosi Cleaning,Cleaning,Pretoria,new,,2026-10-10 08:15");
+  assert.equal(
+    lines[0],
+    "Name,Email,WhatsApp (with country code),Business,Type of work,Town or city,Status,Came from,Applied (UTC),Role,Reps,What they distribute,Agreed to be contacted,Campaign,Ad set,Ad"
+  );
+  assert.equal(lines[1], "Thandi Nkosi,thandi@example.com,27820000000,Nkosi Cleaning,Cleaning,Pretoria,new,,2026-10-10 08:15,,,,,,,");
   assert.ok(lines[2].startsWith("Old One,,27821111111,B,x,T,waitlist,facebook"));
 });
 
 test("a lone carriage return does not hide a formula", () => {
   assert.equal(csvCell("\r=1+1"), " =1+1");
+});
+
+test("a lead from /founding's form has its role, reps, products, consent and ad", () => {
+  const csv = leadsCsv(
+    [
+      {
+        created_at: "2026-10-25T12:26:40.000Z",
+        name: "Thandi Nkosi",
+        email: null,
+        whatsapp: "26771234567",
+        business_name: "Nkosi Snacks",
+        trade: "distribution",
+        town: null,
+        status: "new",
+        source: null,
+        role: "sales_manager",
+        team_size: "31+",
+        distributes: "Groceries, Liquor",
+        contact_consent_at: "2026-10-25T12:26:39.000Z",
+        attribution: { utm_source: "meta", utm_campaign: "distributors-oct", utm_term: "Broad SA", utm_content: "H07" },
+      },
+    ],
+    (c) => (c === "distribution" ? "Distributor" : c),
+  );
+  const line = csv.replace("\ufeff", "").trim().split("\r\n")[1];
+  assert.equal(
+    line,
+    'Thandi Nkosi,,26771234567,Nkosi Snacks,Distributor,,new,,2026-10-25 12:26,Sales manager,More than 30,"Groceries, Liquor",Yes,distributors-oct,Broad SA,H07'
+  );
 });

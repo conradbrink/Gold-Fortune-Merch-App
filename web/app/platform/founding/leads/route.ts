@@ -5,7 +5,8 @@ import { listTemplates, platformAdminClient } from "@/lib/platform";
 
 /**
  * Platform operator: every Founding application as a CSV file (name, email,
- * WhatsApp, business and where they came from). Same gate as the page: an
+ * WhatsApp, business, where they came from, and /founding's role, reps, what
+ * they distribute, consent and ad). Same gate as the page: an
  * operator session, and a 404 for anyone else.
  */
 
@@ -19,7 +20,9 @@ export async function GET() {
   const [{ data, error: listError }, templates] = await Promise.all([
     platformAdminClient()
       .from("founding_applications")
-      .select("created_at, name, email, whatsapp, business_name, trade, town, status, source")
+      .select(
+        "created_at, name, email, whatsapp, business_name, trade, town, status, source, role, team_size, distributes, contact_consent_at, attribution"
+      )
       .order("created_at", { ascending: false }),
     listTemplates().catch(() => []),
   ]);
