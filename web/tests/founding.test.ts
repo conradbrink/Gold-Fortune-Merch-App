@@ -177,6 +177,15 @@ test("only the sales site may call from a browser; localhost only outside produc
   assert.equal(corsOrigin("http://localhost:3100", true), null);
   assert.equal(corsOrigin("http://localhost:3100", false), "http://localhost:3100");
   assert.equal(corsOrigin(null, true), null);
+  // The site's own Vercel previews, for testing the form before it goes live.
+  assert.equal(
+    corsOrigin("https://tickd-site-git-founding-form-first-gold-fortune1.vercel.app", true),
+    "https://tickd-site-git-founding-form-first-gold-fortune1.vercel.app"
+  );
+  assert.equal(corsOrigin("https://tickd-site-abc123-gold-fortune1.vercel.app", true), "https://tickd-site-abc123-gold-fortune1.vercel.app");
+  assert.equal(corsOrigin("https://tickd-site-x-gold-fortune1.vercel.app.evil.example", true), null);
+  assert.equal(corsOrigin("https://tickd-site-x-someone-else.vercel.app", true), null);
+  assert.equal(corsOrigin("http://tickd-site-x-gold-fortune1.vercel.app", true), null);
 });
 
 test("the owner's email escapes what the visitor typed, lists every answer and links to WhatsApp", () => {
