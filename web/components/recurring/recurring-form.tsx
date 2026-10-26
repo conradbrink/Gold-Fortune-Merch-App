@@ -92,6 +92,8 @@ export function RecurringForm({
     }))
   );
   const [productQuery, setProductQuery] = useState("");
+  // The product list shows while the box has focus: away or Escape closes it, as the store search does.
+  const [productOpen, setProductOpen] = useState(false);
   const [storeFilter, setStoreFilter] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -283,7 +285,8 @@ export function RecurringForm({
         </CardContent>
       </Card>
 
-      <Card>
+      {/* overflow-visible: the search list below hangs past the card, which would otherwise cut it off. */}
+      <Card className="overflow-visible">
         <CardHeader>
           <CardTitle className="text-base">Products</CardTitle>
         </CardHeader>
@@ -292,8 +295,15 @@ export function RecurringForm({
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <Input
               value={productQuery}
-              onChange={(e) => setProductQuery(e.target.value)}
+              onChange={(e) => {
+                setProductQuery(e.target.value);
+                setProductOpen(true);
+              }}
+              onFocus={() => setProductOpen(true)}
+              // Delayed, as for the store: on touch screens blur can land before the tap.
+              onBlur={() => setTimeout(() => setProductOpen(false), 150)}
               onKeyDown={(e) => {
+                if (e.key === "Escape") setProductOpen(false);
                 if (e.key === "Enter" && productMatches[0]) {
                   e.preventDefault();
                   add(productMatches[0]);
@@ -303,8 +313,12 @@ export function RecurringForm({
               aria-label="Search products"
               className="pl-9"
             />
-            {productQuery.trim() && (
-              <div className="absolute z-10 mt-1 max-h-64 w-full overflow-y-auto rounded-lg border border-border bg-card shadow-md">
+            {productOpen && productQuery.trim() && (
+              <div
+                className="absolute z-10 mt-1 max-h-64 w-full overflow-y-auto rounded-lg border border-border bg-card shadow-md"
+                // Keeps the focus in the box, so a click on a match or the scrollbar does not close the list.
+                onMouseDown={(e) => e.preventDefault()}
+              >
                 {productMatches.map((p) => (
                   <button key={p.id} type="button" className="flex w-full justify-between gap-3 px-3 py-2 text-left text-sm hover:bg-muted" onClick={() => add(p)}>
                     <span className="truncate">{p.name}</span>
