@@ -7,7 +7,7 @@ import { Clock } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { useCompanyConfig, useTerms } from "@/lib/use-company-config";
 import { moduleEnabled } from "@/lib/modules";
-import { trialState } from "@/lib/onboarding";
+import { pilotState, type PilotAccount } from "@/lib/onboarding";
 import {
   nextStep,
   openingStep,
@@ -54,7 +54,7 @@ export default function OnboardingPage() {
   const [setup, setSetup] = useState<Setup | null>(null);
   const [org, setOrg] = useState<Org | null>(null);
   const [ownerEmail, setOwnerEmail] = useState("");
-  const [trialEndsAt, setTrialEndsAt] = useState<string | null>(null);
+  const [pilot, setPilot] = useState<PilotAccount | null>(null);
   const [step, setStep] = useState<SetupStep | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -63,7 +63,7 @@ export default function OnboardingPage() {
     const [s, user, account] = await Promise.all([
       supabase.rpc("my_setup"),
       supabase.auth.getUser(),
-      supabase.from("company_account").select("trial_ends_at").maybeSingle(),
+      supabase.from("company_account").select("status, trial_ends_at").maybeSingle(),
     ]);
     if (s.error) throw new Error(s.error.message);
     const { data: profile, error: pe } = await supabase
@@ -78,7 +78,7 @@ export default function OnboardingPage() {
     setSetup(parsed);
     setOrg(row as Org);
     setOwnerEmail(user.data.user?.email ?? "");
-    setTrialEndsAt(account.data?.trial_ends_at ?? null);
+    setPilot(account.data ?? null);
     return parsed;
   }, []);
 
@@ -130,7 +130,7 @@ export default function OnboardingPage() {
   const labels = Object.fromEntries(
     SETUP_STEPS.map((s) => [s, stepText(s, t, { products, trade }).label])
   ) as Record<SetupStep, string>;
-  const trial = trialState(trialEndsAt);
+  const trial = pilotState(pilot);
 
   if (error) {
     return (

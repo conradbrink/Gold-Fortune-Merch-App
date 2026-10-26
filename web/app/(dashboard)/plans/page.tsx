@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { salesContact } from "@/lib/platform";
-import { trialState } from "@/lib/onboarding";
+import { onOrPastPilot, pilotState } from "@/lib/onboarding";
 import { SELF_SERVE_SIGNUP_OPEN } from "@/lib/signup";
 import { parseCompanyConfig } from "@/lib/company-config";
 import { DEFAULT_TERMS } from "@/lib/terms";
@@ -18,9 +18,9 @@ import { paystackConfig } from "@/lib/billing/paystack";
  * the plan up. The plans
  * are the site's three (lib/plans.ts), in the company's own word for its
  * people (its `staff` term: "Reps" for a distributor). The Founding price
- * shows to a distributor on, or past, its free pilot while self-serve sign-up
- * is closed, since the Founding application is then the only way onto a
- * pilot. Behind
+ * shows to a distributor on, or past, its free pilot that has not paid yet,
+ * while self-serve sign-up is closed, since the Founding application is then
+ * the only way onto a pilot. Behind
  * `company_settings` in the proxy's permission map.
  */
 
@@ -36,19 +36,19 @@ export default async function PlansPage() {
   if (!user) redirect("/login");
 
   const [{ data: account }, { data: org }, { count: reps, error: repsError }, { data: config }, contact] = await Promise.all([
-    supabase.from("company_account").select("trial_ends_at").maybeSingle(),
+    supabase.from("company_account").select("status, trial_ends_at, period_end").maybeSingle(),
     supabase.from("organizations").select("name, industries, timezone").maybeSingle(),
     supabase.from("profiles").select("id", { count: "exact", head: true }).eq("role", "rep").eq("is_active", true),
     supabase.rpc("my_company_config"),
     salesContact(),
   ]);
-  const trial = trialState(account?.trial_ends_at ?? null);
+  const trial = pilotState(account);
 
   return (
     <PlansView
       trial={trial}
       trialEndsAt={account?.trial_ends_at ?? null}
-      founding={!SELF_SERVE_SIGNUP_OPEN && trial.kind !== "none" && (org?.industries ?? []).includes("distribution")}
+      founding={!SELF_SERVE_SIGNUP_OPEN && onOrPastPilot(account) && (org?.industries ?? []).includes("distribution")}
       reps={repsError ? null : (reps ?? null)}
       terms={parseCompanyConfig(config)?.terms ?? DEFAULT_TERMS}
       company={org?.name ?? null}

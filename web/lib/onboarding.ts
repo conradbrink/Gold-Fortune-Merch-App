@@ -4,9 +4,10 @@ import { TERM_KEYS, type TermKey, type Terms } from "@/lib/terms";
  * The trial countdown and the getting-started list (Stage 5).
  *
  * Pure, so the dashboard cards and their tests share it. The facts come from
- * the database — `company_account.trial_ends_at` and `my_onboarding()` — and the
- * list's titles are data too (`onboarding_steps`), naming things through the
- * company's own words with tokens such as `{site.many|lower}`.
+ * the database — `company_account` (status and `trial_ends_at`) and
+ * `my_onboarding()` — and the list's titles are data too (`onboarding_steps`),
+ * naming things through the company's own words with tokens such as
+ * `{site.many|lower}`.
  */
 
 const TOKEN = /\{([a-z_]+)\.(one|many)(\|lower)?\}/g;
@@ -36,6 +37,8 @@ export type TrialState =
 /**
  * Days left are whole days rounded up, so a trial that ends this evening still
  * says "1 day left" until it has ended. "Ending" is the last three days.
+ * The date alone: a company's own screens use `pilotState`, which knows
+ * whether it has paid.
  */
 export function trialState(trialEndsAt: string | null | undefined, now: Date = new Date()): TrialState {
   if (!trialEndsAt) return { kind: "none" };
@@ -45,6 +48,31 @@ export function trialState(trialEndsAt: string | null | undefined, now: Date = n
   if (left <= 0) return { kind: "ended" };
   const daysLeft = Math.ceil(left / DAY_MS);
   return daysLeft <= 3 ? { kind: "ending", daysLeft } : { kind: "active", daysLeft };
+}
+
+/** The `company_account` columns the pilot banner needs. */
+export type PilotAccount = { status: string; trial_ends_at: string | null };
+
+/**
+ * The pilot banner for a company's own screens: the countdown only while the
+ * account is on its pilot (status 'trial'). Paying leaves `trial_ends_at` as
+ * it was, so the date alone would tell a company that has paid that its pilot
+ * has ended. A read-only or failed-payment account has the layout's own line
+ * (`accountNotice` in lib/billing).
+ */
+export function pilotState(account: PilotAccount | null | undefined, now: Date = new Date()): TrialState {
+  return account?.status === "trial" ? trialState(account.trial_ends_at, now) : { kind: "none" };
+}
+
+/**
+ * On its pilot, or past it without having paid: who the Founding price is
+ * for. An ended pilot stays 'trial' while `trial_end_read_only` is off; with
+ * it on, the account is locked with no paid period behind it, as
+ * `accountNotice` in lib/billing reads it. A company that has paid is neither.
+ */
+export function onOrPastPilot(account: (PilotAccount & { period_end: string | null }) | null | undefined): boolean {
+  if (account?.status === "trial") return pilotState(account).kind !== "none";
+  return account?.status === "read_only" && !!account.trial_ends_at && !account.period_end;
 }
 
 export type OnboardingStep = { code: string; title: string; description: string; href: string; done: boolean };

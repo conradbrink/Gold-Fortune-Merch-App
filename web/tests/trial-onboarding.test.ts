@@ -4,7 +4,7 @@
 // half is supabase/tests/trial_onboarding.sql.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { fillTermTokens, parseOnboarding, showOnboarding, trialState } from "@/lib/onboarding";
+import { fillTermTokens, onOrPastPilot, parseOnboarding, pilotState, showOnboarding, trialState } from "@/lib/onboarding";
 import {
   clientAddress,
   industryFromQuery,
@@ -47,6 +47,41 @@ test("the trial counts down in whole days, warns in the last three, then ends", 
   assert.deepEqual(trialState(inDays(0.4), now), { kind: "ending", daysLeft: 1 });
   assert.deepEqual(trialState(inDays(0), now), { kind: "ended" });
   assert.deepEqual(trialState(inDays(-2), now), { kind: "ended" });
+});
+
+test("the pilot banner shows only while the account is on its pilot, not after it has paid", () => {
+  const now = new Date("2026-10-26T09:00:00Z");
+  const inDays = (d: number) => new Date(now.getTime() + d * 86_400_000).toISOString();
+  // On the pilot: the date decides, ended included (an ended pilot stays 'trial' while trial_end_read_only is off).
+  assert.deepEqual(pilotState({ status: "trial", trial_ends_at: inDays(10) }, now), { kind: "active", daysLeft: 10 });
+  assert.deepEqual(pilotState({ status: "trial", trial_ends_at: inDays(-2) }, now), { kind: "ended" });
+  // Paid after the pilot ended: paying leaves trial_ends_at behind, and the banner must not say "ended".
+  assert.deepEqual(pilotState({ status: "active", trial_ends_at: inDays(-2) }, now), { kind: "none" });
+  // Paid before the pilot ended: no countdown either.
+  assert.deepEqual(pilotState({ status: "active", trial_ends_at: inDays(5) }, now), { kind: "none" });
+  // Locked or a failed payment: the layout's own line speaks instead.
+  assert.deepEqual(pilotState({ status: "read_only", trial_ends_at: inDays(-2) }, now), { kind: "none" });
+  assert.deepEqual(pilotState({ status: "past_due", trial_ends_at: inDays(-40) }, now), { kind: "none" });
+  // Gold Fortune (exempt), a 'trial' row with no date (close_company makes those), and no account row at all.
+  assert.deepEqual(pilotState({ status: "exempt", trial_ends_at: null }, now), { kind: "none" });
+  assert.deepEqual(pilotState({ status: "trial", trial_ends_at: null }, now), { kind: "none" });
+  assert.deepEqual(pilotState(null, now), { kind: "none" });
+});
+
+test("the Founding price is for a company on, or past, its pilot that has not paid", () => {
+  const past = "2026-10-24T09:00:00Z";
+  assert.equal(onOrPastPilot({ status: "trial", trial_ends_at: "2026-11-30T09:00:00Z", period_end: null }), true);
+  assert.equal(onOrPastPilot({ status: "trial", trial_ends_at: past, period_end: null }), true);
+  // Locked when the pilot ran out (trial_end_read_only on), never having paid.
+  assert.equal(onOrPastPilot({ status: "read_only", trial_ends_at: past, period_end: null }), true);
+  // Paid: active, behind on a payment, or locked after a paid period lapsed.
+  assert.equal(onOrPastPilot({ status: "active", trial_ends_at: past, period_end: "2026-11-24T09:00:00Z" }), false);
+  assert.equal(onOrPastPilot({ status: "past_due", trial_ends_at: past, period_end: "2026-10-25T09:00:00Z" }), false);
+  assert.equal(onOrPastPilot({ status: "read_only", trial_ends_at: past, period_end: "2026-10-25T09:00:00Z" }), false);
+  // Never on a pilot.
+  assert.equal(onOrPastPilot({ status: "exempt", trial_ends_at: null, period_end: null }), false);
+  assert.equal(onOrPastPilot({ status: "trial", trial_ends_at: null, period_end: null }), false);
+  assert.equal(onOrPastPilot(null), false);
 });
 
 test("my_onboarding() is read field by field; the card shows only while there is something to do", () => {
