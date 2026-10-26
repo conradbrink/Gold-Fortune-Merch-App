@@ -8968,6 +8968,8 @@ export type Database = {
           last_activity_at: string | null
           last_sign_in_at: string | null
           trial_ends_at: string | null
+          account_status: string | null
+          period_end: string | null
           contact_name: string | null
           contact_email: string | null
           contact_phone: string | null

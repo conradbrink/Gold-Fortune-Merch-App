@@ -4,7 +4,7 @@ import { createClient as createAdminClient } from "@supabase/supabase-js";
 import { supabaseFetch } from "@/lib/supabase/fetch";
 import type { Database, Json } from "@/lib/supabase/types";
 import { toPlatformUsers, type LoginRow, type PlatformUser } from "@/lib/platform-users";
-import { CONTROL_CENTRE_SETTINGS, RECORD_FIELDS, type RecordField } from "@/lib/control-centre";
+import { CONTROL_CENTRE_SETTINGS, RECORD_FIELDS, type OperatorAccount, type RecordField } from "@/lib/control-centre";
 
 /**
  * The platform operator's view: every company on the service.
@@ -496,15 +496,19 @@ export async function salesContact(): Promise<SalesContact> {
   return { email: text(email), whatsapp: text(whatsapp) };
 }
 
-/** A company's trial end, or null when it is not on a trial. */
-export async function companyTrialEnd(orgId: string): Promise<string | null> {
+/**
+ * A company's account as the pilot line on its page reads it
+ * (`pilotStanding`), or null when it has no account row. Its status, not
+ * the trial date alone: paying leaves the date as it was.
+ */
+export async function companyPilotAccount(orgId: string): Promise<OperatorAccount | null> {
   const { data, error } = await platformAdminClient()
     .from("company_account")
-    .select("trial_ends_at")
+    .select("status, trial_ends_at, period, period_end")
     .eq("org_id", orgId)
     .maybeSingle();
   if (error) throw error;
-  return data?.trial_ends_at ?? null;
+  return data ?? null;
 }
 
 /**

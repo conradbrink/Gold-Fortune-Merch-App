@@ -131,7 +131,8 @@ async function applicationsIn(period: Period): Promise<ApplicationRow[]> {
  * Companies whose free period began in the period. It begins either when a
  * sign-up's company is made with a trial (its company_account row is created
  * with trial_ends_at), or when the operator first gives one ("trial.extend"
- * with no previous end, platform_audit_log). Each company counts once.
+ * with no previous end, or "billing.unexempt": a company free by arrangement
+ * put on a pilot; platform_audit_log). Each company counts once.
  */
 async function freePeriodsStartedIn(period: Period): Promise<number> {
   const admin = platformAdminClient();
@@ -146,7 +147,7 @@ async function freePeriodsStartedIn(period: Period): Promise<number> {
     admin
       .from("platform_audit_log")
       .select("target_org_id")
-      .eq("action", "trial.extend")
+      .in("action", ["trial.extend", "billing.unexempt"])
       .is("detail->>from", null)
       .gte("created_at", period.from)
       .lt("created_at", period.to)

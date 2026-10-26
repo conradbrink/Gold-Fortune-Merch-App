@@ -1,4 +1,5 @@
 import { CONTROL_CENTRE_OWNER_SETTINGS, TICKD_RULES } from "@/lib/settings-tabs";
+import { trialState } from "@/lib/onboarding";
 
 /**
  * The Control Centre's half of a company's set-up (owner, 22 Oct 2026): what
@@ -177,4 +178,69 @@ export function parseCompanyRecord(form: (key: RecordField) => string): { update
       default_visit_frequency: frequency,
     },
   };
+}
+
+/** The `company_account` columns the company page's pilot line reads. */
+export type OperatorAccount = {
+  status: string;
+  trial_ends_at: string | null;
+  period: string | null;
+  period_end: string | null;
+};
+
+/**
+ * Where a company stands with its free pilot, for the operator's company
+ * page, and which button it gets:
+ *   extend  on its pilot, or locked after it without paying: more days, and
+ *           back on its pilot (`billing_operator_extend_trial`)
+ *   start   free by arrangement (exempt, or no account row yet): a pilot of
+ *           that many days (`billing_operator_set_exempt`, off)
+ *   null    it has paid for a plan, or is closed: nothing to extend
+ * Paying leaves `trial_ends_at` as it was, so the status decides, as
+ * `pilotState` does on the company's own screens. "Paid" is what the
+ * database's own check refuses: active, past_due or cancelled, or a plan
+ * period behind it.
+ */
+export type PilotStanding = { text: string; button: "extend" | "start" | null };
+
+const pilotDate = new Intl.DateTimeFormat("en-GB", {
+  day: "numeric",
+  month: "short",
+  year: "numeric",
+  hour: "2-digit",
+  minute: "2-digit",
+  timeZone: "UTC",
+});
+const when = (iso: string) => `${pilotDate.format(new Date(iso))} UTC`;
+
+export function pilotStanding(account: OperatorAccount | null, closed: boolean, now: Date): PilotStanding {
+  if (closed) return { text: "Closed, so its pilot can't be changed.", button: null };
+  if (!account || account.status === "exempt") {
+    return { text: "Free by arrangement: not on a pilot and not paying.", button: "start" };
+  }
+  const paid = ["active", "past_due", "cancelled"].includes(account.status) || account.period !== null;
+  if (paid) {
+    const until = account.period_end ? ` (paid up to ${when(account.period_end)})` : "";
+    if (account.status === "active") return { text: `Paying${until}.`, button: null };
+    if (account.status === "past_due") return { text: `Paying, but the last payment didn't go through${until}.`, button: null };
+    if (account.status === "cancelled") return { text: `Cancelled its plan${until}.`, button: null };
+    if (account.status === "read_only") return { text: `Read-only: its plan wasn't paid${until}.`, button: null };
+    return { text: `Has had a paid plan${until}.`, button: null };
+  }
+  if (account.status === "read_only") {
+    return {
+      text: account.trial_ends_at
+        ? `Read-only since its free pilot ended ${when(account.trial_ends_at)}, and it hasn't paid. Extending unlocks it.`
+        : "Read-only, and it hasn't paid. Extending unlocks it.",
+      button: "extend",
+    };
+  }
+  if (account.status !== "trial") return { text: `Account status: ${account.status}.`, button: null };
+  const trial = trialState(account.trial_ends_at, now);
+  if (trial.kind === "none") return { text: "On a free pilot with no end date.", button: "extend" };
+  if (trial.kind === "ended") {
+    return { text: `Free pilot ended ${when(account.trial_ends_at!)}, and it hasn't paid yet.`, button: "extend" };
+  }
+  const left = `${trial.daysLeft} ${trial.daysLeft === 1 ? "day" : "days"} left`;
+  return { text: `Free pilot ends ${when(account.trial_ends_at!)} (${left}).`, button: "extend" };
 }
