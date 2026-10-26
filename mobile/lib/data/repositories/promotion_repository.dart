@@ -116,11 +116,12 @@ class PromotionRepository {
   }) async {
     final answers = <String, PromotionAnswer>{};
 
-    // Read before the server as well as after it. With signal a tap syncs in
-    // about a second, so its entry can leave the outbox while the request
-    // below is out and be answered by a server that had not stored it yet.
-    // Read only afterwards, that answer was in neither place.
-    final queuedBefore = await _db.pendingEntries(limit: 1000);
+    // Read before the server, not after it. With signal a tap syncs in about
+    // a second, so its entry can leave the outbox while the request below is
+    // out and be answered by a server that had not stored it yet. Read only
+    // afterwards, that answer was in neither place. An answer given while the
+    // request is out is not lost either: every tap refetches.
+    final queued = await _db.pendingEntries(limit: 1000);
 
     try {
       // The visit's client id comes along so a synced answer can still be
@@ -143,20 +144,22 @@ class PromotionRepository {
         // visit is someone else's and not readable here. Either way it is
         // not an answer given on this visit.
         final visit = r['visits'] as Map<String, dynamic>?;
+        final thisVisit =
+            visit?['client_generated_id'] == visitClientGeneratedId;
         // Ordered newest first, so the first one wins and later rows are the
-        // history behind it.
-        answers.putIfAbsent(
-          k,
-          () => PromotionAnswer(
-            promotionId: r['promotion_id'] as String,
-            productId: r['product_id'] as String,
-            status: r['status'] as String,
-            checkedAt: r['checked_at'] != null
-                ? DateTime.parse(r['checked_at'] as String).toLocal()
-                : null,
-            thisVisit:
-                visit?['client_generated_id'] == visitClientGeneratedId,
-          ),
+        // history behind it — except that this visit's own answer beats a
+        // newer one from another visit. A supervisor on a joint call who
+        // answers the same line has not answered it for the rep.
+        final seen = answers[k];
+        if (seen != null && (seen.thisVisit || !thisVisit)) continue;
+        answers[k] = PromotionAnswer(
+          promotionId: r['promotion_id'] as String,
+          productId: r['product_id'] as String,
+          status: r['status'] as String,
+          checkedAt: r['checked_at'] != null
+              ? DateTime.parse(r['checked_at'] as String).toLocal()
+              : null,
+          thisVisit: thisVisit,
         );
       }
     } catch (_) {
@@ -164,12 +167,6 @@ class PromotionRepository {
     }
 
     // Pending entries always win — they are newer than anything on the server.
-    // In queue order, so a re-tap still supersedes the tap before it.
-    final queued = {
-      for (final e in [...queuedBefore, ...await _db.pendingEntries(limit: 1000)])
-        e.id: e,
-    }.values.toList()
-      ..sort((a, b) => a.id.compareTo(b.id));
     for (final entry in queued) {
       if (entry.entityType != OutboxType.promotionCheck) continue;
       final data = jsonDecode(entry.payload) as Map<String, dynamic>;

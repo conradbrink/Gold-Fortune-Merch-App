@@ -40,6 +40,8 @@ class Harness {
     trail = WorkdayTrail(
       currentMode: () async {
         modeReads++;
+        await modeGate?.future;
+        if (modeFails) throw StateError('channel');
         return mode;
       },
       openStream: (_) {
@@ -66,6 +68,12 @@ class Harness {
   final Completer<void>? cancelGate;
   AppLifecycleState? lifecycle;
   LocationTrackingMode mode;
+
+  /// Holds the next grant read open, as a slow platform channel would.
+  Completer<void>? modeGate;
+
+  /// Makes the next grant read fail, as a channel error would.
+  bool modeFails = false;
   DateTime now = DateTime(2026, 9, 18, 8, 0);
   StreamController<Position>? controller;
   int opened = 0;
@@ -305,6 +313,50 @@ void main() {
 
       expect(h.modeReads, reads);
       expect(h.opened, 1);
+    });
+
+    test('location switched off is reported, not restarted', () async {
+      final h = Harness(mode: LocationTrackingMode.foregroundOnly)..attach();
+      await h.trail.ensureRunning(reason: 'start');
+
+      await h.background();
+      h.mode = LocationTrackingMode.unavailable;
+      await h.foreground();
+
+      expect(h.trail.mode, LocationTrackingMode.unavailable);
+      // The open stream is kept: it resumes when location comes back.
+      expect(h.trail.isRunning, isTrue);
+      expect(h.opened, 1);
+      expect(h.cancelled, 0);
+    });
+
+    test('a day ended while the grant is being read stays ended', () async {
+      final h = Harness(mode: LocationTrackingMode.foregroundOnly)..attach();
+      await h.trail.ensureRunning(reason: 'start');
+
+      await h.background();
+      h.mode = LocationTrackingMode.background;
+      h.modeGate = Completer<void>();
+      await h.foreground();
+      await h.trail.stop(reason: 'end');
+      h.modeGate!.complete();
+      await Future<void>.delayed(Duration.zero);
+
+      expect(h.trail.isRunning, isFalse);
+      expect(h.opened, 1);
+    });
+
+    test('a grant that cannot be read leaves the trail alone', () async {
+      final h = Harness(mode: LocationTrackingMode.foregroundOnly)..attach();
+      await h.trail.ensureRunning(reason: 'start');
+      h.modeFails = true;
+
+      await h.background();
+      await h.foreground();
+
+      expect(h.trail.isRunning, isTrue);
+      expect(h.opened, 1);
+      expect(h.cancelled, 0);
     });
 
     test('a stop that lands during a start wins', () async {

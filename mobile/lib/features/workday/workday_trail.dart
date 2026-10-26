@@ -177,15 +177,17 @@ class WorkdayTrail {
     // time" went unnoticed and the banner kept saying it only records while
     // the app is open. Only asked below `background`: a downgrade from it
     // leaves the running service recording, and restarting would lose that.
-    if (_mode != LocationTrackingMode.background) {
+    // Only on `resumed`, which coming back from settings always ends with,
+    // so pulling down the notification shade does not ask every time.
+    if (state == AppLifecycleState.resumed &&
+        _mode != LocationTrackingMode.background) {
       _recheckingMode ??= _restartIfModeChanged().whenComplete(
         () => _recheckingMode = null,
       );
     }
   }
 
-  /// The re-read in flight, so the `inactive` and `resumed` that arrive
-  /// together on the way back from settings ask once, not twice.
+  /// The re-read in flight, so two resumes close together ask once.
   Future<void>? _recheckingMode;
 
   /// Restarts the trail when the grant is not what it was opened with. A
@@ -203,6 +205,13 @@ class WorkdayTrail {
     // A stop, or a start that will read the grant for itself, may have
     // landed while that read was out.
     if (mode == _mode || !_wanted || _sub == null) return;
+    // Location switched off is reported, not restarted: there is no stream
+    // to open for it, and the one running comes back by itself when it is
+    // switched on again (see `cancelOnError` in [_start]).
+    if (mode == LocationTrackingMode.unavailable) {
+      _setMode(mode);
+      return;
+    }
     await restart(reason: 'resume-mode-changed');
   }
 

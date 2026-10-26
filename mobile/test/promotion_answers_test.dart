@@ -121,6 +121,20 @@ void main() {
     expect(answers[PromotionAnswer.key('promo-1', 'prod-2')]?.thisVisit, isFalse);
   });
 
+  test('a newer answer from another visit does not hide this one', () async {
+    // A supervisor on a joint call answers the same line two minutes later.
+    // That is their record; the rep has still answered it on this visit.
+    final answers = await repoOver([
+      {...check('prod-1', visit: 'visit-supervisor'), 'status': 'not_running'},
+      check('prod-1', visit: 'visit-now'),
+      check('prod-1', visit: 'visit-before'),
+    ]).answersForStore(storeId: 'store-1', visitClientGeneratedId: 'visit-now');
+
+    final answer = answers[PromotionAnswer.key('promo-1', 'prod-1')];
+    expect(answer?.thisVisit, isTrue);
+    expect(answer?.status, 'running');
+  });
+
   test('an answer that syncs while the server is being asked is kept', () async {
     // The tap's entry drains while the request is out, and the server read
     // was taken before the insert landed: it is in neither the reply nor,
