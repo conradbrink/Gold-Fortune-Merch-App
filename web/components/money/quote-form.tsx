@@ -137,6 +137,8 @@ export function QuoteForm({ quoteId }: { quoteId?: string }) {
   const [productLines, setProductLines] = useState<ProductLine[]>([]);
   const [lines, setLines] = useState<EditableLine[]>([]);
   const [productQuery, setProductQuery] = useState("");
+  // The product list shows while the box has focus: away or Escape closes it, as the store search does.
+  const [productOpen, setProductOpen] = useState(false);
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -396,7 +398,8 @@ export function QuoteForm({ quoteId }: { quoteId?: string }) {
 
       <ErrorBanner message={error} />
 
-      <Card>
+      {/* overflow-visible: the search list below hangs past the card, which would otherwise cut it off. */}
+      <Card className="overflow-visible">
         <CardHeader>
           <CardTitle className="text-base">{t.client.one}</CardTitle>
         </CardHeader>
@@ -457,8 +460,9 @@ export function QuoteForm({ quoteId }: { quoteId?: string }) {
         </CardContent>
       </Card>
 
+      {/* overflow-visible: the search list below hangs past the card, which would otherwise cut it off. */}
       {showProducts && (
-        <Card>
+        <Card className="overflow-visible">
           <CardHeader>
             <CardTitle className="text-base">Products</CardTitle>
           </CardHeader>
@@ -468,8 +472,15 @@ export function QuoteForm({ quoteId }: { quoteId?: string }) {
                 <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                 <Input
                   value={productQuery}
-                  onChange={(e) => setProductQuery(e.target.value)}
+                  onChange={(e) => {
+                    setProductQuery(e.target.value);
+                    setProductOpen(true);
+                  }}
+                  onFocus={() => setProductOpen(true)}
+                  // Delayed, as for the store: on touch screens blur can land before the tap.
+                  onBlur={() => setTimeout(() => setProductOpen(false), 150)}
                   onKeyDown={(e) => {
+                    if (e.key === "Escape") setProductOpen(false);
                     if (e.key === "Enter" && productMatches[0]) {
                       e.preventDefault();
                       addProduct(productMatches[0]);
@@ -480,8 +491,12 @@ export function QuoteForm({ quoteId }: { quoteId?: string }) {
                   className="pl-9"
                   disabled={loading}
                 />
-                {productQuery.trim() && (
-                  <div className="absolute z-10 mt-1 max-h-64 w-full overflow-y-auto rounded-lg border border-border bg-card shadow-md">
+                {productOpen && productQuery.trim() && (
+                  <div
+                    className="absolute z-10 mt-1 max-h-64 w-full overflow-y-auto rounded-lg border border-border bg-card shadow-md"
+                    // Keeps the focus in the box, so a click on a match or the scrollbar does not close the list.
+                    onMouseDown={(e) => e.preventDefault()}
+                  >
                     {productMatches.map((p) => (
                       <button
                         key={p.id}

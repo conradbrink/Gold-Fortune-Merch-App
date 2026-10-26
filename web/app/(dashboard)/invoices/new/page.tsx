@@ -415,7 +415,8 @@ export default function NewInvoicePage() {
 
       {source === "direct" && (
         <>
-          <Card>
+          {/* overflow-visible: the search list below hangs past the card, which would otherwise cut it off. */}
+          <Card className="overflow-visible">
             <CardHeader>
               <CardTitle className="text-base">{t.client.one}</CardTitle>
             </CardHeader>
