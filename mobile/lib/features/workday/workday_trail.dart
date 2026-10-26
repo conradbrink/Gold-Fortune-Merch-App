@@ -170,7 +170,40 @@ class WorkdayTrail {
           stallAfter: pingInterval * 2,
         )) {
       unawaited(restart(reason: 'resume-stalled'));
+      return;
     }
+    // A rep the banner sent to settings comes back through here. Nothing else
+    // reads the grant again while the trail is healthy, so "Allow all the
+    // time" went unnoticed and the banner kept saying it only records while
+    // the app is open. Only asked below `background`: a downgrade from it
+    // leaves the running service recording, and restarting would lose that.
+    if (_mode != LocationTrackingMode.background) {
+      _recheckingMode ??= _restartIfModeChanged().whenComplete(
+        () => _recheckingMode = null,
+      );
+    }
+  }
+
+  /// The re-read in flight, so the `inactive` and `resumed` that arrive
+  /// together on the way back from settings ask once, not twice.
+  Future<void>? _recheckingMode;
+
+  /// Restarts the trail when the grant is not what it was opened with. A
+  /// restart, not just a new mode: the stream for "all the time" is the one
+  /// with the foreground service, so the old subscription cannot become it.
+  Future<void> _restartIfModeChanged() async {
+    final LocationTrackingMode mode;
+    try {
+      mode = await _currentMode();
+    } catch (_) {
+      // Not knowing is no reason to touch a running trail; the next resume
+      // asks again.
+      return;
+    }
+    // A stop, or a start that will read the grant for itself, may have
+    // landed while that read was out.
+    if (mode == _mode || !_wanted || _sub == null) return;
+    await restart(reason: 'resume-mode-changed');
   }
 
   Future<void> _start(String reason) async {

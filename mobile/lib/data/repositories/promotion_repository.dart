@@ -116,16 +116,33 @@ class PromotionRepository {
   }) async {
     final answers = <String, PromotionAnswer>{};
 
+    // Read before the server as well as after it. With signal a tap syncs in
+    // about a second, so its entry can leave the outbox while the request
+    // below is out and be answered by a server that had not stored it yet.
+    // Read only afterwards, that answer was in neither place.
+    final queuedBefore = await _db.pendingEntries(limit: 1000);
+
     try {
+      // The visit's client id comes along so a synced answer can still be
+      // recognised as this visit's. Without it every answer that reached the
+      // server read as an earlier visit's: with signal, a tap synced within
+      // a second, the line went back to "Last time: running", and check-out
+      // warned that the rep had answered nothing.
       final rows = await _client
           .from('promotion_checks')
-          .select('promotion_id, product_id, status, checked_at')
+          .select('promotion_id, product_id, status, checked_at, '
+              'visits(client_generated_id)')
           .eq('store_id', storeId)
           .order('checked_at', ascending: false);
 
       for (final r in (rows as List).cast<Map<String, dynamic>>()) {
         final k = PromotionAnswer.key(
             r['promotion_id'] as String, r['product_id'] as String);
+        // Null when the check synced before its visit did (the sync engine
+        // records it without one rather than hold the queue), or when the
+        // visit is someone else's and not readable here. Either way it is
+        // not an answer given on this visit.
+        final visit = r['visits'] as Map<String, dynamic>?;
         // Ordered newest first, so the first one wins and later rows are the
         // history behind it.
         answers.putIfAbsent(
@@ -137,7 +154,8 @@ class PromotionRepository {
             checkedAt: r['checked_at'] != null
                 ? DateTime.parse(r['checked_at'] as String).toLocal()
                 : null,
-            thisVisit: false,
+            thisVisit:
+                visit?['client_generated_id'] == visitClientGeneratedId,
           ),
         );
       }
@@ -146,7 +164,13 @@ class PromotionRepository {
     }
 
     // Pending entries always win — they are newer than anything on the server.
-    for (final entry in await _db.pendingEntries(limit: 1000)) {
+    // In queue order, so a re-tap still supersedes the tap before it.
+    final queued = {
+      for (final e in [...queuedBefore, ...await _db.pendingEntries(limit: 1000)])
+        e.id: e,
+    }.values.toList()
+      ..sort((a, b) => a.id.compareTo(b.id));
+    for (final entry in queued) {
       if (entry.entityType != OutboxType.promotionCheck) continue;
       final data = jsonDecode(entry.payload) as Map<String, dynamic>;
       if (data['store_id'] != storeId) continue;
