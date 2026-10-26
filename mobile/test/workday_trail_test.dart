@@ -38,7 +38,12 @@ class Harness {
     this.cancelGate,
   }) {
     trail = WorkdayTrail(
-      currentMode: () async => mode,
+      currentMode: () async {
+        modeReads++;
+        await modeGate?.future;
+        if (modeFails) throw StateError('channel');
+        return mode;
+      },
       openStream: (_) {
         // Single-subscription on purpose: its `cancel()` waits for the
         // `onCancel` future, as the platform channel's does, so the gate can
@@ -63,14 +68,25 @@ class Harness {
   final Completer<void>? cancelGate;
   AppLifecycleState? lifecycle;
   LocationTrackingMode mode;
+
+  /// Holds the next grant read open, as a slow platform channel would.
+  Completer<void>? modeGate;
+
+  /// Makes the next grant read fail, as a channel error would.
+  bool modeFails = false;
   DateTime now = DateTime(2026, 9, 18, 8, 0);
   StreamController<Position>? controller;
   int opened = 0;
   int cancelled = 0;
+  int modeReads = 0;
+  int modeChanges = 0;
   final received = <Position>[];
 
-  void attach() =>
-      trail.attach(this, onPosition: received.add, onModeChanged: () {});
+  void attach() => trail.attach(
+    this,
+    onPosition: received.add,
+    onModeChanged: () => modeChanges++,
+  );
 
   /// Goes to the background, then comes forward, the way a rep pocketing the
   /// phone and taking it out again does.
@@ -245,6 +261,100 @@ void main() {
       await Future<void>.delayed(Duration.zero);
       await h.foreground();
 
+      expect(h.opened, 1);
+      expect(h.cancelled, 0);
+    });
+
+    test(
+      'coming back from settings with "all the time" reopens the trail',
+      () async {
+        final h = Harness(mode: LocationTrackingMode.foregroundOnly)..attach();
+        await h.trail.ensureRunning(reason: 'start');
+        expect(h.trail.mode, LocationTrackingMode.foregroundOnly);
+
+        // The banner's "Open settings": the app goes behind the settings
+        // page, the rep picks "Allow all the time", and comes back — through
+        // `inactive` and `resumed`, both of which arrive here.
+        await h.background();
+        h.mode = LocationTrackingMode.background;
+        h.lifecycle = AppLifecycleState.resumed;
+        h.trail.didChangeLifecycle(AppLifecycleState.inactive);
+        h.trail.didChangeLifecycle(AppLifecycleState.resumed);
+        await Future<void>.delayed(Duration.zero);
+
+        // The banner reads this, and is told it changed.
+        expect(h.trail.mode, LocationTrackingMode.background);
+        expect(h.modeChanges, greaterThan(0));
+        // Reopened once, as the stream with the foreground service.
+        expect(h.opened, 2);
+        expect(h.cancelled, 1);
+        expect(h.trail.isRunning, isTrue);
+      },
+    );
+
+    test('an unchanged "while using" grant is left running', () async {
+      final h = Harness(mode: LocationTrackingMode.foregroundOnly)..attach();
+      await h.trail.ensureRunning(reason: 'start');
+
+      await h.background();
+      await h.foreground();
+
+      expect(h.opened, 1);
+      expect(h.cancelled, 0);
+    });
+
+    test('a trail with "all the time" does not ask again on resume', () async {
+      final h = Harness()..attach();
+      await h.trail.ensureRunning(reason: 'start');
+      final reads = h.modeReads;
+
+      await h.background();
+      await h.foreground();
+
+      expect(h.modeReads, reads);
+      expect(h.opened, 1);
+    });
+
+    test('location switched off is reported, not restarted', () async {
+      final h = Harness(mode: LocationTrackingMode.foregroundOnly)..attach();
+      await h.trail.ensureRunning(reason: 'start');
+
+      await h.background();
+      h.mode = LocationTrackingMode.unavailable;
+      await h.foreground();
+
+      expect(h.trail.mode, LocationTrackingMode.unavailable);
+      // The open stream is kept: it resumes when location comes back.
+      expect(h.trail.isRunning, isTrue);
+      expect(h.opened, 1);
+      expect(h.cancelled, 0);
+    });
+
+    test('a day ended while the grant is being read stays ended', () async {
+      final h = Harness(mode: LocationTrackingMode.foregroundOnly)..attach();
+      await h.trail.ensureRunning(reason: 'start');
+
+      await h.background();
+      h.mode = LocationTrackingMode.background;
+      h.modeGate = Completer<void>();
+      await h.foreground();
+      await h.trail.stop(reason: 'end');
+      h.modeGate!.complete();
+      await Future<void>.delayed(Duration.zero);
+
+      expect(h.trail.isRunning, isFalse);
+      expect(h.opened, 1);
+    });
+
+    test('a grant that cannot be read leaves the trail alone', () async {
+      final h = Harness(mode: LocationTrackingMode.foregroundOnly)..attach();
+      await h.trail.ensureRunning(reason: 'start');
+      h.modeFails = true;
+
+      await h.background();
+      await h.foreground();
+
+      expect(h.trail.isRunning, isTrue);
       expect(h.opened, 1);
       expect(h.cancelled, 0);
     });

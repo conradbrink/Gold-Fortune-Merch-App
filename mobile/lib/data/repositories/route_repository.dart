@@ -108,6 +108,14 @@ class RouteRepository {
     final dateStr = formatDate(date);
 
     try {
+      // Taken before the request as well as after it. Checking out with
+      // signal syncs straight away, so the check-out can leave the outbox
+      // while this request is out — answered by a server that read the visit
+      // before the update landed. Asked only afterwards, nothing was pending
+      // any more, the server's "in progress" overwrote the cached check-out,
+      // and Today's Route showed the stop as in progress until a
+      // pull-to-refresh.
+      final pendingBefore = await _db.pendingClientIds();
       final rows = await _client
           .from('routes')
           .select(
@@ -128,7 +136,8 @@ class RouteRepository {
           .map((r) => RouteVisit.fromMap(r as Map<String, dynamic>))
           .toList();
 
-      final merged = await _keepingUnsyncedLocalState(visits, dateStr);
+      final merged =
+          await _keepingUnsyncedLocalState(visits, dateStr, pendingBefore);
 
       await _db.replaceCachedRoutes(
         dateStr,
@@ -146,11 +155,15 @@ class RouteRepository {
   }
 
   /// Loads what [mergeUnsyncedLocalState] needs, then applies it.
+  ///
+  /// [pendingBefore] is what was queued when the request went out; anything
+  /// queued since is read here, so a check-in made meanwhile is kept too.
   Future<List<RouteVisit>> _keepingUnsyncedLocalState(
     List<RouteVisit> fromServer,
     String dateStr,
+    Set<String> pendingBefore,
   ) async {
-    final pending = await _db.pendingClientIds();
+    final pending = {...pendingBefore, ...await _db.pendingClientIds()};
     if (pending.isEmpty) return fromServer;
 
     return mergeUnsyncedLocalState(
