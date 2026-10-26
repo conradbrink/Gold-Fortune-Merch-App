@@ -5,6 +5,7 @@ import assert from "node:assert/strict";
 import {
   attentionFor,
   daysToFirstJob,
+  fromRow,
   median,
   pipeline,
   stageOf,
@@ -32,6 +33,8 @@ const company = (over: Partial<CompanyActivation> = {}): CompanyActivation => ({
   lastActivityAt: null,
   lastSignInAt: daysAgo(0),
   trialEndsAt: null,
+  accountStatus: "trial",
+  periodEnd: null,
   contactName: "Owner",
   contactEmail: "owner@example.com",
   contactPhone: "+27 82 555 0142",
@@ -92,9 +95,53 @@ test("the free period ending comes first", () => {
   const ending = attentionFor(company({ createdAt: daysAgo(55), people: 3, firstClientAt: daysAgo(54), firstJobFinishedAt: daysAgo(50), lastActivityAt: daysAgo(1), trialEndsAt: new Date(now.getTime() + 4 * 86_400_000).toISOString() }), now);
   assert.equal(ending[0].reason, "Free period ends in 4 days");
   const ended = attentionFor(company({ createdAt: daysAgo(65), people: 3, firstClientAt: daysAgo(64), firstJobFinishedAt: daysAgo(60), lastActivityAt: daysAgo(1), trialEndsAt: daysAgo(2) }), now);
+  assert.equal(ending[0].action, "Talk to them about carrying on before it ends.");
   assert.equal(ended[0].reason, "Free period ended 2 days ago");
+  assert.equal(ended[0].action, "Talk to them about choosing a plan to carry on.");
+  const today = attentionFor(company({ createdAt: daysAgo(65), people: 3, firstClientAt: daysAgo(64), firstJobFinishedAt: daysAgo(60), lastActivityAt: daysAgo(1), trialEndsAt: daysAgo(0.1) }), now);
+  assert.equal(today[0].reason, "Free period ended today", "not 'ends in 0 days'");
+  assert.equal(today[0].action, "Talk to them about choosing a plan to carry on.");
   const long = attentionFor(company({ createdAt: daysAgo(90), people: 3, firstClientAt: daysAgo(89), firstJobFinishedAt: daysAgo(85), lastActivityAt: daysAgo(1), trialEndsAt: daysAgo(30) }), now);
   assert.deepEqual(long, [], "a free period that ended weeks ago is no longer news");
+});
+
+// Paying leaves trial_ends_at as it was: the status decides (#221 for the
+// company's own screens, the same rule here).
+const usingIt = { createdAt: daysAgo(65), people: 3, firstClientAt: daysAgo(64), firstJobFinishedAt: daysAgo(60), lastActivityAt: daysAgo(1) };
+
+test("a company that has paid is not told its free period is ending or has ended", () => {
+  assert.deepEqual(attentionFor(company({ ...usingIt, trialEndsAt: daysAgo(2), accountStatus: "active", periodEnd: daysAgo(-28) }), now), []);
+  assert.deepEqual(
+    attentionFor(company({ ...usingIt, trialEndsAt: daysAgo(-4), accountStatus: "active", periodEnd: daysAgo(-30) }), now),
+    [],
+    "paid before its pilot date"
+  );
+  assert.deepEqual(attentionFor(company({ ...usingIt, trialEndsAt: daysAgo(2), accountStatus: "past_due", periodEnd: daysAgo(1) }), now), []);
+  assert.deepEqual(
+    attentionFor(company({ ...usingIt, trialEndsAt: daysAgo(2), accountStatus: "read_only", periodEnd: daysAgo(3) }), now),
+    [],
+    "locked because a paid plan lapsed, not after the pilot"
+  );
+  assert.deepEqual(attentionFor(company({ ...usingIt, trialEndsAt: daysAgo(2), accountStatus: "exempt" }), now), []);
+  assert.deepEqual(attentionFor(company({ ...usingIt, trialEndsAt: daysAgo(2), accountStatus: null }), now), [], "no account row");
+});
+
+test("a pilot locked after it ended without paying still needs the talk", () => {
+  const locked = attentionFor(company({ ...usingIt, trialEndsAt: daysAgo(2), accountStatus: "read_only", periodEnd: null }), now);
+  assert.equal(locked[0].reason, "Free period ended 2 days ago");
+  assert.equal(locked[0].action, "Talk to them about choosing a plan to carry on.");
+});
+
+test("the read carries the account status and paid period end", () => {
+  const row = {
+    org_id: "o", name: "Co", created_at: daysAgo(9), setup_started: true, setup_finished_at: null, people: 2, team_on_at: null,
+    first_client_at: null, first_workday_at: null, first_job_started_at: null, first_job_finished_at: null, finished_days_14: 0,
+    last_activity_at: null, last_sign_in_at: null, trial_ends_at: daysAgo(2), contact_name: null, contact_email: null, contact_phone: null,
+  };
+  const paid = fromRow({ ...row, account_status: "active", period_end: daysAgo(-28) });
+  assert.equal(paid.accountStatus, "active");
+  assert.equal(paid.periodEnd, daysAgo(-28));
+  assert.equal(fromRow({ ...row, account_status: null, period_end: null }).accountStatus, null);
 });
 
 test("WhatsApp needs an international number", () => {

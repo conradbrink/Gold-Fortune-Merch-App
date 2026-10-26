@@ -11,6 +11,7 @@ import {
   operatorMayChange,
   parseCompanyRecord,
   parseSettingValue,
+  pilotStanding,
   RECORD_FIELDS,
   type CompanyRecordUpdate,
 } from "@/lib/control-centre";
@@ -435,10 +436,15 @@ async function startPilot(
 }
 
 /**
- * Extends a company's free trial by a number of days, from its current end or
- * from today if it has already ended. Platform operator only; the audit row
- * first, as for module switches. A company with no account row (one the
- * operator created) gets one, which puts it on a trial.
+ * Gives a company more days of its free pilot, from its current end or from
+ * today if it has already ended, or starts one for a company that is free by
+ * arrangement. Platform operator only. The database does it with its audit
+ * row, and refuses what the company page doesn't offer:
+ * `billing_operator_extend_trial` puts a company back on its pilot (a locked
+ * one is unlocked) and refuses one that has paid or is exempt;
+ * `billing_operator_set_exempt` (off) takes an exempt company, or one with no
+ * account row, onto a pilot of that many days. Which one is the page's
+ * `pilotStanding`, read again here.
  */
 export async function extendTrial(formData: FormData): Promise<void> {
   const orgId = String(formData.get("orgId") ?? "");
@@ -452,30 +458,22 @@ export async function extendTrial(formData: FormData): Promise<void> {
   }
 
   const admin = platformAdminClient();
-  const { data: current, error: readError } = await admin
+  const { data: account, error: readError } = await admin
     .from("company_account")
-    .select("trial_ends_at")
+    .select("status, trial_ends_at, period, period_end, closed_at")
     .eq("org_id", orgId)
     .maybeSingle();
   if (readError) redirect(`${back}?error=${encodeURIComponent(readError.message)}`);
 
-  const now = Date.now();
-  const from = current?.trial_ends_at ? Math.max(new Date(current.trial_ends_at).getTime(), now) : now;
-  const endsAt = new Date(from + days * 24 * 60 * 60 * 1000).toISOString();
-
-  const { error: auditError } = await admin.from("platform_audit_log").insert({
-    actor_id: actor,
-    action: "trial.extend",
-    target_org_id: orgId,
-    detail: { days, from: current?.trial_ends_at ?? null, to: endsAt },
-  });
-  if (auditError) {
-    redirect(`${back}?error=${encodeURIComponent(`Not changed: the audit log could not be written (${auditError.message}).`)}`);
+  const standing = pilotStanding(account, !!account?.closed_at, new Date());
+  if (!standing.button) {
+    redirect(`${back}?error=${encodeURIComponent(`There is no pilot to extend. ${standing.text}`)}`);
   }
-
-  const { error } = await admin
-    .from("company_account")
-    .upsert({ org_id: orgId, trial_ends_at: endsAt, updated_at: new Date().toISOString() }, { onConflict: "org_id" });
+  const button = standing.button;
+  const { error } =
+    button === "start"
+      ? await admin.rpc("billing_operator_set_exempt", { p_org: orgId, p_exempt: false, p_days: days, p_actor: actor })
+      : await admin.rpc("billing_operator_extend_trial", { p_org: orgId, p_days: days, p_actor: actor });
   if (error) redirect(`${back}?error=${encodeURIComponent(error.message)}`);
   redirect(back);
 }

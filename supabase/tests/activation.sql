@@ -7,6 +7,9 @@
 --   A3  A fresh company with one client and nothing else: first client set,
 --       everything after it empty, no people.
 --   A4  Asking for one company returns only that company.
+--   A5  Every row carries its company_account status and paid period end
+--       (null without an account row), so a company that has paid isn't read
+--       as on its pilot by its date alone (20261026143700).
 --
 -- HOW TO RUN: paste into execute_sql. One DO block that always ends in
 -- `raise exception`, so nothing survives.
@@ -50,6 +53,24 @@ begin
   if (select count(*) from public.platform_company_activation(array[v_org])) <> 1
      or (select a.org_id from public.platform_company_activation(array[v_org]) a) <> v_org then
     v_fail := v_fail || 'A4 asking for one company did not return just that company' || E'\n';
+  end if;
+
+  ------------------------------------------------------------ A5 status and paid period
+  if exists (select 1 from public.platform_company_activation() a
+               left join public.company_account ca on ca.org_id = a.org_id
+              where a.account_status is distinct from ca.status
+                 or a.period_end is distinct from ca.period_end) then
+    v_fail := v_fail || 'A5 a row''s account_status or period_end is not its company_account''s' || E'\n';
+  end if;
+  select * into r from public.platform_company_activation(array[v_org]) a;
+  if r.account_status is not null or r.period_end is not null then
+    v_fail := v_fail || 'A5 a company with no account row shows a status or paid period' || E'\n';
+  end if;
+  insert into public.company_account (org_id, status, trial_ends_at, period, period_start, period_end)
+  values (v_org, 'active', now() - interval '2 days', 'monthly', now() - interval '5 days', now() + interval '25 days');
+  select * into r from public.platform_company_activation(array[v_org]) a;
+  if r.account_status is distinct from 'active' or r.period_end is null or r.trial_ends_at is null then
+    v_fail := v_fail || 'A5 a company that paid before its pilot date does not read as active with its period end' || E'\n';
   end if;
 
   if v_fail <> '' then

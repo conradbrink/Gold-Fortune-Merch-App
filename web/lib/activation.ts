@@ -10,6 +10,8 @@
  * Pure, so the tests reach every rule.
  */
 
+import { onOrPastPilot, type PilotAccount } from "@/lib/onboarding";
+
 export type CompanyActivation = {
   orgId: string;
   name: string;
@@ -26,6 +28,10 @@ export type CompanyActivation = {
   lastActivityAt: string | null;
   lastSignInAt: string | null;
   trialEndsAt: string | null;
+  /** company_account.status, null with no account row. */
+  accountStatus: string | null;
+  /** The end of the paid period, null if it has never paid. */
+  periodEnd: string | null;
   contactName: string | null;
   contactEmail: string | null;
   contactPhone: string | null;
@@ -83,6 +89,14 @@ export function median(values: number[]): number | null {
   return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
 }
 
+/**
+ * The company's account as the pilot rules in lib/onboarding read it. Paying
+ * leaves `trial_ends_at` as it was, so the date alone is not enough.
+ */
+export function pilotAccount(c: CompanyActivation): PilotAccount & { period_end: string | null } {
+  return { status: c.accountStatus ?? "", trial_ends_at: c.trialEndsAt, period_end: c.periodEnd };
+}
+
 export type Attention = { reason: string; action: string; urgency: number };
 
 export const plural = (n: number, one: string, many = one + "s") => `${n} ${n === 1 ? one : many}`;
@@ -90,19 +104,28 @@ export const plural = (n: number, one: string, many = one + "s") => `${n} ${n ==
 /**
  * Why a company needs the operator now, each with the next thing to do. Fixed
  * thresholds from the worksheet: the first job should be finished within days,
- * long before the 60 free days end. Most urgent first.
+ * long before the 60 free days end. Most urgent first. The end of the free
+ * period only for a company on its pilot, or locked after it without paying
+ * (`onOrPastPilot`): one that has paid has nothing to talk about there.
  */
 export function attentionFor(c: CompanyActivation, now: Date): Attention[] {
   const out: Attention[] = [];
   const age = daysBetween(c.createdAt, now);
   const activated = isActivated(c);
 
-  if (c.trialEndsAt) {
-    const left = Math.ceil((Date.parse(c.trialEndsAt) - now.getTime()) / DAY);
+  if (c.trialEndsAt && onOrPastPilot(pilotAccount(c))) {
+    const ms = Date.parse(c.trialEndsAt) - now.getTime();
+    // Whole days left, rounded up; once it has ended, whole days since.
+    const left = ms > 0 ? Math.ceil(ms / DAY) : -Math.floor(-ms / DAY);
     if (left <= 7 && left >= -14) {
       out.push({
-        reason: left >= 0 ? `Free period ends in ${plural(left, "day")}` : `Free period ended ${plural(-left, "day")} ago`,
-        action: "Talk to them about carrying on before it ends.",
+        reason:
+          ms > 0
+            ? `Free period ends in ${plural(left, "day")}`
+            : left === 0
+              ? "Free period ended today"
+              : `Free period ended ${plural(-left, "day")} ago`,
+        action: ms > 0 ? "Talk to them about carrying on before it ends." : "Talk to them about choosing a plan to carry on.",
         urgency: 90,
       });
     }
@@ -182,6 +205,8 @@ export function fromRow(r: {
   last_activity_at: string | null;
   last_sign_in_at: string | null;
   trial_ends_at: string | null;
+  account_status: string | null;
+  period_end: string | null;
   contact_name: string | null;
   contact_email: string | null;
   contact_phone: string | null;
@@ -202,6 +227,8 @@ export function fromRow(r: {
     lastActivityAt: r.last_activity_at,
     lastSignInAt: r.last_sign_in_at,
     trialEndsAt: r.trial_ends_at,
+    accountStatus: r.account_status,
+    periodEnd: r.period_end,
     contactName: r.contact_name,
     contactEmail: r.contact_email,
     contactPhone: r.contact_phone,

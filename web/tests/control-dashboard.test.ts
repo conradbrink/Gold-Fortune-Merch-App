@@ -11,7 +11,8 @@ const daysAgo = (n: number) => new Date(now.getTime() - n * 86_400_000).toISOStr
 const company = (over: Partial<CompanyActivation>): CompanyActivation => ({
   orgId: "o", name: "Co", createdAt: daysAgo(30), setupStarted: true, setupFinishedAt: null, people: 3, teamOnAt: null,
   firstClientAt: null, firstWorkdayAt: null, firstJobStartedAt: null, firstJobFinishedAt: null, finishedDays14: 0,
-  lastActivityAt: null, lastSignInAt: null, trialEndsAt: null, contactName: null, contactEmail: null, contactPhone: null,
+  lastActivityAt: null, lastSignInAt: null, trialEndsAt: null, accountStatus: "trial", periodEnd: null,
+  contactName: null, contactEmail: null, contactPhone: null,
   ...over,
 });
 
@@ -21,6 +22,18 @@ test("active means something done in the last 14 days; free period means it hasn
   assert.equal(isActive(company({}), now), false);
   assert.equal(inFreePeriod(company({ trialEndsAt: daysAgo(-10) }), now), true);
   assert.equal(inFreePeriod(company({ trialEndsAt: daysAgo(1) }), now), false);
+});
+
+test("a free period counts only while the company is on its pilot", () => {
+  assert.equal(inFreePeriod(company({ trialEndsAt: daysAgo(-2) }), now), true, "its last three days");
+  assert.equal(
+    inFreePeriod(company({ trialEndsAt: daysAgo(-10), accountStatus: "active", periodEnd: daysAgo(-30) }), now),
+    false,
+    "paid before its pilot date"
+  );
+  assert.equal(inFreePeriod(company({ trialEndsAt: daysAgo(-10), accountStatus: "exempt" }), now), false);
+  assert.equal(inFreePeriod(company({ trialEndsAt: daysAgo(-10), accountStatus: null }), now), false, "no account row");
+  assert.equal(inFreePeriod(company({ trialEndsAt: null }), now), false, "a pilot with no end date isn't counted");
 });
 
 test("new in a period, and per month for 12 months in South African time", () => {

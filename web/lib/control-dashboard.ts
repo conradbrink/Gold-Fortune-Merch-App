@@ -5,7 +5,8 @@
  * customer app's dashboard, a different thing.)
  */
 
-import type { CompanyActivation } from "@/lib/activation";
+import { pilotAccount, type CompanyActivation } from "@/lib/activation";
+import { pilotState } from "@/lib/onboarding";
 import type { Period } from "@/lib/acquisition";
 
 const DAY = 24 * 60 * 60 * 1000;
@@ -25,10 +26,12 @@ export function isActive(c: CompanyActivation, now: Date): boolean {
 /**
  * A free period that hasn't ended. It may not have begun yet: Founding
  * companies made before 2 November have free days that start then (#154), so
- * the dashboard says "started or booked".
+ * the dashboard says "started or booked". Only while the account is on its
+ * pilot (`pilotState`): a company that paid before its pilot date is paying.
  */
 export function inFreePeriod(c: CompanyActivation, now: Date): boolean {
-  return c.trialEndsAt !== null && Date.parse(c.trialEndsAt) > now.getTime();
+  const kind = pilotState(pilotAccount(c), now).kind;
+  return kind === "active" || kind === "ending";
 }
 
 export function madeIn(c: CompanyActivation, p: Period): boolean {

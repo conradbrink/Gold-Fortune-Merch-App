@@ -7,20 +7,19 @@ import {
   companyInternalSettings,
   companyRecentEmails,
   companyRecord,
+  companyPilotAccount,
   companyTerms,
-  companyTrialEnd,
   getCompany,
   type InternalSetting,
 } from "@/lib/platform";
 import { extendTrial, setCompanyModule, setCompanyRecord, setCompanySetting, setCompanyTerms } from "@/app/platform/actions";
-import { customerAlsoSets, groupSettings, patternChoices, settingText } from "@/lib/control-centre";
+import { customerAlsoSets, groupSettings, patternChoices, pilotStanding, settingText } from "@/lib/control-centre";
 import { ALERT_RULES, ruleLabels } from "@/lib/alerts";
 import { DEFAULT_TERMS } from "@/lib/terms";
 import { termShown } from "@/lib/settings-tabs";
 import { toModuleSet } from "@/lib/modules";
 import { ClosePanel } from "./close-panel";
 import { actionLabel, outcomeWords } from "@/lib/assistant-actions";
-import { trialState } from "@/lib/onboarding";
 
 /**
  * Platform operator: one company's set-up. Its modules, switchable; the
@@ -67,9 +66,9 @@ export default async function PlatformCompanyPage({
   const { id } = await params;
   // Not a company id at all: a 404, not a database cast error and a 500.
   if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) notFound();
-  const [company, trialEndsAt, internal, closure, record, terms, emails, aiChanges] = await Promise.all([
+  const [company, account, internal, closure, record, terms, emails, aiChanges] = await Promise.all([
     getCompany(id),
-    companyTrialEnd(id),
+    companyPilotAccount(id),
     companyInternalSettings(id),
     companyClosure(id),
     companyRecord(id),
@@ -78,7 +77,7 @@ export default async function PlatformCompanyPage({
     companyAiChanges(id),
   ]);
   if (!company || !record) notFound();
-  const trial = trialState(trialEndsAt);
+  const pilot = pilotStanding(account, closure !== null, new Date());
   const modules = toModuleSet(Object.fromEntries(company.modules.map((m) => [m.code, m.enabled])));
 
   const query = await searchParams;
@@ -115,35 +114,31 @@ export default async function PlatformCompanyPage({
       )}
 
       <section className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border bg-card p-4">
-        <p className="text-sm text-foreground">
-          {trial.kind === "none"
-            ? "Not on a free pilot (free by arrangement, or paying)."
-            : trial.kind === "ended"
-              ? `Free pilot ended ${dateTime.format(new Date(trialEndsAt!))} UTC.`
-              : `Free pilot ends ${dateTime.format(new Date(trialEndsAt!))} UTC (${trial.daysLeft} ${trial.daysLeft === 1 ? "day" : "days"} left).`}
-        </p>
-        <form action={extendTrial} className="flex items-center gap-2">
-          <input type="hidden" name="orgId" value={company.id} />
-          <label className="text-sm text-muted-foreground" htmlFor="extend-days">
-            {trial.kind === "none" ? "Start a trial of" : "Extend by"}
-          </label>
-          <input
-            id="extend-days"
-            name="days"
-            type="number"
-            min={1}
-            max={365}
-            required
-            className="h-8 w-20 rounded-md border border-border bg-transparent px-2 text-sm"
-          />
-          <span className="text-sm text-muted-foreground">days</span>
-          <button
-            type="submit"
-            className="inline-flex h-8 items-center rounded-md border border-border px-3 text-sm hover:bg-secondary"
-          >
-            Save
-          </button>
-        </form>
+        <p className="text-sm text-foreground">{pilot.text}</p>
+        {pilot.button && (
+          <form action={extendTrial} className="flex items-center gap-2">
+            <input type="hidden" name="orgId" value={company.id} />
+            <label className="text-sm text-muted-foreground" htmlFor="extend-days">
+              {pilot.button === "start" ? "Start a trial of" : "Extend by"}
+            </label>
+            <input
+              id="extend-days"
+              name="days"
+              type="number"
+              min={1}
+              max={365}
+              required
+              className="h-8 w-20 rounded-md border border-border bg-transparent px-2 text-sm"
+            />
+            <span className="text-sm text-muted-foreground">days</span>
+            <button
+              type="submit"
+              className="inline-flex h-8 items-center rounded-md border border-border px-3 text-sm hover:bg-secondary"
+            >
+              Save
+            </button>
+          </form>
+        )}
       </section>
 
       {refusal && (
