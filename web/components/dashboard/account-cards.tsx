@@ -12,9 +12,10 @@ import { useTerms } from "@/lib/use-company-config";
 import {
   fillTermTokens,
   parseOnboarding,
+  pilotState,
   showOnboarding,
-  trialState,
   type Onboarding,
+  type PilotAccount,
 } from "@/lib/onboarding";
 import { parseSetup, SETUP_STEPS, stepIndex, type Setup } from "@/lib/setup";
 import { lower } from "@/lib/terms";
@@ -25,11 +26,12 @@ type TeamLine = { id: string; name: string; signedIn: boolean; startedWorkday: b
  * The top of the dashboard for whoever runs the company: the free-trial
  * countdown and the getting-started list (Stage 5).
  *
- * Both are facts from the database — `company_account.trial_ends_at` (which the
- * company can read but not change) and `my_onboarding()` (each step worked out
- * from what the company has actually done) — so this only decides how they
- * look. A company with no trial sees no banner; one that has put the list away,
- * or finished it, sees no list. Gold Fortune has neither.
+ * Both are facts from the database — `company_account` (which the company can
+ * read but not change) and `my_onboarding()` (each step worked out from what
+ * the company has actually done) — so this only decides how they look. A
+ * company not on its pilot (one that has paid, or has none) sees no banner;
+ * one that has put the list away, or finished it, sees no list. Gold Fortune
+ * has neither.
  */
 export function AccountCards() {
   const permissions = usePermissions();
@@ -40,7 +42,7 @@ export function AccountCards() {
 
 function AccountCardsFor() {
   const terms = useTerms();
-  const [trialEndsAt, setTrialEndsAt] = useState<string | null>(null);
+  const [pilot, setPilot] = useState<PilotAccount | null>(null);
   const [confirmation, setConfirmation] = useState<{ needed: boolean; email: string | null } | null>(null);
   const [resend, setResend] = useState<{ busy: boolean; message: string | null; failed: boolean }>({
     busy: false,
@@ -56,13 +58,13 @@ function AccountCardsFor() {
   const load = useCallback(async () => {
     const supabase = createClient();
     const [account, list, wizard, confirm] = await Promise.all([
-      supabase.from("company_account").select("trial_ends_at").maybeSingle(),
+      supabase.from("company_account").select("status, trial_ends_at").maybeSingle(),
       supabase.rpc("my_onboarding"),
       supabase.rpc("my_setup"),
       supabase.rpc("my_email_confirmation"),
     ]);
     // Quietly absent on failure: these cards are a help, not the dashboard.
-    if (!account.error) setTrialEndsAt(account.data?.trial_ends_at ?? null);
+    if (!account.error) setPilot(account.data ?? null);
     if (!confirm.error && confirm.data && typeof confirm.data === "object" && !Array.isArray(confirm.data)) {
       const c = confirm.data as { needed?: unknown; email?: unknown };
       setConfirmation({ needed: c.needed === true, email: typeof c.email === "string" ? c.email : null });
@@ -128,7 +130,7 @@ function AccountCardsFor() {
     await load();
   }
 
-  const trial = trialState(trialEndsAt);
+  const trial = pilotState(pilot);
   const done = onboarding?.steps.filter((s) => s.done).length ?? 0;
   const total = onboarding?.steps.length ?? 0;
 
