@@ -9,7 +9,7 @@ import { lineColumns, quoteHeaderProblem, updateQuote, whyQuoteIsFixed, type New
 const text = (id: string, over: Partial<Extract<NewQuoteLine, { kind: "text" }>> = {}) =>
   ({ id, kind: "text", description: "Cooking oil 5L", unit: null, qty: 1, price: 120.25, ...over }) as const;
 const product = (id: string, productId: string, over: Partial<Extract<NewQuoteLine, { kind: "product" }>> = {}) =>
-  ({ id, kind: "product", productId, qty: 2, listPrice: 50, discountPct: 0, discountAmount: 0, ...over }) as const;
+  ({ id, kind: "product", productId, unitsPerShrink: null, qty: 2, listPrice: 50, discountPct: 0, discountAmount: 0, ...over }) as const;
 
 test("a draft or sent quote can be changed; the rest say why not", () => {
   assert.equal(whyQuoteIsFixed({ status: "draft" }), null);
@@ -38,6 +38,20 @@ test("an edited line drops what it no longer has", () => {
   assert.equal(t.unit, null);
   assert.equal(t.product_id, null);
   assert.equal(t.discount_amount, 0);
+});
+
+test("a product priced per shrink says so, and keeps the shrink's size", () => {
+  const unit = lineColumns(product("a", "p1"), 1);
+  assert.equal(unit.unit, null);
+  assert.equal(unit.units_per_shrink, null);
+  const shrink = lineColumns(product("a", "p1", { unitsPerShrink: 10, qty: 2, listPrice: 771.69 }), 1);
+  assert.equal(shrink.unit, "shrink");
+  assert.equal(shrink.units_per_shrink, 10);
+  // qty counts shrinks and the price is a shrink's, as typed.
+  assert.equal(shrink.qty, 2);
+  assert.equal(shrink.list_price, 771.69);
+  // Typed and price-list lines never carry a shrink.
+  assert.equal(lineColumns(text("b"), 2).units_per_shrink, null);
 });
 
 // ---------------------------------------------------------------- the save itself
@@ -97,9 +111,9 @@ test("a save is one call to quote_save with the header, the time the form loaded
     notes: "Delivery on Fridays",
   });
   assert.deepEqual(args.p_lines, [
-    { id: "line-p", position: 1, product_id: "p1", service_item_id: null, description: null, unit: null, qty: 3, list_price: 50, discount_pct: 0, discount_amount: 10 },
-    { id: "line-a", position: 2, product_id: null, service_item_id: null, description: "Maize meal 10kg", unit: "bag", qty: 1, list_price: 845.5, discount_pct: 0, discount_amount: 0 },
-    { id: "line-s", position: 3, product_id: null, service_item_id: "item-1", description: "Call-out", unit: "visit", qty: 1, list_price: 450, discount_pct: 0, discount_amount: 0 },
+    { id: "line-p", position: 1, product_id: "p1", service_item_id: null, description: null, unit: null, units_per_shrink: null, qty: 3, list_price: 50, discount_pct: 0, discount_amount: 10 },
+    { id: "line-a", position: 2, product_id: null, service_item_id: null, description: "Maize meal 10kg", unit: "bag", units_per_shrink: null, qty: 1, list_price: 845.5, discount_pct: 0, discount_amount: 0 },
+    { id: "line-s", position: 3, product_id: null, service_item_id: "item-1", description: "Call-out", unit: "visit", units_per_shrink: null, qty: 1, list_price: 450, discount_pct: 0, discount_amount: 0 },
   ]);
 });
 

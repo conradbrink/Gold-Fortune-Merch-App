@@ -531,6 +531,20 @@ export function unitPriceFor(
 }
 
 /**
+ * A product's shrink price excluding VAT: the store's price list's, or the
+ * product's own. What a quote line priced per shrink starts at. Null when
+ * neither has one.
+ */
+export function shrinkPriceFor(
+  p: { id?: string; shrink_price_excl_vat: number | null },
+  list?: StorePriceList | null
+): string | null {
+  const listed = p.id != null ? list?.prices[p.id] : undefined;
+  const shrink = listed ?? p.shrink_price_excl_vat;
+  return shrink == null ? null : Number(shrink).toFixed(2);
+}
+
+/**
  * Sets the price on one order line.
  *
  * `order_lines` grants `update (qty_ordered, unit_price)` to `authenticated`

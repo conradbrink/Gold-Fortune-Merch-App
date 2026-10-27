@@ -22,6 +22,7 @@ import {
   fetchStoresForOrder,
   matchProducts,
   netUnitPrice,
+  shrinkPriceFor,
   unitPriceFor,
   type DiscountKind,
 } from "@/lib/orders";
@@ -48,6 +49,8 @@ type ProductLine = {
   /** The saved line's id, or a new one: see `updateQuote`. */
   id: string;
   productId: string;
+  /** Units in a shrink while the line is priced per shrink (qty counts shrinks); null per unit. */
+  unitsPerShrink: number | null;
   qty: string;
   price: string;
   discount: string;
@@ -76,6 +79,7 @@ function formFromQuote({ quote: q, lines: saved }: QuoteDetail) {
         return {
           id: l.id,
           productId: l.product_id as string,
+          unitsPerShrink: l.units_per_shrink,
           qty: String(Number(l.qty)),
           price: Number(l.list_price).toFixed(2),
           discount: amount > 0 ? String(amount) : pct > 0 ? String(pct) : "",
@@ -137,6 +141,8 @@ export function QuoteForm({ quoteId }: { quoteId?: string }) {
   const [productLines, setProductLines] = useState<ProductLine[]>([]);
   const [lines, setLines] = useState<EditableLine[]>([]);
   const [productQuery, setProductQuery] = useState("");
+  // Whether the last line switched was to per shrink: new products follow it.
+  const [byShrink, setByShrink] = useState(false);
   // The product list shows while the box has focus: away or Escape closes it, as the store search does.
   const [productOpen, setProductOpen] = useState(false);
 
@@ -258,10 +264,21 @@ export function QuoteForm({ quoteId }: { quoteId?: string }) {
     b.mode === "store" ? listForGroup(priceBook, stores.find((s) => s.id === b.storeId)?.store_group_id) : null;
   const storeList = listOf(billTo);
 
-  /** A product's price in the quote's own basis: the store's VAT-exclusive price (its price list, or the product's own), with the VAT added when the quote's prices include it. */
-  function productPrice(p: Product, list = storeList): string {
-    const net = unitPriceFor(p, list);
+  /**
+   * A product's price in the quote's own basis, per unit or per shrink: the
+   * store's VAT-exclusive price (its price list, or the product's own), with
+   * the VAT added when the quote's prices include it.
+   */
+  function productPrice(p: Product, list = storeList, perShrink = false): string {
+    const net = perShrink ? shrinkPriceFor(p, list) : unitPriceFor(p, list);
     return net !== null && inclusive ? grossPrice(Number(net), vatRate).toFixed(2) : (net ?? "");
+  }
+
+  /** How many units a line per shrink counts as one: the size it was saved with, or the product's. */
+  function shrinkSize(l: Pick<ProductLine, "unitsPerShrink">, p: Product | undefined): number | null {
+    if (l.unitsPerShrink) return l.unitsPerShrink;
+    const units = p?.units_per_shrink;
+    return units != null && Number.isInteger(units) && units > 1 ? units : null;
   }
 
   /**
@@ -277,8 +294,9 @@ export function QuoteForm({ quoteId }: { quoteId?: string }) {
     setProductLines((prev) =>
       prev.map((l) => {
         const p = byId.get(l.productId);
-        if (!p || (l.price !== "" && l.price !== productPrice(p, before))) return l;
-        return { ...l, price: productPrice(p, after) };
+        const perShrink = l.unitsPerShrink !== null;
+        if (!p || (l.price !== "" && l.price !== productPrice(p, before, perShrink))) return l;
+        return { ...l, price: productPrice(p, after, perShrink) };
       })
     );
   }
@@ -289,15 +307,46 @@ export function QuoteForm({ quoteId }: { quoteId?: string }) {
   }));
 
   function addProduct(p: Product) {
+    // A new product is sold the way the last one was switched to, when it comes in shrinks.
+    const units = byShrink ? shrinkSize({ unitsPerShrink: null }, p) : null;
     setProductLines((prev) =>
       prev.some((l) => l.productId === p.id)
         ? prev.map((l) => (l.productId === p.id ? { ...l, qty: String((Number(l.qty) || 0) + 1) } : l))
         : [
             ...prev,
-            { id: crypto.randomUUID(), productId: p.id, qty: "1", price: productPrice(p), discount: "", discountKind: "pct" },
+            {
+              id: crypto.randomUUID(),
+              productId: p.id,
+              unitsPerShrink: units,
+              qty: "1",
+              price: productPrice(p, storeList, units !== null),
+              discount: "",
+              discountKind: "pct",
+            },
           ]
     );
     setProductQuery("");
+  }
+
+  /**
+   * Prices a line per shrink or per unit. Its quantity stays as typed. A price
+   * still at the store's takes the store's price for the new way; a price typed
+   * in is moved across (times or divided by the units in a shrink).
+   */
+  function sellBy(l: ProductLine, perShrink: boolean) {
+    const p = byId.get(l.productId);
+    const units = shrinkSize(l, p);
+    if (!units || perShrink === (l.unitsPerShrink !== null)) return;
+    setByShrink(perShrink);
+    const atStorePrice = !p || l.price === "" || l.price === productPrice(p, storeList, !perShrink);
+    const price = atStorePrice
+      ? p
+        ? productPrice(p, storeList, perShrink)
+        : ""
+      : validPrice(l.price)
+        ? (perShrink ? Number(l.price) * units : Number(l.price) / units).toFixed(2)
+        : l.price;
+    updateProduct(l.productId, { unitsPerShrink: perShrink ? units : null, price });
   }
 
   function updateProduct(productId: string, patch: Partial<ProductLine>) {
@@ -322,7 +371,7 @@ export function QuoteForm({ quoteId }: { quoteId?: string }) {
       if (problem) return setError(problem);
     }
     if (productLines.some((l) => !Number.isInteger(Number(l.qty)) || Number(l.qty) <= 0)) {
-      return setError("Product quantities are whole units above zero.");
+      return setError("Product quantities are whole numbers above zero.");
     }
     if (productLines.some((l) => !validPrice(l.price))) {
       return setError("Every product needs a price, to the cent.");
@@ -341,6 +390,7 @@ export function QuoteForm({ quoteId }: { quoteId?: string }) {
         id: l.id,
         kind: "product" as const,
         productId: l.productId,
+        unitsPerShrink: l.unitsPerShrink,
         qty: Number(l.qty),
         listPrice: Number(l.price),
         discountPct: l.discountKind === "pct" ? Number(l.discount) || 0 : 0,
@@ -522,17 +572,19 @@ export function QuoteForm({ quoteId }: { quoteId?: string }) {
             )}
             {productLines.length > 0 && (
               <div className="space-y-2">
-                <div className="hidden gap-2 px-1 text-xs font-medium text-muted-foreground sm:grid sm:grid-cols-[1fr_5rem_7rem_7rem_2.5rem]">
+                <div className="hidden gap-2 px-1 text-xs font-medium text-muted-foreground sm:grid sm:grid-cols-[1fr_8rem_5rem_7rem_7rem_2.5rem]">
                   <span>Product</span>
+                  <span>Priced per</span>
                   <span>Qty</span>
-                  <span>{inclusive ? "Price incl. VAT" : "Price/unit"}</span>
+                  <span>{inclusive ? "Price incl. VAT" : "Price"}</span>
                   <span>Discount</span>
                   <span />
                 </div>
                 {productLines.map((l) => {
                   const p = byId.get(l.productId);
+                  const units = shrinkSize(l, p);
                   return (
-                    <div key={l.productId} className="grid items-start gap-2 sm:grid-cols-[1fr_5rem_7rem_7rem_2.5rem]">
+                    <div key={l.productId} className="grid items-start gap-2 sm:grid-cols-[1fr_8rem_5rem_7rem_7rem_2.5rem]">
                       <span className="min-w-0 truncate py-1.5 text-sm">
                         {p?.name ?? savedNames.get(l.productId)?.name}
                         {(p ? p.brand : savedNames.get(l.productId)?.brand) && (
@@ -540,24 +592,41 @@ export function QuoteForm({ quoteId }: { quoteId?: string }) {
                         )}
                       </span>
                       <label className="block">
-                        <span className={phoneLabel}>Quantity</span>
+                        <span className={phoneLabel}>Priced per</span>
+                        {units ? (
+                          <NativeSelect
+                            value={l.unitsPerShrink !== null ? "shrink" : "unit"}
+                            onChange={(e) => sellBy(l, e.target.value === "shrink")}
+                            aria-label="Priced per"
+                          >
+                            <option value="unit">Unit</option>
+                            <option value="shrink">{`Shrink of ${units}`}</option>
+                          </NativeSelect>
+                        ) : (
+                          <span className="block py-1.5 text-sm text-muted-foreground">Unit</span>
+                        )}
+                      </label>
+                      <label className="block">
+                        <span className={phoneLabel}>{l.unitsPerShrink !== null ? "Shrinks" : "Quantity"}</span>
                         <Input
                           type="number"
                           min={1}
                           value={l.qty}
                           onChange={(e) => updateProduct(l.productId, { qty: e.target.value })}
-                          aria-label="Quantity"
+                          aria-label={l.unitsPerShrink !== null ? "Shrinks" : "Quantity"}
                         />
                       </label>
                       <label className="block">
-                        <span className={phoneLabel}>{inclusive ? "Price incl. VAT" : "Price/unit"}</span>
+                        <span className={phoneLabel}>
+                          {`${l.unitsPerShrink !== null ? "Price per shrink" : "Price per unit"}${inclusive ? " incl. VAT" : ""}`}
+                        </span>
                         <Input
                           type="number"
                           min={0}
                           step="0.01"
                           value={l.price}
                           onChange={(e) => updateProduct(l.productId, { price: e.target.value })}
-                          aria-label={inclusive ? "Price incl. VAT" : "Price/unit"}
+                          aria-label={`${l.unitsPerShrink !== null ? "Price per shrink" : "Price per unit"}${inclusive ? " incl. VAT" : ""}`}
                         />
                       </label>
                       <div>

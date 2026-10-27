@@ -12,8 +12,10 @@ import { billingErrorMessage } from "@/lib/billing";
  * list, or free text. An accepted quote becomes an order (`quote_convert`,
  * products only) or is invoiced (`invoice_from_quote`: in full, a deposit, or
  * the final balance). An edited draft or sent quote is saved in one step
- * (`quote_save`). See `20261007095715_quotes.sql`,
- * `20261008180000_invoicing_for_every_trade.sql` and `20261023141700_quote_save.sql`.
+ * (`quote_save`). A product is priced per unit or per shrink; the order made
+ * from it counts units. See `20261007095715_quotes.sql`,
+ * `20261008180000_invoicing_for_every_trade.sql`, `20261023141700_quote_save.sql`
+ * and `20261027154700_quote_shrink_lines.sql`.
  */
 
 type Client = SupabaseClient<Database>;
@@ -180,6 +182,8 @@ export type NewQuoteLine =
   | {
       kind: "product";
       productId: string;
+      /** Units in the product's shrink when the line is priced per shrink (qty counts shrinks); null per unit. */
+      unitsPerShrink: number | null;
       qty: number;
       listPrice: number;
       discountPct: number;
@@ -238,7 +242,8 @@ export function lineColumns(l: NewQuoteLine, position: number) {
         product_id: l.productId,
         service_item_id: null,
         description: null,
-        unit: null,
+        unit: l.unitsPerShrink ? "shrink" : null,
+        units_per_shrink: l.unitsPerShrink,
         qty: l.qty,
         list_price: l.listPrice,
         discount_pct: l.discountAmount > 0 ? 0 : l.discountPct,
@@ -250,6 +255,7 @@ export function lineColumns(l: NewQuoteLine, position: number) {
         service_item_id: l.kind === "service" ? l.serviceItemId : null,
         description: l.description.trim(),
         unit: l.unit?.trim() || null,
+        units_per_shrink: null,
         qty: l.qty,
         list_price: l.price,
         discount_pct: 0,
