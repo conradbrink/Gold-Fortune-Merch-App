@@ -1,7 +1,8 @@
 -- A quote's product priced per shrink: 20261027154700_quote_shrink_lines (27 Oct 2026).
 --
---   S1  quote_save keeps a line's units per shrink and its 'shrink'; a line
---       per unit has neither.
+--   S1  quote_save keeps a line's units per shrink and writes its unit from
+--       it ('shrink of 10', whatever unit was sent); a line per unit has
+--       neither.
 --   S2  A line per shrink is worth qty x the shrink's price, as typed.
 --   S3  A typed line with units per shrink is refused, and nothing changes.
 --   S4  Units per shrink of 0 is refused, and nothing changes.
@@ -10,7 +11,9 @@
 --       stays.
 --   S6  quote_convert, VAT-inclusive at 15%: 1 shrink of 10 at 887.44 becomes
 --       10 units at 77.17 (887.44 / 1.15 / 10, to the cent); an amount off
---       the line stays the same amount, VAT taken off.
+--       the line stays the same amount, VAT taken off; all of a line off
+--       stays all of it when the unit price rounds down, never below nothing.
+--   S8  A product line whose unit does not say its shrink is refused.
 --   S7  quote_save and quote_convert keep their security: invoker, a fixed
 --       search_path, no execute for anon or PUBLIC.
 --
@@ -56,13 +59,13 @@ begin
 
   ---------------------------------------------------------------- S1 saved as given
   perform public.quote_save(v_q, v_at, jsonb_build_object('store_id', v_store, 'notes', 'shrink suite'), jsonb_build_array(
-    jsonb_build_object('id', v_shrink, 'product_id', v_product, 'unit', 'shrink', 'units_per_shrink', 10,
+    jsonb_build_object('id', v_shrink, 'product_id', v_product, 'unit', 'box', 'units_per_shrink', 10,
                        'qty', 2, 'list_price', 771.69, 'discount_pct', 10),
     jsonb_build_object('id', v_unit, 'product_id', v_product2, 'qty', 3, 'list_price', 50)));
   v_checks := v_checks + 1;
   select string_agg(format('%s:%s:%s', position, coalesce(unit, '-'), coalesce(units_per_shrink::text, '-')), ', ' order by position)
     into v_err from public.quote_lines where quote_id = v_q;
-  if v_err is distinct from '1:shrink:10, 2:-:-' then
+  if v_err is distinct from '1:shrink of 10:10, 2:-:-' then
     v_fail := v_fail || 'S1 lines are ' || coalesce(v_err, 'none') || E'\n';
   end if;
 
@@ -92,7 +95,7 @@ begin
   -- S4 a shrink of nothing
   begin
     perform public.quote_save(v_q, v_at, jsonb_build_object('store_id', v_store, 'notes', 'zero'), jsonb_build_array(
-      jsonb_build_object('id', v_shrink, 'product_id', v_product, 'unit', 'shrink', 'units_per_shrink', 0, 'qty', 1, 'list_price', 10)));
+      jsonb_build_object('id', v_shrink, 'product_id', v_product, 'units_per_shrink', 0, 'qty', 1, 'list_price', 10)));
     v_fail := v_fail || 'S4 a shrink of 0 was saved' || E'\n';
   exception when others then
     get stacked diagnostics v_err = message_text;
@@ -100,9 +103,21 @@ begin
   end;
   v_checks := v_checks + 1;
 
+  -- S8 a product's unit that does not say its shrink, written straight to the table
+  begin
+    insert into public.quote_lines (org_id, quote_id, position, product_id, unit, units_per_shrink, qty, list_price)
+    values (c_gf, v_q, 9, (select id from public.products where org_id = c_gf and active and id not in (v_product, v_product2) order by name, id limit 1),
+            'shrink', 10, 1, 10);
+    v_fail := v_fail || 'S8 a product line with unit ''shrink'' for a shrink of 10 was saved' || E'\n';
+  exception when others then
+    get stacked diagnostics v_err = message_text;
+    if v_err not like '%quote_lines_product_unit%' then v_fail := v_fail || 'S8 refused for another reason: ' || v_err || E'\n'; end if;
+  end;
+  v_checks := v_checks + 1;
+
   if (select md5(coalesce(string_agg(l::text, '|' order by l.id), '')) || md5((select q::text from public.quotes q where q.id = v_q))
         from public.quote_lines l where l.quote_id = v_q) is distinct from v_snap then
-    v_fail := v_fail || 'S3/S4 a refused save changed the quote' || E'\n';
+    v_fail := v_fail || 'S3/S4/S8 a refused save changed the quote' || E'\n';
   end if;
 
   ---------------------------------------------------------------- S5 convert, VAT-exclusive
@@ -124,15 +139,22 @@ begin
   values (c_gf, 'QZ-' || left(md5(random()::text), 8), v_store, 'shrink suite inclusive')
   returning id into v_q2;
   insert into public.quote_lines (org_id, quote_id, position, product_id, unit, units_per_shrink, qty, list_price, discount_amount)
-  values (c_gf, v_q2, 1, v_product, 'shrink', 10, 1, 887.44, 11.50);
+  values (c_gf, v_q2, 1, v_product, 'shrink of 10', 10, 1, 887.44, 11.50),
+         -- All of the line off, at a shrink price whose unit price rounds down.
+         (c_gf, v_q2, 2, v_product2, 'shrink of 10', 10, 1, 477.30, 477.30);
   update public.quotes set status = 'accepted' where id = v_q2;
   v_order := public.quote_convert(v_q2);
   v_checks := v_checks + 1;
-  select qty_ordered, list_price, discount_amount into r from public.order_lines where order_id = v_order;
+  select qty_ordered, list_price, discount_amount into r from public.order_lines where order_id = v_order and product_id = v_product;
   if (select not prices_include_vat or vat_rate <> 15 from public.quotes where id = v_q2) then
     v_fail := v_fail || 'S6 fixture: the quote is not VAT-inclusive at 15%' || E'\n';
   elsif r.qty_ordered <> 10 or r.list_price <> 77.17 or r.discount_amount <> 10.00 then
     v_fail := v_fail || format('S6 the order line is %s at %s less %s', r.qty_ordered, r.list_price, r.discount_amount) || E'\n';
+  end if;
+  -- 477.30 / 1.15 / 10 = 41.50 a unit, 415.00 the line, less 415.04 off: capped at 415.00.
+  select qty_ordered, list_price, discount_amount, unit_price into r from public.order_lines where order_id = v_order and product_id = v_product2;
+  if r.qty_ordered <> 10 or r.list_price <> 41.50 or r.discount_amount <> 415.00 or r.unit_price <> 0 then
+    v_fail := v_fail || format('S6 the line all off is %s at %s less %s (%s)', r.qty_ordered, r.list_price, r.discount_amount, r.unit_price) || E'\n';
   end if;
   reset role;
 

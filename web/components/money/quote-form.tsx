@@ -31,6 +31,7 @@ import {
   fetchQuote,
   quoteClientName,
   quoteHeaderProblem,
+  switchedPrice,
   updateQuote,
   whyQuoteIsFixed,
   type NewQuoteLine,
@@ -199,6 +200,8 @@ export function QuoteForm({ quoteId }: { quoteId?: string }) {
           setDeliveryAddress(f.deliveryAddress);
           setNotes(f.notes);
           setProductLines(f.productLines);
+          // Products added to it are priced the way its last one is.
+          setByShrink(f.productLines.at(-1)?.unitsPerShrink != null);
           setLines(f.lines);
           const why = whyQuoteIsFixed(q.quote);
           if (why) setError(why);
@@ -328,24 +331,18 @@ export function QuoteForm({ quoteId }: { quoteId?: string }) {
     setProductQuery("");
   }
 
-  /**
-   * Prices a line per shrink or per unit. Its quantity stays as typed. A price
-   * still at the store's takes the store's price for the new way; a price typed
-   * in is moved across (times or divided by the units in a shrink).
-   */
+  /** Prices a line per shrink or per unit (see `switchedPrice`). Its quantity stays as typed. */
   function sellBy(l: ProductLine, perShrink: boolean) {
     const p = byId.get(l.productId);
     const units = shrinkSize(l, p);
     if (!units || perShrink === (l.unitsPerShrink !== null)) return;
     setByShrink(perShrink);
-    const atStorePrice = !p || l.price === "" || l.price === productPrice(p, storeList, !perShrink);
-    const price = atStorePrice
-      ? p
-        ? productPrice(p, storeList, perShrink)
-        : ""
-      : validPrice(l.price)
-        ? (perShrink ? Number(l.price) * units : Number(l.price) / units).toFixed(2)
-        : l.price;
+    const price = switchedPrice({
+      price: l.price,
+      toShrink: perShrink,
+      units,
+      storePrice: p ? { unit: productPrice(p, storeList, false), shrink: productPrice(p, storeList, true) } : null,
+    });
     updateProduct(l.productId, { unitsPerShrink: perShrink ? units : null, price });
   }
 

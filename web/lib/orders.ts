@@ -519,8 +519,7 @@ export function unitPriceFor(
       product's own, as `store_unit_price` decides in the database. */
   list?: StorePriceList | null
 ): string | null {
-  const listed = p.id != null ? list?.prices[p.id] : undefined;
-  const shrink = listed ?? p.shrink_price_excl_vat;
+  const shrink = shrinkPriceFor(p, list);
   if (shrink == null) return null;
   const units = p.units_per_shrink;
   if (units == null || !Number.isInteger(units) || units <= 0) return null;

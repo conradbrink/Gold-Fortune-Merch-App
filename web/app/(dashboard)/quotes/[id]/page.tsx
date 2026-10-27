@@ -410,12 +410,7 @@ export default function QuoteDetailPage() {
                     </TableCell>
                     <TableCell className="text-right tabular-nums">
                       {formatQty(Number(l.qty))}
-                      {l.unit && (
-                        <span className="text-muted-foreground">
-                          {" "}
-                          {l.units_per_shrink ? `${l.unit} of ${l.units_per_shrink}` : l.unit}
-                        </span>
-                      )}
+                      {l.unit && <span className="text-muted-foreground"> {l.unit}</span>}
                     </TableCell>
                     <TableCell className="text-right tabular-nums">
                       {m(Number(l.unit_price ?? 0))}

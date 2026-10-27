@@ -231,6 +231,32 @@ function headerColumns(input: QuoteHeader) {
   };
 }
 
+/** A product line's unit: what the quote prints beside its qty ("2 shrink of 10"), as the database checks it. */
+export function shrinkUnit(unitsPerShrink: number | null) {
+  return unitsPerShrink ? `shrink of ${unitsPerShrink}` : null;
+}
+
+/**
+ * A product line's price once it is switched to per shrink or per unit. A
+ * price still at the store's (or empty) takes the store's price the new way
+ * (`storePrice`, "" when there is none); a price typed in is moved across,
+ * times or divided by the units in a shrink, to the cent.
+ */
+export function switchedPrice(input: {
+  price: string;
+  toShrink: boolean;
+  units: number;
+  /** The store's price per unit and per shrink, in the quote's basis; null when the product can no longer be ordered. */
+  storePrice: { unit: string; shrink: string } | null;
+}): string {
+  const { price, toShrink, units, storePrice } = input;
+  const from = storePrice && (toShrink ? storePrice.unit : storePrice.shrink);
+  if (storePrice && (price === "" || price === from)) return toShrink ? storePrice.shrink : storePrice.unit;
+  const n = Number(price);
+  if (price.trim() === "" || !Number.isFinite(n)) return price;
+  return (Math.round((toShrink ? n * units : n / units) * 100) / 100).toFixed(2);
+}
+
 /**
  * What a line writes. Every column is spelt out, so an edited line drops what
  * it no longer has (a discount taken off, a unit cleared) rather than keeping it.
@@ -242,7 +268,7 @@ export function lineColumns(l: NewQuoteLine, position: number) {
         product_id: l.productId,
         service_item_id: null,
         description: null,
-        unit: l.unitsPerShrink ? "shrink" : null,
+        unit: shrinkUnit(l.unitsPerShrink),
         units_per_shrink: l.unitsPerShrink,
         qty: l.qty,
         list_price: l.listPrice,

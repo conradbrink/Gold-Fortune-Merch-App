@@ -4,7 +4,7 @@
 // quote's client, nothing kept from a failed save) is supabase/tests/quote_save.sql.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { lineColumns, quoteHeaderProblem, updateQuote, whyQuoteIsFixed, type NewQuoteLine } from "@/lib/quotes";
+import { lineColumns, quoteHeaderProblem, switchedPrice, updateQuote, whyQuoteIsFixed, type NewQuoteLine } from "@/lib/quotes";
 
 const text = (id: string, over: Partial<Extract<NewQuoteLine, { kind: "text" }>> = {}) =>
   ({ id, kind: "text", description: "Cooking oil 5L", unit: null, qty: 1, price: 120.25, ...over }) as const;
@@ -45,13 +45,30 @@ test("a product priced per shrink says so, and keeps the shrink's size", () => {
   assert.equal(unit.unit, null);
   assert.equal(unit.units_per_shrink, null);
   const shrink = lineColumns(product("a", "p1", { unitsPerShrink: 10, qty: 2, listPrice: 771.69 }), 1);
-  assert.equal(shrink.unit, "shrink");
+  // What the PDF and the client's link print beside the qty: "2 shrink of 10".
+  assert.equal(shrink.unit, "shrink of 10");
   assert.equal(shrink.units_per_shrink, 10);
   // qty counts shrinks and the price is a shrink's, as typed.
   assert.equal(shrink.qty, 2);
   assert.equal(shrink.list_price, 771.69);
   // Typed and price-list lines never carry a shrink.
   assert.equal(lineColumns(text("b"), 2).units_per_shrink, null);
+});
+
+test("switching a line per shrink: the store's price follows, a typed price is moved across", () => {
+  const storePrice = { unit: "41.50", shrink: "415.00" };
+  // At the store's price, or empty: the store's price the new way.
+  assert.equal(switchedPrice({ price: "41.50", toShrink: true, units: 10, storePrice }), "415.00");
+  assert.equal(switchedPrice({ price: "415.00", toShrink: false, units: 10, storePrice }), "41.50");
+  assert.equal(switchedPrice({ price: "", toShrink: true, units: 10, storePrice }), "415.00");
+  // Typed: times or divided by the units, to the cent.
+  assert.equal(switchedPrice({ price: "30", toShrink: true, units: 12, storePrice }), "360.00");
+  assert.equal(switchedPrice({ price: "771.69", toShrink: false, units: 10, storePrice }), "77.17");
+  // A product that can no longer be ordered keeps its price, moved across.
+  assert.equal(switchedPrice({ price: "771.69", toShrink: false, units: 10, storePrice: null }), "77.17");
+  assert.equal(switchedPrice({ price: "", toShrink: false, units: 10, storePrice: null }), "");
+  // Something that is not a price stays as typed, for the save to refuse.
+  assert.equal(switchedPrice({ price: "abc", toShrink: true, units: 10, storePrice }), "abc");
 });
 
 // ---------------------------------------------------------------- the save itself

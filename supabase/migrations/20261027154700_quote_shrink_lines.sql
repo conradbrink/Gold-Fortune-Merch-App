@@ -9,15 +9,16 @@
 --   * quote_lines.units_per_shrink: how many units were in the product's
 --     shrink when the line was written, kept on the line so a later change to
 --     the catalogue does not change what the quote offered. Null = per unit.
---     The screens also write unit = 'shrink' on such a line, which is what the
---     PDF and the client's page print beside the qty.
---   * quote_save writes it.
+--     A product line's unit then reads 'shrink of 10', and only then (checked),
+--     so the PDF and the client's page, which print the unit beside the qty,
+--     say how big the shrink is: "2 shrink of 10".
+--   * quote_save writes it, and writes a product line's unit from it.
 --   * quote_convert makes the order in units, as every order is: qty x units
 --     per shrink, at the shrink price divided by the units, to the cent, the
 --     same rule a rep's order is priced by (store_unit_price). So a shrink at
 --     771.69 becomes 10 units at 77.17 and the order can differ from the quote
 --     by a few cents. A percentage discount stays the same; an amount off the
---     line stays the same amount.
+--     line stays the same amount, up to what the order's line is worth.
 --
 -- Totals everywhere are qty x unit_price, which holds for a shrink line too,
 -- so nothing else changes.
@@ -25,7 +26,9 @@
 alter table public.quote_lines
   add column units_per_shrink integer,
   add constraint quote_lines_units_per_shrink check (
-    units_per_shrink is null or (product_id is not null and units_per_shrink > 0));
+    units_per_shrink is null or (product_id is not null and units_per_shrink > 0)),
+  add constraint quote_lines_product_unit check (
+    product_id is null or unit is not distinct from 'shrink of ' || units_per_shrink);
 
 create or replace function public.quote_save(p_quote uuid, p_loaded_at timestamptz, p_header jsonb, p_lines jsonb)
 returns void
@@ -94,7 +97,10 @@ begin
      qty, list_price, discount_pct, discount_amount, created_at)
   select y.id, q.org_id, q.id, y.ord::integer,
          nullif(y.l->>'product_id', '')::uuid, nullif(y.l->>'service_item_id', '')::uuid,
-         nullif(btrim(y.l->>'description'), ''), nullif(btrim(y.l->>'unit'), ''),
+         nullif(btrim(y.l->>'description'), ''),
+         -- A product's unit says its shrink, from the size given.
+         case when nullif(y.l->>'product_id', '') is null then nullif(btrim(y.l->>'unit'), '')
+              else 'shrink of ' || nullif(y.l->>'units_per_shrink', '')::integer end,
          nullif(y.l->>'units_per_shrink', '')::integer,
          (y.l->>'qty')::numeric, (y.l->>'list_price')::numeric,
          coalesce((y.l->>'discount_pct')::numeric, 0), coalesce((y.l->>'discount_amount')::numeric, 0),
@@ -157,13 +163,16 @@ begin
   ) returning id into v_order;
 
   -- An order counts units: a line per shrink becomes its units, at the
-  -- shrink's VAT-exclusive price shared across them, to the cent.
+  -- shrink's VAT-exclusive price shared across them, to the cent. An amount
+  -- off the line is at most what the order's line is worth, which rounding
+  -- the unit price down can make a few cents less than the quote's.
   insert into public.order_lines (
     org_id, order_id, product_id, qty_ordered,
     unit_price, list_price, discount_pct, discount_amount, client_generated_id
   )
   select q.org_id, v_order, l.product_id, (l.qty * coalesce(l.units_per_shrink, 1))::integer,
-         x.list_price, x.list_price, l.discount_pct, x.discount_amount, gen_random_uuid()
+         x.list_price, x.list_price, l.discount_pct,
+         least(x.discount_amount, round(l.qty * coalesce(l.units_per_shrink, 1) * x.list_price, 2)), gen_random_uuid()
   from public.quote_lines l
   cross join lateral (
     select round(case when q.prices_include_vat and coalesce(q.vat_rate, 0) > 0
