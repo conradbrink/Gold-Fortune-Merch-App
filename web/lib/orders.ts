@@ -519,8 +519,7 @@ export function unitPriceFor(
       product's own, as `store_unit_price` decides in the database. */
   list?: StorePriceList | null
 ): string | null {
-  const listed = p.id != null ? list?.prices[p.id] : undefined;
-  const shrink = listed ?? p.shrink_price_excl_vat;
+  const shrink = shrinkPriceFor(p, list);
   if (shrink == null) return null;
   const units = p.units_per_shrink;
   if (units == null || !Number.isInteger(units) || units <= 0) return null;
@@ -528,6 +527,20 @@ export function unitPriceFor(
   // database: a rep's line priced there and a clerk's prefilled here agree.
   const cents = Math.round(Number(shrink) * 100);
   return (Math.floor((cents * 2 + units) / (units * 2)) / 100).toFixed(2);
+}
+
+/**
+ * A product's shrink price excluding VAT: the store's price list's, or the
+ * product's own. What a quote line priced per shrink starts at. Null when
+ * neither has one.
+ */
+export function shrinkPriceFor(
+  p: { id?: string; shrink_price_excl_vat: number | null },
+  list?: StorePriceList | null
+): string | null {
+  const listed = p.id != null ? list?.prices[p.id] : undefined;
+  const shrink = listed ?? p.shrink_price_excl_vat;
+  return shrink == null ? null : Number(shrink).toFixed(2);
 }
 
 /**

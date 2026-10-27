@@ -3,7 +3,7 @@
 // these are the cases supabase/tests/price_lists.sql checks there.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { unitPriceFor } from "@/lib/orders";
+import { shrinkPriceFor, unitPriceFor } from "@/lib/orders";
 import { differenceFromOwn, listForGroup, type PriceBook } from "@/lib/price-lists";
 
 const lighter = { id: "p1", units_per_shrink: 50, shrink_price_excl_vat: 272.37 };
@@ -37,4 +37,13 @@ test("the difference from the product's own price", () => {
   assert.equal(differenceFromOwn(250, 272.37), "-8.2%");
   assert.equal(differenceFromOwn(272.37, 272.37), "Same");
   assert.equal(differenceFromOwn(10, null), null);
+});
+
+test("a quote priced per shrink starts at the shrink price: the store's list's, or the product's own", () => {
+  assert.equal(shrinkPriceFor(lighter), "272.37");
+  assert.equal(shrinkPriceFor(lighter, listForGroup(book, "forecourts")), "294.16");
+  assert.equal(shrinkPriceFor({ ...lighter, id: "p2" }, listForGroup(book, "forecourts")), "272.37");
+  // No pack size is needed for the shrink's own price.
+  assert.equal(shrinkPriceFor({ id: "p4", shrink_price_excl_vat: null }, book.forecourts), "60.00");
+  assert.equal(shrinkPriceFor({ id: "p5", shrink_price_excl_vat: null }, book.forecourts), null);
 });

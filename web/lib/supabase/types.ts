@@ -838,6 +838,7 @@ export type Database = {
           service_item_id: string | null
           description: string | null
           unit: string | null
+          units_per_shrink: number | null
           position: number | null
         }
         Insert: {
@@ -854,6 +855,7 @@ export type Database = {
           service_item_id?: string | null
           description?: string | null
           unit?: string | null
+          units_per_shrink?: number | null
           position?: number | null
         }
         Update: {
@@ -870,6 +872,7 @@ export type Database = {
           service_item_id?: string | null
           description?: string | null
           unit?: string | null
+          units_per_shrink?: number | null
           position?: number | null
         }
         Relationships: []

@@ -12,8 +12,10 @@ import { billingErrorMessage } from "@/lib/billing";
  * list, or free text. An accepted quote becomes an order (`quote_convert`,
  * products only) or is invoiced (`invoice_from_quote`: in full, a deposit, or
  * the final balance). An edited draft or sent quote is saved in one step
- * (`quote_save`). See `20261007095715_quotes.sql`,
- * `20261008180000_invoicing_for_every_trade.sql` and `20261023141700_quote_save.sql`.
+ * (`quote_save`). A product is priced per unit or per shrink; the order made
+ * from it counts units. See `20261007095715_quotes.sql`,
+ * `20261008180000_invoicing_for_every_trade.sql`, `20261023141700_quote_save.sql`
+ * and `20261027154700_quote_shrink_lines.sql`.
  */
 
 type Client = SupabaseClient<Database>;
@@ -180,6 +182,8 @@ export type NewQuoteLine =
   | {
       kind: "product";
       productId: string;
+      /** Units in the product's shrink when the line is priced per shrink (qty counts shrinks); null per unit. */
+      unitsPerShrink: number | null;
       qty: number;
       listPrice: number;
       discountPct: number;
@@ -227,6 +231,32 @@ function headerColumns(input: QuoteHeader) {
   };
 }
 
+/** A product line's unit: what the quote prints beside its qty ("2 shrink of 10"), as the database checks it. */
+export function shrinkUnit(unitsPerShrink: number | null) {
+  return unitsPerShrink ? `shrink of ${unitsPerShrink}` : null;
+}
+
+/**
+ * A product line's price once it is switched to per shrink or per unit. A
+ * price still at the store's (or empty) takes the store's price the new way
+ * (`storePrice`, "" when there is none); a price typed in is moved across,
+ * times or divided by the units in a shrink, to the cent.
+ */
+export function switchedPrice(input: {
+  price: string;
+  toShrink: boolean;
+  units: number;
+  /** The store's price per unit and per shrink, in the quote's basis; null when the product can no longer be ordered. */
+  storePrice: { unit: string; shrink: string } | null;
+}): string {
+  const { price, toShrink, units, storePrice } = input;
+  const from = storePrice && (toShrink ? storePrice.unit : storePrice.shrink);
+  if (storePrice && (price === "" || price === from)) return toShrink ? storePrice.shrink : storePrice.unit;
+  const n = Number(price);
+  if (price.trim() === "" || !Number.isFinite(n)) return price;
+  return (Math.round((toShrink ? n * units : n / units) * 100) / 100).toFixed(2);
+}
+
 /**
  * What a line writes. Every column is spelt out, so an edited line drops what
  * it no longer has (a discount taken off, a unit cleared) rather than keeping it.
@@ -238,7 +268,8 @@ export function lineColumns(l: NewQuoteLine, position: number) {
         product_id: l.productId,
         service_item_id: null,
         description: null,
-        unit: null,
+        unit: shrinkUnit(l.unitsPerShrink),
+        units_per_shrink: l.unitsPerShrink,
         qty: l.qty,
         list_price: l.listPrice,
         discount_pct: l.discountAmount > 0 ? 0 : l.discountPct,
@@ -250,6 +281,7 @@ export function lineColumns(l: NewQuoteLine, position: number) {
         service_item_id: l.kind === "service" ? l.serviceItemId : null,
         description: l.description.trim(),
         unit: l.unit?.trim() || null,
+        units_per_shrink: null,
         qty: l.qty,
         list_price: l.price,
         discount_pct: 0,

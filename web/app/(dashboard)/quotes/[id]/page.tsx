@@ -397,7 +397,7 @@ export default function QuoteDetailPage() {
                 <TableRow>
                   <TableHead>Description</TableHead>
                   <TableHead className="text-right">Qty</TableHead>
-                  <TableHead className="text-right">Price/unit</TableHead>
+                  <TableHead className="text-right">Price</TableHead>
                   <TableHead className="text-right">Line total</TableHead>
                 </TableRow>
               </TableHeader>
