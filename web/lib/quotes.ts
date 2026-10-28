@@ -41,6 +41,36 @@ export function isExpired(q: Pick<QuoteRow, "status" | "valid_until">, today = n
   return q.valid_until < today.toISOString().slice(0, 10);
 }
 
+/**
+ * A name as the database compares it when a quote for someone new becomes an
+ * order (quote_convert, 20261028113700): case and spacing ignored.
+ */
+export function sameName(a: string, b: string): boolean {
+  const norm = (s: string) => tidyName(s).toLowerCase();
+  return norm(a) !== "" && norm(a) === norm(b);
+}
+
+/** A typed name as a customer added from a quote is named: trimmed, single spaces. */
+export function tidyName(name: string): string {
+  return name.trim().replace(/\s+/g, " ");
+}
+
+/**
+ * How many active places on the books quote_convert would match this typed
+ * name to: 0 means it will add them. Asked so Convert can say which.
+ */
+export async function countStoresNamed(supabase: Client, name: string): Promise<number> {
+  // ilike with the wildcards escaped, narrowed by the same rule the database uses.
+  const pattern = tidyName(name).replace(/[\\%_]/g, (c) => `\\${c}`);
+  const { data, error } = await supabase
+    .from("stores")
+    .select("name")
+    .eq("active", true)
+    .ilike("name", `%${pattern.split(" ").join("%")}%`);
+  if (error) throw new Error(error.message);
+  return (data ?? []).filter((s) => sameName(s.name, name)).length;
+}
+
 /** Who a quote is for: the place on the books, or the name typed in. */
 export function quoteClientName(q: Pick<QuoteRow, "customer_name">, storeName: string | null) {
   return storeName ?? q.customer_name ?? "—";

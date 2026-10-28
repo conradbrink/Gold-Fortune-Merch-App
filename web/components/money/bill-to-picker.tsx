@@ -5,6 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useTerms } from "@/lib/use-company-config";
 import { lower, type Terms } from "@/lib/terms";
+import { sameName } from "@/lib/quotes";
 
 /**
  * Who a quote or an invoice is for: one of the company's places on the books,
@@ -14,6 +15,11 @@ import { lower, type Terms } from "@/lib/terms";
 export type BillTo = { mode: "store" | "new"; storeId: string; name: string; email: string; address: string };
 
 type PickableStore = { id: string; name: string; address: string | null; city: string | null };
+
+/** The places on the books with this name, as quote_convert would match them. */
+export function storesNamed<T extends { name: string }>(stores: T[], name: string): T[] {
+  return stores.filter((s) => sameName(s.name, name));
+}
 
 /** The first problem, in words, or null when the choice is complete. */
 export function billToProblem(b: BillTo, t: Terms): string | null {
@@ -47,6 +53,9 @@ export function BillToPicker({
   // switching between "someone new" and back, and a value set from outside.
   const chosen = stores.find((s) => s.id === value.storeId);
   const shown = query !== "" || !chosen ? query : chosen.name + (chosen.city ? ` — ${chosen.city}` : "");
+  // Someone new who is not new: typed by hand, they would get a second
+  // record of their own when the quote becomes an order. Offered, not forced.
+  const already = value.mode === "new" ? storesNamed(stores, value.name) : [];
 
   return (
     <div className="space-y-3">
@@ -127,6 +136,24 @@ export function BillToPicker({
               onChange={(e) => onChange({ ...value, name: e.target.value })}
               placeholder="A person or a business"
             />
+            {already.length === 1 && (
+              <p className="mt-1.5 text-sm">
+                {`${already[0].name}${already[0].city ? ` in ${already[0].city}` : ""} is on your books already. `}
+                <button
+                  type="button"
+                  className="font-medium text-primary underline-offset-2 hover:underline"
+                  disabled={disabled}
+                  onClick={() => onChange({ ...value, mode: "store", storeId: already[0].id })}
+                >
+                  {`Use that ${lower(t.site.one)}`}
+                </button>
+              </p>
+            )}
+            {already.length > 1 && (
+              <p className="mt-1.5 text-sm text-muted-foreground">
+                {`${already.length} ${lower(t.site.many)} on your books have this name. Choose one under "A ${lower(t.site.one)} on the books".`}
+              </p>
+            )}
           </div>
           <div>
             <Label htmlFor="bill-email">Email</Label>

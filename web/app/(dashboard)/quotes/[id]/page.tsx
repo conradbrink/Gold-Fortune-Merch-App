@@ -25,6 +25,7 @@ import { SentLines } from "@/components/send/sent-lines";
 import { fetchSendsFor, type SendRow } from "@/lib/document-sends";
 import {
   convertQuote,
+  countStoresNamed,
   deleteQuote,
   downloadQuotePdf,
   fetchQuote,
@@ -35,6 +36,7 @@ import {
   quoteClientName,
   quoteTotals,
   setQuoteStatus,
+  tidyName,
   whyQuoteIsFixed,
   type QuoteDetail,
 } from "@/lib/quotes";
@@ -252,9 +254,22 @@ export default function QuoteDetailPage() {
               disabled={busy}
               onClick={() =>
                 run(async () => {
+                  // Someone new has no record yet: converting uses the one
+                  // of that name, or adds them (quote_convert).
+                  let who = "";
+                  if (!q.store_id && q.customer_name) {
+                    const named = await countStoresNamed(supabase, q.customer_name);
+                    const name = tidyName(q.customer_name);
+                    who =
+                      named === 0
+                        ? ` ${name} is not on your books yet, so they will be added as a new ${lower(t.site.one)}, with the address on the quote.`
+                        : named === 1
+                          ? ` The order will be for ${name}, who is on your books already.`
+                          : "";
+                  }
                   if (
                     !window.confirm(
-                      `Turn ${q.quote_number} into an order? The warehouse will see it as a new order.`
+                      `Turn ${q.quote_number} into an order? The warehouse will see it as a new order.${who}`
                     )
                   )
                     return;
