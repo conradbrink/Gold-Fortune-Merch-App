@@ -1,10 +1,10 @@
 // A consignment somebody has made this rep responsible for.
 //
-// Read-only on the phone. Marking a delivery received moves stock out of the
-// in-transit location and closes the order, which `order_mark_delivered()` does
-// in one transaction with the proof of delivery beside it — that is a warehouse
-// action with an audit trail, and a second path into it from a handset is not
-// something to add casually.
+// Read on the phone, with one action: the rep it is assigned to records a
+// full drop with a photo of the signed delivery note, through
+// `delivery_confirm()` (20261027201700), which moves the stock out of transit
+// and files the photo as the order's POD in one transaction. A short drop is
+// still the warehouse's to record.
 
 import 'package:intl/intl.dart';
 
@@ -178,6 +178,7 @@ class DeliveryDetail {
     required this.failureReason,
     required this.receivedBy,
     required this.lines,
+    this.orderId,
   });
 
   /// Its counts are this delivery's products, from [lines].
@@ -205,6 +206,9 @@ class DeliveryDetail {
   final String? dispatchNotes;
   final String? failureReason;
   final String? receivedBy;
+
+  /// The order behind the dispatch: its POD photo is filed under it.
+  final String? orderId;
 
   /// Null when the products could not be loaded: the rest of the delivery
   /// still is, and is still worth showing.
@@ -320,6 +324,7 @@ class DeliveryDetail {
       dispatchNotes: _text(dispatch['notes']),
       failureReason: _text(dispatch['failure_reason']),
       receivedBy: _text(dispatch['received_by_name']),
+      orderId: dispatch['order_id'] as String?,
       lines: lines == null
           ? null
           : [

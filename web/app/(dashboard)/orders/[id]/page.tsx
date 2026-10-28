@@ -61,6 +61,7 @@ import {
   type ShortfallAction,
 } from "@/lib/orders";
 import { formatDateOnly } from "@/lib/format-date";
+import { OrderSignature } from "@/components/orders/order-signature";
 import { useCompanyConfig, useTerms } from "@/lib/use-company-config";
 import { capital, lower, possessive, withArticle } from "@/lib/terms";
 import { fetchPriceBook, listForGroup, type PriceBook } from "@/lib/price-lists";
@@ -1063,6 +1064,11 @@ export default function OrderDetailPage() {
               <OrderInvoice orderId={o.id} status={o.status} invoiceNumber={o.invoice_number} />
               {o.contact_name && <Row label="Contact" value={o.contact_name} />}
               {o.contact_phone && <Row label="Phone" value={o.contact_phone} />}
+              <OrderSignature
+                path={o.signature_path}
+                signedBy={o.signed_by_name}
+                signedAt={o.signed_at}
+              />
               {o.required_by && <Row label="Required by" value={o.required_by} />}
               {o.customer_po_number && (
                 <Row

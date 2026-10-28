@@ -51,6 +51,7 @@ Map<String, dynamic> _dispatch({
   'notes': null,
   'failure_reason': null,
   'received_by_name': status == 'delivered' ? 'K. Molefe' : null,
+  'order_id': 'o1',
   'order': {
     'order_number': 'SO-001234',
     'customer_po_number': 'PO-4471',
@@ -126,6 +127,25 @@ class _FakeRepository implements DeliveryRepository {
   @override
   Future<int> outstandingCount() async =>
       list.where((d) => d.isOutstanding).length;
+
+  /// Dispatches recorded as delivered on "this phone" and not yet sent.
+  Set<String> pending = {};
+  int confirmCalls = 0;
+
+  @override
+  Future<Set<String>> pendingConfirms() async => pending;
+
+  @override
+  Future<void> confirmDelivery({
+    required String orgId,
+    required String repId,
+    required DeliveryDetail delivery,
+    required String receivedBy,
+    required File photo,
+  }) async {
+    confirmCalls++;
+    pending = {...pending, delivery.delivery.id};
+  }
 }
 
 Widget _scope(_FakeRepository repo, Widget app) => ProviderScope(
@@ -134,6 +154,8 @@ Widget _scope(_FakeRepository repo, Widget app) => ProviderScope(
   overrides: [
     currentUserProvider.overrideWithValue(null),
     deliveryRepositoryProvider.overrideWithValue(repo),
+    // The real one reads the outbox; here the fake's set is the outbox.
+    pendingDeliveryConfirmsProvider.overrideWith((ref) => repo.pendingConfirms()),
     companyConfigValueProvider.overrideWithValue(CompanyConfig.fallback),
     termsProvider.overrideWithValue(Terms.defaults),
   ],
@@ -144,8 +166,10 @@ Future<_FakeRepository> _pumpDetail(
   WidgetTester tester, {
   DeliveryDetail? detail,
   Future<DeliveryDetail?> Function()? fetch,
+  Set<String> pending = const {},
 }) async {
-  final repo = _FakeRepository(detail: fetch ?? (() async => detail));
+  final repo = _FakeRepository(detail: fetch ?? (() async => detail))
+    ..pending = pending;
   await tester.pumpWidget(
     _scope(
       repo,
@@ -569,6 +593,40 @@ void main() {
       await tester.tap(find.text('Main Road Superette'));
       await tester.pumpAndSettle();
       expect(repo.listCalls, 1);
+    });
+  });
+
+  group('recording the drop', () {
+    testWidgets('a delivery on the road offers it', (tester) async {
+      await _pumpDetail(tester, detail: _detail());
+      expect(find.text('Record delivery'), findsOneWidget);
+    });
+
+    testWidgets('a finished one does not', (tester) async {
+      await _pumpDetail(tester, detail: _detail(_dispatch(status: 'delivered')));
+      expect(find.text('Record delivery'), findsNothing);
+    });
+
+    testWidgets('one recorded on this phone says it is waiting, and is not offered twice', (
+      tester,
+    ) async {
+      await _pumpDetail(tester, detail: _detail(), pending: {'d1'});
+      expect(find.text('Record delivery'), findsNothing);
+      expect(find.textContaining('You recorded this as delivered'), findsOneWidget);
+    });
+
+    testWidgets('it needs a name and a photo of the delivery note', (tester) async {
+      await _pumpDetail(tester, detail: _detail(_dispatch(contact: 'Thabo')));
+      await tester.tap(find.text('Record delivery'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Take a photo of the signed delivery note'), findsOneWidget);
+      // The order's contact is the likely receiver, so the name starts there.
+      expect(find.widgetWithText(TextField, 'Thabo'), findsOneWidget);
+      final delivered = find.widgetWithText(FilledButton, 'Delivered');
+      expect(tester.widget<FilledButton>(delivered).onPressed, isNull,
+          reason: 'no photo yet');
+      expect(find.textContaining('everything on this delivery was taken'), findsOneWidget);
     });
   });
 }

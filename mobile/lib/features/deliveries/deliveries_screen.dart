@@ -19,10 +19,9 @@ import '../../shared/widgets/message_panel.dart';
 /// A card opens the delivery (`DeliveryDetailScreen`): what is in it, where
 /// it goes and who to ask for.
 ///
-/// Read-only, on purpose for now. Recording a delivery moves stock out of the
-/// in-transit location, closes the order and files the proof — one transaction
-/// with an audit trail behind it, and a second way into that from a handset is
-/// not something to add without deciding it deliberately.
+/// The drop itself is recorded on the delivery's own screen: the owner
+/// decided (27 Oct 2026) that the driver records a full delivery there, with a
+/// photo of the signed delivery note, through `delivery_confirm()`.
 class DeliveriesScreen extends ConsumerWidget {
   const DeliveriesScreen({super.key});
 
@@ -30,6 +29,17 @@ class DeliveriesScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final deliveries = ref.watch(myDeliveriesProvider);
     final site = ref.watch(termsProvider).site.oneLower;
+
+    // A drop recorded on this phone has reached the server: the list and the
+    // badge are asked again, so it moves to Finished.
+    ref.listen(pendingDeliveryConfirmsProvider, (previous, next) {
+      final before = previous?.value ?? const <String>{};
+      final now = next.value ?? const <String>{};
+      if (before.any((id) => !now.contains(id))) {
+        ref.invalidate(myDeliveriesProvider);
+        ref.invalidate(outstandingDeliveryCountProvider);
+      }
+    });
 
     return Scaffold(
       appBar: AppBar(title: const Text('My deliveries')),
@@ -114,15 +124,17 @@ class DeliveryStatusChip extends StatelessWidget {
   }
 }
 
-class _DeliveryCard extends StatelessWidget {
+class _DeliveryCard extends ConsumerWidget {
   const _DeliveryCard(this.delivery);
 
   final Delivery delivery;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final d = delivery;
     final fmt = DateFormat('d MMM');
+    final waiting = d.isOutstanding &&
+        (ref.watch(pendingDeliveryConfirmsProvider).value?.contains(d.id) ?? false);
 
     return Card(
       margin: const EdgeInsets.only(bottom: 8),
@@ -175,6 +187,17 @@ class _DeliveryCard extends StatelessWidget {
                 ].join(' · '),
                 style: const TextStyle(color: AppColors.textMuted, fontSize: 12),
               ),
+              if (waiting) ...[
+                const SizedBox(height: 6),
+                Text(
+                  'You recorded it as delivered. Waiting for signal to send it.',
+                  style: TextStyle(
+                    color: context.brand.primary,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
               if (d.trackingReference != null)
                 Padding(
                   padding: const EdgeInsets.only(top: 2),

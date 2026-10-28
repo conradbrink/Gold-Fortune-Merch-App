@@ -3555,6 +3555,9 @@ export type Database = {
           received_via: string
           rep_id: string | null
           required_by: string | null
+          signature_path: string | null
+          signed_at: string | null
+          signed_by_name: string | null
           source: string
           status: string
           store_id: string
@@ -3600,6 +3603,9 @@ export type Database = {
           received_via?: string
           rep_id?: string | null
           required_by?: string | null
+          signature_path?: string | null
+          signed_at?: string | null
+          signed_by_name?: string | null
           source: string
           status?: string
           store_id: string
@@ -3645,6 +3651,9 @@ export type Database = {
           received_via?: string
           rep_id?: string | null
           required_by?: string | null
+          signature_path?: string | null
+          signed_at?: string | null
+          signed_by_name?: string | null
           source?: string
           status?: string
           store_id?: string
