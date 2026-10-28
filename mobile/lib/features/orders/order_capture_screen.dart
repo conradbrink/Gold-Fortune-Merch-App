@@ -8,6 +8,7 @@ import '../../core/theme.dart';
 import '../../data/local/order_draft.dart';
 import '../../data/models/catalogue_product.dart';
 import '../../data/models/store_reorder.dart';
+import 'order_sign_sheet.dart';
 
 /// Taking an order in the shop.
 ///
@@ -280,6 +281,18 @@ class _OrderCaptureScreenState extends ConsumerState<OrderCaptureScreen> {
       return;
     }
 
+    // The manager signs for it before it is saved: every order needs a
+    // signature (owner, 27 Oct 2026). Closing the sheet leaves the draft.
+    setState(() => _error = null);
+    final contact = _contactName.text.trim();
+    final signature = await showOrderSignSheet(
+      context,
+      lineCount: lines.length,
+      storeName: widget.storeName,
+      signerName: contact.isEmpty ? null : contact,
+    );
+    if (signature == null || !mounted) return;
+
     setState(() {
       _saving = true;
       _error = null;
@@ -287,6 +300,7 @@ class _OrderCaptureScreenState extends ConsumerState<OrderCaptureScreen> {
 
     try {
       await ref.read(orderRepositoryProvider).submitOrder(
+            signature: signature,
             orgId: profile.orgId,
             repId: profile.id,
             storeId: widget.storeId,
@@ -503,7 +517,7 @@ class _OrderCaptureScreenState extends ConsumerState<OrderCaptureScreen> {
                             ),
                             FilledButton(
                               onPressed: _saving || lineCount == 0 ? null : _submit,
-                              child: Text(_saving ? 'Saving…' : 'Save order'),
+                              child: Text(_saving ? 'Saving…' : 'Sign and save'),
                             ),
                           ],
                         ),

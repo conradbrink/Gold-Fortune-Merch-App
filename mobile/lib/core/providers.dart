@@ -159,7 +159,19 @@ final unacknowledgedWarningCountProvider = FutureProvider<int>((ref) async {
 // ------------------------------------------------------------- deliveries
 
 final deliveryRepositoryProvider = Provider<DeliveryRepository>((ref) {
-  return DeliveryRepository(supabase);
+  return DeliveryRepository(
+    supabase,
+    ref.watch(appDatabaseProvider),
+    ref.watch(syncEngineProvider),
+  );
+});
+
+/// Dispatches this phone has recorded as delivered and not yet sent. Asked
+/// again whenever the outbox changes, so a drop that lands stops showing as
+/// waiting.
+final pendingDeliveryConfirmsProvider = FutureProvider<Set<String>>((ref) {
+  ref.watch(pendingSyncCountProvider);
+  return ref.watch(deliveryRepositoryProvider).pendingConfirms();
 });
 
 /// No automatic retry for the two delivery screens. Riverpod's default tries

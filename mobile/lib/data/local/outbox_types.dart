@@ -49,6 +49,13 @@ class OutboxType {
   /// Waits for its check-in, as a form does: the photo is filed against the
   /// visit, and the visit's server id only exists once the check-in lands.
   static const damageReport = 'damage_report';
+
+  /// The driver records a delivery with its proof: who received it, and a
+  /// photo of the signed delivery note (`delivery_confirm()`).
+  ///
+  /// Keyed by the dispatch id, so the delivery screen can tell it is waiting
+  /// on this phone. The photo uploads first; the call refuses without it.
+  static const deliveryConfirm = 'delivery_confirm';
 }
 
 /// One queued operation, named by what it is and what it is about.

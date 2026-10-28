@@ -1,6 +1,10 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
+
+import 'package:path/path.dart' as p;
+import 'package:path_provider/path_provider.dart';
 
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:uuid/uuid.dart';
@@ -115,12 +119,25 @@ class OrderRepository {
     String? contactName,
     String? contactPhone,
     String? requiredBy,
+    ({Uint8List png, String name})? signature,
   }) async {
     if (lines.isEmpty) {
       throw ArgumentError('An order needs at least one line.');
     }
 
     final clientId = _uuid.v4();
+    // On disk before the order is queued, outside the cache Android may empty.
+    // Uploaded to `order-signatures` when the order syncs (see
+    // `SyncEngine._replayOrder`), then deleted.
+    String? signaturePath;
+    if (signature != null) {
+      final dir = await getApplicationDocumentsDirectory();
+      final sigDir = Directory(p.join(dir.path, 'pending_signatures'));
+      if (!sigDir.existsSync()) sigDir.createSync(recursive: true);
+      final file = File(p.join(sigDir.path, '$clientId.png'));
+      await file.writeAsBytes(signature.png, flush: true);
+      signaturePath = file.path;
+    }
     final payload = <String, dynamic>{
       'org_id': orgId,
       'rep_id': repId,
@@ -133,6 +150,11 @@ class OrderRepository {
       'contact_phone': contactPhone,
       'required_by': requiredBy,
       'visit_client_generated_id': visitClientGeneratedId,
+      // The manager's signature: the picture on this phone until it uploads,
+      // the name typed beside it, and when it was drawn.
+      'local_signature_path': signaturePath,
+      'signed_by_name': signature == null ? null : clipText(signature.name, 120),
+      'signed_at': signature == null ? null : DateTime.now().toUtc().toIso8601String(),
       // Converted out of the rep's shrinks and into the base units the
       // warehouse reserves in. This is the only place the two denominations
       // meet: everything above it is what the rep typed, everything below is

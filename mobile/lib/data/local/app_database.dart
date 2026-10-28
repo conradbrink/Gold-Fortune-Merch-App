@@ -189,6 +189,36 @@ class AppDatabase extends _$AppDatabase {
         .toSet();
   }
 
+  /// The queued entries of one kind about one thing, stalled ones included.
+  Future<List<OutboxEntry>> entriesFor(String entityType, String clientGeneratedId) =>
+      (select(outboxEntries)
+            ..where((t) =>
+                t.entityType.equals(entityType) &
+                t.clientGeneratedId.equals(clientGeneratedId)))
+          .get();
+
+  /// Removes the queued entries of one kind about one thing.
+  Future<int> deleteEntriesFor(String entityType, String clientGeneratedId) =>
+      (delete(outboxEntries)
+            ..where((t) =>
+                t.entityType.equals(entityType) &
+                t.clientGeneratedId.equals(clientGeneratedId)))
+          .go();
+
+  /// Client ids of one kind of entry that are still being retried: queued,
+  /// and short of [maxAttempts].
+  Future<Set<String>> retryingClientIds(String entityType, int maxAttempts) async {
+    final query = selectOnly(outboxEntries, distinct: true)
+      ..addColumns([outboxEntries.clientGeneratedId])
+      ..where(outboxEntries.entityType.equals(entityType) &
+          outboxEntries.attempts.isSmallerThanValue(maxAttempts));
+    final rows = await query.get();
+    return rows
+        .map((r) => r.read(outboxEntries.clientGeneratedId))
+        .whereType<String>()
+        .toSet();
+  }
+
   /// Client ids that still have queued work.
   ///
   /// A cached row carrying one of these holds local state the server has not

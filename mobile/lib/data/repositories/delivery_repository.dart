@@ -1,6 +1,16 @@
-import 'package:supabase_flutter/supabase_flutter.dart';
+import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
 
+import 'package:path/path.dart' as p;
+import 'package:path_provider/path_provider.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:uuid/uuid.dart';
+
+import '../local/app_database.dart';
+import '../local/outbox_types.dart';
 import '../models/delivery.dart';
+import '../sync/sync_engine.dart';
 
 /// Deliveries the warehouse has made this rep responsible for.
 ///
@@ -14,10 +24,16 @@ import '../models/delivery.dart';
 /// delivery list is worse than none: a rep looking at yesterday's cache in a
 /// shop's back room, being told the stock is on its way when it was returned
 /// this morning, is the exact failure this screen exists to prevent.
+///
+/// The one thing that is queued is the driver recording the drop
+/// ([confirmDelivery]): it is done at the shop's back door, where the signal
+/// often is not, and it must not be lost.
 class DeliveryRepository {
-  DeliveryRepository(this._client);
+  DeliveryRepository(this._client, this._db, this._sync);
 
   final SupabaseClient _client;
+  final AppDatabase _db;
+  final SyncEngine _sync;
 
   /// `dispatch_lines` is embedded for the count and the units. The product
   /// names come only on the delivery screen, from `delivery_contents()` (see
@@ -56,7 +72,7 @@ lines:dispatch_lines(qty)
   static const _detailSelect = '''
 id, dispatch_number, status, dispatched_at, expected_delivery_on, delivered_at,
 carrier_name, tracking_reference, notes, failure_reason, received_by_name,
-order:orders(order_number, customer_po_number, customer_po_expires_on,
+order_id, order:orders(order_number, customer_po_number, customer_po_expires_on,
   contact_name, contact_phone, delivery_address, notes,
   store:stores(name, address, city, state, zip, lat, lng))
 ''';
@@ -84,6 +100,87 @@ order:orders(order_number, customer_po_number, customer_po_expires_on,
     if (row == null) return null;
     return DeliveryDetail.fromMaps(row, await lines);
   }
+
+  /// Records the drop: everything on the dispatch was taken, [receivedBy]
+  /// signed for it, and [photo] is the signed delivery note.
+  ///
+  /// Queued, not sent: the photo is copied out of the camera's cache first
+  /// (Android may empty it), then one outbox entry, keyed by the dispatch, is
+  /// replayed by `SyncEngine` as upload-then-`delivery_confirm()`. Full
+  /// deliveries only (owner, 27 Oct 2026): a short drop is the warehouse's to
+  /// record.
+  Future<void> confirmDelivery({
+    required String orgId,
+    required String repId,
+    required DeliveryDetail delivery,
+    required String receivedBy,
+    required File photo,
+  }) async {
+    final orderId = delivery.orderId;
+    if (orderId == null) {
+      throw StateError('This delivery has no order on record.');
+    }
+    final photoId = const Uuid().v4();
+    final dir = await getApplicationDocumentsDirectory();
+    final podDir = Directory(p.join(dir.path, 'pending_pod'));
+    if (!podDir.existsSync()) podDir.createSync(recursive: true);
+    final kept = await photo.copy(p.join(podDir.path, '$photoId.jpg'));
+    final dispatchId = delivery.delivery.id;
+
+    // An earlier try for this dispatch that gave up is replaced, not left in
+    // front: the drain holds back anything sharing a client id with a stalled
+    // entry, so the new one would never be sent behind it.
+    final List<OutboxEntry> replaced;
+    try {
+      replaced = await _db.transaction(() async {
+        final old = await _db.entriesFor(OutboxType.deliveryConfirm, dispatchId);
+        await _db.deleteEntriesFor(OutboxType.deliveryConfirm, dispatchId);
+        await _db.enqueue(
+          entityType: OutboxType.deliveryConfirm,
+          clientGeneratedId: dispatchId,
+          payload: jsonEncode({
+            'org_id': orgId,
+            'rep_id': repId,
+            'dispatch_id': dispatchId,
+            'order_id': orderId,
+            'received_by_name': receivedBy.trim(),
+            'delivered_at': DateTime.now().toUtc().toIso8601String(),
+            'photo_client_id': photoId,
+            'local_photo_path': kept.path,
+          }),
+        );
+        return old;
+      });
+    } catch (_) {
+      // Nothing queued, so nothing will ever upload this copy.
+      await _deleteQuietly(kept.path);
+      rethrow;
+    }
+    for (final e in replaced) {
+      try {
+        final old = jsonDecode(e.payload) as Map<String, dynamic>;
+        await _deleteQuietly(old['local_photo_path'] as String?);
+      } catch (_) {
+        // An unreadable old payload costs space, not the delivery.
+      }
+    }
+    unawaited(_sync.sync());
+  }
+
+  static Future<void> _deleteQuietly(String? path) async {
+    if (path == null) return;
+    try {
+      await File(path).delete();
+    } catch (_) {
+      // Already gone.
+    }
+  }
+
+  /// Dispatches whose drop this phone has recorded and is still trying to
+  /// send. One that has given up is left out, so the screen offers "Record
+  /// delivery" again rather than saying "waiting for signal" for good.
+  Future<Set<String>> pendingConfirms() =>
+      _db.retryingClientIds(OutboxType.deliveryConfirm, kMaxAttempts);
 
   /// How many are still on the road.
   ///

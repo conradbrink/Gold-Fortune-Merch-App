@@ -153,6 +153,24 @@ bool isTransientNetworkFailure(Object error) {
   return false;
 }
 
+/// Storage's answer to an upload whose object is already there: an earlier
+/// try that landed before its reply was lost. Top-level so it can be tested.
+bool isAlreadyUploaded(StorageException e) =>
+    e.statusCode == '409' ||
+    e.error == 'Duplicate' ||
+    e.message.toLowerCase().contains('already exists');
+
+/// A refusal from `delivery_confirm()` that no retry will change: the
+/// dispatch was returned or failed by the warehouse, it is assigned to
+/// somebody else now, or the photo never reached storage (P0002, which only
+/// happens once the phone's copy is gone: it uploads before it calls).
+bool isFinalDeliveryRefusal(PostgrestException e) {
+  if (e.code == 'P0002') return true;
+  if (e.code != '42501') return false;
+  return e.message == 'That delivery is not assigned to you.' ||
+      (e.message.startsWith('Dispatch ') && e.message.contains(' by the warehouse'));
+}
+
 /// Whether a queued check-out has already been recorded on the visit, and can
 /// therefore be dropped from the outbox instead of retried forever.
 ///
@@ -658,6 +676,10 @@ class SyncEngine {
         await _replayDamageReport(data);
         break;
 
+      case OutboxType.deliveryConfirm:
+        await _replayDeliveryConfirm(data);
+        break;
+
       case OutboxType.orderDecline:
         // Insert-only, like a promotion check: no UPDATE policy, so a retry
         // that meets its own earlier row must not take the update path.
@@ -731,9 +753,29 @@ class SyncEngine {
           'sync.order_already_processed',
           data: {'status': status},
         );
+        await _dropLocalSignature(data);
         return;
       }
     } else {
+      // The manager's signature goes up first, so the order can name it. With
+      // upsert: a retry after a lost reply overwrites its own picture, which
+      // `order_signatures_update` allows until an order points at it. A
+      // picture the phone no longer has is an order without a signature, not
+      // an order that never lands.
+      String? signaturePath;
+      final localSignature = data['local_signature_path'] as String?;
+      if (localSignature != null && data['signed_by_name'] != null) {
+        final file = File(localSignature);
+        if (file.existsSync()) {
+          signaturePath = '$orgId/${data['rep_id']}/$clientId.png';
+          await _client.storage.from('order-signatures').upload(
+                signaturePath,
+                file,
+                fileOptions: const FileOptions(upsert: true, contentType: 'image/png'),
+              );
+        }
+      }
+
       // Drawn here, not on the phone. A number handed out while offline would
       // arrive out of sequence, and two reps offline at once would collide.
       final number = await _client.rpc(
@@ -757,6 +799,12 @@ class SyncEngine {
             'contact_name': data['contact_name'],
             'contact_phone': data['contact_phone'],
             'required_by': data['required_by'],
+            // All three or none (`orders_signature_complete`).
+            if (signaturePath != null) ...{
+              'signature_path': signaturePath,
+              'signed_by_name': data['signed_by_name'],
+              'signed_at': data['signed_at'],
+            },
             'client_generated_id': clientId,
           })
           .select('id')
@@ -774,7 +822,10 @@ class SyncEngine {
     // warehouse cannot move an order out from under a half-written entry — the
     // retry still finds it `new` and can finish the job.
     final lines = (data['lines'] as List?) ?? const [];
-    if (lines.isEmpty) return;
+    if (lines.isEmpty) {
+      await _dropLocalSignature(data);
+      return;
+    }
 
     // Resolved line by line on each one's own idempotency key, not skipped
     // wholesale because one line arrived.
@@ -824,6 +875,19 @@ class SyncEngine {
           onConflict: 'client_generated_id',
           ignoreDuplicates: true,
         );
+    await _dropLocalSignature(data);
+  }
+
+  /// The order has landed, so the phone's copy of its signature is no longer
+  /// needed. A retry after this finds the order there and uploads nothing.
+  Future<void> _dropLocalSignature(Map<String, dynamic> data) async {
+    final path = data['local_signature_path'] as String?;
+    if (path == null) return;
+    try {
+      await File(path).delete();
+    } catch (_) {
+      // Already gone.
+    }
   }
 
   Future<void> _replayFormSubmission(Map<String, dynamic> data) async {
@@ -953,6 +1017,73 @@ class SyncEngine {
     if (localPhotoPath != null) {
       try {
         await File(localPhotoPath).delete();
+      } catch (_) {
+        // Already gone.
+      }
+    }
+  }
+
+  /// The driver's drop: the photo of the signed delivery note into
+  /// `fulfilment-docs` under the order (where the web files PODs), then
+  /// `delivery_confirm()`, which records the delivery and files the photo in
+  /// one transaction.
+  ///
+  /// Safe to replay. The upload is not an upsert (only the warehouse may
+  /// overwrite in that bucket), so a photo already there from an earlier try
+  /// is taken as uploaded; the call answers a photo it has already filed
+  /// without doing anything.
+  Future<void> _replayDeliveryConfirm(Map<String, dynamic> data) async {
+    final orgId = data['org_id'] as String;
+    final storagePath =
+        '$orgId/${data['order_id']}/${data['photo_client_id']}.jpg';
+    final localPath = data['local_photo_path'] as String?;
+    final file = localPath == null ? null : File(localPath);
+
+    int? size;
+    if (file != null && file.existsSync()) {
+      size = file.lengthSync();
+      try {
+        await _client.storage.from('fulfilment-docs').upload(
+              storagePath,
+              file,
+              fileOptions: const FileOptions(contentType: 'image/jpeg'),
+            );
+      } on StorageException catch (e) {
+        if (!isAlreadyUploaded(e)) rethrow;
+      }
+    }
+
+    try {
+      await _client.rpc('delivery_confirm', params: {
+        'p_dispatch_id': data['dispatch_id'],
+        'p_received_by_name': data['received_by_name'],
+        'p_delivered_at': data['delivered_at'],
+        'p_pod_path': storagePath,
+        'p_size_bytes': size,
+      });
+    } on PostgrestException catch (e, stack) {
+      // The warehouse returned the dispatch meanwhile, or gave it to somebody
+      // else, or the photo is gone from the phone and never arrived. None of
+      // these clears up by trying again, and the drain stops at a failure, so
+      // holding on would hold back everything queued behind it. The delivery
+      // screen shows the dispatch as the warehouse has it.
+      //
+      // Reported, not just noted: a driver who pressed Delivered believes it
+      // is recorded, so a drop let go here is one somebody has to follow up.
+      if (!isFinalDeliveryRefusal(e)) rethrow;
+      unawaited(
+        Monitoring.report(
+          e,
+          stack,
+          feature: 'sync',
+          data: {'entity_type': OutboxType.deliveryConfirm, 'code': e.code, 'let_go': true},
+        ),
+      );
+    }
+
+    if (file != null) {
+      try {
+        await file.delete();
       } catch (_) {
         // Already gone.
       }
