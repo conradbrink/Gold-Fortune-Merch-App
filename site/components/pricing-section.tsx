@@ -2,7 +2,7 @@ import { Check, ShieldCheck } from "lucide-react";
 import type { ReactNode } from "react";
 import { biggestPlan, confirmed, contactHref, founding, pricing, rand, site } from "@/lib/site";
 
-// Three fixed plans by the number of reps (owner, 19 Oct 2026): no slider and
+// Three fixed plans by the number of reps and drivers (owner, 19 and 29 Oct 2026): no slider and
 // no Monthly | Yearly switch, just the three prices, side by side from md up
 // and one under the other on a phone, with the middle plan marked. What every
 // plan includes sits once underneath, so the cards stay short. Yearly is one
@@ -72,7 +72,10 @@ export function PricingSection() {
         <div className="grid content-start gap-4 rounded-2xl bg-white p-5 ring-1 ring-line sm:p-6">
           <h3 className="font-display text-xl font-bold text-teal-900">Every plan includes</h3>
           <ul className="grid gap-2">
-            <Item>Everything: store visits, orders, photos, routes and kilometres, invoices and reports</Item>
+            <Item>Everything: store visits, orders and deliveries, photos, routes and kilometres, invoices and reports</Item>
+            <Item>
+              <strong>Managers and office staff are free:</strong> You only pay for the reps and drivers on the phone app
+            </Item>
             <Item>
               <strong>Our AI Manager:</strong> Ask about your business, and get a plan to grow
             </Item>
@@ -93,20 +96,24 @@ export function PricingSection() {
 
         <div className="grid content-start gap-5 rounded-2xl bg-mint p-5 ring-1 ring-line sm:p-6">
           <div className="grid gap-1.5">
-            <h3 className="font-display text-xl font-bold text-teal-900">More than {biggestPlan.reps} reps?</h3>
+            <h3 className="font-display text-xl font-bold text-teal-900">More than {biggestPlan.reps} reps and drivers?</h3>
             <p className="leading-relaxed text-ink">We&apos;ll give you a price for your team.</p>
             <a
-              href={contactHref(`Hi, we have more than ${biggestPlan.reps} reps. What would ${site.name} cost us?`)}
+              href={contactHref(`Hi, we have more than ${biggestPlan.reps} reps and drivers. What would ${site.name} cost us?`)}
               className="w-fit py-1 font-semibold text-teal-900 underline underline-offset-4 hover:text-teal-700"
             >
               Ask us for a price
             </a>
           </div>
           <div className="grid gap-3 border-t border-line pt-4">
-            {/* HR and the warehouse are one add-on at one price (owner, 20 Oct 2026). */}
+            {/* Stock control and HR are the one add-on, at one price (owner, 20 Oct 2026). Deliveries
+                and drivers are in every plan (owner, 29 Oct 2026). */}
             <h3 className="font-display text-xl font-bold text-teal-900">Add-on</h3>
             <div className="grid gap-0.5">
-              <span className="font-display text-lg font-bold text-teal-900">Warehouse, deliveries and HR</span>
+              <span className="font-display text-lg font-bold text-teal-900">Stock control and HR</span>
+              <span className="leading-relaxed text-ink">
+                Track the stock in your warehouses, and keep your staff&apos;s leave, attendance and reviews in one place.
+              </span>
               <span className="leading-relaxed text-muted">R495 a month for both</span>
             </div>
           </div>
