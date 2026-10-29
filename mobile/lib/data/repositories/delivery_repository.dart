@@ -231,12 +231,15 @@ received_signature_path, order_id, order:orders(order_number, customer_po_number
   }
 
   /// Whether the drop queued for [dispatchId] carries a photo of the
-  /// delivery note, which is optional beside the signature.
+  /// delivery note, which is optional beside the signature. Only one still on
+  /// the phone counts: a copy Android has cleared is left out when the drop is
+  /// sent (`SyncEngine._replayDeliveryConfirm`), so it must not be promised.
   Future<bool> queuedWithPhoto(String dispatchId) async {
     for (final e in await _db.entriesFor(OutboxType.deliveryConfirm, dispatchId)) {
       try {
         final data = jsonDecode(e.payload) as Map<String, dynamic>;
-        if (data['local_photo_path'] != null) return true;
+        final path = data['local_photo_path'];
+        if (path is String && File(path).existsSync()) return true;
       } catch (_) {
         // An unreadable payload says nothing about a photo.
       }

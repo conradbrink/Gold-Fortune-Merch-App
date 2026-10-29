@@ -317,9 +317,9 @@ class SyncEngine {
   /// A drain reads the queue once, when it starts, so work queued after that
   /// (a delivery recorded while a photo was still going up) is not on its
   /// list. When [sync] was called meanwhile and the drain went all the way
-  /// through, it drains once more before the callers hear back, so their work
-  /// has been tried. One that stopped (no signal, a refusal) does not: that
-  /// would only spend another attempt on the same failure.
+  /// through, it makes one more pass before the callers hear back, so their
+  /// work has been tried. One that stopped (no signal, a refusal) does not:
+  /// that would only spend another attempt on the same failure.
   Future<void> sync() {
     final running = _draining;
     if (running != null) {
@@ -331,11 +331,16 @@ class SyncEngine {
 
   Future<void> _drainWhileAsked() async {
     try {
-      bool through;
-      do {
-        _again = false;
-        through = await _drain();
-      } while (through && _again);
+      _again = false;
+      var through = await _drain();
+      // One more pass, never a chain of them: on a slow link the pings and the
+      // timer can ask again during every pass, and a caller waiting on [sync]
+      // (pull to refresh, "Sync now") would wait for as long as they kept on.
+      // What is asked for during this pass waits for the next trigger.
+      if (through && _again) through = await _drain();
+      // Said once, after the last pass, so the banner does not go back to
+      // idle between the two.
+      if (through) await _emit(SyncState.idle);
     } finally {
       _draining = null;
     }
@@ -361,7 +366,8 @@ class SyncEngine {
   }
 
   /// One pass over the queue. True when it went all the way through, with
-  /// nothing refused and the signal holding; false when it stopped short.
+  /// nothing refused and the signal holding, and then it leaves saying idle
+  /// to [_drainWhileAsked]; false when it stopped short, having said why.
   Future<bool> _drain() async {
     // Nobody signed in: hold everything, at no cost, until someone is.
     final me = _signedInUser();
@@ -375,10 +381,7 @@ class SyncEngine {
     // whatever was queued behind them is still held back.
     final stalled = await _db.stalledClientIds(kMaxAttempts);
     final entries = await _db.pendingEntries(maxAttempts: kMaxAttempts);
-    if (entries.isEmpty) {
-      await _emit(SyncState.idle);
-      return true;
-    }
+    if (entries.isEmpty) return true;
 
     await _emit(SyncState.syncing);
 
@@ -460,7 +463,6 @@ class SyncEngine {
       }
     }
 
-    await _emit(SyncState.idle);
     return true;
   }
 

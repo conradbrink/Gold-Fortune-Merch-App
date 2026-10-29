@@ -4,8 +4,8 @@
 //
 // What these hold: a sync asked for while a drain is under way waits for it,
 // and work queued meanwhile goes in one more drain before the caller hears
-// back; a drain that stopped is not run again; and `sentWithin` says sent
-// only when the entry has left the phone.
+// back, in one extra pass and no more; a drain that stopped is not run
+// again; and `sentWithin` says sent only when the entry has left the phone.
 
 import 'dart:async';
 import 'dart:convert';
@@ -109,6 +109,9 @@ void main() {
       await hold.future;
       return created(r);
     });
+    final states = <SyncState>[];
+    final listening = s.engine.status.listen((st) => states.add(st.state));
+    addTearDown(listening.cancel);
     await queueOrder('store-a');
     final first = s.engine.sync();
     // The first drain is at the server with store-a when store-b is saved.
@@ -125,6 +128,40 @@ void main() {
     await Future.wait([first, second]);
     expect(s.inserted, ['store-a', 'store-b']);
     expect(await db.pendingEntries(), isEmpty, reason: 'both landed before the caller heard back');
+    await Future<void>.delayed(Duration.zero);
+    expect(states, [SyncState.syncing, SyncState.syncing, SyncState.idle],
+        reason: 'the banner does not go back to idle between the two passes');
+  });
+
+  test('asked again during the extra pass, it stops there', () async {
+    final holds = {'store-a': Completer<void>(), 'store-b': Completer<void>()};
+    final s = engineWith((r) async {
+      await holds[jsonDecode(r.body)['store_id']]?.future;
+      return created(r);
+    });
+    Future<void> reached(int inserts) async {
+      while (s.inserted.length < inserts) {
+        await Future<void>.delayed(Duration.zero);
+      }
+    }
+
+    await queueOrder('store-a');
+    final first = s.engine.sync();
+    await reached(1);
+    await queueOrder('store-b');
+    final second = s.engine.sync();
+    holds['store-a']!.complete();
+    // The extra pass is at the server with store-b when store-c is saved.
+    await reached(2);
+    await queueOrder('store-c');
+    final third = s.engine.sync();
+    holds['store-b']!.complete();
+
+    await Future.wait([first, second, third]);
+    expect(s.inserted, ['store-a', 'store-b'], reason: 'one extra pass, not a chain of them');
+    final left = (await db.pendingEntries()).single;
+    expect(jsonDecode(left.payload)['store_id'], 'store-c');
+    expect(left.attempts, 0, reason: 'it waits for the next trigger, untried');
   });
 
   test('a drain that stopped at a refusal is not run again on the spot', () async {
