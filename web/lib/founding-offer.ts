@@ -10,7 +10,7 @@
 export const FOUNDING_OFFER = {
   spots: 10,
   pilotDays: 14,
-  /** Reps a company may have during the pilot (platform_settings trial_user_limit). */
+  /** Reps and drivers a company may have during the pilot (platform_settings trial_user_limit). */
   pilotReps: 10,
   /** After the pilot: this much off the plan that fits, for this many months. */
   percentOff: 40,

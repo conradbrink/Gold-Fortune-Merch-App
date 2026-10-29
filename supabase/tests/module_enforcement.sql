@@ -30,8 +30,10 @@ declare
   r record; t record; f record;
   v_n int; v_before int; v_row jsonb; v_cols text; v_txt text; v_args text;
   v_fail text := ''; v_info text := '';
-  v_modules text[] := array['warehouse','hr','checklists_forms','reports',
-                             'recurring_jobs','distribution','invoicing'];  -- warehouse before distribution
+  -- Dependents before what they need: warehouse (Stock control) before
+  -- deliveries before distribution.
+  v_modules text[] := array['warehouse','deliveries','hr','checklists_forms','reports',
+                             'recurring_jobs','distribution','invoicing'];
   v_mod text;
   v_checked_tables int := 0; v_checked_funcs int := 0;
 begin
@@ -104,7 +106,8 @@ begin
   ----------------------------------------------------------- M3 behaviour
   foreach v_mod in array v_modules loop
     -- Anything that depends on this module goes off first, or the dependency
-    -- guard (rightly) refuses: warehouse before distribution.
+    -- guard (rightly) refuses: warehouse before deliveries before distribution.
+    -- Each was switched off on its own turn, earlier in the list.
     update public.company_modules cm set enabled = false
       from public.module_dependencies d
      where cm.org_id = v_org and cm.module_code = d.module_code
@@ -230,7 +233,7 @@ begin
 
   ------------------------------------------------------- M4 cross-module
   -- Distribution is on again (the loop ends by switching each module back on);
-  -- warehouse was switched off on the way to testing distribution.
+  -- warehouse and deliveries were switched off on the way to testing it.
   update public.company_modules set enabled = false
    where org_id = v_org and module_code = 'warehouse';
   perform set_config('request.jwt.claims', json_build_object(
@@ -248,7 +251,7 @@ begin
   -- read merchandising data (oos_visit_flags); they must answer, not raise.
   -- Caught in the rehearsal of 8 Oct 2026, when those helpers were gated.
   update public.company_modules set enabled = false
-   where org_id = v_org and module_code in ('warehouse', 'distribution');
+   where org_id = v_org and module_code in ('warehouse', 'deliveries', 'distribution');
   perform set_config('request.jwt.claims', json_build_object(
     'sub', v_admin, 'role', 'authenticated')::text, true);
   set local role authenticated;

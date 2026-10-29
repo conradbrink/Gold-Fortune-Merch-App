@@ -14,6 +14,7 @@ import { generatePassword } from "@/lib/representatives";
 import { displayLogin } from "@/lib/phone-login";
 import { useTerms } from "@/lib/use-company-config";
 import { lower } from "@/lib/terms";
+import { placesPeople } from "@/lib/plans";
 import type { StepProps } from "./types";
 
 type Role = { id: string; code: string | null; name: string; description: string | null; base_role: string };
@@ -112,8 +113,8 @@ export function TeamStep({ setup, text, icon, onBack, onNext, reload }: StepProp
       <div className="space-y-5">
         {setup.places && (
           <p className="text-sm text-muted-foreground">
-            {/* Only the field role takes a place (20261020160000); office and warehouse logins don't use one. */}
-            {setup.places.used} of {setup.places.limit} {lower(t.staff.one)} places used
+            {/* Reps and drivers take a place (20261020160000, 20261029223700); office and warehouse logins don't. */}
+            {setup.places.used} of {setup.places.limit} places used by {placesPeople(t)}
             {setup.places.used >= setup.places.limit ? ". Every place is taken." : ". Office and warehouse logins don't use a place."}
           </p>
         )}

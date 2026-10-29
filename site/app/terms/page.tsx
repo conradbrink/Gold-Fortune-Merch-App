@@ -30,13 +30,13 @@ export default function TermsPage() {
           their account. We don&apos;t ask for a card for the pilot.
         </li>
         <li>
-          During the pilot you can have up to {founding.pilotReps} reps. Office and warehouse logins don&apos;t count.
+          During the pilot you can have up to {founding.pilotReps} reps and drivers. Office and warehouse logins don&apos;t count.
         </li>
         <li>
           After the pilot, a Founding distributor pays {founding.percentOff}% less than the normal price of the plan that
           fits their team, for their first {founding.priceMonths} months (the founding price):{" "}
-          {pricing.plans.map((p) => `${rand(foundingPrice(p))} a month for up to ${p.reps} reps`).join(", ")}. A team of
-          more than {biggestPlan.reps} reps is priced with us. The setup, the training day by video call and the bonuses we
+          {pricing.plans.map((p) => `${rand(foundingPrice(p))} a month for up to ${p.reps} reps and drivers`).join(", ")}. A team of
+          more than {biggestPlan.reps} reps and drivers is priced with us. The setup, the training day by video call and the bonuses we
           list on our website are included. After the {founding.priceMonths} months, the normal price of your plan
           applies.
         </li>
@@ -90,7 +90,7 @@ export default function TermsPage() {
         <li>
           Apart from the founding price above, you pay monthly or yearly, in rand, at the prices on our website on the
           day you pay. Today that is{" "}
-          {pricing.plans.map((p) => `${rand(p.monthly)} a month for up to ${p.reps} reps`).join("; ")}. A year costs{" "}
+          {pricing.plans.map((p) => `${rand(p.monthly)} a month for up to ${p.reps} reps and drivers`).join("; ")}. A year costs{" "}
           {pricing.yearlyMonths} months.
         </li>
         <li>We are not registered for VAT, so no VAT is added.</li>

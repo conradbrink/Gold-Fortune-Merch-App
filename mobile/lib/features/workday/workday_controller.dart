@@ -9,6 +9,7 @@ import '../../core/location_tracking.dart';
 import '../../core/monitoring.dart';
 import '../../core/providers.dart';
 import '../../data/models/workday_session.dart';
+import '../route_today/visit_plan.dart';
 import 'workday_auto_end.dart';
 import 'workday_trail.dart';
 
@@ -252,6 +253,36 @@ class WorkdayController extends AsyncNotifier<WorkdaySession?> {
       _armAutoEnd(session);
       return session;
     });
+    if (state.value != null) await _planDayOnStart();
+  }
+
+  /// Puts the day's stops still to visit in driving order, once, as the day
+  /// starts: fewer kilometres from the first stop. A plan the rep already
+  /// made today stands. Waited for a little, so the day ahead opens in the
+  /// planned order; one that takes longer (a slow fix, a slow network) still
+  /// lands, and the list follows when it does. Never stops the day starting.
+  Future<void> _planDayOnStart() async {
+    try {
+      final repId = ref.read(currentUserProvider)?.id;
+      if (repId == null) return;
+      final date = ref.read(selectedRouteDateProvider);
+      final repo = ref.read(routeRepositoryProvider);
+      if (await repo.savedVisitPlan(repId, date) != null) return;
+      final day = await ref.read(todayRoutesProvider.future);
+      final planned = planToday(
+        repo,
+        repId: repId,
+        day: day,
+        date: date,
+      ).then((_) {
+        if (!ref.mounted) return;
+        ref.invalidate(todayRoutesProvider);
+        ref.invalidate(visitPlanProvider);
+      }).catchError((Object _) {});
+      await planned.timeout(const Duration(seconds: 12), onTimeout: () {});
+    } catch (_) {
+      // The free order the day already had is a fine order to start in.
+    }
   }
 
   /// Ends the open day.

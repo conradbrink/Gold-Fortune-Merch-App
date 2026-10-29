@@ -2002,7 +2002,7 @@ export type Database = {
           created_at: string
           delivered_at: string | null
           delivered_by: string | null
-          dispatch_location_id: string
+          dispatch_location_id: string | null
           dispatch_number: string
           dispatched_at: string
           dispatched_by: string | null
@@ -2017,7 +2017,7 @@ export type Database = {
           received_signature_path: string | null
           status: string
           tracking_reference: string | null
-          transit_location_id: string
+          transit_location_id: string | null
           updated_at: string
           vehicle_id: string | null
         }
@@ -2027,7 +2027,7 @@ export type Database = {
           created_at?: string
           delivered_at?: string | null
           delivered_by?: string | null
-          dispatch_location_id: string
+          dispatch_location_id?: string | null
           dispatch_number: string
           dispatched_at?: string
           dispatched_by?: string | null
@@ -2042,7 +2042,7 @@ export type Database = {
           received_signature_path?: string | null
           status?: string
           tracking_reference?: string | null
-          transit_location_id: string
+          transit_location_id?: string | null
           updated_at?: string
           vehicle_id?: string | null
         }
@@ -2052,7 +2052,7 @@ export type Database = {
           created_at?: string
           delivered_at?: string | null
           delivered_by?: string | null
-          dispatch_location_id?: string
+          dispatch_location_id?: string | null
           dispatch_number?: string
           dispatched_at?: string
           dispatched_by?: string | null
@@ -2067,7 +2067,7 @@ export type Database = {
           received_signature_path?: string | null
           status?: string
           tracking_reference?: string | null
-          transit_location_id?: string
+          transit_location_id?: string | null
           updated_at?: string
           vehicle_id?: string | null
         }

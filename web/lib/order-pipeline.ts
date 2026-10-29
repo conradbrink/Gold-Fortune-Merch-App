@@ -61,6 +61,11 @@ export type PipelineOrder = {
   /** VAT included, as the Orders list shows it. */
   total: number;
   stage: PipelineStage;
+  /**
+   * It has a fulfilment location: it went through the warehouse, with stock.
+   * False for a new order, and for one invoiced and sent out without stock.
+   */
+  fromStock: boolean;
 };
 
 type Row = {
@@ -83,6 +88,7 @@ type Row = {
   customer_po_number: string | null;
   customer_po_expires_on: string | null;
   vat_rate: number | null;
+  fulfil_location_id: string | null;
   stores: { name: string } | { name: string }[] | null;
   profiles: { full_name: string | null } | { full_name: string | null }[] | null;
   order_lines: { qty_ordered: number; unit_price: number | null }[] | null;
@@ -139,7 +145,7 @@ export async function fetchPipelineOrders(supabase: SupabaseClient): Promise<Pip
       .select(
         `id, order_number, invoice_number, contact_name, status, pod_status, on_hold, store_id, rep_id, created_at, confirmed_at,
          picking_started_at, packed_at, dispatched_at, delivered_at, required_by, customer_po_number, customer_po_expires_on, vat_rate,
-         stores(name), profiles!orders_rep_id_fkey(full_name), order_lines(qty_ordered, unit_price)`
+         fulfil_location_id, stores(name), profiles!orders_rep_id_fkey(full_name), order_lines(qty_ordered, unit_price)`
       );
   type Page = PromiseLike<{ data: Row[] | null; error: { message: string } | null }>;
   const [open, unproven] = await Promise.all([
@@ -177,6 +183,7 @@ export async function fetchPipelineOrders(supabase: SupabaseClient): Promise<Pip
           Number(r.vat_rate ?? 0)
         ).total,
         stage,
+        fromStock: r.fulfil_location_id !== null,
       },
     ];
   });

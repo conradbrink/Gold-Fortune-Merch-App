@@ -1,11 +1,8 @@
-import 'dart:convert';
-
-import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:http/http.dart' as http;
 import 'package:supabase_flutter/supabase_flutter.dart';
 
-import '../../core/env.dart';
 import '../../features/driver/route_plan.dart';
+import 'route_plan_api.dart';
 
 /// A driver's round: the deliveries given to them, and the order to drive
 /// them in.
@@ -52,53 +49,18 @@ lines:dispatch_lines(qty)
     ];
   }
 
-  /// Google's order for [dispatchIds] from ([lat], [lng]), through the web's
-  /// `/api/route-plan` (the Google key stays on the server). Null when there
-  /// is no answer worth using — no signal, route planning not switched on,
-  /// too many stops, anything — and the caller orders them nearest first.
+  /// Google's order for [dispatchIds] from ([lat], [lng]); null when there
+  /// is none worth using, and the caller orders them nearest first.
   Future<RoutePlan?> googleOrder({
     required double lat,
     required double lng,
     required List<String> dispatchIds,
-  }) async {
-    final token = _client.auth.currentSession?.accessToken;
-    if (token == null || dispatchIds.length < 2) return null;
-    try {
-      // No network, no wait: the straight-line plan needs none.
-      final links = await Connectivity().checkConnectivity();
-      if (links.contains(ConnectivityResult.none)) return null;
-      final res = await _http
-          .post(
-            Uri.parse('${Env.webBaseUrl}/api/route-plan'),
-            headers: {
-              'Authorization': 'Bearer $token',
-              'Content-Type': 'application/json',
-            },
-            body: jsonEncode({
-              'origin': {'lat': lat, 'lng': lng},
-              'dispatchIds': dispatchIds,
-            }),
-          )
-          .timeout(const Duration(seconds: 10));
-      if (res.statusCode != 200) return null;
-      final body = jsonDecode(res.body) as Map<String, dynamic>;
-      final order = (body['order'] as List?)?.whereType<String>().toList();
-      // Every stop, once: an answer that loses one is worse than nearest
-      // first, which never does.
-      if (order == null ||
-          order.length != dispatchIds.length ||
-          order.toSet().length != order.length ||
-          !order.every(dispatchIds.contains)) {
-        return null;
-      }
-      return RoutePlan(
-        order: order,
-        byGoogle: true,
-        distanceMeters: (body['distanceMeters'] as num?)?.toInt(),
-        durationSeconds: (body['durationSeconds'] as num?)?.toInt(),
-      );
-    } catch (_) {
-      return null;
-    }
-  }
+  }) => googleRouteOrder(
+    _client,
+    _http,
+    kind: PlanKind.deliveries,
+    lat: lat,
+    lng: lng,
+    ids: dispatchIds,
+  );
 }

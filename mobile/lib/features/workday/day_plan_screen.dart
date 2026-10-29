@@ -7,6 +7,7 @@ import '../../core/company_config.dart';
 import '../../core/providers.dart';
 import '../../core/theme.dart';
 import '../../data/models/route_visit.dart';
+import '../route_today/visit_plan.dart';
 import 'workday_summary_screen.dart' show kMonthlyRewardTarget;
 
 /// Shown once right after the rep starts their workday: the day ahead at a
@@ -30,6 +31,8 @@ class DayPlanScreen extends ConsumerWidget {
     final profile = ref.watch(profileProvider).value;
     final monthlyAsync = ref.watch(monthlyCompletionProvider);
     final t = ref.watch(termsProvider);
+    // Made as the day started (WorkdayController); the list is in its order.
+    final plan = ref.watch(visitPlanProvider).value;
 
     final pending = routes.where((r) => !r.isCheckedOut && !r.isMissed).length;
     final firstName = profile?.fullName?.split(' ').first;
@@ -98,6 +101,21 @@ class DayPlanScreen extends ConsumerWidget {
                           ],
                         ],
                       ),
+                    if (routes.isNotEmpty && plan != null) ...[
+                      const SizedBox(height: 10),
+                      Text(
+                        plan.byGoogle
+                            ? 'Your stops are in the best order to drive'
+                                '${plan.summary == null || !planStillWhole(plan, routes) ? '' : ' (${plan.summary})'}.'
+                            : 'Your stops are in order of the closest one '
+                                'each time.',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          color: Colors.white.withValues(alpha: 0.75),
+                          fontSize: 13,
+                        ),
+                      ),
+                    ],
                     const SizedBox(height: 16),
                     monthlyAsync.when(
                       loading: () => const SizedBox.shrink(),

@@ -72,7 +72,13 @@ import {
 import { formatDateOnly } from "@/lib/format-date";
 import { OrderSignature } from "@/components/orders/order-signature";
 import { useCompanyConfig, useTerms } from "@/lib/use-company-config";
-import { finishedWithoutStock, invoicesWithoutStock, keepsStock as companyKeepsStock } from "@/lib/order-board";
+import {
+  deliversOrders,
+  finishedWithoutStock,
+  invoicesWithoutStock,
+  keepsStock as companyKeepsStock,
+  sentWithoutStock,
+} from "@/lib/order-board";
 import { lower } from "@/lib/terms";
 import { fetchPriceBook, listForGroup, type PriceBook } from "@/lib/price-lists";
 
@@ -210,11 +216,16 @@ export default function OrderDetailPage() {
   /** Confirming issues the order's invoice (`money_invoice_orders`). */
   const automaticInvoice = companyConfig?.settings.money_invoice_orders ?? false;
   /**
-   * Confirming, picking, packing, dispatching, holding and the stock-aware
-   * cancel are the warehouse module's (`keepsStock` in lib/order-board).
+   * Confirming and reserving, picking, packing, holding and the stock-aware
+   * cancel are Stock control's (`keepsStock` in lib/order-board).
    */
   const keepsStock = companyKeepsStock(companyConfig);
-  /** Without the warehouse: one step invoices a new order and finishes it. */
+  /** Dispatching, recording a delivery and its POD are Deliveries'. */
+  const delivers = deliversOrders(companyConfig);
+  /**
+   * Without Stock control: one step invoices a new order. With Deliveries it then
+   * goes out from here; without, that step finishes it.
+   */
   const withoutStock = invoicesWithoutStock(companyConfig);
 
   /** Opens the shared dialog, latching which of the two it is. */
@@ -281,13 +292,14 @@ export default function OrderDetailPage() {
     let cancelled = false;
     (async () => {
       try {
-        // Carriers, locations and the people a delivery can be given to only
-        // serve the warehouse steps: without the module they are never shown.
+        // Carriers and the people a delivery can be given to serve the
+        // delivery steps, locations the stock ones: without the module each
+        // is never shown.
         const [c, cat, locs, repRows, book] = await Promise.all([
-          keepsStock ? fetchCarriers(supabase) : { drivers: [], vehicles: [] },
+          delivers ? fetchCarriers(supabase) : { drivers: [], vehicles: [] },
           fetchOrderableProducts(supabase),
           keepsStock ? fetchLocations(supabase) : [],
-          keepsStock
+          delivers
             ? supabase
                 .from("profiles")
                 .select("id, full_name, role")
@@ -330,7 +342,7 @@ export default function OrderDetailPage() {
     return () => {
       cancelled = true;
     };
-  }, [supabase, reload, keepsStock]);
+  }, [supabase, reload, keepsStock, delivers]);
 
   /**
    * What the availability check is about: these lines, at this location.
@@ -472,7 +484,23 @@ export default function OrderDetailPage() {
    * sent and delivered in full although nothing left a warehouse.
    */
   const showStock = !finished && (keepsStock || o.fulfil_location_id !== null || o.dispatched_at !== null);
-  const canCancel = keepsStock ? !["delivered", "cancelled", "dispatched"].includes(o.status) : o.status === "new";
+  /**
+   * Invoiced without stock and sent out from there: confirmed, dispatched,
+   * delivered, with no picking or packing. Its lines show what was sent and
+   * delivered, never reserved or picked, which no stock ever was.
+   */
+  const sentNoStock = sentWithoutStock(o);
+  const showHeld = showStock && !sentNoStock;
+  const showSent = showStock || sentNoStock;
+  /**
+   * Which cancel: the stock one for a company that keeps stock (a new order,
+   * or one holding stock); otherwise the one for an order with none, which
+   * takes it while new or invoiced and not yet sent.
+   */
+  const cancelsStock = keepsStock && (o.status === "new" || o.fulfil_location_id !== null);
+  const canCancel = cancelsStock
+    ? !["delivered", "cancelled", "dispatched"].includes(o.status)
+    : o.status === "new" || (o.status === "confirmed" && sentNoStock);
   // The product being added, if it comes in shrinks: its row offers per shrink too.
   const addUnits = shrinkUnits(catalogue.find((c) => c.id === addProductId)?.units_per_shrink);
   const addByShrink = addPerShrink && addUnits !== null;
@@ -721,6 +749,21 @@ export default function OrderDetailPage() {
   }
   const openDispatch = detail.dispatches.find((d) => d.status === "in_transit");
 
+  /**
+   * The order already knows whose it is — 36 of this week's 59 dispatches came
+   * from an order with a rep on it — so the dialog opens on that answer rather
+   * than on "Nobody" and the warehouse only has to act when the delivery is
+   * going to somebody else. Falls back to nobody when the order's rep is not a
+   * currently active rep, because a native select whose value matches no
+   * option silently shows the first one, which would claim a delivery for
+   * whoever heads the list.
+   */
+  function startDispatch() {
+    const ordersRep = o.rep_id ?? "";
+    setDispatchRepId(reps.some((r) => r.id === ordersRep) ? ordersRep : "");
+    setDialog("dispatch");
+  }
+
   /** Opens the sheet in a new tab with the print box up; a failure to read the order says so here. */
   function print(sheet: typeof printPickingList) {
     setError(null);
@@ -751,7 +794,13 @@ export default function OrderDetailPage() {
             <Badge variant={o.status === "cancelled" ? "outline" : "secondary"}>
               {/* After a void it is done but not invoiced: the Invoice row then
                   offers to issue one again. */}
-              {finished ? (o.invoice_number ? "Invoiced" : "Not invoiced") : (STATUS_LABELS[o.status] ?? o.status)}
+              {finished
+                ? o.invoice_number
+                  ? "Invoiced"
+                  : "Not invoiced"
+                : sentNoStock && o.status === "confirmed" && o.invoice_number
+                  ? "Invoiced"
+                  : (STATUS_LABELS[o.status] ?? o.status)}
             </Badge>
             {o.on_hold && (
               <Badge variant="outline" className="border-amber-500/50 text-amber-600">
@@ -783,7 +832,7 @@ export default function OrderDetailPage() {
               Confirm and invoice
             </Button>
           )}
-          {o.status === "confirmed" && keepsStock && (
+          {o.status === "confirmed" && keepsStock && !sentNoStock && (
             <Button
               onClick={() =>
                 run(
@@ -815,31 +864,13 @@ export default function OrderDetailPage() {
               </Button>
             </>
           )}
-          {o.status === "packed" && keepsStock && (
-            <Button
-              onClick={() => {
-                /*
-                 * The order already knows whose it is — 36 of this week's 59
-                 * dispatches came from an order with a rep on it — so the
-                 * dialog opens on that answer rather than on "Nobody" and the
-                 * warehouse only has to act when the delivery is going to
-                 * somebody else. Falls back to nobody when the order's rep is
-                 * not a currently active rep, because a native select whose
-                 * value matches no option silently shows the first one, which
-                 * would claim a delivery for whoever heads the list.
-                 */
-                const ordersRep = o.rep_id ?? "";
-                setDispatchRepId(
-                  reps.some((r) => r.id === ordersRep) ? ordersRep : ""
-                );
-                setDialog("dispatch");
-              }}
-              disabled={busy}
-            >
+          {/* Packed, or invoiced with no stock to pick or pack. */}
+          {((o.status === "packed" && keepsStock) || (o.status === "confirmed" && sentNoStock && delivers)) && (
+            <Button onClick={startDispatch} disabled={busy}>
               Dispatch
             </Button>
           )}
-          {o.status === "dispatched" && openDispatch && keepsStock && (
+          {o.status === "dispatched" && openDispatch && delivers && (
             <>
               <Button onClick={() => setDialog("deliver")} disabled={busy}>
                 Record delivery
@@ -849,7 +880,7 @@ export default function OrderDetailPage() {
               </Button>
             </>
           )}
-          {o.status === "delivered" && keepsStock && !finished && (
+          {o.status === "delivered" && delivers && !finished && (
             <Button onClick={() => setDialog("upload")} disabled={busy}>
               <FileUp className="mr-1.5 h-4 w-4" /> Upload POD
             </Button>
@@ -858,12 +889,15 @@ export default function OrderDetailPage() {
               with, then the note that goes with the goods and comes back
               signed. Still offered once delivered, for a note that went
               missing before it was signed. */}
-          {(o.status === "confirmed" || o.status === "picking") && (
+          {(o.status === "confirmed" || o.status === "picking") && !sentNoStock && (
             <Button variant="outline" onClick={() => print(printPickingList)}>
               <Printer className="mr-1.5 h-4 w-4" /> Print picking list
             </Button>
           )}
-          {(o.status === "packed" || o.status === "dispatched" || o.status === "delivered") && (
+          {(o.status === "packed" ||
+            o.status === "dispatched" ||
+            o.status === "delivered" ||
+            (o.status === "confirmed" && sentNoStock)) && (
             <Button variant="outline" onClick={() => print(printDeliveryNote)}>
               <Printer className="mr-1.5 h-4 w-4" /> Print delivery note
             </Button>
@@ -939,19 +973,24 @@ export default function OrderDetailPage() {
                   <TableHead className="text-right">{pricedPer ? "Price" : "Price/unit"}</TableHead>
                   {/* Stock columns: a company without the warehouse has no
                       stock to reserve, pick or send, so they would only ever
-                      read 0. */}
-                  {showStock && (
+                      read 0. An order sent out without stock shows what was
+                      sent and delivered. */}
+                  {showHeld && (
                     <>
                       <TableHead className="text-right">Reserved</TableHead>
                       <TableHead className="text-right">Picked</TableHead>
+                    </>
+                  )}
+                  {showSent && (
+                    <>
                       <TableHead className="text-right">Dispatched</TableHead>
                       <TableHead className="text-right">Delivered</TableHead>
                     </>
                   )}
-                  {/* Without the stock columns it only holds a new order's
+                  {/* Without those columns it only holds a new order's
                       Remove buttons. */}
-                  {(showStock || canPrice) && (
-                    <TableHead>{showStock ? "Status" : <span className="sr-only">Remove</span>}</TableHead>
+                  {(showSent || canPrice) && (
+                    <TableHead>{showSent ? "Status" : <span className="sr-only">Remove</span>}</TableHead>
                   )}
                 </TableRow>
               </TableHeader>
@@ -1053,10 +1092,14 @@ export default function OrderDetailPage() {
                         </span>
                       )}
                     </TableCell>
-                    {showStock && (
+                    {showHeld && (
                       <>
                         <TableCell className="text-right tabular-nums">{l.qty_reserved}</TableCell>
                         <TableCell className="text-right tabular-nums">{l.qty_picked}</TableCell>
+                      </>
+                    )}
+                    {showSent && (
+                      <>
                         <TableCell className="text-right tabular-nums">{l.qty_dispatched}</TableCell>
                         <TableCell className="text-right tabular-nums">
                           {l.qty_delivered}
@@ -1068,9 +1111,9 @@ export default function OrderDetailPage() {
                         </TableCell>
                       </>
                     )}
-                    {(showStock || canPrice) && (
+                    {(showSent || canPrice) && (
                     <TableCell>
-                      {showStock && (
+                      {showSent && (
                         <Badge variant={l.line_status === "fulfilled" ? "default" : "outline"}>
                           {l.line_status}
                         </Badge>
@@ -1293,7 +1336,7 @@ export default function OrderDetailPage() {
                 <Row label="Fulfilled from" value={detail.fulfilLocationName} />
               )}
               {/* No POD is asked of an order finished without stock. */}
-              {!finished && (keepsStock || o.pod_status !== "not_required") && (
+              {!finished && (delivers || o.pod_status !== "not_required") && (
                 <Row
                   label="POD"
                   value={
@@ -1522,9 +1565,9 @@ export default function OrderDetailPage() {
             </Card>
           )}
 
-          {/* Delivery documents are the warehouse's (its file store and table):
+          {/* Delivery documents are Deliveries' (its file store and table):
               a company without it has none to show or file. */}
-          {keepsStock && (
+          {delivers && (
             <Card>
               <CardHeader>
                 <CardTitle className="text-base">Documents</CardTitle>
@@ -1949,8 +1992,9 @@ export default function OrderDetailPage() {
               <span>
                 Cancel the order as well.
                 <span className="block text-muted-foreground">
-                  Leave this unticked to put it back to packed with its stock still
-                  reserved, ready to go out again.
+                  {sentNoStock
+                    ? "Leave this unticked to put it back to invoiced, ready to go out again. Ticked, its invoice is voided, or credited if it has been paid."
+                    : "Leave this unticked to put it back to packed with its stock still reserved, ready to go out again."}
                 </span>
               </span>
             </label>
@@ -1975,9 +2019,13 @@ export default function OrderDetailPage() {
                       cancelAfterReturn
                     );
                   },
-                  cancelAfterReturn
-                    ? "Stock returned and the order cancelled."
-                    : "Stock returned. The order is packed and ready to go out again."
+                  sentNoStock
+                    ? cancelAfterReturn
+                      ? "The order is cancelled."
+                      : "The order is back to invoiced and ready to go out again."
+                    : cancelAfterReturn
+                      ? "Stock returned and the order cancelled."
+                      : "Stock returned. The order is packed and ready to go out again."
                 )
               }
               disabled={busy || !reason.trim() || !openDispatch}
@@ -1994,15 +2042,21 @@ export default function OrderDetailPage() {
             <DialogTitle>Confirm and invoice {o.order_number}</DialogTitle>
           </DialogHeader>
           <div className="space-y-2 text-sm text-muted-foreground">
+            {/* With Deliveries the order then goes out from its page;
+                without, invoicing finishes it. */}
             {o.invoice_number ? (
               <p>
-                It was invoiced in QuickBooks as {o.invoice_number}, so no invoice is made here. The order is
-                marked done and moves to the archive.
+                It was invoiced in QuickBooks as {o.invoice_number}, so no invoice is made here.{" "}
+                {delivers
+                  ? "The order is then ready to dispatch."
+                  : "The order is marked done and moves to the archive."}
               </p>
             ) : (
               <p>
-                This issues its tax invoice for what was ordered, at the prices on the order. The order is then
-                done and moves to the archive.
+                This issues its tax invoice for what was ordered, at the prices on the order.{" "}
+                {delivers
+                  ? "The order is then ready to dispatch."
+                  : "The order is then done and moves to the archive."}
               </p>
             )}
             {o.on_hold && (
@@ -2039,7 +2093,12 @@ export default function OrderDetailPage() {
             </Button>
             <Button
               onClick={() =>
-                run(() => invoiceWithoutStock(supabase, orderId), "Order invoiced. It is done and in the archive.")
+                run(
+                  () => invoiceWithoutStock(supabase, orderId),
+                  delivers
+                    ? "Order invoiced. Dispatch it when it goes out."
+                    : "Order invoiced. It is done and in the archive."
+                )
               }
               disabled={busy || blocksInvoicing || unpricedToInvoice > 0 || toInvoice.length === 0}
             >
@@ -2062,9 +2121,11 @@ export default function OrderDetailPage() {
           <div className="space-y-3">
             <p className="text-sm text-muted-foreground">
               {confirmKind === "cancel"
-                ? keepsStock
+                ? cancelsStock
                   ? "Any stock held for this order is released and can be sold again. If it was packed, unpack the boxes back onto the shelf. This cannot be undone."
-                  : "The order has not been invoiced, so nothing else changes. This cannot be undone."
+                  : o.status === "confirmed"
+                    ? "Its invoice is voided, or credited if it has been paid. This cannot be undone."
+                    : "The order has not been invoiced, so nothing else changes. This cannot be undone."
                 : "A hold freezes the order where it is. Nothing moves until it is released."}
             </p>
             <div>
@@ -2081,7 +2142,7 @@ export default function OrderDetailPage() {
                 run(
                   () =>
                     confirmKind === "cancel"
-                      ? keepsStock
+                      ? cancelsStock
                         ? cancelOrder(supabase, orderId, reason)
                         : cancelWithoutStock(supabase, orderId, reason)
                       : holdOrder(supabase, orderId, reason),

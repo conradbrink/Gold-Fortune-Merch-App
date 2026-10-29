@@ -27,6 +27,7 @@ import {
 import { ErrorBanner, EmptyRow } from "@/components/warehouse/stat-tile";
 import { can } from "@/lib/permissions";
 import { usePermissions } from "@/lib/use-permissions";
+import { keepsStock as companyKeepsStock } from "@/lib/order-board";
 import { fetchOrgId } from "@/lib/representatives";
 import {
   fetchSuppliersAll,
@@ -50,7 +51,7 @@ import {
   type ReorderRow,
   type StaffMember,
 } from "@/lib/warehouse-settings";
-import { useTerms } from "@/lib/use-company-config";
+import { useCompanyConfig, useTerms } from "@/lib/use-company-config";
 import { lower } from "@/lib/terms";
 
 type Editing =
@@ -108,14 +109,19 @@ export default function WarehouseSettingsPage() {
   // a licence could change colour because something unrelated updated.
   const [licenceCutoff, setLicenceCutoff] = useState<number | null>(null);
 
+  // Drivers, vehicles and warehouse logins are Deliveries' (every
+  // distributor's plan); suppliers, locations and reorder levels are about
+  // stock, Stock control's, and are left out without it.
+  const keepsStock = companyKeepsStock(useCompanyConfig());
+
   const reload = useCallback(async () => {
     const [org, s, d, v, l, r, st] = await Promise.all([
       fetchOrgId(supabase),
-      fetchSuppliersAll(supabase),
+      keepsStock ? fetchSuppliersAll(supabase) : [],
       fetchDriversAll(supabase),
       fetchVehiclesAll(supabase),
-      fetchLocationsAll(supabase),
-      fetchReorderLevels(supabase),
+      keepsStock ? fetchLocationsAll(supabase) : [],
+      keepsStock ? fetchReorderLevels(supabase) : [],
       fetchWarehouseStaff(supabase),
     ]);
     setOrgId(org);
@@ -127,7 +133,7 @@ export default function WarehouseSettingsPage() {
     setLevels(Object.fromEntries(r.map((x) => [x.product_id, x])));
     setStaff(st);
     setLicenceCutoff(Date.now() + 30 * 24 * 60 * 60 * 1000);
-  }, [supabase]);
+  }, [supabase, keepsStock]);
 
   useEffect(() => {
     let cancelled = false;
@@ -183,7 +189,7 @@ export default function WarehouseSettingsPage() {
         </Link>
         <h1 className="mt-1 text-2xl font-semibold tracking-tight">Warehouse settings</h1>
         <p className="text-sm text-muted-foreground">
-          Who we buy from, who delivers, and where stock lives.
+          {keepsStock ? "Who we buy from, who delivers, and where stock lives." : "Who delivers, and who works in the warehouse."}
         </p>
       </div>
 
@@ -192,14 +198,14 @@ export default function WarehouseSettingsPage() {
         <p className="rounded-lg border border-border bg-muted/40 p-2.5 text-sm">{notice}</p>
       )}
 
-      <Tabs defaultValue="suppliers">
+      <Tabs defaultValue={keepsStock ? "suppliers" : "drivers"}>
         {/* Scrolls on its own on a phone, as on Reports. */}
         <TabsList className="max-w-full justify-start overflow-x-auto px-1 [&::-webkit-scrollbar]:hidden [&>*]:shrink-0 [&>*]:px-2.5">
-          <TabsTrigger value="suppliers">Suppliers</TabsTrigger>
+          {keepsStock && <TabsTrigger value="suppliers">Suppliers</TabsTrigger>}
           <TabsTrigger value="drivers">Drivers</TabsTrigger>
           <TabsTrigger value="vehicles">Vehicles</TabsTrigger>
-          {isManager && <TabsTrigger value="locations">Locations</TabsTrigger>}
-          {isManager && <TabsTrigger value="reorder">Reorder levels</TabsTrigger>}
+          {isManager && keepsStock && <TabsTrigger value="locations">Locations</TabsTrigger>}
+          {isManager && keepsStock && <TabsTrigger value="reorder">Reorder levels</TabsTrigger>}
           {isManager && <TabsTrigger value="staff">Warehouse staff</TabsTrigger>}
         </TabsList>
 
