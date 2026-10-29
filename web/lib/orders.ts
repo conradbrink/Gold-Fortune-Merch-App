@@ -39,7 +39,12 @@ export type OrderDetail = {
    * say where its stock came from.
    */
   fulfilLocationName: string | null;
-  lines: (OrderLineRow & { product_name: string; brand: string | null })[];
+  lines: (OrderLineRow & {
+    product_name: string;
+    brand: string | null;
+    /** Units in the product's shrink as the catalogue has it now: what "per shrink" on the page counts in. */
+    units_per_shrink: number | null;
+  })[];
   events: {
     id: number;
     from_status: string | null;
@@ -265,6 +270,8 @@ export function archiveMonths<T extends { closedAt: string | null }>(
   return out;
 }
 
+type LineProduct = { name: string; brand: string | null; units_per_shrink: number | null };
+
 export async function fetchOrderDetail(
   supabase: Client,
   orderId: string
@@ -279,7 +286,7 @@ export async function fetchOrderDetail(
       .single(),
     supabase
       .from("order_lines")
-      .select("*, products(name, brand)")
+      .select("*, products(name, brand, units_per_shrink)")
       .eq("order_id", orderId),
     supabase
       .from("order_status_events")
@@ -326,10 +333,15 @@ export async function fetchOrderDetail(
     repName: rep?.full_name ?? null,
     fulfilLocationName: one(orderRaw.stock_locations)?.name ?? null,
     lines: ((linesRes.data ?? []) as unknown as (OrderLineRow & {
-      products: { name: string; brand: string | null } | { name: string; brand: string | null }[] | null;
+      products: LineProduct | LineProduct[] | null;
     })[]).map((l) => {
       const p = one(l.products);
-      return { ...l, product_name: p?.name ?? "Unknown product", brand: p?.brand ?? null };
+      return {
+        ...l,
+        product_name: p?.name ?? "Unknown product",
+        brand: p?.brand ?? null,
+        units_per_shrink: p?.units_per_shrink ?? null,
+      };
     }),
     events: ((eventsRes.data ?? []) as unknown as {
       id: number;
@@ -525,8 +537,81 @@ export function unitPriceFor(
   if (units == null || !Number.isInteger(units) || units <= 0) return null;
   // In whole cents, half away from zero, as `round(price / units, 2)` in the
   // database: a rep's line priced there and a clerk's prefilled here agree.
-  const cents = Math.round(Number(shrink) * 100);
+  return perUnitOfShrink(Number(shrink), units);
+}
+
+/**
+ * A shrink's price as the price of one unit in it, to the cent: whole cents,
+ * half away from zero, as `round(price / units, 2)` in the database.
+ */
+export function perUnitOfShrink(shrinkPrice: number, units: number): string {
+  const cents = Math.round(shrinkPrice * 100);
   return (Math.floor((cents * 2 + units) / (units * 2)) / 100).toFixed(2);
+}
+
+/** The units in a product's shrink when it can be priced per shrink (more than one); otherwise null. */
+export function shrinkUnits(unitsPerShrink: number | null | undefined): number | null {
+  return unitsPerShrink != null && Number.isInteger(unitsPerShrink) && unitsPerShrink > 1
+    ? unitsPerShrink
+    : null;
+}
+
+/**
+ * An order line's quantity and price as the order page shows them: per unit
+ * as saved, or per shrink of `units` (`units` null means per unit).
+ *
+ * An order is kept in units, so per shrink is a way of reading and typing the
+ * line, not of saving it: `lineFromShown` turns what was typed back.
+ */
+export function shownLine(
+  line: { qty_ordered: number; unit_price: number | null },
+  units: number | null
+): { qty: string; price: string } {
+  const price = line.unit_price == null ? "" : String(line.unit_price);
+  if (!units) return { qty: String(line.qty_ordered), price };
+  return {
+    // Up to three places: 5 units of a shrink of 12 read 0.417, not 0.41666…
+    qty: String(Math.round((line.qty_ordered / units) * 1000) / 1000),
+    price: line.unit_price == null ? "" : (Math.round(Number(line.unit_price) * units * 100) / 100).toFixed(2),
+  };
+}
+
+/**
+ * Moves a typed quantity or price from per unit to per shrink, or back, so a
+ * box keeps meaning the same order when the switch changes. Something that is
+ * not a number is left as typed, for the save to refuse.
+ */
+export function switchedShown(
+  raw: string,
+  kind: "qty" | "price",
+  toShrink: boolean,
+  units: number
+): string {
+  const n = Number(raw);
+  if (raw.trim() === "" || !Number.isFinite(n)) return raw;
+  if (kind === "price") {
+    return toShrink ? (Math.round(n * units * 100) / 100).toFixed(2) : perUnitOfShrink(n, units);
+  }
+  return String(toShrink ? Math.round((n / units) * 1000) / 1000 : Math.round(n * units * 1000) / 1000);
+}
+
+/**
+ * What a typed quantity saves as, in units: null when it is not a whole
+ * number of units, one or more (2.5 shrinks of 10 is 25 units; 0.25 is not).
+ */
+export function unitsFromShown(raw: string, units: number | null): number | null {
+  const n = Number(raw);
+  if (raw.trim() === "" || !Number.isFinite(n)) return null;
+  const total = units ? n * units : n;
+  const whole = Math.round(total);
+  return Math.abs(total - whole) < 1e-6 && whole >= 1 ? whole : null;
+}
+
+/** What a typed price saves as, per unit: a price per shrink is divided by its units, to the cent. */
+export function unitPriceFromShown(raw: string, units: number | null): number | null {
+  const n = Number(raw);
+  if (raw.trim() === "" || !Number.isFinite(n) || n < 0) return null;
+  return units ? Number(perUnitOfShrink(n, units)) : n;
 }
 
 /**
