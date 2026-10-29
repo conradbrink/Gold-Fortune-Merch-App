@@ -12,7 +12,7 @@ class SyncBanner extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final pending = ref.watch(pendingSyncCountProvider).value ?? 0;
+    final pending = ref.watch(myPendingSyncCountProvider).value ?? 0;
     final status = ref.watch(syncStatusProvider).value;
     final state = status?.state ?? SyncState.idle;
 

@@ -60,17 +60,7 @@ List<OutboxEntry> replayableEntries(
 /// The rep an outbox entry was queued by, when its payload says so
 /// (`rep_id`); null when it does not, which the drain treats as "anyone's".
 @visibleForTesting
-String? ownerOf(OutboxEntry entry) {
-  try {
-    final payload = jsonDecode(entry.payload);
-    if (payload is Map && payload['rep_id'] is String) {
-      return payload['rep_id'] as String;
-    }
-  } catch (_) {
-    // A payload that is not JSON is the replay's problem, not this check's.
-  }
-  return null;
-}
+String? ownerOf(OutboxEntry entry) => repIdOf(entry.payload);
 
 /// The queued operation this entry cannot land without, if it has one.
 ///
@@ -305,9 +295,14 @@ class SyncEngine {
 
   Future<void> _emit(SyncState state, {String? message}) async {
     if (_statusController.isClosed) return;
-    final pending = await _db.pendingEntries(limit: 1000);
+    // The signed-in person's, as the banner counts: another person's work
+    // waits for them and is nothing this session can send.
+    final me = _signedInUser();
+    final pending = (await _db.pendingEntries(limit: 1000))
+        .where((e) => isWorkOf(e.payload, me))
+        .length;
     _statusController.add(
-      SyncStatus(state: state, pending: pending.length, message: message),
+      SyncStatus(state: state, pending: pending, message: message),
     );
   }
 

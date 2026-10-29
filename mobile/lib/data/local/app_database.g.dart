@@ -514,6 +514,15 @@ class $CachedRoutesTable extends CachedRoutes
     type: DriftSqlType.dateTime,
     requiredDuringInsert: true,
   );
+  static const VerificationMeta _repIdMeta = const VerificationMeta('repId');
+  @override
+  late final GeneratedColumn<String> repId = GeneratedColumn<String>(
+    'rep_id',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
   static const VerificationMeta _adHocMeta = const VerificationMeta('adHoc');
   @override
   late final GeneratedColumn<bool> adHoc = GeneratedColumn<bool>(
@@ -533,6 +542,7 @@ class $CachedRoutesTable extends CachedRoutes
     scheduledDate,
     payload,
     cachedAt,
+    repId,
     adHoc,
   ];
   @override
@@ -582,6 +592,12 @@ class $CachedRoutesTable extends CachedRoutes
     } else if (isInserting) {
       context.missing(_cachedAtMeta);
     }
+    if (data.containsKey('rep_id')) {
+      context.handle(
+        _repIdMeta,
+        repId.isAcceptableOrUnknown(data['rep_id']!, _repIdMeta),
+      );
+    }
     if (data.containsKey('ad_hoc')) {
       context.handle(
         _adHocMeta,
@@ -613,6 +629,10 @@ class $CachedRoutesTable extends CachedRoutes
         DriftSqlType.dateTime,
         data['${effectivePrefix}cached_at'],
       )!,
+      repId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}rep_id'],
+      ),
       adHoc: attachedDatabase.typeMapping.read(
         DriftSqlType.bool,
         data['${effectivePrefix}ad_hoc'],
@@ -632,6 +652,12 @@ class CachedRoute extends DataClass implements Insertable<CachedRoute> {
   final String payload;
   final DateTime cachedAt;
 
+  /// Whose day the row belongs to. Reps share phones: keyed by date alone,
+  /// the next person to sign in saw the last one's unscheduled visits on
+  /// their own list. Null only on rows cached before schema 5, until
+  /// [AppDatabase.claimUnownedRoutes] gives them to whoever signs in.
+  final String? repId;
+
   /// Ad-hoc rows exist only on this device until they sync, so a schedule
   /// refresh must never delete them.
   final bool adHoc;
@@ -640,6 +666,7 @@ class CachedRoute extends DataClass implements Insertable<CachedRoute> {
     required this.scheduledDate,
     required this.payload,
     required this.cachedAt,
+    this.repId,
     required this.adHoc,
   });
   @override
@@ -649,6 +676,9 @@ class CachedRoute extends DataClass implements Insertable<CachedRoute> {
     map['scheduled_date'] = Variable<String>(scheduledDate);
     map['payload'] = Variable<String>(payload);
     map['cached_at'] = Variable<DateTime>(cachedAt);
+    if (!nullToAbsent || repId != null) {
+      map['rep_id'] = Variable<String>(repId);
+    }
     map['ad_hoc'] = Variable<bool>(adHoc);
     return map;
   }
@@ -659,6 +689,9 @@ class CachedRoute extends DataClass implements Insertable<CachedRoute> {
       scheduledDate: Value(scheduledDate),
       payload: Value(payload),
       cachedAt: Value(cachedAt),
+      repId: repId == null && nullToAbsent
+          ? const Value.absent()
+          : Value(repId),
       adHoc: Value(adHoc),
     );
   }
@@ -673,6 +706,7 @@ class CachedRoute extends DataClass implements Insertable<CachedRoute> {
       scheduledDate: serializer.fromJson<String>(json['scheduledDate']),
       payload: serializer.fromJson<String>(json['payload']),
       cachedAt: serializer.fromJson<DateTime>(json['cachedAt']),
+      repId: serializer.fromJson<String?>(json['repId']),
       adHoc: serializer.fromJson<bool>(json['adHoc']),
     );
   }
@@ -684,6 +718,7 @@ class CachedRoute extends DataClass implements Insertable<CachedRoute> {
       'scheduledDate': serializer.toJson<String>(scheduledDate),
       'payload': serializer.toJson<String>(payload),
       'cachedAt': serializer.toJson<DateTime>(cachedAt),
+      'repId': serializer.toJson<String?>(repId),
       'adHoc': serializer.toJson<bool>(adHoc),
     };
   }
@@ -693,12 +728,14 @@ class CachedRoute extends DataClass implements Insertable<CachedRoute> {
     String? scheduledDate,
     String? payload,
     DateTime? cachedAt,
+    Value<String?> repId = const Value.absent(),
     bool? adHoc,
   }) => CachedRoute(
     cacheKey: cacheKey ?? this.cacheKey,
     scheduledDate: scheduledDate ?? this.scheduledDate,
     payload: payload ?? this.payload,
     cachedAt: cachedAt ?? this.cachedAt,
+    repId: repId.present ? repId.value : this.repId,
     adHoc: adHoc ?? this.adHoc,
   );
   CachedRoute copyWithCompanion(CachedRoutesCompanion data) {
@@ -709,6 +746,7 @@ class CachedRoute extends DataClass implements Insertable<CachedRoute> {
           : this.scheduledDate,
       payload: data.payload.present ? data.payload.value : this.payload,
       cachedAt: data.cachedAt.present ? data.cachedAt.value : this.cachedAt,
+      repId: data.repId.present ? data.repId.value : this.repId,
       adHoc: data.adHoc.present ? data.adHoc.value : this.adHoc,
     );
   }
@@ -720,6 +758,7 @@ class CachedRoute extends DataClass implements Insertable<CachedRoute> {
           ..write('scheduledDate: $scheduledDate, ')
           ..write('payload: $payload, ')
           ..write('cachedAt: $cachedAt, ')
+          ..write('repId: $repId, ')
           ..write('adHoc: $adHoc')
           ..write(')'))
         .toString();
@@ -727,7 +766,7 @@ class CachedRoute extends DataClass implements Insertable<CachedRoute> {
 
   @override
   int get hashCode =>
-      Object.hash(cacheKey, scheduledDate, payload, cachedAt, adHoc);
+      Object.hash(cacheKey, scheduledDate, payload, cachedAt, repId, adHoc);
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
@@ -736,6 +775,7 @@ class CachedRoute extends DataClass implements Insertable<CachedRoute> {
           other.scheduledDate == this.scheduledDate &&
           other.payload == this.payload &&
           other.cachedAt == this.cachedAt &&
+          other.repId == this.repId &&
           other.adHoc == this.adHoc);
 }
 
@@ -744,6 +784,7 @@ class CachedRoutesCompanion extends UpdateCompanion<CachedRoute> {
   final Value<String> scheduledDate;
   final Value<String> payload;
   final Value<DateTime> cachedAt;
+  final Value<String?> repId;
   final Value<bool> adHoc;
   final Value<int> rowid;
   const CachedRoutesCompanion({
@@ -751,6 +792,7 @@ class CachedRoutesCompanion extends UpdateCompanion<CachedRoute> {
     this.scheduledDate = const Value.absent(),
     this.payload = const Value.absent(),
     this.cachedAt = const Value.absent(),
+    this.repId = const Value.absent(),
     this.adHoc = const Value.absent(),
     this.rowid = const Value.absent(),
   });
@@ -759,6 +801,7 @@ class CachedRoutesCompanion extends UpdateCompanion<CachedRoute> {
     required String scheduledDate,
     required String payload,
     required DateTime cachedAt,
+    this.repId = const Value.absent(),
     this.adHoc = const Value.absent(),
     this.rowid = const Value.absent(),
   }) : cacheKey = Value(cacheKey),
@@ -770,6 +813,7 @@ class CachedRoutesCompanion extends UpdateCompanion<CachedRoute> {
     Expression<String>? scheduledDate,
     Expression<String>? payload,
     Expression<DateTime>? cachedAt,
+    Expression<String>? repId,
     Expression<bool>? adHoc,
     Expression<int>? rowid,
   }) {
@@ -778,6 +822,7 @@ class CachedRoutesCompanion extends UpdateCompanion<CachedRoute> {
       if (scheduledDate != null) 'scheduled_date': scheduledDate,
       if (payload != null) 'payload': payload,
       if (cachedAt != null) 'cached_at': cachedAt,
+      if (repId != null) 'rep_id': repId,
       if (adHoc != null) 'ad_hoc': adHoc,
       if (rowid != null) 'rowid': rowid,
     });
@@ -788,6 +833,7 @@ class CachedRoutesCompanion extends UpdateCompanion<CachedRoute> {
     Value<String>? scheduledDate,
     Value<String>? payload,
     Value<DateTime>? cachedAt,
+    Value<String?>? repId,
     Value<bool>? adHoc,
     Value<int>? rowid,
   }) {
@@ -796,6 +842,7 @@ class CachedRoutesCompanion extends UpdateCompanion<CachedRoute> {
       scheduledDate: scheduledDate ?? this.scheduledDate,
       payload: payload ?? this.payload,
       cachedAt: cachedAt ?? this.cachedAt,
+      repId: repId ?? this.repId,
       adHoc: adHoc ?? this.adHoc,
       rowid: rowid ?? this.rowid,
     );
@@ -816,6 +863,9 @@ class CachedRoutesCompanion extends UpdateCompanion<CachedRoute> {
     if (cachedAt.present) {
       map['cached_at'] = Variable<DateTime>(cachedAt.value);
     }
+    if (repId.present) {
+      map['rep_id'] = Variable<String>(repId.value);
+    }
     if (adHoc.present) {
       map['ad_hoc'] = Variable<bool>(adHoc.value);
     }
@@ -832,6 +882,7 @@ class CachedRoutesCompanion extends UpdateCompanion<CachedRoute> {
           ..write('scheduledDate: $scheduledDate, ')
           ..write('payload: $payload, ')
           ..write('cachedAt: $cachedAt, ')
+          ..write('repId: $repId, ')
           ..write('adHoc: $adHoc, ')
           ..write('rowid: $rowid')
           ..write(')'))
@@ -1885,6 +1936,7 @@ typedef $$CachedRoutesTableCreateCompanionBuilder =
       required String scheduledDate,
       required String payload,
       required DateTime cachedAt,
+      Value<String?> repId,
       Value<bool> adHoc,
       Value<int> rowid,
     });
@@ -1894,6 +1946,7 @@ typedef $$CachedRoutesTableUpdateCompanionBuilder =
       Value<String> scheduledDate,
       Value<String> payload,
       Value<DateTime> cachedAt,
+      Value<String?> repId,
       Value<bool> adHoc,
       Value<int> rowid,
     });
@@ -1924,6 +1977,11 @@ class $$CachedRoutesTableFilterComposer
 
   ColumnFilters<DateTime> get cachedAt => $composableBuilder(
     column: $table.cachedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get repId => $composableBuilder(
+    column: $table.repId,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -1962,6 +2020,11 @@ class $$CachedRoutesTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<String> get repId => $composableBuilder(
+    column: $table.repId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<bool> get adHoc => $composableBuilder(
     column: $table.adHoc,
     builder: (column) => ColumnOrderings(column),
@@ -1990,6 +2053,9 @@ class $$CachedRoutesTableAnnotationComposer
 
   GeneratedColumn<DateTime> get cachedAt =>
       $composableBuilder(column: $table.cachedAt, builder: (column) => column);
+
+  GeneratedColumn<String> get repId =>
+      $composableBuilder(column: $table.repId, builder: (column) => column);
 
   GeneratedColumn<bool> get adHoc =>
       $composableBuilder(column: $table.adHoc, builder: (column) => column);
@@ -2030,6 +2096,7 @@ class $$CachedRoutesTableTableManager
                 Value<String> scheduledDate = const Value.absent(),
                 Value<String> payload = const Value.absent(),
                 Value<DateTime> cachedAt = const Value.absent(),
+                Value<String?> repId = const Value.absent(),
                 Value<bool> adHoc = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => CachedRoutesCompanion(
@@ -2037,6 +2104,7 @@ class $$CachedRoutesTableTableManager
                 scheduledDate: scheduledDate,
                 payload: payload,
                 cachedAt: cachedAt,
+                repId: repId,
                 adHoc: adHoc,
                 rowid: rowid,
               ),
@@ -2046,6 +2114,7 @@ class $$CachedRoutesTableTableManager
                 required String scheduledDate,
                 required String payload,
                 required DateTime cachedAt,
+                Value<String?> repId = const Value.absent(),
                 Value<bool> adHoc = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => CachedRoutesCompanion.insert(
@@ -2053,6 +2122,7 @@ class $$CachedRoutesTableTableManager
                 scheduledDate: scheduledDate,
                 payload: payload,
                 cachedAt: cachedAt,
+                repId: repId,
                 adHoc: adHoc,
                 rowid: rowid,
               ),
