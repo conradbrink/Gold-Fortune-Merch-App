@@ -260,6 +260,23 @@ test("an order finished without stock is told apart by the order, not the compan
   assert.equal(finishedWithoutStock(o("cancelled", null, null)), false);
 });
 
+test("an order with no stock is not dragged through picking and packing", () => {
+  const o = { orderNumber: "SO-9", status: "confirmed", podStatus: null, onHold: false, fromStock: false };
+  assert.deepEqual(dropAnswer(o, "packed", true), { refuse: "SO-9 has no stock to pick or pack. Open it to dispatch it." });
+  assert.deepEqual(dropAnswer(o, "dispatched", true), { refuse: "SO-9 has no stock to pick or pack. Open it to dispatch it." });
+  const out = { ...o, status: "dispatched" };
+  assert.deepEqual(dropAnswer(out, "packed", true), {
+    refuse: "SO-9 carried no stock. If it did not arrive, open it and record the failed delivery.",
+  });
+  // Delivering it is the same step as for any order.
+  assert.deepEqual(dropAnswer(out, "delivered", true), { step: "deliver" });
+  // An order through the warehouse, or one that does not say, is moved as before.
+  assert.deepEqual(dropAnswer({ ...o, fromStock: true }, "packed", true), { step: "pack" });
+  const { fromStock: _unused, ...unsaid } = o;
+  void _unused;
+  assert.deepEqual(dropAnswer(unsaid, "packed", true), { step: "pack" });
+});
+
 test("Deliveries is its own module, on while the config loads", () => {
   const config = (modules: Record<string, boolean>) => ({ modules: toModuleSet(modules) });
   assert.equal(deliversOrders(config({ distribution: true, deliveries: true })), true);

@@ -35,6 +35,12 @@ export type BoardFacts = {
   status: string;
   podStatus: string | null;
   onHold: boolean;
+  /**
+   * False for an order invoiced without stock (no fulfilment location): it is
+   * never picked or packed, so the board's stock steps do not apply to it.
+   * Left out, the order is taken to hold stock, as every order did before.
+   */
+  fromStock?: boolean;
 };
 
 /** The column an order sits in, or null for one that is finished (the archive's). */
@@ -164,6 +170,14 @@ export function dropAnswer(
   }
   if (o.onHold) {
     return { refuse: `${n} is on hold. Open the order and release the hold first.` };
+  }
+  // Invoiced without stock, before the company bought Stock control: there is
+  // nothing to pick or pack, and the database refuses Packed for it.
+  if (o.fromStock === false && from === "invoiced") {
+    return { refuse: `${n} has no stock to pick or pack. Open it to dispatch it.` };
+  }
+  if (o.fromStock === false && from === "dispatched" && to !== "delivered") {
+    return { refuse: `${n} carried no stock. If it did not arrive, open it and record the failed delivery.` };
   }
   if (toAt === fromAt + 1) return { step: STEP_INTO[to as keyof typeof STEP_INTO] };
   if (toAt > fromAt + 1) {

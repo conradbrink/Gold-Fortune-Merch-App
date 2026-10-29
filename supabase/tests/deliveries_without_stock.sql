@@ -18,9 +18,10 @@
 --   D5  The office records a delivery short: the line is partial, what came
 --       back is recorded, nothing is moved, and the invoice is credited.
 --   D6  Cancelling: a confirmed order is cancelled and its invoice voided,
---       with "Invoice every order" on (the follow trigger) and off (the
---       cancel itself); off, an invoice with a payment is refused; an order
---       out for delivery is refused with its own message.
+--       with "Invoice every order" on (the follow trigger) and off
+--       (order_cancel_settle_invoice); off, a paid one is credited in full
+--       instead; an order out for delivery is refused with its own message,
+--       and cancelled with its failed delivery, its invoice voided (off).
 --   D7  The rules stay shut: a stock order cannot skip picking, nor drop its
 --       location to do so; nothing comes
 --       back to confirmed but through order_return_undelivered; an order with
@@ -78,8 +79,9 @@ begin
   insert into public.products (org_id, name, units_per_shrink, shrink_price_excl_vat)
   values (c_gf, v_tag || ' product two', 1, 20) returning id into v_p2;
 
-  -- Seven orders of 10 x p1 at 12.50; the first also has a cancelled line.
-  for i in 1..7 loop
+  -- Nine orders of 10 x p1 at 12.50; the first also has a cancelled line.
+  -- All but the seventh are invoiced in D1; the seventh stays new.
+  for i in 1..9 loop
     insert into public.orders (org_id, order_number, store_id, rep_id, source, received_via, client_generated_id)
     values (c_gf, v_tag || '-' || i, v_store, v_rep, 'warehouse_manual', 'other', gen_random_uuid())
     returning id into v_id;
@@ -94,7 +96,8 @@ begin
   ---------------------------------------------------------------- D1 invoiced, confirmed
   perform set_config('request.jwt.claims', json_build_object('sub', v_admin, 'role', 'authenticated')::text, true);
   set local role authenticated;
-  for i in 1..6 loop
+  for i in 1..9 loop
+    continue when i = 7;
     begin
       v_res := public.order_invoice_without_stock(v_o[i]);
       if v_res->>'status' <> 'confirmed' then
@@ -298,22 +301,21 @@ begin
   v_checks := v_checks + 1;
   begin
     perform public.order_cancel_without_stock(v_o[6], 'Wrong shop');
-    v_fail := v_fail || 'D6 (setting off) an order with a paid invoice was cancelled' || E'\n';
   exception when others then
     get stacked diagnostics v_err = message_text;
-    if v_err not like '% has payments or credit notes against it.%' then
-      v_fail := v_fail || 'D6 paid invoice refused for another reason: ' || v_err || E'\n';
-    end if;
+    v_fail := v_fail || 'D6 (setting off) an order with a paid invoice could not be cancelled: ' || v_err || E'\n';
   end;
   begin
-    v_dsp := (public.order_dispatch(p_order_id => v_o[6], p_carrier_name => 'ZZ courier')->>'dispatch_id')::uuid;
+    v_dsp := (public.order_dispatch(p_order_id => v_o[8], p_carrier_name => 'ZZ courier')->>'dispatch_id')::uuid;
+    -- Left on the road for D7.
+    perform public.order_dispatch(p_order_id => v_o[9], p_carrier_name => 'ZZ courier');
   exception when others then
     get stacked diagnostics v_err = message_text;
-    v_fail := v_fail || 'D6 the paid order could not be dispatched: ' || v_err || E'\n';
+    v_fail := v_fail || 'D6 an order could not be dispatched: ' || v_err || E'\n';
   end;
   v_checks := v_checks + 1;
   begin
-    perform public.order_cancel_without_stock(v_o[6], 'Wrong shop');
+    perform public.order_cancel_without_stock(v_o[8], 'Wrong shop');
     v_fail := v_fail || 'D6 an order out for delivery was cancelled' || E'\n';
   exception when others then
     get stacked diagnostics v_err = message_text;
@@ -321,14 +323,34 @@ begin
       v_fail := v_fail || 'D6 out for delivery refused for another reason: ' || v_err || E'\n';
     end if;
   end;
+  if (select status from public.orders where id = v_o[8]) <> 'dispatched' then
+    v_fail := v_fail || 'D6 a refused cancel changed the order out for delivery' || E'\n';
+  end if;
+  v_checks := v_checks + 1;
+  begin
+    perform public.order_return_undelivered(v_dsp, 'Shop refused it', true);
+  exception when others then
+    get stacked diagnostics v_err = message_text;
+    v_fail := v_fail || 'D6 (setting off) the failed delivery could not cancel the order: ' || v_err || E'\n';
+  end;
   reset role;
   if (select status from public.orders where id = v_o[5]) <> 'cancelled'
      or (select invoice_number from public.orders where id = v_o[5]) is not null
      or exists (select 1 from public.tax_invoices where order_id = v_o[5] and status = 'issued') then
     v_fail := v_fail || 'D6 (setting off) not cancelled, or its invoice not voided' || E'\n';
   end if;
-  if (select status from public.orders where id = v_o[6]) <> 'dispatched' then
-    v_fail := v_fail || 'D6 a refused cancel changed the order out for delivery' || E'\n';
+  if (select status from public.orders where id = v_o[6]) <> 'cancelled'
+     or (select count(*) from public.tax_invoices where order_id = v_o[6] and status = 'issued') <> 1
+     or (select sum(cl.qty) from public.credit_note_lines cl
+           join public.credit_notes c on c.id = cl.credit_note_id
+           join public.tax_invoices t on t.id = c.invoice_id
+          where t.order_id = v_o[6]) is distinct from 10 then
+    v_fail := v_fail || 'D6 (setting off) the paid order is not cancelled with its invoice credited in full' || E'\n';
+  end if;
+  if (select status from public.orders where id = v_o[8]) <> 'cancelled'
+     or (select invoice_number from public.orders where id = v_o[8]) is not null
+     or exists (select 1 from public.tax_invoices where order_id = v_o[8] and status = 'issued') then
+    v_fail := v_fail || 'D6 (setting off) cancelled with its failed delivery, but its invoice still stands' || E'\n';
   end if;
   update public.company_settings set value = 'true'::jsonb where org_id = c_gf and key = 'money_invoice_orders';
 
@@ -361,7 +383,7 @@ begin
   end;
   v_checks := v_checks + 1;
   begin
-    update public.orders set status = 'confirmed' where id = v_o[6];
+    update public.orders set status = 'confirmed' where id = v_o[9];
     v_fail := v_fail || 'D7 an order came back from dispatched without order_return_undelivered' || E'\n';
   exception when others then
     get stacked diagnostics v_err = message_text;

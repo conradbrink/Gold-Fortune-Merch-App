@@ -45,6 +45,8 @@ begin
 end;
 $$;
 
+drop function if exists public.order_cancel_settle_invoice(uuid);
+
 -- The rest as they were (prosrc md5: orders_enforce_transition 86b4c96b…,
 -- order_dispatch 650b387a…, order_mark_delivered_unchecked 4c8668f9…,
 -- order_return_undelivered b5acaa4b…, order_invoice_without_stock e434090f…,

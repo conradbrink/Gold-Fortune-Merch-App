@@ -57,9 +57,12 @@
 --
 -- The invoice is issued when the order is confirmed, as before, and follows
 -- the order from there through orders_invoice_follow (20261013180000): sent
--- short or delivered short is credited, cancelled is voided. Where "Invoice
--- every order" is off the follow trigger does nothing, so cancelling here
--- voids the invoice itself, the same way.
+-- short or delivered short is credited, cancelled is voided (or credited once
+-- paid). Where "Invoice every order" is off that trigger does nothing, yet
+-- order_invoice_without_stock still invoiced the order; so both ways of
+-- cancelling one (order_cancel_without_stock, and a failed delivery recorded
+-- with "cancel") settle its invoice themselves, the trigger's way, through
+-- order_cancel_settle_invoice.
 --
 -- -------------------------------------------------- the rules it changes
 --
@@ -573,6 +576,61 @@ begin
 end;
 $function$;
 
+-- A cancelled order's invoice, settled as orders_invoice_follow settles it
+-- where "Invoice every order" is on: voided when nothing was paid or credited
+-- against it, otherwise credited for what is still invoiced. Where the
+-- setting is on it does nothing: the trigger does this when the cancel
+-- commits. Called only for an order invoiced without stock; internal.
+create or replace function public.order_cancel_settle_invoice(p_order_id uuid)
+ RETURNS void
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'pg_temp'
+AS $function$
+declare
+  o public.orders;
+  i public.tax_invoices;
+  v_lines jsonb;
+begin
+  select * into o from public.orders where id = p_order_id;
+  if not found or public.order_invoices_on(o.org_id) then
+    return;
+  end if;
+  select * into i from public.tax_invoices t
+   where t.order_id = o.id and t.status = 'issued' for update;
+  if not found then
+    return;
+  end if;
+
+  if not exists (select 1 from public.invoice_payments p where p.invoice_id = i.id)
+     and not exists (select 1 from public.credit_notes c where c.invoice_id = i.id) then
+    update public.tax_invoices
+       set status = 'void', void_reason = format('%s was cancelled.', o.order_number),
+           voided_by = auth.uid(), voided_at = now()
+     where id = i.id;
+    update public.orders set invoice_number = null
+     where id = o.id and invoice_number = i.invoice_number;
+    return;
+  end if;
+
+  select jsonb_agg(jsonb_build_object('invoice_line_id', x.id, 'qty', x.net) order by x.position)
+    into v_lines
+    from (
+      select tl.id, tl.position,
+             tl.qty - coalesce((select sum(cl.qty) from public.credit_note_lines cl where cl.invoice_line_id = tl.id), 0) as net
+        from public.tax_invoice_lines tl
+       where tl.invoice_id = i.id
+    ) x
+   where x.net > 0;
+  if v_lines is not null then
+    perform public.credit_note_write(i.id, format('%s was cancelled.', o.order_number), v_lines);
+  end if;
+end;
+$function$;
+
+revoke all on function public.order_cancel_settle_invoice(uuid) from public, anon, authenticated;
+grant execute on function public.order_cancel_settle_invoice(uuid) to service_role;
+
 create or replace function public.order_return_undelivered(p_dispatch_id uuid, p_reason text, p_cancel boolean DEFAULT false)
  RETURNS jsonb
  LANGUAGE plpgsql
@@ -687,6 +745,11 @@ begin
        set status = 'cancelled', cancel_reason = p_reason,
            cancelled_by = auth.uid(), cancelled_at = now()
      where id = v_order.id;
+    -- Invoiced without stock: its invoice is settled here too where the
+    -- follow trigger would leave it standing.
+    if not v_stock then
+      perform public.order_cancel_settle_invoice(v_order.id);
+    end if;
   else
     update public.orders
        set status = case when v_order.fulfil_location_id is null then 'confirmed' else 'packed' end,
@@ -848,7 +911,6 @@ AS $function$
 declare
   v_org uuid;
   o public.orders;
-  i public.tax_invoices;
   -- Any run of white space, tabs and new lines included, counts as one space.
   v_reason text := btrim(regexp_replace(coalesce(p_reason, ''), '\s+', ' ', 'g'));
 begin
@@ -899,29 +961,6 @@ begin
       using errcode = '42501';
   end if;
 
-  -- Invoiced and not sent yet. Where "Invoice every order" is on,
-  -- orders_invoice_follow voids the invoice (or credits it, once paid) when
-  -- the order is cancelled. Where it is off that trigger does nothing, so the
-  -- invoice this order's confirm issued is voided here, the same way; one
-  -- with payments or credits against it is the invoicing page's to credit.
-  if o.status = 'confirmed' and not public.order_invoices_on(v_org) then
-    select * into i from public.tax_invoices t
-     where t.order_id = o.id and t.status = 'issued' for update;
-    if found then
-      if exists (select 1 from public.invoice_payments p where p.invoice_id = i.id)
-         or exists (select 1 from public.credit_notes c where c.invoice_id = i.id) then
-        raise exception '% has payments or credit notes against it. Credit what is left on the invoice, then send the order out or leave it.',
-          i.invoice_number using errcode = '42501';
-      end if;
-      update public.tax_invoices
-         set status = 'void', void_reason = format('%s was cancelled.', o.order_number),
-             voided_by = auth.uid(), voided_at = now()
-       where id = i.id;
-      update public.orders set invoice_number = null
-       where id = o.id and invoice_number = i.invoice_number;
-    end if;
-  end if;
-
   -- Lines first, then the order, as order_cancel does.
   update public.order_lines set line_status = 'cancelled'
    where order_id = o.id and line_status <> 'cancelled';
@@ -931,6 +970,11 @@ begin
          cancelled_by = auth.uid(),
          cancelled_at = now()
    where id = o.id;
+  -- Invoiced and not sent yet: its invoice is voided, or credited once paid
+  -- (orders_invoice_follow where "Invoice every order" is on, else here).
+  if o.status = 'confirmed' then
+    perform public.order_cancel_settle_invoice(o.id);
+  end if;
 
   return jsonb_build_object('order_id', o.id, 'order_number', o.order_number, 'status', 'cancelled');
 end;
@@ -939,4 +983,6 @@ $function$;
 comment on function public.order_invoice_without_stock(uuid) is
   'For a company without Stock control: invoices a new order at the quantities ordered. With Deliveries the order is then confirmed, ready to dispatch; without, it is finished as delivered. Never touches stock.';
 comment on function public.order_cancel_without_stock(uuid, text) is
-  'For an order with no stock: cancels it while new, or invoiced and not yet sent (its invoice voided or credited).';
+  'For an order with no stock: cancels it while new, or invoiced and not yet sent (its invoice voided, or credited once paid).';
+comment on function public.order_cancel_settle_invoice(uuid) is
+  'Internal. Settles a cancelled no-stock order''s invoice the way orders_invoice_follow does when "Invoice every order" is on: void, or credit what is left once paid or credited. Does nothing where that setting is on.';
