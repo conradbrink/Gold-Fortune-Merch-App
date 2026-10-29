@@ -51,11 +51,12 @@ export const LIMITS = {
   roadDistance: { bucket: "road_distance", limit: 200, windowSeconds: 3600 },
   /**
    * A driver's "Plan my route": one Google Routes call each (Compute Routes
-   * Pro). A driver plans a round once or twice and again when a drop moves;
-   * twenty an hour is that with room, and a loop stops long before the bill
-   * notices.
+   * Pro). Ten a day per person (owner, 29 Oct 2026): a driver plans a round
+   * once or twice and again when a drop moves. The day is a UTC day, so it
+   * starts again at 02:00 in South Africa and Botswana. Past the limit the
+   * phone still plans, nearest stop first, at no cost.
    */
-  routePlan: { bucket: "route_plan", limit: 20, windowSeconds: 3600 },
+  routePlan: { bucket: "route_plan", limit: 10, windowSeconds: 86_400 },
   /**
    * The assistant (Ask), per person: the owner's numbers, 19 Oct 2026. Every
    * question counts, answered or refused, so nobody can run up the bill by
