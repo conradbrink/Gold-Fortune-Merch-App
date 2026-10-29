@@ -8,6 +8,7 @@ import {
   boardViewFromQuery,
   dayInZone,
   daysBetween,
+  deliversOrders,
   finishedWithoutStock,
   invoicesOnConfirm,
   invoicesWithoutStock,
@@ -21,6 +22,7 @@ import {
   matchesSearch,
   nextStepOf,
   poExpiry,
+  sentWithoutStock,
   waitTone,
 } from "@/lib/order-board";
 import { archiveMonths } from "@/lib/orders";
@@ -256,6 +258,34 @@ test("an order finished without stock is told apart by the order, not the compan
   assert.equal(finishedWithoutStock(o("delivered", "2026-10-29T08:00:00Z", "loc-1")), false);
   assert.equal(finishedWithoutStock(o("new", null, null)), false);
   assert.equal(finishedWithoutStock(o("cancelled", null, null)), false);
+});
+
+test("Deliveries is its own module, on while the config loads", () => {
+  const config = (modules: Record<string, boolean>) => ({ modules: toModuleSet(modules) });
+  assert.equal(deliversOrders(config({ distribution: true, deliveries: true })), true);
+  // A distributor without the Inventory add-on still sends its orders out.
+  assert.equal(deliversOrders(config({ distribution: true, deliveries: true, warehouse: false })), true);
+  assert.equal(deliversOrders(config({ distribution: true, deliveries: false })), false);
+  assert.equal(deliversOrders(null), true);
+});
+
+test("an order sent out without stock: no location, from confirmed until delivered", () => {
+  const o = (status: string, dispatched_at: string | null, fulfil_location_id: string | null) => ({
+    status,
+    dispatched_at,
+    fulfil_location_id,
+  });
+  assert.equal(sentWithoutStock(o("confirmed", null, null)), true);
+  assert.equal(sentWithoutStock(o("dispatched", "2026-10-29T08:00:00Z", null)), true);
+  assert.equal(sentWithoutStock(o("delivered", "2026-10-29T08:00:00Z", null)), true);
+  // Finished in one step (no Deliveries): not sent, nothing to show as sent.
+  assert.equal(sentWithoutStock(o("delivered", null, null)), false);
+  // A new or cancelled order has no location whoever it belongs to.
+  assert.equal(sentWithoutStock(o("new", null, null)), false);
+  assert.equal(sentWithoutStock(o("cancelled", null, null)), false);
+  // Through the warehouse: it holds stock at a location.
+  assert.equal(sentWithoutStock(o("confirmed", null, "loc-1")), false);
+  assert.equal(sentWithoutStock(o("dispatched", "2026-10-29T08:00:00Z", "loc-1")), false);
 });
 
 test("a POD file storage would refuse is caught before the delivery is recorded", () => {

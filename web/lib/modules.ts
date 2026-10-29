@@ -25,6 +25,9 @@ export type ModuleCode =
   | "checklists_forms"
   | "reports"
   | "distribution"
+  /** Dispatch, drivers, delivery on the phone and its proof: in every distributor's plan. */
+  | "deliveries"
+  /** Inventory, the paid add-on: stock, receiving, picking, counts. The code predates the name. */
   | "warehouse"
   | "hr"
   | "invoicing"
@@ -74,7 +77,12 @@ const MODULE_PATHS: { prefix: string; module: ModuleCode }[] = [
   // Damaged stock of ours found at stores.
   { prefix: "/stores/damages", module: "distribution" },
 
-  { prefix: "/warehouse", module: "warehouse" },
+  // The warehouse home (what is waiting to go out, PODs outstanding) and its
+  // settings (drivers and vehicles) are Deliveries'; their stock parts show
+  // only with Inventory. The stock insights and every /inventory page are
+  // Inventory's.
+  { prefix: "/warehouse", module: "deliveries" },
+  { prefix: "/warehouse/insights", module: "warehouse" },
   { prefix: "/inventory", module: "warehouse" },
 
   { prefix: "/hr", module: "hr" },

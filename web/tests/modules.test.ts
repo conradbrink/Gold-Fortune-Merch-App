@@ -15,6 +15,7 @@ const everything = toModuleSet({
   checklists_forms: true,
   reports: true,
   distribution: true,
+  deliveries: true,
   warehouse: true,
   hr: true,
 });
@@ -30,6 +31,9 @@ test("each gated page belongs to its module, and anything else is core", () => {
   assert.equal(moduleForPath("/statements"), "invoicing");
   assert.equal(moduleForPath("/price-list"), "invoicing");
   assert.equal(moduleForPath("/contracts/1"), "invoicing");
+  // The warehouse home and its settings are Deliveries'; stock is Inventory's.
+  assert.equal(moduleForPath("/warehouse"), "deliveries");
+  assert.equal(moduleForPath("/warehouse/settings"), "deliveries");
   assert.equal(moduleForPath("/warehouse/insights"), "warehouse");
   assert.equal(moduleForPath("/inventory/stocktakes"), "warehouse");
   assert.equal(moduleForPath("/hr/me"), "hr");
@@ -49,7 +53,7 @@ test("prefixes match whole segments only", () => {
 });
 
 test("a module that is not explicitly true is off", () => {
-  const m = toModuleSet({ hr: false, warehouse: "yes", distribution: true });
+  const m = toModuleSet({ hr: false, deliveries: "yes", distribution: true });
   assert.equal(canReachPath(m, "/hr"), false);
   assert.equal(canReachPath(m, "/warehouse"), false);
   assert.equal(canReachPath(m, "/orders"), true);
@@ -169,7 +173,9 @@ test("menu headings name the areas of the business; a distributor adds its sales
     [null, "Customers", "Operations", "Team", "Finance", null, "Admin", "Resources"]
   );
   assert.deepEqual(
-    headings(toModuleSet({ distribution: true, warehouse: true, invoicing: true, reports: true, checklists_forms: true, hr: true })),
+    headings(
+      toModuleSet({ distribution: true, deliveries: true, warehouse: true, invoicing: true, reports: true, checklists_forms: true, hr: true })
+    ),
     [null, "Sales", "Field team", "Inventory", "Finance", null, "People", "Admin", "Resources"]
   );
 });

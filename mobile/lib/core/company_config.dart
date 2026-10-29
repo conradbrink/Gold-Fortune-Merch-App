@@ -76,6 +76,7 @@ class CompanyConfig {
       'checklists_forms',
       'reports',
       'distribution',
+      'deliveries',
       'warehouse',
       'hr',
     },
@@ -285,7 +286,9 @@ String moduleForLocation(String location) {
   bool under(String prefix) =>
       location == prefix || location.startsWith('$prefix/');
   if (under('/my-hr')) return 'hr';
-  if (under('/deliveries')) return 'warehouse';
+  // Deliveries, in every distributor's plan since 29 Oct 2026; stock
+  // (`warehouse`, the Inventory add-on) has no screen on the phone.
+  if (under('/deliveries')) return 'deliveries';
   if (under('/unscheduled/sales')) return 'distribution';
   // Taking an order and reporting damaged stock are both distribution's.
   if (RegExp(r'^/visit/[^/]+/(order|damage)(/|$)').hasMatch(location)) {

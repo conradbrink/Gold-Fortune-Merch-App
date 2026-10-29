@@ -131,7 +131,7 @@ void main() {
     test('each gated screen belongs to its module', () {
       expect(moduleForLocation('/my-hr'), 'hr');
       expect(moduleForLocation('/my-hr/leave'), 'hr');
-      expect(moduleForLocation('/deliveries'), 'warehouse');
+      expect(moduleForLocation('/deliveries'), 'deliveries');
       expect(moduleForLocation('/unscheduled/sales'), 'distribution');
       expect(moduleForLocation('/unscheduled/sales/abc'), 'distribution');
       expect(moduleForLocation('/visit/123/order'), 'distribution');

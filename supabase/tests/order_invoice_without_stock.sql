@@ -1,7 +1,10 @@
 -- Orders without the warehouse module: 20261029203300_invoice_orders_without_stock.
 --
 -- Run on Gold Fortune with its warehouse module switched off inside the block
--- (the company in question: orders and invoicing, no stock).
+-- (the company in question: orders and invoicing, no stock), and Deliveries
+-- off too: since 20261029224700 that is the company whose orders are finished
+-- in one step. With Deliveries on, an invoiced order is confirmed and goes out
+-- through dispatch: deliveries_without_stock.sql.
 --
 --   W1  Someone without the Orders permission cannot invoice an order.
 --   W2  The administrator invoices a new order and it is finished: delivered
@@ -25,8 +28,8 @@
 --   W10 With the warehouse module on, both are refused with the "keeps stock"
 --       message, changing nothing.
 --   W11 The rules it bends stay shut to everything else: new -> delivered
---       without the function is refused, and a confirmed order still needs a
---       location.
+--       without the function is refused, and an order is not picked without
+--       a location (a confirmed one may have none since 20261029224700).
 --   W12 Both functions keep their security: definer, a fixed search_path, no
 --       execute for anon or PUBLIC, and a Distribution module row each.
 --
@@ -72,6 +75,7 @@ begin
   if v_n <> 1 then
     raise exception 'Fixtures broken: Gold Fortune has no warehouse module row to switch off';
   end if;
+  update public.company_modules set enabled = false where org_id = c_gf and module_code = 'deliveries';
   update public.company_settings set value = 'true'::jsonb where org_id = c_gf and key = 'money_invoice_orders';
 
   -- A product with no price anywhere: a line saved with no price takes the
@@ -383,6 +387,7 @@ begin
   perform set_config('request.jwt.claims', json_build_object('sub', v_admin, 'role', 'authenticated')::text, true);
 
   ---------------------------------------------------------------- W10 warehouse on
+  update public.company_modules set enabled = true where org_id = c_gf and module_code = 'deliveries';
   update public.company_modules set enabled = true where org_id = c_gf and module_code = 'warehouse';
   insert into public.orders (org_id, order_number, store_id, source, received_via, client_generated_id)
   values (c_gf, v_tag || '-stock', v_store, 'warehouse_manual', 'other', gen_random_uuid()) returning id into v_o2;
@@ -430,11 +435,12 @@ begin
   v_checks := v_checks + 1;
   begin
     update public.orders set status = 'confirmed', fulfil_location_id = null where id = v_o2;
-    v_fail := v_fail || 'W11 an order was confirmed with no location' || E'\n';
+    update public.orders set status = 'picking' where id = v_o2;
+    v_fail := v_fail || 'W11 an order was picked with no location' || E'\n';
   exception when check_violation then null;
     when others then
       get stacked diagnostics v_err = message_text;
-      v_fail := v_fail || 'W11 confirming with no location refused for another reason: ' || v_err || E'\n';
+      v_fail := v_fail || 'W11 picking with no location refused for another reason: ' || v_err || E'\n';
   end;
 
   ---------------------------------------------------------------- W12 security

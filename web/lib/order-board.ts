@@ -263,9 +263,19 @@ export function keepsStock(config: { modules: ModuleSet } | null): boolean {
 }
 
 /**
- * A company with orders and invoicing but no warehouse: a new order is
- * invoiced at the quantities ordered and finished in one step, with no stock
- * reserved or moved (`order_invoice_without_stock`), and cancelled while new
+ * Whether this company sends its orders out: dispatch, drivers, delivery on
+ * the phone and its proof (the Deliveries module, in every distributor's plan
+ * since 29 Oct 2026). True while the config is loading, as `keepsStock` is.
+ */
+export function deliversOrders(config: { modules: ModuleSet } | null): boolean {
+  return config ? moduleEnabled(config.modules, "deliveries") : true;
+}
+
+/**
+ * A company with orders and invoicing but no Inventory: a new order is
+ * invoiced at the quantities ordered with no stock reserved or moved
+ * (`order_invoice_without_stock`). With Deliveries it is then confirmed and
+ * sent out (`sentWithoutStock`); without, it is finished in one step. Cancelled
  * by `order_cancel_without_stock`. False while the config is loading, so no
  * button is offered that the database might refuse.
  */
@@ -290,6 +300,24 @@ export function finishedWithoutStock(o: {
   fulfil_location_id: string | null;
 }): boolean {
   return o.status === "delivered" && o.dispatched_at === null && o.fulfil_location_id === null;
+}
+
+/**
+ * An order invoiced without stock and sent out from there: no location, past
+ * new, not finished in one step. It goes confirmed -> dispatched -> delivered,
+ * with no picking, packing or stock figures. Read from the order, like
+ * `finishedWithoutStock`.
+ */
+export function sentWithoutStock(o: {
+  status: string;
+  dispatched_at: string | null;
+  fulfil_location_id: string | null;
+}): boolean {
+  return (
+    o.fulfil_location_id === null &&
+    ["confirmed", "dispatched", "delivered"].includes(o.status) &&
+    !finishedWithoutStock(o)
+  );
 }
 
 /** An order's state in words for a sentence: "It is now being picked." */
