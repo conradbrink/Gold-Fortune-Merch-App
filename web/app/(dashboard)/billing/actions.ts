@@ -27,8 +27,8 @@ import {
  * the caller's own call just created or reopened. Paying on Paystack's page
  * is /api/paystack/checkout.
  *
- * Plans are bought by reps only: add-ons are not sold here until the add-on
- * bundle is priced.
+ * Plans are bought by reps and drivers only. The add-on, Stock control and HR
+ * at one price (price_list.bundle, 20261029233700), is not sold here yet.
  */
 
 type Result<T> = { ok: true; value: T } | { ok: false; error: string };
