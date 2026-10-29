@@ -112,17 +112,18 @@ as $$
       r.*,
       p.name as product_name, p.brand, p.sku_code,
       l.name as location_name,
-      -- Only a warehouse in use is kept to a level; a vehicle or a rep
-      -- carries what was sent out on it. See the header of 20261029235300.
-      (l.type = 'warehouse' and l.active) as keeps_level,
-      case when l.type = 'warehouse' and l.active
+      k.keeps_level,
+      case when k.keeps_level
            then coalesce(pls.min_stock_level, p.min_stock_level) end as min_level,
-      case when l.type = 'warehouse' and l.active
+      case when k.keeps_level
            then coalesce(pls.reorder_point, p.reorder_point) end as reorder_level
     from rolled r
     cross join cfg
     join public.products p on p.id = r.product_id
     join public.stock_locations l on l.id = r.location_id
+    -- Only a warehouse in use is kept to a level; a vehicle or a rep carries
+    -- what was sent out on it. See the header of 20261029235300.
+    cross join lateral (select l.type = 'warehouse' and l.active as keeps_level) k
     left join public.product_location_settings pls
       on pls.product_id = r.product_id and pls.location_id = r.location_id
      and pls.org_id = cfg.org
@@ -134,7 +135,7 @@ as $$
       )
       -- An empty van or rep line is what a finished run leaves behind, and an
       -- empty line at a warehouse no longer in use is what closing it did.
-      and ((l.type = 'warehouse' and l.active) or r.qty_on_hand > 0 or r.qty_in_transit > 0)
+      and (k.keeps_level or r.qty_on_hand > 0 or r.qty_in_transit > 0)
   )
   select
     j.product_id, j.product_name, j.brand, j.sku_code,
