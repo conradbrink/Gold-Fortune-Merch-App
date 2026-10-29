@@ -21,6 +21,8 @@ import '../data/models/delivery.dart';
 import '../data/models/hr.dart';
 import '../data/repositories/form_repository.dart';
 import '../data/repositories/delivery_repository.dart';
+import '../data/repositories/driver_repository.dart';
+import '../features/driver/route_plan.dart';
 import '../data/repositories/hr_repository.dart';
 import '../data/repositories/lead_repository.dart';
 import '../data/repositories/order_repository.dart';
@@ -207,6 +209,19 @@ final outstandingDeliveryCountProvider = FutureProvider<int>((ref) {
   ref.watch(currentUserProvider);
   return ref.watch(deliveryRepositoryProvider).outstandingCount();
 });
+
+// ------------------------------------------------------------- driver
+
+final driverRepositoryProvider = Provider<DriverRepository>((ref) {
+  return DriverRepository(supabase);
+});
+
+/// A driver's round: everything still on the road and the last week's drops.
+/// Narrowed by RLS to the dispatches assigned to them, like "My deliveries".
+final driverRunProvider = FutureProvider<List<RunStop>>((ref) {
+  ref.watch(currentUserProvider);
+  return ref.watch(driverRepositoryProvider).myRun();
+}, retry: _noRetry);
 
 final routeRepositoryProvider = Provider<RouteRepository>((ref) {
   return RouteRepository(supabase, ref.watch(appDatabaseProvider));

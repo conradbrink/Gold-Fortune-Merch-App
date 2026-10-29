@@ -64,6 +64,8 @@ export type OrderDetail = {
     dispatched_at: string;
     delivered_at: string | null;
     received_by_name: string | null;
+    /** The receiver's signature on the phone (20261029181700), in fulfilment-docs. */
+    received_signature_path: string | null;
     /** The rep whose job this delivery is, when one has been given it. */
     assigned_rep_id: string | null;
     assigned_rep_name: string | null;
@@ -296,7 +298,7 @@ export async function fetchOrderDetail(
     supabase
       .from("dispatches")
       .select(
-        "id, dispatch_number, status, tracking_reference, carrier_name, dispatched_at, delivered_at, received_by_name, assigned_rep_id, assigned_rep:profiles!dispatches_assigned_rep_id_fkey(full_name), drivers(full_name), vehicles(registration)"
+        "id, dispatch_number, status, tracking_reference, carrier_name, dispatched_at, delivered_at, received_by_name, received_signature_path, assigned_rep_id, assigned_rep:profiles!dispatches_assigned_rep_id_fkey(full_name), drivers(full_name), vehicles(registration)"
       )
       .eq("order_id", orderId)
       .order("dispatched_at", { ascending: false }),
@@ -367,6 +369,7 @@ export async function fetchOrderDetail(
       dispatched_at: string;
       delivered_at: string | null;
       received_by_name: string | null;
+      received_signature_path: string | null;
       assigned_rep_id: string | null;
       assigned_rep:
         | { full_name: string | null }
@@ -385,6 +388,7 @@ export async function fetchOrderDetail(
       dispatched_at: d.dispatched_at,
       delivered_at: d.delivered_at,
       received_by_name: d.received_by_name,
+      received_signature_path: d.received_signature_path,
       assigned_rep_id: d.assigned_rep_id,
       assigned_rep_name: one(d.assigned_rep)?.full_name ?? null,
     })),
@@ -1182,12 +1186,11 @@ export async function dispatchOrder(
 
   if (!carrier.assignedRepId) return result;
 
-  const one = lower(t.staff.one);
   const dispatchId = result.dispatch_id;
   if (typeof dispatchId !== "string") {
     throw new PartialDispatchError(
-      `The order was dispatched, but it could not be given to ${withArticle(t, "staff")} — the ` +
-        `dispatch id came back missing. Set the ${one} on the delivery below.`,
+      `The order was dispatched, but it could not be given to ${withArticle(t, "staff")} or driver — the ` +
+        `dispatch id came back missing. Set "Handled by" on the delivery below.`,
       "the dispatch id came back missing."
     );
   }
@@ -1197,8 +1200,8 @@ export async function dispatchOrder(
   } catch (e) {
     const reason = e instanceof Error ? e.message : String(e);
     throw new PartialDispatchError(
-      `The order was dispatched, but it could not be given to ${withArticle(t, "staff")}: ${reason} ` +
-        `Set the ${one} on the delivery below — do not dispatch again.`,
+      `The order was dispatched, but it could not be given to ${withArticle(t, "staff")} or driver: ${reason} ` +
+        `Set "Handled by" on the delivery below — do not dispatch again.`,
       reason
     );
   }

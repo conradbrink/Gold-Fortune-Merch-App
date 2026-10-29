@@ -89,10 +89,11 @@ async function authorise(id: string) {
   // create; `manager` stays out, so no manager can delete a peer or move a
   // peer's sign-in address to one they control. That is the escalation this
   // check exists to prevent, and it is the same line the invite route draws.
-  if (victim.role !== "rep" && victim.role !== "warehouse") {
+  // A driver (20261029161700) reaches less than a rep: their own deliveries.
+  if (victim.role !== "rep" && victim.role !== "warehouse" && victim.role !== "driver") {
     return {
       error: Response.json(
-        { error: "Only field staff and warehouse staff can be changed here." },
+        { error: "Only field staff, drivers and warehouse staff can be changed here." },
         { status: 400 }
       ),
     };

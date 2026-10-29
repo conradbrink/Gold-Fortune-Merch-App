@@ -7,10 +7,13 @@ import 'package:image_picker/image_picker.dart';
 import '../../core/providers.dart';
 import '../../core/theme.dart';
 import '../../data/models/delivery.dart';
+import '../../shared/widgets/signature_pad.dart';
 
-/// The driver records the drop: who received it, and a photo of the signed
-/// delivery note as the proof (owner, 27 Oct 2026: a photo, no on-screen
-/// signature; full deliveries only).
+/// The driver records the drop: who received it, their signature on the
+/// phone, and if the driver wants it, a photo of the signed delivery note.
+/// The owner chose a photo on 27 Oct 2026 and on 29 Oct asked for the
+/// receiver to sign on the phone instead: the signature is required, the
+/// photo optional. Full deliveries only.
 ///
 /// Returns true when the drop was queued.
 Future<bool?> showDeliveryConfirmSheet(BuildContext context, DeliveryDetail detail) {
@@ -18,7 +21,9 @@ Future<bool?> showDeliveryConfirmSheet(BuildContext context, DeliveryDetail deta
     context: context,
     isScrollControlled: true,
     useSafeArea: true,
-    showDragHandle: true,
+    // A signature drawn downwards would otherwise drag the sheet closed.
+    enableDrag: false,
+    showDragHandle: false,
     builder: (_) => _DeliveryConfirmSheet(detail),
   );
 }
@@ -35,15 +40,25 @@ class _DeliveryConfirmSheet extends ConsumerStatefulWidget {
 class _DeliveryConfirmSheetState extends ConsumerState<_DeliveryConfirmSheet> {
   final _picker = ImagePicker();
   late final _name = TextEditingController(text: widget.detail.contactName ?? '');
+  final _pad = SignaturePadController();
   File? _photo;
   bool _saving = false;
   String? _error;
 
   @override
+  void initState() {
+    super.initState();
+    _pad.addListener(_changed);
+  }
+
+  @override
   void dispose() {
+    _pad.dispose();
     _name.dispose();
     super.dispose();
   }
+
+  void _changed() => setState(() {});
 
   Future<void> _takePhoto() async {
     final picked = await _picker.pickImage(
@@ -63,8 +78,7 @@ class _DeliveryConfirmSheetState extends ConsumerState<_DeliveryConfirmSheet> {
 
   Future<void> _confirm() async {
     final profile = ref.read(profileProvider).value;
-    final photo = _photo;
-    if (profile == null || photo == null) {
+    if (profile == null) {
       setState(() => _error = 'Could not read your profile. Try again in a moment.');
       return;
     }
@@ -73,12 +87,17 @@ class _DeliveryConfirmSheetState extends ConsumerState<_DeliveryConfirmSheet> {
       _error = null;
     });
     try {
+      final signature = await _pad.tryPng();
+      if (signature == null) {
+        throw StateError('The signature could not be saved. Try again.');
+      }
       await ref.read(deliveryRepositoryProvider).confirmDelivery(
             orgId: profile.orgId,
             repId: profile.id,
             delivery: widget.detail,
             receivedBy: _name.text,
-            photo: photo,
+            signature: signature,
+            photo: _photo,
           );
       ref.invalidate(pendingDeliveryConfirmsProvider);
       if (mounted) Navigator.of(context).pop(true);
@@ -86,7 +105,7 @@ class _DeliveryConfirmSheetState extends ConsumerState<_DeliveryConfirmSheet> {
       if (!mounted) return;
       setState(() {
         _saving = false;
-        _error = '$e';
+        _error = e is StateError ? e.message : '$e';
       });
     }
   }
@@ -94,7 +113,7 @@ class _DeliveryConfirmSheetState extends ConsumerState<_DeliveryConfirmSheet> {
   @override
   Widget build(BuildContext context) {
     final d = widget.detail.delivery;
-    final ready = _photo != null && _name.text.trim().isNotEmpty && !_saving;
+    final ready = _pad.isSigned && _name.text.trim().isNotEmpty && !_saving;
     final units = '${d.units} ${d.units == 1 ? 'unit' : 'units'}';
 
     return Padding(
@@ -105,11 +124,22 @@ class _DeliveryConfirmSheetState extends ConsumerState<_DeliveryConfirmSheet> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Text(
-              'Record the delivery',
-              style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.w700,
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    'Record the delivery',
+                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                          fontWeight: FontWeight.w700,
+                        ),
                   ),
+                ),
+                IconButton(
+                  onPressed: _saving ? null : () => Navigator.of(context).pop(),
+                  icon: const Icon(Icons.close),
+                  tooltip: 'Back to the delivery',
+                ),
+              ],
             ),
             const SizedBox(height: 4),
             Text(
@@ -142,13 +172,26 @@ class _DeliveryConfirmSheetState extends ConsumerState<_DeliveryConfirmSheet> {
                 counterText: '',
               ),
             ),
-            const SizedBox(height: 14),
+            const SizedBox(height: 10),
+            const Text(
+              'Hand the phone over to sign for the delivery.',
+              style: TextStyle(color: AppColors.textMuted, fontSize: 12.5),
+            ),
+            const SizedBox(height: 6),
+            SignaturePad(controller: _pad),
+            Align(
+              alignment: Alignment.centerRight,
+              child: TextButton.icon(
+                onPressed: _pad.strokes.isEmpty || _saving ? null : _pad.clear,
+                icon: const Icon(Icons.refresh, size: 18),
+                label: const Text('Clear and sign again'),
+              ),
+            ),
             if (_photo == null)
               OutlinedButton.icon(
                 onPressed: _saving ? null : _takePhoto,
-                style: OutlinedButton.styleFrom(minimumSize: const Size.fromHeight(56)),
                 icon: const Icon(Icons.photo_camera_outlined),
-                label: const Text('Take a photo of the signed delivery note'),
+                label: const Text('Add a photo of the delivery note (optional)'),
               )
             else ...[
               ClipRRect(

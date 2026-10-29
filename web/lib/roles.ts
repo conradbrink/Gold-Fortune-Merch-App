@@ -23,7 +23,7 @@ import { lower, type Terms } from "@/lib/terms";
  */
 
 /** Every value `profiles.role` may hold. */
-export const APP_ROLES = ["rep", "manager", "warehouse", "hr_manager"] as const;
+export const APP_ROLES = ["rep", "manager", "warehouse", "hr_manager", "driver"] as const;
 
 export type AppRole = (typeof APP_ROLES)[number];
 
@@ -38,7 +38,17 @@ export function roleLabels(t: Terms): Record<AppRole, string> {
     manager: "Manager",
     warehouse: "Warehouse",
     hr_manager: "HR",
+    driver: "Driver",
   };
+}
+
+/**
+ * Whether the phone app lets this role in. A rep gets the field app; a driver
+ * (20261029161700) gets their deliveries and nothing else. Every other role
+ * is shown the "use the website" notice.
+ */
+export function usesPhoneApp(role: string | null | undefined): boolean {
+  return role === "rep" || role === "driver";
 }
 
 /**

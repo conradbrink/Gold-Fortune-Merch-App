@@ -12,7 +12,7 @@ import { NativeSelect } from "@/components/ui/native-select";
 import { Textarea } from "@/components/ui/textarea";
 import { Field } from "@/components/hr/field";
 import { createClient } from "@/lib/supabase/client";
-import { APP_ROLES, roleLabels } from "@/lib/roles";
+import { APP_ROLES, roleLabels, usesPhoneApp } from "@/lib/roles";
 import { useTerms } from "@/lib/use-company-config";
 import {
   baseRoleNotes,
@@ -156,7 +156,7 @@ export function JobRoleEditor({
                 >
                   <span className="flex items-center gap-1.5 text-sm font-medium text-foreground">
                     {r.name}
-                    {r.base_role === "rep" && (
+                    {usesPhoneApp(r.base_role) && (
                       <Smartphone className="h-3 w-3 shrink-0" aria-label="Uses the phone app" />
                     )}
                     {!r.active && (

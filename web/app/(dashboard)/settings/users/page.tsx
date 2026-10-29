@@ -27,6 +27,8 @@ import { WelcomeCard } from "@/components/team/welcome-card";
 import { SignInPanel } from "@/components/team/sign-in-panel";
 import { useCompanyConfig, useTerms } from "@/lib/use-company-config";
 import { lower } from "@/lib/terms";
+import { usesPhoneApp } from "@/lib/roles";
+import { moduleEnabled } from "@/lib/modules";
 import {
   applyJobRole,
   createUser,
@@ -92,6 +94,9 @@ export default function UsersPage() {
     [directory, selectedId]
   );
   const company = useCompanyConfig();
+  // A driver only has deliveries to do where the warehouse sends them out, so
+  // the Driver job role is offered only there.
+  const hasWarehouse = !company || moduleEnabled(company.modules, "warehouse");
   const areas = useMemo(
     () => groupByArea(permissionsForCompany(directory?.permissions ?? [], company?.modules ?? null)),
     [directory, company]
@@ -183,7 +188,7 @@ export default function UsersPage() {
                     <span className="flex items-center gap-1.5 truncate text-xs text-muted-foreground">
                       {directory.jobRoles.find((r) => r.id === u.job_role_id)?.name ??
                         "No job role"}
-                      {u.role === "rep" && (
+                      {usesPhoneApp(u.role) && (
                         <Smartphone className="h-3 w-3 shrink-0" aria-label="Uses the mobile app" />
                       )}
                     </span>
@@ -202,7 +207,7 @@ export default function UsersPage() {
                   <h2 className="text-sm font-semibold">{selected.full_name}</h2>
                   <p className="text-xs text-muted-foreground">{displayLogin(selected.email)}</p>
                 </div>
-                {(selected.role === "rep" || selected.role === "warehouse") && (
+                {(usesPhoneApp(selected.role) || selected.role === "warehouse") && (
                   // Keyed by person: a password shown for one is never shown on the next.
                   <SignInPanel key={selected.id} person={selected} onChanged={load} />
                 )}
@@ -224,7 +229,11 @@ export default function UsersPage() {
                       Choose…
                     </option>
                     {directory.jobRoles
-                      .filter((r) => r.active || r.id === selected.job_role_id)
+                      .filter(
+                        (r) =>
+                          r.id === selected.job_role_id ||
+                          (r.active && (r.base_role !== "driver" || hasWarehouse))
+                      )
                       .map((r) => (
                       <option key={r.id} value={r.id}>
                         {r.name}
@@ -234,7 +243,16 @@ export default function UsersPage() {
                 </Field>
                 <p className="flex gap-2 rounded-md bg-muted/50 p-3 text-xs text-muted-foreground">
                   <Smartphone className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-                  {selected.role === "rep" ? (
+                  {selected.role === "driver" ? (
+                    <span>
+                      <span className="font-medium text-foreground">
+                        Signs in to the Android app as a driver.
+                      </span>{" "}
+                      It opens on the deliveries the warehouse gives them, with a
+                      route plan and &ldquo;Record delivery&rdquo;, and nothing
+                      else. A driver takes no place on the plan.
+                    </span>
+                  ) : selected.role === "rep" ? (
                     <span>
                       <span className="font-medium text-foreground">
                         Signs in to the Android app.
@@ -339,7 +357,8 @@ export default function UsersPage() {
         // another full administrator is a Supabase-dashboard act, and the API
         // refuses it regardless of what this list offers.
         jobRoles={directory.jobRoles.filter(
-          (r) => r.active && r.code !== "administrator"
+          (r) =>
+            r.active && r.code !== "administrator" && (r.base_role !== "driver" || hasWarehouse)
         )}
         onCreated={load}
       />
@@ -481,7 +500,9 @@ function CreateUserDialog({
               hint={
                 chosen
                   ? `${chosen.description ?? ""}${
-                      chosen.base_role === "rep"
+                      chosen.base_role === "driver"
+                        ? " They sign in to the Android app and see only the deliveries given to them."
+                        : chosen.base_role === "rep"
                         ? " They will also be able to sign in to the Android app."
                         : " They will not be able to sign in to the Android app."
                     }`.trim()

@@ -9,6 +9,9 @@ import { createClient } from "@/lib/supabase/client";
  * `order-signatures`, and readable by whoever can read the order; a signed
  * link is asked for when the row is shown.
  *
+ * Also who received a delivery and signed for it on the driver's phone
+ * (20261029181700): `bucket` fulfilment-docs, where the drop's proof is filed.
+ *
  * Orders keyed here, imported, or taken on a phone before signatures existed
  * have none, and show no row: "Not signed" on every older phone order would
  * read as a step the rep skipped, when there was nothing to sign then.
@@ -17,10 +20,14 @@ export function OrderSignature({
   path,
   signedBy,
   signedAt,
+  bucket = "order-signatures",
+  label = "Signed for by",
 }: {
   path: string | null;
   signedBy: string | null;
   signedAt: string | null;
+  bucket?: "order-signatures" | "fulfilment-docs";
+  label?: string;
 }) {
   const supabase = createClient();
   const [url, setUrl] = useState<string | null>(null);
@@ -30,7 +37,7 @@ export function OrderSignature({
     if (!path) return;
     let live = true;
     supabase.storage
-      .from("order-signatures")
+      .from(bucket)
       .createSignedUrl(path, 3600)
       .then(({ data, error }) => {
         if (!live) return;
@@ -42,7 +49,7 @@ export function OrderSignature({
     };
     // The client is made per render; the path is what decides the request.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [path]);
+  }, [path, bucket]);
 
   if (!path || !signedBy) return null;
 
@@ -50,7 +57,7 @@ export function OrderSignature({
   return (
     <div className="space-y-1.5">
       <div className="flex justify-between gap-3">
-        <span className="text-muted-foreground">Signed for by</span>
+        <span className="text-muted-foreground">{label}</span>
         <span className="text-right">
           {signedBy}
           {when && !Number.isNaN(when.getTime()) && (

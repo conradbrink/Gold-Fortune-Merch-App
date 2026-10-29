@@ -77,12 +77,12 @@ class DeliveriesScreen extends ConsumerWidget {
               children: [
                 if (outstanding.isNotEmpty) ...[
                   const SectionTitle('On the road'),
-                  for (final d in outstanding) _DeliveryCard(d),
+                  for (final d in outstanding) DeliveryCard(d),
                   const SizedBox(height: 20),
                 ],
                 if (done.isNotEmpty) ...[
                   const SectionTitle('Finished'),
-                  for (final d in done) _DeliveryCard(d),
+                  for (final d in done) DeliveryCard(d),
                 ],
               ],
             );
@@ -124,10 +124,20 @@ class DeliveryStatusChip extends StatelessWidget {
   }
 }
 
-class _DeliveryCard extends ConsumerWidget {
-  const _DeliveryCard(this.delivery);
+/// One delivery on a list. Opens it under [basePath]: a rep's are under
+/// "My deliveries", a driver's under their own home. [stop] numbers it on a
+/// planned round.
+class DeliveryCard extends ConsumerWidget {
+  const DeliveryCard(
+    this.delivery, {
+    super.key,
+    this.basePath = '/deliveries',
+    this.stop,
+  });
 
   final Delivery delivery;
+  final String basePath;
+  final int? stop;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -140,7 +150,7 @@ class _DeliveryCard extends ConsumerWidget {
       margin: const EdgeInsets.only(bottom: 8),
       clipBehavior: Clip.antiAlias,
       child: InkWell(
-        onTap: () => context.go('/deliveries/${d.id}'),
+        onTap: () => context.go('$basePath/${d.id}'),
         child: Padding(
           padding: const EdgeInsets.all(14),
           child: Column(
@@ -148,6 +158,21 @@ class _DeliveryCard extends ConsumerWidget {
             children: [
               Row(
                 children: [
+                  if (stop != null) ...[
+                    CircleAvatar(
+                      radius: 13,
+                      backgroundColor: context.brand.primary,
+                      child: Text(
+                        '$stop',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                  ],
                   Expanded(
                     child: Text(
                       d.storeName,

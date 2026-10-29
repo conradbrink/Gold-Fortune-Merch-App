@@ -7,6 +7,7 @@
 // rule are the shipped ones.
 
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -21,6 +22,7 @@ import 'package:gf_merch_rep/data/models/delivery.dart';
 import 'package:gf_merch_rep/data/repositories/delivery_repository.dart';
 import 'package:gf_merch_rep/features/deliveries/deliveries_screen.dart';
 import 'package:gf_merch_rep/features/deliveries/delivery_detail_screen.dart';
+import 'package:gf_merch_rep/shared/widgets/signature_pad.dart';
 
 /// A dispatch as PostgREST returns it for the delivery screen's select.
 Map<String, dynamic> _dispatch({
@@ -141,7 +143,8 @@ class _FakeRepository implements DeliveryRepository {
     required String repId,
     required DeliveryDetail delivery,
     required String receivedBy,
-    required File photo,
+    required Uint8List signature,
+    File? photo,
   }) async {
     confirmCalls++;
     pending = {...pending, delivery.delivery.id};
@@ -615,18 +618,28 @@ void main() {
       expect(find.textContaining('You recorded this as delivered'), findsOneWidget);
     });
 
-    testWidgets('it needs a name and a photo of the delivery note', (tester) async {
+    testWidgets('it needs a name and the receiver\'s signature; the photo is optional', (tester) async {
+      await tester.binding.setSurfaceSize(const Size(400, 1000));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
       await _pumpDetail(tester, detail: _detail(_dispatch(contact: 'Thabo')));
       await tester.tap(find.text('Record delivery'));
       await tester.pumpAndSettle();
 
-      expect(find.text('Take a photo of the signed delivery note'), findsOneWidget);
+      expect(find.text('Add a photo of the delivery note (optional)'), findsOneWidget);
+      expect(find.byType(SignaturePad), findsOneWidget);
       // The order's contact is the likely receiver, so the name starts there.
       expect(find.widgetWithText(TextField, 'Thabo'), findsOneWidget);
       final delivered = find.widgetWithText(FilledButton, 'Delivered');
       expect(tester.widget<FilledButton>(delivered).onPressed, isNull,
-          reason: 'no photo yet');
+          reason: 'not signed yet');
       expect(find.textContaining('everything on this delivery was taken'), findsOneWidget);
+
+      // A signature, and no photo: enough.
+      final pad = tester.getRect(find.byType(SignaturePad));
+      await tester.dragFrom(pad.center - const Offset(80, 0), const Offset(160, 20));
+      await tester.pumpAndSettle();
+      expect(tester.widget<FilledButton>(delivered).onPressed, isNotNull,
+          reason: 'signed, with a name');
     });
   });
 }

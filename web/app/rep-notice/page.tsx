@@ -49,7 +49,8 @@ export default function RepNoticePage() {
         <h1 className="text-xl font-bold text-foreground">Use the mobile app</h1>
         <p className="text-sm text-muted-foreground">
           Field staff check in, fill forms and capture photos in the{" "}
-          {PRODUCT_NAME} mobile app. This web dashboard is for managers.
+          {PRODUCT_NAME} mobile app, and drivers see their deliveries there.
+          This web dashboard is for managers.
         </p>
         {/* The one exception, and worth saying out loud: leave, payslips-to-be,
             reviews and the acknowledgements that go with them are not in the

@@ -2014,6 +2014,7 @@ export type Database = {
           order_id: string
           org_id: string
           received_by_name: string | null
+          received_signature_path: string | null
           status: string
           tracking_reference: string | null
           transit_location_id: string
@@ -2038,6 +2039,7 @@ export type Database = {
           order_id: string
           org_id: string
           received_by_name?: string | null
+          received_signature_path?: string | null
           status?: string
           tracking_reference?: string | null
           transit_location_id: string
@@ -2062,6 +2064,7 @@ export type Database = {
           order_id?: string
           org_id?: string
           received_by_name?: string | null
+          received_signature_path?: string | null
           status?: string
           tracking_reference?: string | null
           transit_location_id?: string

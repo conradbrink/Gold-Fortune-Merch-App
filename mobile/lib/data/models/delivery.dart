@@ -177,6 +177,7 @@ class DeliveryDetail {
     required this.dispatchNotes,
     required this.failureReason,
     required this.receivedBy,
+    this.signed = false,
     required this.lines,
     this.orderId,
   });
@@ -206,6 +207,9 @@ class DeliveryDetail {
   final String? dispatchNotes;
   final String? failureReason;
   final String? receivedBy;
+
+  /// The receiver signed on the phone (20261029181700).
+  final bool signed;
 
   /// The order behind the dispatch: its POD photo is filed under it.
   final String? orderId;
@@ -324,6 +328,7 @@ class DeliveryDetail {
       dispatchNotes: _text(dispatch['notes']),
       failureReason: _text(dispatch['failure_reason']),
       receivedBy: _text(dispatch['received_by_name']),
+      signed: _text(dispatch['received_signature_path']) != null,
       orderId: dispatch['order_id'] as String?,
       lines: lines == null
           ? null
