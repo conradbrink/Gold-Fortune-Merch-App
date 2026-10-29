@@ -1,5 +1,6 @@
 // The WhatsApp welcome for a new staff member (Stage 7 Part 2): it must tell
-// them exactly what to type into today's app, which has only an Email box.
+// them exactly what to type into the app, which takes a cellphone number
+// since 1.2.7.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { welcomeMessage } from "@/lib/welcome-message";
@@ -13,10 +14,11 @@ const base = {
   terms: DEFAULT_TERMS,
 };
 
-test("a phone login is spelled out for the Email box", () => {
+test("a phone login is given as the cellphone number, never the hidden login", () => {
   const m = welcomeMessage({ ...base, login: "27825550142@staff.tickd.co.za" });
   assert.match(m, /^Hi Thabo, this is Sparkle Clean\./);
-  assert.match(m, /In the Email box type 27825550142@staff\.tickd\.co\.za and the password K7mp-Qx4r/);
+  assert.match(m, /Use your cellphone number \+27 82 555 0142 and the password K7mp-Qx4r/);
+  assert.doesNotMatch(m, /staff\.tickd\.co\.za|Email box/);
   assert.match(m, /https:\/\/app\.example\.com\/download/);
   assert.match(m, /Tap "Start workday"/);
 });

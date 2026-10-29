@@ -9,9 +9,8 @@ import examples from "libphonenumber-js/examples.mobile.json";
  * nobody types or sees on the web: "+27 82 555 0142" →
  * "27825550142@staff.tickd.co.za". That address has no mailbox and nothing is
  * ever sent to it; a forgotten password is reset by the company. The domain
- * can never change, because every phone login already carries it. Today's
- * phone app (1.1.13) only takes an email, so until the next app its people
- * type the whole login; the welcome message says exactly what.
+ * can never change, because every phone login already carries it. The phone
+ * app takes the number itself since 1.2.7 (required from 29 Oct 2026).
  */
 export const STAFF_LOGIN_DOMAIN = "staff.tickd.co.za";
 
