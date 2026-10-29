@@ -32,6 +32,7 @@ import 'package:gf_merch_rep/data/repositories/order_repository.dart';
 import 'package:gf_merch_rep/data/repositories/route_repository.dart';
 import 'package:gf_merch_rep/data/sync/sync_engine.dart';
 import 'package:gf_merch_rep/features/orders/order_capture_screen.dart';
+import 'package:gf_merch_rep/features/visit/new_customer_screen.dart';
 import 'package:gf_merch_rep/features/visit/unscheduled_chooser_screen.dart';
 
 /// `submitOrder` ends with `unawaited(_sync.sync())`; nothing here should
@@ -337,6 +338,27 @@ void main() {
       expect(payload['delivery_address'], '12 Main Road, Mahikeng');
     });
 
+    testWidgets('a new order left unsaved yesterday is not filled in today', (tester) async {
+      final id = OrderDraft.newOrderId('rep-1', 'store-1');
+      await tester.runAsync(() => repo.drafts.save(
+            id,
+            OrderDraft(
+              storeId: 'store-1',
+              lines: const [_line],
+              receivedVia: 'whatsapp',
+              savedAt: DateTime.now().subtract(const Duration(days: 1)),
+            ),
+          ));
+
+      await openNewOrder(tester);
+
+      expect(find.text('0 lines'), findsOneWidget,
+          reason: 'the shop has sent another order since; the old lines would go again');
+      final chip = tester.widget<ChoiceChip>(find.widgetWithText(ChoiceChip, 'WhatsApp'));
+      expect(chip.selected, isFalse);
+      expect(await tester.runAsync(() => repo.drafts.load(id)), isNull);
+    });
+
     testWidgets('how they ordered survives the app being closed', (tester) async {
       await openNewOrder(tester);
       await tester.tap(find.widgetWithText(ChoiceChip, 'Email'));
@@ -349,6 +371,25 @@ void main() {
       expect(draft!.receivedVia, 'email');
       expect(draft.lines.single.qty, 1);
     });
+  });
+
+  testWidgets('a customer added for a new order takes no position and goes on to the order',
+      (tester) async {
+    await tester.pumpWidget(ProviderScope(
+      overrides: [
+        termsProvider.overrideWithValue(Terms.defaults),
+        storesProvider.overrideWith((ref) async => const []),
+        storeGroupsProvider.overrideWith((ref) async => const []),
+      ],
+      child: const MaterialApp(home: NewCustomerScreen(forOrder: true)),
+    ));
+    await tester.pump();
+
+    // Where the rep is standing is not where the shop is.
+    expect(find.textContaining('GPS'), findsNothing);
+    expect(find.textContaining('position'), findsNothing);
+    expect(find.text('Add and type the order'), findsOneWidget);
+    expect(find.textContaining('You type the order in next.'), findsOneWidget);
   });
 
   group('the "+ New" screen', () {

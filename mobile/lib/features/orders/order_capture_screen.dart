@@ -129,10 +129,16 @@ class _OrderCaptureScreenState extends ConsumerState<OrderCaptureScreen> {
     // order (owner, 29 Oct 2026), so they start filled in wherever they can.
     final lastContact =
         await ref.read(routeRepositoryProvider).contactFor(widget.storeId);
+    // A new order left unsaved on an earlier day is not this one: the
+    // customer has sent another since, and last week's lines filled in would
+    // be sent again. Kept for the day it was started (Android may kill the
+    // app mid-order), then dropped. A visit's draft ends with its visit.
+    final stale = !_inShop && draft != null && !_startedToday(draft.savedAt);
+    if (stale) await repo.drafts.clear(widget.draftId);
     if (!mounted) return;
     setState(() {
       _catalogue = catalogue.isEmpty ? const [] : catalogue;
-      final ours = draft != null && draft.storeId == widget.storeId;
+      final ours = draft != null && !stale && draft.storeId == widget.storeId;
       if (ours) {
         for (final l in draft.lines) {
           _qty[l.productId] = l.qty;
@@ -662,6 +668,14 @@ class _OrderCaptureScreenState extends ConsumerState<OrderCaptureScreen> {
             ),
     );
   }
+}
+
+/// Whether [savedAt] is today on this phone.
+bool _startedToday(DateTime? savedAt) {
+  if (savedAt == null) return false;
+  final now = DateTime.now();
+  final at = savedAt.toLocal();
+  return at.year == now.year && at.month == now.month && at.day == now.day;
 }
 
 /// What stops an order being saved for want of delivery details, as the

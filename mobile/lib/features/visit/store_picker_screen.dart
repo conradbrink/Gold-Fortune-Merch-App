@@ -71,14 +71,16 @@ class _StorePickerScreenState extends ConsumerState<StorePickerScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(widget.forOrder ? 'New order' : 'Unscheduled ${t.job.oneLower}'),
+        title: Text(widget.forOrder ? 'New order' : 'Choose the ${t.site.oneLower}'),
       ),
       body: Column(
         children: [
           Padding(
             padding: const EdgeInsets.all(16),
             child: TextField(
-              autofocus: true,
+              // Not for a new order: the rep comes back here from the order
+              // screen, and the keyboard would cover the list each time.
+              autofocus: !widget.forOrder,
               onChanged: (v) => setState(() => _query = v),
               decoration: InputDecoration(
                 hintText: widget.forOrder
@@ -117,14 +119,15 @@ class _StorePickerScreenState extends ConsumerState<StorePickerScreen> {
                         ),
                       ),
                       // Orders belong to the Distribution module, and a new
-                      // customer is only added to take one. Not offered for a
-                      // new order: adding a customer goes on to a check-in.
-                      if (!widget.forOrder &&
-                          ref.watch(companyConfigValueProvider).has('distribution'))
+                      // customer is only added to take one. For a new order it
+                      // goes on to that order, not to a check-in.
+                      if (ref.watch(companyConfigValueProvider).has('distribution'))
                         Padding(
                           padding: const EdgeInsets.all(16),
                           child: OutlinedButton.icon(
-                            onPressed: () => context.go('/unscheduled/new'),
+                            onPressed: () => context.go(
+                              widget.forOrder ? '/unscheduled/order/new' : '/unscheduled/new',
+                            ),
                             icon: const Icon(Icons.add_business_outlined),
                             label: Text('Add a new ${t.site.oneLower}'),
                           ),

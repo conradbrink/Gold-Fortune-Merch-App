@@ -49,8 +49,8 @@ class UnscheduledChooserScreen extends ConsumerWidget {
             icon: Icons.receipt_long_outlined,
             title: 'New order',
             body:
-                'An order ${t.site.withArticle} sent you, on WhatsApp, in a '
-                'call, by email or any other way. Choose the '
+                'An order ${t.site.withArticle} sent you, on WhatsApp, over the '
+                'phone, by email or any other way. Choose the '
                 '${t.site.oneLower} and type it in. You don\'t check in, and '
                 'nobody signs.',
             onTap: () => context.go('/unscheduled/order'),

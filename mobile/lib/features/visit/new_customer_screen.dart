@@ -27,8 +27,15 @@ const _uuid = Uuid();
 ///
 /// Works with no signal: the customer is on this phone at once and reaches
 /// the server before the visit and the order that name it (`store_add`).
+///
+/// With [forOrder], the customer sent a new order and the rep is not there:
+/// it goes on to that order instead of a check-in, and takes no position,
+/// since where the rep is standing is not where the shop is.
 class NewCustomerScreen extends ConsumerStatefulWidget {
-  const NewCustomerScreen({super.key});
+  const NewCustomerScreen({super.key, this.forOrder = false});
+
+  /// Adding the customer of a new order (`/unscheduled/order/new`).
+  final bool forOrder;
 
   @override
   ConsumerState<NewCustomerScreen> createState() => _NewCustomerScreenState();
@@ -43,7 +50,7 @@ class _NewCustomerScreenState extends ConsumerState<NewCustomerScreen> {
 
   String? _groupId;
   Position? _position;
-  bool _locating = true;
+  late bool _locating = !widget.forOrder;
   String? _locationError;
   bool _saving = false;
   String? _error;
@@ -51,7 +58,7 @@ class _NewCustomerScreenState extends ConsumerState<NewCustomerScreen> {
   @override
   void initState() {
     super.initState();
-    _locate();
+    if (!widget.forOrder) _locate();
   }
 
   @override
@@ -114,7 +121,7 @@ class _NewCustomerScreenState extends ConsumerState<NewCustomerScreen> {
       return;
     }
     try {
-      final position = _position;
+      final position = widget.forOrder ? null : _position;
       final store = await ref.read(routeRepositoryProvider).addStoreFromPhone(
             storeId: _uuid.v4(),
             repId: profile.id,
@@ -131,6 +138,7 @@ class _NewCustomerScreenState extends ConsumerState<NewCustomerScreen> {
       // Pushes it to the server now when there is signal; otherwise it waits
       // in the outbox like everything else.
       ref.read(syncEngineProvider).sync();
+      if (widget.forOrder) return _toOrder(store);
       final key = await startUnscheduledVisit(ref, store);
       if (!mounted) return;
       context.go('/visit/$key');
@@ -145,9 +153,15 @@ class _NewCustomerScreenState extends ConsumerState<NewCustomerScreen> {
 
   Future<void> _useExisting(StoreSummary store) async {
     setState(() => _saving = true);
+    if (widget.forOrder) return _toOrder(store);
     final key = await startUnscheduledVisit(ref, store);
     if (!mounted) return;
     context.go('/visit/$key');
+  }
+
+  /// On to the order the customer sent: no visit is started for it.
+  void _toOrder(StoreSummary store) {
+    if (mounted) context.go('/unscheduled/order/${store.id}');
   }
 
   @override
@@ -273,13 +287,15 @@ class _NewCustomerScreenState extends ConsumerState<NewCustomerScreen> {
               onChanged: (v) => setState(() => _groupId = v),
             ),
           ],
-          const SizedBox(height: 16),
-          _PositionLine(
-            locating: _locating,
-            position: _position,
-            problem: _locationError,
-            onRetry: _locate,
-          ),
+          if (!widget.forOrder) ...[
+            const SizedBox(height: 16),
+            _PositionLine(
+              locating: _locating,
+              position: _position,
+              problem: _locationError,
+              onRetry: _locate,
+            ),
+          ],
           const SizedBox(height: 20),
           FilledButton.icon(
             onPressed: _saving || !_ready ? null : _add,
@@ -290,12 +306,17 @@ class _NewCustomerScreenState extends ConsumerState<NewCustomerScreen> {
                     child: CircularProgressIndicator(strokeWidth: 2),
                   )
                 : const Icon(Icons.add_business_outlined),
-            label: Text(_saving ? 'Adding…' : 'Add and start $job'),
+            label: Text(_saving
+                ? 'Adding…'
+                : widget.forOrder
+                    ? 'Add and type the order'
+                    : 'Add and start $job'),
           ),
           const SizedBox(height: 8),
           Text(
             'The $site is saved on this phone at once and reaches the office '
-            'when you have signal. You check in next, then take the order.',
+            'when you have signal. '
+            '${widget.forOrder ? 'You type the order in next.' : 'You check in next, then take the order.'}',
             style: Theme.of(context).textTheme.bodySmall,
           ),
         ],

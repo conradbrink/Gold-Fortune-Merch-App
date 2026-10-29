@@ -141,6 +141,11 @@ final routerProvider = Provider<GoRouter>((ref) {
                 path: 'order',
                 builder: (context, state) => const StorePickerScreen(forOrder: true),
                 routes: [
+                  // Before ':storeId', which would otherwise take 'new' as an id.
+                  GoRoute(
+                    path: 'new',
+                    builder: (context, state) => const NewCustomerScreen(forOrder: true),
+                  ),
                   GoRoute(
                     path: ':storeId',
                     builder: (context, state) => NewOrderRoute(
