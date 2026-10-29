@@ -312,13 +312,13 @@ class _OrderCaptureScreenState extends ConsumerState<OrderCaptureScreen> {
     final contact = _contactName.text.trim();
     final contactPhone = _contactPhone.text.trim();
     final deliveryAddress = _deliveryAddress.text.trim();
-    final missing = [
-      if (deliveryAddress.isEmpty) 'the delivery address',
-      if (contact.isEmpty) 'who placed it',
-      if (contactPhone.isEmpty) 'their phone number',
-    ];
-    if (missing.isNotEmpty) {
-      setState(() => _error = 'Fill in ${_listed(missing)} before saving.');
+    final missing = missingDeliveryDetails(
+      address: deliveryAddress,
+      contactName: contact,
+      contactPhone: contactPhone,
+    );
+    if (missing != null) {
+      setState(() => _error = missing);
       return;
     }
 
@@ -352,10 +352,15 @@ class _OrderCaptureScreenState extends ConsumerState<OrderCaptureScreen> {
             deliveryAddress: deliveryAddress,
             requiredBy: _requiredBy,
           );
-      await ref.read(routeRepositoryProvider).rememberContact(
-            widget.storeId,
-            StoreContact(name: contact, phone: contactPhone),
-          );
+      // Only fills in the next order. The order is queued by now, so a
+      // failure here must not read as the save failing: the rep would save
+      // it again.
+      try {
+        await ref.read(routeRepositoryProvider).rememberContact(
+              widget.storeId,
+              StoreContact(name: contact, phone: contactPhone),
+            );
+      } catch (_) {}
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -598,10 +603,25 @@ class _OrderCaptureScreenState extends ConsumerState<OrderCaptureScreen> {
   }
 }
 
-/// "a", "a and b", "a, b and c".
-String _listed(List<String> parts) => parts.length == 1
-    ? parts.single
-    : '${parts.sublist(0, parts.length - 1).join(', ')} and ${parts.last}';
+/// What stops an order being saved for want of delivery details, as the
+/// message the rep reads, or null when all three are there (owner, 29 Oct
+/// 2026: every order carries where it goes and who to ask for).
+String? missingDeliveryDetails({
+  required String address,
+  required String contactName,
+  required String contactPhone,
+}) {
+  final missing = [
+    if (address.trim().isEmpty) 'the delivery address',
+    if (contactName.trim().isEmpty) 'who placed it',
+    if (contactPhone.trim().isEmpty) 'their phone number',
+  ];
+  if (missing.isEmpty) return null;
+  final listed = missing.length == 1
+      ? missing.single
+      : '${missing.sublist(0, missing.length - 1).join(', ')} and ${missing.last}';
+  return 'Fill in $listed before saving.';
+}
 
 class _ProductRow extends StatelessWidget {
   const _ProductRow({

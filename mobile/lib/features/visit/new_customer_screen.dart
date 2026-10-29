@@ -105,6 +105,14 @@ class _NewCustomerScreenState extends ConsumerState<NewCustomerScreen> {
       _saving = true;
       _error = null;
     });
+    // Asked again here, not only as the rep types: while the list is still
+    // loading the warning under the name has nothing to compare against.
+    final known = storesNamed(await ref.read(storesProvider.future), _name.text);
+    if (!mounted) return;
+    if (known.isNotEmpty) {
+      setState(() => _saving = false);
+      return;
+    }
     try {
       final position = _position;
       final store = await ref.read(routeRepositoryProvider).addStoreFromPhone(

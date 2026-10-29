@@ -11,11 +11,13 @@ import '../models/store_group.dart';
 import '../models/store_summary.dart';
 import 'order_repository.dart' show clipText;
 
-/// Collapses runs of spaces and ignores case: the rule the server's
-/// `store_add_from_phone` tidies a name with, and the one this phone uses to
-/// ask "is this customer on the list already?" before adding them.
-String sameStoreName(String name) =>
-    name.trim().replaceAll(RegExp(r'\s+'), ' ').toLowerCase();
+/// Trimmed, with runs of spaces collapsed: how `store_add_from_phone` tidies
+/// a name and a town, and how this phone does before sending them.
+String tidySpaces(String text) => text.trim().replaceAll(RegExp(r'\s+'), ' ');
+
+/// The same, ignoring case: the rule this phone uses to ask "is this customer
+/// on the list already?" before adding them.
+String sameStoreName(String name) => tidySpaces(name).toLowerCase();
 
 /// The customers already on the list called [name], by [sameStoreName].
 List<StoreSummary> storesNamed(List<StoreSummary> stores, String name) {
@@ -263,11 +265,15 @@ class RouteRepository {
         _storesKey,
         jsonEncode(stores.map((s) => s.toMap()).toList()),
       );
-      final merged = mergeAddedStores(stores, await _addedStores());
       // Once the server has a customer this phone added, the server's copy is
-      // the one to keep.
-      await _saveAddedStores(merged.stillLocal);
-      return merged.stores;
+      // the one to keep. Read and pruned in one transaction, as
+      // addStoreFromPhone writes it, so a customer added while this request
+      // was out is not written over.
+      return _db.transaction(() async {
+        final merged = mergeAddedStores(stores, await _addedStores());
+        await _saveAddedStores(merged.stillLocal);
+        return merged.stores;
+      });
     } catch (_) {
       final raw = await _db.getValue(_storesKey);
       final cached = raw == null
@@ -331,11 +337,10 @@ class RouteRepository {
     String? storeGroupId,
     StoreContact? contact,
   }) async {
-    final tidyName = name.trim().replaceAll(RegExp(r'\s+'), ' ');
-    final tidyCity = city?.trim().replaceAll(RegExp(r'\s+'), ' ');
+    final tidyCity = city == null ? null : tidySpaces(city);
     final store = StoreSummary(
       id: storeId,
-      name: clipText(tidyName, 120)!,
+      name: clipText(tidySpaces(name), 120)!,
       address: clipText(address.trim(), 300),
       city: tidyCity == null || tidyCity.isEmpty ? null : clipText(tidyCity, 80),
       lat: lat,
@@ -370,18 +375,27 @@ class RouteRepository {
 
   /// The contact this phone last took an order from at [storeId], if any.
   Future<StoreContact?> contactFor(String storeId) async {
-    final raw = await _db.getValue(_contactsKey);
-    if (raw == null) return null;
-    final all = jsonDecode(raw) as Map<String, dynamic>;
-    final one = all[storeId];
+    final one = (await _contacts())[storeId];
     return one is Map<String, dynamic> ? StoreContact.fromMap(one) : null;
   }
 
   Future<void> rememberContact(String storeId, StoreContact contact) async {
-    final raw = await _db.getValue(_contactsKey);
-    final all = raw == null ? <String, dynamic>{} : jsonDecode(raw) as Map<String, dynamic>;
+    final all = await _contacts();
     all[storeId] = contact.toMap();
     await _db.setValue(_contactsKey, jsonEncode(all));
+  }
+
+  /// Every remembered contact, by store. A value that does not read back is
+  /// a convenience lost, not a reason to stop the order screen opening.
+  Future<Map<String, dynamic>> _contacts() async {
+    final raw = await _db.getValue(_contactsKey);
+    if (raw == null) return {};
+    try {
+      final all = jsonDecode(raw);
+      return all is Map<String, dynamic> ? all : {};
+    } on FormatException {
+      return {};
+    }
   }
 
   /// Records an unscheduled visit locally so it appears on the day's list

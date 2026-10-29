@@ -16,6 +16,8 @@ import 'package:gf_merch_rep/data/models/store_group.dart';
 import 'package:gf_merch_rep/data/models/store_summary.dart';
 import 'package:gf_merch_rep/data/repositories/route_repository.dart';
 import 'package:gf_merch_rep/data/sync/sync_engine.dart';
+import 'package:gf_merch_rep/features/orders/order_capture_route.dart';
+import 'package:gf_merch_rep/features/orders/order_capture_screen.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -207,5 +209,37 @@ void main() {
 
     final old = jsonEncode({'store_id': 's', 'lines': [], 'saved_at': DateTime.now().toIso8601String()});
     expect(OrderDraft.decode(old)?.deliveryAddress, isNull);
+  });
+  test('an order is not saved without where it goes and who to ask for', () {
+    expect(
+      missingDeliveryDetails(address: '12 Main Road', contactName: 'K. Molefe', contactPhone: '082'),
+      isNull,
+    );
+    expect(
+      missingDeliveryDetails(address: '12 Main Road', contactName: 'K. Molefe', contactPhone: '  '),
+      'Fill in their phone number before saving.',
+    );
+    expect(
+      missingDeliveryDetails(address: '', contactName: '', contactPhone: ''),
+      'Fill in the delivery address, who placed it and their phone number before saving.',
+    );
+  });
+
+  test('the delivery address starts as the street and the town, once', () {
+    expect(deliveryAddressOf('12 Main Road', 'Mahikeng'), '12 Main Road, Mahikeng');
+    expect(deliveryAddressOf('12 Main Road, Mahikeng', 'mahikeng'), '12 Main Road, Mahikeng');
+    expect(deliveryAddressOf(null, 'Mahikeng'), 'Mahikeng');
+    expect(deliveryAddressOf('  ', null), isNull);
+  });
+
+  test('a remembered contact that does not read back is skipped, not thrown', () async {
+    final repo = RouteRepository(
+      await clientAnswering((r) => http.Response('offline', 503, request: r)),
+      db,
+    );
+    await db.setValue('store_contacts', '[not a map');
+    expect(await repo.contactFor('store-1'), isNull);
+    await repo.rememberContact('store-1', const StoreContact(name: 'K', phone: '082'));
+    expect((await repo.contactFor('store-1'))?.phone, '082');
   });
 }
