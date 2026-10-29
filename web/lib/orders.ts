@@ -592,19 +592,25 @@ export function switchedShown(
   if (kind === "price") {
     return toShrink ? (Math.round(n * units * 100) / 100).toFixed(2) : perUnitOfShrink(n, units);
   }
-  return String(toShrink ? Math.round((n / units) * 1000) / 1000 : Math.round(n * units * 1000) / 1000);
+  if (toShrink) return String(Math.round((n / units) * 1000) / 1000);
+  // Back to units: a whole number the shrinks were rounded from comes back whole.
+  return String(unitsFromShown(raw, units) ?? Math.round(n * units * 1000) / 1000);
 }
 
 /**
  * What a typed quantity saves as, in units: null when it is not a whole
  * number of units, one or more (2.5 shrinks of 10 is 25 units; 0.25 is not).
+ *
+ * Shrinks are shown to three places, so 5 units of a shrink of 12 read 0.417;
+ * anything within that rounding of a whole number of units is that number.
  */
 export function unitsFromShown(raw: string, units: number | null): number | null {
   const n = Number(raw);
   if (raw.trim() === "" || !Number.isFinite(n)) return null;
   const total = units ? n * units : n;
   const whole = Math.round(total);
-  return Math.abs(total - whole) < 1e-6 && whole >= 1 ? whole : null;
+  const slack = units ? units * 0.0005 + 1e-9 : 1e-6;
+  return Math.abs(total - whole) <= slack && whole >= 1 ? whole : null;
 }
 
 /** What a typed price saves as, per unit: a price per shrink is divided by its units, to the cent. */

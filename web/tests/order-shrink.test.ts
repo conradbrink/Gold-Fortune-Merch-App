@@ -39,7 +39,7 @@ test("switching moves what was typed across", () => {
 test("shrinks save as whole units, or not at all", () => {
   assert.equal(unitsFromShown("2", 10), 20);
   assert.equal(unitsFromShown("2.5", 10), 25);
-  assert.equal(unitsFromShown("0.417", 12), null);
+  assert.equal(unitsFromShown("0.375", 12), null); // 4.5 units
   assert.equal(unitsFromShown("0.25", 10), null);
   assert.equal(unitsFromShown("0", 10), null);
   assert.equal(unitsFromShown("", 10), null);
@@ -55,4 +55,14 @@ test("a price per shrink saves per unit, to the cent, as the database rounds", (
   assert.equal(unitPriceFromShown("-1", 10), null);
   assert.equal(unitPriceFromShown("", 10), null);
   assert.equal(perUnitOfShrink(0.05, 10), "0.01");
+});
+
+test("units that are not whole shrinks survive the switch there and back", () => {
+  const shrinks = switchedShown("5", "qty", true, 12);
+  assert.equal(shrinks, "0.417");
+  assert.equal(unitsFromShown(shrinks, 12), 5);
+  assert.equal(switchedShown(shrinks, "qty", false, 12), "5");
+  assert.equal(unitsFromShown(shownLine({ qty_ordered: 7, unit_price: 1 }, 24).qty, 24), 7);
+  // Still refused when the shrinks are not near a whole unit.
+  assert.equal(unitsFromShown("0.45", 12), null);
 });

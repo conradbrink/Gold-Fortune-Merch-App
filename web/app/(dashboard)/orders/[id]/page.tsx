@@ -433,10 +433,10 @@ export default function OrderDetailPage() {
   // edit the database refuses.
   const canPrice = o.status === "new";
   const unpricedLines = detail.lines.filter((l) => l.unit_price == null).length;
-  // While the order can be changed, a line whose product comes in shrinks can be read and priced per shrink.
   // The product being added, if it comes in shrinks: its row offers per shrink too.
   const addUnits = shrinkUnits(catalogue.find((c) => c.id === addProductId)?.units_per_shrink);
   const addByShrink = addPerShrink && addUnits !== null;
+  // While the order can be changed, a line whose product comes in shrinks can be read and priced per shrink.
   const pricedPer = canPrice && detail.lines.some((l) => shrinkUnits(l.units_per_shrink) !== null);
 
   // The store's price list, if its group has one: what a line saved without a
@@ -876,6 +876,8 @@ export default function OrderDetailPage() {
                   const canSwitch = shrinkUnits(l.units_per_shrink);
                   // What a price per shrink saves as, said under the box: it is divided to the cent.
                   const perUnit = units ? unitPriceFromShown(priceDraft[l.id] ?? shown.price, units) : null;
+                  // And what the shrinks come to, since Reserved, Picked and the stock warning count units.
+                  const unitCount = units ? unitsFromShown(qtyDraft[l.id] ?? shown.qty, units) : null;
                   return (
                   <TableRow key={l.id}>
                     <TableCell>
@@ -916,6 +918,11 @@ export default function OrderDetailPage() {
                         />
                       ) : (
                         <span className="tabular-nums">{l.qty_ordered}</span>
+                      )}
+                      {unitCount !== null && (
+                        <span className="mt-0.5 block text-xs text-muted-foreground tabular-nums">
+                          {unitCount} {unitCount === 1 ? "unit" : "units"}
+                        </span>
                       )}
                     </TableCell>
                     <TableCell className="text-right">
@@ -1066,7 +1073,12 @@ export default function OrderDetailPage() {
                     <label className="mb-1 block text-xs text-muted-foreground">Priced per</label>
                     <NativeSelect
                       value={addPerShrink ? "shrink" : "unit"}
-                      onChange={(e) => setAddPerShrink(e.target.value === "shrink")}
+                      onChange={(e) => {
+                        // The number typed moves across, as on a line: 24 units are 2 shrinks of 12.
+                        const toShrink = e.target.value === "shrink";
+                        setAddQty((prev) => switchedShown(prev, "qty", toShrink, addUnits));
+                        setAddPerShrink(toShrink);
+                      }}
                       aria-label="Priced per, for the product to add"
                     >
                       <option value="unit">Unit</option>
