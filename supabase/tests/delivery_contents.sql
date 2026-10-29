@@ -122,6 +122,11 @@ begin
     insert into public.company_modules (org_id, module_code, enabled)
     values (v_foreign_org, 'distribution', true)
     on conflict (org_id, module_code) do update set enabled = true;
+    -- Deliveries owns delivery_contents since 20261029224700; it needs
+    -- Distribution, and Stock control (`warehouse`) needs it.
+    insert into public.company_modules (org_id, module_code, enabled)
+    values (v_foreign_org, 'deliveries', true)
+    on conflict (org_id, module_code) do update set enabled = true;
     insert into public.company_modules (org_id, module_code, enabled)
     values (v_foreign_org, 'warehouse', true)
     on conflict (org_id, module_code) do update set enabled = true;
@@ -131,7 +136,7 @@ begin
 
     perform set_config('request.jwt.claims', json_build_object('sub', v_foreign, 'role', 'authenticated')::text, true);
     set local role authenticated;
-    if not public.module_enabled('warehouse') or not public.has_permission('warehouse') then
+    if not public.module_enabled('deliveries') or not public.has_permission('warehouse') then
       v_fail := v_fail || 'C5 fixture: the other company''s user lacks the module or the permission' || E'\n';
     end if;
     begin

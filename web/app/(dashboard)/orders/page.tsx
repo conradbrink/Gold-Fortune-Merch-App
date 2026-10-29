@@ -25,6 +25,7 @@ import {
   daysBetween,
   dropAnswer,
   invoicesOnConfirm,
+  deliversOrders,
   invoicesWithoutStock,
   keepsStock,
   matchesSearch,
@@ -77,8 +78,12 @@ export default function OrdersBoardPage() {
    * step would be refused, so the board shows where orders are and moves none.
    */
   const canMove = keepsStock(config);
-  /** No warehouse: a new order is invoiced and finished on its own page. */
+  /**
+   * No Stock control: a new order is invoiced on its own page and, with
+   * Deliveries, dispatched and delivered from there too.
+   */
   const withoutStock = invoicesWithoutStock(config);
+  const delivers = deliversOrders(config);
 
   const [orders, setOrders] = useState<PipelineOrder[]>([]);
   /** When the board was read: "today" and every "waiting 3 days" are counted to it. */
@@ -310,8 +315,10 @@ export default function OrdersBoardPage() {
       {!canMove && (
         <p className="rounded-lg border border-border bg-muted/40 p-2.5 text-sm text-muted-foreground">
           {withoutStock
-            ? "Your company does not track stock, so orders are not packed or dispatched here. Open a purchase order to confirm and invoice it."
-            : "Confirming, packing and dispatching orders is part of Warehouse and deliveries, which is not switched on for your company. The board shows where each order is, but cannot move it on."}
+            ? delivers
+              ? "Your company does not track stock, so orders are not picked or packed. Open an order to invoice it, dispatch it and record its delivery."
+              : "Your company does not track stock, so orders are not packed or dispatched here. Open a purchase order to confirm and invoice it."
+            : "Confirming, picking and packing orders is part of Stock control, which is not switched on for your company. The board shows where each order is, but cannot move it on."}
         </p>
       )}
       <ErrorBanner message={error} />
@@ -484,6 +491,7 @@ export default function OrdersBoardPage() {
                           invoices={invoices}
                           canMove={canMove}
                           withoutStock={withoutStock}
+                          delivers={delivers}
                           money={money}
                           staffWord={lower(terms.staff.one)}
                           siteWord={lower(terms.site.one)}
@@ -553,6 +561,7 @@ function OrderCard({
   invoices,
   canMove,
   withoutStock,
+  delivers,
   money,
   staffWord,
   siteWord,
@@ -571,6 +580,8 @@ function OrderCard({
   canMove: boolean;
   /** No warehouse: a new order is confirmed and invoiced on its own page. */
   withoutStock: boolean;
+  /** With Deliveries, such an order is then dispatched and delivered from its page too. */
+  delivers: boolean;
   money: (n: number) => string;
   staffWord: string;
   siteWord: string;
@@ -599,18 +610,44 @@ function OrderCard({
 
   let action: ReactNode = null;
   if (!canMove) {
-    action =
-      withoutStock && o.status === "new" ? (
-        <Button
-          variant="outline"
-          size="sm"
-          className="w-full text-xs"
-          nativeButton={false}
-          render={<Link href={`/orders/${o.id}`} draggable={false} />}
-        >
-          Open to confirm and invoice
-        </Button>
-      ) : null;
+    // Each step of an order with no stock is on its own page; the card says
+    // which one is next. One that went through the warehouse before the
+    // company dropped Stock control can still be delivered, not dispatched.
+    const open =
+      withoutStock && o.status === "new"
+        ? "Open to confirm and invoice"
+        : withoutStock && delivers && o.status === "confirmed" && !o.fromStock
+          ? "Open to dispatch"
+          : withoutStock && delivers && o.status === "dispatched"
+            ? "Open to record the delivery"
+            : withoutStock && delivers && column === "delivered"
+              ? "Open to upload the POD"
+              : null;
+    action = open ? (
+      <Button
+        variant="outline"
+        size="sm"
+        className="w-full text-xs"
+        nativeButton={false}
+        render={<Link href={`/orders/${o.id}`} draggable={false} />}
+      >
+        {open}
+      </Button>
+    ) : null;
+  } else if (o.status === "confirmed" && !o.fromStock) {
+    // Invoiced without stock before the company bought Stock control: nothing to
+    // pick or pack, so it goes out from its own page.
+    action = (
+      <Button
+        variant="outline"
+        size="sm"
+        className="w-full text-xs"
+        nativeButton={false}
+        render={<Link href={`/orders/${o.id}`} draggable={false} />}
+      >
+        Open to dispatch
+      </Button>
+    );
   } else if (o.onHold && column !== "delivered") {
     action = (
       <Button

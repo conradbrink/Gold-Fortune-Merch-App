@@ -33,6 +33,7 @@ const distributor = toModuleSet({
   checklists_forms: true,
   reports: true,
   distribution: true,
+  deliveries: true,
   warehouse: true,
   hr: true,
   invoicing: true,

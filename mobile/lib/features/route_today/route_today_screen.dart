@@ -70,7 +70,7 @@ class RouteTodayScreen extends ConsumerWidget {
           // and an icon that looks the same either way is how it goes unread.
           if (company.has('hr'))
             _MyHrAction(count: ref.watch(unacknowledgedWarningCountProvider)),
-          if (company.has('warehouse'))
+          if (company.has('deliveries'))
             _DeliveriesAction(
               count: ref.watch(outstandingDeliveryCountProvider),
             ),
