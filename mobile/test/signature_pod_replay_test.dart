@@ -10,6 +10,7 @@ import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:gf_merch_rep/data/local/app_database.dart';
 import 'package:gf_merch_rep/data/local/outbox_types.dart';
+import 'package:gf_merch_rep/data/repositories/delivery_repository.dart';
 import 'package:gf_merch_rep/data/sync/sync_engine.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
@@ -332,6 +333,29 @@ void main() {
       expect(await db.entriesFor(OutboxType.deliveryConfirm, 'dispatch-2'), isEmpty);
       expect(await db.entriesFor(OutboxType.damageReport, 'dispatch-2'), hasLength(1),
           reason: 'only that kind of entry goes');
+    });
+
+    test('a photo is promised only while its copy is still on the phone', () async {
+      final sync = engine((r) => http.Response('{}', 200, request: r));
+      final deliveries = DeliveryRepository(client!, db, sync);
+      final photo = File('${dir.path}/note.jpg')..writeAsBytesSync([1, 2, 3]);
+      await db.enqueue(
+        entityType: OutboxType.deliveryConfirm,
+        clientGeneratedId: 'dispatch-1',
+        payload: jsonEncode({'local_signature_path': '${dir.path}/sig.png', 'local_photo_path': photo.path}),
+      );
+      await db.enqueue(
+        entityType: OutboxType.deliveryConfirm,
+        clientGeneratedId: 'dispatch-2',
+        payload: jsonEncode({'local_signature_path': '${dir.path}/sig2.png', 'local_photo_path': null}),
+      );
+
+      expect(await deliveries.queuedWithPhoto('dispatch-1'), isTrue);
+      expect(await deliveries.queuedWithPhoto('dispatch-2'), isFalse, reason: 'none was taken');
+
+      // Android cleared it: the drop goes up with the signature alone.
+      photo.deleteSync();
+      expect(await deliveries.queuedWithPhoto('dispatch-1'), isFalse);
     });
   });
 }

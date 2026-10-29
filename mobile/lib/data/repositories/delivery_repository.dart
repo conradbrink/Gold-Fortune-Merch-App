@@ -13,6 +13,20 @@ import '../local/outbox_types.dart';
 import '../models/delivery.dart';
 import '../sync/sync_engine.dart';
 
+/// What became of a drop just recorded, as far as the phone can tell within
+/// a few seconds ([DeliveryRepository.sendDrop]).
+enum DropOutcome {
+  /// Still on the phone: no signal, slow, or refused for now and tried again.
+  waiting,
+
+  /// The warehouse has it.
+  delivered,
+
+  /// Sent, and not taken: the warehouse had already returned the dispatch or
+  /// given it to somebody else.
+  notTaken,
+}
+
 /// Deliveries the warehouse has made this rep responsible for.
 ///
 /// Nothing here filters by rep. `dispatches_select` does: a rep sees a dispatch
@@ -190,6 +204,47 @@ received_signature_path, order_id, order:orders(order_number, customer_po_number
     } catch (_) {
       // Already gone.
     }
+  }
+
+  /// Sends the drop just recorded for [dispatchId], waiting a few seconds,
+  /// and says what became of it, so the screen says "delivered" only when the
+  /// warehouse has it.
+  Future<DropOutcome> sendDrop(String dispatchId) async {
+    if (!await _sync.sentWithin(OutboxType.deliveryConfirm, dispatchId)) {
+      return DropOutcome.waiting;
+    }
+    // Gone from the phone is accepted, or let go because the warehouse had
+    // already returned the dispatch or given it to somebody else
+    // (`isFinalDeliveryRefusal`). Only the dispatch can tell the two apart.
+    try {
+      final row = await _client
+          .from('dispatches')
+          .select('status')
+          .eq('id', dispatchId)
+          .maybeSingle();
+      return row?['status'] == 'delivered' ? DropOutcome.delivered : DropOutcome.notTaken;
+    } catch (_) {
+      // It reached the server and was not refused in the rare way above; the
+      // screen asks again for the dispatch when it can.
+      return DropOutcome.delivered;
+    }
+  }
+
+  /// Whether the drop queued for [dispatchId] carries a photo of the
+  /// delivery note, which is optional beside the signature. Only one still on
+  /// the phone counts: a copy Android has cleared is left out when the drop is
+  /// sent (`SyncEngine._replayDeliveryConfirm`), so it must not be promised.
+  Future<bool> queuedWithPhoto(String dispatchId) async {
+    for (final e in await _db.entriesFor(OutboxType.deliveryConfirm, dispatchId)) {
+      try {
+        final data = jsonDecode(e.payload) as Map<String, dynamic>;
+        final path = data['local_photo_path'];
+        if (path is String && File(path).existsSync()) return true;
+      } catch (_) {
+        // An unreadable payload says nothing about a photo.
+      }
+    }
+    return false;
   }
 
   /// Dispatches whose drop this phone has recorded and is still trying to

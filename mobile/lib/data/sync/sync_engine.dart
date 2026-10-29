@@ -239,7 +239,11 @@ class SyncEngine {
 
   StreamSubscription<List<ConnectivityResult>>? _connSub;
   Timer? _timer;
-  bool _running = false;
+
+  /// The drain under way, if any, and whether [sync] was asked for again
+  /// while it ran.
+  Future<void>? _draining;
+  bool _again = false;
   bool _online = true;
 
   void start() {
@@ -306,114 +310,160 @@ class SyncEngine {
     );
   }
 
-  /// Replays queued operations oldest-first. Safe to call concurrently —
-  /// overlapping invocations are collapsed.
-  Future<void> sync() async {
-    if (_running) return;
-    _running = true;
-
-    try {
-      // Nobody signed in: hold everything, at no cost, until someone is.
-      final me = _signedInUser();
-      if (me == null) {
-        await _emit(SyncState.idle);
-        return;
-      }
-
-      // The window excludes entries that have given up, so a backlog of them
-      // cannot crowd out newer work; their client ids come across separately so
-      // whatever was queued behind them is still held back.
-      final stalled = await _db.stalledClientIds(kMaxAttempts);
-      final entries = await _db.pendingEntries(maxAttempts: kMaxAttempts);
-      if (entries.isEmpty) {
-        await _emit(SyncState.idle);
-        return;
-      }
-
-      await _emit(SyncState.syncing);
-
-      // Everything still on the phone, by type and id, so an entry can be asked
-      // whether the thing it depends on has landed yet. Entries that land in
-      // this very drain are struck off as they go — a ping queued straight
-      // after its workday start must not wait a whole extra drain for it.
-      final queued = await _db.queuedEntryKeys();
-      final landed = <String>{};
-
-      for (final entry in replayableEntries(entries, alreadyStalled: stalled)) {
-        // A parent still on the phone — stalled, or somehow not yet replayed —
-        // means the server cannot resolve this entry. Replaying it would only
-        // spend an attempt on a foregone failure and stop the drain for
-        // everything behind it. Held back, at no cost, and looked at again
-        // next time.
-        final dependency = dependencyKeyOf(entry);
-        if (dependency != null &&
-            queued.contains(dependency) &&
-            !landed.contains(dependency)) {
-          continue;
-        }
-        // Someone else's work, queued before they signed out: held for them
-        // rather than replayed (and refused) under this session.
-        final owner = ownerOf(entry);
-        if (owner != null && owner != me) continue;
-
-        try {
-          await _replay(entry, queued: queued);
-          await _db.deleteEntry(entry.id);
-          landed.add(outboxEntryKey(entry.entityType, entry.clientGeneratedId));
-        } catch (e, stack) {
-          // No network mid-drain: stop, keep everything queued, try later.
-          //
-          // This used to be `on SocketException` alone, and a TLS handshake
-          // cut by a dropped cellular link is not a SocketException. It fell
-          // through to the branch below, counted as one of the entry's eight
-          // attempts, and after eight bad moments of signal a location ping
-          // that had done nothing wrong was reported as given up (FLUTTER-D).
-          if (isTransientNetworkFailure(e)) {
-            await _emit(SyncState.offline);
-            return;
-          }
-          final attempts = entry.attempts + 1;
-          await _db.recordFailure(entry.id, attempts, e.toString());
-
-          // The failure worth waking someone up for. An entry that has used up
-          // its attempts is work the rep believes is saved and which will now
-          // never reach the server unaided — a visit, a form, a photo. Until
-          // this existed, that was completely silent: the rep saw a pending
-          // count that stopped falling and nothing else.
-          //
-          // Only the entry type and its id are reported. Never the payload:
-          // it holds store data, GPS fixes and answers.
-          if (attempts >= kMaxAttempts) {
-            unawaited(
-              Monitoring.report(
-                e,
-                stack,
-                feature: 'sync',
-                data: {
-                  'entity_type': entry.entityType,
-                  'attempts': attempts,
-                  'given_up': true,
-                },
-              ),
-            );
-          } else {
-            Monitoring.event(
-              'sync.retry',
-              data: {'entity_type': entry.entityType, 'attempts': attempts},
-            );
-          }
-
-          // Stop on first failure so ordering is preserved — a check-out
-          // must not be replayed before its check-in succeeds.
-          await _emit(SyncState.error, message: e.toString());
-          return;
-        }
-      }
-
-      await _emit(SyncState.idle);
-    } finally {
-      _running = false;
+  /// Replays queued operations oldest-first. Safe to call concurrently: a
+  /// call while a drain is under way waits for that drain instead of
+  /// starting another.
+  ///
+  /// A drain reads the queue once, when it starts, so work queued after that
+  /// (a delivery recorded while a photo was still going up) is not on its
+  /// list. When [sync] was called meanwhile and the drain went all the way
+  /// through, it makes one more pass before the callers hear back, so their
+  /// work has been tried. One that stopped (no signal, a refusal) does not:
+  /// that would only spend another attempt on the same failure.
+  Future<void> sync() {
+    final running = _draining;
+    if (running != null) {
+      _again = true;
+      return running;
     }
+    return _draining = _drainWhileAsked();
+  }
+
+  Future<void> _drainWhileAsked() async {
+    try {
+      _again = false;
+      var through = await _drain();
+      // One more pass, never a chain of them: on a slow link the pings and the
+      // timer can ask again during every pass, and a caller waiting on [sync]
+      // (pull to refresh, "Sync now") would wait for as long as they kept on.
+      // What is asked for during this pass waits for the next trigger.
+      if (through && _again) through = await _drain();
+      // Said once, after the last pass, so the banner does not go back to
+      // idle between the two.
+      if (through) await _emit(SyncState.idle);
+    } finally {
+      _draining = null;
+    }
+  }
+
+  /// Sends what is queued, waiting at most [within], and says whether the
+  /// [entityType] entry for [clientGeneratedId] has left the phone: what a
+  /// screen needs before it says "sent" rather than "when you have signal".
+  /// False with no signal, when the server refused it for now (it stays
+  /// queued and is tried again), or when it is still going. The work is safe
+  /// on the phone whichever it is.
+  Future<bool> sentWithin(
+    String entityType,
+    String clientGeneratedId, {
+    Duration within = const Duration(seconds: 8),
+  }) async {
+    try {
+      await sync().timeout(within);
+    } catch (_) {
+      // Still going, or the drain failed: the queue says where it stands.
+    }
+    return (await _db.entriesFor(entityType, clientGeneratedId)).isEmpty;
+  }
+
+  /// One pass over the queue. True when it went all the way through, with
+  /// nothing refused and the signal holding, and then it leaves saying idle
+  /// to [_drainWhileAsked]; false when it stopped short, having said why.
+  Future<bool> _drain() async {
+    // Nobody signed in: hold everything, at no cost, until someone is.
+    final me = _signedInUser();
+    if (me == null) {
+      await _emit(SyncState.idle);
+      return false;
+    }
+
+    // The window excludes entries that have given up, so a backlog of them
+    // cannot crowd out newer work; their client ids come across separately so
+    // whatever was queued behind them is still held back.
+    final stalled = await _db.stalledClientIds(kMaxAttempts);
+    final entries = await _db.pendingEntries(maxAttempts: kMaxAttempts);
+    if (entries.isEmpty) return true;
+
+    await _emit(SyncState.syncing);
+
+    // Everything still on the phone, by type and id, so an entry can be asked
+    // whether the thing it depends on has landed yet. Entries that land in
+    // this very drain are struck off as they go — a ping queued straight
+    // after its workday start must not wait a whole extra drain for it.
+    final queued = await _db.queuedEntryKeys();
+    final landed = <String>{};
+
+    for (final entry in replayableEntries(entries, alreadyStalled: stalled)) {
+      // A parent still on the phone — stalled, or somehow not yet replayed —
+      // means the server cannot resolve this entry. Replaying it would only
+      // spend an attempt on a foregone failure and stop the drain for
+      // everything behind it. Held back, at no cost, and looked at again
+      // next time.
+      final dependency = dependencyKeyOf(entry);
+      if (dependency != null &&
+          queued.contains(dependency) &&
+          !landed.contains(dependency)) {
+        continue;
+      }
+      // Someone else's work, queued before they signed out: held for them
+      // rather than replayed (and refused) under this session.
+      final owner = ownerOf(entry);
+      if (owner != null && owner != me) continue;
+
+      try {
+        await _replay(entry, queued: queued);
+        await _db.deleteEntry(entry.id);
+        landed.add(outboxEntryKey(entry.entityType, entry.clientGeneratedId));
+      } catch (e, stack) {
+        // No network mid-drain: stop, keep everything queued, try later.
+        //
+        // This used to be `on SocketException` alone, and a TLS handshake
+        // cut by a dropped cellular link is not a SocketException. It fell
+        // through to the branch below, counted as one of the entry's eight
+        // attempts, and after eight bad moments of signal a location ping
+        // that had done nothing wrong was reported as given up (FLUTTER-D).
+        if (isTransientNetworkFailure(e)) {
+          await _emit(SyncState.offline);
+          return false;
+        }
+        final attempts = entry.attempts + 1;
+        await _db.recordFailure(entry.id, attempts, e.toString());
+
+        // The failure worth waking someone up for. An entry that has used up
+        // its attempts is work the rep believes is saved and which will now
+        // never reach the server unaided — a visit, a form, a photo. Until
+        // this existed, that was completely silent: the rep saw a pending
+        // count that stopped falling and nothing else.
+        //
+        // Only the entry type and its id are reported. Never the payload:
+        // it holds store data, GPS fixes and answers.
+        if (attempts >= kMaxAttempts) {
+          unawaited(
+            Monitoring.report(
+              e,
+              stack,
+              feature: 'sync',
+              data: {
+                'entity_type': entry.entityType,
+                'attempts': attempts,
+                'given_up': true,
+              },
+            ),
+          );
+        } else {
+          Monitoring.event(
+            'sync.retry',
+            data: {'entity_type': entry.entityType, 'attempts': attempts},
+          );
+        }
+
+        // Stop on first failure so ordering is preserved — a check-out
+        // must not be replayed before its check-in succeeds.
+        await _emit(SyncState.error, message: e.toString());
+        return false;
+      }
+    }
+
+    return true;
   }
 
   /// Replays one entry. [queued] is every operation still on the phone, keyed

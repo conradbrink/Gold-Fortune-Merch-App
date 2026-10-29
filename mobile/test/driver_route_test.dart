@@ -10,6 +10,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import 'package:gf_merch_rep/core/addresses.dart';
 import 'package:gf_merch_rep/core/company_config.dart';
 import 'package:gf_merch_rep/core/providers.dart';
 import 'package:gf_merch_rep/core/terms.dart';
@@ -185,6 +186,85 @@ void main() {
       ]);
     });
 
+    test("an order carrying the place's own address is sorted by its pin", () {
+      // What the order screen fills in for every order (owner, 29 Oct 2026),
+      // and the same written another way.
+      final prefilled = [
+        _stop(
+          'potch',
+          lat: -26.71,
+          lng: 27.1,
+          deliveryAddress: '1 Church Street, Potchefstroom',
+        ),
+        _stop(
+          'orkney',
+          lat: -26.98,
+          lng: 26.67,
+          deliveryAddress: '1 church street  potchefstroom.',
+        ),
+        _stop(
+          'stil',
+          lat: -26.84,
+          lng: 26.77,
+          deliveryAddress: '1 Church Street, Potchefstroom, North West',
+        ),
+      ];
+      expect(prefilled.every((s) => s.pinned), isTrue);
+      expect(nearestFirst(-26.85, 26.66, prefilled), [
+        'orkney',
+        'stil',
+        'potch',
+      ]);
+      // Google Maps is still given what is on the order.
+      expect(prefilled.first.mapsPlace, '1 Church Street, Potchefstroom');
+    });
+
+    test('an address that is not the place\'s own still goes last', () {
+      final elsewhere = _stop(
+        'elsewhere',
+        lat: -26.84,
+        lng: 26.77,
+        deliveryAddress: 'Back gate, 1 Church Street, Potchefstroom',
+      );
+      expect(elsewhere.pinned, isFalse);
+      expect(nearestFirst(-26.85, 26.66, [elsewhere, potch, orkney]), [
+        'orkney',
+        'potch',
+        'elsewhere',
+      ]);
+    });
+  });
+
+  group("the place's own address", () {
+    bool usual(String typed, {String? address = '1 Church Street', String? city = 'Potchefstroom'}) =>
+        isUsualAddress(typed, address: address, city: city, state: 'North West');
+
+    test('as the order screen fills it in, or the street, in any case or spacing', () {
+      expect(usual('1 Church Street, Potchefstroom'), isTrue);
+      expect(usual('1 CHURCH STREET POTCHEFSTROOM'), isTrue);
+      expect(usual(' 1 Church Street '), isTrue);
+      expect(usual('1 Church Street, North West'), isTrue);
+      expect(usual('1 Church Street, Potchefstroom, North West'), isTrue);
+    });
+
+    test('a town in the street is not written twice', () {
+      expect(
+        usual('12 Main Road, Mahikeng', address: '12 Main Road, Mahikeng', city: 'Mahikeng'),
+        isTrue,
+      );
+    });
+
+    test('a place with no street is filled in with its town', () {
+      expect(usual('Potchefstroom', address: null), isTrue);
+    });
+
+    test('anything else is somewhere else', () {
+      expect(usual('Back gate, 1 Church Street'), isFalse);
+      expect(usual('3 Wolmarans Street, Potchefstroom'), isFalse);
+      expect(usual('Potchefstroom'), isFalse, reason: 'a street is on record');
+      expect(usual('anything', address: null, city: null), isFalse);
+      expect(usual('  '), isFalse);
+    });
   });
 
   group('Google Maps legs', () {

@@ -8,6 +8,7 @@ import '../../core/company_config.dart';
 import '../../core/providers.dart';
 import '../../core/theme.dart';
 import '../../data/models/delivery.dart';
+import '../../data/repositories/delivery_repository.dart' show DropOutcome;
 import '../../data/sync/sync_engine.dart' show isTransientNetworkFailure;
 import '../../shared/widgets/message_panel.dart';
 import 'deliveries_screen.dart';
@@ -107,16 +108,17 @@ class DeliveryDetailScreen extends ConsumerWidget {
                 child: FilledButton.icon(
                   style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(52)),
                   onPressed: () async {
+                    // Taken before the sheet: the driver may have left this
+                    // screen by the time the answer comes, and the message
+                    // still belongs on whichever one they are on.
+                    final repo = ref.read(deliveryRepositoryProvider);
+                    final messenger = ScaffoldMessenger.of(context);
                     final queued = await showDeliveryConfirmSheet(context, open);
-                    if (queued == true && context.mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text(
-                            'Delivery saved. It will reach the warehouse when you have signal.',
-                          ),
-                        ),
-                      );
-                    }
+                    if (queued != true) return;
+                    final outcome = await repo.sendDrop(dispatchId);
+                    messenger.showSnackBar(
+                      SnackBar(content: Text(dropMessage(outcome))),
+                    );
                   },
                   icon: const Icon(Icons.task_alt),
                   label: const Text('Record delivery'),
@@ -156,21 +158,47 @@ class DeliveryDetailScreen extends ConsumerWidget {
                       'The warehouse may have given it to somebody else. '
                       'Ask them if you were expecting it.',
                 )
-              : _Body(d, byName: byName, waiting: waiting),
+              : _Body(
+                  d,
+                  byName: byName,
+                  waiting: waiting,
+                  withPhoto: waiting &&
+                      (ref.watch(queuedDeliveryPhotoProvider(dispatchId)).value ?? false),
+                ),
         ),
       ),
     );
   }
 }
 
+/// What the driver is told once the drop is recorded: that the warehouse has
+/// it only when it does. "When you have signal" only while it is still on the
+/// phone (29 Oct 2026: it showed with full signal too).
+String dropMessage(DropOutcome outcome) => switch (outcome) {
+  DropOutcome.delivered => 'Delivered. The warehouse has it.',
+  DropOutcome.waiting =>
+    'Delivery saved. It will reach the warehouse when you have signal.',
+  DropOutcome.notTaken =>
+    'This delivery was not recorded: the warehouse had already changed it. '
+        'Phone them about it.',
+};
+
 class _Body extends StatelessWidget {
-  const _Body(this.detail, {required this.byName, required this.waiting});
+  const _Body(
+    this.detail, {
+    required this.byName,
+    required this.waiting,
+    required this.withPhoto,
+  });
 
   final DeliveryDetail detail;
   final bool byName;
 
   /// Recorded as delivered on this phone, not yet sent.
   final bool waiting;
+
+  /// What is waiting has a photo of the delivery note, which is optional.
+  final bool withPhoto;
 
   @override
   Widget build(BuildContext context) {
@@ -195,15 +223,16 @@ class _Body extends StatelessWidget {
               color: context.brand.accent.withValues(alpha: 0.12),
               borderRadius: BorderRadius.circular(10),
             ),
-            child: const Row(
+            child: Row(
               children: [
-                Icon(Icons.cloud_upload_outlined, size: 20),
-                SizedBox(width: 10),
+                const Icon(Icons.cloud_upload_outlined, size: 20),
+                const SizedBox(width: 10),
                 Expanded(
                   child: Text(
                     'You recorded this as delivered. It will reach the '
-                    'warehouse, with the photo, when you have signal.',
-                    style: TextStyle(fontSize: 13),
+                    'warehouse${withPhoto ? ', with the photo,' : ''} when you '
+                    'have signal.',
+                    style: const TextStyle(fontSize: 13),
                   ),
                 ),
               ],

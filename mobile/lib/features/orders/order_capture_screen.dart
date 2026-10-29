@@ -387,8 +387,9 @@ class _OrderCaptureScreenState extends ConsumerState<OrderCaptureScreen> {
       _error = null;
     });
 
+    final orders = ref.read(orderRepositoryProvider);
     try {
-      await ref.read(orderRepositoryProvider).submitOrder(
+      final clientId = await orders.submitOrder(
             signature: signature,
             orgId: profile.orgId,
             repId: profile.id,
@@ -413,16 +414,16 @@ class _OrderCaptureScreenState extends ConsumerState<OrderCaptureScreen> {
             );
       } catch (_) {}
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Order saved. It will reach the warehouse when you have signal.'),
-        ),
-      );
+      // The screen is left at once; what became of the order is said on the
+      // next one, when it is known.
+      final messenger = ScaffoldMessenger.of(context);
       ref.invalidate(orderDraftProvider(widget.draftId));
       ref.invalidate(ordersTakenProvider);
       ref.invalidate(storeReorderProvider);
       final visitKey = widget.visitKey;
       context.go(visitKey == null ? '/' : '/visit/$visitKey');
+      final sent = await orders.sendNow(clientId).catchError((Object _) => false);
+      messenger.showSnackBar(SnackBar(content: Text(orderSavedMessage(sent: sent))));
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -697,6 +698,13 @@ String? missingDeliveryDetails({
       : '${missing.sublist(0, missing.length - 1).join(', ')} and ${missing.last}';
   return 'Fill in $listed before saving.';
 }
+
+/// What the rep is told once the order is saved: "when you have signal" only
+/// while it is still on the phone (29 Oct 2026: it showed with full signal
+/// too).
+String orderSavedMessage({required bool sent}) => sent
+    ? 'Order sent to the warehouse.'
+    : 'Order saved. It will reach the warehouse when you have signal.';
 
 /// "How they ordered": the one thing a new order says that one taken in
 /// the shop does not. No answer is chosen for the rep: a wrong default would

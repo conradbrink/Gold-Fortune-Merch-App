@@ -19,6 +19,7 @@ import 'package:gf_merch_rep/core/company_config.dart';
 import 'package:gf_merch_rep/core/providers.dart';
 import 'package:gf_merch_rep/core/terms.dart';
 import 'package:gf_merch_rep/data/models/delivery.dart';
+import 'package:gf_merch_rep/data/models/profile.dart';
 import 'package:gf_merch_rep/data/repositories/delivery_repository.dart';
 import 'package:gf_merch_rep/features/deliveries/deliveries_screen.dart';
 import 'package:gf_merch_rep/features/deliveries/delivery_detail_screen.dart';
@@ -148,6 +149,25 @@ class _FakeRepository implements DeliveryRepository {
   }) async {
     confirmCalls++;
     pending = {...pending, delivery.delivery.id};
+    if (photo != null) withPhoto = {...withPhoto, delivery.delivery.id};
+  }
+
+  /// Of [pending], the ones queued with a photo of the delivery note.
+  Set<String> withPhoto = {};
+
+  @override
+  Future<bool> queuedWithPhoto(String dispatchId) async =>
+      withPhoto.contains(dispatchId);
+
+  /// What sending the drop comes to; "this phone" has signal unless told.
+  DropOutcome outcome = DropOutcome.delivered;
+  int sendCalls = 0;
+
+  @override
+  Future<DropOutcome> sendDrop(String dispatchId) async {
+    sendCalls++;
+    if (outcome != DropOutcome.waiting) pending = {...pending}..remove(dispatchId);
+    return outcome;
   }
 }
 
@@ -159,6 +179,10 @@ Widget _scope(_FakeRepository repo, Widget app) => ProviderScope(
     deliveryRepositoryProvider.overrideWithValue(repo),
     // The real one reads the outbox; here the fake's set is the outbox.
     pendingDeliveryConfirmsProvider.overrideWith((ref) => repo.pendingConfirms()),
+    queuedDeliveryPhotoProvider.overrideWith((ref, id) => repo.queuedWithPhoto(id)),
+    profileProvider.overrideWith(
+      (ref) async => const Profile(id: 'driver-1', orgId: 'org-1', role: 'driver'),
+    ),
     companyConfigValueProvider.overrideWithValue(CompanyConfig.fallback),
     termsProvider.overrideWithValue(Terms.defaults),
   ],
@@ -170,9 +194,13 @@ Future<_FakeRepository> _pumpDetail(
   DeliveryDetail? detail,
   Future<DeliveryDetail?> Function()? fetch,
   Set<String> pending = const {},
+  Set<String> withPhoto = const {},
+  DropOutcome outcome = DropOutcome.delivered,
 }) async {
   final repo = _FakeRepository(detail: fetch ?? (() async => detail))
-    ..pending = pending;
+    ..pending = pending
+    ..withPhoto = withPhoto
+    ..outcome = outcome;
   await tester.pumpWidget(
     _scope(
       repo,
@@ -615,7 +643,84 @@ void main() {
     ) async {
       await _pumpDetail(tester, detail: _detail(), pending: {'d1'});
       expect(find.text('Record delivery'), findsNothing);
-      expect(find.textContaining('You recorded this as delivered'), findsOneWidget);
+      expect(
+        find.text(
+          'You recorded this as delivered. It will reach the warehouse when '
+          'you have signal.',
+        ),
+        findsOneWidget,
+        reason: 'no photo was taken, so none is promised',
+      );
+    });
+
+    testWidgets('the photo is mentioned only when one is waiting with it', (tester) async {
+      await _pumpDetail(tester, detail: _detail(), pending: {'d1'}, withPhoto: {'d1'});
+      expect(
+        find.text(
+          'You recorded this as delivered. It will reach the warehouse, with '
+          'the photo, when you have signal.',
+        ),
+        findsOneWidget,
+      );
+    });
+
+    Future<void> recordDrop(WidgetTester tester, _FakeRepository repo) async {
+      // Read already, as it is in the app by the time a drop is recorded.
+      await tester.runAsync(
+        () => ProviderScope.containerOf(
+          tester.element(find.byType(DeliveryDetailScreen)),
+        ).read(profileProvider.future),
+      );
+      await tester.tap(find.text('Record delivery'));
+      await tester.pumpAndSettle();
+      final pad = tester.getRect(find.byType(SignaturePad));
+      await tester.dragFrom(pad.center - const Offset(80, 0), const Offset(160, 20));
+      await tester.pump();
+      await tester.runAsync(() async {
+        await tester.tap(find.widgetWithText(FilledButton, 'Delivered'));
+        // The signature renders off the test clock.
+        for (var i = 0; i < 20 && repo.sendCalls == 0; i++) {
+          await Future<void>.delayed(const Duration(milliseconds: 50));
+          await tester.pump();
+        }
+      });
+      await tester.pumpAndSettle();
+      expect(repo.confirmCalls, 1);
+    }
+
+    testWidgets('sent straight away, it says delivered, not "when you have signal"', (
+      tester,
+    ) async {
+      await tester.binding.setSurfaceSize(const Size(400, 1000));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      final repo = await _pumpDetail(tester, detail: _detail(_dispatch(contact: 'Thabo')));
+      await recordDrop(tester, repo);
+      expect(find.text('Delivered. The warehouse has it.'), findsOneWidget);
+      expect(
+        find.text('Delivery saved. It will reach the warehouse when you have signal.'),
+        findsNothing,
+      );
+    });
+
+    testWidgets('still on the phone, it says it goes when there is signal', (tester) async {
+      await tester.binding.setSurfaceSize(const Size(400, 1000));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      final repo = await _pumpDetail(
+        tester,
+        detail: _detail(_dispatch(contact: 'Thabo')),
+        outcome: DropOutcome.waiting,
+      );
+      await recordDrop(tester, repo);
+      expect(
+        find.text('Delivery saved. It will reach the warehouse when you have signal.'),
+        findsOneWidget,
+      );
+      expect(find.text('Delivered. The warehouse has it.'), findsNothing);
+    });
+
+    test('a drop the warehouse had already changed is not called delivered', () {
+      expect(dropMessage(DropOutcome.notTaken), isNot(contains('Delivered')));
+      expect(dropMessage(DropOutcome.notTaken), contains('not recorded'));
     });
 
     testWidgets('it needs a name and the receiver\'s signature; the photo is optional', (tester) async {

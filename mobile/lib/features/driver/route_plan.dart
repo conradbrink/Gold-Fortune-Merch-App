@@ -12,6 +12,7 @@
 
 import 'dart:math' as math;
 
+import '../../core/addresses.dart';
 import '../../core/location_service.dart';
 import '../../data/models/delivery.dart';
 
@@ -32,7 +33,7 @@ abstract interface class PlanStop {
 /// One delivery on a driver's round, with what the round needs: where it is
 /// and which town it is in.
 class RunStop implements PlanStop {
-  const RunStop({
+  RunStop({
     required this.delivery,
     required this.placeName,
     required this.town,
@@ -57,12 +58,28 @@ class RunStop implements PlanStop {
   @override
   final double? lng;
 
-  /// Typed on the order when this drop is not at the usual address.
+  /// The delivery address on the order. The order screen fills it in with
+  /// the place's own address, so most orders carry one; only another address
+  /// means this drop is not at the place.
   final String? deliveryAddress;
   final String? state;
 
+  /// The place's pin says where the drop is, unless the order is going
+  /// somewhere else. Treating every typed address as somewhere else left
+  /// nearly every stop unsorted at the end of the plan (29 Oct 2026).
   @override
-  bool get pinned => lat != null && lng != null && deliveryAddress == null;
+  bool get pinned => lat != null && lng != null && !_elsewhere;
+
+  /// The order names an address that is not the place's own. Worked out once:
+  /// the planner asks [pinned] of every stop several times.
+  late final bool _elsewhere =
+      deliveryAddress != null &&
+      !isUsualAddress(
+        deliveryAddress!,
+        address: delivery.storeAddress,
+        city: town,
+        state: state,
+      );
 
   /// The town it is in, else its territory; how the round is grouped.
   String get area => town ?? territory ?? 'No town on record';
