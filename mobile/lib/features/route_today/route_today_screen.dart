@@ -13,6 +13,7 @@ import '../../shared/widgets/status_badge.dart';
 import '../auth/auth_controller.dart';
 import '../../shared/widgets/sync_banner.dart';
 import '../workday/workday_banner.dart';
+import 'route_plan_panel.dart';
 
 class RouteTodayScreen extends ConsumerWidget {
   const RouteTodayScreen({super.key});
@@ -140,6 +141,12 @@ class RouteTodayScreen extends ConsumerWidget {
             ),
             const SliverToBoxAdapter(child: SyncBanner()),
             const SliverToBoxAdapter(child: WorkdayBanner()),
+            SliverToBoxAdapter(
+              child: routesAsync.maybeWhen(
+                data: (routes) => RoutePlanPanel(day: routes),
+                orElse: () => const SizedBox.shrink(),
+              ),
+            ),
             routesAsync.when(
               data: (routes) {
                 if (routes.isEmpty) {

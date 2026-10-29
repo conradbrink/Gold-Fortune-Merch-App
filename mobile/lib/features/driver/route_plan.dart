@@ -1,5 +1,7 @@
 // A driver's round: which day a delivery is for, the town it is in, the
-// order to drive them in, and the Google Maps links that drive it.
+// order to drive them in, and the Google Maps links that drive it. The order
+// and the links work on any [PlanStop], so a rep's day uses them too
+// (lib/features/route_today/visit_plan.dart).
 //
 // Pure, so it is tested without a phone. The order comes from Google when the
 // office has switched route planning on (web/app/api/route-plan, Compute
@@ -13,9 +15,23 @@ import 'dart:math' as math;
 import '../../core/location_service.dart';
 import '../../data/models/delivery.dart';
 
+/// A place on a round, as the planner and Google Maps need it.
+abstract interface class PlanStop {
+  /// What the plan's order is written in.
+  String get id;
+
+  /// Has a point to measure from. One without goes last, found by its address.
+  bool get pinned;
+  double? get lat;
+  double? get lng;
+
+  /// What Google Maps is given for this stop; null when there is nothing.
+  String? get mapsPlace;
+}
+
 /// One delivery on a driver's round, with what the round needs: where it is
 /// and which town it is in.
-class RunStop {
+class RunStop implements PlanStop {
   const RunStop({
     required this.delivery,
     required this.placeName,
@@ -28,6 +44,7 @@ class RunStop {
   });
 
   final Delivery delivery;
+  @override
   String get id => delivery.id;
 
   /// The place's own name; null when it has none (the card says "Unknown
@@ -35,13 +52,16 @@ class RunStop {
   final String? placeName;
   final String? town;
   final String? territory;
+  @override
   final double? lat;
+  @override
   final double? lng;
 
   /// Typed on the order when this drop is not at the usual address.
   final String? deliveryAddress;
   final String? state;
 
+  @override
   bool get pinned => lat != null && lng != null && deliveryAddress == null;
 
   /// The town it is in, else its territory; how the round is grouped.
@@ -50,6 +70,7 @@ class RunStop {
   /// What Google Maps is given for this stop, as the delivery screen finds a
   /// place (`DeliveryDetail.directions`): a typed delivery address first, then
   /// the pin, then the name and address. Null when there is nothing at all.
+  @override
   String? get mapsPlace {
     if (deliveryAddress != null) return deliveryAddress;
     if (lat != null && lng != null) return '$lat,$lng';
@@ -139,10 +160,10 @@ double _metres(double lat1, double lng1, double lat2, double lng2) =>
 /// (web/lib/geo.ts `orderStops`), where 2-opt took about a fifth off the
 /// real drive. A stop Google Maps can only find by its address has no point
 /// to measure from, so those go last, in the order they came.
-List<String> nearestFirst(double lat, double lng, List<RunStop> stops) {
+List<String> nearestFirst(double lat, double lng, List<PlanStop> stops) {
   final pinned = stops.where((s) => s.pinned).toList();
   final rest = stops.where((s) => !s.pinned);
-  final order = <RunStop>[];
+  final order = <PlanStop>[];
   var hereLat = lat;
   var hereLng = lng;
   while (pinned.isNotEmpty) {
@@ -167,7 +188,7 @@ List<String> nearestFirst(double lat, double lng, List<RunStop> stops) {
 /// Reverses any stretch of the round that makes it shorter, until none does.
 /// Point 0 is the driver, who stays where they are; the round ends wherever it
 /// ends, so a reversal running to the last stop has no leg after it.
-List<RunStop> _twoOpt(double lat, double lng, List<RunStop> stops) {
+List<PlanStop> _twoOpt(double lat, double lng, List<PlanStop> stops) {
   final route = [...stops];
   double d(int a, int b) {
     final (aLat, aLng) = a < 0 ? (lat, lng) : (route[a].lat!, route[a].lng!);
@@ -214,7 +235,7 @@ class MapsLeg {
 /// [kStopsPerLeg]. The first leg starts from wherever the phone is (no
 /// origin, which Maps reads as "your location"); every later one starts at
 /// the stop the leg before it ended on. Stops Maps cannot find are skipped.
-List<MapsLeg> mapsLegs(List<RunStop> stops) {
+List<MapsLeg> mapsLegs(List<PlanStop> stops) {
   final findable = [
     for (var i = 0; i < stops.length; i++)
       if (stops[i].mapsPlace != null) (n: i + 1, place: stops[i].mapsPlace!),
@@ -245,6 +266,12 @@ List<MapsLeg> mapsLegs(List<RunStop> stops) {
   return legs;
 }
 
+/// What a plan by straight line says about itself.
+String straightLineNote({required bool unpinned}) =>
+    'Your stops are in order of the closest one each time, measured in a '
+    'straight line from where you are.'
+    '${unpinned ? ' Stops that are not on the map yet are at the end.' : ''}';
+
 /// A round put in order, and where the order came from.
 class RoutePlan {
   const RoutePlan({
@@ -255,7 +282,8 @@ class RoutePlan {
     this.note,
   });
 
-  /// Dispatch ids in driving order.
+  /// Stop ids in driving order: dispatch ids for a driver, a rep's
+  /// visit cache keys.
   final List<String> order;
 
   /// Google's roads, as against nearest first by straight line.
@@ -265,6 +293,28 @@ class RoutePlan {
 
   /// Why it is nearest first, when it is, in words for the driver.
   final String? note;
+
+  /// Kept on the phone (a rep's plan for the day), as [fromMap] reads it.
+  Map<String, dynamic> toMap() => {
+    'order': order,
+    'by_google': byGoogle,
+    'distance_m': distanceMeters,
+    'duration_s': durationSeconds,
+    'note': note,
+  };
+
+  static RoutePlan? fromMap(Object? m) {
+    if (m is! Map<String, dynamic>) return null;
+    final order = m['order'];
+    if (order is! List) return null;
+    return RoutePlan(
+      order: order.whereType<String>().toList(),
+      byGoogle: m['by_google'] == true,
+      distanceMeters: (m['distance_m'] as num?)?.toInt(),
+      durationSeconds: (m['duration_s'] as num?)?.toInt(),
+      note: m['note'] as String?,
+    );
+  }
 
   /// "81 km, about 1 h 10 min", when Google said.
   String? get summary {

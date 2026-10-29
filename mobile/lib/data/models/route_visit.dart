@@ -9,6 +9,10 @@
 /// server's `visits.route_id` stays null too, which keeps `routes` meaning
 /// strictly "what was planned" for adherence reporting.
 class RouteVisit {
+  /// The name shown when the place's row did not come back. Never searched
+  /// for on a map.
+  static const unknownStoreName = 'Unknown location';
+
   final String? routeId;
   final String storeId;
   final String storeName;
@@ -186,7 +190,7 @@ class RouteVisit {
     return RouteVisit(
       routeId: map['id'] as String?,
       storeId: map['store_id'] as String,
-      storeName: store?['name'] as String? ?? 'Unknown location',
+      storeName: store?['name'] as String? ?? unknownStoreName,
       storeAddress: store?['address'] as String?,
       storeCity: store?['city'] as String?,
       storeState: store?['state'] as String?,
