@@ -141,6 +141,10 @@ class _NewCustomerScreenState extends ConsumerState<NewCustomerScreen> {
       if (widget.forOrder) return _toOrder(store);
       final key = await startUnscheduledVisit(ref, store);
       if (!mounted) return;
+      if (key == null) {
+        setState(() => _saving = false);
+        return;
+      }
       context.go('/visit/$key');
     } catch (e) {
       if (!mounted) return;
@@ -156,6 +160,10 @@ class _NewCustomerScreenState extends ConsumerState<NewCustomerScreen> {
     if (widget.forOrder) return _toOrder(store);
     final key = await startUnscheduledVisit(ref, store);
     if (!mounted) return;
+    if (key == null) {
+      setState(() => _saving = false);
+      return;
+    }
     context.go('/visit/$key');
   }
 

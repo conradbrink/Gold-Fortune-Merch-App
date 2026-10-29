@@ -43,10 +43,15 @@ class LeadRepository {
     );
   }
 
-  /// Newest first. Calls still open sort above finished ones, because an
-  /// unfinished call is a thing the rep still has to do something about.
-  Future<List<Lead>> myLeads() async {
-    final leads = await _cached();
+  /// [repId]'s calls, newest first. Calls still open sort above finished
+  /// ones, because an unfinished call is a thing the rep still has to do
+  /// something about.
+  ///
+  /// The cache holds everyone's who has used this phone: reps share them, and
+  /// the next person to sign in was being offered the last one's open calls.
+  Future<List<Lead>> myLeads(String repId) async {
+    final leads =
+        (await _cached()).where((l) => l.repId == repId).toList();
     leads.sort((a, b) {
       if (a.isComplete != b.isComplete) return a.isComplete ? 1 : -1;
       return b.startedAt.compareTo(a.startedAt);
@@ -54,8 +59,8 @@ class LeadRepository {
     return leads;
   }
 
-  Future<List<Lead>> inProgress() async =>
-      (await myLeads()).where((l) => !l.isComplete).toList();
+  Future<List<Lead>> inProgress(String repId) async =>
+      (await myLeads(repId)).where((l) => !l.isComplete).toList();
 
   Future<Lead?> byClientId(String clientGeneratedId) async {
     for (final lead in await _cached()) {

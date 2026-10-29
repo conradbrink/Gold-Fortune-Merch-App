@@ -96,9 +96,18 @@ final syncStatusProvider = StreamProvider<SyncStatus>((ref) {
   return ref.watch(syncEngineProvider).status;
 });
 
-/// Number of operations still waiting to reach the server.
+/// Number of operations still waiting to reach the server, whoever made
+/// them. What removing the app would lose.
 final pendingSyncCountProvider = StreamProvider<int>((ref) {
   return ref.watch(appDatabaseProvider).watchPendingCount();
+});
+
+/// The signed-in person's share of [pendingSyncCountProvider]: what this
+/// session can send. On a shared phone the rest waits for whoever made it.
+final myPendingSyncCountProvider = StreamProvider<int>((ref) {
+  final user = ref.watch(currentUserProvider);
+  if (user == null) return Stream.value(0);
+  return ref.watch(appDatabaseProvider).watchPendingCountFor(user.id);
 });
 
 final fileRepositoryProvider = Provider<FileRepository>((ref) {
@@ -266,7 +275,9 @@ final leadRepositoryProvider = Provider<LeadRepository>((ref) {
 /// The rep's own sales calls, open ones first. Read from the local cache, so
 /// it is the same list with or without signal.
 final myLeadsProvider = FutureProvider<List<Lead>>((ref) async {
-  return ref.watch(leadRepositoryProvider).myLeads();
+  final user = ref.watch(currentUserProvider);
+  if (user == null) return const [];
+  return ref.watch(leadRepositoryProvider).myLeads(user.id);
 });
 
 final orderRepositoryProvider = Provider<OrderRepository>((ref) {

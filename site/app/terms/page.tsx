@@ -36,7 +36,7 @@ export default function TermsPage() {
           After the pilot, a Founding distributor pays {founding.percentOff}% less than the normal price of the plan that
           fits their team, for their first {founding.priceMonths} months (the founding price):{" "}
           {pricing.plans.map((p) => `${rand(foundingPrice(p))} a month for up to ${p.reps} reps and drivers`).join(", ")}. A team of
-          more than {biggestPlan.reps} reps is priced with us. The setup, the training day by video call and the bonuses we
+          more than {biggestPlan.reps} reps and drivers is priced with us. The setup, the training day by video call and the bonuses we
           list on our website are included. After the {founding.priceMonths} months, the normal price of your plan
           applies.
         </li>
