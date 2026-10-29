@@ -42,7 +42,7 @@ export default async function PlanPage({
         .from("company_account")
         .select("status, period, plan, plan_next, custom_price_cents, period_end, billing_email, setup_charged")
         .maybeSingle(),
-      supabase.from("profiles").select("id", { count: "exact", head: true }).eq("role", "rep").eq("is_active", true),
+      supabase.from("profiles").select("id", { count: "exact", head: true }).in("role", ["rep", "driver"]).eq("is_active", true),
       supabase.rpc("billing_card"),
       supabase
         .from("billing_invoices")

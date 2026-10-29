@@ -113,7 +113,7 @@ const faqs: [q: string, a: string][] = [
   ["Who is it for?", "Distributors with 3 to 30 reps who visit stores, take orders and check the shelves."],
   [
     `What happens after the ${founding.priceMonths} founding months?`,
-    `You go onto your plan's normal price, from ${rand(firstPlan.monthly)} a month for up to ${firstPlan.reps} reps. The plans are above.`,
+    `You go onto your plan's normal price, from ${rand(firstPlan.monthly)} a month for up to ${firstPlan.reps} reps and drivers. The plans are above.`,
   ],
   ["Do my reps need new phones?", "No. Tickd runs on the Android phones your reps already have."],
   ["Can I trust the shelf photos?", "Yes. They can only be taken inside the app, and each one shows the time and place."],

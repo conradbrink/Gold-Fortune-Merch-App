@@ -1,6 +1,25 @@
 import { FOUNDING_OFFER } from "@/lib/founding-offer";
 import { PRODUCT_NAME } from "@/lib/product";
-import { count, type Terms } from "@/lib/terms";
+import { lower, type Terms } from "@/lib/terms";
+
+/**
+ * Who takes a paid place: everyone who works from the phone app, reps and
+ * drivers (owner, 29 Oct 2026; reps only from 20 Oct). Managers, office and
+ * warehouse logins are free. In the company's own word for a rep.
+ */
+export function placesPeople(t: Terms): string {
+  return `${lower(t.staff.many)} and drivers`;
+}
+
+/** "10 reps and drivers": a number of places. */
+export function placesCount(t: Terms, n: number): string {
+  return `${n} ${placesPeople(t)}`;
+}
+
+/** "4 people on the app": how many places are taken now. */
+export function onTheApp(n: number): string {
+  return `${n} ${n === 1 ? "person" : "people"} on the app`;
+}
 
 /**
  * The three fixed plans by the number of reps (owner, 19 Oct 2026), as the
@@ -51,7 +70,7 @@ export type PlanChoice = { kind: "founding"; reps?: number | null } | { kind: "p
 /** The ready-written message a plan's button opens, naming the company and the plan. */
 export function planMessage(choice: PlanChoice, company: string | null, t: Terms): string {
   const who = company?.trim() ? ` for ${company.trim()}` : "";
-  const staff = (n: number) => count(t, "staff", n);
+  const staff = (n: number) => placesCount(t, n);
   switch (choice.kind) {
     case "founding": {
       // The plan that fits the team; a bigger team is priced by hand (the

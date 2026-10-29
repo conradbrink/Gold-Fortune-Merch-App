@@ -6,10 +6,11 @@
 --       request (hint 'quote').
 --   R2  The 5-user base price and the extra-user price ended on 20 Oct 2026
 --       and are kept on record.
---   R3  Only active reps take a place: billing_seats_used counts them, not
---       managers, office or warehouse logins.
+--   R3  Only active reps and drivers take a place (drivers from
+--       20261029223700): billing_seats_used counts them, not managers, office
+--       or warehouse logins.
 --   R4  profiles_user_limit stops a rep beyond the places, on a pilot and on a
---       paid plan, and never stops a login that is not a rep.
+--       paid plan, and never stops a login that is not a rep or a driver.
 --
 -- Needs the billing tables (20261008091250_billing, on production; its file
 -- arrives with #91). Without them the suite says so and checks nothing.
@@ -33,15 +34,15 @@ begin
   -- Priced as listed, not as agreed with one company.
   update public.company_account set custom_price_cents = null where org_id = c_gf;
   for t in select * from (values
-      ('monthly', 1, 199500::bigint, 'Plan for up to 5 reps'),
-      ('monthly', 5, 199500, 'Plan for up to 5 reps'),
-      ('monthly', 6, 349500, 'Plan for up to 10 reps'),
-      ('monthly', 10, 349500, 'Plan for up to 10 reps'),
-      ('monthly', 11, 599500, 'Plan for up to 15 reps'),
-      ('monthly', 15, 599500, 'Plan for up to 15 reps'),
-      ('yearly', 4, 1995000, 'Plan for up to 5 reps'),
-      ('yearly', 10, 3495000, 'Plan for up to 10 reps'),
-      ('yearly', 15, 5995000, 'Plan for up to 15 reps')) x(period, seats, cents, label)
+      ('monthly', 1, 199500::bigint, 'Plan for up to 5 reps and drivers'),
+      ('monthly', 5, 199500, 'Plan for up to 5 reps and drivers'),
+      ('monthly', 6, 349500, 'Plan for up to 10 reps and drivers'),
+      ('monthly', 10, 349500, 'Plan for up to 10 reps and drivers'),
+      ('monthly', 11, 599500, 'Plan for up to 15 reps and drivers'),
+      ('monthly', 15, 599500, 'Plan for up to 15 reps and drivers'),
+      ('yearly', 4, 1995000, 'Plan for up to 5 reps and drivers'),
+      ('yearly', 10, 3495000, 'Plan for up to 10 reps and drivers'),
+      ('yearly', 15, 5995000, 'Plan for up to 15 reps and drivers')) x(period, seats, cents, label)
   loop
     v_j := public.billing_lines(c_gf, t.period, public.billing_plan(t.seats, '{}'::jsonb), false);
     if jsonb_array_length(v_j->'lines') <> 1 or v_j->'lines'->0->>'code' <> 'base'
@@ -79,18 +80,18 @@ begin
     v_fail := v_fail || 'R2 the old prices are not kept on record' || E'\n';
   end if;
 
-  ---------------------------------------------------------------- R3 only reps count
-  select count(*) into v_reps from public.profiles where org_id = c_gf and is_active and role = 'rep';
-  select count(*) into v_n from public.profiles where org_id = c_gf and is_active and role <> 'rep';
+  ---------------------------------------------------------------- R3 only reps and drivers count
+  select count(*) into v_reps from public.profiles where org_id = c_gf and is_active and role in ('rep', 'driver');
+  select count(*) into v_n from public.profiles where org_id = c_gf and is_active and role not in ('rep', 'driver');
   if v_n = 0 then
     raise exception 'Fixtures missing: Gold Fortune needs a login that is not a rep.';
   end if;
   if public.billing_seats_used(c_gf, public.billing_plan(1, '{}'::jsonb)) <> v_reps then
-    v_fail := v_fail || format('R3 seats used %s, expected the %s reps', public.billing_seats_used(c_gf, public.billing_plan(1, '{}'::jsonb)), v_reps) || E'\n';
+    v_fail := v_fail || format('R3 seats used %s, expected the %s reps and drivers', public.billing_seats_used(c_gf, public.billing_plan(1, '{}'::jsonb)), v_reps) || E'\n';
   end if;
 
   ---------------------------------------------------------------- R4 the limit
-  select id into v_other from public.profiles where org_id = c_gf and is_active and role <> 'rep' order by created_at limit 1;
+  select id into v_other from public.profiles where org_id = c_gf and is_active and role not in ('rep', 'driver') order by created_at limit 1;
   select id into v_rep from public.profiles where org_id = c_gf and is_active and role = 'rep' order by created_at limit 1;
   -- On a pilot, the places are exactly the reps it has now.
   update public.company_account set status = 'trial', plan = null, trial_ends_at = now() + interval '10 days' where org_id = c_gf;
@@ -98,7 +99,7 @@ begin
   begin
     update public.profiles set role = role where id = v_other;
   exception when others then
-    v_fail := v_fail || format('R4 a login that is not a rep was stopped on a pilot: %s', sqlerrm) || E'\n';
+    v_fail := v_fail || format('R4 a login that is not a rep or driver was stopped on a pilot: %s', sqlerrm) || E'\n';
   end;
   begin
     update public.profiles set role = role where id = v_rep;

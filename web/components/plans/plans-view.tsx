@@ -2,8 +2,8 @@ import { Check } from "lucide-react";
 import type { ReactNode } from "react";
 import type { TrialState } from "@/lib/onboarding";
 import { FOUNDING_OFFER } from "@/lib/founding-offer";
-import { count, lower, type Terms } from "@/lib/terms";
-import { PLANS, biggestPlan, contactLink, foundingFrom, foundingPrice, planFor, planMessage, rand, type PlanChoice } from "@/lib/plans";
+import { lower, type Terms } from "@/lib/terms";
+import { PLANS, biggestPlan, contactLink, foundingFrom, foundingPrice, placesCount, placesPeople, planFor, planMessage, rand, type PlanChoice } from "@/lib/plans";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -34,7 +34,7 @@ export type PlansViewProps = {
  * session.
  */
 export function PlansView({ trial, trialEndsAt, founding, reps, terms: t, company, timezone, contact, payByCard = false }: PlansViewProps) {
-  const staff = lower(t.staff.many);
+  const staff = placesPeople(t);
   const fits = reps && reps > 0 ? planFor(reps) : null;
   const tooBig = reps !== null && reps > biggestPlan.reps;
   const link = (choice: PlanChoice, subject: string) => contactLink(contact, planMessage(choice, company, t), subject);
@@ -72,7 +72,7 @@ export function PlansView({ trial, trialEndsAt, founding, reps, terms: t, compan
               <CardTitle className="pt-1">
                 <span className="text-3xl font-bold tabular-nums text-foreground">{rand(foundingPrice(fits))}</span>{" "}
                 <span className="text-base font-medium text-muted-foreground">
-                  a month for {FOUNDING_OFFER.priceMonths} months, on the plan for up to {count(t, "staff", fits.reps)}
+                  a month for {FOUNDING_OFFER.priceMonths} months, on the plan for up to {placesCount(t, fits.reps)}
                 </span>
               </CardTitle>
             ) : (
@@ -83,7 +83,7 @@ export function PlansView({ trial, trialEndsAt, founding, reps, terms: t, compan
             <CardDescription className="text-pretty">
               {fits
                 ? `That is ${FOUNDING_OFFER.percentOff}% off the ${rand(fits.monthly)} plan, ${rand((fits.monthly - foundingPrice(fits)) * FOUNDING_OFFER.priceMonths)} less over the ${FOUNDING_OFFER.priceMonths} months`
-                : `From ${rand(foundingFrom)} a month on the plan for up to ${count(t, "staff", PLANS.plans[0].reps)}`}
+                : `From ${rand(foundingFrom)} a month on the plan for up to ${placesCount(t, PLANS.plans[0].reps)}`}
               . It is only for the first {FOUNDING_OFFER.spots} distributors on the pilot.
             </CardDescription>
           </CardHeader>
@@ -94,7 +94,7 @@ export function PlansView({ trial, trialEndsAt, founding, reps, terms: t, compan
             {fits && reps !== null && <FitsNote reps={reps} t={t} />}
             {tooBig && (
               <p className="text-sm text-foreground">
-                You have {count(t, "staff", reps ?? 0)}. We&apos;ll give you a founding price for your whole team.
+                You have {placesCount(t, reps ?? 0)}. We&apos;ll give you a founding price for your whole team.
               </p>
             )}
           </CardContent>
@@ -126,7 +126,7 @@ export function PlansView({ trial, trialEndsAt, founding, reps, terms: t, compan
                   <CardContent className="mt-auto space-y-3">
                     {isFit && reps !== null && <FitsNote reps={reps} t={t} />}
                     <ChooseButton
-                      href={payByCard ? "/settings/plan?choose=1" : link({ kind: "plan", reps: p.reps }, `The plan for up to ${count(t, "staff", p.reps)}`)}
+                      href={payByCard ? "/settings/plan?choose=1" : link({ kind: "plan", reps: p.reps }, `The plan for up to ${placesCount(t, p.reps)}`)}
                       primary={isFit && !founding}
                     >
                       {payByCard ? "Pay by card" : "Choose this plan"}
@@ -148,9 +148,9 @@ export function PlansView({ trial, trialEndsAt, founding, reps, terms: t, compan
             <span className="font-medium">
               More than {biggestPlan.reps} {staff}?
             </span>{" "}
-            {tooBig ? `You have ${count(t, "staff", reps ?? 0)}. ` : ""}We&apos;ll give you a price for your team.
+            {tooBig ? `You have ${placesCount(t, reps ?? 0)}. ` : ""}We&apos;ll give you a price for your team.
           </p>
-          <ChooseButton href={link({ kind: "bigger" }, `More than ${count(t, "staff", biggestPlan.reps)}`)} primary={tooBig}>
+          <ChooseButton href={link({ kind: "bigger" }, `More than ${placesCount(t, biggestPlan.reps)}`)} primary={tooBig}>
             Ask us for a price
           </ChooseButton>
         </CardContent>
@@ -204,7 +204,7 @@ function FitsNote({ reps, t }: { reps: number; t: Terms }) {
   return (
     <p className="flex items-center gap-1.5 text-sm font-medium text-foreground">
       <Check className="size-4 text-primary" aria-hidden />
-      Fits your {count(t, "staff", reps)}
+      Fits your {placesCount(t, reps)}
     </p>
   );
 }

@@ -38,7 +38,7 @@ export default async function PlansPage() {
   const [{ data: account }, { data: org }, { count: reps, error: repsError }, { data: config }, contact] = await Promise.all([
     supabase.from("company_account").select("status, trial_ends_at, period_end").maybeSingle(),
     supabase.from("organizations").select("name, industries, timezone").maybeSingle(),
-    supabase.from("profiles").select("id", { count: "exact", head: true }).eq("role", "rep").eq("is_active", true),
+    supabase.from("profiles").select("id", { count: "exact", head: true }).in("role", ["rep", "driver"]).eq("is_active", true),
     supabase.rpc("my_company_config"),
     salesContact(),
   ]);

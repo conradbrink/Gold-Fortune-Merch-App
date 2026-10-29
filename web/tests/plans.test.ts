@@ -4,7 +4,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { FOUNDING_OFFER } from "@/lib/founding-offer";
 import { DEFAULT_TERMS, type Terms } from "@/lib/terms";
-import { PLANS, contactLink, foundingFrom, foundingLine, foundingPrice, planFor, planMessage, rand } from "@/lib/plans";
+import { PLANS, contactLink, foundingFrom, foundingLine, foundingPrice, onTheApp, placesCount, placesPeople, planFor, planMessage, rand } from "@/lib/plans";
 // The site's own code, loaded by address so this project's type checker doesn't reach into the other project.
 const sitePath = new URL("../../site/lib/site.ts", import.meta.url).href;
 const site = (await import(sitePath)) as {
@@ -53,7 +53,7 @@ const t: Terms = { ...DEFAULT_TERMS, staff: { one: "Rep", many: "Reps", article:
 test("each button's message names the company and the plan, in the company's words", () => {
   assert.equal(
     planMessage({ kind: "plan", reps: 10 }, " Gf motors ", t),
-    "Hi, we'd like the plan for up to 10 reps for Gf motors (R3,495 a month)."
+    "Hi, we'd like the plan for up to 10 reps and drivers for Gf motors (R3,495 a month)."
   );
   assert.equal(
     planMessage({ kind: "founding" }, null, t),
@@ -61,20 +61,20 @@ test("each button's message names the company and the plan, in the company's wor
   );
   assert.equal(
     planMessage({ kind: "founding", reps: 4 }, "Moloto Foods", t),
-    "Hi, we'd like the founding price for Moloto Foods: R1,197 a month for 3 months, on the plan for up to 5 reps."
+    "Hi, we'd like the founding price for Moloto Foods: R1,197 a month for 3 months, on the plan for up to 5 reps and drivers."
   );
   assert.equal(
     planMessage({ kind: "founding", reps: 18 }, "Moloto Foods", t),
-    "Hi, we'd like the founding price for Moloto Foods. We have 18 reps. What would it be for our whole team?"
+    "Hi, we'd like the founding price for Moloto Foods. We have 18 reps and drivers. What would it be for our whole team?"
   );
   assert.equal(
     planMessage({ kind: "bigger" }, "Moloto Foods", t),
-    "Hi, this is Moloto Foods. We have more than 15 reps. What would Tickd cost us?"
+    "Hi, this is Moloto Foods. We have more than 15 reps and drivers. What would Tickd cost us?"
   );
-  assert.equal(planMessage({ kind: "bigger" }, "", t), "Hi, we have more than 15 reps. What would Tickd cost us?");
+  assert.equal(planMessage({ kind: "bigger" }, "", t), "Hi, we have more than 15 reps and drivers. What would Tickd cost us?");
   assert.equal(
     planMessage({ kind: "plan", reps: 5 }, null, DEFAULT_TERMS),
-    "Hi, we'd like the plan for up to 5 staff (R1,995 a month)."
+    "Hi, we'd like the plan for up to 5 staff and drivers (R1,995 a month)."
   );
   assert.equal(rand(16776), "R16,776");
 });
@@ -89,4 +89,12 @@ test("WhatsApp when the number is set, else email, else no button", () => {
     "mailto:hello@tickd.co.za?subject=The%20plan&body=Hi%20there"
   );
   assert.equal(contactLink({ email: null, whatsapp: " " }, "Hi", "Plan"), null);
+});
+
+test("a place is a rep or a driver, named in the company's word for a rep", () => {
+  assert.equal(placesPeople(t), "reps and drivers");
+  assert.equal(placesCount(t, 10), "10 reps and drivers");
+  assert.equal(placesPeople(DEFAULT_TERMS), "staff and drivers");
+  assert.equal(onTheApp(1), "1 person on the app");
+  assert.equal(onTheApp(4), "4 people on the app");
 });
