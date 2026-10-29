@@ -7,6 +7,7 @@ import {
   paperDate,
   paperLines,
   paperMoney,
+  printMoneyPdf,
   termsText,
   vatRows,
   type Paper,
@@ -465,6 +466,11 @@ async function signedInPaper(): Promise<Paper> {
 
 export async function downloadInvoicePdf(detail: InvoiceDetail) {
   await drawMoneyPdf(invoicePdfSpec(detail, await signedInPaper()));
+}
+
+/** The same invoice the PDF button saves, opened with the print box up. */
+export async function printInvoicePdf(detail: InvoiceDetail) {
+  await printMoneyPdf(async () => invoicePdfSpec(detail, await signedInPaper()));
 }
 
 export function creditNotePdfSpec(
