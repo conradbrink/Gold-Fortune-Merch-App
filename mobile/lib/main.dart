@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:sentry_flutter/sentry_flutter.dart';
 
 import 'app.dart';
 import 'core/company_config.dart';
@@ -28,9 +29,14 @@ Future<void> main() async {
           .read(lastCompanyProvider.future)
           .timeout(const Duration(seconds: 2));
     } catch (_) {}
-    runApp(UncontrolledProviderScope(
-      container: container,
-      child: const GfMerchApp(),
+    // SentryWidget records each tap as a breadcrumb, so a failure says what
+    // was pressed just before it. With sendDefaultPii off it records the
+    // widget's type and key, never a button's or a list row's words.
+    runApp(SentryWidget(
+      child: UncontrolledProviderScope(
+        container: container,
+        child: const GfMerchApp(),
+      ),
     ));
   });
 }
