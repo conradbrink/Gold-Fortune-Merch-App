@@ -34,7 +34,7 @@ export function FoundingStack({ applyHref }: { applyHref: string }) {
           <ul className="grid gap-1">
             {pricing.plans.map((p) => (
               <li key={p.reps} className="flex items-baseline justify-between gap-3">
-                <span className="whitespace-nowrap text-teal-100">Up to {p.reps} reps</span>
+                <span className="whitespace-nowrap text-teal-100">Up to {p.reps} reps and drivers</span>
                 <span className="whitespace-nowrap tabular-nums">
                   <span className="text-sm text-teal-100 line-through">{rand(p.monthly)}</span>{" "}
                   <strong className="font-display text-xl font-extrabold text-sand">{rand(foundingPrice(p))}</strong>

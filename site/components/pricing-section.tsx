@@ -38,7 +38,7 @@ export function PricingSection() {
                   Most popular
                 </span>
               )}
-              <h3 className="font-display text-xl font-bold text-teal-900">Up to {p.reps} reps</h3>
+              <h3 className="font-display text-xl font-bold text-teal-900">Up to {p.reps} reps and drivers</h3>
               <p className="flex flex-wrap items-baseline gap-x-1.5">
                 <strong className="font-display text-4xl font-extrabold tabular-nums text-teal-900">{rand(p.monthly)}</strong>
                 <span className="text-base font-medium text-muted">a month</span>

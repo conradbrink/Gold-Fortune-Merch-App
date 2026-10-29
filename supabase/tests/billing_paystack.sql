@@ -57,7 +57,7 @@ begin
 
   select p.id into v_admin from public.profiles p join public.job_roles jr on jr.id = p.job_role_id
    where p.org_id = c_gf and jr.code = 'administrator' and p.is_active order by p.created_at limit 1;
-  select count(*) into v_reps from public.profiles where org_id = c_gf and is_active and role = 'rep';
+  select count(*) into v_reps from public.profiles where org_id = c_gf and is_active and role in ('rep', 'driver');
   if v_admin is null or v_reps not between 1 and 5 then
     raise exception 'Fixtures missing: a Gold Fortune administrator and 1 to 5 active reps are needed (reps: %).', v_reps;
   end if;

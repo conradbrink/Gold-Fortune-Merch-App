@@ -4,8 +4,9 @@
 --       and re-running provision_organization adds no second one.
 --   T2  A driver profile created without a job role is put on the Driver
 --       template and holds no permission (not Field Staff's workday).
---   T3  A driver takes no place: billing_seats_used does not count them, and
---       a pilot whose places are all taken still lets a driver in.
+--   T3  A driver takes a place, as a rep does (owner, 29 Oct 2026; was "no
+--       place" until 20261029223700): billing_seats_used counts them, a pilot
+--       with one place left lets one driver in, and a second is refused.
 --   T4  The warehouse gives a dispatch to a driver; a manager login is still
 --       refused, with the new message.
 --   T5  The driver sees the dispatch given to them, its lines, its order and
@@ -27,7 +28,7 @@ do $$
 declare
   c_gf constant uuid := '71170c8a-d53c-4a07-bdd4-97704a3cf4bc';
   v_fail text := '';
-  v_wh uuid; v_rep uuid; v_mgr uuid; v_admin uuid; v_driver uuid := gen_random_uuid();
+  v_wh uuid; v_rep uuid; v_mgr uuid; v_admin uuid; v_driver uuid := gen_random_uuid(); v_driver2 uuid := gen_random_uuid();
   v_loc uuid; v_store uuid; v_prod uuid;
   v_o1 uuid; v_o2 uuid; v_l1 uuid; v_l2 uuid; v_d1 uuid; v_d2 uuid;
   v_pod1 text; v_pod2 text; v_seats int; v_reps int; v_n int; v_ok boolean; v_msg text;
@@ -69,17 +70,17 @@ begin
   ---------------------------------------------------------------- T2 a new driver
   select count(*) into v_reps from public.profiles where org_id = c_gf and is_active and role = 'rep';
   v_seats := public.billing_seats_used(c_gf, public.billing_plan(1, '{}'::jsonb));
-  -- On a pilot whose places are exactly the reps it has now (T3).
+  -- On a pilot with exactly one place left (T3): the reps it has now, and one.
   update public.company_account set status = 'trial', plan = null, trial_ends_at = now() + interval '10 days'
    where org_id = c_gf;
-  update public.platform_settings set value = to_jsonb(v_reps) where key = 'trial_user_limit';
+  update public.platform_settings set value = to_jsonb(v_reps + 1) where key = 'trial_user_limit';
 
   insert into auth.users (id) values (v_driver);
   begin
     insert into public.profiles (id, org_id, role, full_name, email, is_active)
     values (v_driver, c_gf, 'driver', 'ZZ Driver', 'zz.driver@example.invalid', true);
   exception when others then
-    v_fail := v_fail || 'T3 a driver could not be added on a full pilot: ' || sqlerrm || E'\n';
+    v_fail := v_fail || 'T3 a driver could not take the last place on a pilot: ' || sqlerrm || E'\n';
     raise exception E'driver role suite\n%FAILED (rolled back)', v_fail;
   end;
   select job_role_id into r from public.profiles where id = v_driver;
@@ -91,10 +92,21 @@ begin
     v_fail := v_fail || format('T2 the driver holds %s permissions', v_n) || E'\n';
   end if;
 
-  ---------------------------------------------------------------- T3 no place taken
-  if public.billing_seats_used(c_gf, public.billing_plan(1, '{}'::jsonb)) <> v_seats then
-    v_fail := v_fail || 'T3 the driver took a place' || E'\n';
+  ---------------------------------------------------------------- T3 a place taken
+  if public.billing_seats_used(c_gf, public.billing_plan(1, '{}'::jsonb)) <> v_seats + 1 then
+    v_fail := v_fail || 'T3 the driver did not take a place' || E'\n';
   end if;
+  -- The pilot is full now: a second driver is refused, as a rep would be.
+  insert into auth.users (id) values (v_driver2);
+  begin
+    insert into public.profiles (id, org_id, role, full_name, email, is_active)
+    values (v_driver2, c_gf, 'driver', 'ZZ Driver Two', 'zz.driver2@example.invalid', true);
+    v_fail := v_fail || 'T3 a second driver was let onto a full pilot' || E'\n';
+  exception when others then
+    if sqlerrm not like 'All % places on your plan are taken.' then
+      v_fail := v_fail || 'T3 the second driver was refused for another reason: ' || sqlerrm || E'\n';
+    end if;
+  end;
 
   ---------------------------------------------------------------- fixtures: two dispatches
   insert into public.stock_locations (org_id, name, type)

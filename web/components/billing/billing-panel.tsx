@@ -32,7 +32,7 @@ import {
 import type { SalesContact } from "@/lib/platform";
 import { useCompanyConfig, useTerms } from "@/lib/use-company-config";
 import { planIncludes } from "@/lib/plan-features";
-import { count, lower, noun } from "@/lib/terms";
+import { onTheApp, placesCount, placesPeople } from "@/lib/plans";
 
 export type InvoiceRow = {
   id: string;
@@ -234,8 +234,8 @@ function contactHref(contact: SalesContact): string | null {
 }
 
 /**
- * The plan at a glance: its name, its price, the reps it includes and what it
- * includes. The name is the price list's ("Plan for up to 10 reps"), never a
+ * The plan at a glance: its name, its price, the places it includes and what it
+ * includes. The name is the price list's ("Plan for up to 10 reps and drivers"), never a
  * made-up tier; a pilot is the free pilot, and a plan agreed by hand says so.
  */
 function PlanSummary(props: Props & { canUpgrade: boolean; onUpgrade: (() => void) | null }) {
@@ -248,7 +248,6 @@ function PlanSummary(props: Props & { canUpgrade: boolean; onUpgrade: (() => voi
   const config = useCompanyConfig();
   const includes = config ? planIncludes(config.modules) : [];
   const paying = account.status === "active" || account.status === "past_due";
-  const staff = lower(t.staff.many);
   const reach = contactHref(contact);
 
   const name =
@@ -260,7 +259,7 @@ function PlanSummary(props: Props & { canUpgrade: boolean; onUpgrade: (() => voi
           ? "Arranged with Tickd"
           : customPriceCents !== null
             ? "Your own plan"
-            : (nextLabel ?? (plan ? `Plan for up to ${count(t, "staff", plan.seats)}` : "Your plan"));
+            : (nextLabel ?? (plan ? `Plan for up to ${placesCount(t, plan.seats)}` : "Your plan"));
 
   const price =
     account.status === "trial" ? (
@@ -277,10 +276,10 @@ function PlanSummary(props: Props & { canUpgrade: boolean; onUpgrade: (() => voi
 
   const reps =
     plan && paying && customPriceCents === null
-      ? `${count(t, "staff", plan.seats)} included, ${activeReps} active${
+      ? `${placesCount(t, plan.seats)} included, ${activeReps} on the app${
           planNext && props.periodEnd ? `, from ${formatDate(props.periodEnd)}` : ""
         }`
-      : `${activeReps} active ${lower(noun(t, "staff", activeReps))}`;
+      : onTheApp(activeReps);
 
   return (
     <section aria-labelledby="your-plan" className="rounded-xl border border-border bg-card">
@@ -341,7 +340,7 @@ function PlanSummary(props: Props & { canUpgrade: boolean; onUpgrade: (() => voi
       </div>
       {(canUpgrade || reach) && (
       <p className="border-t border-border px-5 py-3 text-sm text-muted-foreground sm:px-6">
-        Need more {staff} or features? {canUpgrade ? "Upgrade your plan or" : ""}{" "}
+        Need more places or features? {canUpgrade ? "Upgrade your plan or" : ""}{" "}
         {reach ? (
           <a href={reach} className="underline underline-offset-2 hover:text-foreground" target={reach.startsWith("http") ? "_blank" : undefined} rel="noopener noreferrer">
             {canUpgrade ? "contact Tickd" : "Contact Tickd"}
@@ -390,7 +389,7 @@ function Payment(props: Props) {
               ) : (
                 <>
                   <span className="font-medium tabular-nums">{formatRand(nextCents)}</span> on {formatDate(periodEnd)}
-                  {planNext && <span className="text-muted-foreground">, for {count(t, "staff", planNext.seats)} from then</span>}
+                  {planNext && <span className="text-muted-foreground">, for {placesCount(t, planNext.seats)} from then</span>}
                 </>
               )}
             </Row>
@@ -564,7 +563,7 @@ function ChoosePlan({ plan, defaultEmail, cardsReady, contact, customPriceCents,
         <CardDescription>
           {customPriceCents !== null
             ? "Your price was agreed with us. Pay it by card here."
-            : `Your price depends on how many ${lower(t.staff.many)} you have. Managers and office users are free.`}
+            : `Your price depends on how many ${placesPeople(t)} use the app. Managers and office users are free.`}
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -588,13 +587,13 @@ function ChoosePlan({ plan, defaultEmail, cardsReady, contact, customPriceCents,
         {customPriceCents === null && (
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
-              <p className="text-sm font-medium">{t.staff.many}</p>
+              <p className="text-sm font-medium">Places for {placesPeople(t)}</p>
               <p className="text-xs text-muted-foreground">
-                You have {activeReps} active {noun(t, "staff", activeReps)}
+                You have {onTheApp(activeReps)}
                 {planLine ? `. This is the ${planLine.label.replace(/^Plan/, "plan")}.` : "."}
               </p>
             </div>
-            <Stepper value={reps} min={least} label={lower(t.staff.many)} onChange={setReps} />
+            <Stepper value={reps} min={least} label={placesPeople(t)} onChange={setReps} />
           </div>
         )}
 
@@ -657,7 +656,7 @@ function ChangeReps({ plan, period, periodEnd, activeReps, card }: Props) {
   const [pending, start] = useTransition();
   const router = useRouter();
   const t = useTerms();
-  const staff = lower(t.staff.many);
+  const staff = placesPeople(t);
   const seats = plan!.seats;
   const addons = plan!.addons;
   const changed = reps !== seats;
@@ -697,14 +696,14 @@ function ChangeReps({ plan, period, periodEnd, activeReps, card }: Props) {
       <CardHeader>
         <CardTitle className="text-base">Change the number of {staff}</CardTitle>
         <CardDescription>
-          More {staff} are paid for now, for what is left of this {periodWord(period)}. Fewer apply from {formatDate(periodEnd)}.
+          More places are paid for now, for what is left of this {periodWord(period)}. Fewer apply from {formatDate(periodEnd)}.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <p className="text-sm font-medium">Places for {staff}</p>
-            <p className="text-xs text-muted-foreground">You have {activeReps} active {noun(t, "staff", activeReps)} now.</p>
+            <p className="text-xs text-muted-foreground">You have {onTheApp(activeReps)} now.</p>
           </div>
           <Stepper value={reps} min={Math.max(activeReps, 1)} label={staff} onChange={choose} />
         </div>
@@ -725,7 +724,7 @@ function ChangeReps({ plan, period, periodEnd, activeReps, card }: Props) {
             })
           }
         >
-          {pending ? "Saving…" : chargeNow ? `Pay ${formatRand(preview.totalCents)} and add the ${staff}` : "Save the change"}
+          {pending ? "Saving…" : chargeNow ? `Pay ${formatRand(preview.totalCents)} and add the places` : "Save the change"}
         </Button>
         {chargeNow && !card && <p className="text-xs text-muted-foreground">Add a card under Payment first.</p>}
       </CardContent>
