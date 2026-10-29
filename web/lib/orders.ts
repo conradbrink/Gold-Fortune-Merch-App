@@ -92,11 +92,19 @@ export function receivedViaOptions(t: Terms) {
   return [
     { value: "whatsapp", label: "WhatsApp" },
     { value: "email", label: "Email" },
-    { value: "phone", label: "Phone" },
+    { value: "phone", label: "Phone call" },
     { value: "in_person", label: "In person" },
     { value: "rep_visit", label: `${t.staff.one} ${lower(t.job.one)}` },
     { value: "other", label: "Other" },
   ] as const;
+}
+
+/**
+ * How an order came in, in the words of the New order form: "WhatsApp",
+ * "Phone call". The stored value itself for one the list does not know.
+ */
+export function receivedViaLabel(value: string, t: Terms): string {
+  return receivedViaOptions(t).find((o) => o.value === value)?.label ?? value;
 }
 
 function fail(error: { message: string } | null) {

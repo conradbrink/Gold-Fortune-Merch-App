@@ -39,6 +39,7 @@ import {
 } from "@/lib/order-board";
 import { formatMoney, formatMoneyShort } from "@/lib/money";
 import { dayLabel } from "@/lib/store-reorder";
+import { receivedViaLabel } from "@/lib/orders";
 import { useCompanyConfig, useTerms } from "@/lib/use-company-config";
 import { lower, withArticle } from "@/lib/terms";
 
@@ -495,6 +496,7 @@ export default function OrdersBoardPage() {
                           money={money}
                           staffWord={lower(terms.staff.one)}
                           siteWord={lower(terms.site.one)}
+                          sentVia={o.receivedVia === "rep_visit" ? null : receivedViaLabel(o.receivedVia, terms)}
                           faded={dragging === o.id}
                           onStep={(step) => open(o, step)}
                           ticked={ticked.has(o.id)}
@@ -565,6 +567,7 @@ function OrderCard({
   money,
   staffWord,
   siteWord,
+  sentVia,
   faded,
   onStep,
   ticked,
@@ -585,6 +588,13 @@ function OrderCard({
   money: (n: number) => string;
   staffWord: string;
   siteWord: string;
+  /**
+   * How an order not taken in the shop came in ("WhatsApp", "Email"), or
+   * null for one taken there. A rep's new order from the phone, or one keyed
+   * in the office (owner, 29 Oct 2026: a tag on the card, not only on the
+   * order's own page).
+   */
+  sentVia: string | null;
   faded: boolean;
   onStep: (step: BoardStep) => void;
   /** Ticked to print with others. */
@@ -719,8 +729,13 @@ function OrderCard({
       </div>
       <p className="text-sm leading-tight text-foreground">{o.storeName ?? `No ${siteWord} named`}</p>
 
-      {(o.onHold || o.status === "picking" || column === "delivered") && (
+      {(sentVia || o.onHold || o.status === "picking" || column === "delivered") && (
         <div className="flex flex-wrap gap-1">
+          {sentVia && (
+            <Badge variant="outline" title={`Received via ${sentVia}`}>
+              {sentVia}
+            </Badge>
+          )}
           {o.onHold && (
             <Badge variant="outline" className="border-amber-500/50 text-amber-700 dark:text-amber-500">
               On hold

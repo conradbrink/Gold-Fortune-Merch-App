@@ -3,7 +3,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../core/providers.dart';
+import '../../data/local/order_draft.dart';
 import '../../data/models/route_visit.dart';
+import '../../data/models/store_summary.dart';
 import 'order_capture_screen.dart';
 
 /// Resolves a screen under a checked-in visit (`/visit/:key/order`, and
@@ -59,7 +61,7 @@ class _OrderCaptureRouteState extends ConsumerState<OrderCaptureRoute> {
       // say so, which is more use than an error on a screen with no content.
       error: (_, _) => _visit != null
           ? _screenFor(_visit!)
-          : _BackToVisit(visitKey: widget.visitKey),
+          : _LeaveTo('/visit/${widget.visitKey}'),
       data: (visits) {
         RouteVisit? found;
         for (final candidate in visits) {
@@ -78,7 +80,7 @@ class _OrderCaptureRouteState extends ConsumerState<OrderCaptureRoute> {
         if (usable) _visit = found;
 
         final visit = _visit;
-        if (visit == null) return _BackToVisit(visitKey: widget.visitKey);
+        if (visit == null) return _LeaveTo('/visit/${widget.visitKey}');
         return _screenFor(visit);
       },
     );
@@ -93,6 +95,57 @@ class _OrderCaptureRouteState extends ConsumerState<OrderCaptureRoute> {
       );
 }
 
+/// `/unscheduled/order/:storeId`: a new order the customer sent, for the
+/// customer the rep picked. No visit and no check-in, and no open workday
+/// either: a shop that messages at eight at night gets its order in then
+/// (owner, 29 Oct 2026).
+///
+/// The customer is found in the phone's own list by id rather than handed
+/// over as route `extra`, for the reason [OrderCaptureRoute] gives, and kept
+/// once found: a refetch that comes back thin must not take the screen away
+/// from a rep who is typing into it.
+class NewOrderRoute extends ConsumerStatefulWidget {
+  const NewOrderRoute({super.key, required this.storeId});
+
+  final String storeId;
+
+  @override
+  ConsumerState<NewOrderRoute> createState() => _NewOrderRouteState();
+}
+
+class _NewOrderRouteState extends ConsumerState<NewOrderRoute> {
+  StoreSummary? _store;
+
+  @override
+  Widget build(BuildContext context) {
+    final stores = ref.watch(storesProvider);
+    // The draft is the signed-in person's. Nobody signed in means the router
+    // is already on its way to the sign-in screen.
+    final repId = ref.watch(currentUserProvider)?.id;
+    _store ??= stores.value?.where((s) => s.id == widget.storeId).firstOrNull;
+
+    final store = _store;
+    if (store != null && repId != null) {
+      final draftId = OrderDraft.newOrderId(repId, store.id);
+      return OrderCaptureScreen.newOrder(
+        // A different person signing in on the same phone is a different
+        // draft, and must not inherit the last one's half-typed lines.
+        key: ValueKey(draftId),
+        draftId: draftId,
+        storeId: store.id,
+        storeName: store.name,
+        storeAddress: deliveryAddressOf(store.address, store.city),
+      );
+    }
+    if (stores.isLoading || repId == null) {
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    }
+    // Not on this phone's list (removed in the office, or a stale link): back
+    // to choosing one.
+    return const _LeaveTo('/unscheduled/order');
+  }
+}
+
 /// "12 Main Road, Mahikeng": the street and the town, without repeating a
 /// town the address already names. Null when neither is on record.
 String? deliveryAddressOf(String? address, String? city) {
@@ -103,22 +156,23 @@ String? deliveryAddressOf(String? address, String? city) {
   return '$street, $town';
 }
 
-/// Leaves during the frame rather than in `build`, which cannot navigate.
-class _BackToVisit extends StatefulWidget {
-  const _BackToVisit({required this.visitKey});
+/// Goes to [path] during the frame rather than in `build`, which cannot
+/// navigate.
+class _LeaveTo extends StatefulWidget {
+  const _LeaveTo(this.path);
 
-  final String visitKey;
+  final String path;
 
   @override
-  State<_BackToVisit> createState() => _BackToVisitState();
+  State<_LeaveTo> createState() => _LeaveToState();
 }
 
-class _BackToVisitState extends State<_BackToVisit> {
+class _LeaveToState extends State<_LeaveTo> {
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) context.go('/visit/${widget.visitKey}');
+      if (mounted) context.go(widget.path);
     });
   }
 

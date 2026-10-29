@@ -22,6 +22,8 @@ final _words = RegExp(
 const _allowed = <String, String>{
   // A verb after a count of sites: "3 stores to visit today."
   'to visit today': 'the verb "to visit", not the job noun',
+  // The "+ New" screen's first choice: "Visit a store not on today's list".
+  "not on today's list": 'the verb "visit", not the job noun',
   // The Sentry release name, an identifier kept unchanged so crash history
   // stays continuous across the rename.
   'gf-merch-rep@': 'Sentry release tag, not shown to anyone',

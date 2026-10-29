@@ -36,11 +36,17 @@ Future<String> startUnscheduledVisit(WidgetRef ref, StoreSummary store) async {
 
 /// Lets a rep start a visit at a store nobody scheduled — covering for a
 /// colleague, a call-out from the manager, or a store they happened to pass.
+/// With [forOrder], picks the customer for a new order they sent instead, and
+/// starts no visit.
 ///
 /// The store list is served from the local cache when offline, which is when
 /// an unscheduled visit is most likely to happen.
 class StorePickerScreen extends ConsumerStatefulWidget {
-  const StorePickerScreen({super.key});
+  const StorePickerScreen({super.key, this.forOrder = false});
+
+  /// Picking who a new order is for (`/unscheduled/order`), not where to
+  /// check in.
+  final bool forOrder;
 
   @override
   ConsumerState<StorePickerScreen> createState() => _StorePickerScreenState();
@@ -64,7 +70,9 @@ class _StorePickerScreenState extends ConsumerState<StorePickerScreen> {
     final t = ref.watch(termsProvider);
 
     return Scaffold(
-      appBar: AppBar(title: Text('Unscheduled ${t.job.oneLower}')),
+      appBar: AppBar(
+        title: Text(widget.forOrder ? 'New order' : 'Unscheduled ${t.job.oneLower}'),
+      ),
       body: Column(
         children: [
           Padding(
@@ -73,7 +81,9 @@ class _StorePickerScreenState extends ConsumerState<StorePickerScreen> {
               autofocus: true,
               onChanged: (v) => setState(() => _query = v),
               decoration: InputDecoration(
-                hintText: 'Search ${t.site.manyLower}',
+                hintText: widget.forOrder
+                    ? 'Which ${t.site.oneLower} is it for?'
+                    : 'Search ${t.site.manyLower}',
                 prefixIcon: const Icon(Icons.search),
               ),
             ),
@@ -107,8 +117,10 @@ class _StorePickerScreenState extends ConsumerState<StorePickerScreen> {
                         ),
                       ),
                       // Orders belong to the Distribution module, and a new
-                      // customer is only added to take one.
-                      if (ref.watch(companyConfigValueProvider).has('distribution'))
+                      // customer is only added to take one. Not offered for a
+                      // new order: adding a customer goes on to a check-in.
+                      if (!widget.forOrder &&
+                          ref.watch(companyConfigValueProvider).has('distribution'))
                         Padding(
                           padding: const EdgeInsets.all(16),
                           child: OutlinedButton.icon(
@@ -152,7 +164,11 @@ class _StorePickerScreenState extends ConsumerState<StorePickerScreen> {
                             : Text(store.location,
                                 style: const TextStyle(fontSize: 12.5)),
                         trailing: const Icon(Icons.chevron_right),
-                        onTap: _busy ? null : () => _start(store),
+                        onTap: _busy
+                            ? null
+                            : widget.forOrder
+                                ? () => context.go('/unscheduled/order/${store.id}')
+                                : () => _start(store),
                       ),
                     );
                   },
