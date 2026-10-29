@@ -3,7 +3,7 @@
 // of delivery, and the invoice's Print button, all on the invoice's letterhead.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { buildMoneyPdf } from "@/lib/money-pdf";
+import { buildMoneyPdf, buildMoneyPdfs, PRINT_AT_ONCE, tooManyToPrint } from "@/lib/money-pdf";
 import { DOCUMENT_STYLES, type DocumentStyle } from "@/lib/document-style";
 import {
   deliveryAddress,
@@ -13,6 +13,8 @@ import {
   noteLineOrder,
   pickingListPdfSpec,
   sentQty,
+  sheetFor,
+  sheetsFor,
   storeAddressLine,
   type DeliveryNoteInput,
   type PickingSheetInput,
@@ -336,4 +338,61 @@ test("the print buttons sit on pages only the warehouse permission opens; the in
   assert.equal(permissionForPath("/orders"), "warehouse");
   // Printing an invoice is downloading it: whoever invoices.
   assert.equal(permissionForPath("/invoices/9a2b"), "invoicing");
+});
+
+test("which sheet an order prints at its stage, and ticked orders split by it in the board's order", () => {
+  assert.equal(sheetFor("new"), null);
+  assert.equal(sheetFor("confirmed"), "picking");
+  assert.equal(sheetFor("picking"), "picking");
+  for (const status of ["packed", "dispatched", "delivered"]) assert.equal(sheetFor(status), "delivery", status);
+  assert.equal(sheetFor("cancelled"), null);
+  assert.deepEqual(
+    sheetsFor([
+      { id: "a", status: "packed" },
+      { id: "b", status: "confirmed" },
+      { id: "c", status: "new" },
+      { id: "d", status: "dispatched" },
+      { id: "e", status: "picking" },
+    ]),
+    { picking: ["b", "e"], delivery: ["a", "d"] }
+  );
+});
+
+test("a batch is one PDF: each document on a page of its own, numbering only its own pages", async () => {
+  const long = deliveryNotePdfSpec(
+    note({
+      lines: Array.from({ length: 60 }, (_, i) => ({
+        id: `l${i}`,
+        product_id: `p${i}`,
+        product_name: `Product ${i}`,
+        brand: null,
+        line_status: "open",
+        qty_ordered: 1,
+        qty_picked: 1,
+        qty_dispatched: 1,
+      })),
+    }),
+    seller,
+    paper
+  );
+  const short = pickingListPdfSpec(sheet, seller, paper);
+  for (const style of DOCUMENT_STYLES) {
+    const longPages = (await buildMoneyPdf(long, look(style), null)).getNumberOfPages();
+    const doc = await buildMoneyPdfs([{ spec: long, logo: null }, { spec: short, logo: null }, { spec: long, logo: null }], look(style));
+    // The short one takes one page, between the two long ones.
+    assert.equal(doc.getNumberOfPages(), longPages * 2 + 1, style);
+    const pdf = text(doc);
+    // Each long note counts its own pages; the short one has no number; nothing counts the whole batch.
+    assert.equal(pdf.split(`Page ${longPages} of ${longPages}`).length - 1, 2, style);
+    assert.doesNotMatch(pdf, new RegExp(`of ${longPages * 2 + 1}\\)`), style);
+    assert.equal(pdf.split("PICKING LIST").length - 1, 1, style);
+    assert.equal(pdf.split("Received in good order").length - 1, 2, style);
+  }
+  await assert.rejects(buildMoneyPdfs([], look("classic")), /nothing to print/);
+});
+
+test("a batch prints up to a hundred at a time, and says so beyond that", () => {
+  assert.equal(tooManyToPrint(1), null);
+  assert.equal(tooManyToPrint(PRINT_AT_ONCE), null);
+  assert.match(tooManyToPrint(PRINT_AT_ONCE + 1) ?? "", /^That is 101 documents\. Print up to 100 at a time/);
 });

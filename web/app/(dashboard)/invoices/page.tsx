@@ -3,12 +3,13 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Download, Plus, Search } from "lucide-react";
+import { Download, Plus, Printer, Search } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";
 import { Badge } from "@/components/ui/badge";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Card, CardContent } from "@/components/ui/card";
 import {
   Table,
@@ -30,8 +31,10 @@ import {
   money,
   PAYMENT_STATUS_LABELS,
   paymentStatus,
+  printInvoicePdfs,
   type InvoiceListRow,
 } from "@/lib/invoices";
+import { tooManyToPrint } from "@/lib/money-pdf";
 import { invoiceSources, switchesOf } from "@/lib/money-workflow";
 import { moduleEnabled } from "@/lib/modules";
 import { lastDayOf, rangeFromQuery } from "@/lib/dashboard-links";
@@ -77,6 +80,8 @@ export default function InvoicesPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [sent, setSent] = useState<SendSummaries | null>(null);
+  /** Invoices ticked to print together. Only those still on screen print, so a filter never prints what it hides. */
+  const [ticked, setTicked] = useState<Set<string>>(new Set());
 
   // Seeded from the link, so the dashboard's "Invoiced" lands on the same days
   // it added up. The link's `to` is the day after the last (as everywhere the
@@ -197,6 +202,31 @@ export default function InvoicesPage() {
   }
 
   const today = ymd(new Date());
+  const tickedRows = visible.filter((r) => ticked.has(r.id));
+  const allTicked = visible.length > 0 && tickedRows.length === visible.length;
+
+  // Ticks and unticks only these: a filter's hidden ticks stay as they were.
+  function tick(ids: string[], on: boolean) {
+    setTicked((t) => {
+      const next = new Set(t);
+      for (const id of ids) {
+        if (on) next.add(id);
+        else next.delete(id);
+      }
+      return next;
+    });
+  }
+
+  function printTicked() {
+    // Said here, before a print tab opens only to close again.
+    const tooMany = tooManyToPrint(tickedRows.length);
+    if (tooMany) {
+      setError(tooMany);
+      return;
+    }
+    setError(null);
+    printInvoicePdfs(supabase, tickedRows).catch((e) => setError(e instanceof Error ? e.message : String(e)));
+  }
 
   return (
     <div className="space-y-6">
@@ -257,10 +287,34 @@ export default function InvoicesPage() {
         <Input type="date" value={range.to} onChange={(e) => setRange((r) => ({ ...r, to: e.target.value }))} className="w-40" aria-label="To" />
       </div>
 
+      {/* What the ticks are for: every ticked invoice in one PDF, one print box. */}
+      {tickedRows.length > 0 && (
+        <div className="flex flex-wrap items-center gap-2 rounded-lg border border-border bg-muted/40 p-2.5">
+          <p className="mr-auto text-sm">
+            {tickedRows.length === 1 ? "1 invoice ticked" : `${tickedRows.length} invoices ticked`}
+          </p>
+          <Button size="sm" onClick={printTicked}>
+            <Printer className="mr-1.5 h-4 w-4" /> {tickedRows.length === 1 ? "Print it" : `Print all ${tickedRows.length}`}
+          </Button>
+          <Button size="sm" variant="ghost" onClick={() => setTicked(new Set())}>
+            Clear
+          </Button>
+        </div>
+      )}
+
       <div className="overflow-x-auto rounded-xl ring-1 ring-foreground/10">
         <Table>
           <TableHeader>
             <TableRow>
+              <TableHead className="w-10">
+                {visible.length > 0 && (
+                  <Checkbox
+                    checked={allTicked}
+                    aria-label="Tick every invoice shown"
+                    onCheckedChange={(v) => tick(visible.map((r) => r.id), v === true)}
+                  />
+                )}
+              </TableHead>
               <TableHead>Invoice</TableHead>
               <TableHead>Date</TableHead>
               <TableHead>{terms.client.one}</TableHead>
@@ -272,9 +326,9 @@ export default function InvoicesPage() {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {loading && <EmptyRow colSpan={8}>Loading…</EmptyRow>}
+            {loading && <EmptyRow colSpan={9}>Loading…</EmptyRow>}
             {!loading && visible.length === 0 && (
-              <EmptyRow colSpan={8}>
+              <EmptyRow colSpan={9}>
                 {rows.length === 0 ? (
                   sells && !canStart ? (
                     <>
@@ -298,6 +352,14 @@ export default function InvoicesPage() {
               const overdue = out > 0 && r.due_date < today;
               return (
                 <TableRow key={r.id} className="cursor-pointer" onClick={() => router.push(`/invoices/${r.id}`)}>
+                  {/* Ticking is not opening: the click stays in the cell. */}
+                  <TableCell className="w-10" onClick={(e) => e.stopPropagation()}>
+                    <Checkbox
+                      checked={ticked.has(r.id)}
+                      aria-label={`Tick ${r.invoice_number}`}
+                      onCheckedChange={(v) => tick([r.id], v === true)}
+                    />
+                  </TableCell>
                   <TableCell className="font-medium">
                     <Link href={`/invoices/${r.id}`} className="text-primary hover:underline">
                       {r.invoice_number}
