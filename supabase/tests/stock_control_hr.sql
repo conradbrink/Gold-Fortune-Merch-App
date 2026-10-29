@@ -3,7 +3,8 @@
 --   S1  A plan with Stock control, HR or both costs the plan plus R495 a month
 --       (R4,950 a year), in one line coded stock_control_hr, whatever the
 --       number of warehouses or employees.
---   S2  The add-on is on or off: a quantity other than 1 is refused.
+--   S2  The add-on is on or off: a quantity left from the per-warehouse
+--       price counts once.
 --   S3  Adding HR to a plan that has Stock control, or Stock control to one
 --       that has HR, costs nothing until the renewal; adding the add-on to a
 --       plan without it costs its share of the period.
@@ -11,6 +12,9 @@
 --       kept on record; no unbundled warehouse or HR price is still active.
 --   S5  Every active warehouse and HR price is the bundle: flat, R495 a month
 --       or R4,950 a year, no logins included, labelled "Stock control and HR".
+--   S6  Paying for either switches both on (billing_apply_addons); dropping
+--       it switches both off; a company that cannot have Stock control (no
+--       Deliveries) gets HR alone, without an error.
 --
 -- HOW TO RUN: as rep_plans.sql. One DO block that always ends in
 -- `raise exception`, so nothing survives. Gold Fortune stands in for a
@@ -52,11 +56,10 @@ begin
 
   ---------------------------------------------------------------- S2 on or off
   for t in select * from (values ('{"warehouse": 2}'::jsonb), ('{"hr": 3}'), ('{"hr": 1, "warehouse": 2}')) x(addons) loop
-    begin
-      v_j := public.billing_lines(c_gf, 'monthly', public.billing_plan(5, t.addons), false);
-      v_fail := v_fail || format('S2 %s was priced: %s', t.addons, v_j) || E'\n';
-    exception when sqlstate '22023' then null;
-    end;
+    v_j := public.billing_lines(c_gf, 'monthly', public.billing_plan(5, t.addons), false);
+    if (v_j->>'total_cents')::bigint <> 199500 + 49500 then
+      v_fail := v_fail || format('S2 %s: %s (expected R495 once)', t.addons, v_j) || E'\n';
+    end if;
   end loop;
 
   ---------------------------------------------------------------- S3 changing the plan
@@ -109,6 +112,29 @@ begin
                         or amount_cents <> case period when 'monthly' then 49500 when 'yearly' then 495000 end)) then
     v_fail := v_fail || 'S5 the active warehouse and HR prices are not the R495 bundle' || E'\n';
   end if;
+
+  ---------------------------------------------------------------- S6 switching on and off
+  update public.company_modules set enabled = false where org_id = c_gf and module_code in ('warehouse', 'hr') and enabled;
+  perform public.billing_apply_addons(c_gf, '{"warehouse": 1}'::jsonb, null);
+  if (select count(*) from public.company_modules
+       where org_id = c_gf and module_code in ('warehouse', 'hr') and enabled) <> 2 then
+    v_fail := v_fail || 'S6 paying for Stock control did not switch both on' || E'\n';
+  end if;
+  perform public.billing_apply_addons(c_gf, '{}'::jsonb, array['warehouse']);
+  if exists (select 1 from public.company_modules
+              where org_id = c_gf and module_code in ('warehouse', 'hr') and enabled) then
+    v_fail := v_fail || 'S6 dropping the add-on left one of them on' || E'\n';
+  end if;
+  update public.company_modules set enabled = false where org_id = c_gf and module_code = 'deliveries' and enabled;
+  begin
+    perform public.billing_apply_addons(c_gf, '{"hr": 1}'::jsonb, null);
+    if not exists (select 1 from public.company_modules where org_id = c_gf and module_code = 'hr' and enabled)
+       or exists (select 1 from public.company_modules where org_id = c_gf and module_code = 'warehouse' and enabled) then
+      v_fail := v_fail || 'S6 without Deliveries, HR did not come alone' || E'\n';
+    end if;
+  exception when others then
+    v_fail := v_fail || format('S6 without Deliveries, paying for HR failed: %s', sqlerrm) || E'\n';
+  end;
 
   if v_fail <> '' then
     raise exception E'STOCK CONTROL AND HR FAILED:\n%', v_fail;
