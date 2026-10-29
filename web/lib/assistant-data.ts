@@ -686,7 +686,9 @@ async function stock(args: Record<string, unknown>, env: ToolEnv): Promise<ToolR
     packed_for_orders: Number(l.qty_reserved),
     available: Number(l.qty_available),
     damaged: Number(l.qty_damaged),
-    minimum: Number(l.min_stock_level),
+    // None on a vehicle, a rep or a closed warehouse (20261029235300): blank,
+    // not 0, which would read as a minimum somebody set.
+    minimum: l.min_stock_level == null ? null : Number(l.min_stock_level),
     below_minimum: l.is_out_of_stock ? "Out of stock" : l.is_below_min ? "Below minimum" : "",
   }));
   return {

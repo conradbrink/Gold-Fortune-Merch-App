@@ -89,6 +89,7 @@ export default function WarehousePage() {
 
   const outOfStock = Number(position?.products_out_of_stock ?? 0);
   const belowMin = Number(position?.products_below_min ?? 0);
+  const lowStockPlaces = new Set(lowStock.map((a) => a.location_id)).size;
 
   return (
     <div className="space-y-6">
@@ -234,7 +235,16 @@ export default function WarehousePage() {
                       key={`${a.product_id}-${a.location_id}`}
                       className="flex items-baseline justify-between gap-2"
                     >
-                      <span className="truncate">{a.product_name}</span>
+                      {/* Each warehouse is judged on its own, so with two the
+                          same product can be short at both: say which. */}
+                      <span className="min-w-0">
+                        <span className="block truncate">{a.product_name}</span>
+                        {lowStockPlaces > 1 && (
+                          <span className="block truncate text-xs text-muted-foreground">
+                            {a.location_name}
+                          </span>
+                        )}
+                      </span>
                       <span className="shrink-0 tabular-nums text-muted-foreground">
                         {a.qty_available} left · order {a.recommended_order_qty}
                       </span>

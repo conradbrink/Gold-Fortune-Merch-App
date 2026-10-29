@@ -27,6 +27,7 @@ import {
 } from "@/components/ui/table";
 import { StatTile, ErrorBanner, EmptyRow } from "@/components/warehouse/stat-tile";
 import {
+  emptyStockText,
   fetchLocations,
   fetchLowStock,
   fetchStockOnHand,
@@ -354,11 +355,12 @@ export default function InventoryPage() {
               <EmptyRow colSpan={columnCount}>Loading…</EmptyRow>
             ) : visible.length === 0 ? (
               <EmptyRow colSpan={columnCount}>
-                {lowOnly && !search.trim() && !onlyBelowMin
-                  ? "Nothing is at or below its reorder point."
-                  : search.trim() || onlyBelowMin || lowOnly
-                  ? "Nothing matches those filters."
-                  : "No stock recorded yet. Receive a delivery to get started."}
+                {emptyStockText({
+                  location: locations.find((l) => l.id === locationId) ?? null,
+                  search,
+                  onlyBelowMin,
+                  lowOnly,
+                })}
               </EmptyRow>
             ) : (
               visible.map((l) => (
