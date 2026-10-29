@@ -73,6 +73,31 @@ export async function fetchLocations(supabase: Client): Promise<StockLocation[]>
   return unwrap(data as StockLocation[] | null, error);
 }
 
+/**
+ * What the inventory table says when it has no lines to show.
+ *
+ * A vehicle or rep location that holds nothing has no lines at all:
+ * stock_on_hand leaves out the empty lines a finished delivery run leaves
+ * behind (20261029235300). Picking an empty van must not read as a company
+ * that has never received stock.
+ */
+export function emptyStockText(opts: {
+  location: StockLocation | null;
+  search: string;
+  onlyBelowMin: boolean;
+  lowOnly: boolean;
+}): string {
+  const searching = opts.search.trim() !== "";
+  if (opts.lowOnly && !searching && !opts.onlyBelowMin) {
+    return "Nothing is at or below its reorder point.";
+  }
+  if (searching || opts.onlyBelowMin || opts.lowOnly) return "Nothing matches those filters.";
+  if (opts.location && opts.location.type !== "warehouse") {
+    return `${opts.location.name} holds no stock right now.`;
+  }
+  return "No stock recorded yet. Receive a delivery to get started.";
+}
+
 export async function fetchStockOnHand(
   supabase: Client,
   opts: { locationId?: string | null; search?: string; onlyBelowMin?: boolean } = {}
