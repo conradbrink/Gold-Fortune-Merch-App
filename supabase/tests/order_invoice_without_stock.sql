@@ -13,6 +13,7 @@
 --   W3  A second press is refused and issues nothing more.
 --   W4  Refused, changing nothing: an unpriced line, an order with nothing
 --       live on it.
+--   W4b An order made from a quote already invoiced is refused: no second bill.
 --   W5  An order with a QuickBooks number is finished with no second invoice.
 --   W6  A held order is finished, its hold released.
 --   W7  With "Invoice every order" off, it still invoices, exactly once.
@@ -40,7 +41,7 @@ declare
   v_checks int := 0;
   v_admin uuid; v_rep uuid; v_store uuid; v_p0 uuid; v_p1 uuid; v_p2 uuid; v_p3 uuid;
   v_order uuid; v_l1 uuid; v_l2 uuid; v_l3 uuid; v_o2 uuid; v_n int;
-  v_res jsonb; v_err text; v_inv public.tax_invoices; t record; r record;
+  v_res jsonb; v_err text; v_inv public.tax_invoices; t record; r record; v_n_quote uuid;
   v_tag text := 'ZZ-NS-' || left(md5(random()::text), 5);
 begin
   set constraints all immediate;
@@ -214,6 +215,35 @@ begin
       v_fail := v_fail || 'W4 ' || r.label || ' changed the order or issued an invoice' || E'\n';
     end if;
   end loop;
+
+  ---------------------------------------------------------------- W4b quote already invoiced
+  -- A quote invoiced (here: in full, as invoice_from_quote leaves it) and then
+  -- turned into this order: invoicing the order too would bill it twice.
+  insert into public.orders (org_id, order_number, store_id, source, received_via, client_generated_id)
+  values (c_gf, v_tag || '-quote', v_store, 'warehouse_manual', 'other', gen_random_uuid()) returning id into v_o2;
+  insert into public.order_lines (org_id, order_id, product_id, qty_ordered, unit_price, client_generated_id)
+  values (c_gf, v_o2, v_p1, 2, 5, gen_random_uuid());
+  insert into public.quotes (org_id, quote_number, store_id, status, converted_order_id, notes)
+  values (c_gf, 'QZ-' || v_tag, v_store, 'converted', v_o2, 'no-stock suite') returning id into v_n_quote;
+  insert into public.tax_invoices (org_id, invoice_number, quote_id, source, store_id, seller_name, customer_name,
+                                   issue_date, due_date, vat_rate, subtotal, vat, total)
+  values (c_gf, 'ZZ-QI-' || v_tag, v_n_quote, 'quote', v_store, 'ZZ', 'ZZ', current_date, current_date, 0, 10, 0, 10);
+  v_checks := v_checks + 1;
+  set local role authenticated;
+  begin
+    perform public.order_invoice_without_stock(v_o2);
+    v_fail := v_fail || 'W4b an order from an invoiced quote was invoiced again' || E'\n';
+  exception when others then
+    get stacked diagnostics v_err = message_text;
+    if v_err not like '% was made from a quote that is already invoiced: QZ-%. Cancel the order, or credit that invoice first.' then
+      v_fail := v_fail || 'W4b refused for another reason: ' || v_err || E'\n';
+    end if;
+  end;
+  reset role;
+  if (select status from public.orders where id = v_o2) <> 'new'
+     or exists (select 1 from public.tax_invoices where order_id = v_o2) then
+    v_fail := v_fail || 'W4b the refusal changed the order' || E'\n';
+  end if;
 
   ---------------------------------------------------------------- W5 QuickBooks number
   insert into public.orders (org_id, order_number, store_id, source, received_via, invoice_number, client_generated_id)

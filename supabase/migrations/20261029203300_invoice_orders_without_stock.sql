@@ -155,8 +155,9 @@ begin
     raise exception 'Order % is already %.', o.order_number, o.status using errcode = '42501';
   end if;
 
-  -- The lines too, so an edit saved while this runs waits and then finds the
-  -- order finished, rather than landing after the invoice was written.
+  -- The lines too, so a change to a line saved while this runs waits for it.
+  -- A line added or removed at the same moment is not held off (the same
+  -- window order_confirm has).
   perform 1 from public.order_lines where order_id = o.id for update;
 
   select count(*),
@@ -176,6 +177,19 @@ begin
   end if;
   if exists (select 1 from public.tax_invoices t where t.order_id = o.id and t.status = 'issued') then
     raise exception '% already has a tax invoice.', o.order_number using errcode = '23505';
+  end if;
+  -- Made from a quote that was invoiced already (in full, or a deposit):
+  -- invoicing the order too would bill the customer twice, the deposit not
+  -- taken off. quote_convert does not stop that; for these companies this is
+  -- the step that would issue the second invoice, so it stops here.
+  select string_agg(distinct q.quote_number || ' (' || t.invoice_number || ')', ', ')
+    into v_missing
+    from public.quotes q
+    join public.tax_invoices t on t.quote_id = q.id and t.status = 'issued'
+   where q.converted_order_id = o.id;
+  if v_missing is not null then
+    raise exception '% was made from a quote that is already invoiced: %. Cancel the order, or credit that invoice first.',
+      o.order_number, v_missing using errcode = '23505';
   end if;
 
   -- Only the warehouse could release it, and there is none.
@@ -252,9 +266,14 @@ begin
   if o.status = 'cancelled' then
     raise exception 'Order % is already cancelled.', o.order_number using errcode = '42501';
   end if;
-  if o.status <> 'new' then
+  if o.status = 'delivered' then
     raise exception 'Order % has been invoiced, so it cannot be cancelled. Issue a credit note on its invoice instead.',
       o.order_number using errcode = '42501';
+  end if;
+  if o.status <> 'new' then
+    -- Moved on through the warehouse before the company dropped it.
+    raise exception 'Order % is %, which only the warehouse steps can undo.', o.order_number, o.status
+      using errcode = '42501';
   end if;
 
   -- Lines first, then the order, as order_cancel does.

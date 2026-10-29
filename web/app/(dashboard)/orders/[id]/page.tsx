@@ -455,14 +455,21 @@ export default function OrderDetailPage() {
   // number gets no second invoice, so its prices do not stop it.
   const toInvoice = detail.lines.filter((l) => l.line_status !== "cancelled" && l.qty_ordered > 0);
   const unpricedToInvoice = o.invoice_number ? 0 : toInvoice.filter((l) => l.unit_price == null).length;
-  /** Typed in the lines table and not saved yet: invoicing would not see it. */
-  const unsavedLines = Object.keys(priceDraft).length > 0 || Object.keys(qtyDraft).length > 0;
   /**
-   * The stock columns and the POD row, read from the order as well as the
-   * company: an order that went through the warehouse keeps its figures after
-   * the company drops the add-on, and one finished without stock has none.
+   * Typed and not saved yet, in the lines table or the details editor (the
+   * PO number goes on the invoice): invoicing would not see it, and the
+   * order cannot be edited afterwards.
    */
-  const showStock = keepsStock || o.fulfil_location_id !== null || o.dispatched_at !== null;
+  const unsavedLines = Object.keys(priceDraft).length > 0 || Object.keys(qtyDraft).length > 0 || editingDetails;
+  /** Finished without stock: invoicing was all there was to do. */
+  const finished = finishedWithoutStock(o);
+  /**
+   * The stock columns, read from the order as well as the company: an order
+   * that went through the warehouse keeps its figures after the company drops
+   * the add-on. Never for an order finished without stock, whose lines read as
+   * sent and delivered in full although nothing left a warehouse.
+   */
+  const showStock = !finished && (keepsStock || o.fulfil_location_id !== null || o.dispatched_at !== null);
   const canCancel = keepsStock ? !["delivered", "cancelled", "dispatched"].includes(o.status) : o.status === "new";
   // The product being added, if it comes in shrinks: its row offers per shrink too.
   const addUnits = shrinkUnits(catalogue.find((c) => c.id === addProductId)?.units_per_shrink);
@@ -734,8 +741,9 @@ export default function OrderDetailPage() {
           <h1 className="mt-1 flex items-center gap-2 text-2xl font-semibold tracking-tight">
             {o.order_number}
             <Badge variant={o.status === "cancelled" ? "outline" : "secondary"}>
-              {/* Finished without stock: invoicing was all there was to do. */}
-              {finishedWithoutStock(o) ? "Invoiced" : (STATUS_LABELS[o.status] ?? o.status)}
+              {/* After a void it is done but not invoiced: the Invoice row then
+                  offers to issue one again. */}
+              {finished ? (o.invoice_number ? "Invoiced" : "Not invoiced") : (STATUS_LABELS[o.status] ?? o.status)}
             </Badge>
             {o.on_hold && (
               <Badge variant="outline" className="border-amber-500/50 text-amber-600">
@@ -826,7 +834,7 @@ export default function OrderDetailPage() {
               </Button>
             </>
           )}
-          {o.status === "delivered" && keepsStock && (
+          {o.status === "delivered" && keepsStock && !finished && (
             <Button onClick={() => setDialog("upload")} disabled={busy}>
               <FileUp className="mr-1.5 h-4 w-4" /> Upload POD
             </Button>
@@ -1256,7 +1264,7 @@ export default function OrderDetailPage() {
                 <Row label="Fulfilled from" value={detail.fulfilLocationName} />
               )}
               {/* No POD is asked of an order finished without stock. */}
-              {(keepsStock || o.pod_status !== "not_required") && (
+              {!finished && (keepsStock || o.pod_status !== "not_required") && (
                 <Row
                   label="POD"
                   value={
@@ -1979,9 +1987,11 @@ export default function OrderDetailPage() {
             </p>
             {unsavedLines && (
               <p className="text-destructive">
-                You have changed the lines without saving. Save or undo the changes first.
+                You have changes on this order that are not saved. Save or undo them first.
               </p>
             )}
+            {/* A refusal shows here too: the page banner is behind the dialog. */}
+            <ErrorBanner message={error} />
             {unpricedToInvoice > 0 && (
               <p className="text-destructive">
                 {unpricedToInvoice === 1 ? "One product has" : `${unpricedToInvoice} products have`} no price yet.
