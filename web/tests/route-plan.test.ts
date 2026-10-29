@@ -4,6 +4,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   isLatLng,
+  isUsualAddress,
   MAX_STOPS,
   orderFromAnswer,
   plannedIds,
@@ -86,6 +87,28 @@ test("a typed delivery address beats the pin; the pin beats the shop's address",
     "Spar, 1 Church St, Potchefstroom"
   );
   assert.equal(stopFor({ id: "d", order: null }).address, null);
+});
+
+test("a typed address that only repeats the place's own goes by the pin", () => {
+  const store = { name: "Spar", address: "1 Church St", city: "Potchefstroom", state: "North West", lat: -26.7, lng: 27.1 };
+  // What the phone fills in on every order, and the same written another way.
+  for (const typed of ["1 Church St, Potchefstroom", "1 church st  potchefstroom.", "1 Church St", "1 Church St, Potchefstroom, North West"]) {
+    assert.ok(isUsualAddress(typed, store), typed);
+    assert.deepEqual(stopFor({ id: "d", order: { delivery_address: typed, store } }).at, { lat: -26.7, lng: 27.1 }, typed);
+  }
+  // A town in the street is not written twice; a place with no street is its town.
+  assert.ok(isUsualAddress("12 Main Rd, Mahikeng", { ...store, address: "12 Main Rd, Mahikeng", city: "Mahikeng" }));
+  assert.ok(isUsualAddress("Potchefstroom", { ...store, address: null }));
+  // Anything else is somewhere else.
+  assert.ok(!isUsualAddress("Back gate, 1 Church St", store));
+  assert.ok(!isUsualAddress("Potchefstroom", store));
+  assert.ok(!isUsualAddress("anything", null));
+  // With no pin there is nothing better than the words on the order.
+  assert.equal(
+    stopFor({ id: "d", order: { delivery_address: "1 Church St, Potchefstroom", store: { ...store, lat: null, lng: null } } })
+      .address,
+    "1 Church St, Potchefstroom"
+  );
 });
 
 test("only a real latitude and longitude is a place", () => {

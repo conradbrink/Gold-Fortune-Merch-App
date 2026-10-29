@@ -214,6 +214,12 @@ class OrderRepository {
     return clientId;
   }
 
+  /// Sends the order saved as [clientId], waiting a few seconds, and says
+  /// whether it has reached the server: what the screen needs before it says
+  /// "sent" rather than "when you have signal".
+  Future<bool> sendNow(String clientId) =>
+      _sync.sentWithin(OutboxType.orderCreate, clientId);
+
   /// When every store last ordered and when it is due again, keyed by store.
   ///
   /// The whole company's list in one call (a few hundred short rows), fetched

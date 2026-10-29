@@ -45,6 +45,28 @@ class _SilentSync extends SyncEngine {
   Future<void> sync() async {}
 }
 
+/// A phone with signal: whatever is queued reaches the server at once.
+class _LandingSync extends SyncEngine {
+  _LandingSync(this.db)
+      : super(
+          db,
+          SupabaseClient(
+            'http://localhost:1',
+            'test-anon-key',
+            authOptions: const AuthClientOptions(autoRefreshToken: false),
+          ),
+        );
+
+  final AppDatabase db;
+
+  @override
+  Future<void> sync() async {
+    for (final e in await db.pendingEntries()) {
+      await db.deleteEntry(e.id);
+    }
+  }
+}
+
 const _line = OrderDraftLine(productId: 'p1', qty: 3, unitsPerShrink: 10);
 
 void main() {
@@ -336,6 +358,37 @@ void main() {
       expect(payload['visit_client_generated_id'], isNull);
       expect(payload['signed_by_name'], isNull);
       expect(payload['delivery_address'], '12 Main Road, Mahikeng');
+      // Nothing was sent: "when you have signal" is the truth here.
+      expect(
+        find.text('Order saved. It will reach the warehouse when you have signal.'),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('sent straight away, the rep is not told to wait for signal', (tester) async {
+      repo = OrderRepository(
+        SupabaseClient(
+          'http://localhost:1',
+          'test-anon-key',
+          authOptions: const AuthClientOptions(autoRefreshToken: false),
+        ),
+        db,
+        _LandingSync(db),
+      );
+      await openNewOrder(tester);
+      await tester.tap(find.byIcon(Icons.add_circle_outline));
+      await fillContact(tester);
+      await tester.tap(find.widgetWithText(ChoiceChip, 'WhatsApp'));
+      await tester.pump();
+
+      await tester.tap(find.text('Save order'));
+      await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 50)));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Today'), findsOneWidget);
+      expect(await tester.runAsync(db.pendingEntries), isEmpty, reason: 'it landed');
+      expect(find.text('Order sent to the warehouse.'), findsOneWidget);
+      expect(find.textContaining('when you have signal'), findsNothing);
     });
 
     testWidgets('a new order left unsaved yesterday is not filled in today', (tester) async {

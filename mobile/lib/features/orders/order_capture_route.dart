@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../core/addresses.dart';
 import '../../core/providers.dart';
 import '../../data/local/order_draft.dart';
 import '../../data/models/route_visit.dart';
@@ -144,16 +145,6 @@ class _NewOrderRouteState extends ConsumerState<NewOrderRoute> {
     // to choosing one.
     return const _LeaveTo('/unscheduled/order');
   }
-}
-
-/// "12 Main Road, Mahikeng": the street and the town, without repeating a
-/// town the address already names. Null when neither is on record.
-String? deliveryAddressOf(String? address, String? city) {
-  final street = address?.trim() ?? '';
-  final town = city?.trim() ?? '';
-  if (street.isEmpty) return town.isEmpty ? null : town;
-  if (town.isEmpty || street.toLowerCase().contains(town.toLowerCase())) return street;
-  return '$street, $town';
 }
 
 /// Goes to [path] during the frame rather than in `build`, which cannot

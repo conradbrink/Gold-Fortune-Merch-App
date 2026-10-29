@@ -12,7 +12,9 @@ import { distanceKm } from "@/lib/geo";
  * the stops between. A driver's round has no fixed end, so the end is the
  * stop furthest from the driver: the round works its way out to it.
  *
- * A stop with no pin is sent by its address, which Google can place.
+ * A stop with no pin is sent by its address, which Google can place. So is a
+ * delivery going somewhere other than the place, by the address typed on the
+ * order; one whose typed address only repeats the place's own goes by its pin.
  */
 
 export type LatLng = { lat: number; lng: number };
@@ -173,16 +175,47 @@ function placeStop(id: string, store: PlaceRow | null): Stop {
   return { id, at: null, address: parts.length ? parts.join(", ") : null };
 }
 
+/** Letters and digits only, lower case, one space between words. */
+const plain = (s: string) =>
+  s
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}]+/gu, " ")
+    .trim();
+
 /**
- * Where a delivery is going, as the phone's delivery screen finds it
- * (`DeliveryDetail.directions`): an address typed on the order first, because
- * this drop is going somewhere other than the usual place; then the place's
- * pin; then its name and address.
+ * Whether an order's typed delivery address is only the place's own: what the
+ * phone's order screen fills in (the street and the town, the town once;
+ * mobile/lib/core/addresses.dart), the street alone, or either with the
+ * region after it. Case, commas and spacing do not count.
+ */
+export function isUsualAddress(typed: string, store: PlaceRow | null): boolean {
+  const words = plain(typed);
+  if (!words || !store) return false;
+  const street = text(store.address);
+  const town = text(store.city);
+  const region = text(store.state);
+  const usual = !street
+    ? town
+    : !town || street.toLowerCase().includes(town.toLowerCase())
+      ? street
+      : `${street}, ${town}`;
+  const forms = [street, usual, usual && region && `${usual}, ${region}`, street && region && `${street}, ${region}`];
+  return forms.some((f) => !!f && plain(f) === words);
+}
+
+/**
+ * Where a delivery is going, as the phone's driver plan finds it
+ * (`RunStop.pinned`): an address typed on the order when this drop is going
+ * somewhere other than the place; else the place's pin; else its name and
+ * address. The phone fills every order's delivery address in with the place's
+ * own, so a typed address that only repeats it is not somewhere else.
  */
 export function stopFor(row: DispatchRow): Stop {
+  const store = row.order?.store ?? null;
+  const place = placeStop(row.id, store);
   const typed = text(row.order?.delivery_address);
-  if (typed) return { id: row.id, at: null, address: typed };
-  return placeStop(row.id, row.order?.store ?? null);
+  if (!typed || (place.at && isUsualAddress(typed, store))) return place;
+  return { id: row.id, at: null, address: typed };
 }
 
 /** Where a rep's visit is: the place's pin, else its name and address. */

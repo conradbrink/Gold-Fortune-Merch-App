@@ -186,6 +186,14 @@ final pendingDeliveryConfirmsProvider = FutureProvider<Set<String>>((ref) {
   return ref.watch(deliveryRepositoryProvider).pendingConfirms();
 });
 
+/// Whether the drop this phone recorded for a dispatch, not yet sent, has a
+/// photo of the delivery note with it.
+final queuedDeliveryPhotoProvider = FutureProvider.autoDispose
+    .family<bool, String>((ref, dispatchId) {
+  ref.watch(pendingSyncCountProvider);
+  return ref.watch(deliveryRepositoryProvider).queuedWithPhoto(dispatchId);
+});
+
 /// No automatic retry for the two delivery screens. Riverpod's default tries
 /// a failed fetch ten more times over about 38 seconds, showing a spinner the
 /// whole while, which cannot be pulled; the screens say what went wrong at
