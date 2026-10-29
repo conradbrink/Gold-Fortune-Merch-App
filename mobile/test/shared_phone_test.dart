@@ -230,26 +230,35 @@ void main() {
       ]);
     }
 
-    test('an unscheduled visit with a queued check-in goes to its rep', () async {
+    test('an unscheduled visit with queued work goes to its rep', () async {
       await db.close();
       db = schema4(
         rows: (raw) {
-          cacheRow(
-            raw,
-            unscheduled('v1', 'Bloem Corner Tuck Shop'),
-            adHoc: true,
-          );
-          cacheRow(raw, unscheduled('v2', 'Offline Test Spaza'), adHoc: true);
+          for (final (id, name) in [
+            ('v1', 'Bloem Corner Tuck Shop'),
+            ('v2', 'Offline Test Spaza'),
+            ('v3', 'Batho Cash Store'),
+            ('v4', 'Bayswater Superette'),
+          ]) {
+            cacheRow(raw, unscheduled(id, name), adHoc: true);
+          }
           cacheRow(raw, scheduled('route-1', 'Choppies Kgale'), adHoc: false);
-          raw.execute(
-            'INSERT INTO outbox_entries (entity_type, payload, client_generated_id, created_at) '
-            'VALUES (?, ?, ?, 0)',
-            [
-              OutboxType.visitCheckIn,
-              jsonEncode({'rep_id': 'thabo'}),
-              'v1',
-            ],
-          );
+          void queue(String type, String clientId, Map<String, dynamic> p) =>
+              raw.execute(
+                'INSERT INTO outbox_entries '
+                '(entity_type, payload, client_generated_id, created_at) '
+                'VALUES (?, ?, ?, 0)',
+                [type, jsonEncode(p), clientId],
+              );
+          // A check-in still waiting.
+          queue(OutboxType.visitCheckIn, 'v1', {'rep_id': 'thabo'});
+          // The check-in landed; the check-out, keyed by the visit, did not.
+          queue(OutboxType.visitCheckOut, 'v3', {'rep_id': 'sipho'});
+          // Only a form names the visit, by its own id.
+          queue(OutboxType.formSubmission, 'form-1', {
+            'rep_id': 'naledi',
+            'visit_client_generated_id': 'v4',
+          });
         },
       );
 
@@ -260,7 +269,18 @@ void main() {
                 .get())
           row.read<String>('route_id'): row.readNullable<String>('rep_id'),
       };
-      expect(owners, {'v1': 'thabo', 'v2': null, 'route-1': null});
+      expect(owners, {
+        'v1': 'thabo',
+        'v2': null,
+        'v3': 'sipho',
+        'v4': 'naledi',
+        'route-1': null,
+      });
+    });
+
+    test('a new install has nothing to claim', () async {
+      await repo().addUnscheduledVisit('thabo', unscheduled('v1', 'Spar'), day);
+      expect(await db.claimUnownedRoutes('sipho'), 0);
     });
 
     test(

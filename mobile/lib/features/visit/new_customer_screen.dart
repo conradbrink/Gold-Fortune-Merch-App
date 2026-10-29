@@ -133,6 +133,10 @@ class _NewCustomerScreenState extends ConsumerState<NewCustomerScreen> {
       ref.read(syncEngineProvider).sync();
       final key = await startUnscheduledVisit(ref, store);
       if (!mounted) return;
+      if (key == null) {
+        setState(() => _saving = false);
+        return;
+      }
       context.go('/visit/$key');
     } catch (e) {
       if (!mounted) return;
@@ -147,6 +151,10 @@ class _NewCustomerScreenState extends ConsumerState<NewCustomerScreen> {
     setState(() => _saving = true);
     final key = await startUnscheduledVisit(ref, store);
     if (!mounted) return;
+    if (key == null) {
+      setState(() => _saving = false);
+      return;
+    }
     context.go('/visit/$key');
   }
 

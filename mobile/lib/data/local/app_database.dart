@@ -111,28 +111,39 @@ class AppDatabase extends _$AppDatabase {
           }
           if (from < 5) {
             await m.addColumn(cachedRoutes, cachedRoutes.repId);
-            await _ownAdHocRowsByQueuedCheckIn();
+            await _ownAdHocRowsByQueuedWork();
+            final unowned = await (select(cachedRoutes)
+                  ..where((t) => t.repId.isNull())
+                  ..limit(1))
+                .get();
+            if (unowned.isNotEmpty) await setValue(_unownedRoutesKey, '1');
           }
         },
       );
 
   /// Gives each unscheduled visit cached before schema 5 to the rep whose
-  /// check-in for it is still queued, which is the one sure answer the phone
-  /// has. The rest stay unowned for [claimUnownedRoutes].
-  Future<void> _ownAdHocRowsByQueuedCheckIn() async {
-    final checkIns = await (select(outboxEntries)
-          ..where((t) => t.entityType.equals(OutboxType.visitCheckIn)))
-        .get();
-    for (final entry in checkIns) {
+  /// work on it is still queued — its check-in or check-out (keyed by the
+  /// visit), or a form, order or report naming it — which is the one sure
+  /// answer the phone has. The rest stay unowned for [claimUnownedRoutes].
+  Future<void> _ownAdHocRowsByQueuedWork() async {
+    for (final entry in await select(outboxEntries).get()) {
       final repId = repIdOf(entry.payload);
       if (repId == null) continue;
+      final visitIds = {
+        entry.clientGeneratedId,
+        payloadText(entry.payload, 'visit_client_generated_id'),
+      }.whereType<String>().toList();
       await (update(cachedRoutes)
             ..where((t) =>
-                t.cacheKey.equals(entry.clientGeneratedId) &
-                t.adHoc.equals(true)))
+                t.cacheKey.isIn(visitIds) &
+                t.adHoc.equals(true) &
+                t.repId.isNull()))
           .write(CachedRoutesCompanion(repId: Value(repId)));
     }
   }
+
+  /// Set by the schema 5 upgrade while rows without an owner remain.
+  static const _unownedRoutesKey = 'cached_routes_unowned';
 
   // --- Key/value --------------------------------------------------------
 
@@ -308,10 +319,8 @@ class AppDatabase extends _$AppDatabase {
   /// (`ownerOf` in the sync engine), so counting it showed the next person on
   /// a shared phone "1 change waiting to sync" that they could never send.
   Stream<int> watchPendingCountFor(String repId) {
-    return select(outboxEntries).watch().map((entries) => entries.where((e) {
-          final owner = repIdOf(e.payload);
-          return owner == null || owner == repId;
-        }).length);
+    return select(outboxEntries).watch().map(
+        (entries) => entries.where((e) => isWorkOf(e.payload, repId)).length);
   }
 
   Future<void> deleteEntry(int id) =>
@@ -404,11 +413,18 @@ class AppDatabase extends _$AppDatabase {
   ///
   /// Called before the day is read. The session survives an app update, so
   /// the first person to read the day on the new build is, in practice, the
-  /// one who was signed in when those rows were made. After that nothing is
-  /// written without an owner and this finds nothing.
-  Future<int> claimUnownedRoutes(String repId) {
-    return (update(cachedRoutes)..where((t) => t.repId.isNull()))
-        .write(CachedRoutesCompanion(repId: Value(repId)));
+  /// one who was signed in when those rows were made. Runs once: nothing is
+  /// written without an owner after the upgrade, so the flag the upgrade left
+  /// is all it checks from then on.
+  Future<int> claimUnownedRoutes(String repId) async {
+    if (await getValue(_unownedRoutesKey) == null) return 0;
+    return transaction(() async {
+      final claimed = await (update(cachedRoutes)
+            ..where((t) => t.repId.isNull()))
+          .write(CachedRoutesCompanion(repId: Value(repId)));
+      await deleteValue(_unownedRoutesKey);
+      return claimed;
+    });
   }
 
   Future<void> updateCachedRoute(String cacheKey, String payload) {

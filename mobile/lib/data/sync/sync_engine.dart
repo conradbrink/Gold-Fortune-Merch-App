@@ -295,9 +295,14 @@ class SyncEngine {
 
   Future<void> _emit(SyncState state, {String? message}) async {
     if (_statusController.isClosed) return;
-    final pending = await _db.pendingEntries(limit: 1000);
+    // The signed-in person's, as the banner counts: another person's work
+    // waits for them and is nothing this session can send.
+    final me = _signedInUser();
+    final pending = (await _db.pendingEntries(limit: 1000))
+        .where((e) => isWorkOf(e.payload, me))
+        .length;
     _statusController.add(
-      SyncStatus(state: state, pending: pending.length, message: message),
+      SyncStatus(state: state, pending: pending, message: message),
     );
   }
 

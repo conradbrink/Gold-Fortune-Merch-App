@@ -80,12 +80,20 @@ String outboxEntryKey(String entityType, String clientGeneratedId) =>
 /// not say, which is read as "anyone's". The one rule for whose work an entry
 /// is: the drain holds others' back, the count shows only the signed-in
 /// person's, and the schema 5 migration finds the owner of a cached visit.
-String? repIdOf(String payload) {
+String? repIdOf(String payload) => payloadText(payload, 'rep_id');
+
+/// Whether a queued payload is [repId]'s to send: theirs, or nobody's.
+bool isWorkOf(String payload, String? repId) {
+  final owner = repIdOf(payload);
+  return owner == null || owner == repId;
+}
+
+/// The text at [key] in a queued payload, or null when it is missing, not
+/// text, or the payload is not JSON.
+String? payloadText(String payload, String key) {
   try {
     final decoded = jsonDecode(payload);
-    if (decoded is Map && decoded['rep_id'] is String) {
-      return decoded['rep_id'] as String;
-    }
+    if (decoded is Map && decoded[key] is String) return decoded[key] as String;
   } on FormatException {
     // A payload that is not JSON is the replay's problem, not this check's.
   }

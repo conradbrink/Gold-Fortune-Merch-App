@@ -14,9 +14,14 @@ const _uuid = Uuid();
 /// Puts an unscheduled visit to [store] on today's list, on this phone, and
 /// returns its key for `/visit/:key`. Shared by the picker and by adding a
 /// new customer, which goes straight on to a visit there.
-Future<String> startUnscheduledVisit(WidgetRef ref, StoreSummary store) async {
+///
+/// Null when nobody is signed in — the session dropped under the rep — since
+/// the visit has to be somebody's. The router is already taking them to sign
+/// in, and back here after.
+Future<String?> startUnscheduledVisit(WidgetRef ref, StoreSummary store) async {
   final date = ref.read(selectedRouteDateProvider);
-  final repId = ref.read(currentUserProvider)!.id;
+  final repId = ref.read(currentUserProvider)?.id;
+  if (repId == null) return null;
   final visit = RouteVisit.unscheduled(
     clientId: _uuid.v4(),
     storeId: store.id,
@@ -56,6 +61,10 @@ class _StorePickerScreenState extends ConsumerState<StorePickerScreen> {
     setState(() => _busy = true);
     final key = await startUnscheduledVisit(ref, store);
     if (!mounted) return;
+    if (key == null) {
+      setState(() => _busy = false);
+      return;
+    }
     context.go('/visit/$key');
   }
 
