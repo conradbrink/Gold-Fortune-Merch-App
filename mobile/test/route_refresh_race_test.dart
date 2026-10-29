@@ -74,7 +74,7 @@ void main() {
   /// What `VisitRepository` leaves behind: the stop cached as [local], with
   /// [type] queued for its visit.
   Future<int> actLocally(RouteVisit local, String type) async {
-    await db.replaceCachedRoutes(RouteRepository.formatDate(day), [
+    await db.replaceCachedRoutes('rep-1', RouteRepository.formatDate(day), [
       (cacheKey: local.cacheKey, payload: jsonEncode(local.toMap())),
     ]);
     return db.enqueue(
@@ -85,7 +85,10 @@ void main() {
   }
 
   Future<String> cachedStatus() async {
-    final rows = await db.cachedRoutesForDate(RouteRepository.formatDate(day));
+    final rows = await db.cachedRoutesForDate(
+      'rep-1',
+      RouteRepository.formatDate(day),
+    );
     return RouteVisit.fromMap(
       jsonDecode(rows.single.payload) as Map<String, dynamic>,
     ).status;
@@ -124,7 +127,7 @@ void main() {
   test('with nothing queued the server is believed', () async {
     // A check-out that drained well before the fetch: the server has it, and
     // a cache saying otherwise is the stale side.
-    await db.replaceCachedRoutes(RouteRepository.formatDate(day), [
+    await db.replaceCachedRoutes('rep-1', RouteRepository.formatDate(day), [
       (cacheKey: 'route-1', payload: jsonEncode(stop(status: 'checked_out').toMap())),
     ]);
 

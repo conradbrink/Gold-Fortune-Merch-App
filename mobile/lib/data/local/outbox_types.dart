@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 /// Operation kinds the sync engine knows how to replay. Kept as constants
 /// (not an enum) so entries written by an older build still resolve after an
 /// app update.
@@ -73,3 +75,19 @@ class OutboxType {
 /// *end* carries the same id. Keying by type as well is what tells them apart.
 String outboxEntryKey(String entityType, String clientGeneratedId) =>
     '$entityType:$clientGeneratedId';
+
+/// The rep a queued payload was written by (`rep_id`), or null when it does
+/// not say, which is read as "anyone's". The one rule for whose work an entry
+/// is: the drain holds others' back, the count shows only the signed-in
+/// person's, and the schema 5 migration finds the owner of a cached visit.
+String? repIdOf(String payload) {
+  try {
+    final decoded = jsonDecode(payload);
+    if (decoded is Map && decoded['rep_id'] is String) {
+      return decoded['rep_id'] as String;
+    }
+  } on FormatException {
+    // A payload that is not JSON is the replay's problem, not this check's.
+  }
+  return null;
+}

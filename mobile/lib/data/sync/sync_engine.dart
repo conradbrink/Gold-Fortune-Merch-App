@@ -60,17 +60,7 @@ List<OutboxEntry> replayableEntries(
 /// The rep an outbox entry was queued by, when its payload says so
 /// (`rep_id`); null when it does not, which the drain treats as "anyone's".
 @visibleForTesting
-String? ownerOf(OutboxEntry entry) {
-  try {
-    final payload = jsonDecode(entry.payload);
-    if (payload is Map && payload['rep_id'] is String) {
-      return payload['rep_id'] as String;
-    }
-  } catch (_) {
-    // A payload that is not JSON is the replay's problem, not this check's.
-  }
-  return null;
-}
+String? ownerOf(OutboxEntry entry) => repIdOf(entry.payload);
 
 /// The queued operation this entry cannot land without, if it has one.
 ///

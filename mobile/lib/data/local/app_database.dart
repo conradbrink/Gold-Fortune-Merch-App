@@ -38,6 +38,12 @@ class CachedRoutes extends Table {
   TextColumn get payload => text()(); // JSON of the RouteVisit row
   DateTimeColumn get cachedAt => dateTime()();
 
+  /// Whose day the row belongs to. Reps share phones: keyed by date alone,
+  /// the next person to sign in saw the last one's unscheduled visits on
+  /// their own list. Null only on rows cached before schema 5, until
+  /// [AppDatabase.claimUnownedRoutes] gives them to whoever signs in.
+  TextColumn get repId => text().named('rep_id').nullable()();
+
   /// Ad-hoc rows exist only on this device until they sync, so a schedule
   /// refresh must never delete them.
   BoolColumn get adHoc => boolean().withDefault(const Constant(false))();
@@ -88,7 +94,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase.forTesting(super.executor);
 
   @override
-  int get schemaVersion => 4;
+  int get schemaVersion => 5;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -103,8 +109,30 @@ class AppDatabase extends _$AppDatabase {
           if (from < 4) {
             await m.createTable(cachedFiles);
           }
+          if (from < 5) {
+            await m.addColumn(cachedRoutes, cachedRoutes.repId);
+            await _ownAdHocRowsByQueuedCheckIn();
+          }
         },
       );
+
+  /// Gives each unscheduled visit cached before schema 5 to the rep whose
+  /// check-in for it is still queued, which is the one sure answer the phone
+  /// has. The rest stay unowned for [claimUnownedRoutes].
+  Future<void> _ownAdHocRowsByQueuedCheckIn() async {
+    final checkIns = await (select(outboxEntries)
+          ..where((t) => t.entityType.equals(OutboxType.visitCheckIn)))
+        .get();
+    for (final entry in checkIns) {
+      final repId = repIdOf(entry.payload);
+      if (repId == null) continue;
+      await (update(cachedRoutes)
+            ..where((t) =>
+                t.cacheKey.equals(entry.clientGeneratedId) &
+                t.adHoc.equals(true)))
+          .write(CachedRoutesCompanion(repId: Value(repId)));
+    }
+  }
 
   // --- Key/value --------------------------------------------------------
 
@@ -274,6 +302,18 @@ class AppDatabase extends _$AppDatabase {
     return query.map((row) => row.read(countExp) ?? 0).watchSingle();
   }
 
+  /// What [repId] has waiting: their own entries and any that name nobody.
+  ///
+  /// The drain holds back another person's work until they sign in again
+  /// (`ownerOf` in the sync engine), so counting it showed the next person on
+  /// a shared phone "1 change waiting to sync" that they could never send.
+  Stream<int> watchPendingCountFor(String repId) {
+    return select(outboxEntries).watch().map((entries) => entries.where((e) {
+          final owner = repIdOf(e.payload);
+          return owner == null || owner == repId;
+        }).length);
+  }
+
   Future<void> deleteEntry(int id) =>
       (delete(outboxEntries)..where((t) => t.id.equals(id))).go();
 
@@ -290,17 +330,21 @@ class AppDatabase extends _$AppDatabase {
 
   // --- Route cache ----------------------------------------------------
 
-  /// Replaces the *scheduled* rows for a date. Ad-hoc rows are left alone —
-  /// they only exist here until they sync, so dropping them would lose an
-  /// unscheduled visit the rep has already performed.
+  /// Replaces [repId]'s *scheduled* rows for a date. Ad-hoc rows are left
+  /// alone — they only exist here until they sync, so dropping them would lose
+  /// an unscheduled visit the rep has already performed — and so is anyone
+  /// else's day on a shared phone.
   Future<void> replaceCachedRoutes(
+    String repId,
     String scheduledDate,
     List<({String cacheKey, String payload})> rows,
   ) async {
     await transaction(() async {
       await (delete(cachedRoutes)
             ..where((t) =>
-                t.scheduledDate.equals(scheduledDate) & t.adHoc.equals(false)))
+                t.repId.equals(repId) &
+                t.scheduledDate.equals(scheduledDate) &
+                t.adHoc.equals(false)))
           .go();
       for (final row in rows) {
         await into(cachedRoutes).insertOnConflictUpdate(
@@ -309,6 +353,7 @@ class AppDatabase extends _$AppDatabase {
             scheduledDate: scheduledDate,
             payload: row.payload,
             cachedAt: DateTime.now(),
+            repId: Value(repId),
           ),
         );
       }
@@ -316,6 +361,7 @@ class AppDatabase extends _$AppDatabase {
   }
 
   Future<void> insertAdHocVisit({
+    required String repId,
     required String cacheKey,
     required String scheduledDate,
     required String payload,
@@ -327,21 +373,42 @@ class AppDatabase extends _$AppDatabase {
         payload: payload,
         cachedAt: DateTime.now(),
         adHoc: const Value(true),
+        repId: Value(repId),
       ),
     );
   }
 
-  Future<List<CachedRoute>> cachedRoutesForDate(String scheduledDate) {
+  Future<List<CachedRoute>> cachedRoutesForDate(
+    String repId,
+    String scheduledDate,
+  ) {
     return (select(cachedRoutes)
-          ..where((t) => t.scheduledDate.equals(scheduledDate)))
+          ..where((t) =>
+              t.repId.equals(repId) & t.scheduledDate.equals(scheduledDate)))
         .get();
   }
 
-  Future<List<CachedRoute>> adHocVisitsForDate(String scheduledDate) {
+  Future<List<CachedRoute>> adHocVisitsForDate(
+    String repId,
+    String scheduledDate,
+  ) {
     return (select(cachedRoutes)
           ..where((t) =>
-              t.scheduledDate.equals(scheduledDate) & t.adHoc.equals(true)))
+              t.repId.equals(repId) &
+              t.scheduledDate.equals(scheduledDate) &
+              t.adHoc.equals(true)))
         .get();
+  }
+
+  /// Gives every row cached before schema 5 with no owner to [repId].
+  ///
+  /// Called before the day is read. The session survives an app update, so
+  /// the first person to read the day on the new build is, in practice, the
+  /// one who was signed in when those rows were made. After that nothing is
+  /// written without an owner and this finds nothing.
+  Future<int> claimUnownedRoutes(String repId) {
+    return (update(cachedRoutes)..where((t) => t.repId.isNull()))
+        .write(CachedRoutesCompanion(repId: Value(repId)));
   }
 
   Future<void> updateCachedRoute(String cacheKey, String payload) {

@@ -16,6 +16,7 @@ const _uuid = Uuid();
 /// new customer, which goes straight on to a visit there.
 Future<String> startUnscheduledVisit(WidgetRef ref, StoreSummary store) async {
   final date = ref.read(selectedRouteDateProvider);
+  final repId = ref.read(currentUserProvider)!.id;
   final visit = RouteVisit.unscheduled(
     clientId: _uuid.v4(),
     storeId: store.id,
@@ -29,7 +30,7 @@ Future<String> startUnscheduledVisit(WidgetRef ref, StoreSummary store) async {
     geofenceRadiusM: store.geofenceRadiusM,
   );
 
-  await ref.read(routeRepositoryProvider).addUnscheduledVisit(visit, date);
+  await ref.read(routeRepositoryProvider).addUnscheduledVisit(repId, visit, date);
   ref.invalidate(todayRoutesProvider);
   return visit.cacheKey;
 }

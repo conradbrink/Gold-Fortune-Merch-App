@@ -144,6 +144,7 @@ class RouteRepository {
     DateTime date,
   ) async {
     final dateStr = formatDate(date);
+    await _db.claimUnownedRoutes(repId);
 
     try {
       // Taken before the request as well as after it. Checking out with
@@ -174,10 +175,11 @@ class RouteRepository {
           .map((r) => RouteVisit.fromMap(r as Map<String, dynamic>))
           .toList();
 
-      final merged =
-          await _keepingUnsyncedLocalState(visits, dateStr, pendingBefore);
+      final merged = await _keepingUnsyncedLocalState(
+          repId, visits, dateStr, pendingBefore);
 
       await _db.replaceCachedRoutes(
+        repId,
         dateStr,
         merged
             .map((v) => (cacheKey: v.cacheKey, payload: jsonEncode(v.toMap())))
@@ -186,9 +188,9 @@ class RouteRepository {
 
       // Unscheduled visits live only on this device until they sync, so they
       // are merged in rather than coming back from the routes query.
-      return _withAdHoc(_sorted(merged), dateStr);
+      return _withAdHoc(repId, _sorted(merged), dateStr);
     } catch (_) {
-      return _cachedRoutes(dateStr);
+      return _cachedRoutes(repId, dateStr);
     }
   }
 
@@ -197,6 +199,7 @@ class RouteRepository {
   /// [pendingBefore] is what was queued when the request went out; anything
   /// queued since is read here, so a check-in made meanwhile is kept too.
   Future<List<RouteVisit>> _keepingUnsyncedLocalState(
+    String repId,
     List<RouteVisit> fromServer,
     String dateStr,
     Set<String> pendingBefore,
@@ -207,7 +210,7 @@ class RouteRepository {
     return mergeUnsyncedLocalState(
       fromServer: fromServer,
       cached: {
-        for (final row in await _db.cachedRoutesForDate(dateStr))
+        for (final row in await _db.cachedRoutesForDate(repId, dateStr))
           row.cacheKey: RouteVisit.fromMap(
               jsonDecode(row.payload) as Map<String, dynamic>),
       },
@@ -215,11 +218,13 @@ class RouteRepository {
     );
   }
 
+  /// [repId]'s own, and nobody else's: a shared phone keeps every rep's.
   Future<List<RouteVisit>> _withAdHoc(
+    String repId,
     List<RouteVisit> scheduled,
     String dateStr,
   ) async {
-    final adHoc = await _db.adHocVisitsForDate(dateStr);
+    final adHoc = await _db.adHocVisitsForDate(repId, dateStr);
     if (adHoc.isEmpty) return scheduled;
 
     // A synced ad-hoc visit comes back inside the routes query only if the
@@ -233,8 +238,8 @@ class RouteRepository {
     return _sorted([...scheduled, ...extras]);
   }
 
-  Future<List<RouteVisit>> _cachedRoutes(String dateStr) async {
-    final cached = await _db.cachedRoutesForDate(dateStr);
+  Future<List<RouteVisit>> _cachedRoutes(String repId, String dateStr) async {
+    final cached = await _db.cachedRoutesForDate(repId, dateStr);
     return _sorted(cached
         .map((c) =>
             RouteVisit.fromMap(jsonDecode(c.payload) as Map<String, dynamic>))
@@ -398,10 +403,15 @@ class RouteRepository {
     }
   }
 
-  /// Records an unscheduled visit locally so it appears on the day's list
+  /// Records an unscheduled visit locally so it appears on [repId]'s list
   /// immediately, before check-in and before any connection.
-  Future<void> addUnscheduledVisit(RouteVisit visit, DateTime date) {
+  Future<void> addUnscheduledVisit(
+    String repId,
+    RouteVisit visit,
+    DateTime date,
+  ) {
     return _db.insertAdHocVisit(
+      repId: repId,
       cacheKey: visit.cacheKey,
       scheduledDate: formatDate(date),
       payload: jsonEncode(visit.toMap()),
