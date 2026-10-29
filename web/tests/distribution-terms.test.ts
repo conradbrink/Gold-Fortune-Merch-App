@@ -3,7 +3,7 @@
 // neutral defaults gets the neutral words.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { dispatchOrder, PartialDispatchError, receivedViaOptions } from "@/lib/orders";
+import { dispatchOrder, PartialDispatchError, receivedViaLabel, receivedViaOptions } from "@/lib/orders";
 import { fetchSales } from "@/lib/sales";
 import { DEFAULT_TERMS, parseTerms, type Terms } from "@/lib/terms";
 
@@ -28,8 +28,16 @@ test("an order taken on a call is labelled in the company's words", () => {
   // The other channels are not business words and do not move.
   assert.deepEqual(
     receivedViaOptions(DEFAULT_TERMS).map((o) => o.label),
-    ["WhatsApp", "Email", "Phone", "In person", "Staff member job", "Other"]
+    ["WhatsApp", "Email", "Phone call", "In person", "Staff member job", "Other"]
   );
+});
+
+test("a board card names how the order came in", () => {
+  assert.equal(receivedViaLabel("whatsapp", goldFortune), "WhatsApp");
+  assert.equal(receivedViaLabel("phone", goldFortune), "Phone call");
+  assert.equal(receivedViaLabel("rep_visit", goldFortune), "Rep visit");
+  // A value added on the server before the web knows it still says something.
+  assert.equal(receivedViaLabel("sms", goldFortune), "sms");
 });
 
 /** Just enough of a Supabase client for dispatchOrder: two RPCs. */

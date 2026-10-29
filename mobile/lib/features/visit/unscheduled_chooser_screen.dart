@@ -7,7 +7,10 @@ import '../../core/providers.dart';
 import '../../core/terms.dart';
 import '../../core/theme.dart';
 
-/// What kind of unscheduled call this is.
+/// Everything a rep starts that is not on today's list, behind the day's
+/// "+ New" button (owner, 29 Oct 2026; it was "Unscheduled visit" until "New
+/// order" joined it). Labels are one to three words (owner: "not make wording
+/// too long for labels"); what each does goes in the small text under it.
 ///
 /// The button used to go straight to the store picker, which quietly assumed
 /// every unplanned call is to a shop already on the estate. The other kind —
@@ -27,20 +30,34 @@ class UnscheduledChooserScreen extends ConsumerWidget {
     final t = ref.watch(termsProvider);
 
     return Scaffold(
-      appBar: AppBar(title: Text('Unscheduled ${t.job.oneLower}')),
+      appBar: AppBar(title: const Text('New')),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
           _Choice(
             icon: Icons.storefront_outlined,
-            title: '${t.site.one} check-in',
+            title: '${t.site.one} ${t.job.oneLower}',
             body:
-                '${capital(t.site.withArticle)} already on your list. Checks in '
-                'with the usual position and time, then the normal '
+                "${capital(t.site.withArticle)} that is not on today's list. Checks "
+                'in with the usual position and time, then the normal '
                 '${t.job.oneLower}: forms, photos, check-out.',
             onTap: () => context.go('/unscheduled/store'),
           ),
           if (hasSales) ...[
+          const SizedBox(height: 12),
+          // An order the customer sent rather than gave the rep in the shop.
+          // Named for what it is, not for how it came: WhatsApp is one answer
+          // to "How they ordered" on the next screen (owner, 29 Oct 2026).
+          _Choice(
+            icon: Icons.receipt_long_outlined,
+            title: 'New order',
+            body:
+                'An order ${t.site.withArticle} sent you, on WhatsApp, over the '
+                'phone, by email or any other way. Choose the '
+                '${t.site.oneLower} and type it in. You don\'t check in, and '
+                'nobody signs.',
+            onTap: () => context.go('/unscheduled/order'),
+          ),
           const SizedBox(height: 12),
           _Choice(
             icon: Icons.add_business_outlined,

@@ -85,8 +85,10 @@ class RouteTodayScreen extends ConsumerWidget {
         onPressed: () => context.go('/unscheduled'),
         backgroundColor: context.brand.primary,
         foregroundColor: Colors.white,
-        icon: const Icon(Icons.add_business_outlined),
-        label: Text('Unscheduled ${t.job.oneLower}'),
+        // Everything not on today's list starts here: a visit, a new order, a
+        // new customer, a sales call (owner, 29 Oct 2026).
+        icon: const Icon(Icons.add),
+        label: const Text('New'),
       ),
       body: RefreshIndicator(
         onRefresh: () async {

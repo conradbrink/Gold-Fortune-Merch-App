@@ -7,11 +7,19 @@ import '../../core/providers.dart';
 import '../../core/theme.dart';
 import '../../data/local/order_draft.dart';
 import '../../data/models/catalogue_product.dart';
+import '../../data/models/order_received_via.dart';
 import '../../data/models/store_group.dart';
 import '../../data/models/store_reorder.dart';
 import 'order_sign_sheet.dart';
 
-/// Taking an order in the shop.
+/// What a new order says when it is saved without how it came.
+const _askHowTheyOrdered = 'Choose how they ordered before saving.';
+
+/// Taking an order in the shop, or typing in a new order a customer sent.
+///
+/// The two differ only at the end. In the shop the manager signs for it on the
+/// rep's phone. A new order has nobody there to sign (owner, 29 Oct 2026):
+/// there is no visit and no check-in, and the rep says how it came instead.
 ///
 /// Every change is written to the draft on disk immediately. Android will kill
 /// this app whenever something else wants the memory, and an order is the worst
@@ -23,16 +31,32 @@ import 'order_sign_sheet.dart';
 /// afternoon. The warehouse checks availability when it confirms, under a lock,
 /// which is the only place the answer can be true.
 class OrderCaptureScreen extends ConsumerStatefulWidget {
+  /// An order taken on a checked-in visit, signed for in the shop.
   const OrderCaptureScreen({
     super.key,
-    required this.visitClientId,
+    required String this.visitClientId,
     required this.storeId,
     required this.storeName,
-    required this.visitKey,
+    required String this.visitKey,
     this.storeAddress,
-  });
+  }) : draftId = visitClientId;
 
-  final String visitClientId;
+  /// A new order the customer sent: no visit, no signature, kept under
+  /// [OrderDraft.newOrderId] while it is typed.
+  const OrderCaptureScreen.newOrder({
+    super.key,
+    required this.draftId,
+    required this.storeId,
+    required this.storeName,
+    this.storeAddress,
+  })  : visitClientId = null,
+        visitKey = null;
+
+  /// The visit this order is taken on; null for a new order.
+  final String? visitClientId;
+
+  /// Where the half-typed order is kept: the visit's client id in the shop.
+  final String draftId;
   final String storeId;
   final String storeName;
 
@@ -42,8 +66,9 @@ class OrderCaptureScreen extends ConsumerStatefulWidget {
 
   /// Where leaving this screen goes back to. Held rather than popped, because
   /// this is a route now (`/visit/:key/order`) and not an imperative push —
-  /// see the comment on the button that opens it.
-  final String visitKey;
+  /// see the comment on the button that opens it. Null for a new order, which
+  /// goes back to the day.
+  final String? visitKey;
 
   @override
   ConsumerState<OrderCaptureScreen> createState() => _OrderCaptureScreenState();
@@ -63,6 +88,12 @@ class _OrderCaptureScreenState extends ConsumerState<OrderCaptureScreen> {
   /// `orders.required_by` is and what the draft round-trips; converting at two
   /// boundaries instead of one is how a date drifts by a day.
   String? _requiredBy;
+
+  /// How the customer sent a new order, once the rep has said: one of
+  /// [orderSentChoices]. Required before a new order saves; unused in the shop.
+  String? _receivedVia;
+
+  bool get _inShop => widget.visitClientId != null;
 
   bool _loading = true;
   bool _saving = false;
@@ -92,16 +123,22 @@ class _OrderCaptureScreenState extends ConsumerState<OrderCaptureScreen> {
   Future<void> _restore() async {
     final repo = ref.read(orderRepositoryProvider);
     final catalogue = await repo.cachedCatalogue();
-    final draft = await repo.drafts.load(widget.visitClientId);
+    final draft = await repo.drafts.load(widget.draftId);
     // Who this phone last took an order from here, or who the rep named when
     // they added the customer: the delivery details are required on every
     // order (owner, 29 Oct 2026), so they start filled in wherever they can.
     final lastContact =
         await ref.read(routeRepositoryProvider).contactFor(widget.storeId);
+    // A new order left unsaved on an earlier day is not this one: the
+    // customer has sent another since, and last week's lines filled in would
+    // be sent again. Kept for the day it was started (Android may kill the
+    // app mid-order), then dropped. A visit's draft ends with its visit.
+    final stale = !_inShop && draft != null && !_startedToday(draft.savedAt);
+    if (stale) await repo.drafts.clear(widget.draftId);
     if (!mounted) return;
     setState(() {
       _catalogue = catalogue.isEmpty ? const [] : catalogue;
-      final ours = draft != null && draft.storeId == widget.storeId;
+      final ours = draft != null && !stale && draft.storeId == widget.storeId;
       if (ours) {
         for (final l in draft.lines) {
           _qty[l.productId] = l.qty;
@@ -111,6 +148,7 @@ class _OrderCaptureScreenState extends ConsumerState<OrderCaptureScreen> {
         _contactPhone.text = draft.contactPhone ?? '';
         _deliveryAddress.text = draft.deliveryAddress ?? '';
         _requiredBy = draft.requiredBy;
+        if (isOrderSentChoice(draft.receivedVia)) _receivedVia = draft.receivedVia;
       }
       // Only into an empty box: what the rep typed on the draft stands.
       if (_contactName.text.isEmpty) _contactName.text = lastContact?.name ?? '';
@@ -192,17 +230,18 @@ class _OrderCaptureScreenState extends ConsumerState<OrderCaptureScreen> {
         name.isEmpty &&
         phone.isEmpty &&
         !typedAddress &&
-        _requiredBy == null) {
-      await repo.drafts.clear(widget.visitClientId);
+        _requiredBy == null &&
+        _receivedVia == null) {
+      await repo.drafts.clear(widget.draftId);
       // #20 moved this invalidate *after* the await on purpose, so the store
       // screen's "Order in progress" count could never read one edit stale.
       // Through the container rather than `ref`, so that stays true even when
       // this screen is gone by the time the write lands.
-      container.invalidate(orderDraftProvider(widget.visitClientId));
+      container.invalidate(orderDraftProvider(widget.draftId));
       return;
     }
     await repo.drafts.save(
-      widget.visitClientId,
+      widget.draftId,
       OrderDraft(
         storeId: widget.storeId,
         lines: lines,
@@ -211,6 +250,7 @@ class _OrderCaptureScreenState extends ConsumerState<OrderCaptureScreen> {
         contactPhone: phone.isEmpty ? null : phone,
         deliveryAddress: address.isEmpty ? null : address,
         requiredBy: _requiredBy,
+        receivedVia: _receivedVia,
       ),
     );
     // After the write, as the clear branch above already does. Invalidating
@@ -222,7 +262,7 @@ class _OrderCaptureScreenState extends ConsumerState<OrderCaptureScreen> {
     // Through the container for the same reason as the clear branch: the write
     // has already happened, and the screen that reads it must be told whether or
     // not this one survived to see it.
-    container.invalidate(orderDraftProvider(widget.visitClientId));
+    container.invalidate(orderDraftProvider(widget.draftId));
   }
 
   List<OrderDraftLine> _lines() {
@@ -307,6 +347,11 @@ class _OrderCaptureScreenState extends ConsumerState<OrderCaptureScreen> {
       return;
     }
 
+    if (!_inShop && _receivedVia == null) {
+      setState(() => _error = _askHowTheyOrdered);
+      return;
+    }
+
     // Where it goes and who to ask for, on every order (owner, 29 Oct 2026):
     // a driver with no address or number cannot deliver it.
     final contact = _contactName.text.trim();
@@ -322,16 +367,20 @@ class _OrderCaptureScreenState extends ConsumerState<OrderCaptureScreen> {
       return;
     }
 
-    // The manager signs for it before it is saved: every order needs a
-    // signature (owner, 27 Oct 2026). Closing the sheet leaves the draft.
+    // The manager signs for an order taken in the shop before it is saved
+    // (owner, 27 Oct 2026). Closing the sheet leaves the draft. A new order
+    // has nobody there to sign: how it came stands in for that.
     setState(() => _error = null);
-    final signature = await showOrderSignSheet(
-      context,
-      lineCount: lines.length,
-      storeName: widget.storeName,
-      signerName: contact,
-    );
-    if (signature == null || !mounted) return;
+    OrderSignature? signature;
+    if (_inShop) {
+      signature = await showOrderSignSheet(
+        context,
+        lineCount: lines.length,
+        storeName: widget.storeName,
+        signerName: contact,
+      );
+      if (signature == null || !mounted) return;
+    }
 
     setState(() {
       _saving = true;
@@ -345,6 +394,8 @@ class _OrderCaptureScreenState extends ConsumerState<OrderCaptureScreen> {
             repId: profile.id,
             storeId: widget.storeId,
             visitClientGeneratedId: widget.visitClientId,
+            draftId: widget.draftId,
+            receivedVia: _receivedVia ?? orderTakenInShop,
             lines: lines,
             note: _note.text.trim().isEmpty ? null : _note.text.trim(),
             contactName: contact,
@@ -367,10 +418,11 @@ class _OrderCaptureScreenState extends ConsumerState<OrderCaptureScreen> {
           content: Text('Order saved. It will reach the warehouse when you have signal.'),
         ),
       );
-      ref.invalidate(orderDraftProvider(widget.visitClientId));
+      ref.invalidate(orderDraftProvider(widget.draftId));
       ref.invalidate(ordersTakenProvider);
       ref.invalidate(storeReorderProvider);
-      context.go('/visit/${widget.visitKey}');
+      final visitKey = widget.visitKey;
+      context.go(visitKey == null ? '/' : '/visit/$visitKey');
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -405,7 +457,7 @@ class _OrderCaptureScreenState extends ConsumerState<OrderCaptureScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Take an order'),
+        title: Text(_inShop ? 'Take an order' : 'New order'),
         bottom: PreferredSize(
           preferredSize: const Size.fromHeight(28),
           child: Padding(
@@ -444,6 +496,17 @@ class _OrderCaptureScreenState extends ConsumerState<OrderCaptureScreen> {
                       'once with signal and they will be there next time.',
                       textAlign: TextAlign.center,
                     ),
+                  ),
+                if (!_inShop)
+                  _HowTheyOrdered(
+                    value: _receivedVia,
+                    onChanged: (v) {
+                      setState(() {
+                        _receivedVia = v;
+                        if (_error == _askHowTheyOrdered) _error = null;
+                      });
+                      _persist();
+                    },
                   ),
                 Padding(
                   padding: const EdgeInsets.all(12),
@@ -576,7 +639,11 @@ class _OrderCaptureScreenState extends ConsumerState<OrderCaptureScreen> {
                             ),
                             FilledButton(
                               onPressed: _saving || lineCount == 0 ? null : _submit,
-                              child: Text(_saving ? 'Saving…' : 'Sign and save'),
+                              child: Text(_saving
+                                  ? 'Saving…'
+                                  : _inShop
+                                      ? 'Sign and save'
+                                      : 'Save order'),
                             ),
                           ],
                         ),
@@ -603,6 +670,14 @@ class _OrderCaptureScreenState extends ConsumerState<OrderCaptureScreen> {
   }
 }
 
+/// Whether [savedAt] is today on this phone.
+bool _startedToday(DateTime? savedAt) {
+  if (savedAt == null) return false;
+  final now = DateTime.now();
+  final at = savedAt.toLocal();
+  return at.year == now.year && at.month == now.month && at.day == now.day;
+}
+
 /// What stops an order being saved for want of delivery details, as the
 /// message the rep reads, or null when all three are there (owner, 29 Oct
 /// 2026: every order carries where it goes and who to ask for).
@@ -621,6 +696,42 @@ String? missingDeliveryDetails({
       ? missing.single
       : '${missing.sublist(0, missing.length - 1).join(', ')} and ${missing.last}';
   return 'Fill in $listed before saving.';
+}
+
+/// "How they ordered": the one thing a new order says that one taken in
+/// the shop does not. No answer is chosen for the rep: a wrong default would
+/// tell the office an email came that never did.
+class _HowTheyOrdered extends StatelessWidget {
+  const _HowTheyOrdered({required this.value, required this.onChanged});
+
+  final String? value;
+  final ValueChanged<String> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 12, 12, 0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('How they ordered', style: Theme.of(context).textTheme.titleSmall),
+          const SizedBox(height: 6),
+          Wrap(
+            spacing: 8,
+            runSpacing: 4,
+            children: [
+              for (final c in orderSentChoices)
+                ChoiceChip(
+                  label: Text(c.label),
+                  selected: value == c.value,
+                  onSelected: (_) => onChanged(c.value),
+                ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 class _ProductRow extends StatelessWidget {

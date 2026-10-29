@@ -65,6 +65,7 @@ import {
   unitsFromShown,
   unitPriceFromShown,
   fetchOrderableProducts,
+  receivedViaLabel,
   type OrderDetail,
   type AvailabilityRow,
   type ShortfallAction,
@@ -1292,16 +1293,9 @@ export default function OrderDetailPage() {
             </CardHeader>
             <CardContent className="space-y-1.5 text-sm">
               <Row label="Source" value={o.source === "rep_app" ? `${terms.staff.one} app` : "Keyed here"} />
-              {/* The stored value, read out lower-case as it always has been;
-                  only the one that names the company's people is translated. */}
-              <Row
-                label="Received via"
-                value={
-                  o.received_via === "rep_visit"
-                    ? `${lower(terms.staff.one)} ${lower(terms.job.one)}`
-                    : o.received_via.replace("_", " ")
-                }
-              />
+              {/* In the words the board's tag and the New order form use
+                  ("WhatsApp", "Phone call", "Rep visit"). */}
+              <Row label="Received via" value={receivedViaLabel(o.received_via, terms)} />
               {/* Always shown. "No rep" is a fact about the order — a shop
                   that rang the office is nobody's call — and hiding the row
                   makes it look like the screen forgot to load it. */}

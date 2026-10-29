@@ -48,6 +48,8 @@ export type PipelineOrder = {
   storeName: string | null;
   repId: string | null;
   repName: string | null;
+  /** How it came in (`received_via`): `rep_visit` when taken in the shop. */
+  receivedVia: string;
   createdAt: string;
   /** When it was confirmed: the orders board's Invoiced column counts from here. */
   confirmedAt: string | null;
@@ -78,6 +80,7 @@ type Row = {
   on_hold: boolean | null;
   store_id: string | null;
   rep_id: string | null;
+  received_via: string;
   created_at: string;
   confirmed_at: string | null;
   picking_started_at: string | null;
@@ -143,7 +146,7 @@ export async function fetchPipelineOrders(supabase: SupabaseClient): Promise<Pip
     supabase
       .from("orders")
       .select(
-        `id, order_number, invoice_number, contact_name, status, pod_status, on_hold, store_id, rep_id, created_at, confirmed_at,
+        `id, order_number, invoice_number, contact_name, status, pod_status, on_hold, store_id, rep_id, received_via, created_at, confirmed_at,
          picking_started_at, packed_at, dispatched_at, delivered_at, required_by, customer_po_number, customer_po_expires_on, vat_rate,
          fulfil_location_id, stores(name), profiles!orders_rep_id_fkey(full_name), order_lines(qty_ordered, unit_price)`
       );
@@ -172,6 +175,7 @@ export async function fetchPipelineOrders(supabase: SupabaseClient): Promise<Pip
         storeName: one(r.stores)?.name ?? null,
         repId: r.rep_id,
         repName: one(r.profiles)?.full_name ?? null,
+        receivedVia: r.received_via,
         createdAt: r.created_at,
         confirmedAt: r.confirmed_at,
         enteredAt: enteredAtOf(r),

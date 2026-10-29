@@ -13,6 +13,7 @@ import '../local/app_database.dart';
 import '../local/order_draft.dart';
 import '../local/outbox_types.dart';
 import '../models/catalogue_product.dart';
+import '../models/order_received_via.dart';
 import '../models/store_reorder.dart';
 import '../sync/sync_engine.dart';
 
@@ -29,7 +30,8 @@ String? clipText(String? text, int max) {
   return runes.length <= max ? t : String.fromCharCodes(runes.take(max)).trimRight();
 }
 
-/// Orders a rep takes while standing in a shop.
+/// Orders a rep takes while standing in a shop, and new orders a customer
+/// sent them.
 ///
 /// ------------------------------------------------------------- stock
 ///
@@ -109,11 +111,19 @@ class OrderRepository {
   /// on disk — which the rep would find and send twice — or a cleared draft
   /// with nothing queued, which is the order simply gone. `LeadRepository.start`
   /// carries the same note for the same reason.
+  ///
+  /// An order taken in the shop names its [visitClientGeneratedId] and is
+  /// [orderTakenInShop]. A new order the customer sent has no visit: it names
+  /// the [draftId] it was typed under and how it came ([receivedVia], one of
+  /// [orderSentChoices]). The server needs neither a visit nor a signature
+  /// for it (`orders_insert` pins only the rep and `source`).
   Future<String> submitOrder({
     required String orgId,
     required String repId,
     required String storeId,
-    required String visitClientGeneratedId,
+    String? visitClientGeneratedId,
+    String? draftId,
+    String receivedVia = orderTakenInShop,
     required List<OrderDraftLine> lines,
     String? note,
     String? contactName,
@@ -124,6 +134,16 @@ class OrderRepository {
   }) async {
     if (lines.isEmpty) {
       throw ArgumentError('An order needs at least one line.');
+    }
+    // Taken in the shop, or sent and saying how: never a visit with a channel,
+    // nor an order with neither, which the office could not tell apart.
+    final inShop = visitClientGeneratedId != null;
+    if (inShop ? receivedVia != orderTakenInShop : !isOrderSentChoice(receivedVia)) {
+      throw ArgumentError.value(receivedVia, 'receivedVia', 'does not fit visitClientGeneratedId');
+    }
+    final draft = draftId ?? visitClientGeneratedId;
+    if (draft == null) {
+      throw ArgumentError.notNull('draftId');
     }
 
     final clientId = _uuid.v4();
@@ -145,12 +165,14 @@ class OrderRepository {
       'store_id': storeId,
       'client_generated_id': clientId,
       'source': 'rep_app',
-      'received_via': 'rep_visit',
+      'received_via': receivedVia,
       'notes': note,
       'contact_name': contactName,
       'contact_phone': contactPhone,
       'delivery_address': clipText(deliveryAddress, 300),
       'required_by': requiredBy,
+      // Null for a new order: it was not taken on a visit. Read only on this
+      // phone (the server's order has no visit column).
       'visit_client_generated_id': visitClientGeneratedId,
       // The manager's signature: the picture on this phone until it uploads,
       // the name typed beside it, and when it was drawn.
@@ -184,8 +206,8 @@ class OrderRepository {
         clientGeneratedId: clientId,
         payload: jsonEncode(payload),
       );
-      await drafts.clear(visitClientGeneratedId);
-      await _rememberOrderTaken(visitClientGeneratedId);
+      await drafts.clear(draft);
+      if (inShop) await _rememberOrderTaken(visitClientGeneratedId);
     });
 
     unawaited(_sync.sync());

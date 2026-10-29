@@ -134,6 +134,27 @@ final routerProvider = Provider<GoRouter>((ref) {
                 builder: (context, state) => const StorePickerScreen(),
               ),
               GoRoute(
+                // A new order the customer sent: pick them, then type it in.
+                // No visit is started, so nothing here needs a check-in or an
+                // open workday. The store id, not `extra`, for the reason
+                // 'visit/:key' gives.
+                path: 'order',
+                builder: (context, state) => const StorePickerScreen(forOrder: true),
+                routes: [
+                  // Before ':storeId', which would otherwise take 'new' as an id.
+                  GoRoute(
+                    path: 'new',
+                    builder: (context, state) => const NewCustomerScreen(forOrder: true),
+                  ),
+                  GoRoute(
+                    path: ':storeId',
+                    builder: (context, state) => NewOrderRoute(
+                      storeId: state.pathParameters['storeId']!,
+                    ),
+                  ),
+                ],
+              ),
+              GoRoute(
                 path: 'new',
                 builder: (context, state) => const NewCustomerScreen(),
               ),

@@ -120,6 +120,7 @@ class OrderDraft {
     this.contactPhone,
     this.deliveryAddress,
     this.requiredBy,
+    this.receivedVia,
     this.savedAt,
   });
 
@@ -146,12 +147,24 @@ class OrderDraft {
   /// date attached and inventing one would be worse than leaving it open.
   final String? requiredBy;
 
+  /// How the customer sent a new order (`orders.received_via`), once the rep
+  /// has said. Null on an order taken in the shop, and on one not answered yet.
+  final String? receivedVia;
+
   final DateTime? savedAt;
 
   /// Keyed by the visit, not the store: a rep who visits the same shop twice in
   /// a day is taking two orders, and the second must not resurrect the first.
+  ///
+  /// A new order the customer sent has no visit, so it is kept under
+  /// [newOrderId] instead.
   static String keyFor(String visitClientGeneratedId) =>
       'order_draft:$visitClientGeneratedId';
+
+  /// Where a new order for [storeId] is kept while [repId] types it: one per
+  /// person and customer, so choosing the same customer again brings it back,
+  /// and somebody else signed in on a shared phone never finds it.
+  static String newOrderId(String repId, String storeId) => 'new:$repId:$storeId';
 
   String encode() => jsonEncode({
         'saved_at': (savedAt ?? DateTime.now()).toIso8601String(),
@@ -161,6 +174,7 @@ class OrderDraft {
         'contact_phone': contactPhone,
         'delivery_address': deliveryAddress,
         'required_by': requiredBy,
+        'received_via': receivedVia,
         'lines': lines.map((l) => l.toMap()).toList(),
       });
 
@@ -183,6 +197,8 @@ class OrderDraft {
         // Absent from drafts written before the delivery address was asked.
         deliveryAddress: map['delivery_address'] as String?,
         requiredBy: map['required_by'] as String?,
+        // Absent from drafts of orders taken in the shop.
+        receivedVia: map['received_via'] as String?,
         savedAt: saved,
         lines: ((map['lines'] as List?) ?? const [])
             .map((l) => OrderDraftLine.fromMap(
@@ -204,18 +220,20 @@ class OrderDraftStore {
 
   final AppDatabase _db;
 
-  Future<OrderDraft?> load(String visitClientGeneratedId) async {
-    final raw = await _db.getValue(OrderDraft.keyFor(visitClientGeneratedId));
+  /// [draftId] is the visit's client id for an order taken in the shop, or
+  /// [OrderDraft.newOrderId] for one the customer sent.
+  Future<OrderDraft?> load(String draftId) async {
+    final raw = await _db.getValue(OrderDraft.keyFor(draftId));
     final draft = OrderDraft.decode(raw);
     if (draft == null && raw != null) {
-      await clear(visitClientGeneratedId);
+      await clear(draftId);
     }
     return draft;
   }
 
-  Future<void> save(String visitClientGeneratedId, OrderDraft draft) =>
-      _db.setValue(OrderDraft.keyFor(visitClientGeneratedId), draft.encode());
+  Future<void> save(String draftId, OrderDraft draft) =>
+      _db.setValue(OrderDraft.keyFor(draftId), draft.encode());
 
-  Future<void> clear(String visitClientGeneratedId) =>
-      _db.deleteValue(OrderDraft.keyFor(visitClientGeneratedId));
+  Future<void> clear(String draftId) =>
+      _db.deleteValue(OrderDraft.keyFor(draftId));
 }
