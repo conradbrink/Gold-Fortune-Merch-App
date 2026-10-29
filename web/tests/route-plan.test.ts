@@ -1,13 +1,15 @@
-// A driver's stops put in order by Google: the request, and the answer read
-// back into dispatch ids (lib/route-plan.ts).
+// A driver's or a rep's stops put in order by Google: the request, and the
+// answer read back into ids (lib/route-plan.ts).
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   isLatLng,
   MAX_STOPS,
   orderFromAnswer,
+  plannedIds,
   routesRequest,
   stopFor,
+  stopForRoute,
   type Stop,
 } from "@/lib/route-plan";
 import { LIMITS } from "@/lib/rate-limit";
@@ -96,4 +98,20 @@ test("only a real latitude and longitude is a place", () => {
 test("Plan my route is ten Google calls a day per person (owner, 29 Oct 2026)", () => {
   assert.equal(LIMITS.routePlan.limit, 10);
   assert.equal(LIMITS.routePlan.windowSeconds, 86_400);
+});
+
+test("a rep's visit is found by the shop's pin, else its name and address", () => {
+  const store = { name: "Spar", address: "1 Church St", city: "Potchefstroom", state: null, lat: -26.7, lng: 27.1 };
+  assert.deepEqual(stopForRoute({ id: "r", store }), { id: "r", at: { lat: -26.7, lng: 27.1 }, address: null });
+  assert.equal(stopForRoute({ id: "r", store: { ...store, lat: null } }).address, "Spar, 1 Church St, Potchefstroom");
+  assert.equal(stopForRoute({ id: "r", store: null }).address, null);
+});
+
+test("the phone asks for deliveries or visits, never both, each once", () => {
+  assert.deepEqual(plannedIds({ dispatchIds: ["a", "b", "a", 3] }), { kind: "dispatches", ids: ["a", "b"] });
+  assert.deepEqual(plannedIds({ routeIds: ["r1", "r2"] }), { kind: "routes", ids: ["r1", "r2"] });
+  assert.equal(plannedIds({ dispatchIds: ["a"], routeIds: ["r"] }), null);
+  assert.equal(plannedIds({ routeIds: "r1" }), null);
+  assert.equal(plannedIds({}), null);
+  assert.equal(plannedIds(null), null);
 });

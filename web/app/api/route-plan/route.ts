@@ -6,25 +6,37 @@ import {
   MAX_STOPS,
   orderFromAnswer,
   routesRequest,
+  plannedIds,
   stopFor,
+  stopForRoute,
   type DispatchRow,
+  type RouteRow,
   type RoutesAnswer,
 } from "@/lib/route-plan";
 
 /**
- * A driver's deliveries in the best driving order, from Google.
+ * A driver's deliveries, or a rep's visits for the day, in the best driving
+ * order, from Google.
  *
- * Called by the phone's "Plan my route" (mobile/lib/features/driver), with the
- * driver's own access token: the phone has no cookie, so this reads the
+ * Called by the phone's "Plan my route" (mobile/lib/features/driver for a
+ * driver, mobile/lib/features/route_today for a rep, which also plans once
+ * when the workday starts), with the person's own access token: the phone has no cookie, so this reads the
  * `Authorization: Bearer` header and asks Supabase who it belongs to. Server-
  * side because the Google key must never reach a handset, the same reasoning
  * as `/api/geocode` and `/api/workday/road-distance`; `proxy.ts` excludes /api,
  * so this handler owns its auth.
  *
- * **The phone sends dispatch ids, never places.** The stops are read here,
- * through the driver's own client, so RLS answers with only the deliveries
- * assigned to them (`dispatches_select`). An endpoint that routed whatever
- * points it was sent would be a free routing service on the company's key.
+ * **The phone sends ids, never places.** A driver sends dispatch ids, a rep
+ * the route ids of their scheduled visits. The stops are read here, through
+ * the caller's own client, so RLS answers with only the deliveries assigned to
+ * them (`dispatches_select`) or the visits in their company
+ * (`routes_select`), and routes are narrowed to the caller's own on top: a
+ * manager signed in on a phone plans their own day, not a rep's. An endpoint
+ * that routed whatever points it was sent would be a free routing service on
+ * the company's key.
+ *
+ * Both share one limit (`LIMITS.routePlan`), per person: a rep's automatic
+ * plan at the start of the day is one of them.
  *
  * **Off until the owner switches it on.** Ordering stops is billed as Compute
  * Routes Pro (US$10 a 1,000 calls, the first 5,000 a month free, Google's
@@ -67,19 +79,18 @@ export async function POST(request: Request) {
       );
     }
 
-    const body = (await request.json().catch(() => null)) as {
-      origin?: unknown;
-      dispatchIds?: unknown;
-    } | null;
+    const body = (await request.json().catch(() => null)) as { origin?: unknown } | null;
     const origin = body?.origin;
     if (!isLatLng(origin)) {
       return Response.json({ error: "Where you are is missing." }, { status: 400 });
     }
-    const ids = Array.isArray(body?.dispatchIds)
-      ? [...new Set(body.dispatchIds.filter((v): v is string => typeof v === "string"))]
-      : [];
+    const asked = plannedIds(body);
+    if (!asked) {
+      return Response.json({ error: "Send deliveries or stops to plan, not both." }, { status: 400 });
+    }
+    const { kind, ids } = asked;
     if (ids.length < 2) {
-      return Response.json({ error: "Two deliveries or more are needed to plan a route." }, { status: 400 });
+      return Response.json({ error: "Two stops or more are needed to plan a route." }, { status: 400 });
     }
     if (ids.length > MAX_STOPS) {
       return Response.json(
@@ -88,26 +99,43 @@ export async function POST(request: Request) {
       );
     }
 
-    // Through the driver's own client: RLS returns only their deliveries.
-    const { data, error } = await supabase
-      .from("dispatches")
-      .select("id, order:orders(delivery_address, store:stores(name, address, city, state, lat, lng))")
-      .in("id", ids)
-      .eq("status", "in_transit");
-    if (error) {
-      return Response.json({ error: error.message }, { status: 502 });
+    // Through the caller's own client: RLS returns only their deliveries,
+    // and the routes are narrowed to the ones scheduled for them.
+    const read =
+      kind === "dispatches"
+        ? await supabase
+            .from("dispatches")
+            .select("id, order:orders(delivery_address, store:stores(name, address, city, state, lat, lng))")
+            .in("id", ids)
+            .eq("status", "in_transit")
+        : await supabase
+            .from("routes")
+            .select("id, store:stores(name, address, city, state, lat, lng)")
+            .in("id", ids)
+            .eq("rep_id", user.id);
+    if (read.error) {
+      return Response.json({ error: read.error.message }, { status: 502 });
     }
-    const rows = (data ?? []) as unknown as DispatchRow[];
+    const rows = read.data ?? [];
     if (rows.length !== ids.length) {
       return Response.json(
-        { error: "Some of those deliveries are not yours, or are no longer on the road.", fallback: true },
+        {
+          error:
+            kind === "dispatches"
+              ? "Some of those deliveries are not yours, or are no longer on the road."
+              : "Some of those stops are not on your schedule.",
+          fallback: true,
+        },
         { status: 409 }
       );
     }
-    const stops = rows.map(stopFor);
+    const stops =
+      kind === "dispatches"
+        ? (rows as unknown as DispatchRow[]).map(stopFor)
+        : (rows as unknown as RouteRow[]).map(stopForRoute);
     if (stops.some((s) => !s.at && !s.address)) {
       return Response.json(
-        { error: "A delivery has no address to find it by.", fallback: true },
+        { error: "A stop has no address to find it by.", fallback: true },
         { status: 422 }
       );
     }

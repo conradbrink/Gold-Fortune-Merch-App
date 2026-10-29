@@ -1,11 +1,12 @@
 import { distanceKm } from "@/lib/geo";
 
 /**
- * A driver's stops in the best order, from where they are standing, by
- * Google (`/api/route-plan`): the Routes API with `optimizeWaypointOrder`,
- * which knows the roads. Paid per call (Compute Routes Pro), so it runs only
- * when the owner has switched it on. Without it the phone orders the stops
- * itself, by straight line (mobile/lib/features/driver/route_plan.dart).
+ * A driver's deliveries, or a rep's visits for the day, in the best order from
+ * where they are standing, by Google (`/api/route-plan`): the Routes API with
+ * `optimizeWaypointOrder`, which knows the roads. Paid per call (Compute Routes
+ * Pro), so it runs only when the owner has switched it on. Without it the
+ * phone orders the stops itself, by straight line
+ * (mobile/lib/features/driver/route_plan.dart).
  *
  * Google keeps the origin and the destination where they are and orders only
  * the stops between. A driver's round has no fixed end, so the end is the
@@ -133,26 +134,44 @@ export function orderFromAnswer(
   };
 }
 
+/** A place as `/api/route-plan` reads it, from `stores`. */
+export type PlaceRow = {
+  name: string | null;
+  address: string | null;
+  city: string | null;
+  state: string | null;
+  lat: number | null;
+  lng: number | null;
+};
+
 /** A dispatch as `/api/route-plan` reads it: the order's typed address and the place. */
 export type DispatchRow = {
   id: string;
   order: {
     delivery_address: string | null;
-    store: {
-      name: string | null;
-      address: string | null;
-      city: string | null;
-      state: string | null;
-      lat: number | null;
-      lng: number | null;
-    } | null;
+    store: PlaceRow | null;
   } | null;
+};
+
+/** A rep's scheduled visit as `/api/route-plan` reads it: the place only. */
+export type RouteRow = {
+  id: string;
+  store: PlaceRow | null;
 };
 
 const text = (v: string | null | undefined) => {
   const s = v?.trim();
   return s ? s : null;
 };
+
+/** A place by its pin, else by its name and address. */
+function placeStop(id: string, store: PlaceRow | null): Stop {
+  if (store && typeof store.lat === "number" && typeof store.lng === "number") {
+    return { id, at: { lat: store.lat, lng: store.lng }, address: null };
+  }
+  const parts = [store?.name, store?.address, store?.city, store?.state].map(text).filter(Boolean);
+  return { id, at: null, address: parts.length ? parts.join(", ") : null };
+}
 
 /**
  * Where a delivery is going, as the phone's delivery screen finds it
@@ -161,12 +180,29 @@ const text = (v: string | null | undefined) => {
  * pin; then its name and address.
  */
 export function stopFor(row: DispatchRow): Stop {
-  const store = row.order?.store ?? null;
   const typed = text(row.order?.delivery_address);
   if (typed) return { id: row.id, at: null, address: typed };
-  if (store && typeof store.lat === "number" && typeof store.lng === "number") {
-    return { id: row.id, at: { lat: store.lat, lng: store.lng }, address: null };
-  }
-  const parts = [store?.name, store?.address, store?.city, store?.state].map(text).filter(Boolean);
-  return { id: row.id, at: null, address: parts.length ? parts.join(", ") : null };
+  return placeStop(row.id, row.order?.store ?? null);
+}
+
+/** Where a rep's visit is: the place's pin, else its name and address. */
+export function stopForRoute(row: RouteRow): Stop {
+  return placeStop(row.id, row.store);
+}
+
+/**
+ * What the phone asked to have planned: a driver's deliveries (`dispatchIds`)
+ * or a rep's scheduled visits (`routeIds`), never both, each id once. Null
+ * when the body names neither, or both.
+ */
+export function plannedIds(body: unknown): { kind: "dispatches" | "routes"; ids: string[] } | null {
+  const b = (body ?? {}) as { dispatchIds?: unknown; routeIds?: unknown };
+  const dispatches = Array.isArray(b.dispatchIds);
+  const routes = Array.isArray(b.routeIds);
+  if (dispatches === routes) return null;
+  const raw = (dispatches ? b.dispatchIds : b.routeIds) as unknown[];
+  return {
+    kind: dispatches ? "dispatches" : "routes",
+    ids: [...new Set(raw.filter((v): v is string => typeof v === "string"))],
+  };
 }
