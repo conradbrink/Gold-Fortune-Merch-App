@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
@@ -72,7 +73,7 @@ lines:dispatch_lines(qty)
   static const _detailSelect = '''
 id, dispatch_number, status, dispatched_at, expected_delivery_on, delivered_at,
 carrier_name, tracking_reference, notes, failure_reason, received_by_name,
-order_id, order:orders(order_number, customer_po_number, customer_po_expires_on,
+received_signature_path, order_id, order:orders(order_number, customer_po_number, customer_po_expires_on,
   contact_name, contact_phone, delivery_address, notes,
   store:stores(name, address, city, state, zip, lat, lng))
 ''';
@@ -102,29 +103,40 @@ order_id, order:orders(order_number, customer_po_number, customer_po_expires_on,
   }
 
   /// Records the drop: everything on the dispatch was taken, [receivedBy]
-  /// signed for it, and [photo] is the signed delivery note.
+  /// signed for it on the phone ([signature], a PNG), and [photo], when the
+  /// driver took one, is the signed delivery note.
   ///
-  /// Queued, not sent: the photo is copied out of the camera's cache first
-  /// (Android may empty it), then one outbox entry, keyed by the dispatch, is
-  /// replayed by `SyncEngine` as upload-then-`delivery_confirm()`. Full
-  /// deliveries only (owner, 27 Oct 2026): a short drop is the warehouse's to
-  /// record.
+  /// Queued, not sent: the signature is written to the app's own folder and
+  /// the photo copied out of the camera's cache (Android may empty it), then
+  /// one outbox entry, keyed by the dispatch, is replayed by `SyncEngine` as
+  /// upload-then-`delivery_confirm()`. Full deliveries only (owner, 27 Oct
+  /// 2026): a short drop is the warehouse's to record. The signature is
+  /// required and the photo optional (owner, 29 Oct 2026).
   Future<void> confirmDelivery({
     required String orgId,
     required String repId,
     required DeliveryDetail delivery,
     required String receivedBy,
-    required File photo,
+    required Uint8List signature,
+    File? photo,
   }) async {
     final orderId = delivery.orderId;
     if (orderId == null) {
       throw StateError('This delivery has no order on record.');
     }
-    final photoId = const Uuid().v4();
+    final signatureId = const Uuid().v4();
+    final photoId = photo == null ? null : const Uuid().v4();
     final dir = await getApplicationDocumentsDirectory();
     final podDir = Directory(p.join(dir.path, 'pending_pod'));
     if (!podDir.existsSync()) podDir.createSync(recursive: true);
-    final kept = await photo.copy(p.join(podDir.path, '$photoId.jpg'));
+    final signed = await File(p.join(podDir.path, '$signatureId.png')).writeAsBytes(signature, flush: true);
+    File? kept;
+    try {
+      kept = photo == null ? null : await photo.copy(p.join(podDir.path, '$photoId.jpg'));
+    } catch (_) {
+      await _deleteQuietly(signed.path);
+      rethrow;
+    }
     final dispatchId = delivery.delivery.id;
 
     // An earlier try for this dispatch that gave up is replaced, not left in
@@ -145,20 +157,24 @@ order_id, order:orders(order_number, customer_po_number, customer_po_expires_on,
             'order_id': orderId,
             'received_by_name': receivedBy.trim(),
             'delivered_at': DateTime.now().toUtc().toIso8601String(),
+            'signature_client_id': signatureId,
+            'local_signature_path': signed.path,
             'photo_client_id': photoId,
-            'local_photo_path': kept.path,
+            'local_photo_path': kept?.path,
           }),
         );
         return old;
       });
     } catch (_) {
-      // Nothing queued, so nothing will ever upload this copy.
-      await _deleteQuietly(kept.path);
+      // Nothing queued, so nothing will ever upload these copies.
+      await _deleteQuietly(signed.path);
+      await _deleteQuietly(kept?.path);
       rethrow;
     }
     for (final e in replaced) {
       try {
         final old = jsonDecode(e.payload) as Map<String, dynamic>;
+        await _deleteQuietly(old['local_signature_path'] as String?);
         await _deleteQuietly(old['local_photo_path'] as String?);
       } catch (_) {
         // An unreadable old payload costs space, not the delivery.

@@ -170,6 +170,8 @@ void main() {
           return http.Response('unexpected $path', 500, request: r);
         };
 
+    // An entry from the build before signatures: a photo and no signature,
+    // sent exactly as it always was (no p_signature_path key at all).
     test('the photo goes under the order, then the call, and the copy leaves the phone', () async {
       final photo = await queue();
       await engine(server()).sync();
@@ -187,6 +189,87 @@ void main() {
       });
       expect(requests.indexOf(upload), lessThan(requests.indexOf(call)));
       expect(photo.existsSync(), isFalse);
+    });
+
+    // From the build with the receiver's signature (29 Oct 2026): a PNG,
+    // and a photo only when the driver took one.
+    Future<(File, File?)> queueSigned({bool photo = false, bool losePhoto = false}) async {
+      final sig = File('${dir.path}/sig.png')..writeAsBytesSync([0x89, 0x50, 0x4e, 0x47, 0x0d]);
+      final pic = photo ? (File('${dir.path}/pod.jpg')..writeAsBytesSync([0xff, 0xd8, 0xff])) : null;
+      if (losePhoto) pic!.deleteSync();
+      await db.enqueue(
+        entityType: OutboxType.deliveryConfirm,
+        clientGeneratedId: 'dispatch-1',
+        payload: jsonEncode({
+          'org_id': 'org-1',
+          'rep_id': 'rep-1',
+          'dispatch_id': 'dispatch-1',
+          'order_id': 'order-1',
+          'received_by_name': 'K. Molefe',
+          'delivered_at': '2026-10-29T09:30:00.000Z',
+          'signature_client_id': 'sig-1',
+          'local_signature_path': sig.path,
+          'photo_client_id': photo ? 'photo-1' : null,
+          'local_photo_path': pic?.path,
+        }),
+      );
+      return (sig, pic);
+    }
+
+    test('a signature alone goes up as a PNG under the order, and the call names it', () async {
+      final (sig, _) = await queueSigned();
+      await engine(server()).sync();
+
+      expect(await pending(), isEmpty);
+      final upload = storage().single;
+      expect(upload.url.path, endsWith('/fulfilment-docs/org-1/order-1/sig-1.png'));
+      // Multipart: the file's own type is in the part, not the request header.
+      expect(latin1.decode(upload.bodyBytes), contains('image/png'));
+      final call = requests.singleWhere((r) => r.url.path.endsWith('/rpc/delivery_confirm'));
+      expect(jsonDecode(call.body), {
+        'p_dispatch_id': 'dispatch-1',
+        'p_received_by_name': 'K. Molefe',
+        'p_delivered_at': '2026-10-29T09:30:00.000Z',
+        'p_pod_path': null,
+        'p_size_bytes': null,
+        'p_signature_path': 'org-1/order-1/sig-1.png',
+      });
+      expect(sig.existsSync(), isFalse);
+    });
+
+    test('with a photo too, both go up before the call, and both leave the phone', () async {
+      final (sig, pic) = await queueSigned(photo: true);
+      await engine(server()).sync();
+
+      expect(storage().map((r) => r.url.path.split('/').last), ['sig-1.png', 'photo-1.jpg']);
+      final call = requests.singleWhere((r) => r.url.path.endsWith('/rpc/delivery_confirm'));
+      final body = jsonDecode(call.body) as Map<String, dynamic>;
+      expect(body['p_signature_path'], 'org-1/order-1/sig-1.png');
+      expect(body['p_pod_path'], 'org-1/order-1/photo-1.jpg');
+      expect(body['p_size_bytes'], 3);
+      expect(sig.existsSync() || pic!.existsSync(), isFalse);
+    });
+
+    test('a photo the phone lost is left out beside a signature, not named and refused', () async {
+      await queueSigned(photo: true, losePhoto: true);
+      await engine(server()).sync();
+
+      expect(storage().map((r) => r.url.path.split('/').last), ['sig-1.png']);
+      final call = requests.singleWhere((r) => r.url.path.endsWith('/rpc/delivery_confirm'));
+      expect((jsonDecode(call.body) as Map)['p_pod_path'], isNull);
+      expect(await pending(), isEmpty);
+    });
+
+    test('a signature the phone lost is left out when the photo can carry the drop', () async {
+      final (sig, _) = await queueSigned(photo: true);
+      sig.deleteSync();
+      await engine(server()).sync();
+
+      expect(storage().map((r) => r.url.path.split('/').last), ['photo-1.jpg']);
+      final call = requests.singleWhere((r) => r.url.path.endsWith('/rpc/delivery_confirm'));
+      final body = jsonDecode(call.body) as Map<String, dynamic>;
+      expect(body.containsKey('p_signature_path'), isFalse);
+      expect(body['p_pod_path'], 'org-1/order-1/photo-1.jpg');
     });
 
     test('a photo already uploaded by an earlier try is not a failure', () async {

@@ -1046,34 +1046,60 @@ class SyncEngine {
     }
   }
 
-  /// The driver's drop: the photo of the signed delivery note into
-  /// `fulfilment-docs` under the order (where the web files PODs), then
-  /// `delivery_confirm()`, which records the delivery and files the photo in
-  /// one transaction.
+  /// The driver's drop: the receiver's signature (a PNG) and, when there is
+  /// one, the photo of the signed delivery note into `fulfilment-docs` under
+  /// the order (where the web files PODs), then `delivery_confirm()`, which
+  /// records the delivery and files both in one transaction.
   ///
-  /// Safe to replay. The upload is not an upsert (only the warehouse may
-  /// overwrite in that bucket), so a photo already there from an earlier try
-  /// is taken as uploaded; the call answers a photo it has already filed
+  /// Safe to replay. The uploads are not upserts (only the warehouse may
+  /// overwrite in that bucket), so a file already there from an earlier try
+  /// is taken as uploaded; the call answers proof it has already filed
   /// without doing anything.
+  ///
+  /// An entry queued by the build before signatures (29 Oct 2026) has a photo
+  /// and no signature, and is sent as it always was.
   Future<void> _replayDeliveryConfirm(Map<String, dynamic> data) async {
     final orgId = data['org_id'] as String;
-    final storagePath =
-        '$orgId/${data['order_id']}/${data['photo_client_id']}.jpg';
-    final localPath = data['local_photo_path'] as String?;
-    final file = localPath == null ? null : File(localPath);
+    final folder = '$orgId/${data['order_id']}';
+    final signatureFile = _fileAt(data['local_signature_path']);
+    final photoId = data['photo_client_id'] as String?;
+    final photoFile = _fileAt(data['local_photo_path']);
+    // A signature the phone has lost is left out when a photo on the phone can
+    // carry the drop: naming it would be refused for good (P0002) and the
+    // delivery let go with its proof still here. With nothing else it is
+    // named, and the refusal reported, as before.
+    final signatureId = data['signature_client_id'] as String?;
+    final keepSignature = signatureFile?.existsSync() == true ||
+        !(photoFile?.existsSync() == true);
+    final signaturePath =
+        signatureId == null || !keepSignature ? null : '$folder/$signatureId.png';
 
-    int? size;
-    if (file != null && file.existsSync()) {
-      size = file.lengthSync();
+    Future<int?> upload(File? file, String path, String type) async {
+      if (file == null || !file.existsSync()) return null;
+      final size = file.lengthSync();
       try {
         await _client.storage.from('fulfilment-docs').upload(
-              storagePath,
+              path,
               file,
-              fileOptions: const FileOptions(contentType: 'image/jpeg'),
+              fileOptions: FileOptions(contentType: type),
             );
       } on StorageException catch (e) {
         if (!isAlreadyUploaded(e)) rethrow;
       }
+      return size;
+    }
+
+    if (signaturePath != null) await upload(signatureFile, signaturePath, 'image/png');
+    // The photo is optional beside a signature: one the phone has lost is left
+    // out rather than named and refused. Without a signature (an older entry)
+    // it is the only proof, so it is named either way.
+    String? photoPath;
+    int? size;
+    if (photoId != null) {
+      final path = '$folder/$photoId.jpg';
+      final have = photoFile != null && photoFile.existsSync();
+      if (have || signaturePath == null) photoPath = path;
+      size = await upload(photoFile, path, 'image/jpeg');
     }
 
     try {
@@ -1081,8 +1107,9 @@ class SyncEngine {
         'p_dispatch_id': data['dispatch_id'],
         'p_received_by_name': data['received_by_name'],
         'p_delivered_at': data['delivered_at'],
-        'p_pod_path': storagePath,
+        'p_pod_path': photoPath,
         'p_size_bytes': size,
+        'p_signature_path': ?signaturePath,
       });
     } on PostgrestException catch (e, stack) {
       // The warehouse returned the dispatch meanwhile, or gave it to somebody
@@ -1104,7 +1131,8 @@ class SyncEngine {
       );
     }
 
-    if (file != null) {
+    for (final file in [signatureFile, photoFile]) {
+      if (file == null) continue;
       try {
         await file.delete();
       } catch (_) {
@@ -1112,6 +1140,8 @@ class SyncEngine {
       }
     }
   }
+
+  static File? _fileAt(Object? path) => path is String ? File(path) : null;
 
   Future<String?> _uploadQueuedPhoto({
     required String orgId,

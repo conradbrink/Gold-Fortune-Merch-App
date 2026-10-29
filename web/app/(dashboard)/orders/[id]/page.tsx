@@ -1396,10 +1396,25 @@ export default function OrderDetailPage() {
                         Tracking {d.tracking_reference}
                       </p>
                     )}
-                    {d.received_by_name && (
-                      <p className="text-xs text-muted-foreground">
-                        Received by {d.received_by_name}
-                      </p>
+                    {/* Signed on the driver's phone (20261029181700): the
+                        name and the signature. Otherwise the name alone, as
+                        the warehouse or an older phone recorded it. */}
+                    {d.received_signature_path ? (
+                      <div className="mt-2 text-xs">
+                        <OrderSignature
+                          bucket="fulfilment-docs"
+                          label="Received and signed by"
+                          path={d.received_signature_path}
+                          signedBy={d.received_by_name}
+                          signedAt={d.delivered_at}
+                        />
+                      </div>
+                    ) : (
+                      d.received_by_name && (
+                        <p className="text-xs text-muted-foreground">
+                          Received by {d.received_by_name}
+                        </p>
+                      )
                     )}
                   </div>
                 ))}

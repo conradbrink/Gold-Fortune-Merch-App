@@ -378,7 +378,7 @@ begin
   end if;
 
   ---------------------------------------------------------------- D11 grants
-  if has_function_privilege('anon', 'public.delivery_confirm(uuid,text,timestamptz,text,bigint)', 'EXECUTE') then
+  if has_function_privilege('anon', 'public.delivery_confirm(uuid,text,timestamptz,text,bigint,text)', 'EXECUTE') then
     v_fail := v_fail || 'D11 anon can call delivery_confirm' || E'\n';
   end if;
   if has_function_privilege('authenticated', 'public.order_mark_delivered_unchecked(uuid,text,timestamptz,jsonb)', 'EXECUTE')
@@ -387,7 +387,7 @@ begin
   end if;
   select exists (
     select 1 from pg_proc p, aclexplode(coalesce(p.proacl, acldefault('f', p.proowner))) a
-     where p.oid in ('public.delivery_confirm(uuid,text,timestamptz,text,bigint)'::regprocedure,
+     where p.oid in ('public.delivery_confirm(uuid,text,timestamptz,text,bigint,text)'::regprocedure,
                      'public.order_mark_delivered_unchecked(uuid,text,timestamptz,jsonb)'::regprocedure)
        and a.grantee = 0 and a.privilege_type = 'EXECUTE') into v_ok;
   if v_ok then

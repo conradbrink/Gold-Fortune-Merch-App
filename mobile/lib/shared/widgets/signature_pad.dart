@@ -66,6 +66,16 @@ class SignaturePadController extends ChangeNotifier {
       image.dispose();
     }
   }
+
+  /// [toPng], or null when drawing the picture fails (memory on a small
+  /// handset), so a sheet can say "try again" rather than stick on "Saving…".
+  Future<Uint8List?> tryPng() async {
+    try {
+      return await toPng();
+    } catch (_) {
+      return null;
+    }
+  }
 }
 
 /// A box to sign in with a finger.

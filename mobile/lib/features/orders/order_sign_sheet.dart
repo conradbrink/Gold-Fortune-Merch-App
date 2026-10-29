@@ -75,14 +75,9 @@ class _OrderSignSheetState extends ConsumerState<_OrderSignSheet> {
 
   Future<void> _done() async {
     setState(() => _busy = true);
-    Uint8List? png;
-    try {
-      png = await _pad.toPng();
-    } catch (_) {
-      // Drawing the picture failed (memory on a small handset). The sheet
-      // must not stay stuck on "Saving…": the rep can try again.
-      png = null;
-    }
+    // Null when drawing the picture failed. The sheet must not stay stuck on
+    // "Saving…": the rep can try again.
+    final png = await _pad.tryPng();
     if (!mounted) return;
     if (png == null) {
       setState(() => _busy = false);

@@ -411,7 +411,8 @@ class _Facts extends StatelessWidget {
         ('Due', DateFormat('EEE d MMM').format(d.delivery.expectedOn!), null),
       if (d.delivery.deliveredAt != null)
         ('Arrived', _when(d.delivery.deliveredAt!), null),
-      if (d.receivedBy != null) ('Received by', d.receivedBy!, null),
+      if (d.receivedBy != null)
+        ('Received by', d.signed ? '${d.receivedBy!}, signed on the phone' : d.receivedBy!, null),
       if (d.delivery.carrier != null) ('Carrier', d.delivery.carrier!, null),
       if (d.delivery.trackingReference != null)
         ('Tracking', d.delivery.trackingReference!, null),
