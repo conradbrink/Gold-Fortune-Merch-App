@@ -456,11 +456,12 @@ export default function OrderDetailPage() {
   const toInvoice = detail.lines.filter((l) => l.line_status !== "cancelled" && l.qty_ordered > 0);
   const unpricedToInvoice = o.invoice_number ? 0 : toInvoice.filter((l) => l.unit_price == null).length;
   /**
-   * Typed and not saved yet, in the lines table or the details editor (the
-   * PO number goes on the invoice): invoicing would not see it, and the
-   * order cannot be edited afterwards.
+   * Typed and not saved yet in the lines table, or the details editor still
+   * open (the PO number goes on the invoice): invoicing would not see it, and
+   * the order cannot be edited afterwards.
    */
-  const unsavedLines = Object.keys(priceDraft).length > 0 || Object.keys(qtyDraft).length > 0 || editingDetails;
+  const unsavedLines = Object.keys(priceDraft).length > 0 || Object.keys(qtyDraft).length > 0;
+  const blocksInvoicing = unsavedLines || editingDetails;
   /** Finished without stock: invoicing was all there was to do. */
   const finished = finishedWithoutStock(o);
   /**
@@ -764,7 +765,14 @@ export default function OrderDetailPage() {
             </Button>
           )}
           {o.status === "new" && withoutStock && (
-            <Button onClick={() => setDialog("invoice")} disabled={busy}>
+            <Button
+              onClick={() => {
+                // An earlier failure on the page must not read as this one's.
+                setError(null);
+                setDialog("invoice");
+              }}
+              disabled={busy}
+            >
               Confirm and invoice
             </Button>
           )}
@@ -1987,7 +1995,12 @@ export default function OrderDetailPage() {
             </p>
             {unsavedLines && (
               <p className="text-destructive">
-                You have changes on this order that are not saved. Save or undo them first.
+                You have changed the lines without saving. Save or undo the changes first.
+              </p>
+            )}
+            {editingDetails && (
+              <p className="text-destructive">
+                The order details are open for editing. Save or close them first.
               </p>
             )}
             {/* A refusal shows here too: the page banner is behind the dialog. */}
@@ -2007,7 +2020,7 @@ export default function OrderDetailPage() {
               onClick={() =>
                 run(() => invoiceWithoutStock(supabase, orderId), "Order invoiced. It is done and in the archive.")
               }
-              disabled={busy || unsavedLines || unpricedToInvoice > 0 || toInvoice.length === 0}
+              disabled={busy || blocksInvoicing || unpricedToInvoice > 0 || toInvoice.length === 0}
             >
               {busy ? "Invoicing…" : "Confirm and invoice"}
             </Button>

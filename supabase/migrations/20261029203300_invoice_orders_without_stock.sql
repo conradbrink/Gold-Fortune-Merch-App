@@ -129,6 +129,7 @@ declare
   o public.orders;
   v_live integer;
   v_missing text;
+  v_quotes text;
   v_invoice_id uuid;
 begin
   perform public.require_writable();
@@ -181,15 +182,18 @@ begin
   -- Made from a quote that was invoiced already (in full, or a deposit):
   -- invoicing the order too would bill the customer twice, the deposit not
   -- taken off. quote_convert does not stop that; for these companies this is
-  -- the step that would issue the second invoice, so it stops here.
+  -- the step that would issue the second invoice, so it stops here. The way
+  -- on is the quote's own: its final balance (invoice_from_quote) bills what
+  -- is left with the deposit taken off. A credit note would not clear this:
+  -- a credited invoice is still issued.
   select string_agg(distinct q.quote_number || ' (' || t.invoice_number || ')', ', ')
-    into v_missing
+    into v_quotes
     from public.quotes q
     join public.tax_invoices t on t.quote_id = q.id and t.status = 'issued'
    where q.converted_order_id = o.id;
-  if v_missing is not null then
-    raise exception '% was made from a quote that is already invoiced: %. Cancel the order, or credit that invoice first.',
-      o.order_number, v_missing using errcode = '23505';
+  if v_quotes is not null then
+    raise exception '% was made from a quote that is already invoiced: %. Invoice what is left from the quote instead, and cancel this order.',
+      o.order_number, v_quotes using errcode = '23505';
   end if;
 
   -- Only the warehouse could release it, and there is none.
@@ -267,7 +271,9 @@ begin
     raise exception 'Order % is already cancelled.', o.order_number using errcode = '42501';
   end if;
   if o.status = 'delivered' then
-    raise exception 'Order % has been invoiced, so it cannot be cancelled. Issue a credit note on its invoice instead.',
+    -- Delivered through the warehouse once, or finished here: either way a
+    -- correction is a credit note, when there is an invoice to credit.
+    raise exception 'Order % is delivered, so it cannot be cancelled. If it was invoiced, issue a credit note on its invoice instead.',
       o.order_number using errcode = '42501';
   end if;
   if o.status <> 'new' then

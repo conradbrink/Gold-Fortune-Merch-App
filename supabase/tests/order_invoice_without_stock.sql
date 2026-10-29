@@ -235,7 +235,7 @@ begin
     v_fail := v_fail || 'W4b an order from an invoiced quote was invoiced again' || E'\n';
   exception when others then
     get stacked diagnostics v_err = message_text;
-    if v_err not like '% was made from a quote that is already invoiced: QZ-%. Cancel the order, or credit that invoice first.' then
+    if v_err not like '% was made from a quote that is already invoiced: QZ-%. Invoice what is left from the quote instead, and cancel this order.' then
       v_fail := v_fail || 'W4b refused for another reason: ' || v_err || E'\n';
     end if;
   end;
@@ -352,7 +352,7 @@ begin
     v_fail := v_fail || 'W9 an invoiced order was cancelled' || E'\n';
   exception when others then
     get stacked diagnostics v_err = message_text;
-    if v_err not like 'Order % has been invoiced, so it cannot be cancelled. Issue a credit note on its invoice instead.' then
+    if v_err not like 'Order % is delivered, so it cannot be cancelled. If it was invoiced, issue a credit note on its invoice instead.' then
       v_fail := v_fail || 'W9 invoiced order refused for another reason: ' || v_err || E'\n';
     end if;
   end;
