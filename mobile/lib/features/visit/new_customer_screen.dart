@@ -309,7 +309,7 @@ class _NewCustomerScreenState extends ConsumerState<NewCustomerScreen> {
             label: Text(_saving
                 ? 'Adding…'
                 : widget.forOrder
-                    ? 'Add and type the order'
+                    ? 'Add and continue'
                     : 'Add and start $job'),
           ),
           const SizedBox(height: 8),

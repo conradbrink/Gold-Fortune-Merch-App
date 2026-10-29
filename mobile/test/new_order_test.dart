@@ -6,7 +6,7 @@
 // What these hold: the order is queued with no visit and with how it came, its
 // draft is the rep's own and is cleared with it, nothing records it as taken
 // on a visit, the server is sent `received_via` and no signature, and the
-// screen asks "How did they order?" before it will save, with no sign sheet.
+// screen asks how they ordered before it will save, with no sign sheet.
 
 import 'dart:convert';
 
@@ -304,7 +304,7 @@ void main() {
 
       expect(find.text('New order'), findsOneWidget);
       expect(find.text('Take an order'), findsNothing);
-      expect(find.text('How did they order?'), findsOneWidget);
+      expect(find.text('How they ordered'), findsOneWidget);
       for (final c in orderSentChoices) {
         expect(find.widgetWithText(ChoiceChip, c.label), findsOneWidget);
       }
@@ -388,7 +388,7 @@ void main() {
     // Where the rep is standing is not where the shop is.
     expect(find.textContaining('GPS'), findsNothing);
     expect(find.textContaining('position'), findsNothing);
-    expect(find.text('Add and type the order'), findsOneWidget);
+    expect(find.text('Add and continue'), findsOneWidget);
     expect(find.textContaining('You type the order in next.'), findsOneWidget);
   });
 
@@ -412,18 +412,20 @@ void main() {
     }
 
     testWidgets('offers a new order beside a visit, a new customer and a sales call', (tester) async {
+      // Every label one to three words (owner, 29 Oct 2026).
       await openChooser(tester, {'core', 'distribution'});
 
-      expect(find.text('What would you like to do?'), findsOneWidget);
+      expect(find.text('New'), findsOneWidget);
       const t = Terms.defaults;
       final titles = [
-        "Visit ${t.site.withArticle} not on today's list",
+        '${t.site.one} ${t.job.oneLower}',
         'New order',
         'New ${t.site.oneLower}',
         'Sales ${t.job.oneLower}',
       ];
       for (final t in titles) {
         expect(find.text(t), findsOneWidget);
+        expect(t.split(' ').length, lessThanOrEqualTo(3), reason: '"$t" is too long for a label');
       }
       // In the order the owner chose.
       final ys = [for (final t in titles) tester.getTopLeft(find.text(t)).dy];
@@ -433,7 +435,7 @@ void main() {
     testWidgets('no new order without the orders module', (tester) async {
       await openChooser(tester, {'core'});
 
-      expect(find.text("Visit ${Terms.defaults.site.withArticle} not on today's list"), findsOneWidget);
+      expect(find.text('${Terms.defaults.site.one} ${Terms.defaults.job.oneLower}'), findsOneWidget);
       expect(find.text('New order'), findsNothing);
     });
   });

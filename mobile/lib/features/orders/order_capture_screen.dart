@@ -698,7 +698,7 @@ String? missingDeliveryDetails({
   return 'Fill in $listed before saving.';
 }
 
-/// "How did they order?": the one thing a new order says that one taken in
+/// "How they ordered": the one thing a new order says that one taken in
 /// the shop does not. No answer is chosen for the rep: a wrong default would
 /// tell the office an email came that never did.
 class _HowTheyOrdered extends StatelessWidget {
@@ -714,7 +714,7 @@ class _HowTheyOrdered extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('How did they order?', style: Theme.of(context).textTheme.titleSmall),
+          Text('How they ordered', style: Theme.of(context).textTheme.titleSmall),
           const SizedBox(height: 6),
           Wrap(
             spacing: 8,

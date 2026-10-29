@@ -83,9 +83,7 @@ class _StorePickerScreenState extends ConsumerState<StorePickerScreen> {
               autofocus: !widget.forOrder,
               onChanged: (v) => setState(() => _query = v),
               decoration: InputDecoration(
-                hintText: widget.forOrder
-                    ? 'Which ${t.site.oneLower} is it for?'
-                    : 'Search ${t.site.manyLower}',
+                hintText: 'Search ${t.site.manyLower}',
                 prefixIcon: const Icon(Icons.search),
               ),
             ),
