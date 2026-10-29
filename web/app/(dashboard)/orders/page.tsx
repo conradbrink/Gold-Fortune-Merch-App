@@ -24,6 +24,7 @@ import {
   dropAnswer,
   invoicesOnConfirm,
   invoicesWithoutStock,
+  keepsStock,
   matchesSearch,
   nextStepOf,
   poExpiry,
@@ -34,7 +35,6 @@ import {
   type BoardStep,
 } from "@/lib/order-board";
 import { formatMoney, formatMoneyShort } from "@/lib/money";
-import { moduleEnabled } from "@/lib/modules";
 import { dayLabel } from "@/lib/store-reorder";
 import { useCompanyConfig, useTerms } from "@/lib/use-company-config";
 import { lower, withArticle } from "@/lib/terms";
@@ -74,7 +74,9 @@ export default function OrdersBoardPage() {
    * module; the board itself only needs distribution. Without the module every
    * step would be refused, so the board shows where orders are and moves none.
    */
-  const canMove = config ? moduleEnabled(config.modules, "warehouse") : true;
+  const canMove = keepsStock(config);
+  /** No warehouse: a new order is invoiced and finished on its own page. */
+  const withoutStock = invoicesWithoutStock(config);
 
   const [orders, setOrders] = useState<PipelineOrder[]>([]);
   /** When the board was read: "today" and every "waiting 3 days" are counted to it. */
@@ -283,7 +285,7 @@ export default function OrdersBoardPage() {
 
       {!canMove && (
         <p className="rounded-lg border border-border bg-muted/40 p-2.5 text-sm text-muted-foreground">
-          {invoicesWithoutStock(config)
+          {withoutStock
             ? "Your company does not track stock, so orders are not packed or dispatched here. Open a purchase order to confirm and invoice it."
             : "Confirming, packing and dispatching orders is part of Warehouse and deliveries, which is not switched on for your company. The board shows where each order is, but cannot move it on."}
         </p>
@@ -409,7 +411,9 @@ export default function OrdersBoardPage() {
                           ? "Drop to move it here"
                           : filtered
                             ? "Nothing here matches."
-                            : columnEmptyText(column, invoices)}
+                            : canMove
+                              ? columnEmptyText(column, invoices)
+                              : "Nothing here."}
                       </p>
                     ) : (
                       cards.map((o) => (
@@ -420,7 +424,7 @@ export default function OrdersBoardPage() {
                           today={today}
                           invoices={invoices}
                           canMove={canMove}
-                          withoutStock={invoicesWithoutStock(config)}
+                          withoutStock={withoutStock}
                           money={money}
                           staffWord={lower(terms.staff.one)}
                           siteWord={lower(terms.site.one)}

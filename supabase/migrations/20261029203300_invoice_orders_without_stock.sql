@@ -12,36 +12,111 @@
 -- all warehouse functions. A company with orders and invoicing but no
 -- warehouse could take an order and never invoice or cancel it.
 --
--- Two functions for exactly that company. Both refuse when the warehouse
--- module is on, so a company that keeps stock has one way to confirm an order
--- (order_confirm, which reserves it) and one way to cancel it (order_cancel,
--- which puts the stock back).
+-- ------------------------------------------------------------ what it does
 --
---   order_invoice_without_stock  new -> confirmed, issuing the invoice at the
---     quantities ordered and the order's prices (order_invoice_write, the
---     same writer the confirm trigger uses). Nothing is reserved, moved or
---     counted. The invoice is written before the status changes, so the
---     triggers see the order already invoiced: orders_invoice_ready skips its
---     price check (done here first) and orders_invoice_follow issues nothing
---     more and has nothing to credit.
+-- order_invoice_without_stock: a new order is invoiced and finished in one
+-- step. It ends `delivered`, not `confirmed`: for a company that tracks no
+-- stock, invoicing is the last thing that happens to an order, and every
+-- reader of order status (the board, the archive, the pipeline, the
+-- dashboard, commissions, the rep app's "is their last order still on its
+-- way") already treats `delivered` as finished and `confirmed` as waiting for
+-- the warehouse. Each live line is recorded as sent and delivered in full,
+-- which `order_lines_delivered_within_dispatched` needs and commissions read.
+-- No stock is reserved, moved or counted, and no POD is asked for
+-- (`pod_status` not_required).
 --
---   order_cancel_without_stock  new -> cancelled, with a reason. Only while
---     new: once invoiced, a correction is a credit note on the invoice.
+-- The invoice is issued at the quantities ordered and the order's prices by
+-- order_invoice_write, the writer the confirm trigger uses, before the status
+-- changes, so orders_invoice_follow finds it and issues nothing more. An order
+-- that already carries a QuickBooks number is finished without a second
+-- invoice, as confirming one does in a company that keeps stock. A hold
+-- (placed while the company still had the warehouse, which alone can release
+-- one) is released by the same step.
 --
--- Invoicing an order is the invoicing permission's job here, as issuing any
--- other invoice is; there is no warehouse permission to give in a company
--- without the warehouse.
+-- If the invoice is voided later, the order is `delivered` with no invoice,
+-- and tax_invoice_issue (the "Issue tax invoice" button) invoices it again.
+-- A mistake on an invoiced order is a credit note, as it is everywhere.
 --
--- A confirmed order may now have no fulfilment location. A company without
--- the warehouse has no stock locations at all (none is made for it), and
--- `orders_fulfil_location_set` refused a confirmed order without one.
--- order_confirm always sets the location, so a company that keeps stock is
--- unchanged; picking, packing and dispatching still need one, so an order
--- confirmed without stock can never slip into those steps.
+-- order_cancel_without_stock: cancels a new order, with a reason, lines and
+-- all, as order_cancel does for an order that holds no stock.
+--
+-- Both refuse when the warehouse module is on: a company that keeps stock has
+-- one way to confirm an order (order_confirm, which reserves it) and one way
+-- to cancel it (order_cancel, which puts the stock back). Both need the
+-- Orders permission (`warehouse`, "Orders and warehouse"), which is what
+-- gates /orders, the orders policies, order_confirm, order_cancel and
+-- tax_invoice_issue; it is offered whenever the orders module is on.
+--
+-- -------------------------------------------------- the two rules it bends
+--
+-- orders_enforce_transition admits new -> delivered for this function only,
+-- the way it admits a dispatched order back only through
+-- order_return_undelivered: a transaction-local setting naming the order.
+--
+-- orders_fulfil_location_set lets such an order have no fulfilment location
+-- (a company without the warehouse has no stock locations; none is made for
+-- it). Only for a delivered order that was never dispatched, which before
+-- this no order was: every other order keeps the rule exactly as it was.
+
+create or replace function public.orders_enforce_transition()
+returns trigger
+language plpgsql
+set search_path to 'public'
+as $function$
+declare
+  v_legal boolean;
+begin
+  if new.status is not distinct from old.status then
+    if new.org_id is distinct from old.org_id then
+      raise exception 'An order cannot be moved to another organisation.'
+        using errcode = '42501';
+    end if;
+    if new.store_id is distinct from old.store_id and old.status <> 'new' then
+      raise exception 'Order % has been confirmed; it cannot be moved to another location.',
+        old.order_number using errcode = '42501';
+    end if;
+    return new;
+  end if;
+
+  if old.on_hold and new.status <> 'cancelled' then
+    raise exception 'Order % is on hold (%). Release the hold first.',
+      old.order_number, coalesce(old.hold_reason, 'no reason given')
+      using errcode = '42501';
+  end if;
+
+  v_legal := (old.status, new.status) in (
+    ('new', 'confirmed'),       ('new', 'cancelled'),
+    ('confirmed', 'picking'),   ('confirmed', 'cancelled'),
+    ('picking', 'confirmed'),   ('picking', 'packed'),      ('picking', 'cancelled'),
+    ('packed', 'picking'),      ('packed', 'dispatched'),   ('packed', 'cancelled'),
+    ('dispatched', 'delivered'),('dispatched', 'cancelled'),('dispatched', 'packed')
+  )
+  -- Invoiced and finished in one step by order_invoice_without_stock, for a
+  -- company that keeps no stock. Only through it.
+  or ((old.status, new.status) = ('new', 'delivered')
+      and coalesce(current_setting('app.finished_without_stock', true), '') = new.id::text);
+
+  if not v_legal then
+    raise exception 'An order cannot go from % to %.', old.status, new.status
+      using errcode = '42501';
+  end if;
+
+  if old.status = 'dispatched' and new.status in ('cancelled', 'packed')
+     and coalesce(current_setting('app.stock_returned', true), '') <> new.id::text then
+    raise exception
+      'Take a dispatched order back through order_return_undelivered(), so the stock comes with it.'
+      using errcode = '42501';
+  end if;
+
+  return new;
+end;
+$function$;
 
 alter table public.orders drop constraint orders_fulfil_location_set;
 alter table public.orders add constraint orders_fulfil_location_set
-  check (status in ('new', 'confirmed', 'cancelled') or fulfil_location_id is not null);
+  check (status in ('new', 'cancelled')
+         or fulfil_location_id is not null
+         or (status = 'delivered' and dispatched_at is null));
 
 create or replace function public.order_invoice_without_stock(p_order_id uuid)
 returns jsonb
@@ -52,8 +127,8 @@ as $function$
 declare
   v_org uuid;
   o public.orders;
+  v_live integer;
   v_missing text;
-  v_invoice public.tax_invoices;
   v_invoice_id uuid;
 begin
   perform public.require_writable();
@@ -62,11 +137,11 @@ begin
   v_org := public.current_org_id();
 
   if public.module_enabled('warehouse') then
-    raise exception 'Your company keeps stock, so confirm the order with "Confirm and reserve". That issues its invoice and takes the stock off the shelf.'
+    raise exception 'Your company keeps stock, so confirm the order with "Confirm and reserve", which takes the stock off the shelf.'
       using errcode = '42501';
   end if;
-  if not public.has_permission('invoicing') then
-    raise exception 'Only someone who can issue invoices can invoice an order.' using errcode = '42501';
+  if not public.has_permission('warehouse') then
+    raise exception 'Invoicing an order needs the Orders permission.' using errcode = '42501';
   end if;
 
   -- As order_confirm: two people pressing the button must not both invoice it.
@@ -79,50 +154,62 @@ begin
   if o.status <> 'new' then
     raise exception 'Order % is already %.', o.order_number, o.status using errcode = '42501';
   end if;
-  if o.on_hold then
-    raise exception 'Order % is on hold (%). Release the hold first.',
-      o.order_number, coalesce(o.hold_reason, 'no reason given') using errcode = '42501';
+
+  -- The lines too, so an edit saved while this runs waits and then finds the
+  -- order finished, rather than landing after the invoice was written.
+  perform 1 from public.order_lines where order_id = o.id for update;
+
+  select count(*),
+         string_agg(p.name, ', ' order by p.name) filter (where ol.unit_price is null)
+    into v_live, v_missing
+    from public.order_lines ol
+    join public.products p on p.id = ol.product_id
+   where ol.order_id = o.id and ol.line_status <> 'cancelled' and ol.qty_ordered > 0;
+  if v_live = 0 then
+    raise exception 'Order % has nothing on it to invoice.', o.order_number using errcode = '22023';
   end if;
-  -- Invoiced in QuickBooks before the app issued invoices: refuse, never
-  -- overwrite, as tax_invoice_issue does.
-  if o.invoice_number is not null then
-    raise exception '% was already invoiced outside the app as %. Clear that number on the order first if it was wrong.',
-      o.order_number, o.invoice_number using errcode = '23505';
+  -- A QuickBooks number means it was invoiced there: no second invoice, so
+  -- no prices needed.
+  if o.invoice_number is null and v_missing is not null then
+    raise exception '% has products with no price: %. Price them before invoicing.', o.order_number, v_missing
+      using errcode = '22023';
   end if;
   if exists (select 1 from public.tax_invoices t where t.order_id = o.id and t.status = 'issued') then
     raise exception '% already has a tax invoice.', o.order_number using errcode = '23505';
   end if;
 
-  if not exists (select 1 from public.order_lines ol
-                  where ol.order_id = o.id and ol.line_status <> 'cancelled' and ol.qty_ordered > 0) then
-    raise exception 'Order % has nothing on it to invoice.', o.order_number using errcode = '22023';
-  end if;
-  select string_agg(p.name, ', ' order by p.name) into v_missing
-    from public.order_lines ol
-    join public.products p on p.id = ol.product_id
-   where ol.order_id = o.id and ol.line_status <> 'cancelled' and ol.qty_ordered > 0
-     and ol.unit_price is null;
-  if v_missing is not null then
-    raise exception '% has products with no price: %. Price them before invoicing.', o.order_number, v_missing
-      using errcode = '22023';
+  -- Only the warehouse could release it, and there is none.
+  if o.on_hold then
+    update public.orders set on_hold = false, hold_reason = null, held_at = null, held_by = null
+     where id = o.id;
   end if;
 
-  v_invoice_id := public.order_invoice_write(o.id);
+  if o.invoice_number is null then
+    v_invoice_id := public.order_invoice_write(o.id);
+  end if;
 
+  update public.order_lines
+     set qty_dispatched = qty_ordered,
+         qty_delivered = qty_ordered,
+         line_status = 'fulfilled'
+   where order_id = o.id and line_status <> 'cancelled';
+
+  perform set_config('app.finished_without_stock', o.id::text, true);
   update public.orders
-     set status = 'confirmed',
+     set status = 'delivered',
          confirmed_by = auth.uid(),
-         confirmed_at = now()
+         confirmed_at = now(),
+         delivered_by = auth.uid(),
+         delivered_at = now(),
+         pod_status = 'not_required'
    where id = o.id;
+  perform set_config('app.finished_without_stock', '', true);
 
-  select * into v_invoice from public.tax_invoices where id = v_invoice_id;
   return jsonb_build_object(
     'order_id', o.id,
     'order_number', o.order_number,
-    'status', 'confirmed',
-    'invoice_id', v_invoice.id,
-    'invoice_number', v_invoice.invoice_number,
-    'total', v_invoice.total);
+    'status', 'delivered',
+    'invoice_id', v_invoice_id);
 end;
 $function$;
 
@@ -135,18 +222,19 @@ as $function$
 declare
   v_org uuid;
   o public.orders;
-  v_reason text := btrim(coalesce(p_reason, ''));
+  -- Any run of white space, tabs and new lines included, counts as one space.
+  v_reason text := btrim(regexp_replace(coalesce(p_reason, ''), '\s+', ' ', 'g'));
 begin
   perform public.require_writable();
   perform public.require_module('distribution');
   v_org := public.current_org_id();
 
   if public.module_enabled('warehouse') then
-    raise exception 'Your company keeps stock, so cancel the order with "Cancel". That also puts any reserved stock back.'
+    raise exception 'Your company keeps stock, so cancel the order with "Cancel", which also puts any reserved stock back.'
       using errcode = '42501';
   end if;
-  if not (public.has_permission('invoicing') or public."current_role"() = 'manager') then
-    raise exception 'Only a manager or someone who can issue invoices can cancel an order.' using errcode = '42501';
+  if not public.has_permission('warehouse') then
+    raise exception 'Cancelling an order needs the Orders permission.' using errcode = '42501';
   end if;
   if v_reason = '' then
     raise exception 'Say why the order is being cancelled.' using errcode = '22023';
@@ -169,6 +257,9 @@ begin
       o.order_number using errcode = '42501';
   end if;
 
+  -- Lines first, then the order, as order_cancel does.
+  update public.order_lines set line_status = 'cancelled'
+   where order_id = o.id and line_status <> 'cancelled';
   update public.orders
      set status = 'cancelled',
          cancel_reason = v_reason,
@@ -186,7 +277,7 @@ revoke all on function public.order_cancel_without_stock(uuid, text) from public
 grant execute on function public.order_cancel_without_stock(uuid, text) to authenticated, service_role;
 
 comment on function public.order_invoice_without_stock(uuid) is
-  'For a company without the warehouse module: confirms a new order and issues its invoice at the quantities ordered. No stock is touched. Refuses when the warehouse module is on.';
+  'For a company without the warehouse module: invoices a new order at the quantities ordered and finishes it (delivered, no POD). No stock is touched. Refuses when the warehouse module is on.';
 comment on function public.order_cancel_without_stock(uuid, text) is
   'For a company without the warehouse module: cancels a new order, with a reason. Refuses when the warehouse module is on, and once the order is invoiced.';
 

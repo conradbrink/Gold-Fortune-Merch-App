@@ -245,24 +245,26 @@ export function waitWords(days: number, delivered: boolean): string {
  * the invoicing module, which is what the database's `order_invoices_on()`
  * checks. Reading the setting alone said "Invoiced" for a company whose
  * invoicing had been switched off.
- *
- * A company without the warehouse confirms only through "Confirm and invoice"
- * (`invoicesWithoutStock`), so for it a confirmed order is an invoiced one
- * whatever the setting says.
  */
 export function invoicesOnConfirm(
   config: { settings: { money_invoice_orders: boolean }; modules: ModuleSet } | null
 ): boolean {
-  return (
-    !!config &&
-    moduleEnabled(config.modules, "invoicing") &&
-    (config.settings.money_invoice_orders || !moduleEnabled(config.modules, "warehouse"))
-  );
+  return !!config && config.settings.money_invoice_orders && moduleEnabled(config.modules, "invoicing");
 }
 
 /**
- * A company with orders and invoicing but no warehouse: its orders are
- * confirmed and invoiced in one step at the quantities ordered, with no stock
+ * Whether this company keeps stock: confirming reserves it, and picking,
+ * packing, dispatching, holds and the stock-aware cancel are open to it.
+ * True while the config is loading, so a company that keeps stock never sees
+ * its buttons flicker away and back.
+ */
+export function keepsStock(config: { modules: ModuleSet } | null): boolean {
+  return config ? moduleEnabled(config.modules, "warehouse") : true;
+}
+
+/**
+ * A company with orders and invoicing but no warehouse: a new order is
+ * invoiced at the quantities ordered and finished in one step, with no stock
  * reserved or moved (`order_invoice_without_stock`), and cancelled while new
  * by `order_cancel_without_stock`. False while the config is loading, so no
  * button is offered that the database might refuse.
@@ -270,10 +272,24 @@ export function invoicesOnConfirm(
 export function invoicesWithoutStock(config: { modules: ModuleSet } | null): boolean {
   return (
     !!config &&
+    !keepsStock(config) &&
     moduleEnabled(config.modules, "distribution") &&
-    moduleEnabled(config.modules, "invoicing") &&
-    !moduleEnabled(config.modules, "warehouse")
+    moduleEnabled(config.modules, "invoicing")
   );
+}
+
+/**
+ * An order finished by `order_invoice_without_stock`: delivered without ever
+ * being dispatched, from no location. Read from the order itself, not from
+ * the company's modules, so an order that went through the warehouse keeps
+ * its stock figures after the company drops the add-on.
+ */
+export function finishedWithoutStock(o: {
+  status: string;
+  dispatched_at: string | null;
+  fulfil_location_id: string | null;
+}): boolean {
+  return o.status === "delivered" && o.dispatched_at === null && o.fulfil_location_id === null;
 }
 
 /** An order's state in words for a sentence: "It is now being picked." */

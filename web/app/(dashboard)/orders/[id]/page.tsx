@@ -71,8 +71,7 @@ import {
 import { formatDateOnly } from "@/lib/format-date";
 import { OrderSignature } from "@/components/orders/order-signature";
 import { useCompanyConfig, useTerms } from "@/lib/use-company-config";
-import { invoicesWithoutStock } from "@/lib/order-board";
-import { moduleEnabled } from "@/lib/modules";
+import { finishedWithoutStock, invoicesWithoutStock, keepsStock as companyKeepsStock } from "@/lib/order-board";
 import { lower } from "@/lib/terms";
 import { fetchPriceBook, listForGroup, type PriceBook } from "@/lib/price-lists";
 
@@ -211,11 +210,10 @@ export default function OrderDetailPage() {
   const automaticInvoice = companyConfig?.settings.money_invoice_orders ?? false;
   /**
    * Confirming, picking, packing, dispatching, holding and the stock-aware
-   * cancel are the warehouse module's. True while the config loads, as the
-   * board does, so a company that keeps stock never sees its buttons flicker.
+   * cancel are the warehouse module's (`keepsStock` in lib/order-board).
    */
-  const keepsStock = companyConfig ? moduleEnabled(companyConfig.modules, "warehouse") : true;
-  /** Without the warehouse: one step confirms the order and issues its invoice. */
+  const keepsStock = companyKeepsStock(companyConfig);
+  /** Without the warehouse: one step invoices a new order and finishes it. */
   const withoutStock = invoicesWithoutStock(companyConfig);
 
   /** Opens the shared dialog, latching which of the two it is. */
@@ -282,16 +280,20 @@ export default function OrderDetailPage() {
     let cancelled = false;
     (async () => {
       try {
+        // Carriers, locations and the people a delivery can be given to only
+        // serve the warehouse steps: without the module they are never shown.
         const [c, cat, locs, repRows, book] = await Promise.all([
-          fetchCarriers(supabase),
+          keepsStock ? fetchCarriers(supabase) : { drivers: [], vehicles: [] },
           fetchOrderableProducts(supabase),
-          fetchLocations(supabase),
-          supabase
-            .from("profiles")
-            .select("id, full_name, role")
-            .in("role", ["rep", "driver"])
-            .eq("is_active", true)
-            .order("full_name"),
+          keepsStock ? fetchLocations(supabase) : [],
+          keepsStock
+            ? supabase
+                .from("profiles")
+                .select("id, full_name, role")
+                .in("role", ["rep", "driver"])
+                .eq("is_active", true)
+                .order("full_name")
+            : { data: [], error: null },
           fetchPriceBook(supabase),
         ]);
         const d = await reload();
@@ -327,7 +329,7 @@ export default function OrderDetailPage() {
     return () => {
       cancelled = true;
     };
-  }, [supabase, reload]);
+  }, [supabase, reload, keepsStock]);
 
   /**
    * What the availability check is about: these lines, at this location.
@@ -448,8 +450,20 @@ export default function OrderDetailPage() {
   const unpricedLines = detail.lines.filter((l) => l.unit_price == null).length;
   // What "Confirm and invoice" will put on the invoice: the live lines, as
   // `order_invoice_without_stock` counts them.
+  // What "Confirm and invoice" puts on the invoice: the live lines, as
+  // `order_invoice_without_stock` counts them. An order with a QuickBooks
+  // number gets no second invoice, so its prices do not stop it.
   const toInvoice = detail.lines.filter((l) => l.line_status !== "cancelled" && l.qty_ordered > 0);
-  const unpricedToInvoice = toInvoice.filter((l) => l.unit_price == null).length;
+  const unpricedToInvoice = o.invoice_number ? 0 : toInvoice.filter((l) => l.unit_price == null).length;
+  /** Typed in the lines table and not saved yet: invoicing would not see it. */
+  const unsavedLines = Object.keys(priceDraft).length > 0 || Object.keys(qtyDraft).length > 0;
+  /**
+   * The stock columns and the POD row, read from the order as well as the
+   * company: an order that went through the warehouse keeps its figures after
+   * the company drops the add-on, and one finished without stock has none.
+   */
+  const showStock = keepsStock || o.fulfil_location_id !== null || o.dispatched_at !== null;
+  const canCancel = keepsStock ? !["delivered", "cancelled", "dispatched"].includes(o.status) : o.status === "new";
   // The product being added, if it comes in shrinks: its row offers per shrink too.
   const addUnits = shrinkUnits(catalogue.find((c) => c.id === addProductId)?.units_per_shrink);
   const addByShrink = addPerShrink && addUnits !== null;
@@ -720,8 +734,8 @@ export default function OrderDetailPage() {
           <h1 className="mt-1 flex items-center gap-2 text-2xl font-semibold tracking-tight">
             {o.order_number}
             <Badge variant={o.status === "cancelled" ? "outline" : "secondary"}>
-              {/* Without the warehouse, confirming is invoicing: say so. */}
-              {!keepsStock && o.status === "confirmed" ? "Invoiced" : (STATUS_LABELS[o.status] ?? o.status)}
+              {/* Finished without stock: invoicing was all there was to do. */}
+              {finishedWithoutStock(o) ? "Invoiced" : (STATUS_LABELS[o.status] ?? o.status)}
             </Badge>
             {o.on_hold && (
               <Badge variant="outline" className="border-amber-500/50 text-amber-600">
@@ -832,7 +846,7 @@ export default function OrderDetailPage() {
                 Hold
               </Button>
             ))}
-          {(keepsStock ? !["delivered", "cancelled", "dispatched"].includes(o.status) : o.status === "new") && (
+          {canCancel && (
             <Button variant="outline" onClick={() => openConfirm("cancel")} disabled={busy}>
               Cancel
             </Button>
@@ -889,7 +903,7 @@ export default function OrderDetailPage() {
                   {/* Stock columns: a company without the warehouse has no
                       stock to reserve, pick or send, so they would only ever
                       read 0. */}
-                  {keepsStock && (
+                  {showStock && (
                     <>
                       <TableHead className="text-right">Reserved</TableHead>
                       <TableHead className="text-right">Picked</TableHead>
@@ -897,9 +911,11 @@ export default function OrderDetailPage() {
                       <TableHead className="text-right">Delivered</TableHead>
                     </>
                   )}
-                  {/* Kept without the warehouse too: it holds a new order's
-                      Remove button. */}
-                  <TableHead>{keepsStock ? "Status" : ""}</TableHead>
+                  {/* Without the stock columns it only holds a new order's
+                      Remove buttons. */}
+                  {(showStock || canPrice) && (
+                    <TableHead>{showStock ? "Status" : <span className="sr-only">Remove</span>}</TableHead>
+                  )}
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -1000,7 +1016,7 @@ export default function OrderDetailPage() {
                         </span>
                       )}
                     </TableCell>
-                    {keepsStock && (
+                    {showStock && (
                       <>
                         <TableCell className="text-right tabular-nums">{l.qty_reserved}</TableCell>
                         <TableCell className="text-right tabular-nums">{l.qty_picked}</TableCell>
@@ -1015,8 +1031,9 @@ export default function OrderDetailPage() {
                         </TableCell>
                       </>
                     )}
+                    {(showStock || canPrice) && (
                     <TableCell>
-                      {keepsStock && (
+                      {showStock && (
                         <Badge variant={l.line_status === "fulfilled" ? "default" : "outline"}>
                           {l.line_status}
                         </Badge>
@@ -1035,6 +1052,7 @@ export default function OrderDetailPage() {
                         </button>
                       )}
                     </TableCell>
+                    )}
                   </TableRow>
                   );
                 })}
@@ -1237,8 +1255,8 @@ export default function OrderDetailPage() {
               {detail.fulfilLocationName && (
                 <Row label="Fulfilled from" value={detail.fulfilLocationName} />
               )}
-              {/* No deliveries are recorded without the warehouse, so no POD. */}
-              {keepsStock && (
+              {/* No POD is asked of an order finished without stock. */}
+              {(keepsStock || o.pod_status !== "not_required") && (
                 <Row
                   label="POD"
                   value={
@@ -1467,78 +1485,82 @@ export default function OrderDetailPage() {
             </Card>
           )}
 
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base">Documents</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-2 text-sm">
-              {/* The rule this states is already enforced: the orders board
-                  derives its column from `pod_status`, so an order stays in
-                  Delivered, and out of the archive, until the trigger on
-                  `delivery_documents` flips it to `received`. It was enforced
-                  silently, which is why it read as missing: the screen never
-                  said the delivery was unfinished or what would finish it. */}
-              {o.pod_status === "outstanding" && (
-                <p className="rounded-lg border border-amber-500/40 bg-amber-500/5 p-2.5 text-amber-700 dark:text-amber-500">
-                  This delivery is not finished. It stays in{" "}
-                  <strong>Delivered</strong> on the orders board until a signed
-                  proof of delivery is filed here, and then goes to the archive.
-                </p>
-              )}
-              {detail.documents.length === 0 ? (
-                <p className="text-muted-foreground">Nothing filed yet.</p>
-              ) : (
-                detail.documents.map((d) => (
-                  <button
-                    key={d.id}
-                    type="button"
-                    className="block w-full text-left text-primary hover:underline"
-                    onClick={async () => {
-                      // The tab is opened on the click itself, then pointed at
-                      // the signed URL once it arrives. Opening it after the
-                      // await loses the user-activation token in Safari and
-                      // others, and the click then does nothing at all with
-                      // nothing on screen to explain why.
-                      //
-                      // ⚠️ No `noopener` here, and that is the whole point.
-                      // `window.open` returns **null** whenever noopener is
-                      // asked for — per spec, the handle is exactly what
-                      // noopener withholds. The blank tab still opened, so the
-                      // old code left the user staring at `about:blank` while
-                      // its fallback `window.open(url)` ran after the await
-                      // with the activation token already spent, and was
-                      // swallowed by the popup blocker. The reference is
-                      // needed to navigate the tab, so take it and sever the
-                      // back-link by hand instead.
-                      const tab = window.open("", "_blank");
-                      if (tab) tab.opener = null;
-                      try {
-                        const url = await signedDocumentUrl(supabase, d.storage_path);
-                        if (tab) tab.location.href = url;
-                        // Popup blocked outright: fall back to navigating this
-                        // tab, which needs no activation token. Better than a
-                        // dead click with nothing on screen.
-                        else window.location.href = url;
-                      } catch (e) {
-                        tab?.close();
-                        setError(e instanceof Error ? e.message : String(e));
-                      }
-                    }}
-                  >
-                    {d.doc_type.replace("_", " ")} — {d.file_name ?? "document"}
-                    {d.signed_by_name && (
-                      <span className="text-muted-foreground"> · {d.signed_by_name}</span>
-                    )}
-                  </button>
-                ))
-              )}
-              {o.status === "delivered" && (
-                <Button variant="outline" size="sm" onClick={() => setDialog("upload")}>
-                  <FileUp className="mr-1.5 h-4 w-4" /> Upload
-                </Button>
-              )}
-            </CardContent>
-          </Card>
+          {/* Delivery documents are the warehouse's (its file store and table):
+              a company without it has none to show or file. */}
+          {keepsStock && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">Documents</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-2 text-sm">
+                {/* The rule this states is already enforced: the orders board
+                    derives its column from `pod_status`, so an order stays in
+                    Delivered, and out of the archive, until the trigger on
+                    `delivery_documents` flips it to `received`. It was enforced
+                    silently, which is why it read as missing: the screen never
+                    said the delivery was unfinished or what would finish it. */}
+                {o.pod_status === "outstanding" && (
+                  <p className="rounded-lg border border-amber-500/40 bg-amber-500/5 p-2.5 text-amber-700 dark:text-amber-500">
+                    This delivery is not finished. It stays in{" "}
+                    <strong>Delivered</strong> on the orders board until a signed
+                    proof of delivery is filed here, and then goes to the archive.
+                  </p>
+                )}
+                {detail.documents.length === 0 ? (
+                  <p className="text-muted-foreground">Nothing filed yet.</p>
+                ) : (
+                  detail.documents.map((d) => (
+                    <button
+                      key={d.id}
+                      type="button"
+                      className="block w-full text-left text-primary hover:underline"
+                      onClick={async () => {
+                        // The tab is opened on the click itself, then pointed at
+                        // the signed URL once it arrives. Opening it after the
+                        // await loses the user-activation token in Safari and
+                        // others, and the click then does nothing at all with
+                        // nothing on screen to explain why.
+                        //
+                        // ⚠️ No `noopener` here, and that is the whole point.
+                        // `window.open` returns **null** whenever noopener is
+                        // asked for — per spec, the handle is exactly what
+                        // noopener withholds. The blank tab still opened, so the
+                        // old code left the user staring at `about:blank` while
+                        // its fallback `window.open(url)` ran after the await
+                        // with the activation token already spent, and was
+                        // swallowed by the popup blocker. The reference is
+                        // needed to navigate the tab, so take it and sever the
+                        // back-link by hand instead.
+                        const tab = window.open("", "_blank");
+                        if (tab) tab.opener = null;
+                        try {
+                          const url = await signedDocumentUrl(supabase, d.storage_path);
+                          if (tab) tab.location.href = url;
+                          // Popup blocked outright: fall back to navigating this
+                          // tab, which needs no activation token. Better than a
+                          // dead click with nothing on screen.
+                          else window.location.href = url;
+                        } catch (e) {
+                          tab?.close();
+                          setError(e instanceof Error ? e.message : String(e));
+                        }
+                      }}
+                    >
+                      {d.doc_type.replace("_", " ")} — {d.file_name ?? "document"}
+                      {d.signed_by_name && (
+                        <span className="text-muted-foreground"> · {d.signed_by_name}</span>
+                      )}
+                    </button>
+                  ))
+                )}
+                {o.status === "delivered" && (
+                  <Button variant="outline" size="sm" onClick={() => setDialog("upload")}>
+                    <FileUp className="mr-1.5 h-4 w-4" /> Upload
+                  </Button>
+                )}
+              </CardContent>
+            </Card>
+          )}
         </div>
       </div>
 
@@ -1935,14 +1957,31 @@ export default function OrderDetailPage() {
             <DialogTitle>Confirm and invoice {o.order_number}</DialogTitle>
           </DialogHeader>
           <div className="space-y-2 text-sm text-muted-foreground">
-            <p>
-              This confirms the order and issues its tax invoice for what was ordered, at the prices on the
-              order.
-            </p>
+            {o.invoice_number ? (
+              <p>
+                It was invoiced in QuickBooks as {o.invoice_number}, so no invoice is made here. The order is
+                marked done and moves to the archive.
+              </p>
+            ) : (
+              <p>
+                This issues its tax invoice for what was ordered, at the prices on the order. The order is then
+                done and moves to the archive.
+              </p>
+            )}
+            {o.on_hold && (
+              <p>
+                It is on hold ({o.hold_reason ?? "no reason given"}). This releases the hold.
+              </p>
+            )}
             <p>
               After this the order cannot be changed. If something is wrong later, put it right with a credit
               note on the invoice.
             </p>
+            {unsavedLines && (
+              <p className="text-destructive">
+                You have changed the lines without saving. Save or undo the changes first.
+              </p>
+            )}
             {unpricedToInvoice > 0 && (
               <p className="text-destructive">
                 {unpricedToInvoice === 1 ? "One product has" : `${unpricedToInvoice} products have`} no price yet.
@@ -1956,9 +1995,9 @@ export default function OrderDetailPage() {
             </Button>
             <Button
               onClick={() =>
-                run(() => invoiceWithoutStock(supabase, orderId), "Order confirmed and invoiced.")
+                run(() => invoiceWithoutStock(supabase, orderId), "Order invoiced. It is done and in the archive.")
               }
-              disabled={busy || unpricedToInvoice > 0 || toInvoice.length === 0}
+              disabled={busy || unsavedLines || unpricedToInvoice > 0 || toInvoice.length === 0}
             >
               {busy ? "Invoicing…" : "Confirm and invoice"}
             </Button>
