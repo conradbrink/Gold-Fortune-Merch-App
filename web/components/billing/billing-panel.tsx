@@ -541,7 +541,7 @@ function ChoosePlan({ plan, defaultEmail, cardsReady, contact, customPriceCents,
       if (r.ok) {
         setQuote(r.value);
         setError(null);
-        // Never fewer places than reps already working.
+        // Never fewer places than reps and drivers already on the app.
         if (r.value.seatsUsed !== null && reps < r.value.seatsUsed) setReps(r.value.seatsUsed);
       } else {
         setQuote(null);

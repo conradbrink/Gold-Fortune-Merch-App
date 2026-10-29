@@ -6,7 +6,9 @@
 --       template and holds no permission (not Field Staff's workday).
 --   T3  A driver takes a place, as a rep does (owner, 29 Oct 2026; was "no
 --       place" until 20261029223700): billing_seats_used counts them, a pilot
---       with one place left lets one driver in, and a second is refused.
+--       with one place left lets one driver in, and a second is refused; on
+--       a paid plan the driver counts against its places, and my_setup shows
+--       the driver among the places used.
 --   T4  The warehouse gives a dispatch to a driver; a manager login is still
 --       refused, with the new message.
 --   T5  The driver sees the dispatch given to them, its lines, its order and
@@ -107,6 +109,25 @@ begin
       v_fail := v_fail || 'T3 the second driver was refused for another reason: ' || sqlerrm || E'\n';
     end if;
   end;
+  -- What the setup screen shows: the driver among the places used.
+  perform set_config('request.jwt.claims', json_build_object('sub', v_admin, 'role', 'authenticated')::text, true);
+  set local role authenticated;
+  if (public.my_setup()->'places'->>'used')::int is distinct from v_reps + 1 then
+    v_fail := v_fail || format('T3 the setup screen shows %s places used, expected %s', public.my_setup()->'places'->>'used', v_reps + 1) || E'\n';
+  end if;
+  reset role;
+  -- On a paid plan with as many places as reps: the driver is one too many.
+  update public.company_account set status = 'active', plan = public.billing_plan(v_reps, '{}'::jsonb)
+   where org_id = c_gf;
+  begin
+    update public.profiles set is_active = true where id = v_driver;
+    v_fail := v_fail || 'T3 a paid plan with no place left kept the driver' || E'\n';
+  exception when others then
+    if sqlerrm not like 'All % places on your plan are taken.' then
+      v_fail := v_fail || 'T3 the paid plan refused the driver for another reason: ' || sqlerrm || E'\n';
+    end if;
+  end;
+  update public.company_account set status = 'trial', plan = null where org_id = c_gf;
 
   ---------------------------------------------------------------- fixtures: two dispatches
   insert into public.stock_locations (org_id, name, type)
