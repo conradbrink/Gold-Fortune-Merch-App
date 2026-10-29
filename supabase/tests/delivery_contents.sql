@@ -123,7 +123,7 @@ begin
     values (v_foreign_org, 'distribution', true)
     on conflict (org_id, module_code) do update set enabled = true;
     -- Deliveries owns delivery_contents since 20261029224700; it needs
-    -- Distribution, and Inventory (`warehouse`) needs it.
+    -- Distribution, and Stock control (`warehouse`) needs it.
     insert into public.company_modules (org_id, module_code, enabled)
     values (v_foreign_org, 'deliveries', true)
     on conflict (org_id, module_code) do update set enabled = true;

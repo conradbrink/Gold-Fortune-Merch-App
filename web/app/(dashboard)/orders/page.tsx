@@ -79,7 +79,7 @@ export default function OrdersBoardPage() {
    */
   const canMove = keepsStock(config);
   /**
-   * No Inventory: a new order is invoiced on its own page and, with
+   * No Stock control: a new order is invoiced on its own page and, with
    * Deliveries, dispatched and delivered from there too.
    */
   const withoutStock = invoicesWithoutStock(config);
@@ -318,7 +318,7 @@ export default function OrdersBoardPage() {
             ? delivers
               ? "Your company does not track stock, so orders are not picked or packed. Open an order to invoice it, dispatch it and record its delivery."
               : "Your company does not track stock, so orders are not packed or dispatched here. Open a purchase order to confirm and invoice it."
-            : "Confirming, packing and dispatching orders is part of Inventory, which is not switched on for your company. The board shows where each order is, but cannot move it on."}
+            : "Confirming, picking and packing orders is part of Stock control, which is not switched on for your company. The board shows where each order is, but cannot move it on."}
         </p>
       )}
       <ErrorBanner message={error} />
@@ -612,7 +612,7 @@ function OrderCard({
   if (!canMove) {
     // Each step of an order with no stock is on its own page; the card says
     // which one is next. One that went through the warehouse before the
-    // company dropped Inventory can still be delivered, not dispatched.
+    // company dropped Stock control can still be delivered, not dispatched.
     const open =
       withoutStock && o.status === "new"
         ? "Open to confirm and invoice"
@@ -635,7 +635,7 @@ function OrderCard({
       </Button>
     ) : null;
   } else if (o.status === "confirmed" && !o.fromStock) {
-    // Invoiced without stock before the company bought Inventory: nothing to
+    // Invoiced without stock before the company bought Stock control: nothing to
     // pick or pack, so it goes out from its own page.
     action = (
       <Button

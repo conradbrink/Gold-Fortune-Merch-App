@@ -266,7 +266,7 @@ test("the Plan page lists what the company has, in words", () => {
   const gf = planIncludes(
     toModuleSet({ distribution: true, deliveries: true, warehouse: true, hr: true, reports: true, recurring_jobs: true })
   );
-  assert.deepEqual(gf, ["Field tracking", "Check-ins", "Scheduling", "Reports", "Distribution", "Deliveries", "Inventory", "HR"]);
+  assert.deepEqual(gf, ["Field tracking", "Check-ins", "Scheduling", "Reports", "Distribution", "Deliveries", "Stock control", "HR"]);
   for (const f of PLAN_FEATURES.flatMap((x) => x.labels)) {
     assert.ok(!/_|module|enabled/i.test(f), f);
   }

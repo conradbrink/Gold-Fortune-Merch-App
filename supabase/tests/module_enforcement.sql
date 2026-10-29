@@ -30,7 +30,7 @@ declare
   r record; t record; f record;
   v_n int; v_before int; v_row jsonb; v_cols text; v_txt text; v_args text;
   v_fail text := ''; v_info text := '';
-  -- Dependents before what they need: warehouse (Inventory) before
+  -- Dependents before what they need: warehouse (Stock control) before
   -- deliveries before distribution.
   v_modules text[] := array['warehouse','deliveries','hr','checklists_forms','reports',
                              'recurring_jobs','distribution','invoicing'];

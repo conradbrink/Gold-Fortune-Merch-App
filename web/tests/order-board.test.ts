@@ -263,7 +263,7 @@ test("an order finished without stock is told apart by the order, not the compan
 test("Deliveries is its own module, on while the config loads", () => {
   const config = (modules: Record<string, boolean>) => ({ modules: toModuleSet(modules) });
   assert.equal(deliversOrders(config({ distribution: true, deliveries: true })), true);
-  // A distributor without the Inventory add-on still sends its orders out.
+  // A distributor without the Stock control add-on still sends its orders out.
   assert.equal(deliversOrders(config({ distribution: true, deliveries: true, warehouse: false })), true);
   assert.equal(deliversOrders(config({ distribution: true, deliveries: false })), false);
   assert.equal(deliversOrders(null), true);

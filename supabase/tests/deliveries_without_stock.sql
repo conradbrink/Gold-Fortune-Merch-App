@@ -1,6 +1,6 @@
 -- Deliveries without stock: 20261029224700_deliveries_in_the_plan.
 --
--- Run on Gold Fortune with Inventory (`warehouse`) switched off inside the
+-- Run on Gold Fortune with Stock control (`warehouse`) switched off inside the
 -- block and Deliveries on: a distributor on the normal plan, no add-on.
 --
 --   D1  Invoicing a new order confirms it: one invoice, no location, nothing
@@ -28,9 +28,9 @@
 --   D8  Deliveries off: dispatching is refused with the plan message, and
 --       invoicing finishes the order as delivered (#234's one step).
 --   D9  The catalogue: Deliveries is an edition module needing Distribution;
---       Inventory needs Deliveries; every company with Distribution has it
---       on; the Distribution template brings Deliveries, not Inventory; the
---       add-on is called Inventory.
+--       Stock control needs Deliveries; every company with Distribution has it
+--       on; the Distribution template brings Deliveries, not Stock control; the
+--       add-on is called Stock control.
 --
 -- HOW TO RUN: as dashboard.sql. One DO block that always ends in
 -- `raise exception`, so nothing survives (the storage rows it writes
@@ -431,7 +431,7 @@ begin
   ---------------------------------------------------------------- D9 the catalogue
   v_checks := v_checks + 1;
   if (select (plan_type, is_built) from public.modules where code = 'deliveries') is distinct from ('edition'::text, true)
-     or (select name from public.modules where code = 'warehouse') <> 'Inventory'
+     or (select name from public.modules where code = 'warehouse') <> 'Stock control'
      or not exists (select 1 from public.module_dependencies where module_code = 'deliveries' and requires_code = 'distribution')
      or not exists (select 1 from public.module_dependencies where module_code = 'warehouse' and requires_code = 'deliveries')
      or exists (select 1 from public.company_modules d where d.module_code = 'distribution' and d.enabled
@@ -439,7 +439,7 @@ begin
                                   where x.org_id = d.org_id and x.module_code = 'deliveries'))
      or not exists (select 1 from public.template_modules where template_code = 'distribution' and module_code = 'deliveries')
      or exists (select 1 from public.template_modules where template_code = 'distribution' and module_code = 'warehouse')
-     or exists (select 1 from public.price_list where code = 'warehouse' and label not like 'Inventory%') then
+     or exists (select 1 from public.price_list where code = 'warehouse' and label not like 'Stock control%') then
     v_fail := v_fail || 'D9 the catalogue, the switches, the template or the price list are not as described' || E'\n';
   end if;
 

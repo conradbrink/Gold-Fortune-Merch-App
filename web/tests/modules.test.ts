@@ -31,7 +31,7 @@ test("each gated page belongs to its module, and anything else is core", () => {
   assert.equal(moduleForPath("/statements"), "invoicing");
   assert.equal(moduleForPath("/price-list"), "invoicing");
   assert.equal(moduleForPath("/contracts/1"), "invoicing");
-  // The warehouse home and its settings are Deliveries'; stock is Inventory's.
+  // The warehouse home and its settings are Deliveries'; stock is Stock control's.
   assert.equal(moduleForPath("/warehouse"), "deliveries");
   assert.equal(moduleForPath("/warehouse/settings"), "deliveries");
   assert.equal(moduleForPath("/warehouse/insights"), "warehouse");

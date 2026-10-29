@@ -217,13 +217,13 @@ export default function OrderDetailPage() {
   const automaticInvoice = companyConfig?.settings.money_invoice_orders ?? false;
   /**
    * Confirming and reserving, picking, packing, holding and the stock-aware
-   * cancel are Inventory's (`keepsStock` in lib/order-board).
+   * cancel are Stock control's (`keepsStock` in lib/order-board).
    */
   const keepsStock = companyKeepsStock(companyConfig);
   /** Dispatching, recording a delivery and its POD are Deliveries'. */
   const delivers = deliversOrders(companyConfig);
   /**
-   * Without Inventory: one step invoices a new order. With Deliveries it then
+   * Without Stock control: one step invoices a new order. With Deliveries it then
    * goes out from here; without, that step finishes it.
    */
   const withoutStock = invoicesWithoutStock(companyConfig);

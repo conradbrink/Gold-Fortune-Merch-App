@@ -272,7 +272,7 @@ export function deliversOrders(config: { modules: ModuleSet } | null): boolean {
 }
 
 /**
- * A company with orders and invoicing but no Inventory: a new order is
+ * A company with orders and invoicing but no Stock control: a new order is
  * invoiced at the quantities ordered with no stock reserved or moved
  * (`order_invoice_without_stock`). With Deliveries it is then confirmed and
  * sent out (`sentWithoutStock`); without, it is finished in one step. Cancelled

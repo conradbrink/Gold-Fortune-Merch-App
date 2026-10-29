@@ -39,7 +39,7 @@ import { withArticle } from "@/lib/terms";
  * away rather than on this page.
  *
  * The page is Deliveries' (every distributor's plan); its stock parts are
- * Inventory's, the add-on, and are left out without it.
+ * Stock control's, the add-on, and are left out without it.
  */
 export default function WarehousePage() {
   const supabase = createClient();

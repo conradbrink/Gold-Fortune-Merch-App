@@ -19,7 +19,7 @@
 -- dispatch_lines, drivers, vehicles and delivery_documents, the fulfilment-docs
 -- bucket, and the functions that send an order out and record what happened
 -- to it. `warehouse` keeps its code (the price list, billing, Paystack
--- add-ons, the web and the phone all name it) and becomes "Inventory", the
+-- add-ons, the web and the phone all name it) and becomes "Stock control", the
 -- paid add-on, with every stock table and function exactly as they were: none
 -- of their bodies is touched here.
 --
@@ -28,13 +28,13 @@
 -- every new company, and deliveries cannot be on without Distribution, so a
 -- cleaning company's sign-up would fail. It comes with the Distribution
 -- template instead (create_company switches modules on in sort order, so
--- Distribution 70 before Deliveries 75 before Inventory 80), and is switched on
--- here for every company that has Distribution today. Inventory needs
+-- Distribution 70 before Deliveries 75 before Stock control 80), and is switched on
+-- here for every company that has Distribution today. Stock control needs
 -- Deliveries (its dispatch moves the stock out), and Deliveries needs
 -- Distribution (it sends orders).
 --
--- New sign-ups get Deliveries and not Inventory: the Distribution template
--- drops `warehouse` (version bumped). Companies that have Inventory keep it;
+-- New sign-ups get Deliveries and not Stock control: the Distribution template
+-- drops `warehouse` (version bumped). Companies that have Stock control keep it;
 -- nothing a company can see or do today goes away.
 --
 -- -------------------------------------------- an order with no stock to move
@@ -42,7 +42,7 @@
 -- An order invoiced by order_invoice_without_stock has no fulfilment
 -- location: its company keeps no stock. That, read from the order and never
 -- from the company's modules, is what every step below asks, so an order keeps
--- the path it started on if the company buys or drops Inventory halfway.
+-- the path it started on if the company buys or drops Stock control halfway.
 --
 --   new --order_invoice_without_stock--> confirmed   (invoiced, ready to go)
 --   confirmed --order_dispatch--> dispatched          (no picking, no packing)
@@ -87,7 +87,7 @@ insert into public.modules (code, name, description, plan_type, is_built, sort_o
    'edition', true, 75);
 
 update public.modules
-   set name = 'Inventory',
+   set name = 'Stock control',
        description = 'Stock in your warehouses: receiving, reserving, picking and packing, stock counts, transfers, adjustments, batches and expiry, and the stock reports.'
  where code = 'warehouse';
 
@@ -109,7 +109,7 @@ update public.industry_templates set version = version + 1 where code = 'distrib
 
 -- What the add-on is called on a plan and its invoice. Same prices.
 update public.price_list
-   set label = 'Inventory, per warehouse'
+   set label = 'Stock control, per warehouse'
  where code = 'warehouse' and kind = 'addon' and label = 'Warehouse and deliveries, per warehouse';
 
 -------------------------------------------------------- which module owns what
@@ -874,7 +874,7 @@ begin
   end if;
   -- A company that keeps stock cancels with order_cancel, which puts the
   -- stock back; only an order invoiced without stock before it bought
-  -- Inventory is still this function's.
+  -- Stock control is still this function's.
   if public.module_enabled('warehouse')
      and not (o.fulfil_location_id is null and o.status in ('confirmed', 'dispatched')) then
     raise exception 'Your company keeps stock, so cancel the order with "Cancel", which also puts any reserved stock back.'
@@ -937,6 +937,6 @@ end;
 $function$;
 
 comment on function public.order_invoice_without_stock(uuid) is
-  'For a company without Inventory: invoices a new order at the quantities ordered. With Deliveries the order is then confirmed, ready to dispatch; without, it is finished as delivered. Never touches stock.';
+  'For a company without Stock control: invoices a new order at the quantities ordered. With Deliveries the order is then confirmed, ready to dispatch; without, it is finished as delivered. Never touches stock.';
 comment on function public.order_cancel_without_stock(uuid, text) is
   'For an order with no stock: cancels it while new, or invoiced and not yet sent (its invoice voided or credited).';

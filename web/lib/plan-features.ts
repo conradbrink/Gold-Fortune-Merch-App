@@ -18,7 +18,7 @@ export const PLAN_FEATURES: { module: ModuleCode; labels: string[] }[] = [
   { module: "distribution", labels: ["Distribution"] },
   { module: "invoicing", labels: ["Quotes and invoices"] },
   { module: "deliveries", labels: ["Deliveries"] },
-  { module: "warehouse", labels: ["Inventory"] },
+  { module: "warehouse", labels: ["Stock control"] },
   { module: "hr", labels: ["HR"] },
   { module: "vehicle_logbook", labels: ["Vehicle logbook"] },
 ];

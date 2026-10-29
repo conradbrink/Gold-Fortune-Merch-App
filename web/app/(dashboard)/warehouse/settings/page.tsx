@@ -111,7 +111,7 @@ export default function WarehouseSettingsPage() {
 
   // Drivers, vehicles and warehouse logins are Deliveries' (every
   // distributor's plan); suppliers, locations and reorder levels are about
-  // stock, Inventory's, and are left out without it.
+  // stock, Stock control's, and are left out without it.
   const keepsStock = companyKeepsStock(useCompanyConfig());
 
   const reload = useCallback(async () => {

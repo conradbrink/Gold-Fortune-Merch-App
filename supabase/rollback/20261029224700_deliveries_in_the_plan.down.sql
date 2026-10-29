@@ -718,14 +718,14 @@ update public.module_assignments set module_code = 'warehouse' where module_code
 
 update public.price_list
    set label = 'Warehouse and deliveries, per warehouse'
- where code = 'warehouse' and kind = 'addon' and label = 'Inventory, per warehouse';
+ where code = 'warehouse' and kind = 'addon' and label = 'Stock control, per warehouse';
 
 delete from public.template_modules where template_code = 'distribution' and module_code = 'deliveries';
 insert into public.template_modules (template_code, module_code) values ('distribution', 'warehouse')
 on conflict do nothing;
 update public.industry_templates set version = version - 1 where code = 'distribution';
 
--- Deliveries rows go; a company that had Inventory still has `warehouse`,
+-- Deliveries rows go; a company that had Stock control still has `warehouse`,
 -- which holds the delivery half again.
 delete from public.company_modules where module_code = 'deliveries';
 delete from public.module_dependencies where 'deliveries' in (module_code, requires_code);
