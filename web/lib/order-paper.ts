@@ -1,6 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/lib/supabase/types";
-import { paperDate, printMoneyPdf, type Paper, type PdfSeller, type PdfSpec } from "@/lib/money-pdf";
+import { paperDate, printMoneyPdf, type Paper, type PdfBatch, type PdfSeller, type PdfSpec } from "@/lib/money-pdf";
 import { fetchOrderDetail, fetchPickingList, type OrderDetail, type OrderRow, type PickingRow } from "@/lib/orders";
 import { fetchQuoteSeller, type QuoteSeller } from "@/lib/quotes";
 import { customerPoText } from "@/lib/invoices";
@@ -14,8 +14,9 @@ import { todayIn } from "@/lib/client-document";
  * look (`lib/money-pdf.ts`), so what the customer signs reads as the same
  * company's paper as the invoice they pay.
  *
- * The specs are pure, so the tests pin what each sheet says; the two print
- * functions at the bottom read the order and hand the spec to the drawer.
+ * The specs are pure, so the tests pin what each sheet says; the print
+ * functions at the bottom read the orders and hand the specs to the drawer,
+ * one order or a ticked batch of them as one PDF.
  */
 
 type Client = SupabaseClient<Database>;
@@ -45,6 +46,23 @@ export function deliveryAddress(order: Pick<OrderRow, "delivery_address">, store
 }
 
 const productLabel = (name: string, brand: string | null | undefined) => (brand ? `${name} — ${brand}` : name);
+
+/** Which sheet an order prints at its stage: the picking list until it is packed, then the delivery note. */
+export function sheetFor(status: string): "picking" | "delivery" | null {
+  if (status === "confirmed" || status === "picking") return "picking";
+  if (status === "packed" || status === "dispatched" || status === "delivered") return "delivery";
+  return null;
+}
+
+/** Ticked orders split by the sheet each prints, in the order given; one with nothing to print is left out. */
+export function sheetsFor<T extends { id: string; status: string }>(orders: T[]): { picking: string[]; delivery: string[] } {
+  const out = { picking: [] as string[], delivery: [] as string[] };
+  for (const o of orders) {
+    const sheet = sheetFor(o.status);
+    if (sheet) out[sheet].push(o.id);
+  }
+  return out;
+}
 
 // ---------------------------------------------------------- picking list
 
@@ -258,62 +276,84 @@ async function companyPaper(): Promise<{ paper: Paper; timeZone: string }> {
   return { paper, timeZone: config?.timezone ?? Intl.DateTimeFormat().resolvedOptions().timeZone };
 }
 
-/** Print the order's picking list: a new tab with the sheet and the print box. */
-export function printPickingList(supabase: Client, orderId: string) {
+/** `fn` over the items a few at a time, answers in the items' order: a batch of orders reads without flooding the API. */
+async function inGroups<T, R>(items: T[], size: number, fn: (item: T) => Promise<R>): Promise<R[]> {
+  const out: R[] = [];
+  for (let i = 0; i < items.length; i += size) out.push(...(await Promise.all(items.slice(i, i + size).map(fn))));
+  return out;
+}
+
+/** One order's picking list, read from the database. */
+async function pickingListFor(supabase: Client, orderId: string, seller: QuoteSeller, paper: Paper): Promise<PdfSpec> {
+  const [detail, rows] = await Promise.all([fetchOrderDetail(supabase, orderId), fetchPickingList(supabase, orderId)]);
+  if (rows.length === 0) {
+    throw new Error(`Nothing is reserved for ${detail.order.order_number}, so there is nothing to pick yet. Confirm it first.`);
+  }
+  const [skus, storeAddress] = await Promise.all([
+    fetchSkus(supabase, rows.map((r) => r.product_id)),
+    fetchStoreAddress(supabase, detail.order.store_id),
+  ]);
+  return pickingListPdfSpec(
+    {
+      order: detail.order,
+      storeName: detail.storeName,
+      storeAddress,
+      fulfilLocationName: detail.fulfilLocationName,
+      rows,
+      skus,
+    },
+    seller,
+    paper
+  );
+}
+
+/** One order's delivery note, read from the database. */
+async function deliveryNoteFor(supabase: Client, orderId: string, seller: QuoteSeller, paper: Paper, timeZone: string): Promise<PdfSpec> {
+  const detail = await fetchOrderDetail(supabase, orderId);
+  const dispatch = noteDispatch(detail.order.status, detail.dispatches);
+  const [skus, storeAddress] = await Promise.all([
+    fetchSkus(supabase, detail.lines.map((l) => l.product_id)),
+    fetchStoreAddress(supabase, detail.order.store_id),
+  ]);
+  return deliveryNotePdfSpec(
+    {
+      order: detail.order,
+      storeName: detail.storeName,
+      storeAddress,
+      lines: [...detail.lines].sort(noteLineOrder),
+      dispatch,
+      dispatchedOn: dispatch ? todayIn(timeZone, new Date(dispatch.dispatched_at)) : null,
+      skus,
+    },
+    seller,
+    paper
+  );
+}
+
+/** One sheet as itself; several as one PDF, named for what is in it. */
+const asBatch = (specs: PdfSpec[], many: string): PdfSpec | PdfBatch =>
+  specs.length === 1 ? specs[0] : { title: `${many} (${specs.length})`, specs };
+
+/** Print these orders' picking lists, in this order: a new tab with the sheets and the print box. */
+export function printPickingLists(supabase: Client, orderIds: string[]) {
   return printMoneyPdf(async () => {
-    const [detail, rows, seller, { paper }] = await Promise.all([
-      fetchOrderDetail(supabase, orderId),
-      fetchPickingList(supabase, orderId),
-      fetchQuoteSeller(supabase),
-      companyPaper(),
-    ]);
-    if (rows.length === 0) {
-      throw new Error("Nothing is reserved for this order, so there is nothing to pick yet. Confirm it first.");
-    }
-    const [skus, storeAddress] = await Promise.all([
-      fetchSkus(supabase, rows.map((r) => r.product_id)),
-      fetchStoreAddress(supabase, detail.order.store_id),
-    ]);
-    return pickingListPdfSpec(
-      {
-        order: detail.order,
-        storeName: detail.storeName,
-        storeAddress,
-        fulfilLocationName: detail.fulfilLocationName,
-        rows,
-        skus,
-      },
-      seller,
-      paper
-    );
+    const [seller, { paper }] = await Promise.all([fetchQuoteSeller(supabase), companyPaper()]);
+    const specs = await inGroups(orderIds, 4, (id) => pickingListFor(supabase, id, seller, paper));
+    return asBatch(specs, "Picking lists");
   });
 }
 
-/** Print the order's delivery note: a new tab with the note and the print box. */
-export function printDeliveryNote(supabase: Client, orderId: string) {
+/** Print these orders' delivery notes, in this order: a new tab with the notes and the print box. */
+export function printDeliveryNotes(supabase: Client, orderIds: string[]) {
   return printMoneyPdf(async () => {
-    const [detail, seller, { paper, timeZone }] = await Promise.all([
-      fetchOrderDetail(supabase, orderId),
-      fetchQuoteSeller(supabase),
-      companyPaper(),
-    ]);
-    const dispatch = noteDispatch(detail.order.status, detail.dispatches);
-    const [skus, storeAddress] = await Promise.all([
-      fetchSkus(supabase, detail.lines.map((l) => l.product_id)),
-      fetchStoreAddress(supabase, detail.order.store_id),
-    ]);
-    return deliveryNotePdfSpec(
-      {
-        order: detail.order,
-        storeName: detail.storeName,
-        storeAddress,
-        lines: [...detail.lines].sort(noteLineOrder),
-        dispatch,
-        dispatchedOn: dispatch ? todayIn(timeZone, new Date(dispatch.dispatched_at)) : null,
-        skus,
-      },
-      seller,
-      paper
-    );
+    const [seller, { paper, timeZone }] = await Promise.all([fetchQuoteSeller(supabase), companyPaper()]);
+    const specs = await inGroups(orderIds, 4, (id) => deliveryNoteFor(supabase, id, seller, paper, timeZone));
+    return asBatch(specs, "Delivery notes");
   });
 }
+
+/** Print one order's picking list. */
+export const printPickingList = (supabase: Client, orderId: string) => printPickingLists(supabase, [orderId]);
+
+/** Print one order's delivery note. */
+export const printDeliveryNote = (supabase: Client, orderId: string) => printDeliveryNotes(supabase, [orderId]);

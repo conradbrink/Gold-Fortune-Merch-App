@@ -712,9 +712,27 @@ function totalsBlock(c: Ctx, x: number): Totals {
  * from it.
  */
 export async function buildMoneyPdf(d: PdfSpec, look: PdfLook, logo: LogoImage | null): Promise<Doc> {
+  return buildMoneyPdfs([{ spec: d, logo }], look);
+}
+
+/**
+ * Several documents in one PDF, so a batch prints from one print box: each
+ * starts on a page of its own and numbers only its own pages.
+ */
+export async function buildMoneyPdfs(docs: { spec: PdfSpec; logo: LogoImage | null }[], look: PdfLook): Promise<Doc> {
+  if (docs.length === 0) throw new Error("There is nothing to print.");
   const [{ jsPDF }, autoTableModule] = await Promise.all([import("jspdf"), import("jspdf-autotable")]);
-  const autoTable = autoTableModule.default;
   const doc = new jsPDF({ unit: "pt", format: "a4" });
+  docs.forEach(({ spec, logo }, i) => {
+    if (i > 0) doc.addPage();
+    drawDocument(doc, autoTableModule.default, spec, look, logo);
+  });
+  return doc;
+}
+
+/** One document onto `doc`, from its current page on. */
+function drawDocument(doc: Doc, autoTable: typeof import("jspdf-autotable").default, d: PdfSpec, look: PdfLook, logo: LogoImage | null) {
+  const first = doc.getNumberOfPages();
   const width = doc.internal.pageSize.getWidth();
   const height = doc.internal.pageSize.getHeight();
   const left = MARGIN;
@@ -792,24 +810,28 @@ export async function buildMoneyPdf(d: PdfSpec, look: PdfLook, logo: LogoImage |
     drawSignOff(c, d.signOff, end + 18, bottom);
   }
 
-  // Page numbers once there is more than one page.
-  const pages = doc.getNumberOfPages();
+  // Page numbers once the document has more than one page.
+  const last = doc.getNumberOfPages();
+  const pages = last - first + 1;
   if (pages > 1) {
     doc.setFont("helvetica", "normal");
     doc.setFontSize(7.5);
     textIn(doc, SOFT);
-    for (let p = 1; p <= pages; p++) {
+    for (let p = first; p <= last; p++) {
       doc.setPage(p);
-      doc.text(`Page ${p} of ${pages}`, right, height - 22, { align: "right" });
+      doc.text(`Page ${p - first + 1} of ${pages}`, right, height - 22, { align: "right" });
     }
   }
-  return doc;
 }
 
 async function loadLogo(d: PdfSpec): Promise<LogoImage | null> {
+  return loadLogoAt(d.seller.logoPath ?? null);
+}
+
+async function loadLogoAt(path: string | null): Promise<LogoImage | null> {
   // A logo that cannot be fetched is left off rather than failing the download.
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  return loadLogoImage(supabaseUrl ? logoUrl(supabaseUrl, d.seller.logoPath ?? null) : null);
+  return loadLogoImage(supabaseUrl ? logoUrl(supabaseUrl, path) : null);
 }
 
 async function lookOf(d: PdfSpec): Promise<PdfLook> {
@@ -824,16 +846,31 @@ export async function drawMoneyPdf(d: PdfSpec) {
   doc.save(`${d.fileName}.pdf`);
 }
 
+/** Several documents printed as one: `title` names the tab and the file "Save as PDF" offers. */
+export type PdfBatch = { title: string; specs: PdfSpec[] };
+
+/** The most documents one print draws: more, and the browser builds a PDF of hundreds of pages while the page freezes. */
+export const PRINT_AT_ONCE = 100;
+
+/** Why a batch this big is refused, or null when it can print. */
+export function tooManyToPrint(count: number): string | null {
+  return count > PRINT_AT_ONCE
+    ? `That is ${count} documents. Print up to ${PRINT_AT_ONCE} at a time: narrow the dates or the filter, or untick some.`
+    : null;
+}
+
 /**
  * Print the document: the same PDF the download saves, opened in a new tab
  * with the print box already up (the PDF asks for it as it opens, which the
- * viewers in Chrome and Edge do). The document is only asked for once the tab
- * is open, because reading an order first would use up the click and a pop-up
- * blocker would refuse the tab. Where the tab is refused anyway, the PDF
- * downloads instead, so the click still gives the person something to print.
+ * viewers in Chrome and Edge do). Given a batch, every document goes into the
+ * one PDF, so a stack of invoices or picking lists is one print box. The
+ * documents are only asked for once the tab is open, because reading orders
+ * first would use up the click and a pop-up blocker would refuse the tab.
+ * Where the tab is refused anyway, the PDF downloads instead, so the click
+ * still gives the person something to print.
  */
-export async function printMoneyPdf(spec: () => Promise<PdfSpec>) {
-  // A second click while the first is still reading would open a second tab and print the sheet twice.
+export async function printMoneyPdf(load: () => Promise<PdfSpec | PdfBatch>) {
+  // A second click while the first is still reading would open a second tab and print the sheets twice.
   if (printing) return;
   printing = true;
   const win = window.open("", "_blank");
@@ -841,17 +878,27 @@ export async function printMoneyPdf(spec: () => Promise<PdfSpec>) {
     if (win) {
       win.document.title = "Getting it ready to print";
       win.document.body.style.font = "16px system-ui, sans-serif";
-      win.document.body.textContent = "Getting the document ready to print…";
+      win.document.body.textContent = "Getting the documents ready to print…";
     }
-    const d = await spec();
-    const [look, logo] = await Promise.all([lookOf(d), loadLogo(d)]);
-    const doc = await buildMoneyPdf(d, look, logo);
+    const got = await load();
+    const batch: PdfBatch = "specs" in got ? got : { title: got.fileName, specs: [got] };
+    if (batch.specs.length === 0) throw new Error("There is nothing to print.");
+    const tooMany = tooManyToPrint(batch.specs.length);
+    if (tooMany) throw new Error(tooMany);
+    // One company's paper: its look, and each logo fetched once (an invoice keeps the logo it was issued with).
+    const paths = [...new Set(batch.specs.map((d) => d.seller.logoPath ?? null))];
+    const [look, logos] = await Promise.all([lookOf(batch.specs[0]), Promise.all(paths.map((path) => loadLogoAt(path)))]);
+    const logoOf = new Map(paths.map((path, i) => [path, logos[i]]));
+    const doc = await buildMoneyPdfs(
+      batch.specs.map((spec) => ({ spec, logo: logoOf.get(spec.seller.logoPath ?? null) ?? null })),
+      look
+    );
     if (!win) {
-      doc.save(`${d.fileName}.pdf`);
+      doc.save(`${batch.title}.pdf`);
       return;
     }
     // The tab's title, and the file name Chrome offers under "Save as PDF".
-    doc.setProperties({ title: d.fileName });
+    doc.setProperties({ title: batch.title });
     doc.autoPrint();
     win.location.href = doc.output("bloburl") as unknown as string;
   } catch (e) {
