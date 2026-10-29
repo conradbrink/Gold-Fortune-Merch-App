@@ -9,6 +9,7 @@ import {
   dayInZone,
   daysBetween,
   invoicesOnConfirm,
+  invoicesWithoutStock,
   podFileProblem,
   statusWords,
   waitWords,
@@ -222,10 +223,26 @@ test("confirming invoices only with the setting and the invoicing module both on
     settings: { money_invoice_orders: setting },
     modules: toModuleSet(modules),
   });
-  assert.equal(invoicesOnConfirm(config(true, { invoicing: true })), true);
-  assert.equal(invoicesOnConfirm(config(true, { invoicing: false })), false);
-  assert.equal(invoicesOnConfirm(config(false, { invoicing: true })), false);
+  assert.equal(invoicesOnConfirm(config(true, { invoicing: true, warehouse: true })), true);
+  assert.equal(invoicesOnConfirm(config(true, { invoicing: false, warehouse: true })), false);
+  assert.equal(invoicesOnConfirm(config(false, { invoicing: true, warehouse: true })), false);
   assert.equal(invoicesOnConfirm(null), false);
+});
+
+test("without the warehouse, confirming always invoices, and only with invoicing on", () => {
+  const config = (setting: boolean, modules: Record<string, boolean>) => ({
+    settings: { money_invoice_orders: setting },
+    modules: toModuleSet(modules),
+  });
+  // The setting does not matter: "Confirm and invoice" is the only way to confirm.
+  assert.equal(invoicesOnConfirm(config(false, { invoicing: true, warehouse: false })), true);
+  assert.equal(invoicesOnConfirm(config(false, { invoicing: false, warehouse: false })), false);
+
+  assert.equal(invoicesWithoutStock(config(false, { distribution: true, invoicing: true, warehouse: false })), true);
+  assert.equal(invoicesWithoutStock(config(false, { distribution: true, invoicing: true, warehouse: true })), false);
+  assert.equal(invoicesWithoutStock(config(false, { distribution: true, invoicing: false, warehouse: false })), false);
+  assert.equal(invoicesWithoutStock(config(false, { distribution: false, invoicing: true, warehouse: false })), false);
+  assert.equal(invoicesWithoutStock(null), false);
 });
 
 test("a POD file storage would refuse is caught before the delivery is recorded", () => {

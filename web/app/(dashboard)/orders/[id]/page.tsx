@@ -43,6 +43,8 @@ import {
   markDelivered,
   returnUndelivered,
   cancelOrder,
+  cancelWithoutStock,
+  invoiceWithoutStock,
   holdOrder,
   releaseHold,
   uploadDeliveryDocument,
@@ -69,6 +71,8 @@ import {
 import { formatDateOnly } from "@/lib/format-date";
 import { OrderSignature } from "@/components/orders/order-signature";
 import { useCompanyConfig, useTerms } from "@/lib/use-company-config";
+import { invoicesWithoutStock } from "@/lib/order-board";
+import { moduleEnabled } from "@/lib/modules";
 import { lower } from "@/lib/terms";
 import { fetchPriceBook, listForGroup, type PriceBook } from "@/lib/price-lists";
 
@@ -82,6 +86,7 @@ type AvailabilityCheck = { locationId: string; linesKey: string };
 type DialogKind =
   | null
   | "confirm"
+  | "invoice"
   | "dispatch"
   | "deliver"
   | "failed"
@@ -201,8 +206,17 @@ export default function OrderDetailPage() {
    */
   const [confirmKind, setConfirmKind] = useState<"cancel" | "hold">("cancel");
 
+  const companyConfig = useCompanyConfig();
   /** Confirming issues the order's invoice (`money_invoice_orders`). */
-  const automaticInvoice = useCompanyConfig()?.settings.money_invoice_orders ?? false;
+  const automaticInvoice = companyConfig?.settings.money_invoice_orders ?? false;
+  /**
+   * Confirming, picking, packing, dispatching, holding and the stock-aware
+   * cancel are the warehouse module's. True while the config loads, as the
+   * board does, so a company that keeps stock never sees its buttons flicker.
+   */
+  const keepsStock = companyConfig ? moduleEnabled(companyConfig.modules, "warehouse") : true;
+  /** Without the warehouse: one step confirms the order and issues its invoice. */
+  const withoutStock = invoicesWithoutStock(companyConfig);
 
   /** Opens the shared dialog, latching which of the two it is. */
   function openConfirm(kind: "cancel" | "hold") {
@@ -432,6 +446,10 @@ export default function OrderDetailPage() {
   // edit the database refuses.
   const canPrice = o.status === "new";
   const unpricedLines = detail.lines.filter((l) => l.unit_price == null).length;
+  // What "Confirm and invoice" will put on the invoice: the live lines, as
+  // `order_invoice_without_stock` counts them.
+  const toInvoice = detail.lines.filter((l) => l.line_status !== "cancelled" && l.qty_ordered > 0);
+  const unpricedToInvoice = toInvoice.filter((l) => l.unit_price == null).length;
   // The product being added, if it comes in shrinks: its row offers per shrink too.
   const addUnits = shrinkUnits(catalogue.find((c) => c.id === addProductId)?.units_per_shrink);
   const addByShrink = addPerShrink && addUnits !== null;
@@ -702,7 +720,8 @@ export default function OrderDetailPage() {
           <h1 className="mt-1 flex items-center gap-2 text-2xl font-semibold tracking-tight">
             {o.order_number}
             <Badge variant={o.status === "cancelled" ? "outline" : "secondary"}>
-              {STATUS_LABELS[o.status] ?? o.status}
+              {/* Without the warehouse, confirming is invoicing: say so. */}
+              {!keepsStock && o.status === "confirmed" ? "Invoiced" : (STATUS_LABELS[o.status] ?? o.status)}
             </Badge>
             {o.on_hold && (
               <Badge variant="outline" className="border-amber-500/50 text-amber-600">
@@ -717,12 +736,17 @@ export default function OrderDetailPage() {
         </div>
 
         <div className="flex flex-wrap gap-2">
-          {o.status === "new" && (
+          {o.status === "new" && keepsStock && (
             <Button onClick={() => setDialog("confirm")} disabled={busy}>
               Confirm and reserve
             </Button>
           )}
-          {o.status === "confirmed" && (
+          {o.status === "new" && withoutStock && (
+            <Button onClick={() => setDialog("invoice")} disabled={busy}>
+              Confirm and invoice
+            </Button>
+          )}
+          {o.status === "confirmed" && keepsStock && (
             <Button
               onClick={() =>
                 run(
@@ -740,7 +764,7 @@ export default function OrderDetailPage() {
               Start picking
             </Button>
           )}
-          {o.status === "picking" && (
+          {o.status === "picking" && keepsStock && (
             <>
               <Button nativeButton={false} render={<Link href={`/orders/${orderId}/pick`} />}>
                 Open picking list
@@ -754,7 +778,7 @@ export default function OrderDetailPage() {
               </Button>
             </>
           )}
-          {o.status === "packed" && (
+          {o.status === "packed" && keepsStock && (
             <Button
               onClick={() => {
                 /*
@@ -778,7 +802,7 @@ export default function OrderDetailPage() {
               Dispatch
             </Button>
           )}
-          {o.status === "dispatched" && openDispatch && (
+          {o.status === "dispatched" && openDispatch && keepsStock && (
             <>
               <Button onClick={() => setDialog("deliver")} disabled={busy}>
                 Record delivery
@@ -788,12 +812,13 @@ export default function OrderDetailPage() {
               </Button>
             </>
           )}
-          {o.status === "delivered" && (
+          {o.status === "delivered" && keepsStock && (
             <Button onClick={() => setDialog("upload")} disabled={busy}>
               <FileUp className="mr-1.5 h-4 w-4" /> Upload POD
             </Button>
           )}
           {!["delivered", "cancelled"].includes(o.status) &&
+            keepsStock &&
             (o.on_hold ? (
               <Button
                 variant="outline"
@@ -807,7 +832,7 @@ export default function OrderDetailPage() {
                 Hold
               </Button>
             ))}
-          {!["delivered", "cancelled", "dispatched"].includes(o.status) && (
+          {(keepsStock ? !["delivered", "cancelled", "dispatched"].includes(o.status) : o.status === "new") && (
             <Button variant="outline" onClick={() => openConfirm("cancel")} disabled={busy}>
               Cancel
             </Button>
@@ -861,11 +886,20 @@ export default function OrderDetailPage() {
                   {pricedPer && <TableHead>Priced per</TableHead>}
                   <TableHead className="text-right">Ordered</TableHead>
                   <TableHead className="text-right">{pricedPer ? "Price" : "Price/unit"}</TableHead>
-                  <TableHead className="text-right">Reserved</TableHead>
-                  <TableHead className="text-right">Picked</TableHead>
-                  <TableHead className="text-right">Dispatched</TableHead>
-                  <TableHead className="text-right">Delivered</TableHead>
-                  <TableHead>Status</TableHead>
+                  {/* Stock columns: a company without the warehouse has no
+                      stock to reserve, pick or send, so they would only ever
+                      read 0. */}
+                  {keepsStock && (
+                    <>
+                      <TableHead className="text-right">Reserved</TableHead>
+                      <TableHead className="text-right">Picked</TableHead>
+                      <TableHead className="text-right">Dispatched</TableHead>
+                      <TableHead className="text-right">Delivered</TableHead>
+                    </>
+                  )}
+                  {/* Kept without the warehouse too: it holds a new order's
+                      Remove button. */}
+                  <TableHead>{keepsStock ? "Status" : ""}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -966,21 +1000,27 @@ export default function OrderDetailPage() {
                         </span>
                       )}
                     </TableCell>
-                    <TableCell className="text-right tabular-nums">{l.qty_reserved}</TableCell>
-                    <TableCell className="text-right tabular-nums">{l.qty_picked}</TableCell>
-                    <TableCell className="text-right tabular-nums">{l.qty_dispatched}</TableCell>
-                    <TableCell className="text-right tabular-nums">
-                      {l.qty_delivered}
-                      {l.qty_returned > 0 && (
-                        <span className="ml-1 text-xs text-muted-foreground">
-                          ({l.qty_returned} back)
-                        </span>
-                      )}
-                    </TableCell>
+                    {keepsStock && (
+                      <>
+                        <TableCell className="text-right tabular-nums">{l.qty_reserved}</TableCell>
+                        <TableCell className="text-right tabular-nums">{l.qty_picked}</TableCell>
+                        <TableCell className="text-right tabular-nums">{l.qty_dispatched}</TableCell>
+                        <TableCell className="text-right tabular-nums">
+                          {l.qty_delivered}
+                          {l.qty_returned > 0 && (
+                            <span className="ml-1 text-xs text-muted-foreground">
+                              ({l.qty_returned} back)
+                            </span>
+                          )}
+                        </TableCell>
+                      </>
+                    )}
                     <TableCell>
-                      <Badge variant={l.line_status === "fulfilled" ? "default" : "outline"}>
-                        {l.line_status}
-                      </Badge>
+                      {keepsStock && (
+                        <Badge variant={l.line_status === "fulfilled" ? "default" : "outline"}>
+                          {l.line_status}
+                        </Badge>
+                      )}
                       {/* Only while `new`, where the badge says `pending` for
                           every line and carries nothing. Once anything is
                           reserved this column is the only place the line's own
@@ -1016,7 +1056,9 @@ export default function OrderDetailPage() {
                       Set them before confirming.
                     </>
                   ) : (
-                    "Quantities and prices can be changed until this order is confirmed. After that, stock is reserved against it."
+                    keepsStock
+                      ? "Quantities and prices can be changed until this order is confirmed. After that, stock is reserved against it."
+                      : "Quantities and prices can be changed until this order is confirmed and invoiced."
                   )}
                   {storeList && (
                     <span className="block text-xs">
@@ -1195,22 +1237,25 @@ export default function OrderDetailPage() {
               {detail.fulfilLocationName && (
                 <Row label="Fulfilled from" value={detail.fulfilLocationName} />
               )}
-              <Row
-                label="POD"
-                value={
-                  // Every delivery sets this to `outstanding` and filing the
-                  // document sets it to `received`; nothing ever chooses
-                  // `not_required`, which is only the column default before a
-                  // delivery has happened. Printing it raw told the reader a
-                  // signature would not be needed, which is the opposite of
-                  // the rule.
-                  o.pod_status === "received"
-                    ? "Received"
-                    : o.pod_status === "outstanding"
-                      ? "Outstanding"
-                      : "Required on delivery"
-                }
-              />
+              {/* No deliveries are recorded without the warehouse, so no POD. */}
+              {keepsStock && (
+                <Row
+                  label="POD"
+                  value={
+                    // Every delivery sets this to `outstanding` and filing the
+                    // document sets it to `received`; nothing ever chooses
+                    // `not_required`, which is only the column default before a
+                    // delivery has happened. Printing it raw told the reader a
+                    // signature would not be needed, which is the opposite of
+                    // the rule.
+                    o.pod_status === "received"
+                      ? "Received"
+                      : o.pod_status === "outstanding"
+                        ? "Outstanding"
+                        : "Required on delivery"
+                  }
+                />
+              )}
               {o.hold_reason && <Row label="Hold reason" value={o.hold_reason} />}
               {o.cancel_reason && <Row label="Cancelled" value={o.cancel_reason} />}
               {o.notes && <Row label="Notes" value={o.notes} />}
@@ -1884,6 +1929,43 @@ export default function OrderDetailPage() {
         </DialogContent>
       </Dialog>
 
+      <Dialog open={dialog === "invoice"} onOpenChange={(v) => !v && setDialog(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Confirm and invoice {o.order_number}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-2 text-sm text-muted-foreground">
+            <p>
+              This confirms the order and issues its tax invoice for what was ordered, at the prices on the
+              order.
+            </p>
+            <p>
+              After this the order cannot be changed. If something is wrong later, put it right with a credit
+              note on the invoice.
+            </p>
+            {unpricedToInvoice > 0 && (
+              <p className="text-destructive">
+                {unpricedToInvoice === 1 ? "One product has" : `${unpricedToInvoice} products have`} no price yet.
+                Price {unpricedToInvoice === 1 ? "it" : "them"} first.
+              </p>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDialog(null)} disabled={busy}>
+              Back
+            </Button>
+            <Button
+              onClick={() =>
+                run(() => invoiceWithoutStock(supabase, orderId), "Order confirmed and invoiced.")
+              }
+              disabled={busy || unpricedToInvoice > 0 || toInvoice.length === 0}
+            >
+              {busy ? "Invoicing…" : "Confirm and invoice"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <Dialog
         open={dialog === "cancel" || dialog === "hold"}
         onOpenChange={(v) => !v && setDialog(null)}
@@ -1897,7 +1979,9 @@ export default function OrderDetailPage() {
           <div className="space-y-3">
             <p className="text-sm text-muted-foreground">
               {confirmKind === "cancel"
-                ? "Any stock held for this order is released and can be sold again. If it was packed, unpack the boxes back onto the shelf. This cannot be undone."
+                ? keepsStock
+                  ? "Any stock held for this order is released and can be sold again. If it was packed, unpack the boxes back onto the shelf. This cannot be undone."
+                  : "The order has not been invoiced, so nothing else changes. This cannot be undone."
                 : "A hold freezes the order where it is. Nothing moves until it is released."}
             </p>
             <div>
@@ -1914,7 +1998,9 @@ export default function OrderDetailPage() {
                 run(
                   () =>
                     confirmKind === "cancel"
-                      ? cancelOrder(supabase, orderId, reason)
+                      ? keepsStock
+                        ? cancelOrder(supabase, orderId, reason)
+                        : cancelWithoutStock(supabase, orderId, reason)
                       : holdOrder(supabase, orderId, reason),
                   confirmKind === "cancel" ? "Order cancelled." : "Order held."
                 )

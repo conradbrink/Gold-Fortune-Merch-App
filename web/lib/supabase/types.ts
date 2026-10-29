@@ -7994,6 +7994,14 @@ export type Database = {
         Args: { p_order_id: string; p_reason: string }
         Returns: Json
       }
+      order_cancel_without_stock: {
+        Args: { p_order_id: string; p_reason: string }
+        Returns: Json
+      }
+      order_invoice_without_stock: {
+        Args: { p_order_id: string }
+        Returns: Json
+      }
       tax_invoice_issue: {
         Args: { p_order_id: string; p_issue_date?: string }
         Returns: string

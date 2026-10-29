@@ -245,11 +245,35 @@ export function waitWords(days: number, delivered: boolean): string {
  * the invoicing module, which is what the database's `order_invoices_on()`
  * checks. Reading the setting alone said "Invoiced" for a company whose
  * invoicing had been switched off.
+ *
+ * A company without the warehouse confirms only through "Confirm and invoice"
+ * (`invoicesWithoutStock`), so for it a confirmed order is an invoiced one
+ * whatever the setting says.
  */
 export function invoicesOnConfirm(
   config: { settings: { money_invoice_orders: boolean }; modules: ModuleSet } | null
 ): boolean {
-  return !!config && config.settings.money_invoice_orders && moduleEnabled(config.modules, "invoicing");
+  return (
+    !!config &&
+    moduleEnabled(config.modules, "invoicing") &&
+    (config.settings.money_invoice_orders || !moduleEnabled(config.modules, "warehouse"))
+  );
+}
+
+/**
+ * A company with orders and invoicing but no warehouse: its orders are
+ * confirmed and invoiced in one step at the quantities ordered, with no stock
+ * reserved or moved (`order_invoice_without_stock`), and cancelled while new
+ * by `order_cancel_without_stock`. False while the config is loading, so no
+ * button is offered that the database might refuse.
+ */
+export function invoicesWithoutStock(config: { modules: ModuleSet } | null): boolean {
+  return (
+    !!config &&
+    moduleEnabled(config.modules, "distribution") &&
+    moduleEnabled(config.modules, "invoicing") &&
+    !moduleEnabled(config.modules, "warehouse")
+  );
 }
 
 /** An order's state in words for a sentence: "It is now being picked." */

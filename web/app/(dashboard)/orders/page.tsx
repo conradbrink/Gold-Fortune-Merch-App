@@ -23,6 +23,7 @@ import {
   daysBetween,
   dropAnswer,
   invoicesOnConfirm,
+  invoicesWithoutStock,
   matchesSearch,
   nextStepOf,
   poExpiry,
@@ -282,8 +283,9 @@ export default function OrdersBoardPage() {
 
       {!canMove && (
         <p className="rounded-lg border border-border bg-muted/40 p-2.5 text-sm text-muted-foreground">
-          Confirming, packing and dispatching orders is part of Warehouse and deliveries, which is not switched on
-          for your company. The board shows where each order is, but cannot move it on.
+          {invoicesWithoutStock(config)
+            ? "Your company does not track stock, so orders are not packed or dispatched here. Open a purchase order to confirm and invoice it."
+            : "Confirming, packing and dispatching orders is part of Warehouse and deliveries, which is not switched on for your company. The board shows where each order is, but cannot move it on."}
         </p>
       )}
       <ErrorBanner message={error} />
@@ -418,6 +420,7 @@ export default function OrdersBoardPage() {
                           today={today}
                           invoices={invoices}
                           canMove={canMove}
+                          withoutStock={invoicesWithoutStock(config)}
                           money={money}
                           staffWord={lower(terms.staff.one)}
                           siteWord={lower(terms.site.one)}
@@ -478,6 +481,7 @@ function OrderCard({
   today,
   invoices,
   canMove,
+  withoutStock,
   money,
   staffWord,
   siteWord,
@@ -491,6 +495,8 @@ function OrderCard({
   today: string;
   invoices: boolean;
   canMove: boolean;
+  /** No warehouse: a new order is confirmed and invoiced on its own page. */
+  withoutStock: boolean;
   money: (n: number) => string;
   staffWord: string;
   siteWord: string;
@@ -514,7 +520,18 @@ function OrderCard({
 
   let action: ReactNode = null;
   if (!canMove) {
-    action = null;
+    action =
+      withoutStock && o.status === "new" ? (
+        <Button
+          variant="outline"
+          size="sm"
+          className="w-full text-xs"
+          nativeButton={false}
+          render={<Link href={`/orders/${o.id}`} draggable={false} />}
+        >
+          Open to confirm and invoice
+        </Button>
+      ) : null;
   } else if (o.onHold && column !== "delivered") {
     action = (
       <Button

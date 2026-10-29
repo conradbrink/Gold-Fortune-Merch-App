@@ -1233,6 +1233,18 @@ export const returnUndelivered = (
 export const cancelOrder = (supabase: Client, orderId: string, reason: string) =>
   callRpc(supabase, "order_cancel", { p_order_id: orderId, p_reason: reason });
 
+/**
+ * For a company without the warehouse module: confirms a new order and issues
+ * its invoice at the quantities ordered, touching no stock
+ * (`order_invoice_without_stock`). Refused when the warehouse module is on.
+ */
+export const invoiceWithoutStock = (supabase: Client, orderId: string) =>
+  callRpc(supabase, "order_invoice_without_stock", { p_order_id: orderId });
+
+/** The same company's cancel: a new order only (`order_cancel_without_stock`). */
+export const cancelWithoutStock = (supabase: Client, orderId: string, reason: string) =>
+  callRpc(supabase, "order_cancel_without_stock", { p_order_id: orderId, p_reason: reason });
+
 export const holdOrder = (supabase: Client, orderId: string, reason: string) =>
   callRpc(supabase, "order_hold", { p_order_id: orderId, p_reason: reason });
 
