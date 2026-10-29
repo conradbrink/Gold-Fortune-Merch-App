@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { Download, Send, Trash2 } from "lucide-react";
+import { Download, Printer, Send, Trash2 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -28,6 +28,7 @@ import {
   downloadCreditNotePdf,
   downloadInvoicePdf,
   downloadProofOfServicePdf,
+  printInvoicePdf,
   fetchInvoice,
   fetchProofOfService,
   INVOICE_KIND_LABELS,
@@ -208,6 +209,15 @@ export default function InvoiceDetailPage() {
           )}
           <Button variant="outline" onClick={() => downloadInvoicePdf(detail)}>
             <Download className="mr-1.5 h-4 w-4" /> PDF
+          </Button>
+          <Button
+            variant="outline"
+            onClick={() => {
+              setError(null);
+              printInvoicePdf(detail).catch((e) => setError(e instanceof Error ? e.message : String(e)));
+            }}
+          >
+            <Printer className="mr-1.5 h-4 w-4" /> Print
           </Button>
           {live && outstanding > 0 && (
             <Button variant="outline" onClick={() => { setPayAmount(outstanding.toFixed(2)); setRestIsRebate(false); setPanel("pay"); }}>

@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent, type ReactNode } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Archive, CalendarClock, Clock, FileText, Plus, Receipt, Search, User } from "lucide-react";
+import { Archive, CalendarClock, Clock, FileText, Plus, Printer, Receipt, Search, User } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -12,6 +12,7 @@ import { NativeSelect } from "@/components/ui/native-select";
 import { ErrorBanner } from "@/components/warehouse/stat-tile";
 import { OrderStepDialog, type StepTarget } from "@/components/orders/order-step-dialog";
 import { fetchPipelineOrders, type PipelineOrder } from "@/lib/order-pipeline";
+import { printDeliveryNote } from "@/lib/order-paper";
 import {
   BOARD_COLUMNS,
   boardSince,
@@ -423,6 +424,12 @@ export default function OrdersBoardPage() {
                           siteWord={lower(terms.site.one)}
                           faded={dragging === o.id}
                           onStep={(step) => open(o, step)}
+                          onPrint={() => {
+                            setError(null);
+                            printDeliveryNote(createClient(), o.id).catch((e) =>
+                              setError(e instanceof Error ? e.message : String(e))
+                            );
+                          }}
                           onDragStart={(e) => {
                             e.dataTransfer.setData(DRAG_TYPE, o.id);
                             e.dataTransfer.effectAllowed = "move";
@@ -483,6 +490,7 @@ function OrderCard({
   siteWord,
   faded,
   onStep,
+  onPrint,
   onDragStart,
   onDragEnd,
 }: {
@@ -496,6 +504,8 @@ function OrderCard({
   siteWord: string;
   faded: boolean;
   onStep: (step: BoardStep) => void;
+  /** Print the delivery note that goes with the goods. */
+  onPrint: () => void;
   onDragStart: (e: DragEvent) => void;
   onDragEnd: () => void;
 }) {
@@ -630,6 +640,13 @@ function OrderCard({
       </div>
 
       {action}
+      {/* The note that goes on the truck with the goods, from the moment
+          they are packed until they have left. */}
+      {canMove && (o.status === "packed" || o.status === "dispatched") && (
+        <Button variant="ghost" size="xs" className="w-full text-xs text-muted-foreground" onClick={onPrint}>
+          <Printer /> Print delivery note
+        </Button>
+      )}
     </article>
   );
 }

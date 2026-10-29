@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { AlertTriangle, FileUp, History, Truck } from "lucide-react";
+import { AlertTriangle, FileUp, History, Printer, Truck } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -28,6 +28,7 @@ import {
 } from "@/components/ui/table";
 import { ErrorBanner } from "@/components/warehouse/stat-tile";
 import { OrderInvoice } from "@/components/orders/order-invoice";
+import { printDeliveryNote, printPickingList } from "@/lib/order-paper";
 import { fetchOrgId } from "@/lib/representatives";
 import { STATUS_LABELS, fetchLocations, type StockLocation } from "@/lib/warehouse";
 import {
@@ -680,6 +681,12 @@ export default function OrderDetailPage() {
   }
   const openDispatch = detail.dispatches.find((d) => d.status === "in_transit");
 
+  /** Opens the sheet in a new tab with the print box up; a failure to read the order says so here. */
+  function print(sheet: typeof printPickingList) {
+    setError(null);
+    sheet(supabase, orderId).catch((e) => setError(e instanceof Error ? e.message : String(e)));
+  }
+
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -791,6 +798,20 @@ export default function OrderDetailPage() {
           {o.status === "delivered" && (
             <Button onClick={() => setDialog("upload")} disabled={busy}>
               <FileUp className="mr-1.5 h-4 w-4" /> Upload POD
+            </Button>
+          )}
+          {/* Paper for each step: the sheet the picker walks the shelves
+              with, then the note that goes with the goods and comes back
+              signed. Still offered once delivered, for a note that went
+              missing before it was signed. */}
+          {(o.status === "confirmed" || o.status === "picking") && (
+            <Button variant="outline" onClick={() => print(printPickingList)}>
+              <Printer className="mr-1.5 h-4 w-4" /> Print picking list
+            </Button>
+          )}
+          {(o.status === "packed" || o.status === "dispatched" || o.status === "delivered") && (
+            <Button variant="outline" onClick={() => print(printDeliveryNote)}>
+              <Printer className="mr-1.5 h-4 w-4" /> Print delivery note
             </Button>
           )}
           {!["delivered", "cancelled"].includes(o.status) &&
