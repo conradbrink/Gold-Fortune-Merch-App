@@ -21,7 +21,8 @@
 --       with "Invoice every order" on (the follow trigger) and off (the
 --       cancel itself); off, an invoice with a payment is refused; an order
 --       out for delivery is refused with its own message.
---   D7  The rules stay shut: a stock order cannot skip picking; nothing comes
+--   D7  The rules stay shut: a stock order cannot skip picking, nor drop its
+--       location to do so; nothing comes
 --       back to confirmed but through order_return_undelivered; an order with
 --       no location cannot be picked; a new order cannot be dispatched.
 --   D8  Deliveries off: dispatching is refused with the plan message, and
@@ -344,6 +345,18 @@ begin
     get stacked diagnostics v_err = message_text;
     if v_err <> 'An order cannot go from confirmed to dispatched.' then
       v_fail := v_fail || 'D7 skipping picking refused for another reason: ' || v_err || E'\n';
+    end if;
+  end;
+  v_checks := v_checks + 1;
+  begin
+    -- Nor by losing its location in the same statement.
+    update public.orders set status = 'confirmed', fulfil_location_id = v_loc where id = v_o[7];
+    update public.orders set status = 'dispatched', fulfil_location_id = null where id = v_o[7];
+    v_fail := v_fail || 'D7 a stock order dropped its location and skipped picking' || E'\n';
+  exception when others then
+    get stacked diagnostics v_err = message_text;
+    if v_err <> 'An order cannot go from confirmed to dispatched.' then
+      v_fail := v_fail || 'D7 dropping the location refused for another reason: ' || v_err || E'\n';
     end if;
   end;
   v_checks := v_checks + 1;

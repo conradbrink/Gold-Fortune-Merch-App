@@ -634,6 +634,20 @@ function OrderCard({
         {open}
       </Button>
     ) : null;
+  } else if (o.status === "confirmed" && !o.fromStock) {
+    // Invoiced without stock before the company bought Inventory: nothing to
+    // pick or pack, so it goes out from its own page.
+    action = (
+      <Button
+        variant="outline"
+        size="sm"
+        className="w-full text-xs"
+        nativeButton={false}
+        render={<Link href={`/orders/${o.id}`} draggable={false} />}
+      >
+        Open to dispatch
+      </Button>
+    );
   } else if (o.onHold && column !== "delivered") {
     action = (
       <Button

@@ -236,8 +236,9 @@ begin
   or ((old.status, new.status) = ('new', 'delivered')
       and coalesce(current_setting('app.finished_without_stock', true), '') = new.id::text)
   -- An order with no stock to pick or pack goes out straight from confirmed,
-  -- and comes back there when a delivery fails.
-  or (new.fulfil_location_id is null
+  -- and comes back there when a delivery fails. It never had a location: one
+  -- taken away in the same statement does not make a stock order one.
+  or (old.fulfil_location_id is null and new.fulfil_location_id is null
       and (old.status, new.status) in (('confirmed', 'dispatched'), ('dispatched', 'confirmed')));
 
   if not v_legal then
