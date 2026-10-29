@@ -3,15 +3,17 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent, type ReactNode } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Archive, CalendarClock, Clock, FileText, Plus, Receipt, Search, User } from "lucide-react";
+import { Archive, CalendarClock, Clock, FileText, Plus, Printer, Receipt, Search, User } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";
 import { ErrorBanner } from "@/components/warehouse/stat-tile";
 import { OrderStepDialog, type StepTarget } from "@/components/orders/order-step-dialog";
 import { fetchPipelineOrders, type PipelineOrder } from "@/lib/order-pipeline";
+import { printDeliveryNote, printDeliveryNotes, printPickingLists, sheetFor, sheetsFor } from "@/lib/order-paper";
 import {
   BOARD_COLUMNS,
   boardSince,
@@ -83,6 +85,8 @@ export default function OrdersBoardPage() {
   const [readAt, setReadAt] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  /** Orders ticked to print together. Only cards still on the board print, so a filter never prints what it hides. */
+  const [ticked, setTicked] = useState<Set<string>>(new Set());
   /** What the last step did, or why a drop was not a move. */
   const [notice, setNotice] = useState<{ text: string; tone: "done" | "hint" } | null>(null);
   const [query, setQuery] = useState("");
@@ -179,6 +183,26 @@ export default function OrdersBoardPage() {
   const money = (n: number) => formatMoney(n, currency);
 
   const dragged = dragging ? orders.find((o) => o.id === dragging) : undefined;
+  // Printing reads dispatches and drivers, which are part of the warehouse module, like moving a card.
+  const tickedOrders = canMove ? visible.filter((o) => ticked.has(o.id)) : [];
+  const sheets = sheetsFor(tickedOrders);
+
+  function tick(ids: string[], on: boolean) {
+    setTicked((t) => {
+      const next = new Set(t);
+      for (const id of ids) {
+        if (on) next.add(id);
+        else next.delete(id);
+      }
+      return next;
+    });
+  }
+
+  /** Every ticked sheet of one kind in one PDF, in the board's order: one print box. */
+  function printTicked(print: typeof printPickingLists, ids: string[]) {
+    setError(null);
+    print(createClient(), ids).catch((e) => setError(e instanceof Error ? e.message : String(e)));
+  }
 
   function open(o: PipelineOrder, step: BoardStep) {
     setNotice(null);
@@ -335,9 +359,35 @@ export default function OrdersBoardPage() {
               {query.trim() ? ", or search the archive with the link above." : "."}
             </p>
           )}
+          {/* What the ticks are for: each kind of sheet for every ticked order, in one PDF. */}
+          {tickedOrders.length > 0 && (
+            <div className="flex flex-wrap items-center gap-2 rounded-lg border border-border bg-muted/40 p-2.5">
+              <p className="mr-auto text-sm">
+                {tickedOrders.length === 1 ? "1 order ticked" : `${tickedOrders.length} orders ticked`}
+              </p>
+              {sheets.picking.length > 0 && (
+                <Button size="sm" onClick={() => printTicked(printPickingLists, sheets.picking)}>
+                  <Printer className="mr-1.5 h-4 w-4" />
+                  {sheets.picking.length === 1 ? "Print the picking list" : `Print ${sheets.picking.length} picking lists`}
+                </Button>
+              )}
+              {sheets.delivery.length > 0 && (
+                <Button size="sm" onClick={() => printTicked(printDeliveryNotes, sheets.delivery)}>
+                  <Printer className="mr-1.5 h-4 w-4" />
+                  {sheets.delivery.length === 1 ? "Print the delivery note" : `Print ${sheets.delivery.length} delivery notes`}
+                </Button>
+              )}
+              <Button size="sm" variant="ghost" onClick={() => setTicked(new Set())}>
+                Clear
+              </Button>
+            </div>
+          )}
           <div className="grid gap-3 lg:grid-cols-5">
             {BOARD_COLUMNS.map((column) => {
               const cards = visible.filter((o) => columnOf(o) === column);
+              // A column whose orders print a sheet can be ticked as a whole.
+              const printable = canMove ? cards.filter((o) => sheetFor(o.status)) : [];
+              const columnTicked = printable.length > 0 && printable.every((o) => ticked.has(o.id));
               const total = cards.reduce((n, o) => n + o.total, 0);
               const answer = dragged ? dropAnswer(dragged, column, invoices) : null;
               const accepts = answer !== null && "step" in answer;
@@ -396,7 +446,16 @@ export default function OrdersBoardPage() {
                 >
                   <header className="border-b border-border px-3 py-2">
                     <div className="flex items-center justify-between gap-2">
-                      <h2 className="text-sm font-medium text-foreground">{columnLabel(column, invoices)}</h2>
+                      <div className="flex min-w-0 items-center gap-2">
+                        {printable.length > 0 && (
+                          <Checkbox
+                            checked={columnTicked}
+                            aria-label={`Tick every order in ${columnLabel(column, invoices)}`}
+                            onCheckedChange={(v) => tick(printable.map((o) => o.id), v === true)}
+                          />
+                        )}
+                        <h2 className="text-sm font-medium text-foreground">{columnLabel(column, invoices)}</h2>
+                      </div>
                       <Badge variant={column === "delivered" && cards.length > 0 ? "destructive" : "secondary"}>
                         {cards.length}
                       </Badge>
@@ -430,6 +489,14 @@ export default function OrdersBoardPage() {
                           siteWord={lower(terms.site.one)}
                           faded={dragging === o.id}
                           onStep={(step) => open(o, step)}
+                          ticked={ticked.has(o.id)}
+                          onTick={(on) => tick([o.id], on)}
+                          onPrint={() => {
+                            setError(null);
+                            printDeliveryNote(createClient(), o.id).catch((e) =>
+                              setError(e instanceof Error ? e.message : String(e))
+                            );
+                          }}
                           onDragStart={(e) => {
                             e.dataTransfer.setData(DRAG_TYPE, o.id);
                             e.dataTransfer.effectAllowed = "move";
@@ -491,6 +558,9 @@ function OrderCard({
   siteWord,
   faded,
   onStep,
+  ticked,
+  onTick,
+  onPrint,
   onDragStart,
   onDragEnd,
 }: {
@@ -506,6 +576,11 @@ function OrderCard({
   siteWord: string;
   faded: boolean;
   onStep: (step: BoardStep) => void;
+  /** Ticked to print with others. */
+  ticked: boolean;
+  onTick: (on: boolean) => void;
+  /** Print the delivery note that goes with the goods. */
+  onPrint: () => void;
   onDragStart: (e: DragEvent) => void;
   onDragEnd: () => void;
 }) {
@@ -595,9 +670,14 @@ function OrderCard({
       ].join(" ")}
     >
       <div className="flex items-baseline justify-between gap-2">
-        <Link href={`/orders/${o.id}`} draggable={false} className="text-sm font-medium text-primary hover:underline">
-          {o.orderNumber}
-        </Link>
+        <div className="flex min-w-0 items-center gap-2">
+          {canMove && sheetFor(o.status) && (
+            <Checkbox checked={ticked} aria-label={`Tick ${o.orderNumber} to print`} onCheckedChange={(v) => onTick(v === true)} />
+          )}
+          <Link href={`/orders/${o.id}`} draggable={false} className="text-sm font-medium text-primary hover:underline">
+            {o.orderNumber}
+          </Link>
+        </div>
         <span className="text-xs font-medium tabular-nums text-foreground">{money(o.total)}</span>
       </div>
       <p className="text-sm leading-tight text-foreground">{o.storeName ?? `No ${siteWord} named`}</p>
@@ -651,6 +731,13 @@ function OrderCard({
       </div>
 
       {action}
+      {/* The note that goes on the truck with the goods, from the moment
+          they are packed until they have left. */}
+      {canMove && (o.status === "packed" || o.status === "dispatched") && (
+        <Button variant="ghost" size="xs" className="w-full text-xs text-muted-foreground" onClick={onPrint}>
+          <Printer /> Print delivery note
+        </Button>
+      )}
     </article>
   );
 }

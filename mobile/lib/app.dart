@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:sentry_flutter/sentry_flutter.dart';
 
 import 'core/company_closed.dart';
 import 'core/company_config.dart';
@@ -87,6 +88,9 @@ final routerProvider = Provider<GoRouter>((ref) {
 
   return GoRouter(
     initialLocation: '/',
+    // Each screen change is a breadcrumb (the route's pattern, never its ids),
+    // so a failure reported to Sentry says which screen it happened on.
+    observers: [SentryNavigatorObserver()],
     refreshListenable: GoRouterRefreshStream(supabase.auth.onAuthStateChange),
     routes: [
       GoRoute(path: '/login', builder: (context, state) => const LoginScreen()),

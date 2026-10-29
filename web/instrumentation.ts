@@ -10,7 +10,12 @@ import { sharedSentryOptions } from "@/lib/monitoring";
 
 export async function register() {
   if (!process.env.NEXT_PUBLIC_SENTRY_DSN) return;
-  Sentry.init(sharedSentryOptions);
+  Sentry.init({
+    ...sharedSentryOptions,
+    // Routes and actions that catch a failure log it with console.error and
+    // answer politely; this turns each of those logs into a Sentry issue.
+    integrations: [Sentry.captureConsoleIntegration({ levels: ["error"] })],
+  });
 }
 
 export const onRequestError = Sentry.captureRequestError;

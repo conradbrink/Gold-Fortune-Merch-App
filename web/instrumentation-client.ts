@@ -11,7 +11,12 @@ import * as Sentry from "@sentry/nextjs";
 import { sharedSentryOptions } from "@/lib/monitoring";
 
 if (process.env.NEXT_PUBLIC_SENTRY_DSN) {
-  Sentry.init(sharedSentryOptions);
+  Sentry.init({
+    ...sharedSentryOptions,
+    // A failure the code caught and logged is still a failure: the page shows
+    // "could not save" and carries on, and without this nobody would know.
+    integrations: [Sentry.captureConsoleIntegration({ levels: ["error"] })],
+  });
 }
 
 // Lets Sentry tie a client-side navigation to the error that followed it.

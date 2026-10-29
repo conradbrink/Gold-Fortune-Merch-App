@@ -7,13 +7,17 @@ import {
   paperDate,
   paperLines,
   paperMoney,
+  printMoneyPdf,
   termsText,
+  tooManyToPrint,
+  type PdfBatch,
   vatRows,
   type Paper,
   type PdfSpec,
 } from "@/lib/money-pdf";
 import { formatQty } from "@/lib/money-docs";
 import { periodLabel } from "@/lib/contract-periods";
+import { allPages } from "@/lib/all-pages";
 
 /**
  * Invoices, credit notes and payments.
@@ -465,6 +469,74 @@ async function signedInPaper(): Promise<Paper> {
 
 export async function downloadInvoicePdf(detail: InvoiceDetail) {
   await drawMoneyPdf(invoicePdfSpec(detail, await signedInPaper()));
+}
+
+/** The same invoice the PDF button saves, opened with the print box up. */
+export async function printInvoicePdf(detail: InvoiceDetail) {
+  await printMoneyPdf(async () => invoicePdfSpec(detail, await signedInPaper()));
+}
+
+type PrintLink = { invoice_id: string; visit_id: string; visits: { checkin_at: string | null } | null };
+
+/**
+ * The invoices ticked on the register as one PDF, in the register's order:
+ * each the same document as its own PDF button saves. The rows already carry
+ * the invoice and its balance, so only the lines and the days of work are
+ * read, a hundred invoices to a request and every page of each.
+ */
+export async function printInvoicePdfs(supabase: Client, rows: InvoiceListRow[]) {
+  await printMoneyPdf(async (): Promise<PdfSpec | PdfBatch> => {
+    const tooMany = tooManyToPrint(rows.length);
+    if (tooMany) throw new Error(tooMany);
+    const paperRead = signedInPaper();
+    const lines: InvoiceLine[] = [];
+    const links: PrintLink[] = [];
+    for (let i = 0; i < rows.length; i += 100) {
+      const ids = rows.slice(i, i + 100).map((r) => r.id);
+      const [l, v] = await Promise.all([
+        allPages<InvoiceLine>((from, to) =>
+          supabase.from("tax_invoice_lines").select("*").in("invoice_id", ids).order("invoice_id").order("position").order("id").range(from, to)
+        ),
+        allPages<PrintLink>(
+          (from, to) =>
+            supabase
+              .from("tax_invoice_visits")
+              .select("invoice_id, visit_id, visits(checkin_at)")
+              .in("invoice_id", ids)
+              .order("invoice_id")
+              .order("visit_id")
+              .range(from, to) as unknown as PromiseLike<{ data: PrintLink[] | null; error: { message: string } | null }>
+        ),
+      ]);
+      lines.push(...l);
+      links.push(...v);
+    }
+    const paper = await paperRead;
+    const byInvoice = <T extends { invoice_id: string }>(items: T[]) => {
+      const map = new Map<string, T[]>();
+      for (const item of items) {
+        const list = map.get(item.invoice_id);
+        if (list) list.push(item);
+        else map.set(item.invoice_id, [item]);
+      }
+      return map;
+    };
+    const linesOf = byInvoice(lines);
+    const linksOf = byInvoice(links);
+    const specs = rows.map((r) =>
+      invoicePdfSpec(
+        {
+          invoice: r,
+          lines: linesOf.get(r.id) ?? [],
+          // The PDF reads only the days the work was done on.
+          visits: (linksOf.get(r.id) ?? []).map((v) => ({ id: v.visit_id, checkin_at: v.visits?.checkin_at ?? null, checkout_at: null, staff_name: null })),
+          balance: r.balance,
+        },
+        paper
+      )
+    );
+    return specs.length === 1 ? specs[0] : { title: `Invoices (${specs.length})`, specs };
+  });
 }
 
 export function creditNotePdfSpec(

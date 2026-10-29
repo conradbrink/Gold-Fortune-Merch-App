@@ -5,7 +5,9 @@ import { amountText, daysBetween } from "@/lib/client-document";
 
 /**
  * One letterhead for every money document (invoice, credit note, quote and
- * statement) so they read as one company's paperwork.
+ * statement) so they read as one company's paperwork. The warehouse's picking
+ * list and delivery note are drawn on it too (`lib/order-paper.ts`): no
+ * prices, a box to tick per line or boxes to sign at the foot.
  *
  * The layout is the owner's choice (20 Oct), modelled on the QuickBooks
  * invoice their clients already know: the heading and the company's details
@@ -144,6 +146,18 @@ export function statementStatus(closing: number, overdue: number | null, fmt: (n
   return late > 0.004 ? { label: "Overdue", tone: "overdue", detail: fmt(late) } : { label: "Not yet due", tone: "due" };
 }
 
+/**
+ * Boxes at the end of a document for people to fill in by hand: who received
+ * the goods, who picked them. A heading, a sentence saying what signing means,
+ * then rows of boxes, each labelled in its top corner.
+ */
+export type SignOff = {
+  title: string;
+  text?: string | null;
+  /** Each row's height in points, and its boxes left to right; a box's share of the row is relative to the others'. */
+  rows: { height: number; boxes: { label: string; share?: number }[] }[];
+};
+
 export type PdfSeller = {
   name: string;
   address?: string | null;
@@ -175,6 +189,8 @@ export type PdfSpec = {
   strong?: number[];
   /** Number the lines "1.", "2.", in a narrow column of their own. */
   numbered?: boolean;
+  /** Column indexes printed as an empty box, to tick or write in by hand (a picking list's "Picked"). */
+  boxes?: number[];
   /**
    * The amounts under the lines; the last is the one to pay, in large type.
    * A row marked strong (the total, when payments follow it) is in bold over a rule.
@@ -186,9 +202,13 @@ export type PdfSpec = {
   ageing?: [string, string][] | null;
   /** Paragraphs for the customer: a void reason, a credit's reason, terms. */
   notes?: string[];
+  /** The heading over the notes; "Note to customer" unless the document is for someone else. */
+  notesTitle?: string;
   /** "How to pay": bank details, printed under a heading of their own. */
   payTo?: string | null;
   footer?: string | null;
+  /** Boxes to sign at the foot of the last page. */
+  signOff?: SignOff | null;
   /** The look to draw in; without one, the company's own is read. */
   look?: PdfLook;
 };
@@ -197,6 +217,8 @@ const MARGIN = 36;
 const INK: Rgb = [33, 33, 33];
 const SOFT: Rgb = [84, 84, 84];
 const RULE: Rgb = [218, 218, 218];
+/** The edge of a box to fill in by hand: dark enough to survive a cheap printer and a photocopy. */
+const BOX: Rgb = [120, 120, 120];
 const WHITE: Rgb = [255, 255, 255];
 const TONES: Record<PdfStatus["tone"], Rgb> = {
   overdue: [196, 78, 8],
@@ -463,8 +485,10 @@ function drawTable(c: Ctx, autoTable: typeof import("jspdf-autotable").default, 
   const body = d.numbered ? d.rows.map((r, i) => [`${i + 1}.`, ...r]) : d.rows;
   const numeric = d.numeric.map((i) => i + shift);
   const strong = (d.strong ?? []).map((i) => i + shift);
-  const columnStyles: Record<number, { halign?: "right"; cellWidth?: number; textColor?: Rgb; fontSize?: number }> = {};
+  const boxes = (d.boxes ?? []).map((i) => i + shift);
+  const columnStyles: Record<number, { halign?: "right" | "center"; cellWidth?: number; textColor?: Rgb; fontSize?: number }> = {};
   for (const i of numeric) columnStyles[i] = { halign: "right" };
+  for (const i of boxes) columnStyles[i] = { halign: "center", cellWidth: 46 };
   if (d.numbered) columnStyles[0] = { cellWidth: 24, textColor: SOFT, fontSize: 8 };
   const padding = { top: 9, bottom: 9, left: 5, right: 5 };
   autoTable(doc, {
@@ -490,10 +514,17 @@ function drawTable(c: Ctx, autoTable: typeof import("jspdf-autotable").default, 
     },
     didParseCell: (data) => {
       if (numeric.includes(data.column.index)) data.cell.styles.halign = "right";
+      if (boxes.includes(data.column.index)) data.cell.styles.halign = "center";
       if (data.section === "body" && strong.includes(data.column.index)) data.cell.styles.fontStyle = "bold";
     },
     // A thin rule under the heading and every line; bold's fills are their own edges.
     didDrawCell: (data) => {
+      if (data.section === "body" && boxes.includes(data.column.index)) {
+        // The box sits on the line's first row of text, so a wrapped product name does not leave it floating.
+        const size = 12;
+        lineIn(doc, BOX, 0.8);
+        doc.rect(data.cell.x + (data.cell.width - size) / 2, data.cell.y + padding.top - 2, size, size, "S");
+      }
       if (data.section === "foot" || bold) return;
       const underHead = data.section === "head" && clean;
       lineIn(doc, underHead ? brand : RULE, underHead ? 1 : 0.6);
@@ -528,6 +559,57 @@ function drawAgeing(c: Ctx, top: number, cells: [string, string][]): number {
     doc.text(value, x, top + 30);
   });
   return top + height;
+}
+
+// ---------------------------------------------------------------- sign-off
+
+/**
+ * The boxes to fill in by hand, across the page: in its foot when there is
+ * room, as a form has them, or at the top of a page of their own when the
+ * lines have used it up. Kept together, so a signature never lands on a page
+ * without the words that say what it means.
+ */
+function drawSignOff(c: Ctx, s: SignOff, from: number, bottom: number) {
+  const { doc, look, brand, left, right } = c;
+  const GAP = 10;
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(8.5);
+  const text = wrap(doc, s.text, right - left);
+  const height = 16 + text.length * 11.5 + 6 + s.rows.reduce((n, r) => n + r.height, 0) + GAP * (s.rows.length - 1);
+  let y = Math.max(from, bottom - height);
+  if (from + height > bottom) {
+    doc.addPage();
+    y = 50;
+  }
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(10.5);
+  textIn(doc, look.style === "classic" ? INK : brand);
+  doc.text(s.title, left, y + 10);
+  y += 16;
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(8.5);
+  textIn(doc, SOFT);
+  for (const line of text) {
+    doc.text(line, left, y + 9);
+    y += 11.5;
+  }
+  y += 6;
+  for (const row of s.rows) {
+    const shares = row.boxes.map((b) => b.share ?? 1);
+    const total = shares.reduce((n, v) => n + v, 0);
+    const room = right - left - GAP * (row.boxes.length - 1);
+    let x = left;
+    row.boxes.forEach((box, i) => {
+      const w = (room * shares[i]) / total;
+      lineIn(doc, BOX, 0.8);
+      doc.rect(x, y, w, row.height, "S");
+      doc.setFontSize(7.5);
+      textIn(doc, SOFT);
+      doc.text(box.label, x + 6, y + 11);
+      x += w + GAP;
+    });
+    y += row.height + GAP;
+  }
 }
 
 // ------------------------------------------------------------------ totals
@@ -630,9 +712,27 @@ function totalsBlock(c: Ctx, x: number): Totals {
  * from it.
  */
 export async function buildMoneyPdf(d: PdfSpec, look: PdfLook, logo: LogoImage | null): Promise<Doc> {
+  return buildMoneyPdfs([{ spec: d, logo }], look);
+}
+
+/**
+ * Several documents in one PDF, so a batch prints from one print box: each
+ * starts on a page of its own and numbers only its own pages.
+ */
+export async function buildMoneyPdfs(docs: { spec: PdfSpec; logo: LogoImage | null }[], look: PdfLook): Promise<Doc> {
+  if (docs.length === 0) throw new Error("There is nothing to print.");
   const [{ jsPDF }, autoTableModule] = await Promise.all([import("jspdf"), import("jspdf-autotable")]);
-  const autoTable = autoTableModule.default;
   const doc = new jsPDF({ unit: "pt", format: "a4" });
+  docs.forEach(({ spec, logo }, i) => {
+    if (i > 0) doc.addPage();
+    drawDocument(doc, autoTableModule.default, spec, look, logo);
+  });
+  return doc;
+}
+
+/** One document onto `doc`, from its current page on. */
+function drawDocument(doc: Doc, autoTable: typeof import("jspdf-autotable").default, d: PdfSpec, look: PdfLook, logo: LogoImage | null) {
+  const first = doc.getNumberOfPages();
   const width = doc.internal.pageSize.getWidth();
   const height = doc.internal.pageSize.getHeight();
   const left = MARGIN;
@@ -663,6 +763,7 @@ export async function buildMoneyPdf(d: PdfSpec, look: PdfLook, logo: LogoImage |
     top = 50;
   }
   totals.draw(top);
+  const totalsPage = doc.getNumberOfPages();
 
   // The note column starts beside the totals and continues on a new page if it is long.
   const nx = left + (d.numbered ? 29 : 5);
@@ -695,7 +796,7 @@ export async function buildMoneyPdf(d: PdfSpec, look: PdfLook, logo: LogoImage |
   };
   const notes = [...(d.notes ?? []), ...(d.footer ? [d.footer] : [])].filter((n) => n.trim() !== "");
   if (notes.length) {
-    title("Note to customer");
+    title(d.notesTitle ?? "Note to customer");
     notes.forEach(paragraph);
     y += 8;
   }
@@ -703,25 +804,34 @@ export async function buildMoneyPdf(d: PdfSpec, look: PdfLook, logo: LogoImage |
     title("How to pay");
     paragraph(d.payTo);
   }
+  if (d.signOff) {
+    // Under the notes and the totals, whichever ends lower (the totals only count while the notes are on their page).
+    const end = doc.getNumberOfPages() === totalsPage ? Math.max(y, top + totals.height) : y;
+    drawSignOff(c, d.signOff, end + 18, bottom);
+  }
 
-  // Page numbers once there is more than one page.
-  const pages = doc.getNumberOfPages();
+  // Page numbers once the document has more than one page.
+  const last = doc.getNumberOfPages();
+  const pages = last - first + 1;
   if (pages > 1) {
     doc.setFont("helvetica", "normal");
     doc.setFontSize(7.5);
     textIn(doc, SOFT);
-    for (let p = 1; p <= pages; p++) {
+    for (let p = first; p <= last; p++) {
       doc.setPage(p);
-      doc.text(`Page ${p} of ${pages}`, right, height - 22, { align: "right" });
+      doc.text(`Page ${p - first + 1} of ${pages}`, right, height - 22, { align: "right" });
     }
   }
-  return doc;
 }
 
 async function loadLogo(d: PdfSpec): Promise<LogoImage | null> {
+  return loadLogoAt(d.seller.logoPath ?? null);
+}
+
+async function loadLogoAt(path: string | null): Promise<LogoImage | null> {
   // A logo that cannot be fetched is left off rather than failing the download.
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  return loadLogoImage(supabaseUrl ? logoUrl(supabaseUrl, d.seller.logoPath ?? null) : null);
+  return loadLogoImage(supabaseUrl ? logoUrl(supabaseUrl, path) : null);
 }
 
 async function lookOf(d: PdfSpec): Promise<PdfLook> {
@@ -735,6 +845,70 @@ export async function drawMoneyPdf(d: PdfSpec) {
   const doc = await buildMoneyPdf(d, look, logo);
   doc.save(`${d.fileName}.pdf`);
 }
+
+/** Several documents printed as one: `title` names the tab and the file "Save as PDF" offers. */
+export type PdfBatch = { title: string; specs: PdfSpec[] };
+
+/** The most documents one print draws: more, and the browser builds a PDF of hundreds of pages while the page freezes. */
+export const PRINT_AT_ONCE = 100;
+
+/** Why a batch this big is refused, or null when it can print. */
+export function tooManyToPrint(count: number): string | null {
+  return count > PRINT_AT_ONCE
+    ? `That is ${count} documents. Print up to ${PRINT_AT_ONCE} at a time: narrow the dates or the filter, or untick some.`
+    : null;
+}
+
+/**
+ * Print the document: the same PDF the download saves, opened in a new tab
+ * with the print box already up (the PDF asks for it as it opens, which the
+ * viewers in Chrome and Edge do). Given a batch, every document goes into the
+ * one PDF, so a stack of invoices or picking lists is one print box. The
+ * documents are only asked for once the tab is open, because reading orders
+ * first would use up the click and a pop-up blocker would refuse the tab.
+ * Where the tab is refused anyway, the PDF downloads instead, so the click
+ * still gives the person something to print.
+ */
+export async function printMoneyPdf(load: () => Promise<PdfSpec | PdfBatch>) {
+  // A second click while the first is still reading would open a second tab and print the sheets twice.
+  if (printing) return;
+  printing = true;
+  const win = window.open("", "_blank");
+  try {
+    if (win) {
+      win.document.title = "Getting it ready to print";
+      win.document.body.style.font = "16px system-ui, sans-serif";
+      win.document.body.textContent = "Getting the documents ready to print…";
+    }
+    const got = await load();
+    const batch: PdfBatch = "specs" in got ? got : { title: got.fileName, specs: [got] };
+    if (batch.specs.length === 0) throw new Error("There is nothing to print.");
+    const tooMany = tooManyToPrint(batch.specs.length);
+    if (tooMany) throw new Error(tooMany);
+    // One company's paper: its look, and each logo fetched once (an invoice keeps the logo it was issued with).
+    const paths = [...new Set(batch.specs.map((d) => d.seller.logoPath ?? null))];
+    const [look, logos] = await Promise.all([lookOf(batch.specs[0]), Promise.all(paths.map((path) => loadLogoAt(path)))]);
+    const logoOf = new Map(paths.map((path, i) => [path, logos[i]]));
+    const doc = await buildMoneyPdfs(
+      batch.specs.map((spec) => ({ spec, logo: logoOf.get(spec.seller.logoPath ?? null) ?? null })),
+      look
+    );
+    if (!win) {
+      doc.save(`${batch.title}.pdf`);
+      return;
+    }
+    // The tab's title, and the file name Chrome offers under "Save as PDF".
+    doc.setProperties({ title: batch.title });
+    doc.autoPrint();
+    win.location.href = doc.output("bloburl") as unknown as string;
+  } catch (e) {
+    win?.close();
+    throw e;
+  } finally {
+    printing = false;
+  }
+}
+let printing = false;
 
 /** Open the document in a new tab instead of downloading it (the settings preview). */
 export async function previewMoneyPdf(d: PdfSpec) {

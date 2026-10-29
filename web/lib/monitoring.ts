@@ -1,4 +1,5 @@
 import type { Breadcrumb, ErrorEvent, EventHint } from "@sentry/nextjs";
+import type { SupabaseFailure } from "@/lib/supabase/fetch";
 
 /**
  * Shared Sentry configuration for the browser and the server.
@@ -38,6 +39,9 @@ const SENSITIVE_KEY_PARTS = [
   "api_key",
   "service_role",
   "authorization",
+  // A PostgREST error's `details` carries the row's values ("Key (name)=(…)
+  // already exists"), and console.error is captured with its arguments.
+  "details",
 ];
 
 function isSensitiveKey(key: string): boolean {
@@ -156,6 +160,50 @@ export function recordEvent(
     // Never let recording a breadcrumb become the error. An unhandled
     // rejection here would surface as a crash caused by the crash reporter.
     .catch(() => {});
+}
+
+/**
+ * Reports a Supabase request that failed in a way that means something is
+ * broken, even though the page caught it (see `failureOf` in
+ * `lib/supabase/fetch.ts`).
+ *
+ * One Sentry issue per table or function and code, however many people hit
+ * it, so a broken button is one email rather than one per click. The page's
+ * address and the clicks before it come with the event, which is what says
+ * which button it was.
+ */
+export function reportSupabaseFailure(failure: SupabaseFailure): void {
+  if (!process.env.NEXT_PUBLIC_SENTRY_DSN) return;
+  const what = `${failure.method} ${failure.resource || "/"}`;
+  const why = failure.code || `HTTP ${failure.status}`;
+  if (!firstInAWhile(`${failure.service} ${what} ${why}`)) return;
+  void import("@sentry/nextjs")
+    .then((Sentry) => {
+      Sentry.captureMessage(`Supabase ${failure.service} failed: ${what} (${why})`, {
+        level: "error",
+        fingerprint: ["supabase", failure.service, what, why],
+        tags: { "supabase.service": failure.service, "supabase.code": why },
+        extra: { status: failure.status, code: failure.code, message: failure.message },
+      });
+    })
+    // As in recordEvent: the reporter must never become the error.
+    .catch(() => {});
+}
+
+/** How long one tab or server keeps quiet about a failure it has reported. */
+export const REPORT_QUIET_MS = 10 * 60 * 1000;
+const lastReported = new Map<string, number>();
+
+/**
+ * True the first time a failure is seen, then not again for a while. A page
+ * that polls would otherwise send the same failure every few seconds from
+ * every open tab, and spend the month's Sentry allowance on one bug.
+ */
+export function firstInAWhile(key: string, now = Date.now()): boolean {
+  const last = lastReported.get(key);
+  if (last !== undefined && now - last < REPORT_QUIET_MS) return false;
+  lastReported.set(key, now);
+  return true;
 }
 
 /**

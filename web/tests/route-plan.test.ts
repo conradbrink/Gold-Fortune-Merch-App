@@ -10,6 +10,7 @@ import {
   stopFor,
   type Stop,
 } from "@/lib/route-plan";
+import { LIMITS } from "@/lib/rate-limit";
 
 // Klerksdorp, with Potchefstroom 45 km east and Orkney 25 km south-west.
 const warehouse = { lat: -26.85, lng: 26.66 };
@@ -90,4 +91,9 @@ test("only a real latitude and longitude is a place", () => {
   assert.ok(!isLatLng({ lat: 91, lng: 0 }));
   assert.ok(!isLatLng({ lat: "1", lng: 2 }));
   assert.ok(!isLatLng(null));
+});
+
+test("Plan my route is ten Google calls a day per person (owner, 29 Oct 2026)", () => {
+  assert.equal(LIMITS.routePlan.limit, 10);
+  assert.equal(LIMITS.routePlan.windowSeconds, 86_400);
 });

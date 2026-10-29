@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { Check } from "lucide-react";
+import { Check, Printer } from "lucide-react";
 import { formatDateOnly } from "@/lib/format-date";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
@@ -25,6 +25,7 @@ import {
   markPacked,
   type PickingRow,
 } from "@/lib/orders";
+import { printPickingList } from "@/lib/order-paper";
 
 /**
  * The picking list.
@@ -116,17 +117,34 @@ export default function PickingPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <Link
-          href={`/orders/${orderId}`}
-          className="text-sm text-muted-foreground hover:underline"
-        >
-          ← Back to the order
-        </Link>
-        <h1 className="mt-1 text-2xl font-semibold tracking-tight">Picking list</h1>
-        <p className="text-sm text-muted-foreground">
-          Oldest stock first. Change a quantity only if what you took differs.
-        </p>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <Link
+            href={`/orders/${orderId}`}
+            className="text-sm text-muted-foreground hover:underline"
+          >
+            ← Back to the order
+          </Link>
+          <h1 className="mt-1 text-2xl font-semibold tracking-tight">Picking list</h1>
+          <p className="text-sm text-muted-foreground">
+            Oldest stock first. Change a quantity only if what you took differs.
+          </p>
+        </div>
+        {/* The same list on paper, for a picker without a phone: tick each
+            line on the sheet, then type in here what differs. */}
+        {rows.length > 0 && (
+          <Button
+            variant="outline"
+            onClick={() => {
+              setError(null);
+              printPickingList(supabase, orderId).catch((e) =>
+                setError(e instanceof Error ? e.message : String(e))
+              );
+            }}
+          >
+            <Printer className="mr-1.5 h-4 w-4" /> Print picking list
+          </Button>
+        )}
       </div>
 
       <ErrorBanner message={error} />
