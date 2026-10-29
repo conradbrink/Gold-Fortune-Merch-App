@@ -13,6 +13,7 @@ import {
   paymentStatus,
 } from "@/lib/invoices";
 import { useCompanyConfig } from "@/lib/use-company-config";
+import { invoicesWithoutStock } from "@/lib/order-board";
 
 /**
  * The order's invoice row: a link to the app's tax invoice, with whether it is
@@ -39,6 +40,8 @@ export function OrderInvoice({
   const router = useRouter();
   const config = useCompanyConfig();
   const automatic = config?.settings.money_invoice_orders ?? false;
+  /** No warehouse: "Confirm and invoice" on the order issues it. */
+  const withoutStock = invoicesWithoutStock(config);
   const [invoice, setInvoice] = useState<Awaited<ReturnType<typeof fetchInvoiceForOrder>>>(null);
   const [checked, setChecked] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -105,6 +108,8 @@ export function OrderInvoice({
           </Button>
         ) : status === "cancelled" ? (
           "None"
+        ) : withoutStock && status === "new" ? (
+          <span className="text-muted-foreground">Made when you confirm and invoice the order</span>
         ) : automatic && status === "new" ? (
           <span className="text-muted-foreground">Made when the order is confirmed</span>
         ) : (
