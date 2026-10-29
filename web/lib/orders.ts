@@ -1182,12 +1182,11 @@ export async function dispatchOrder(
 
   if (!carrier.assignedRepId) return result;
 
-  const one = lower(t.staff.one);
   const dispatchId = result.dispatch_id;
   if (typeof dispatchId !== "string") {
     throw new PartialDispatchError(
-      `The order was dispatched, but it could not be given to ${withArticle(t, "staff")} — the ` +
-        `dispatch id came back missing. Set the ${one} on the delivery below.`,
+      `The order was dispatched, but it could not be given to ${withArticle(t, "staff")} or driver — the ` +
+        `dispatch id came back missing. Set "Handled by" on the delivery below.`,
       "the dispatch id came back missing."
     );
   }
@@ -1197,8 +1196,8 @@ export async function dispatchOrder(
   } catch (e) {
     const reason = e instanceof Error ? e.message : String(e);
     throw new PartialDispatchError(
-      `The order was dispatched, but it could not be given to ${withArticle(t, "staff")}: ${reason} ` +
-        `Set the ${one} on the delivery below — do not dispatch again.`,
+      `The order was dispatched, but it could not be given to ${withArticle(t, "staff")} or driver: ${reason} ` +
+        `Set "Handled by" on the delivery below — do not dispatch again.`,
       reason
     );
   }

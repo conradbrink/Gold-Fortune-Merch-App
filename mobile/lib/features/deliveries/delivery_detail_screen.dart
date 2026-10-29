@@ -45,6 +45,7 @@ class DeliveryDetailScreen extends ConsumerWidget {
       if (was && !now) {
         ref.invalidate(provider);
         ref.invalidate(myDeliveriesProvider);
+        ref.invalidate(driverRunProvider);
         ref.invalidate(outstandingDeliveryCountProvider);
       }
     });
@@ -68,14 +69,28 @@ class DeliveryDetailScreen extends ConsumerWidget {
       // The list and the home badge are kept, not fetched again; when this
       // fresh answer disagrees with the list, both are asked again, so going
       // back does not show "in transit" for a delivery that has arrived.
-      final listed = ref
-          .read(myDeliveriesProvider)
-          .value
-          ?.where((d) => d.id == dispatchId)
-          .firstOrNull;
+      // A rep's list, or a driver's round: whichever this phone has open.
+      // Asked only when it exists, as reading one creates it and fetches a
+      // list nobody is looking at.
+      final listed = (ref.exists(myDeliveriesProvider)
+              ? ref
+                    .read(myDeliveriesProvider)
+                    .value
+                    ?.where((d) => d.id == dispatchId)
+                    .firstOrNull
+              : null) ??
+          (ref.exists(driverRunProvider)
+              ? ref
+                    .read(driverRunProvider)
+                    .value
+                    ?.where((s) => s.id == dispatchId)
+                    .firstOrNull
+                    ?.delivery
+              : null);
       final fresh = next.value;
       if (listed != null && fresh?.delivery.status != listed.status) {
         ref.invalidate(myDeliveriesProvider);
+        ref.invalidate(driverRunProvider);
         ref.invalidate(outstandingDeliveryCountProvider);
       }
     });

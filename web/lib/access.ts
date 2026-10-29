@@ -322,5 +322,7 @@ export function baseRoleNotes(t: Terms): Record<string, string> {
     warehouse:
       "Uses the website, not the phone app. Where the tick boxes below do not reach yet, sees nothing: the safest start for a role you build from the tick boxes.",
     hr_manager: "Uses the website, not the phone app. Where the tick boxes below do not reach yet, sees nothing.",
+    driver:
+      "Uses the phone app, which opens on their deliveries and nothing else: the ones the warehouse gives them, a route plan and recording each drop. Takes no place on the plan. The tick boxes below change nothing for them.",
   };
 }

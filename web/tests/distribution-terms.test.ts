@@ -55,18 +55,18 @@ async function dispatchMessage(t: Terms, opts: { dispatchId: unknown; assignErro
 test("a dispatch that could not be handed over says so in the company's words", async () => {
   assert.equal(
     await dispatchMessage(goldFortune, { dispatchId: undefined }),
-    "The order was dispatched, but it could not be given to a rep — the dispatch id came " +
-      "back missing. Set the rep on the delivery below."
+    "The order was dispatched, but it could not be given to a rep or driver — the dispatch id came " +
+      'back missing. Set "Handled by" on the delivery below.'
   );
   assert.equal(
     await dispatchMessage(goldFortune, { dispatchId: "d1", assignError: "Not allowed." }),
-    "The order was dispatched, but it could not be given to a rep: Not allowed. Set the rep " +
-      "on the delivery below — do not dispatch again."
+    "The order was dispatched, but it could not be given to a rep or driver: Not allowed. " +
+      'Set "Handled by" on the delivery below — do not dispatch again.'
   );
   assert.equal(
     await dispatchMessage(DEFAULT_TERMS, { dispatchId: "d1", assignError: "Not allowed." }),
-    "The order was dispatched, but it could not be given to a staff member: Not allowed. Set " +
-      "the staff member on the delivery below — do not dispatch again."
+    "The order was dispatched, but it could not be given to a staff member or driver: Not allowed. " +
+      'Set "Handled by" on the delivery below — do not dispatch again.'
   );
 });
 

@@ -69,7 +69,7 @@ import {
 import { formatDateOnly } from "@/lib/format-date";
 import { OrderSignature } from "@/components/orders/order-signature";
 import { useCompanyConfig, useTerms } from "@/lib/use-company-config";
-import { capital, lower, possessive, withArticle } from "@/lib/terms";
+import { lower } from "@/lib/terms";
 import { fetchPriceBook, listForGroup, type PriceBook } from "@/lib/price-lists";
 
 /**
@@ -175,13 +175,14 @@ export default function OrderDetailPage() {
   const [priceBook, setPriceBook] = useState<PriceBook>({});
 
   /**
-   * Field reps, for handing a delivery to one.
+   * Field reps and drivers, for handing a delivery to one.
    *
-   * Only `role = 'rep'`: the Android app lets nobody else in, so assigning a
-   * delivery to a warehouse clerk would be a job with nowhere to appear. The
-   * RPC refuses it too — this list is so nobody is offered the refusal.
+   * Only `role` rep or driver: the Android app lets nobody else in, so
+   * assigning a delivery to a warehouse clerk would be a job with nowhere to
+   * appear. The RPC refuses it too — this list is so nobody is offered the
+   * refusal.
    */
-  const [reps, setReps] = useState<{ id: string; full_name: string | null }[]>([]);
+  const [reps, setReps] = useState<Assignee[]>([]);
 
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -273,8 +274,8 @@ export default function OrderDetailPage() {
           fetchLocations(supabase),
           supabase
             .from("profiles")
-            .select("id, full_name")
-            .eq("role", "rep")
+            .select("id, full_name, role")
+            .in("role", ["rep", "driver"])
             .eq("is_active", true)
             .order("full_name"),
           fetchPriceBook(supabase),
@@ -289,9 +290,7 @@ export default function OrderDetailPage() {
         // which reads as "there are no reps" — and the next thing somebody does
         // is unassign a delivery to make the control agree with the list.
         if (repRows.error) throw new Error(repRows.error.message);
-        setReps(
-          (repRows.data ?? []) as { id: string; full_name: string | null }[]
-        );
+        setReps((repRows.data ?? []) as Assignee[]);
         // A location the order names but the picker cannot offer — retired
         // since — falls back to the default rather than being held in state
         // invisibly: a native select with no matching option displays the
@@ -1347,14 +1346,14 @@ export default function OrderDetailPage() {
                         .join(" · ") || "No carrier recorded"}
                     </p>
                     {/* Whose job it is, which is not the same question as who
-                        is driving. A rep given this sees it on their phone;
-                        until somebody is given it, nobody does. */}
+                        is driving. A rep or driver login given this sees it on
+                        their phone; until somebody is given it, nobody does. */}
                     <div className="mt-2 flex items-center gap-2">
                       <label
                         htmlFor={`assign-${d.id}`}
                         className="shrink-0 text-xs text-muted-foreground"
                       >
-                        {terms.staff.one}
+                        Handled by
                       </label>
                       <NativeSelect
                         id={`assign-${d.id}`}
@@ -1370,7 +1369,7 @@ export default function OrderDetailPage() {
                                 e.target.value || null
                               ),
                             e.target.value
-                              ? `The delivery is on that ${possessive(lower(terms.staff.one))} phone now.`
+                              ? "The delivery is on their phone now."
                               : "The delivery is nobody's job now."
                           )
                         }
@@ -1385,15 +1384,11 @@ export default function OrderDetailPage() {
                         {d.assigned_rep_id &&
                           !reps.some((r) => r.id === d.assigned_rep_id) && (
                             <option value={d.assigned_rep_id} disabled>
-                              {d.assigned_rep_name ?? `Unnamed ${lower(terms.staff.one)}`} (no longer
+                              {d.assigned_rep_name ?? "Unnamed"} (no longer
                               active)
                             </option>
                           )}
-                        {reps.map((r) => (
-                          <option key={r.id} value={r.id}>
-                            {r.full_name ?? `Unnamed ${lower(terms.staff.one)}`}
-                          </option>
-                        ))}
+                        <AssigneeOptions people={reps} staff={terms.staff.many} />
                       </NativeSelect>
                     </div>
                     {d.tracking_reference && (
@@ -1667,21 +1662,17 @@ export default function OrderDetailPage() {
                 the dispatch card afterwards, 62 dispatches got a driver and not
                 one got a rep. */}
             <div>
-              <Label htmlFor="dispatch-rep">{terms.staff.one} who is handling it</Label>
+              <Label htmlFor="dispatch-rep">Who is handling it</Label>
               <NativeSelect
                 id="dispatch-rep"
                 value={dispatchRepId}
                 onChange={(e) => setDispatchRepId(e.target.value)}
               >
                 <option value="">Nobody — the warehouse handles it</option>
-                {reps.map((r) => (
-                  <option key={r.id} value={r.id}>
-                    {r.full_name ?? `Unnamed ${lower(terms.staff.one)}`}
-                  </option>
-                ))}
+                <AssigneeOptions people={reps} staff={terms.staff.many} />
               </NativeSelect>
               <p className="mt-1 text-xs text-muted-foreground">
-                {capital(withArticle(terms, "staff"))} named here sees this delivery in the app. Leave it as
+                The driver or {lower(terms.staff.one)} named here sees this delivery in the app. Leave it as
                 Nobody and it stays with the warehouse; you can hand it over
                 later from the delivery below.
               </p>
@@ -1754,7 +1745,7 @@ export default function OrderDetailPage() {
                   dispatchRepId
                     ? `Dispatched, and it is on ${
                         reps.find((r) => r.id === dispatchRepId)?.full_name ??
-                        `that ${lower(terms.staff.one)}`
+                        "their"
                       }'s phone.`
                     : "Dispatched. Nobody has been given it yet."
                 )
@@ -2011,5 +2002,29 @@ function Row({ label, value }: { label: string; value: string }) {
       <span className="text-muted-foreground">{label}</span>
       <span className="text-right">{value}</span>
     </div>
+  );
+}
+
+type Assignee = { id: string; full_name: string | null; role: string };
+
+/**
+ * Who a delivery can be given to: drivers first, because a driver's whole job
+ * is deliveries, then field staff. No groups when there are no driver logins,
+ * so a company without drivers sees the list it always did.
+ */
+function AssigneeOptions({ people, staff }: { people: Assignee[]; staff: string }) {
+  const option = (r: Assignee) => (
+    <option key={r.id} value={r.id}>
+      {r.full_name ?? "Unnamed"}
+    </option>
+  );
+  const drivers = people.filter((r) => r.role === "driver");
+  const reps = people.filter((r) => r.role !== "driver");
+  if (drivers.length === 0) return <>{reps.map(option)}</>;
+  return (
+    <>
+      <optgroup label="Drivers">{drivers.map(option)}</optgroup>
+      {reps.length > 0 && <optgroup label={staff}>{reps.map(option)}</optgroup>}
+    </>
   );
 }

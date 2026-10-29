@@ -50,6 +50,13 @@ export const LIMITS = {
    */
   roadDistance: { bucket: "road_distance", limit: 200, windowSeconds: 3600 },
   /**
+   * A driver's "Plan my route": one Google Routes call each (Compute Routes
+   * Pro). A driver plans a round once or twice and again when a drop moves;
+   * twenty an hour is that with room, and a loop stops long before the bill
+   * notices.
+   */
+  routePlan: { bucket: "route_plan", limit: 20, windowSeconds: 3600 },
+  /**
    * The assistant (Ask), per person: the owner's numbers, 19 Oct 2026. Every
    * question counts, answered or refused, so nobody can run up the bill by
    * asking it things it will not answer. The day is a UTC day, so it starts

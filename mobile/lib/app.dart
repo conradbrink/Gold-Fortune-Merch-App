@@ -17,6 +17,7 @@ import 'features/auth/login_screen.dart';
 import 'features/auth/manager_notice_screen.dart';
 import 'features/deliveries/deliveries_screen.dart';
 import 'features/deliveries/delivery_detail_screen.dart';
+import 'features/driver/driver_home_screen.dart';
 import 'features/files/files_screen.dart';
 import 'features/hr/my_hr_screen.dart';
 import 'features/orders/order_capture_route.dart';
@@ -96,6 +97,22 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/closed',
         builder: (context, state) => const CompanyClosedScreen(),
+      ),
+      GoRoute(
+        // A driver's whole app (role 'driver', 20261029161700): their
+        // deliveries, a route plan and each delivery's own screen. A top-level
+        // route, not under '/', so going to a delivery never builds today's
+        // route underneath it.
+        path: '/driver',
+        builder: (context, state) => const DriverHomeScreen(),
+        routes: [
+          GoRoute(
+            path: ':dispatchId',
+            builder: (context, state) => DeliveryDetailScreen(
+              dispatchId: state.pathParameters['dispatchId']!,
+            ),
+          ),
+        ],
       ),
       GoRoute(
         path: '/',
@@ -253,6 +270,13 @@ final routerProvider = Provider<GoRouter>((ref) {
       // a third existed — a warehouse clerk would have been handed today's
       // route and a check-in button, and `visits_insert` only pins the row to
       // the caller, so the database would have accepted it.
+      //
+      // A driver gets their deliveries and nothing else, and nobody else gets
+      // the driver's screens.
+      final onDriver = state.matchedLocation == '/driver' ||
+          state.matchedLocation.startsWith('/driver/');
+      if (role == 'driver') return onDriver ? null : '/driver';
+      if (onDriver) return role == 'rep' ? '/' : '/manager-notice';
       if (role != 'rep' && !onManagerNotice) return '/manager-notice';
       if (role == 'rep' && onManagerNotice) return '/';
 
