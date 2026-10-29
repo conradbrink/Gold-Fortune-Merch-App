@@ -43,6 +43,16 @@ class UnscheduledChooserScreen extends ConsumerWidget {
           if (hasSales) ...[
           const SizedBox(height: 12),
           _Choice(
+            icon: Icons.add_business_outlined,
+            title: 'New ${t.site.oneLower}',
+            body:
+                'Not on your list yet and wants to order. Add the name, '
+                'delivery address and contact, then check in and take the '
+                'order.',
+            onTap: () => context.go('/unscheduled/new'),
+          ),
+          const SizedBox(height: 12),
+          _Choice(
             icon: Icons.handshake_outlined,
             title: 'Sales ${t.job.oneLower}',
             body:

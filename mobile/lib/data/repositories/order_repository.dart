@@ -118,6 +118,7 @@ class OrderRepository {
     String? note,
     String? contactName,
     String? contactPhone,
+    String? deliveryAddress,
     String? requiredBy,
     ({Uint8List png, String name})? signature,
   }) async {
@@ -148,6 +149,7 @@ class OrderRepository {
       'notes': note,
       'contact_name': contactName,
       'contact_phone': contactPhone,
+      'delivery_address': clipText(deliveryAddress, 300),
       'required_by': requiredBy,
       'visit_client_generated_id': visitClientGeneratedId,
       // The manager's signature: the picture on this phone until it uploads,

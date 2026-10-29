@@ -7,6 +7,7 @@ import '../../core/providers.dart';
 import '../../core/theme.dart';
 import '../../data/local/order_draft.dart';
 import '../../data/models/catalogue_product.dart';
+import '../../data/models/store_group.dart';
 import '../../data/models/store_reorder.dart';
 import 'order_sign_sheet.dart';
 
@@ -28,11 +29,16 @@ class OrderCaptureScreen extends ConsumerStatefulWidget {
     required this.storeId,
     required this.storeName,
     required this.visitKey,
+    this.storeAddress,
   });
 
   final String visitClientId;
   final String storeId;
   final String storeName;
+
+  /// The customer's address as the day has it ("12 Main Road, Mahikeng"),
+  /// which the delivery address starts as. Null when none is on record.
+  final String? storeAddress;
 
   /// Where leaving this screen goes back to. Held rather than popped, because
   /// this is a route now (`/visit/:key/order`) and not an imperative push —
@@ -48,6 +54,7 @@ class _OrderCaptureScreenState extends ConsumerState<OrderCaptureScreen> {
   final _note = TextEditingController();
   final _contactName = TextEditingController();
   final _contactPhone = TextEditingController();
+  final _deliveryAddress = TextEditingController();
   final Map<String, int> _qty = {};
 
   /// When the shop wants it, as `yyyy-MM-dd`, or null for "no date given".
@@ -78,6 +85,7 @@ class _OrderCaptureScreenState extends ConsumerState<OrderCaptureScreen> {
     _note.dispose();
     _contactName.dispose();
     _contactPhone.dispose();
+    _deliveryAddress.dispose();
     super.dispose();
   }
 
@@ -85,17 +93,30 @@ class _OrderCaptureScreenState extends ConsumerState<OrderCaptureScreen> {
     final repo = ref.read(orderRepositoryProvider);
     final catalogue = await repo.cachedCatalogue();
     final draft = await repo.drafts.load(widget.visitClientId);
+    // Who this phone last took an order from here, or who the rep named when
+    // they added the customer: the delivery details are required on every
+    // order (owner, 29 Oct 2026), so they start filled in wherever they can.
+    final lastContact =
+        await ref.read(routeRepositoryProvider).contactFor(widget.storeId);
     if (!mounted) return;
     setState(() {
       _catalogue = catalogue.isEmpty ? const [] : catalogue;
-      if (draft != null && draft.storeId == widget.storeId) {
+      final ours = draft != null && draft.storeId == widget.storeId;
+      if (ours) {
         for (final l in draft.lines) {
           _qty[l.productId] = l.qty;
         }
         _note.text = draft.note ?? '';
         _contactName.text = draft.contactName ?? '';
         _contactPhone.text = draft.contactPhone ?? '';
+        _deliveryAddress.text = draft.deliveryAddress ?? '';
         _requiredBy = draft.requiredBy;
+      }
+      // Only into an empty box: what the rep typed on the draft stands.
+      if (_contactName.text.isEmpty) _contactName.text = lastContact?.name ?? '';
+      if (_contactPhone.text.isEmpty) _contactPhone.text = lastContact?.phone ?? '';
+      if (_deliveryAddress.text.isEmpty) {
+        _deliveryAddress.text = widget.storeAddress ?? '';
       }
       _loading = false;
     });
@@ -161,12 +182,16 @@ class _OrderCaptureScreenState extends ConsumerState<OrderCaptureScreen> {
     final note = _note.text.trim();
     final name = _contactName.text.trim();
     final phone = _contactPhone.text.trim();
+    final address = _deliveryAddress.text.trim();
     // A typed contact is worth keeping even with no lines yet — the rep may
     // have taken the name before the shopkeeper started listing products.
+    // The address the screen filled in by itself is not something typed.
+    final typedAddress = address.isNotEmpty && address != (widget.storeAddress ?? '');
     if (lines.isEmpty &&
         note.isEmpty &&
         name.isEmpty &&
         phone.isEmpty &&
+        !typedAddress &&
         _requiredBy == null) {
       await repo.drafts.clear(widget.visitClientId);
       // #20 moved this invalidate *after* the await on purpose, so the store
@@ -184,6 +209,7 @@ class _OrderCaptureScreenState extends ConsumerState<OrderCaptureScreen> {
         note: note.isEmpty ? null : note,
         contactName: name.isEmpty ? null : name,
         contactPhone: phone.isEmpty ? null : phone,
+        deliveryAddress: address.isEmpty ? null : address,
         requiredBy: _requiredBy,
       ),
     );
@@ -281,15 +307,29 @@ class _OrderCaptureScreenState extends ConsumerState<OrderCaptureScreen> {
       return;
     }
 
+    // Where it goes and who to ask for, on every order (owner, 29 Oct 2026):
+    // a driver with no address or number cannot deliver it.
+    final contact = _contactName.text.trim();
+    final contactPhone = _contactPhone.text.trim();
+    final deliveryAddress = _deliveryAddress.text.trim();
+    final missing = [
+      if (deliveryAddress.isEmpty) 'the delivery address',
+      if (contact.isEmpty) 'who placed it',
+      if (contactPhone.isEmpty) 'their phone number',
+    ];
+    if (missing.isNotEmpty) {
+      setState(() => _error = 'Fill in ${_listed(missing)} before saving.');
+      return;
+    }
+
     // The manager signs for it before it is saved: every order needs a
     // signature (owner, 27 Oct 2026). Closing the sheet leaves the draft.
     setState(() => _error = null);
-    final contact = _contactName.text.trim();
     final signature = await showOrderSignSheet(
       context,
       lineCount: lines.length,
       storeName: widget.storeName,
-      signerName: contact.isEmpty ? null : contact,
+      signerName: contact,
     );
     if (signature == null || !mounted) return;
 
@@ -307,11 +347,14 @@ class _OrderCaptureScreenState extends ConsumerState<OrderCaptureScreen> {
             visitClientGeneratedId: widget.visitClientId,
             lines: lines,
             note: _note.text.trim().isEmpty ? null : _note.text.trim(),
-            contactName:
-                _contactName.text.trim().isEmpty ? null : _contactName.text.trim(),
-            contactPhone:
-                _contactPhone.text.trim().isEmpty ? null : _contactPhone.text.trim(),
+            contactName: contact,
+            contactPhone: contactPhone,
+            deliveryAddress: deliveryAddress,
             requiredBy: _requiredBy,
+          );
+      await ref.read(routeRepositoryProvider).rememberContact(
+            widget.storeId,
+            StoreContact(name: contact, phone: contactPhone),
           );
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -441,6 +484,17 @@ class _OrderCaptureScreenState extends ConsumerState<OrderCaptureScreen> {
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
+                        TextField(
+                          controller: _deliveryAddress,
+                          onChanged: (_) => _persist(),
+                          textCapitalization: TextCapitalization.words,
+                          keyboardType: TextInputType.streetAddress,
+                          decoration: const InputDecoration(
+                            labelText: 'Delivery address',
+                            isDense: true,
+                          ),
+                        ),
+                        const SizedBox(height: 6),
                         Row(
                           children: [
                             Expanded(
@@ -543,6 +597,11 @@ class _OrderCaptureScreenState extends ConsumerState<OrderCaptureScreen> {
     );
   }
 }
+
+/// "a", "a and b", "a, b and c".
+String _listed(List<String> parts) => parts.length == 1
+    ? parts.single
+    : '${parts.sublist(0, parts.length - 1).join(', ')} and ${parts.last}';
 
 class _ProductRow extends StatelessWidget {
   const _ProductRow({

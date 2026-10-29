@@ -11,6 +11,29 @@ import '../../data/models/store_summary.dart';
 
 const _uuid = Uuid();
 
+/// Puts an unscheduled visit to [store] on today's list, on this phone, and
+/// returns its key for `/visit/:key`. Shared by the picker and by adding a
+/// new customer, which goes straight on to a visit there.
+Future<String> startUnscheduledVisit(WidgetRef ref, StoreSummary store) async {
+  final date = ref.read(selectedRouteDateProvider);
+  final visit = RouteVisit.unscheduled(
+    clientId: _uuid.v4(),
+    storeId: store.id,
+    storeName: store.name,
+    storeAddress: store.address,
+    storeCity: store.city,
+    storeState: store.state,
+    storeLat: store.lat,
+    storeLng: store.lng,
+    storeGeocodeSource: store.geocodeSource,
+    geofenceRadiusM: store.geofenceRadiusM,
+  );
+
+  await ref.read(routeRepositoryProvider).addUnscheduledVisit(visit, date);
+  ref.invalidate(todayRoutesProvider);
+  return visit.cacheKey;
+}
+
 /// Lets a rep start a visit at a store nobody scheduled — covering for a
 /// colleague, a call-out from the manager, or a store they happened to pass.
 ///
@@ -30,26 +53,9 @@ class _StorePickerScreenState extends ConsumerState<StorePickerScreen> {
   Future<void> _start(StoreSummary store) async {
     if (_busy) return;
     setState(() => _busy = true);
-
-    final date = ref.read(selectedRouteDateProvider);
-    final visit = RouteVisit.unscheduled(
-      clientId: _uuid.v4(),
-      storeId: store.id,
-      storeName: store.name,
-      storeAddress: store.address,
-      storeCity: store.city,
-      storeState: store.state,
-      storeLat: store.lat,
-      storeLng: store.lng,
-      storeGeocodeSource: store.geocodeSource,
-      geofenceRadiusM: store.geofenceRadiusM,
-    );
-
-    await ref.read(routeRepositoryProvider).addUnscheduledVisit(visit, date);
-    ref.invalidate(todayRoutesProvider);
-
+    final key = await startUnscheduledVisit(ref, store);
     if (!mounted) return;
-    context.go('/visit/${visit.cacheKey}');
+    context.go('/visit/$key');
   }
 
   @override
@@ -93,8 +99,25 @@ class _StorePickerScreenState extends ConsumerState<StorePickerScreen> {
                   );
                 }
                 if (filtered.isEmpty) {
-                  return _EmptyNotice(
-                    'No ${t.site.manyLower} match that search.',
+                  return Column(
+                    children: [
+                      Expanded(
+                        child: _EmptyNotice(
+                          'No ${t.site.manyLower} match that search.',
+                        ),
+                      ),
+                      // Orders belong to the Distribution module, and a new
+                      // customer is only added to take one.
+                      if (ref.watch(companyConfigValueProvider).has('distribution'))
+                        Padding(
+                          padding: const EdgeInsets.all(16),
+                          child: OutlinedButton.icon(
+                            onPressed: () => context.go('/unscheduled/new'),
+                            icon: const Icon(Icons.add_business_outlined),
+                            label: Text('Add a new ${t.site.oneLower}'),
+                          ),
+                        ),
+                    ],
                   );
                 }
 
