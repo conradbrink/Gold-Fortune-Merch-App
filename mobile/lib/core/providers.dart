@@ -8,6 +8,7 @@ import 'supabase_client.dart';
 import '../data/models/profile.dart';
 import '../data/models/route_visit.dart';
 import '../data/models/store_reorder.dart';
+import '../data/models/store_group.dart';
 import '../data/models/store_summary.dart';
 import '../data/models/form_template.dart';
 import '../data/models/lead.dart';
@@ -368,6 +369,12 @@ final monthlyCompletionProvider =
 /// Active stores for the unscheduled-visit picker. Cached for offline use.
 final storesProvider = FutureProvider<List<StoreSummary>>((ref) async {
   return ref.watch(routeRepositoryProvider).fetchStores();
+});
+
+/// The company's price groups, for a rep adding a customer. Cached for
+/// offline use; empty when the company has none.
+final storeGroupsProvider = FutureProvider<List<StoreGroup>>((ref) async {
+  return ref.watch(routeRepositoryProvider).fetchStoreGroups();
 });
 
 final todayRoutesProvider = FutureProvider<List<RouteVisit>>((ref) async {

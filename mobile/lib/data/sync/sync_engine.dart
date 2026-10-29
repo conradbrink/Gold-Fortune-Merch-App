@@ -101,8 +101,14 @@ String? dependencyKeyOf(OutboxEntry entry) {
     case OutboxType.damageReport:
       parentType = OutboxType.visitCheckIn;
       payloadKey = 'visit_client_generated_id';
-    default:
+    case OutboxType.storeAdd:
       return null;
+    // Everything else that names a store waits for it when the store is one
+    // the rep added on this phone: the check-in, the order, a decline. For a
+    // store already on the books there is no such entry, and nothing waits.
+    default:
+      parentType = OutboxType.storeAdd;
+      payloadKey = 'store_id';
   }
   final Object? decoded;
   try {
@@ -697,6 +703,21 @@ class SyncEngine {
         }
         break;
 
+      case OutboxType.storeAdd:
+        // Safe to replay: a second call with the same id answers with the
+        // customer already there (`already_added`).
+        await _client.rpc('store_add_from_phone', params: {
+          'p_store_id': data['store_id'],
+          'p_name': data['name'],
+          'p_address': data['address'],
+          'p_city': data['city'],
+          'p_lat': data['lat'],
+          'p_lng': data['lng'],
+          'p_accuracy_m': data['accuracy_m'],
+          'p_store_group_id': data['store_group_id'],
+        });
+        break;
+
       default:
         // Unknown type (e.g. written by a newer build). Drop rather than
         // block the queue forever.
@@ -798,6 +819,8 @@ class SyncEngine {
             // with nobody to ring and no date to work to.
             'contact_name': data['contact_name'],
             'contact_phone': data['contact_phone'],
+            // Absent from orders queued before it was asked for.
+            'delivery_address': data['delivery_address'],
             'required_by': data['required_by'],
             // All three or none (`orders_signature_complete`).
             if (signaturePath != null) ...{

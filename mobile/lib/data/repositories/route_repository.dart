@@ -5,8 +5,43 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../core/terms.dart';
 import '../local/app_database.dart';
+import '../local/outbox_types.dart';
 import '../models/route_visit.dart';
+import '../models/store_group.dart';
 import '../models/store_summary.dart';
+import 'order_repository.dart' show clipText;
+
+/// Trimmed, with runs of spaces collapsed: how `store_add_from_phone` tidies
+/// a name and a town, and how this phone does before sending them.
+String tidySpaces(String text) => text.trim().replaceAll(RegExp(r'\s+'), ' ');
+
+/// The same, ignoring case: the rule this phone uses to ask "is this customer
+/// on the list already?" before adding them.
+String sameStoreName(String name) => tidySpaces(name).toLowerCase();
+
+/// The customers already on the list called [name], by [sameStoreName].
+List<StoreSummary> storesNamed(List<StoreSummary> stores, String name) {
+  final wanted = sameStoreName(name);
+  if (wanted.isEmpty) return const [];
+  return stores.where((s) => sameStoreName(s.name) == wanted).toList();
+}
+
+/// The server's list with the customers this phone added and has not yet
+/// seen come back, and the ids of those still waiting.
+///
+/// A customer added offline is only on this phone until `store_add` lands;
+/// without this, the next refresh of the list would drop them and the rep
+/// could not start a second visit there.
+({List<StoreSummary> stores, List<StoreSummary> stillLocal}) mergeAddedStores(
+  List<StoreSummary> fromServer,
+  List<StoreSummary> added,
+) {
+  final known = {for (final s in fromServer) s.id};
+  final stillLocal = added.where((s) => !known.contains(s.id)).toList();
+  final all = [...fromServer, ...stillLocal]
+    ..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+  return (stores: all, stillLocal: stillLocal);
+}
 
 /// A refusal from `set_store_location_from_visit`, carrying a message written
 /// for the rep to read rather than a Postgres error to decode.
@@ -92,6 +127,9 @@ class RouteRepository {
   final AppDatabase _db;
 
   static const _storesKey = 'stores';
+  static const _addedStoresKey = 'stores_added';
+  static const _storeGroupsKey = 'store_groups';
+  static const _contactsKey = 'store_contacts';
 
   static String formatDate(DateTime date) =>
       '${date.year.toString().padLeft(4, '0')}-'
@@ -227,13 +265,136 @@ class RouteRepository {
         _storesKey,
         jsonEncode(stores.map((s) => s.toMap()).toList()),
       );
-      return stores;
+      // Once the server has a customer this phone added, the server's copy is
+      // the one to keep. Read and pruned in one transaction, as
+      // addStoreFromPhone writes it, so a customer added while this request
+      // was out is not written over.
+      return _db.transaction(() async {
+        final merged = mergeAddedStores(stores, await _addedStores());
+        await _saveAddedStores(merged.stillLocal);
+        return merged.stores;
+      });
     } catch (_) {
       final raw = await _db.getValue(_storesKey);
+      final cached = raw == null
+          ? <StoreSummary>[]
+          : (jsonDecode(raw) as List)
+              .map((s) => StoreSummary.fromMap(s as Map<String, dynamic>))
+              .toList();
+      return mergeAddedStores(cached, await _addedStores()).stores;
+    }
+  }
+
+  Future<List<StoreSummary>> _addedStores() async {
+    final raw = await _db.getValue(_addedStoresKey);
+    if (raw == null) return [];
+    return (jsonDecode(raw) as List)
+        .map((s) => StoreSummary.fromMap(s as Map<String, dynamic>))
+        .toList();
+  }
+
+  Future<void> _saveAddedStores(List<StoreSummary> stores) =>
+      _db.setValue(_addedStoresKey, jsonEncode(stores.map((s) => s.toMap()).toList()));
+
+  /// The company's price groups, cached for a rep adding a customer with no
+  /// signal. Empty when the company has none, and the question is not asked.
+  Future<List<StoreGroup>> fetchStoreGroups() async {
+    try {
+      final rows = await _client
+          .from('store_groups')
+          .select('id, name')
+          .order('name', ascending: true);
+      final groups = (rows as List)
+          .map((r) => StoreGroup.fromMap(r as Map<String, dynamic>))
+          .toList();
+      await _db.setValue(
+        _storeGroupsKey,
+        jsonEncode(groups.map((g) => g.toMap()).toList()),
+      );
+      return groups;
+    } catch (_) {
+      final raw = await _db.getValue(_storeGroupsKey);
       if (raw == null) return [];
       return (jsonDecode(raw) as List)
-          .map((s) => StoreSummary.fromMap(s as Map<String, dynamic>))
+          .map((g) => StoreGroup.fromMap(g as Map<String, dynamic>))
           .toList();
+    }
+  }
+
+  /// Adds a customer the rep met in the field. On this phone at once, and
+  /// queued for `store_add_from_phone()`, so the visit and the order that
+  /// follow can be taken with no signal. Returns the customer as the picker
+  /// lists it.
+  Future<StoreSummary> addStoreFromPhone({
+    required String storeId,
+    required String repId,
+    required String name,
+    required String address,
+    String? city,
+    double? lat,
+    double? lng,
+    double? accuracyM,
+    String? storeGroupId,
+    StoreContact? contact,
+  }) async {
+    final tidyCity = city == null ? null : tidySpaces(city);
+    final store = StoreSummary(
+      id: storeId,
+      name: clipText(tidySpaces(name), 120)!,
+      address: clipText(address.trim(), 300),
+      city: tidyCity == null || tidyCity.isEmpty ? null : clipText(tidyCity, 80),
+      lat: lat,
+      lng: lng,
+      geocodeSource: lat == null ? null : 'rep',
+      // What the server gives a store with no radius of its own; the company's
+      // setting replaces it once the list refreshes.
+      geofenceRadiusM: 100,
+    );
+    final payload = <String, dynamic>{
+      'rep_id': repId,
+      'store_id': storeId,
+      'name': store.name,
+      'address': store.address,
+      'city': store.city,
+      'lat': lat,
+      'lng': lng,
+      'accuracy_m': accuracyM,
+      'store_group_id': storeGroupId,
+    };
+    await _db.transaction(() async {
+      await _db.enqueue(
+        entityType: OutboxType.storeAdd,
+        clientGeneratedId: storeId,
+        payload: jsonEncode(payload),
+      );
+      await _saveAddedStores([...await _addedStores(), store]);
+      if (contact != null) await rememberContact(storeId, contact);
+    });
+    return store;
+  }
+
+  /// The contact this phone last took an order from at [storeId], if any.
+  Future<StoreContact?> contactFor(String storeId) async {
+    final one = (await _contacts())[storeId];
+    return one is Map<String, dynamic> ? StoreContact.fromMap(one) : null;
+  }
+
+  Future<void> rememberContact(String storeId, StoreContact contact) async {
+    final all = await _contacts();
+    all[storeId] = contact.toMap();
+    await _db.setValue(_contactsKey, jsonEncode(all));
+  }
+
+  /// Every remembered contact, by store. A value that does not read back is
+  /// a convenience lost, not a reason to stop the order screen opening.
+  Future<Map<String, dynamic>> _contacts() async {
+    final raw = await _db.getValue(_contactsKey);
+    if (raw == null) return {};
+    try {
+      final all = jsonDecode(raw);
+      return all is Map<String, dynamic> ? all : {};
+    } on FormatException {
+      return {};
     }
   }
 

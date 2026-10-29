@@ -89,7 +89,18 @@ class _OrderCaptureRouteState extends ConsumerState<OrderCaptureRoute> {
         storeId: visit.storeId,
         storeName: visit.storeName,
         visitKey: widget.visitKey,
+        storeAddress: deliveryAddressOf(visit.storeAddress, visit.storeCity),
       );
+}
+
+/// "12 Main Road, Mahikeng": the street and the town, without repeating a
+/// town the address already names. Null when neither is on record.
+String? deliveryAddressOf(String? address, String? city) {
+  final street = address?.trim() ?? '';
+  final town = city?.trim() ?? '';
+  if (street.isEmpty) return town.isEmpty ? null : town;
+  if (town.isEmpty || street.toLowerCase().contains(town.toLowerCase())) return street;
+  return '$street, $town';
 }
 
 /// Leaves during the frame rather than in `build`, which cannot navigate.

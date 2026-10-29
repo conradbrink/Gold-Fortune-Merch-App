@@ -26,6 +26,7 @@ import 'features/visit/store_detail_screen.dart';
 import 'features/visit/sales_visit_complete_screen.dart';
 import 'features/visit/sales_visit_start_screen.dart';
 import 'features/visit/store_picker_screen.dart';
+import 'features/visit/new_customer_screen.dart';
 import 'features/visit/unscheduled_chooser_screen.dart';
 import 'features/workday/day_plan_screen.dart';
 import 'features/workday/workday_summary_screen.dart';
@@ -110,6 +111,10 @@ final routerProvider = Provider<GoRouter>((ref) {
               GoRoute(
                 path: 'store',
                 builder: (context, state) => const StorePickerScreen(),
+              ),
+              GoRoute(
+                path: 'new',
+                builder: (context, state) => const NewCustomerScreen(),
               ),
               GoRoute(
                 path: 'sales',

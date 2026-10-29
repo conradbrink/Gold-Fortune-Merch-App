@@ -118,6 +118,7 @@ class OrderDraft {
     this.note,
     this.contactName,
     this.contactPhone,
+    this.deliveryAddress,
     this.requiredBy,
     this.savedAt,
   });
@@ -136,6 +137,11 @@ class OrderDraft {
   final String? contactName;
   final String? contactPhone;
 
+  /// Where the order goes (`orders.delivery_address`). Filled in from the
+  /// customer's address and required before the order is saved (owner,
+  /// 29 Oct 2026); held here so a changed address survives a killed app.
+  final String? deliveryAddress;
+
   /// When the shop wants it, as `yyyy-MM-dd`. Optional: most orders have no
   /// date attached and inventing one would be worse than leaving it open.
   final String? requiredBy;
@@ -153,6 +159,7 @@ class OrderDraft {
         'note': note,
         'contact_name': contactName,
         'contact_phone': contactPhone,
+        'delivery_address': deliveryAddress,
         'required_by': requiredBy,
         'lines': lines.map((l) => l.toMap()).toList(),
       });
@@ -173,6 +180,8 @@ class OrderDraft {
         // Absent from drafts written before contact details were captured.
         contactName: map['contact_name'] as String?,
         contactPhone: map['contact_phone'] as String?,
+        // Absent from drafts written before the delivery address was asked.
+        deliveryAddress: map['delivery_address'] as String?,
         requiredBy: map['required_by'] as String?,
         savedAt: saved,
         lines: ((map['lines'] as List?) ?? const [])

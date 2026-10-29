@@ -56,6 +56,14 @@ class OutboxType {
   /// Keyed by the dispatch id, so the delivery screen can tell it is waiting
   /// on this phone. The photo uploads first; the call refuses without it.
   static const deliveryConfirm = 'delivery_confirm';
+
+  /// A customer the rep added on the phone (`store_add_from_phone()`).
+  ///
+  /// Keyed by the store id the phone made, which the check-in and the order
+  /// queued behind it already name. Anything carrying that `store_id` waits
+  /// for this entry (see `dependencyKeyOf`), so an order never reaches the
+  /// server for a customer it has not heard of yet.
+  static const storeAdd = 'store_add';
 }
 
 /// One queued operation, named by what it is and what it is about.
