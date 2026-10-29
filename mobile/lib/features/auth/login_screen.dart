@@ -1,10 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:supabase_flutter/supabase_flutter.dart'
+    show AuthException, AuthRetryableFetchException;
 
 import '../../core/company_config.dart';
 import '../../core/product.dart';
 import '../../core/theme.dart';
 import 'auth_controller.dart';
+import 'phone_login.dart';
 
 class LoginScreen extends ConsumerStatefulWidget {
   const LoginScreen({super.key});
@@ -30,8 +33,9 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     if (!_formKey.currentState!.validate()) return;
     FocusScope.of(context).unfocus();
     await ref.read(authControllerProvider.notifier).signIn(
-          email: _emailController.text.trim(),
+          login: _emailController.text.trim(),
           password: _passwordController.text,
+          country: WidgetsBinding.instance.platformDispatcher.locale.countryCode,
         );
   }
 
@@ -42,9 +46,22 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
 
     ref.listen(authControllerProvider, (previous, next) {
       if (next.hasError) {
-        final message = next.error is Exception
-            ? next.error.toString().replaceFirst('Exception: ', '')
-            : 'Sign in failed. Check your email and password.';
+        const failed = 'Sign in failed. Check your email or cell phone '
+            'number, and your password.';
+        final error = next.error;
+        // An AuthException prints as "AuthApiException(message: …)"; only
+        // its message is for the rep, and a wrong password reads as above.
+        final message = error is AuthRetryableFetchException
+            ? 'Signing in needs signal. Please try again when you have a '
+                'connection.'
+            : error is AuthException
+            ? (RegExp('invalid login credentials', caseSensitive: false)
+                    .hasMatch(error.message)
+                ? failed
+                : error.message)
+            : error is Exception
+                ? error.toString().replaceFirst('Exception: ', '')
+                : failed;
         ScaffoldMessenger.of(context)
           ..hideCurrentSnackBar()
           ..showSnackBar(SnackBar(content: Text(message)));
@@ -69,11 +86,12 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                     keyboardType: TextInputType.emailAddress,
                     autocorrect: false,
                     decoration: const InputDecoration(
-                      labelText: 'Email',
-                      hintText: 'you@company.com',
+                      labelText: 'Email or cellphone',
+                      hintText: 'you@company.com or 082 123 4567',
                     ),
-                    validator: (v) =>
-                        (v == null || !v.contains('@')) ? 'Enter a valid email' : null,
+                    validator: (v) => loginCandidates(v ?? '').isEmpty
+                        ? 'Type your email address, or your cell phone number.'
+                        : null,
                   ),
                   const SizedBox(height: 14),
                   TextFormField(

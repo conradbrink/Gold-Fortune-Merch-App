@@ -1,15 +1,19 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:http/http.dart' as http;
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../core/terms.dart';
+import '../../features/driver/route_plan.dart';
+import '../../features/route_today/visit_order.dart';
 import '../local/app_database.dart';
 import '../local/outbox_types.dart';
 import '../models/route_visit.dart';
 import '../models/store_group.dart';
 import '../models/store_summary.dart';
 import 'order_repository.dart' show clipText;
+import 'route_plan_api.dart';
 
 /// Trimmed, with runs of spaces collapsed: how `store_add_from_phone` tidies
 /// a name and a town, and how this phone does before sending them.
@@ -121,15 +125,18 @@ class MonthlyCompletion {
 }
 
 class RouteRepository {
-  RouteRepository(this._client, this._db);
+  RouteRepository(this._client, this._db, {http.Client? httpClient})
+    : _http = httpClient ?? http.Client();
 
   final SupabaseClient _client;
   final AppDatabase _db;
+  final http.Client _http;
 
   static const _storesKey = 'stores';
   static const _addedStoresKey = 'stores_added';
   static const _storeGroupsKey = 'store_groups';
   static const _contactsKey = 'store_contacts';
+  static const _visitPlanKey = 'visit_plan';
 
   static String formatDate(DateTime date) =>
       '${date.year.toString().padLeft(4, '0')}-'
@@ -138,8 +145,66 @@ class RouteRepository {
 
   /// Fetches from Supabase and refreshes the local cache. If the network is
   /// unavailable, falls back to the cached copy so the rep still sees their
-  /// day. Local (unsynced) status changes are layered on top.
+  /// day. Local (unsynced) status changes are layered on top, and then the
+  /// rep's plan for the day, when they have one ([inPlannedOrder]).
   Future<List<RouteVisit>> fetchRoutesForDate(
+    String repId,
+    DateTime date,
+  ) async {
+    final day = await _fetchRoutesForDate(repId, date);
+    final plan = await savedVisitPlan(repId, date);
+    return plan == null ? day : inPlannedOrder(day, plan.order);
+  }
+
+  /// [repId]'s plan for [date] ("Plan my route"), or null. Only one is
+  /// kept: a plan is for the day it was made and the person who made it, so
+  /// yesterday's, or a colleague's on a shared phone, is worth nothing.
+  ///
+  /// Never throws: the day must show without its plan rather than not at all.
+  Future<RoutePlan?> savedVisitPlan(String repId, DateTime date) async {
+    try {
+      final raw = await _db.getValue(_visitPlanKey);
+      if (raw == null) return null;
+      final saved = jsonDecode(raw);
+      if (saved is! Map<String, dynamic> ||
+          saved['rep_id'] != repId ||
+          saved['date'] != formatDate(date)) {
+        return null;
+      }
+      return RoutePlan.fromMap(saved['plan']);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Keeps [plan] as the order of [repId]'s stops still to visit on [date],
+  /// on this phone only.
+  Future<void> saveVisitPlan(String repId, DateTime date, RoutePlan plan) =>
+      _db.setValue(
+        _visitPlanKey,
+        jsonEncode({
+          'rep_id': repId,
+          'date': formatDate(date),
+          'plan': plan.toMap(),
+        }),
+      );
+
+  /// Google's order for the rep's scheduled visits [routeIds] from ([lat],
+  /// [lng]); null when there is none worth using.
+  Future<RoutePlan?> googleVisitOrder({
+    required double lat,
+    required double lng,
+    required List<String> routeIds,
+  }) => googleRouteOrder(
+    _client,
+    _http,
+    kind: PlanKind.visits,
+    lat: lat,
+    lng: lng,
+    ids: routeIds,
+  );
+
+  Future<List<RouteVisit>> _fetchRoutesForDate(
     String repId,
     DateTime date,
   ) async {

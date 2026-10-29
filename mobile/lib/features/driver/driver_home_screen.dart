@@ -292,10 +292,7 @@ class _DriverHomeScreenState extends ConsumerState<DriverHomeScreen> {
           RoutePlan(
             order: nearestFirst(lat, lng, stops),
             byGoogle: false,
-            note:
-                'In order of the nearest stop each time, from where you '
-                'are, in a straight line.'
-                '${unpinned ? ' Stops with no pin on the map are last.' : ''}',
+            note: straightLineNote(unpinned: unpinned),
           );
       if (mounted) setState(() => _plans[day] = plan);
     } finally {

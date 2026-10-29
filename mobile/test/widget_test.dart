@@ -21,7 +21,7 @@ void main() {
       ),
     );
 
-    expect(find.text('Email'), findsOneWidget);
+    expect(find.text('Email or cellphone'), findsOneWidget);
     expect(find.text('Password'), findsOneWidget);
     expect(find.widgetWithText(ElevatedButton, 'Sign in'), findsOneWidget);
   });

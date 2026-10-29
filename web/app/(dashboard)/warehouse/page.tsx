@@ -26,7 +26,8 @@ import {
   type LowStockAlert,
   type StockPosition,
 } from "@/lib/warehouse";
-import { useTerms } from "@/lib/use-company-config";
+import { useCompanyConfig, useTerms } from "@/lib/use-company-config";
+import { keepsStock as companyKeepsStock } from "@/lib/order-board";
 import { withArticle } from "@/lib/terms";
 
 /**
@@ -36,10 +37,14 @@ import { withArticle } from "@/lib/terms";
  * in the order they have them: what has come in, what needs picking, what is
  * going out, and what paperwork is outstanding. Everything else is a click
  * away rather than on this page.
+ *
+ * The page is Deliveries' (every distributor's plan); its stock parts are
+ * Stock control's, the add-on, and are left out without it.
  */
 export default function WarehousePage() {
   const supabase = createClient();
   const t = useTerms();
+  const keepsStock = companyKeepsStock(useCompanyConfig());
   const [pipeline, setPipeline] = useState<PipelineRow[]>([]);
   const [pods, setPods] = useState<MissingPodRow[]>([]);
   const [lowStock, setLowStock] = useState<LowStockAlert[]>([]);
@@ -59,8 +64,8 @@ export default function WarehousePage() {
         const [p, d, l, s] = await Promise.all([
           fetchPipeline(supabase, from, to),
           fetchMissingPods(supabase, 0),
-          fetchLowStock(supabase, null),
-          fetchStockPosition(supabase, null),
+          keepsStock ? fetchLowStock(supabase, null) : [],
+          keepsStock ? fetchStockPosition(supabase, null) : null,
         ]);
         if (cancelled) return;
         setPipeline(p);
@@ -77,7 +82,7 @@ export default function WarehousePage() {
     return () => {
       cancelled = true;
     };
-  }, [supabase]);
+  }, [supabase, keepsStock]);
 
   const count = (status: string) =>
     Number(pipeline.find((r) => r.status === status)?.orders ?? 0);
@@ -107,18 +112,38 @@ export default function WarehousePage() {
           tone={count("new") > 0 ? "warn" : "neutral"}
           href="/orders?status=new"
         />
-        <StatTile
-          label="Awaiting picking"
-          value={count("confirmed") + count("picking")}
-          sub="confirmed and being picked"
-          href="/orders?status=confirmed"
-        />
-        <StatTile
-          label="Awaiting dispatch"
-          value={count("packed")}
-          sub="packed and ready to go"
-          href="/orders?status=packed"
-        />
+        {keepsStock ? (
+          <>
+            <StatTile
+              label="Awaiting picking"
+              value={count("confirmed") + count("picking")}
+              sub="confirmed and being picked"
+              href="/orders?status=confirmed"
+            />
+            <StatTile
+              label="Awaiting dispatch"
+              value={count("packed")}
+              sub="packed and ready to go"
+              href="/orders?status=packed"
+            />
+          </>
+        ) : (
+          // No picking or packing: an invoiced order is waiting to go out.
+          <>
+            <StatTile
+              label="Awaiting dispatch"
+              value={count("confirmed")}
+              sub="invoiced and ready to go"
+              href="/orders?status=confirmed"
+            />
+            <StatTile
+              label="On the road"
+              value={count("dispatched")}
+              sub="dispatched, not yet delivered"
+              href="/orders?status=dispatched"
+            />
+          </>
+        )}
         <StatTile
           label="Outstanding PODs"
           value={pods.length}
@@ -128,8 +153,8 @@ export default function WarehousePage() {
         />
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-3">
-        <Card className="lg:col-span-2">
+      <div className={keepsStock ? "grid gap-4 lg:grid-cols-3" : "grid gap-4"}>
+        <Card className={keepsStock ? "lg:col-span-2" : undefined}>
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-base">
               <PackageCheck className="h-4 w-4" /> Order pipeline
@@ -178,52 +203,54 @@ export default function WarehousePage() {
           </CardContent>
         </Card>
 
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-base">
-              <AlertTriangle className="h-4 w-4" /> Needs ordering
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            <div className="grid grid-cols-2 gap-3">
-              <StatTile
-                label="Out of stock"
-                value={outOfStock}
-                tone={outOfStock > 0 ? "bad" : "neutral"}
-              />
-              <StatTile
-                label="Below minimum"
-                value={belowMin}
-                tone={belowMin > 0 ? "warn" : "neutral"}
-              />
-            </div>
-            {lowStock.length === 0 ? (
-              <p className="text-sm text-muted-foreground">
-                {loading ? "Loading…" : "Nothing below its reorder point."}
-              </p>
-            ) : (
-              <ul className="space-y-1.5 text-sm">
-                {lowStock.slice(0, 6).map((a) => (
-                  <li
-                    key={`${a.product_id}-${a.location_id}`}
-                    className="flex items-baseline justify-between gap-2"
-                  >
-                    <span className="truncate">{a.product_name}</span>
-                    <span className="shrink-0 tabular-nums text-muted-foreground">
-                      {a.qty_available} left · order {a.recommended_order_qty}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            )}
-            <Link
-              href="/inventory"
-              className="inline-block text-sm font-medium text-primary hover:underline"
-            >
-              Open inventory →
-            </Link>
-          </CardContent>
-        </Card>
+        {keepsStock && (
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-base">
+                <AlertTriangle className="h-4 w-4" /> Needs ordering
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <div className="grid grid-cols-2 gap-3">
+                <StatTile
+                  label="Out of stock"
+                  value={outOfStock}
+                  tone={outOfStock > 0 ? "bad" : "neutral"}
+                />
+                <StatTile
+                  label="Below minimum"
+                  value={belowMin}
+                  tone={belowMin > 0 ? "warn" : "neutral"}
+                />
+              </div>
+              {lowStock.length === 0 ? (
+                <p className="text-sm text-muted-foreground">
+                  {loading ? "Loading…" : "Nothing below its reorder point."}
+                </p>
+              ) : (
+                <ul className="space-y-1.5 text-sm">
+                  {lowStock.slice(0, 6).map((a) => (
+                    <li
+                      key={`${a.product_id}-${a.location_id}`}
+                      className="flex items-baseline justify-between gap-2"
+                    >
+                      <span className="truncate">{a.product_name}</span>
+                      <span className="shrink-0 tabular-nums text-muted-foreground">
+                        {a.qty_available} left · order {a.recommended_order_qty}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              <Link
+                href="/inventory"
+                className="inline-block text-sm font-medium text-primary hover:underline"
+              >
+                Open inventory →
+              </Link>
+            </CardContent>
+          </Card>
+        )}
       </div>
 
       <Card>

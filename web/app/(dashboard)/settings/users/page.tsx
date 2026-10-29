@@ -94,9 +94,9 @@ export default function UsersPage() {
     [directory, selectedId]
   );
   const company = useCompanyConfig();
-  // A driver only has deliveries to do where the warehouse sends them out, so
-  // the Driver job role is offered only there.
-  const hasWarehouse = !company || moduleEnabled(company.modules, "warehouse");
+  // A driver only has deliveries to do where the company sends orders out
+  // (Deliveries), so the Driver job role is offered only there.
+  const hasDeliveries = !company || moduleEnabled(company.modules, "deliveries");
   const areas = useMemo(
     () => groupByArea(permissionsForCompany(directory?.permissions ?? [], company?.modules ?? null)),
     [directory, company]
@@ -232,7 +232,7 @@ export default function UsersPage() {
                       .filter(
                         (r) =>
                           r.id === selected.job_role_id ||
-                          (r.active && (r.base_role !== "driver" || hasWarehouse))
+                          (r.active && (r.base_role !== "driver" || hasDeliveries))
                       )
                       .map((r) => (
                       <option key={r.id} value={r.id}>
@@ -358,7 +358,7 @@ export default function UsersPage() {
         // refuses it regardless of what this list offers.
         jobRoles={directory.jobRoles.filter(
           (r) =>
-            r.active && r.code !== "administrator" && (r.base_role !== "driver" || hasWarehouse)
+            r.active && r.code !== "administrator" && (r.base_role !== "driver" || hasDeliveries)
         )}
         onCreated={load}
       />

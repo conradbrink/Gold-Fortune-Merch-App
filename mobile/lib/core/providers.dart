@@ -400,3 +400,13 @@ final todayRoutesProvider = FutureProvider<List<RouteVisit>>((ref) async {
   final repo = ref.watch(routeRepositoryProvider);
   return repo.fetchRoutesForDate(user.id, date);
 });
+
+/// The rep's plan for the day ("Plan my route", and the one made when the
+/// workday starts), kept on this phone; null before there is one. The list
+/// above is already in its order; this is what the plan says about itself.
+final visitPlanProvider = FutureProvider<RoutePlan?>((ref) async {
+  final user = ref.watch(currentUserProvider);
+  final date = ref.watch(selectedRouteDateProvider);
+  if (user == null) return null;
+  return ref.watch(routeRepositoryProvider).savedVisitPlan(user.id, date);
+});
