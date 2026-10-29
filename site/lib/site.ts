@@ -89,7 +89,7 @@ export const biggestPlan: Plan = pricing.plans[pricing.plans.length - 1];
 export const founding = {
   spots: 10,
   pilotDays: 14,
-  // Reps a company may have during the pilot (the app's trial_user_limit).
+  // Reps and drivers a company may have during the pilot (the app's trial_user_limit).
   pilotReps: 10,
   // After the pilot: this much off the plan that fits, for this many months.
   percentOff: 40,
@@ -148,8 +148,8 @@ export const objections: [q: string, a: string][] = [
   ],
   ["Can I see my data in Excel?", "Yes. Your sales, invoices and reports download to Excel or CSV whenever you want them."],
   [
-    `What if I have more than ${biggestPlan.reps} reps?`,
-    `The founding price covers our plans up to ${biggestPlan.reps} reps. Tell us on the form how many you have, and we'll give you a founding price for your whole team.`,
+    `What if I have more than ${biggestPlan.reps} reps and drivers?`,
+    `The founding price covers our plans up to ${biggestPlan.reps} reps and drivers. Tell us on the form how many you have, and we'll give you a founding price for your whole team.`,
   ],
 ];
 
