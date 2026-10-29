@@ -55,6 +55,12 @@ import {
   updateOrderDetails,
   requiredByRange,
   unitPriceFor,
+  shrinkPriceFor,
+  shrinkUnits,
+  shownLine,
+  switchedShown,
+  unitsFromShown,
+  unitPriceFromShown,
   fetchOrderableProducts,
   type OrderDetail,
   type AvailabilityRow,
@@ -210,6 +216,14 @@ export default function OrderDetailPage() {
   const [qtyDraft, setQtyDraft] = useState<Record<string, string>>({});
   const [addProductId, setAddProductId] = useState("");
   const [addQty, setAddQty] = useState("");
+  /**
+   * Lines the clerk is reading per shrink, by line id. The order is kept in
+   * units, so this is how the boxes count, not something saved: a reloaded
+   * page shows units again, at the same total.
+   */
+  const [perShrink, setPerShrink] = useState<Record<string, boolean>>({});
+  // The add-a-product row's choice, which the line it adds keeps.
+  const [addPerShrink, setAddPerShrink] = useState(false);
   const [adding, setAdding] = useState(false);
   const [editingDetails, setEditingDetails] = useState(false);
   const [detailsDraft, setDetailsDraft] = useState({
@@ -419,15 +433,37 @@ export default function OrderDetailPage() {
   // edit the database refuses.
   const canPrice = o.status === "new";
   const unpricedLines = detail.lines.filter((l) => l.unit_price == null).length;
+  // The product being added, if it comes in shrinks: its row offers per shrink too.
+  const addUnits = shrinkUnits(catalogue.find((c) => c.id === addProductId)?.units_per_shrink);
+  const addByShrink = addPerShrink && addUnits !== null;
+  // While the order can be changed, a line whose product comes in shrinks can be read and priced per shrink.
+  const pricedPer = canPrice && detail.lines.some((l) => shrinkUnits(l.units_per_shrink) !== null);
 
   // The store's price list, if its group has one: what a line saved without a
   // price is given by the database, so the same figure is suggested here.
   const storeList = listForGroup(priceBook, detail.storeGroupId);
 
-  /** The store's per-unit price for a product, as a prefill. */
-  function suggested(productId: string): string {
+  /** The store's price for a product, per unit or per shrink, as a prefill. */
+  function suggested(productId: string, byShrink = false): string {
     const p = catalogue.find((c) => c.id === productId);
-    return p ? (unitPriceFor(p, storeList) ?? "") : "";
+    if (!p) return "";
+    return (byShrink ? shrinkPriceFor(p, storeList) : unitPriceFor(p, storeList)) ?? "";
+  }
+
+  /** The units a line's boxes count in: its shrink while it is read per shrink, otherwise null (per unit). */
+  function lineUnits(l: { id: string; units_per_shrink: number | null }): number | null {
+    return perShrink[l.id] ? shrinkUnits(l.units_per_shrink) : null;
+  }
+
+  /** Switches a line between per unit and per shrink; what is typed in its boxes moves across with it. */
+  function sellBy(l: { id: string; units_per_shrink: number | null }, toShrink: boolean) {
+    const units = shrinkUnits(l.units_per_shrink);
+    if (!units || toShrink === Boolean(perShrink[l.id])) return;
+    const move = (drafts: Record<string, string>, kind: "qty" | "price") =>
+      drafts[l.id] === undefined ? drafts : { ...drafts, [l.id]: switchedShown(drafts[l.id], kind, toShrink, units) };
+    setQtyDraft((prev) => move(prev, "qty"));
+    setPriceDraft((prev) => move(prev, "price"));
+    setPerShrink((prev) => ({ ...prev, [l.id]: toShrink }));
   }
 
   // Lines with no price that the list (or the product's own price) can fill:
@@ -439,7 +475,7 @@ export default function OrderDetailPage() {
   function fillPrices() {
     setPriceDraft((prev) => ({
       ...prev,
-      ...Object.fromEntries(fillable.map((l) => [l.id, suggested(l.product_id)])),
+      ...Object.fromEntries(fillable.map((l) => [l.id, suggested(l.product_id, lineUnits(l) !== null)])),
     }));
   }
 
@@ -450,16 +486,17 @@ export default function OrderDetailPage() {
     setNotice(null);
     try {
       const edits = detail!.lines
-        .map((l) => ({ id: l.id, raw: priceDraft[l.id], name: l.product_name }))
+        .map((l) => ({ id: l.id, raw: priceDraft[l.id], name: l.product_name, units: lineUnits(l) }))
         .filter((e) => e.raw !== undefined && e.raw !== "");
 
       // Every price is checked before any is written. Validating inside the
       // write loop meant a bad third line left the first two already saved,
       // with the clerk shown only the error and no hint that half of it had
       // gone through — the same half-saved state the stocktake counts had.
+      // A price per shrink is saved per unit: divided by the shrink, to the cent.
       const priced = edits.map((e) => {
-        const n = Number(e.raw);
-        if (!Number.isFinite(n) || n < 0) {
+        const n = unitPriceFromShown(e.raw!, e.units);
+        if (n === null) {
           throw new Error(
             `${e.name}: a price has to be a number and cannot be negative. Nothing was saved.`
           );
@@ -476,15 +513,21 @@ export default function OrderDetailPage() {
       // A box the clerk emptied is rejected rather than skipped. Treating it as
       // "no edit" reads as deleting the line to the person who cleared it, and
       // silently keeping the old number is the worst of the three answers.
+      //
+      // Shrinks are saved as the units they make, which has to be whole:
+      // 2.5 shrinks of 10 is 25 units, 0.25 of 10 is not an order.
       const qtyEdits = detail!.lines
-        .map((l) => ({ id: l.id, raw: qtyDraft[l.id], name: l.product_name }))
+        .map((l) => ({ id: l.id, raw: qtyDraft[l.id], name: l.product_name, units: lineUnits(l) }))
         .filter((e) => e.raw !== undefined)
         .map((e) => {
-          const n = Number(e.raw);
-          if (e.raw!.trim() === "" || !Number.isInteger(n) || n < 1) {
+          const n = unitsFromShown(e.raw!, e.units);
+          if (n === null) {
             throw new Error(
-              `${e.name}: a quantity has to be a whole number, one or more. ` +
-                `To take the line off the order, remove it. Nothing was saved.`
+              e.units
+                ? `${e.name}: shrinks of ${e.units} have to make a whole number of units, one or more. ` +
+                    `To take the line off the order, remove it. Nothing was saved.`
+                : `${e.name}: a quantity has to be a whole number, one or more. ` +
+                    `To take the line off the order, remove it. Nothing was saved.`
             );
           }
           return { id: e.id, qty: n, name: e.name };
@@ -554,9 +597,17 @@ export default function OrderDetailPage() {
     setNotice(null);
     try {
       if (!orgId) throw new Error("Still loading. Try again in a moment.");
-      const qty = Number(addQty);
       const product = catalogue.find((c) => c.id === addProductId);
       if (!product) throw new Error("Pick a product first.");
+      const units = addPerShrink ? shrinkUnits(product.units_per_shrink) : null;
+      const qty = unitsFromShown(addQty, units);
+      if (qty === null) {
+        throw new Error(
+          units
+            ? `Shrinks of ${units} have to make a whole number of units, one or more.`
+            : "A quantity has to be a whole number, one or more."
+        );
+      }
       await addOrderLine(supabase, {
         orgId,
         orderId,
@@ -566,7 +617,10 @@ export default function OrderDetailPage() {
         // still editable in the table above like every other price.
         unitPrice: unitPriceFor(product, storeList) == null ? null : Number(unitPriceFor(product, storeList)),
       });
-      await reload();
+      const d = await reload();
+      // The new line reads the way it was added.
+      const added = d.lines.find((l) => l.product_id === product.id);
+      if (added && units) setPerShrink((prev) => ({ ...prev, [added.id]: true }));
       setAddProductId("");
       setAddQty("");
       setNotice(`${product.name} added.`);
@@ -805,8 +859,9 @@ export default function OrderDetailPage() {
               <TableHeader>
                 <TableRow>
                   <TableHead>Product</TableHead>
+                  {pricedPer && <TableHead>Priced per</TableHead>}
                   <TableHead className="text-right">Ordered</TableHead>
-                  <TableHead className="text-right">Price/unit</TableHead>
+                  <TableHead className="text-right">{pricedPer ? "Price" : "Price/unit"}</TableHead>
                   <TableHead className="text-right">Reserved</TableHead>
                   <TableHead className="text-right">Picked</TableHead>
                   <TableHead className="text-right">Dispatched</TableHead>
@@ -815,7 +870,15 @@ export default function OrderDetailPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {detail.lines.map((l) => (
+                {detail.lines.map((l) => {
+                  const units = lineUnits(l);
+                  const shown = shownLine(l, units);
+                  const canSwitch = shrinkUnits(l.units_per_shrink);
+                  // What a price per shrink saves as, said under the box: it is divided to the cent.
+                  const perUnit = units ? unitPriceFromShown(priceDraft[l.id] ?? shown.price, units) : null;
+                  // And what the shrinks come to, since Reserved, Picked and the stock warning count units.
+                  const unitCount = units ? unitsFromShown(qtyDraft[l.id] ?? shown.qty, units) : null;
+                  return (
                   <TableRow key={l.id}>
                     <TableCell>
                       <div className="font-medium">{l.product_name}</div>
@@ -823,21 +886,43 @@ export default function OrderDetailPage() {
                         <div className="text-xs text-muted-foreground">{l.brand}</div>
                       )}
                     </TableCell>
+                    {pricedPer && (
+                      <TableCell>
+                        {canSwitch ? (
+                          <NativeSelect
+                            className="h-8 w-32"
+                            value={units ? "shrink" : "unit"}
+                            onChange={(e) => sellBy(l, e.target.value === "shrink")}
+                            aria-label={`Priced per, for ${l.product_name}`}
+                          >
+                            <option value="unit">Unit</option>
+                            <option value="shrink">{`Shrink of ${canSwitch}`}</option>
+                          </NativeSelect>
+                        ) : (
+                          <span className="text-sm text-muted-foreground">Unit</span>
+                        )}
+                      </TableCell>
+                    )}
                     <TableCell className="text-right">
                       {canPrice ? (
                         <Input
                           type="number"
-                          min={1}
-                          step="1"
+                          min={units ? 0 : 1}
+                          step={units ? "any" : "1"}
                           className="ml-auto h-8 w-20 text-right"
-                          aria-label={`Quantity ordered of ${l.product_name}`}
-                          value={qtyDraft[l.id] ?? String(l.qty_ordered)}
+                          aria-label={units ? `Shrinks ordered of ${l.product_name}` : `Quantity ordered of ${l.product_name}`}
+                          value={qtyDraft[l.id] ?? shown.qty}
                           onChange={(e) =>
                             setQtyDraft((prev) => ({ ...prev, [l.id]: e.target.value }))
                           }
                         />
                       ) : (
                         <span className="tabular-nums">{l.qty_ordered}</span>
+                      )}
+                      {unitCount !== null && (
+                        <span className="mt-0.5 block text-xs text-muted-foreground tabular-nums">
+                          {unitCount} {unitCount === 1 ? "unit" : "units"}
+                        </span>
                       )}
                     </TableCell>
                     <TableCell className="text-right">
@@ -847,12 +932,9 @@ export default function OrderDetailPage() {
                           min={0}
                           step="0.01"
                           className="ml-auto h-8 w-24 text-right"
-                          aria-label={`Price per unit for ${l.product_name}`}
-                          placeholder={suggested(l.product_id) || "—"}
-                          value={
-                            priceDraft[l.id] ??
-                            (l.unit_price == null ? "" : String(l.unit_price))
-                          }
+                          aria-label={`${units ? "Price per shrink" : "Price per unit"} for ${l.product_name}`}
+                          placeholder={suggested(l.product_id, units !== null) || "—"}
+                          value={priceDraft[l.id] ?? shown.price}
                           onChange={(e) =>
                             setPriceDraft((prev) => ({ ...prev, [l.id]: e.target.value }))
                           }
@@ -877,6 +959,11 @@ export default function OrderDetailPage() {
                                 </span>
                               )
                             ))}
+                        </span>
+                      )}
+                      {perUnit !== null && (
+                        <span className="mt-0.5 block text-xs text-muted-foreground tabular-nums">
+                          {perUnit.toFixed(2)} a unit
                         </span>
                       )}
                     </TableCell>
@@ -910,7 +997,8 @@ export default function OrderDetailPage() {
                       )}
                     </TableCell>
                   </TableRow>
-                ))}
+                  );
+                })}
               </TableBody>
             </Table>
 
@@ -980,17 +1068,35 @@ export default function OrderDetailPage() {
                       ))}
                   </NativeSelect>
                 </div>
+                {addUnits !== null && (
+                  <div className="w-36">
+                    <label className="mb-1 block text-xs text-muted-foreground">Priced per</label>
+                    <NativeSelect
+                      value={addPerShrink ? "shrink" : "unit"}
+                      onChange={(e) => {
+                        // The number typed moves across, as on a line: 24 units are 2 shrinks of 12.
+                        const toShrink = e.target.value === "shrink";
+                        setAddQty((prev) => switchedShown(prev, "qty", toShrink, addUnits));
+                        setAddPerShrink(toShrink);
+                      }}
+                      aria-label="Priced per, for the product to add"
+                    >
+                      <option value="unit">Unit</option>
+                      <option value="shrink">{`Shrink of ${addUnits}`}</option>
+                    </NativeSelect>
+                  </div>
+                )}
                 <div className="w-28">
                   <label className="mb-1 block text-xs text-muted-foreground">
-                    Units
+                    {addByShrink ? "Shrinks" : "Units"}
                   </label>
                   <Input
                     type="number"
-                    min={1}
-                    step="1"
+                    min={addByShrink ? 0 : 1}
+                    step={addByShrink ? "any" : "1"}
                     value={addQty}
                     onChange={(e) => setAddQty(e.target.value)}
-                    aria-label="Units to add"
+                    aria-label={addByShrink ? "Shrinks to add" : "Units to add"}
                   />
                 </div>
                 <Button
