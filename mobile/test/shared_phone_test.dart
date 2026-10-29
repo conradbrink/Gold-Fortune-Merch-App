@@ -13,8 +13,11 @@ import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:gf_merch_rep/data/local/app_database.dart';
 import 'package:gf_merch_rep/data/local/outbox_types.dart';
+import 'package:gf_merch_rep/data/models/lead.dart';
 import 'package:gf_merch_rep/data/models/route_visit.dart';
+import 'package:gf_merch_rep/data/repositories/lead_repository.dart';
 import 'package:gf_merch_rep/data/repositories/route_repository.dart';
+import 'package:gf_merch_rep/data/sync/sync_engine.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -183,6 +186,83 @@ void main() {
         payload: 'not json',
       );
       expect(await db.watchPendingCountFor('sipho').first, 1);
+    });
+  });
+
+  group('sales visits', () {
+    Lead call(String id, String repId, {String status = 'in_progress'}) => Lead(
+      clientGeneratedId: id,
+      orgId: 'org-1',
+      repId: repId,
+      companyName: 'Call $id',
+      purpose: 'Listing',
+      startedAt: DateTime(2026, 10, 29, 9),
+      status: status,
+    );
+
+    test("the next person is not offered the last one's open call", () async {
+      // As LeadRepository caches them: one list, whoever used the phone.
+      await db.setValue(
+        'leads',
+        jsonEncode([
+          call('c1', 'thabo').toMap(),
+          call('c2', 'sipho', status: 'completed').toMap(),
+        ]),
+      );
+      client = SupabaseClient(
+        'http://localhost:54321',
+        'anon-key',
+        authOptions: const AuthClientOptions(autoRefreshToken: false),
+      );
+      final leads = LeadRepository(
+        db,
+        SyncEngine(db, client!, readBuild: () async => null),
+      );
+
+      expect(
+        (await leads.inProgress('sipho')).map((l) => l.clientGeneratedId),
+        isEmpty,
+      );
+      expect((await leads.myLeads('sipho')).map((l) => l.clientGeneratedId), [
+        'c2',
+      ]);
+      expect(
+        (await leads.inProgress('thabo')).map((l) => l.clientGeneratedId),
+        ['c1'],
+      );
+    });
+  });
+
+  group('the sync status', () {
+    test("counts the signed-in person's work, not the last person's", () async {
+      await db.enqueue(
+        entityType: OutboxType.visitCheckIn,
+        clientGeneratedId: 'v1',
+        payload: jsonEncode({'rep_id': 'thabo'}),
+      );
+      client = SupabaseClient(
+        'http://localhost:54321',
+        'anon-key',
+        authOptions: const AuthClientOptions(autoRefreshToken: false),
+      );
+      // Sipho is signed in: Thabo's check-in is held for him, never sent.
+      final engine = SyncEngine(
+        db,
+        client!,
+        readBuild: () async => null,
+        signedInUser: () => 'sipho',
+      );
+      final statuses = <SyncStatus>[];
+      final sub = engine.status.listen(statuses.add);
+      await engine.sync();
+      await Future<void>.delayed(Duration.zero);
+      await sub.cancel();
+      engine.dispose();
+
+      expect(statuses, isNotEmpty);
+      expect(statuses.map((s) => s.pending), everyElement(0));
+      // Still on the phone, waiting for Thabo.
+      expect(await db.watchPendingCount().first, 1);
     });
   });
 

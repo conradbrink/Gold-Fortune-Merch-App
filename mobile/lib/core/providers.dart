@@ -275,7 +275,9 @@ final leadRepositoryProvider = Provider<LeadRepository>((ref) {
 /// The rep's own sales calls, open ones first. Read from the local cache, so
 /// it is the same list with or without signal.
 final myLeadsProvider = FutureProvider<List<Lead>>((ref) async {
-  return ref.watch(leadRepositoryProvider).myLeads();
+  final user = ref.watch(currentUserProvider);
+  if (user == null) return const [];
+  return ref.watch(leadRepositoryProvider).myLeads(user.id);
 });
 
 final orderRepositoryProvider = Provider<OrderRepository>((ref) {
