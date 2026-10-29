@@ -1,6 +1,10 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:sentry_flutter/sentry_flutter.dart';
+
+import 'failure_report_client.dart';
 
 
 /// Crash and error reporting.
@@ -307,6 +311,34 @@ class Monitoring {
       level: SentryLevel.info,
       data: _scrubMap(data),
     ));
+  }
+
+  /// Reports a Supabase request that failed in a way that means something is
+  /// broken, though the screen caught it (see [FailureReportClient]). One
+  /// Sentry issue per table or function and code; the screens and taps before
+  /// it come with the event as breadcrumbs (SentryNavigatorObserver in
+  /// app.dart, SentryWidget in main.dart).
+  static void reportSupabaseFailure(SupabaseFailure failure) {
+    if (!enabled) return;
+    final why = failure.code.isEmpty ? 'HTTP ${failure.status}' : failure.code;
+    final what =
+        '${failure.method} ${failure.resource.isEmpty ? '/' : failure.resource}';
+    unawaited(
+      Sentry.captureMessage(
+        'Supabase ${failure.service} failed: $what ($why)',
+        level: SentryLevel.error,
+        withScope: (scope) {
+          scope.fingerprint = ['supabase', failure.service, what, why];
+          scope.setTag('supabase.service', failure.service);
+          scope.setTag('supabase.code', why);
+          scope.setContexts('supabase', {
+            'status': failure.status,
+            'code': failure.code,
+            'message': failure.message,
+          });
+        },
+      ).then((_) {}, onError: (_) {}),
+    );
   }
 
   /// Reports a caught error that the app handled but a human should see —
