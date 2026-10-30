@@ -16,12 +16,15 @@
 --                             refused confirm says how many have expired.
 --   order_availability_check  counts the same stock, so the "short" numbers
 --                             shown before confirming are what confirming
---                             reserves. New last column qty_expired: the units
---                             left out because they have expired, so a clerk
---                             looking at a full shelf can see why it reads
---                             short.
+--                             reserves; it falls back to an active default
+--                             location only, as confirm does. New last
+--                             column qty_expired: the units left out because
+--                             they have expired, so a clerk looking at a full
+--                             shelf can see why it reads short.
 --   order_record_pick         refuses an expired batch as the one the picker
---                             took instead of the reserved one.
+--                             took instead of the reserved one, and names a
+--                             batch of another product instead of leaving it
+--                             to the non-negative check.
 --
 -- "Today" is the company's own calendar day (organizations.timezone), as for
 -- every other day boundary. A batch can still go out on its expiry date.
@@ -75,8 +78,9 @@ as $$
     select coalesce(
       p_location_id,
       (select o.fulfil_location_id from public.orders o where o.id = p_order_id),
+      -- Active, as order_confirm chooses it, so both read the same shelf.
       (select l.id from public.stock_locations l cross join cfg
-        where l.org_id = cfg.org and l.is_default limit 1)
+        where l.org_id = cfg.org and l.is_default and l.active limit 1)
     ) as id
   )
   select
@@ -411,11 +415,13 @@ begin
       end if;
 
       -- An expired batch cannot be sent, whichever way it reaches the box.
-      v_actual_number := null;
-      v_actual_expiry := null;
       select pb.batch_number, pb.expiry_date into v_actual_number, v_actual_expiry
         from public.product_batches pb
-       where pb.id = v_actual and pb.org_id = v_org;
+        join public.order_lines ol on ol.id = v_alloc.order_line_id
+       where pb.id = v_actual and pb.org_id = v_org and pb.product_id = ol.product_id;
+      if not found then
+        raise exception 'That batch is not one of this product''s.' using errcode = '22023';
+      end if;
       if v_actual_expiry < v_today then
         raise exception 'Batch % expired on %. Take stock that is still in date.',
           v_actual_number, to_char(v_actual_expiry, 'FMDD Mon YYYY')

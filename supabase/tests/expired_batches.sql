@@ -16,8 +16,8 @@
 --   E4  A second order for 5 reads 0 available, 5 short, 37 expired, and
 --       confirming it on hold reserves nothing and holds it.
 --   E5  Picking: swapping a reservation onto an expired lot is refused and
---       leaves it as it was; swapping onto a lot in date still works; a plain
---       pick still records.
+--       leaves it as it was; so is another product's batch, by name;
+--       swapping onto a lot in date still works; a plain pick still records.
 --
 -- HOW TO RUN: one DO block that always ends in `raise exception`, so nothing
 -- survives. The last line of the message is the verdict.
@@ -28,7 +28,7 @@ declare
   v_fail text := '';
   v_wh uuid; v_loc uuid; v_store uuid; v_prod uuid;
   v_today date;
-  b_old uuid; b_yday uuid; b_today uuid; b_later uuid; b_spare uuid;
+  b_old uuid; b_yday uuid; b_today uuid; b_later uuid; b_spare uuid; v_other_batch uuid;
   v_a uuid; v_a_line uuid; v_b uuid;
   v_alloc_later uuid; v_alloc_today uuid;
   j jsonb; r record; v_n int; v_msg text; v_got text;
@@ -57,6 +57,11 @@ begin
   values (c_gf, v_prod, 'ZZ-LATER', v_today + 30) returning id into b_later;
   insert into public.product_batches (org_id, product_id, batch_number, expiry_date)
   values (c_gf, v_prod, 'ZZ-SPARE', v_today + 60) returning id into b_spare;
+  -- A batch in date, of another product.
+  insert into public.product_batches (org_id, product_id, batch_number, expiry_date)
+  select c_gf, p.id, 'ZZ-OTHER', v_today + 60
+    from public.products p where p.org_id = c_gf and p.id <> v_prod order by p.name limit 1
+  returning id into v_other_batch;
 
   insert into public.stock_movements (org_id, product_id, batch_id, qty, to_location_id, to_bucket, reason, source_doc_type)
   values (c_gf, v_prod, b_old,   30, v_loc, 'available', 'opening_stock', 'system'),
@@ -186,6 +191,19 @@ begin
   select batch_id, qty_picked, status into r from public.order_allocations where id = v_alloc_later;
   if (r.batch_id, r.qty_picked, r.status) is distinct from (b_later, 0, 'reserved') then
     v_fail := v_fail || 'E5 the refused swap changed the reservation' || E'\n';
+  end if;
+
+  -- A batch of another product is named as such, not left to a constraint.
+  v_msg := null;
+  begin
+    perform public.order_record_pick(v_a, jsonb_build_array(jsonb_build_object(
+      'allocation_id', v_alloc_later, 'qty_picked', 20, 'actual_batch_id', v_other_batch)));
+    v_fail := v_fail || 'E5 a pick was swapped onto another product''s batch' || E'\n';
+  exception when others then
+    v_msg := sqlstate || ' ' || sqlerrm;
+  end;
+  if v_msg is not null and v_msg not like '22023 That batch is not one of this product%' then
+    v_fail := v_fail || 'E5 the wrong-product refusal reads: ' || v_msg || E'\n';
   end if;
 
   begin
