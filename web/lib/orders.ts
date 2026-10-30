@@ -21,6 +21,18 @@ export type OrderRow = Database["public"]["Tables"]["orders"]["Row"];
 export type OrderLineRow = Database["public"]["Tables"]["order_lines"]["Row"];
 export type AvailabilityRow =
   Database["public"]["Functions"]["order_availability_check"]["Returns"][number];
+
+/**
+ * " (40 expired)" after a short line, when stock at the location has expired.
+ * Expired batches are never reserved, so they are not counted as available;
+ * this says why a full shelf reads short. Empty otherwise.
+ */
+export function expiredNote(row: Pick<AvailabilityRow, "qty_expired">): string {
+  // Absent until the database returns the column (20261030175300).
+  const n = row.qty_expired ?? 0;
+  return n > 0 ? ` (${n} expired)` : "";
+}
+
 export type PickingRow =
   Database["public"]["Functions"]["order_picking_list"]["Returns"][number];
 

@@ -66,6 +66,7 @@ import {
   unitPriceFromShown,
   fetchOrderableProducts,
   receivedViaLabel,
+  expiredNote,
   type OrderDetail,
   type AvailabilityRow,
   type ShortfallAction,
@@ -953,6 +954,7 @@ export default function OrderDetailPage() {
               <li key={s.order_line_id}>
                 {s.product_name}: {s.qty_ordered} ordered, {s.qty_available} available —{" "}
                 <span className="text-amber-700 dark:text-amber-500">{s.qty_short} short</span>
+                {expiredNote(s)}
               </li>
             ))}
           </ul>
@@ -1741,6 +1743,7 @@ export default function OrderDetailPage() {
                       <span className="text-amber-700 dark:text-amber-500">
                         {s.qty_short} short
                       </span>
+                      {expiredNote(s)}
                     </li>
                   ))}
                 </ul>
