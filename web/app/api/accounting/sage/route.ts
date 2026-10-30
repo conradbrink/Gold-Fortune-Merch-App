@@ -111,11 +111,14 @@ export async function POST(request: Request) {
     return sageProblem(err);
   }
   if (companies.length === 0) return json({ error: "That Sage login has no companies." }, 400);
+  if (companies.length > 25) {
+    return json({ error: "That Sage login opens more than 25 companies. Use a Sage user made for this company only." }, 400);
+  }
 
   if (input.step === "check") {
     try {
       const choices: SageCompanyChoice[] = [];
-      for (const c of companies.slice(0, 10)) {
+      for (const c of companies) {
         const banks = (await sageAll<SageBankAccount>(auth, "BankAccount/Get", c.ID, { maxPages: 1 })).filter(
           (b) => b.Active !== false,
         );

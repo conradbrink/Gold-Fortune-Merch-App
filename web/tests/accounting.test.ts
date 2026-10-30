@@ -295,7 +295,7 @@ function fakeDb(rows: QueueRow[], extra: Partial<{ conn: Connection | null; seal
     customer: async () => ({ name: "Spar Philippi", address: "12 Main Road", city: "Cape Town", zip: null,
                              contact_name: null, email: null, phone: null }),
     products: async () => new Map([["p1", { code: "AQ-500", name: "Still 500ml x24" }]]),
-    invoiceQueueStatus: async (_o, id) => queueStatus.get(id) ?? null,
+    queueStatus: async (_o, kind, id) => queueStatus.get(`${kind}:${id}`) ?? null,
     finish: async (row, result) => {
       finished.push({ row, result });
     },
@@ -391,18 +391,53 @@ test("a customer already in Sage is used, not made again; two of them is the off
   assert.match(r.fail, /more than one customer called "Spar Philippi"/);
 });
 
-test("a credit note waits for its invoice; with the invoice failed it says so", async () => {
+test("a credit note waits for its invoice, also while the invoice waits for the office", async () => {
   const sage = fakeSage(() => undefined);
-  const f = fakeDb([row("credit_note", "cn1")]);
-  f.queueStatus.set(invoice.id, "queued");
-  await runAccountingSync(deps(f.db, sage.fetchImpl));
-  assert.match((f.finished[0].result as { wait: string }).wait, /Waiting for INV-000123/);
+  for (const status of ["queued", "sending", "failed"]) {
+    const f = fakeDb([row("credit_note", "cn1")]);
+    f.queueStatus.set(`invoice:${invoice.id}`, status);
+    await runAccountingSync(deps(f.db, sage.fetchImpl));
+    assert.match((f.finished[0].result as { wait: string }).wait, /Waiting for INV-000123/, status);
+  }
   assert.equal(sage.calls.length, 0);
 
   const g = fakeDb([row("credit_note", "cn1")]);
-  g.queueStatus.set(invoice.id, "failed");
+  g.queueStatus.set(`invoice:${invoice.id}`, "skipped");
   await runAccountingSync(deps(g.db, sage.fetchImpl));
-  assert.match((g.finished[0].result as { fail: string }).fail, /has not reached Sage/);
+  assert.match((g.finished[0].result as { fail: string }).fail, /not being sent to Sage/);
+});
+
+test("a payment deleted mid-send waits for that send; a disconnect mid-run loses nothing", async () => {
+  const sage = fakeSage(() => undefined);
+  const f = fakeDb([row("payment_removed", "pay1")]);
+  f.queueStatus.set("payment:pay1", "sending");
+  await runAccountingSync(deps(f.db, sage.fetchImpl));
+  assert.ok("wait" in f.finished[0].result);
+  const g = fakeDb([row("payment_removed", "pay1")]);
+  g.queueStatus.set("payment:pay1", "skipped");
+  await runAccountingSync(deps(g.db, sage.fetchImpl));
+  assert.ok("skip" in g.finished[0].result);
+
+  const h = fakeDb([row("invoice", invoice.id), row("payment", "pay1")], { conn: null });
+  await runAccountingSync(deps(h.db, sage.fetchImpl));
+  assert.ok(h.finished.every((x) => "wait" in x.result));
+  assert.equal(sage.calls.length, 0);
+});
+
+test("lists are read to the last short page; an active item is preferred", async () => {
+  const pages: number[] = [];
+  const sage = fakeSage((c) => {
+    if (c.path !== "Customer/Get") return undefined;
+    const n = pages.length;
+    pages.push(n);
+    const results = Array.from({ length: n === 0 ? 100 : 3 }, (_, i) => ({ ID: n * 100 + i + 1, Name: `C${n * 100 + i}` }));
+    return { body: { Results: results } };
+  });
+  const f = fakeDb([row("invoice", invoice.id)]);
+  await runAccountingSync(deps(f.db, sage.fetchImpl));
+  assert.equal(pages.length, 2);
+  assert.equal(matchItem("A1", [{ ID: 1, Code: "A1", Active: false }, { ID: 2, Code: "a1", Active: true }])?.ID, 2);
+  assert.equal(matchItem("A1", [{ ID: 1, Code: "A1", Active: false }])?.ID, 1);
 });
 
 test("a refused sign-in stops the company at once, for good, and nothing else is tried", async () => {

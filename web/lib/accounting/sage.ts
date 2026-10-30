@@ -199,15 +199,24 @@ export type SageItem = { ID: number; Code: string; Description?: string; Active?
 export type SageDocument = { ID: number; DocumentNumber?: string; ExternalReference?: string; Total?: number };
 export type SageAllocation = { ID: number };
 
-/** Every page of a list, up to `maxPages` (100 rows a page). */
+/**
+ * Every page of a list, up to `maxPages` (100 rows a page). `pace` runs
+ * before each call (the sync keeps a company's calls apart). A short page is
+ * the last; TotalResults, when Sage sends it, ends it sooner.
+ */
 export async function sageAll<T>(
   auth: SageAuth,
   path: string,
   companyId: number | null,
-  opts: Parameters<typeof sageRequest>[2] & { maxPages?: number; query?: SageCall["query"] } = {},
+  opts: Parameters<typeof sageRequest>[2] & {
+    maxPages?: number;
+    query?: SageCall["query"];
+    pace?: () => Promise<void>;
+  } = {},
 ): Promise<T[]> {
   const rows: T[] = [];
   for (let page = 0; page < (opts.maxPages ?? 50); page++) {
+    await opts.pace?.();
     const got = await sageRequest<SagePage<T>>(
       auth,
       {
@@ -220,7 +229,8 @@ export async function sageAll<T>(
     );
     const results = Array.isArray(got?.Results) ? got.Results : [];
     rows.push(...results);
-    if (results.length < PAGE || rows.length >= (got?.TotalResults ?? 0)) break;
+    const total = typeof got?.TotalResults === "number" ? got.TotalResults : Infinity;
+    if (results.length < PAGE || rows.length >= total) break;
   }
   return rows;
 }
@@ -254,7 +264,8 @@ export function matchCustomer(name: string, customers: SageCustomer[]): SageCust
 export function matchItem(code: string, items: SageItem[]): SageItem | null {
   const key = code.trim().toLowerCase();
   if (!key) return null;
-  return items.find((i) => (i.Code ?? "").trim().toLowerCase() === key) ?? null;
+  const hits = items.filter((i) => (i.Code ?? "").trim().toLowerCase() === key);
+  return hits.find((i) => i.Active !== false) ?? hits[0] ?? null;
 }
 
 /**

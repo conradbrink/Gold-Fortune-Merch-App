@@ -159,15 +159,15 @@ export function supabaseSyncDb(admin: SupabaseClient<Database>): SyncDb {
       return new Map((rows ?? []).map((p) => [p.id, { code: p.sku_code?.trim() || null, name: p.name }]));
     },
 
-    async invoiceQueueStatus(org, invoiceId) {
+    async queueStatus(org, kind, localId) {
       const data = must(
-        "invoice status",
+        "queue status",
         await admin
           .from("accounting_queue")
           .select("status")
           .eq("org_id", org)
-          .eq("kind", "invoice")
-          .eq("local_id", invoiceId)
+          .eq("kind", kind)
+          .eq("local_id", localId)
           .maybeSingle(),
       );
       return data?.status ?? null;

@@ -5,6 +5,7 @@ import {
   matchItem,
   officeMessage,
   pickTaxType,
+  sageAll,
   sageRequest,
   taxTypeProblem,
   type SageAuth,
@@ -95,7 +96,7 @@ export interface SyncDb {
   payment(id: string): Promise<Payment | null>;
   customer(storeId: string): Promise<Customer | null>;
   products(ids: string[]): Promise<Map<string, { code: string | null; name: string }>>;
-  invoiceQueueStatus(org: string, invoiceId: string): Promise<string | null>;
+  queueStatus(org: string, kind: string, localId: string): Promise<string | null>;
   finish(row: QueueRow, result: FinishInput): Promise<void>;
   pause(org: string, until: "infinity" | Date, message: string): Promise<void>;
 }
@@ -176,19 +177,12 @@ class Company {
     });
   }
 
-  private async list<T>(path: string): Promise<T[]> {
-    const rows: T[] = [];
-    for (let page = 0; page < 50; page++) {
-      const got = await this.call<SagePage<T>>({
-        method: "GET",
-        path,
-        query: { $orderby: "ID", $top: 100, $skip: page * 100 },
-      });
-      const results = Array.isArray(got?.Results) ? got.Results : [];
-      rows.push(...results);
-      if (results.length < 100 || rows.length >= (got?.TotalResults ?? 0)) break;
-    }
-    return rows;
+  private list<T>(path: string): Promise<T[]> {
+    return sageAll<T>(this.auth, path, this.companyId, {
+      fetchImpl: this.deps.fetchImpl,
+      counter: this.counter,
+      pace: () => this.pace(),
+    });
   }
 
   // --------------------------------------------------------- what documents need
@@ -281,13 +275,20 @@ class Company {
     return hit?.ID ?? null;
   }
 
-  /** The invoice in Sage, or why a document on it cannot go yet. */
+  /**
+   * The invoice in Sage, or why a document on it cannot go yet. While the
+   * invoice is on its way, or turned down and waiting for the office, its
+   * credit notes and payments wait too (no attempt spent, no Sage call), so
+   * fixing the invoice is all the office has to do.
+   */
   async invoiceInSage(invoiceId: string, number: string): Promise<number> {
     const remote = await this.db.link(this.org, this.companyId, "invoice", invoiceId);
     if (remote) return remote;
-    const status = await this.db.invoiceQueueStatus(this.org, invoiceId);
-    if (status === "queued" || status === "sending") throw new Wait(`Waiting for ${number} to reach Sage.`);
-    throw new SageError("refused", `Its invoice ${number} has not reached Sage. Send the invoice first.`);
+    const status = await this.db.queueStatus(this.org, "invoice", invoiceId);
+    if (status === "queued" || status === "sending" || status === "failed") {
+      throw new Wait(`Waiting for ${number} to reach Sage.`);
+    }
+    throw new SageError("refused", `Its invoice ${number} is not being sent to Sage, so this cannot go either.`);
   }
 
   // ------------------------------------------------------------------ the kinds
@@ -403,7 +404,12 @@ class Company {
 
   async paymentRemoved(row: QueueRow): Promise<Outcome> {
     const receiptId = row.remote_id ?? (await this.db.link(this.org, this.companyId, "payment", row.local_id));
-    if (!receiptId) return { skip: "It never reached Sage." };
+    if (!receiptId) {
+      // Deleted while it was being sent: wait for that send to finish and say where it went.
+      const status = await this.db.queueStatus(this.org, "payment", row.local_id);
+      if (status === "sending" || status === "queued") throw new Wait("Waiting for the payment's own send to finish.");
+      return { skip: "It never reached Sage." };
+    }
     const allocationId = await this.db.link(this.org, this.companyId, "allocation", row.local_id);
     const gone = (err: unknown) => err instanceof SageError && err.status === 404;
     if (allocationId) {
@@ -464,11 +470,10 @@ export async function sendCompany(org: string, rows: QueueRow[], deps: SyncDeps)
     }
   };
 
+  // Disconnected since the claim: everything waits for Sage to be connected again.
   const conn = await db.connection(org);
   if (!conn) {
-    for (const row of ordered) {
-      await db.finish(row, { skip: "Sage is no longer connected.", calls: 0 });
-    }
+    await waitAll(0, "Waiting for Sage to be connected again.");
     return tally;
   }
   const signIn = signInFrom(await db.sealedSignIn(org), org, deps.secretKey);
