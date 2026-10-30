@@ -31,6 +31,7 @@ import {
   returnUndelivered,
   startPicking,
   uploadDeliveryDocument,
+  expiredNote,
   type AvailabilityRow,
   type OrderDetail,
   type PickingRow,
@@ -464,6 +465,7 @@ function StepBody({
                 <li key={s.order_line_id}>
                   {s.product_name}: {s.qty_available} of {s.qty_ordered},{" "}
                   <span className="text-amber-700 dark:text-amber-500">{s.qty_short} short</span>
+                  {expiredNote(s)}
                 </li>
               ))}
             </ul>
