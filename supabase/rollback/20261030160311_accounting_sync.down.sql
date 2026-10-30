@@ -1,4 +1,4 @@
--- Rollback of 20261030164700_accounting_sync. Everything it made goes; the
+-- Rollback of 20261030160311_accounting_sync. Everything it made goes; the
 -- catalogue row for the add-on (20261007112542) stays.
 
 drop trigger if exists tax_invoices_accounting on public.tax_invoices;

@@ -35,7 +35,7 @@
 -- Nothing is queued for a company without a connection, or with the add-on
 -- switched off.
 --
--- Rollback: supabase/rollback/20261030164700_accounting_sync.down.sql.
+-- Rollback: supabase/rollback/20261030160311_accounting_sync.down.sql.
 -- Suite: supabase/tests/accounting_sync.sql.
 
 insert into public.module_dependencies (module_code, requires_code)

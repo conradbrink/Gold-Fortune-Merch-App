@@ -1,4 +1,4 @@
--- Accounting sync suite (30 Oct 2026, 20261030164700).
+-- Accounting sync suite (30 Oct 2026, 20261030160311).
 --
 --   A1  No connection, or the add-on off: issuing an invoice queues nothing.
 --   A2  Connected: an invoice issued from sync_from is queued; QuickBooks
