@@ -248,5 +248,15 @@
     "file": "lib/control-centre.ts",
     "text": "Choose the default visit frequency.",
     "reason": "Operator-only Control Centre error for organizations.default_visit_frequency; read by Tickd staff, not the company."
+  },
+  {
+    "file": "lib/accounting/sync.ts",
+    "text": "Sage has more than one customer called ",
+    "reason": "Names Sage's own record type: the office fixes it on Sage's Customers screen, whatever the company calls its customers in Tickd."
+  },
+  {
+    "file": "lib/accounting/sync.ts",
+    "text": "Sage did not say which customer it saved.",
+    "reason": "Sage's own record type (a Sage customer), not the company's word for its customers."
   }
 ]

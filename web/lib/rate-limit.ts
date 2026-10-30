@@ -81,6 +81,11 @@ export const LIMITS = {
   billingCheckout: { bucket: "billing_checkout", limit: 10, windowSeconds: 3600 },
   /** Charging the saved card by hand ("Try again now", more reps). */
   billingCharge: { bucket: "billing_charge", limit: 6, windowSeconds: 3600 },
+  /**
+   * Trying a Sage login (Settings > Sage). Sage locks a login for a day after
+   * 20 failed sign-ins in an hour; a person needs two or three tries at most.
+   */
+  sageConnect: { bucket: "sage_connect", limit: 8, windowSeconds: 3600 },
 } satisfies Record<string, Limit>;
 
 type Verdict =

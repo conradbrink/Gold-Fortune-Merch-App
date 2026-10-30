@@ -396,6 +396,7 @@ const COMPANY_SETTINGS: ItemDef = {
     ...SETTINGS_PAGES.map((p) => ({ href: p.href, label: p.label, permission: "company_settings" as const })),
     { href: "/hr/settings", label: "HR", permission: "hr_settings" },
     { href: "/warehouse/settings", label: "Warehouse", permission: "warehouse" },
+    { href: "/settings/sage", label: "Sage", permission: "company_settings" },
   ],
   also: ["/settings/company", "/plans", "/billing"],
 };
