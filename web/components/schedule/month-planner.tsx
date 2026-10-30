@@ -33,6 +33,7 @@ import {
 } from "@/lib/schedule";
 import { useTerms } from "@/lib/use-company-config";
 import { lower, noun } from "@/lib/terms";
+import { fetchStoreChoices } from "@/lib/representatives";
 
 /**
  * One rep's month, planned by hand.
@@ -104,12 +105,7 @@ export function MonthPlanner() {
   useEffect(() => {
     fetchOrgSettings(supabase).then(setSettings).catch(() => {});
     fetchOrgId(supabase).then(setOrgId).catch(() => setOrgId(null));
-    supabase
-      .from("stores")
-      .select("id, name, city")
-      .eq("active", true)
-      .order("name")
-      .then(({ data }) => setStoreOptions(data ?? []));
+    fetchStoreChoices(supabase).then(setStoreOptions, () => setStoreOptions([]));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

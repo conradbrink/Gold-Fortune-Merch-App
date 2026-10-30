@@ -118,6 +118,22 @@ class _StorePickerScreenState extends ConsumerState<StorePickerScreen> {
                     'your ${t.site.oneLower} list is saved to this device.',
                   );
                 }
+                // Orders belong to the Distribution module, and a new
+                // customer is only added to take one. For a new order it goes
+                // on to that order, not to a check-in.
+                final canAdd =
+                    ref.watch(companyConfigValueProvider).has('distribution');
+                final addNew = OutlinedButton.icon(
+                    onPressed: () => context.go(Uri(
+                      path: widget.forOrder ? '/unscheduled/order/new' : '/unscheduled/new',
+                      // What they searched for is the name they are about to
+                      // type, and filled in it shows the ones already called that.
+                      queryParameters: q.isEmpty ? null : {'name': _query.trim()},
+                    ).toString()),
+                    icon: const Icon(Icons.add_business_outlined),
+                    label: Text('Add a new ${t.site.oneLower}'),
+                );
+
                 if (filtered.isEmpty) {
                   return Column(
                     children: [
@@ -126,29 +142,27 @@ class _StorePickerScreenState extends ConsumerState<StorePickerScreen> {
                           'No ${t.site.manyLower} match that search.',
                         ),
                       ),
-                      // Orders belong to the Distribution module, and a new
-                      // customer is only added to take one. For a new order it
-                      // goes on to that order, not to a check-in.
-                      if (ref.watch(companyConfigValueProvider).has('distribution'))
-                        Padding(
-                          padding: const EdgeInsets.all(16),
-                          child: OutlinedButton.icon(
-                            onPressed: () => context.go(
-                              widget.forOrder ? '/unscheduled/order/new' : '/unscheduled/new',
-                            ),
-                            icon: const Icon(Icons.add_business_outlined),
-                            label: Text('Add a new ${t.site.oneLower}'),
-                          ),
-                        ),
+                      if (canAdd) Padding(padding: const EdgeInsets.all(16), child: addNew),
                     ],
                   );
                 }
 
+                // Under a search's results as well, not only when nothing
+                // matches: a second shop with a name already on the list
+                // (one distributor has several) matches the search, and the rep
+                // had no way past the ones that are not theirs.
+                final showAdd = canAdd && q.isNotEmpty;
                 return ListView.separated(
                   padding: const EdgeInsets.symmetric(horizontal: 16),
-                  itemCount: filtered.length,
+                  itemCount: filtered.length + (showAdd ? 1 : 0),
                   separatorBuilder: (_, _) => const SizedBox(height: 8),
                   itemBuilder: (context, i) {
+                    if (i == filtered.length) {
+                      return Padding(
+                        padding: const EdgeInsets.only(top: 8, bottom: 24),
+                        child: addNew,
+                      );
+                    }
                     final store = filtered[i];
                     return Card(
                       margin: EdgeInsets.zero,

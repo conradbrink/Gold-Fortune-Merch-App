@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { callRpc } from "@/lib/rpc";
 import { lower, type Terms } from "@/lib/terms";
+import { allByKey, byName, type KeyedQuery } from "@/lib/all-pages";
 
 /**
  * Representatives and store ownership.
@@ -91,28 +92,48 @@ export async function fetchRepDirectory(
   return (res.data ?? []) as RepSummary[];
 }
 
+export type StoreChoice = { id: string; name: string; city: string | null };
+
+/**
+ * Every customer for a picker or a filter, A–Z: the active ones, or all of
+ * them with [includeInactive]. Paged: one response stops at 1,000 rows.
+ */
+export async function fetchStoreChoices(
+  supabase: SupabaseClient,
+  { includeInactive = false }: { includeInactive?: boolean } = {}
+): Promise<StoreChoice[]> {
+  const rows = await allByKey<StoreChoice>(() => {
+    const q = supabase.from("stores").select("id, name, city");
+    return (includeInactive ? q : q.eq("active", true)) as unknown as KeyedQuery<StoreChoice>;
+  });
+  return rows.sort(byName);
+}
+
 export async function fetchStores(
   supabase: SupabaseClient
 ): Promise<StoreOption[]> {
   // Single string literal — a concatenated .select() degrades to
   // GenericStringError in postgrest-js.
-  const { data, error } = await supabase
-    .from("stores")
-    .select(
-      "id, name, city, store_group_id, location_confirmed_at, store_groups(name)"
-    )
-    .eq("active", true)
-    .order("name", { ascending: true });
-  if (error) throw new Error(error.message);
-
-  const rows = (data ?? []) as unknown as {
+  type Row = {
     id: string;
     name: string;
     city: string | null;
     store_group_id: string | null;
     location_confirmed_at: string | null;
     store_groups: { name: string } | { name: string }[] | null;
-  }[];
+  };
+  // Paged: one response stops at 1,000 rows.
+  const rows = (
+    await allByKey<Row>(
+      () =>
+        supabase
+          .from("stores")
+          .select(
+            "id, name, city, store_group_id, location_confirmed_at, store_groups(name)"
+          )
+          .eq("active", true) as unknown as KeyedQuery<Row>
+    )
+  ).sort(byName);
 
   return rows.map((r) => ({
     id: r.id,
@@ -132,11 +153,13 @@ export async function fetchStores(
 export async function fetchAssignments(
   supabase: SupabaseClient
 ): Promise<Assignment[]> {
-  const { data, error } = await supabase
-    .from("store_assignments")
-    .select("id, store_id, rep_id, is_primary");
-  if (error) throw new Error(error.message);
-  return (data ?? []) as Assignment[];
+  // Paged: one or more per store, so it passes 1,000 rows with the stores.
+  return allByKey<Assignment>(
+    () =>
+      supabase
+        .from("store_assignments")
+        .select("id, store_id, rep_id, is_primary") as unknown as KeyedQuery<Assignment>
+  );
 }
 
 export async function assignStore(

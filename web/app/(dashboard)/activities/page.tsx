@@ -44,6 +44,7 @@ import {
   type ActivityEvent,
   type ActivitySummary,
 } from "@/lib/activities";
+import { fetchStoreChoices } from "@/lib/representatives";
 
 const PAGE_SIZE = 50;
 
@@ -119,7 +120,12 @@ export default function ActivitiesPage() {
           // `city` is here for the store picker's search, which matches on the
           // town as well as the name — a manager often knows an outlet by where
           // it is before they know what it is called.
-          supabase.from("stores").select("id, name, city").order("name"),
+          // Inactive ones too: their activity is still in the feed. A failure
+          // leaves the picker empty, as it did before.
+          fetchStoreChoices(supabase, { includeInactive: true }).then(
+            (data) => ({ data }),
+            () => ({ data: null })
+          ),
           supabase.from("form_templates").select("id, name, active").order("name"),
         ]);
       if (cancelled) return;

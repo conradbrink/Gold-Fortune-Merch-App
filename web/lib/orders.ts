@@ -2,6 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/lib/supabase/types";
 import { lower, withArticle, type Terms } from "@/lib/terms";
 import type { StorePriceList } from "@/lib/price-lists";
+import { allByKey, byName, type KeyedQuery } from "@/lib/all-pages";
 
 /**
  * Everything the order screens read and do.
@@ -955,21 +956,24 @@ export function orderTotals(
   return { subtotal, vat, total: subtotal + vat };
 }
 
-export async function fetchStoresForOrder(supabase: Client) {
-  const { data, error } = await supabase
-    .from("stores")
-    .select("id, name, address, city, store_group_id")
-    .eq("active", true)
-    .order("name")
-    .limit(1000);
-  fail(error);
-  return (data ?? []) as {
-    id: string;
-    name: string;
-    address: string | null;
-    city: string | null;
-    store_group_id: string | null;
-  }[];
+type StoreForOrder = {
+  id: string;
+  name: string;
+  address: string | null;
+  city: string | null;
+  store_group_id: string | null;
+};
+
+/** Every active customer, paged: a response stops at 1,000 rows. */
+export async function fetchStoresForOrder(supabase: Client): Promise<StoreForOrder[]> {
+  const rows = await allByKey<StoreForOrder>(
+    () =>
+      supabase
+        .from("stores")
+        .select("id, name, address, city, store_group_id")
+        .eq("active", true) as unknown as KeyedQuery<StoreForOrder>
+  );
+  return rows.sort(byName);
 }
 
 export async function fetchCarriers(supabase: Client) {

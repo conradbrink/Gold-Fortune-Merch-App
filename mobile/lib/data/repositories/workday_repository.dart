@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:math' show max;
 
 import 'package:geolocator/geolocator.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -33,6 +34,10 @@ class WorkdayRepository {
   /// would free the rep to start a second workday the same evening, which is
   /// the exact thing this is here to prevent.
   static String _closedKey(String repId) => 'workday_closed_on:$repId';
+
+  /// The day [repId] last ended themselves on this phone, kept so they can
+  /// take the end back (see [reopenWorkday]).
+  static String _lastEndedKey(String repId) => 'workday_last_ended:$repId';
 
   /// The open workday, resilient to having no connection.
   ///
@@ -78,8 +83,11 @@ class WorkdayRepository {
       }
 
       // Server has no open session. Trust the local copy only while its start
-      // is still queued — otherwise the day genuinely ended elsewhere.
-      if (local != null && await _hasPendingStart(local.clientGeneratedId)) {
+      // or its reopening is still queued — otherwise the day genuinely ended
+      // elsewhere.
+      if (local != null &&
+          (await _hasPendingStart(local.clientGeneratedId) ||
+              await _hasPendingReopen(local.clientGeneratedId))) {
         return local;
       }
       if (local != null) await clearActiveSession(repId);
@@ -95,21 +103,26 @@ class WorkdayRepository {
     return WorkdaySession.fromMap(jsonDecode(raw) as Map<String, dynamic>);
   }
 
-  /// Whether this phone has the end of [clientGeneratedId] queued. Read from
-  /// every queued key, not a window: a day's pings can outnumber any window.
+  /// Whether this phone has the end of [clientGeneratedId] queued, and has
+  /// not taken it back since. Asked of that session's entries alone, not a
+  /// window: a day's pings can outnumber any window.
   Future<bool> hasPendingEnd(String clientGeneratedId) async {
-    final queued = await _db.queuedEntryKeys();
-    return queued.contains(
-      outboxEntryKey(OutboxType.workdayEnd, clientGeneratedId),
-    );
+    final ends = await _db.entriesFor(OutboxType.workdayEnd, clientGeneratedId);
+    if (ends.isEmpty) return false;
+    final reopens =
+        await _db.entriesFor(OutboxType.workdayReopen, clientGeneratedId);
+    // Queued in the order the rep tapped, so the later id is the later tap.
+    final lastEnd = ends.map((e) => e.id).reduce(max);
+    return reopens.every((e) => e.id < lastEnd);
   }
 
-  Future<bool> _hasPendingStart(String clientGeneratedId) async {
-    final pending = await _db.pendingEntries(limit: 1000);
-    return pending.any((e) =>
-        e.entityType == OutboxType.workdayStart &&
-        e.clientGeneratedId == clientGeneratedId);
-  }
+  Future<bool> _hasPendingReopen(String clientGeneratedId) async =>
+      (await _db.entriesFor(OutboxType.workdayReopen, clientGeneratedId))
+          .isNotEmpty;
+
+  Future<bool> _hasPendingStart(String clientGeneratedId) async =>
+      (await _db.entriesFor(OutboxType.workdayStart, clientGeneratedId))
+          .isNotEmpty;
 
   Future<void> cacheActiveSession(WorkdaySession session) {
     return _db.setValue(
@@ -274,8 +287,91 @@ class WorkdayRepository {
     // day with no signal, and the "one workday per day" rule has to hold from
     // the moment they tap the button.
     await _recordWorkdayClosed(repId, session.startedAt);
+    // Only the rep's own end can be taken back. A day that ended itself did
+    // so at the cut-off, and there is no day left to carry on with.
+    if (automatic) {
+      await _db.deleteValue(_lastEndedKey(repId));
+    } else {
+      await _db.setValue(
+        _lastEndedKey(repId),
+        jsonEncode(session.copyWith(distanceMeters: distanceMeters).toMap()),
+      );
+    }
 
     unawaited(_sync.sync());
+  }
+
+  /// The day [repId] ended themselves on this phone today, which they may
+  /// still open again; null when there is none.
+  ///
+  /// Today's only: the one-workday-a-day rule is about the day the workday
+  /// started, and yesterday's day is over whatever was tapped.
+  Future<WorkdaySession?> endedToday(String repId) async {
+    final raw = await _db.getValue(_lastEndedKey(repId));
+    if (raw == null) return null;
+    try {
+      final session =
+          WorkdaySession.fromMap(jsonDecode(raw) as Map<String, dynamic>);
+      if (localDate(session.startedAt) == localDate(DateTime.now())) {
+        return session;
+      }
+    } catch (_) {
+      // Unreadable (a FormatException, or a TypeError from a copy missing a
+      // field): nothing to offer, and no reason to break the day's banner.
+    }
+    await _db.deleteValue(_lastEndedKey(repId));
+    return null;
+  }
+
+  /// Opens [session] again after the rep ended it by mistake (owner, 30 Oct
+  /// 2026: a distributor's reps ended theirs by accident on their first morning,
+  /// and only the office could put it right).
+  ///
+  /// The same workday carries on, rather than a second one starting, so "one
+  /// workday a day" still holds and the day's hours and distance stay in one
+  /// row. The time between the end and the restart counts as part of the day:
+  /// the day never ended. Works with no signal, like the end it undoes: the
+  /// reopening queues behind it and lands after it.
+  Future<WorkdaySession> reopenWorkday({
+    required String repId,
+    required WorkdaySession session,
+  }) async {
+    // An end that has stopped being retried never reached the server and
+    // will not on its own: taking it back is removing it. Left queued, it
+    // would hold this reopening behind it for good, since they share the
+    // session's client id, while the phone showed the day open.
+    for (final end
+        in await _db.entriesFor(OutboxType.workdayEnd, session.clientGeneratedId)) {
+      if (end.attempts >= kMaxAttempts) await _db.deleteEntry(end.id);
+    }
+
+    await _db.enqueue(
+      entityType: OutboxType.workdayReopen,
+      clientGeneratedId: session.clientGeneratedId,
+      payload: jsonEncode({
+        'client_generated_id': session.clientGeneratedId,
+        // Whose work this is, so the drain holds it for them (`ownerOf`).
+        'rep_id': repId,
+        'changes': {
+          'ended_at': null,
+          'end_lat': null,
+          'end_lng': null,
+          'duration_seconds': null,
+          'auto_ended_at': null,
+          'ended_by': null,
+          'road_distance_meters': null,
+          'road_distance_at': null,
+          'road_distance_error': null,
+        },
+      }),
+    );
+
+    await cacheActiveSession(session);
+    await _db.deleteValue(_closedKey(repId));
+    await _db.deleteValue(_lastEndedKey(repId));
+
+    unawaited(_sync.sync());
+    return session;
   }
 
   /// Queues a location sample. The session is referenced by its client id;

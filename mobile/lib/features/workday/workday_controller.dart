@@ -103,20 +103,41 @@ class WorkdayController extends AsyncNotifier<WorkdaySession?> {
       // running is plainly not finished, and this would be a wasted request
       // on every rebuild.
       _closedToday = await repo.hasClosedWorkdayToday(user.id);
+      _endedToday = _closedToday ? await repo.endedToday(user.id) : null;
     }
     return session;
   }
 
   bool _closedToday = false;
 
-  /// True once the rep has closed a workday today. The day cannot be restarted
-  /// until tomorrow — see `WorkdayRepository.hasClosedWorkdayToday`.
+  /// True once the rep has closed a workday today. No new day can be started
+  /// until tomorrow — see `WorkdayRepository.hasClosedWorkdayToday` — though
+  /// the one they closed may be opened again ([canRestart]).
   ///
   /// Read by the banner rather than folded into the session state, because
   /// "no open day" and "day already finished" are different things to show and
   /// collapsing them would put a Start button in front of a rep who has
   /// already gone home.
   bool get isClosedForToday => _closedToday;
+
+  /// Today's day as the rep ended it on this phone, while it can still be
+  /// opened again.
+  WorkdaySession? _endedToday;
+
+  /// True when the rep ended today's day themselves and may take that back:
+  /// they ended it by mistake. Not once the company's cut-off has passed — the
+  /// day would only end itself again — and never for a day that ended itself.
+  bool get canRestart {
+    final ended = _endedToday;
+    return _closedToday &&
+        ended != null &&
+        // Never past, when the company has switched auto-end off.
+        !isPastAutoEnd(
+          now: DateTime.now(),
+          startedAt: ended.startedAt,
+          rule: _autoEndRule,
+        );
+  }
 
   bool _autoEnded = false;
 
@@ -256,6 +277,50 @@ class WorkdayController extends AsyncNotifier<WorkdaySession?> {
     if (state.value != null) await _planDayOnStart();
   }
 
+  /// Opens today's day again after the rep ended it by mistake: the same day
+  /// carries on, and the trail records again. See
+  /// `WorkdayRepository.reopenWorkday`.
+  Future<void> restartWorkday() async {
+    final profile = ref.read(profileProvider).value;
+    final ended = _endedToday;
+    if (profile == null || ended == null || !canRestart) return;
+
+    final repo = ref.read(workdayRepositoryProvider);
+    final sync = ref.read(syncEngineProvider);
+    state = const AsyncLoading();
+    state = await AsyncValue.guard(() async {
+      final session =
+          await repo.reopenWorkday(repId: profile.id, session: ended);
+      // Where the rep went while the day was ended is not mileage: the first
+      // position after this starts a new leg.
+      final trail = _trail;
+      trail.lastPingPosition = null;
+      trail.lastPingAt = null;
+      _closedToday = false;
+      _autoEnded = false;
+      _endedToday = null;
+      await trail.ensureRunning(reason: 'restart');
+      _armAutoEnd(session);
+      // Where the rep is as the day opens again, recorded as a start is.
+      // Without it the office's timeline and map end at the mistaken End
+      // until the next interval ping. Not waited for: a slow fix must not
+      // hold the day shut, and no fix at all only loses the marker.
+      unawaited(() async {
+        try {
+          await repo.queuePing(
+            orgId: profile.orgId,
+            repId: profile.id,
+            sessionClientId: session.clientGeneratedId,
+            position: await LocationService.getCurrentPosition(),
+            source: 'workday_start',
+          );
+          await sync.sync();
+        } catch (_) {}
+      }());
+      return session;
+    });
+  }
+
   /// Puts the day's stops still to visit in driving order, once, as the day
   /// starts: fewer kilometres from the first stop. A plan the rep already
   /// made today stands. Waited for a little, so the day ahead opens in the
@@ -324,6 +389,7 @@ class WorkdayController extends AsyncNotifier<WorkdaySession?> {
       // frame, rather than only after the next rebuild re-reads it.
       _closedToday = true;
       _autoEnded = automatic;
+      _endedToday = automatic ? null : session;
       return null;
     });
 

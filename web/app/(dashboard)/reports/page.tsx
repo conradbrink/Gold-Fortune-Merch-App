@@ -90,6 +90,7 @@ import {
   type RepScore,
   type TrendPointRow,
 } from "@/lib/reports";
+import { fetchStoreChoices } from "@/lib/representatives";
 
 /**
  * The day before an exclusive end, as a calendar operation.
@@ -265,11 +266,7 @@ export default function ReportsPage() {
             .select("id, full_name")
             .eq("role", "rep")
             .order("full_name", { ascending: true }),
-          supabase
-            .from("stores")
-            .select("id, name, city")
-            .eq("active", true)
-            .order("name", { ascending: true }),
+          fetchStoreChoices(supabase),
           supabase
             .from("store_groups")
             .select("id, name")
@@ -278,7 +275,7 @@ export default function ReportsPage() {
         setTemplates(tpl);
         setTemplateId((prev) => prev ?? tpl[0]?.id ?? null);
         setReps((repRows.data ?? []) as Rep[]);
-        setStores((storeRows.data ?? []) as Store[]);
+        setStores(storeRows);
         setStoreGroups((groupRows.data ?? []) as StoreGroup[]);
       } catch (e) {
         setError(e instanceof Error ? e.message : String(e));

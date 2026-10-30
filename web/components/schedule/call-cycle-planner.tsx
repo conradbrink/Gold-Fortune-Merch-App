@@ -49,6 +49,7 @@ import { PlanStoreList } from "@/components/schedule/plan-store-list";
 import { CycleGrid } from "@/components/schedule/cycle-grid";
 import { useTerms } from "@/lib/use-company-config";
 import { count, lower, noun } from "@/lib/terms";
+import { fetchStoreChoices } from "@/lib/representatives";
 
 /**
  * The call-cycle planner: pick a rep, give each of their stores a day and a
@@ -146,12 +147,7 @@ export function CallCyclePlanner() {
   useEffect(() => {
     fetchOrgSettings(supabase).then(setSettings).catch(() => {});
     fetchOrgId(supabase).then(setOrgId).catch(() => setOrgId(null));
-    supabase
-      .from("stores")
-      .select("id, name, city")
-      .eq("active", true)
-      .order("name")
-      .then(({ data }) => setStoreOptions(data ?? []));
+    fetchStoreChoices(supabase).then(setStoreOptions, () => setStoreOptions([]));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

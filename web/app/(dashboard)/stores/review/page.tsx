@@ -31,6 +31,7 @@ import {
 import type { Tables } from "@/lib/supabase/types";
 import { useTerms } from "@/lib/use-company-config";
 import { count, lower, possessive } from "@/lib/terms";
+import { allByKey, byName, type KeyedQuery } from "@/lib/all-pages";
 
 type StoreRow = Tables<"stores">;
 
@@ -68,12 +69,16 @@ export default function StoreReviewPage() {
     setLoading(true);
     const [auth, storeRes, driftRes] = await Promise.all([
       supabase.auth.getUser(),
-      supabase.from("stores").select("*").order("name"),
+      // Paged: one response stops at 1,000 rows. A failure shows an empty
+      // list, as it did before, rather than a page that never stops loading.
+      allByKey<StoreRow>(() => supabase.from("stores").select("*") as unknown as KeyedQuery<StoreRow>)
+        .then((rows) => rows.sort(byName))
+        .catch(() => [] as StoreRow[]),
       // Only Postgres can compute this: it needs every check-in in the org.
       supabase.rpc("store_location_drift", {}),
     ]);
     setProfileId(auth.data.user?.id ?? null);
-    setStores(storeRes.data ?? []);
+    setStores(storeRes);
 
     const byStore: Record<string, DriftSignal> = {};
     for (const r of driftRes.data ?? []) {

@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:http/http.dart' as http;
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -42,9 +43,47 @@ List<StoreSummary> storesNamed(List<StoreSummary> stores, String name) {
 ) {
   final known = {for (final s in fromServer) s.id};
   final stillLocal = added.where((s) => !known.contains(s.id)).toList();
-  final all = [...fromServer, ...stillLocal]
-    ..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
-  return (stores: all, stillLocal: stillLocal);
+  return (stores: sortedByName([...fromServer, ...stillLocal]), stillLocal: stillLocal);
+}
+
+/// A–Z by name, ignoring case. Two customers with the same name keep the same
+/// order on every refresh, by where they are and then by id: a list that
+/// swaps them between refreshes makes a rep tap the wrong one. The keys are
+/// worked out once per customer, not once per comparison: a list of a
+/// thousand is sorted on every refresh, on cheap phones.
+List<StoreSummary> sortedByName(Iterable<StoreSummary> stores) {
+  final keyed = [
+    for (final s in stores)
+      (name: s.name.toLowerCase(), place: s.location.toLowerCase(), store: s),
+  ];
+  keyed.sort((a, b) {
+    final byName = a.name.compareTo(b.name);
+    if (byName != 0) return byName;
+    final byPlace = a.place.compareTo(b.place);
+    return byPlace != 0 ? byPlace : a.store.id.compareTo(b.store.id);
+  });
+  return [for (final k in keyed) k.store];
+}
+
+/// Rows asked for per request for the customer list: the API's max rows on
+/// this project.
+@visibleForTesting
+const kStorePageSize = 1000;
+
+/// Whether a page of [rows] was the last, given the page before it.
+///
+/// Not simply "fewer than were asked for": if the API's max rows were ever set
+/// below the page size, every page would come back short, and the first would
+/// be taken for the whole list. Empty, or shorter than the page before, it was
+/// the last. A short *first* page is the whole list unless its length is a
+/// round hundred: a server cap is a round number, which a whole list rarely
+/// is, so only those cost one more request to be sure. The web's
+/// `isLastPage` in `lib/all-pages.ts` is the same rule.
+@visibleForTesting
+bool isLastPage(int rows, {required int? previous, int asked = kStorePageSize}) {
+  if (rows == 0) return true;
+  if (previous != null) return rows < previous;
+  return rows < asked && rows % 100 != 0;
 }
 
 /// A refusal from `set_store_location_from_visit`, carrying a message written
@@ -318,18 +357,40 @@ class RouteRepository {
 
   /// The org's active stores, cached so an unscheduled visit can be started
   /// with no connection.
+  ///
+  /// Read a page at a time. One request stops at the API's 1,000 rows, and
+  /// a distributor passed that on 30 Oct 2026: the customers at the end of the
+  /// alphabet were missing from every phone, and each customer a rep added
+  /// pushed another one off. Paged by id rather than by name, so a customer
+  /// added while the pages are read cannot shift the rest and be skipped or
+  /// read twice; [mergeAddedStores] puts them in name order.
   Future<List<StoreSummary>> fetchStores() async {
     try {
-      final rows = await _client
-          .from('stores')
-          .select('id, name, address, city, state, lat, lng, geocode_source, '
-              'geofence_radius_m')
-          .eq('active', true)
-          .order('name', ascending: true);
-
-      final stores = (rows as List)
-          .map((r) => StoreSummary.fromMap(r as Map<String, dynamic>))
-          .toList();
+      final stores = <StoreSummary>[];
+      String? after;
+      int? previous;
+      while (true) {
+        var query = _client
+            .from('stores')
+            .select('id, name, address, city, state, lat, lng, geocode_source, '
+                'geofence_radius_m')
+            .eq('active', true);
+        if (after != null) query = query.gt('id', after);
+        final rows = await query
+            .order('id', ascending: true)
+            .limit(kStorePageSize);
+        final page = (rows as List)
+            .map((r) => StoreSummary.fromMap(r as Map<String, dynamic>))
+            .toList();
+        stores.addAll(page);
+        // And a page that does not move past the last one ends it too: a
+        // server that ignored the id filter must not keep this asking forever.
+        if (isLastPage(page.length, previous: previous) || page.last.id == after) {
+          break;
+        }
+        previous = page.length;
+        after = page.last.id;
+      }
 
       await _db.setValue(
         _storesKey,

@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/lib/supabase/types";
+import { allByKey, type KeyedQuery } from "@/lib/all-pages";
 
 /**
  * Price lists for groups of stores (owner, 15 Oct 2026: "automatic pricing
@@ -93,12 +94,19 @@ export function listForGroup(book: PriceBook, groupId: string | null | undefined
 export async function fetchStoreGroupUse(supabase: Client): Promise<StoreGroupUse[]> {
   const [groups, stores] = await Promise.all([
     supabase.from("store_groups").select("id, name, price_list_id").order("name"),
-    supabase.from("stores").select("store_group_id").eq("active", true).not("store_group_id", "is", null).limit(10000),
+    // Paged: a response stops at 1,000 rows whatever the limit asks for.
+    allByKey<{ id: string; store_group_id: string | null }>(
+      () =>
+        supabase
+          .from("stores")
+          .select("id, store_group_id")
+          .eq("active", true)
+          .not("store_group_id", "is", null) as unknown as KeyedQuery<{ id: string; store_group_id: string | null }>
+    ),
   ]);
   fail(groups.error);
-  fail(stores.error);
   const counts = new Map<string, number>();
-  for (const s of stores.data ?? []) {
+  for (const s of stores) {
     if (s.store_group_id) counts.set(s.store_group_id, (counts.get(s.store_group_id) ?? 0) + 1);
   }
   return (groups.data ?? []).map((g) => ({

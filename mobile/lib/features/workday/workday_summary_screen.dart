@@ -6,6 +6,8 @@ import '../../core/company_config.dart';
 import '../../core/providers.dart';
 import '../../core/terms.dart';
 import '../../core/theme.dart';
+import 'workday_controller.dart';
+import 'workday_restart.dart';
 
 /// The share of the month's scheduled visits a rep must complete to earn the
 /// monthly reward.
@@ -56,6 +58,9 @@ class WorkdaySummaryScreen extends ConsumerWidget {
     final allDone = data.scheduleComplete;
     final monthlyAsync = ref.watch(monthlyCompletionProvider);
     final t = ref.watch(termsProvider);
+    ref.watch(workdayControllerProvider);
+    final canRestart =
+        ref.read(workdayControllerProvider.notifier).canRestart;
 
     return Scaffold(
       backgroundColor: context.brand.primary,
@@ -247,7 +252,7 @@ class WorkdaySummaryScreen extends ConsumerWidget {
               ),
             ),
             Padding(
-              padding: const EdgeInsets.fromLTRB(24, 8, 24, 20),
+              padding: EdgeInsets.fromLTRB(24, 8, 24, canRestart ? 4 : 20),
               child: SizedBox(
                 width: double.infinity,
                 height: 50,
@@ -265,6 +270,36 @@ class WorkdaySummaryScreen extends ConsumerWidget {
                 ),
               ),
             ),
+            // Right after End is where a rep who tapped it by mistake finds
+            // out: the way back is here, not only on the day's list.
+            if (canRestart)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(24, 0, 24, 12),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Text(
+                      'Ended it by mistake?',
+                      style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.75),
+                        fontSize: 13,
+                      ),
+                    ),
+                    TextButton(
+                      onPressed: () async {
+                        if (await confirmRestartWorkday(context, ref,
+                                reportErrors: true) &&
+                            context.mounted) {
+                          context.go('/');
+                        }
+                      },
+                      style:
+                          TextButton.styleFrom(foregroundColor: Colors.white),
+                      child: Text('Restart ${t.workday.oneLower}'),
+                    ),
+                  ],
+                ),
+              ),
           ],
         ),
       ),

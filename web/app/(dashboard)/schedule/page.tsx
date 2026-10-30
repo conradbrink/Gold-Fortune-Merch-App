@@ -23,6 +23,7 @@ import { StorePicker } from "@/components/stores/store-picker";
 import { addStops, fetchDayBoard, type DayRep } from "@/lib/schedule";
 import { useTerms } from "@/lib/use-company-config";
 import { lower, noun, possessive, withArticle, type Terms } from "@/lib/terms";
+import { fetchStoreChoices } from "@/lib/representatives";
 
 /**
  * Day-month-year with the weekday, because a schedule is read as "which day of
@@ -122,12 +123,7 @@ export default function SchedulePage() {
 
   useEffect(() => {
     fetchOrgId(supabase).then(setOrgId).catch(() => setOrgId(null));
-    supabase
-      .from("stores")
-      .select("id, name, city")
-      .eq("active", true)
-      .order("name")
-      .then(({ data }) => setStores(data ?? []));
+    fetchStoreChoices(supabase).then(setStores, () => setStores([]));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

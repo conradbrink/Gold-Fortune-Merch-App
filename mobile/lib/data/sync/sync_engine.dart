@@ -611,6 +611,34 @@ class SyncEngine {
         }
         break;
 
+      case OutboxType.workdayReopen:
+        // Clears what the end wrote, the road distance worked out from it
+        // included, so the day is open again and is settled afresh when it
+        // ends. Same silent-success hazard as the end: no row means the start
+        // has not landed.
+        // A day a manager closed on the web (ended_by) stays closed: the rep
+        // takes back their own end, not the office's.
+        final reopenId = data['client_generated_id'] as String;
+        final reopened = await _client
+            .from('workday_sessions')
+            .update(data['changes'] as Map<String, dynamic>)
+            .eq('client_generated_id', reopenId)
+            .isFilter('ended_by', null)
+            .select('id');
+        if (reopened.isEmpty) {
+          final existing = await _client
+              .from('workday_sessions')
+              .select('id')
+              .eq('client_generated_id', reopenId)
+              .maybeSingle();
+          if (existing != null) {
+            Monitoring.event('sync.reopen_superseded');
+            break;
+          }
+          throw StateError('Workday start not synced yet; will retry.');
+        }
+        break;
+
       case OutboxType.locationPing:
         // The ping references its workday by client id; resolve it to the
         // real row (which may only just have synced).

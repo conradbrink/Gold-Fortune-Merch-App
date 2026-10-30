@@ -1,7 +1,8 @@
 // A rep adds a customer on the phone (`store_add_from_phone()`), then visits
 // and orders there, possibly with no signal. The customer must reach the
-// server before anything that names it, must stay in the picker until the
-// server has it, and must not be added twice under the same name.
+// server before anything that names it, and must stay in the picker until the
+// server has it. A name already on the list is offered, not refused: see
+// same_name_customer_test.dart.
 //
 // A real `SupabaseClient` over a fake PostgREST, as in order_replay_test.dart.
 
@@ -126,9 +127,15 @@ void main() {
   test('once the server lists the customer, its copy replaces the phone\'s', () async {
     await addedOffline();
     final repo = RouteRepository(
-      await clientAnswering((r) => _answer(r, [
-            {'id': 'store-new', 'name': 'Kgale View Filling', 'geofence_radius_m': 80},
-          ], 200)),
+      // The list ends after this one (`id=gt.` the last id it sent).
+      await clientAnswering((r) => _answer(
+          r,
+          r.url.queryParameters.containsKey('id')
+              ? []
+              : [
+                  {'id': 'store-new', 'name': 'Kgale View Filling', 'geofence_radius_m': 80},
+                ],
+          200)),
       db,
     );
 
