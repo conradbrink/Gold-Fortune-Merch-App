@@ -5,56 +5,64 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { allByKey, byName, type KeyedQuery } from "@/lib/all-pages";
 import { fetchStoresForOrder } from "@/lib/orders";
 import { fetchStoreGroupUse } from "@/lib/price-lists";
-import { fetchAssignments, fetchStores } from "@/lib/representatives";
-import { fetchTerritoryStoreCounts, fetchTerritoryStores } from "@/lib/territories";
+import { fetchAssignments, fetchStoreChoices, fetchStores } from "@/lib/representatives";
+import { fetchTerritoryImpact, fetchTerritoryStoreCounts, fetchTerritoryStores } from "@/lib/territories";
 
 const CUSTOMERS = 2345;
-const MAX_ROWS = 1000;
 
 type Row = Record<string, unknown>;
 
 /**
- * A client whose every table holds [rows], answered as the API does: no more
- * than 1,000 a request, whatever the query asked for. Filters are ignored —
- * these tests are about how many rows come back, not which.
+ * A client whose every table holds [rows], answered as the API does: rows
+ * past `gt` on the ordered key, no more than [maxRows] a request whatever the
+ * query asked for. Other filters are ignored — these tests are about how many
+ * rows come back, not which. [beforeRead] runs before each request, to change
+ * the table while it is being read.
  */
-function fakeClient(rows: (table: string) => Row[]) {
-  const ranges: Record<string, [number, number][]> = {};
+function fakeClient(rows: (table: string) => Row[], { maxRows = 1000, beforeRead = () => {} } = {}) {
+  const requests: { table: string; after: string | null }[] = [];
   const client = {
     from(table: string) {
-      const all = rows(table);
-      let window: [number, number] = [0, all.length - 1];
+      let after: string | null = null;
+      let key = "id";
+      let limit = Infinity;
       const builder = {
         select: () => builder,
         eq: () => builder,
         not: () => builder,
-        order: () => builder,
-        limit: (n: number) => {
-          window = [0, n - 1];
+        gt: (column: string, value: string) => {
+          key = column;
+          after = value;
           return builder;
         },
-        range: (from: number, to: number) => {
-          (ranges[table] ??= []).push([from, to]);
-          window = [from, to];
+        order: (column: string) => {
+          key = column;
+          return builder;
+        },
+        limit: (n: number) => {
+          limit = n;
           return builder;
         },
         then<T>(resolve: (v: { data: Row[]; error: null }) => T) {
-          const [from, to] = window;
-          const end = Math.min(to, from + MAX_ROWS - 1);
-          return Promise.resolve(resolve({ data: all.slice(from, end + 1), error: null }));
+          beforeRead();
+          requests.push({ table, after });
+          const sorted = [...rows(table)].sort((a, b) => String(a[key]).localeCompare(String(b[key])));
+          const past = sorted.filter((r) => after === null || String(r[key]) > after);
+          return Promise.resolve(resolve({ data: past.slice(0, Math.min(limit, maxRows)), error: null }));
         },
       };
       return builder;
     },
   };
-  return { supabase: client as unknown as SupabaseClient, ranges };
+  return { supabase: client as unknown as SupabaseClient, requests };
 }
 
 const stores = Array.from({ length: CUSTOMERS }, (_, i) => ({
   id: `s${String(i).padStart(5, "0")}`,
-  name: `Shop ${i}`,
+  name: `Shop ${String(CUSTOMERS - i).padStart(5, "0")}`,
   address: null,
   city: null,
   store_group_id: i % 2 ? "g1" : "g2",
@@ -63,20 +71,62 @@ const stores = Array.from({ length: CUSTOMERS }, (_, i) => ({
   store_groups: { name: "Group" },
 }));
 
-test("the order and invoice pickers list every customer", async () => {
-  const { supabase, ranges } = fakeClient(() => stores);
+test("the order and invoice pickers list every customer, A-Z", async () => {
+  const { supabase, requests } = fakeClient(() => stores);
   const list = await fetchStoresForOrder(supabase as never);
   assert.equal(list.length, CUSTOMERS);
-  assert.deepEqual(ranges.stores, [
-    [0, 999],
-    [1000, 1999],
-    [2000, 2999],
-  ]);
+  assert.deepEqual(
+    requests.map((r) => r.after),
+    [null, "s00999", "s01999"]
+  );
+  assert.equal(list[0].name, "Shop 00001");
+});
+
+test("a server that answers fewer rows than asked for is still read to the end", async () => {
+  const { supabase } = fakeClient(() => stores, { maxRows: 400 });
+  assert.equal((await fetchStoresForOrder(supabase as never)).length, CUSTOMERS);
+});
+
+test("a customer added while the list is read is not read twice", async () => {
+  const table = stores.slice(0, 1500).map((s) => ({ ...s }));
+  let reads = 0;
+  const { supabase } = fakeClient(() => table, {
+    beforeRead: () => {
+      // A rep adds a customer between the first and second page.
+      if (++reads === 2) table.push({ ...stores[0], id: "s00000a", name: "Aaa Shop" });
+    },
+  });
+  const ids = (await fetchStoresForOrder(supabase as never)).map((s) => s.id);
+  assert.equal(new Set(ids).size, ids.length);
+  assert.equal(ids.length, 1500);
+});
+
+test("a short list asks once more to be sure, and stops", async () => {
+  const { supabase, requests } = fakeClient(() => stores.slice(0, 12));
+  assert.equal((await fetchStoreChoices(supabase)).length, 12);
+  assert.equal(requests.length, 2);
+});
+
+test("a server that ignores the key filter cannot keep the read going", async () => {
+  const page = stores.slice(0, 5);
+  const query = () =>
+    ({
+      gt: () => query(),
+      order: () => ({ limit: () => Promise.resolve({ data: page, error: null }) }),
+    }) as unknown as KeyedQuery<Row>;
+  assert.equal((await allByKey<Row>(query)).length, 10);
+});
+
+test("equal names keep one order", () => {
+  const a = { id: "b", name: "Double Store" };
+  const b = { id: "a", name: "double store" };
+  assert.deepEqual([a, b].sort(byName), [b, a]);
+  assert.deepEqual([b, a].sort(byName), [b, a]);
 });
 
 test("the team's customer list and assignments are whole", async () => {
   const assignments = Array.from({ length: 1500 }, (_, i) => ({
-    id: `a${i}`,
+    id: `a${String(i).padStart(5, "0")}`,
     store_id: stores[i].id,
     rep_id: "r1",
     is_primary: true,
@@ -107,4 +157,39 @@ test("price-group and territory counts count every customer", async () => {
     CUSTOMERS
   );
   assert.equal((await fetchTerritoryStores(supabase, "t1")).length, CUSTOMERS);
+});
+
+test("a territory's delete check is counted by the database, routes through the store", async () => {
+  const calls: { table: string; select?: string; eq: [string, unknown][] }[] = [];
+  const client = {
+    from(table: string) {
+      const call = { table, select: undefined as string | undefined, eq: [] as [string, unknown][] };
+      calls.push(call);
+      const builder = {
+        select: (columns: string) => {
+          call.select = columns;
+          return builder;
+        },
+        eq: (column: string, value: unknown) => {
+          call.eq.push([column, value]);
+          return builder;
+        },
+        gte: () => builder,
+        then<T>(resolve: (v: { data: Row[] | null; count: number | null; error: null }) => T) {
+          const count = table === "stores" ? 1500 : table === "routes" ? 42 : null;
+          return Promise.resolve(resolve({ data: count === null ? [] : null, count, error: null }));
+        },
+      };
+      return builder;
+    },
+  };
+  const impact = await fetchTerritoryImpact(client as unknown as SupabaseClient, {
+    id: "t1",
+    name: "Mitchells Plain",
+  } as never);
+  assert.equal(impact.stores, 1500);
+  assert.equal(impact.upcomingRoutes, 42);
+  const routes = calls.find((c) => c.table === "routes")!;
+  assert.match(routes.select ?? "", /stores!inner\(territory_id\)/);
+  assert.deepEqual(routes.eq, [["stores.territory_id", "t1"]]);
 });

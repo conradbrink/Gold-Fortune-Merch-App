@@ -6,7 +6,7 @@
 // also passed 1,000 customers, and the API answers 1,000 rows a request, so
 // the end of the alphabet was missing from every phone.
 //
-// What these hold: the list is read a page at a time until a short page, the
+// What these hold: the list is read a page at a time until the last, the
 // same name sorts the same way every time, the picker offers a new customer
 // under a search that matched, and a customer with a name already on the list
 // is added when the rep goes ahead.
@@ -76,12 +76,15 @@ void main() {
     late List<http.Request> requests;
     SupabaseClient? client;
 
-    tearDown(() async => client?.dispose());
+    tearDown(() async {
+      await client?.dispose();
+      client = null;
+    });
 
     /// A server holding [count] active customers, answering as PostgREST
     /// does: `id=gt.<id>`, `order=id.asc`, at most `limit` rows and never
     /// more than 1,000.
-    RouteRepository serverWith(int count) {
+    RouteRepository serverWith(int count, {int maxRows = 1000}) {
       requests = [];
       final all = [
         for (var n = 1; n <= count; n++)
@@ -97,7 +100,7 @@ void main() {
           final limit = int.parse(q['limit'] ?? '1000');
           final rows = all
               .where((r) => after == null || (r['id'] as String).compareTo(after) > 0)
-              .take(limit < 1000 ? limit : 1000)
+              .take(limit < maxRows ? limit : maxRows)
               .toList();
           return http.Response(jsonEncode(rows), 200, headers: _json, request: request);
         }),
@@ -130,9 +133,21 @@ void main() {
       expect(requests, hasLength(2));
     });
 
-    test('a short list is one request', () async {
+    test('a short list asks once more to be sure, and stops', () async {
       expect(await serverWith(12).fetchStores(), hasLength(12));
-      expect(requests, hasLength(1));
+      expect(requests, hasLength(2));
+    });
+
+    test('a server that answers fewer rows than asked for is still read to the end', () async {
+      expect(await serverWith(1234, maxRows: 500).fetchStores(), hasLength(1234));
+      expect(requests, hasLength(3));
+    });
+
+    test('the last page is an empty one, or one shorter than the page before', () {
+      expect(isLastPage(0, previous: null), isTrue);
+      expect(isLastPage(12, previous: null), isFalse);
+      expect(isLastPage(500, previous: 500), isFalse);
+      expect(isLastPage(499, previous: 500), isTrue);
     });
 
     test('offline, the whole saved list comes back', () async {
@@ -155,10 +170,16 @@ void main() {
       _store('a', 'Double Store', city: 'Phumlani'),
       _store('d', 'double store', city: 'Pelican Park'),
     ];
-    final once = ([...stores]..sort(compareStoreNames)).map((s) => s.id).toList();
-    final again = ([...stores.reversed]..sort(compareStoreNames)).map((s) => s.id).toList();
+    final once = sortedByName(stores).map((s) => s.id).toList();
+    final again = sortedByName(stores.reversed).map((s) => s.id).toList();
     expect(once, ['c', 'b', 'd', 'a']);
     expect(again, once);
+  });
+
+  test('a search becomes the start of a name', () {
+    expect(initialCustomerName('  double   store '), 'Double Store');
+    expect(initialCustomerName('KFC Mitchells Plain'), 'KFC Mitchells Plain');
+    expect(initialCustomerName(null), '');
   });
 
   group('on the phone', () {
@@ -244,7 +265,9 @@ void main() {
       expect(router.routeInformationProvider.value.uri.path, '/unscheduled/order/new');
       final name = tester.widget<TextField>(
           find.widgetWithText(TextField, 'Name of the ${site.oneLower}'));
-      expect(name.controller?.text, 'double store');
+      // Tidied for a name, and selected so the rep can type over it.
+      expect(name.controller?.text, 'Double Store');
+      expect(name.controller?.selection.textInside(name.controller!.text), 'Double Store');
       // Both shops already called that are shown, each with where it is.
       expect(find.textContaining('in Pelican Park is on your list already'), findsOneWidget);
       expect(find.textContaining('in Phumlani is on your list already'), findsOneWidget);

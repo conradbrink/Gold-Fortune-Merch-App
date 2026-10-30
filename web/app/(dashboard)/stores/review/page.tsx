@@ -31,7 +31,7 @@ import {
 import type { Tables } from "@/lib/supabase/types";
 import { useTerms } from "@/lib/use-company-config";
 import { count, lower, possessive } from "@/lib/terms";
-import { allPages, type Page } from "@/lib/all-pages";
+import { allByKey, byName, type KeyedQuery } from "@/lib/all-pages";
 
 type StoreRow = Tables<"stores">;
 
@@ -71,9 +71,9 @@ export default function StoreReviewPage() {
       supabase.auth.getUser(),
       // Paged: one response stops at 1,000 rows. A failure shows an empty
       // list, as it did before, rather than a page that never stops loading.
-      allPages<StoreRow>((from, to) =>
-        supabase.from("stores").select("*").order("name").order("id").range(from, to) as unknown as Page<StoreRow>
-      ).catch(() => [] as StoreRow[]),
+      allByKey<StoreRow>(() => supabase.from("stores").select("*") as unknown as KeyedQuery<StoreRow>)
+        .then((rows) => rows.sort(byName))
+        .catch(() => [] as StoreRow[]),
       // Only Postgres can compute this: it needs every check-in in the org.
       supabase.rpc("store_location_drift", {}),
     ]);

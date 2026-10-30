@@ -129,8 +129,9 @@ class WorkdayController extends AsyncNotifier<WorkdaySession?> {
   /// day would only end itself again — and never for a day that ended itself.
   bool get canRestart {
     final ended = _endedToday;
-    if (!_closedToday || ended == null) return false;
-    return !_autoEndRule.enabled ||
+    return _closedToday &&
+        ended != null &&
+        // Never past, when the company has switched auto-end off.
         !isPastAutoEnd(
           now: DateTime.now(),
           startedAt: ended.startedAt,

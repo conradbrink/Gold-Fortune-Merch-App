@@ -287,7 +287,8 @@ class WorkdaySummaryScreen extends ConsumerWidget {
                     ),
                     TextButton(
                       onPressed: () async {
-                        if (await confirmRestartWorkday(context, ref) &&
+                        if (await confirmRestartWorkday(context, ref,
+                                reportErrors: true) &&
                             context.mounted) {
                           context.go('/');
                         }

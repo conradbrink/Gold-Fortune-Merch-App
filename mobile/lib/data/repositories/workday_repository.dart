@@ -336,6 +336,15 @@ class WorkdayRepository {
     required String repId,
     required WorkdaySession session,
   }) async {
+    // An end that has stopped being retried never reached the server and
+    // will not on its own: taking it back is removing it. Left queued, it
+    // would hold this reopening behind it for good, since they share the
+    // session's client id, while the phone showed the day open.
+    for (final end
+        in await _db.entriesFor(OutboxType.workdayEnd, session.clientGeneratedId)) {
+      if (end.attempts >= kMaxAttempts) await _db.deleteEntry(end.id);
+    }
+
     await _db.enqueue(
       entityType: OutboxType.workdayReopen,
       clientGeneratedId: session.clientGeneratedId,

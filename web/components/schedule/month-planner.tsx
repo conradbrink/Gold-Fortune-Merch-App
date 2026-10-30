@@ -33,7 +33,7 @@ import {
 } from "@/lib/schedule";
 import { useTerms } from "@/lib/use-company-config";
 import { lower, noun } from "@/lib/terms";
-import { allPages, type Page } from "@/lib/all-pages";
+import { fetchStoreChoices } from "@/lib/representatives";
 
 /**
  * One rep's month, planned by hand.
@@ -105,16 +105,7 @@ export function MonthPlanner() {
   useEffect(() => {
     fetchOrgSettings(supabase).then(setSettings).catch(() => {});
     fetchOrgId(supabase).then(setOrgId).catch(() => setOrgId(null));
-    // Paged: one response stops at 1,000 rows.
-    allPages<{ id: string; name: string; city: string | null }>((from, to) =>
-      supabase
-        .from("stores")
-        .select("id, name, city")
-        .eq("active", true)
-        .order("name")
-        .order("id")
-        .range(from, to) as unknown as Page<{ id: string; name: string; city: string | null }>
-    ).then(setStoreOptions, () => setStoreOptions([]));
+    fetchStoreChoices(supabase).then(setStoreOptions, () => setStoreOptions([]));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

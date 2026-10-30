@@ -29,7 +29,7 @@ import {
 } from "@/lib/territories";
 import { useTerms } from "@/lib/use-company-config";
 import { count, lower, withArticle } from "@/lib/terms";
-import { allPages, type Page } from "@/lib/all-pages";
+import { allByKey, byName, type KeyedQuery } from "@/lib/all-pages";
 
 /**
  * Coverage: who covers which stores, and how often.
@@ -128,17 +128,15 @@ export function CoveragePlanner({
     try {
       const [storeRes, groupRes, territoryRows] = await Promise.all([
         // Paged: one response stops at 1,000 rows.
-        allPages<StoreRow>((from, to) =>
-          supabase
-            .from("stores")
-            .select(
-              "id, name, city, store_group_id, visit_frequency, territory_id, sub_territory_id"
-            )
-            .eq("active", true)
-            .order("name")
-            .order("id")
-            .range(from, to) as unknown as Page<StoreRow>
-        ),
+        allByKey<StoreRow>(
+          () =>
+            supabase
+              .from("stores")
+              .select(
+                "id, name, city, store_group_id, visit_frequency, territory_id, sub_territory_id"
+              )
+              .eq("active", true) as unknown as KeyedQuery<StoreRow>
+        ).then((rows) => rows.sort(byName)),
         supabase.from("store_groups").select("id, name").order("name"),
         fetchTerritories(supabase),
       ]);

@@ -1,7 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Tables } from "@/lib/supabase/types";
 import { lower, withArticle, type Terms } from "@/lib/terms";
-import { allPages, type Page } from "@/lib/all-pages";
+import { allByKey, byName, type KeyedQuery } from "@/lib/all-pages";
 
 /**
  * Territories — the sales geography of one organisation.
@@ -100,12 +100,12 @@ export async function fetchTerritoryTree(
   const [territories, storeRows] = await Promise.all([
     fetchTerritories(supabase),
     // Paged: a response stops at 1,000 rows, and these are counts.
-    allPages<{ territory_id: string | null }>((from, to) =>
-      supabase
-        .from("stores")
-        .select("territory_id")
-        .order("id")
-        .range(from, to) as unknown as Page<{ territory_id: string | null }>
+    allByKey<{ id: string; territory_id: string | null }>(
+      () =>
+        supabase.from("stores").select("id, territory_id") as unknown as KeyedQuery<{
+          id: string;
+          territory_id: string | null;
+        }>
     ),
   ]);
 
@@ -160,13 +160,12 @@ export async function fetchTerritoryStoreCounts(
   supabase: SupabaseClient
 ): Promise<Record<string, number>> {
   // Paged: a response stops at 1,000 rows, and these are counts.
-  const data = await allPages<{ territory_id: string | null }>((from, to) =>
-    supabase
-      .from("stores")
-      .select("territory_id")
-      .not("territory_id", "is", null)
-      .order("id")
-      .range(from, to) as unknown as Page<{ territory_id: string | null }>
+  const data = await allByKey<{ id: string; territory_id: string | null }>(
+    () =>
+      supabase
+        .from("stores")
+        .select("id, territory_id")
+        .not("territory_id", "is", null) as unknown as KeyedQuery<{ id: string; territory_id: string | null }>
   );
 
   const counts: Record<string, number> = {};
@@ -280,10 +279,12 @@ export async function fetchTerritoryImpact(
   const today = new Date();
   const localToday = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
 
+  // Counted by the database, not by reading the rows: a response stops at
+  // 1,000 of them, and a busy territory can hold more.
   const [storeRows, subs, reps] = await Promise.all([
     supabase
       .from("stores")
-      .select("id")
+      .select("id", { count: "exact", head: true })
       .eq("territory_id", territory.id),
     supabase.from("territories").select("id").eq("parent_id", territory.id),
     supabase.from("territory_reps").select("id").eq("territory_id", territory.id),
@@ -295,17 +296,19 @@ export async function fetchTerritoryImpact(
   const failure = storeRows.error ?? subs.error ?? reps.error;
   if (failure) throw new Error(failure.message);
 
-  const storeIds = (storeRows.data ?? []).map((s) => (s as { id: string }).id);
+  const stores = storeRows.count ?? 0;
 
   // Routes hang off stores, not off territories, so "schedules linked to this
   // territory" means the routes of the stores inside it. Only future ones are
-  // at risk; past routes are history and keep their store either way.
+  // at risk; past routes are history and keep their store either way. Joined
+  // through the store rather than listing its ids, which past a few hundred no
+  // longer fit in one request.
   let upcomingRoutes = 0;
-  if (storeIds.length > 0) {
+  if (stores > 0) {
     const { count, error } = await supabase
       .from("routes")
-      .select("id", { count: "exact", head: true })
-      .in("store_id", storeIds)
+      .select("id, stores!inner(territory_id)", { count: "exact", head: true })
+      .eq("stores.territory_id", territory.id)
       .gte("scheduled_date", localToday);
     if (error) throw new Error(error.message);
     upcomingRoutes = count ?? 0;
@@ -313,7 +316,7 @@ export async function fetchTerritoryImpact(
 
   return {
     name: territory.name,
-    stores: storeIds.length,
+    stores,
     children: (subs.data ?? []).length,
     reps: (reps.data ?? []).length,
     upcomingRoutes,
@@ -368,15 +371,14 @@ export async function fetchTerritoryStores(
   mainId: string
 ): Promise<TerritoryStore[]> {
   // Paged: a busy territory can pass the 1,000 rows one response holds.
-  return allPages<TerritoryStore>((from, to) =>
-    supabase
-      .from("stores")
-      .select(STORE_COLUMNS)
-      .eq("territory_id", mainId)
-      .order("name")
-      .order("id")
-      .range(from, to) as unknown as Page<TerritoryStore>
+  const rows = await allByKey<TerritoryStore>(
+    () =>
+      supabase
+        .from("stores")
+        .select(STORE_COLUMNS)
+        .eq("territory_id", mainId) as unknown as KeyedQuery<TerritoryStore>
   );
+  return rows.sort(byName);
 }
 
 /**

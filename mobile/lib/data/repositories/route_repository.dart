@@ -43,25 +43,43 @@ List<StoreSummary> storesNamed(List<StoreSummary> stores, String name) {
 ) {
   final known = {for (final s in fromServer) s.id};
   final stillLocal = added.where((s) => !known.contains(s.id)).toList();
-  final all = [...fromServer, ...stillLocal]..sort(compareStoreNames);
-  return (stores: all, stillLocal: stillLocal);
+  return (stores: sortedByName([...fromServer, ...stillLocal]), stillLocal: stillLocal);
 }
 
 /// A–Z by name, ignoring case. Two customers with the same name keep the same
-/// order on every refresh: a list that swaps them between refreshes makes a
-/// rep tap the wrong one.
-int compareStoreNames(StoreSummary a, StoreSummary b) {
-  final byName = a.name.toLowerCase().compareTo(b.name.toLowerCase());
-  if (byName != 0) return byName;
-  final byPlace = a.location.toLowerCase().compareTo(b.location.toLowerCase());
-  return byPlace != 0 ? byPlace : a.id.compareTo(b.id);
+/// order on every refresh, by where they are and then by id: a list that
+/// swaps them between refreshes makes a rep tap the wrong one. The keys are
+/// worked out once per customer, not once per comparison: a list of a
+/// thousand is sorted on every refresh, on cheap phones.
+List<StoreSummary> sortedByName(Iterable<StoreSummary> stores) {
+  final keyed = [
+    for (final s in stores)
+      (name: s.name.toLowerCase(), place: s.location.toLowerCase(), store: s),
+  ];
+  keyed.sort((a, b) {
+    final byName = a.name.compareTo(b.name);
+    if (byName != 0) return byName;
+    final byPlace = a.place.compareTo(b.place);
+    return byPlace != 0 ? byPlace : a.store.id.compareTo(b.store.id);
+  });
+  return [for (final k in keyed) k.store];
 }
 
-/// Rows per request for the customer list. The API answers at most 1,000
-/// rows a request (the project's max rows), so a page must not ask for more:
-/// a page shorter than this is how the last one is recognised.
+/// Rows asked for per request for the customer list: the API's max rows on
+/// this project.
 @visibleForTesting
 const kStorePageSize = 1000;
+
+/// Whether a page of [rows] was the last, given the page before it.
+///
+/// Not simply "fewer than were asked for": if the API's max rows were ever set
+/// below the page size, every page would come back short, and the first would
+/// be taken for the whole list. A page is the last when it is empty, or shorter
+/// than the one before; a short first page is followed by one more request to
+/// be sure.
+@visibleForTesting
+bool isLastPage(int rows, {required int? previous}) =>
+    rows == 0 || (previous != null && rows < previous);
 
 /// A refusal from `set_store_location_from_visit`, carrying a message written
 /// for the rep to read rather than a Postgres error to decode.
@@ -345,6 +363,7 @@ class RouteRepository {
     try {
       final stores = <StoreSummary>[];
       String? after;
+      int? previous;
       while (true) {
         var query = _client
             .from('stores')
@@ -359,7 +378,12 @@ class RouteRepository {
             .map((r) => StoreSummary.fromMap(r as Map<String, dynamic>))
             .toList();
         stores.addAll(page);
-        if (page.length < kStorePageSize) break;
+        // And a page that does not move past the last one ends it too: a
+        // server that ignored the id filter must not keep this asking forever.
+        if (isLastPage(page.length, previous: previous) || page.last.id == after) {
+          break;
+        }
+        previous = page.length;
         after = page.last.id;
       }
 

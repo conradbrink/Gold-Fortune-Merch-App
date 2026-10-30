@@ -12,15 +12,20 @@ import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:gf_merch_rep/core/branding.dart';
 import 'package:gf_merch_rep/core/company_config.dart';
+import 'package:gf_merch_rep/core/providers.dart';
 import 'package:gf_merch_rep/core/terms.dart';
 import 'package:gf_merch_rep/data/local/app_database.dart';
 import 'package:gf_merch_rep/data/local/outbox_types.dart';
+import 'package:gf_merch_rep/data/models/profile.dart';
 import 'package:gf_merch_rep/data/models/workday_session.dart';
 import 'package:gf_merch_rep/data/repositories/workday_repository.dart';
 import 'package:gf_merch_rep/data/sync/sync_engine.dart';
 import 'package:gf_merch_rep/features/workday/workday_banner.dart';
+import 'package:gf_merch_rep/features/workday/workday_auto_end.dart';
 import 'package:gf_merch_rep/features/workday/workday_controller.dart';
+import 'package:gf_merch_rep/features/workday/workday_trail.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -259,6 +264,114 @@ void main() {
     expect(await db.pendingEntries(), isEmpty);
   });
 
+  group('the controller', () {
+    /// A day closed today on this phone, started at [started], under [rule].
+    Future<(ProviderContainer, _ClosedRepo)> closed({
+      required DateTime started,
+      required AutoEndRule rule,
+      bool endedHere = true,
+    }) async {
+      repo(null);
+      final fake = _ClosedRepo(client!, db, ended: endedHere ? day(started: started) : null);
+      final container = ProviderContainer(overrides: [
+        currentUserProvider.overrideWithValue(const User(
+          id: 'rep-1',
+          appMetadata: {},
+          userMetadata: {},
+          aud: 'authenticated',
+          createdAt: '2026-10-30T00:00:00Z',
+        )),
+        profileProvider.overrideWith(
+          (ref) async => const Profile(id: 'rep-1', orgId: 'org-1', role: 'rep'),
+        ),
+        companyConfigValueProvider.overrideWithValue(CompanyConfig(
+          modules: const {'core'},
+          pingInterval: CompanyConfig.fallback.pingInterval,
+          shortVisit: CompanyConfig.fallback.shortVisit,
+          autoEnd: rule,
+          checkinRadiusM: 100,
+        )),
+        brandingProvider.overrideWithValue(Branding.product),
+        termsProvider.overrideWithValue(Terms.defaults),
+        workdayRepositoryProvider.overrideWithValue(fake),
+        workdayTrailProvider.overrideWithValue(WorkdayTrail(
+          currentMode: () async => LocationTrackingMode.background,
+          openStream: (mode) => const Stream.empty(),
+          lifecycleState: () => AppLifecycleState.resumed,
+        )),
+      ]);
+      addTearDown(container.dispose);
+      await container.read(profileProvider.future);
+      await container.read(workdayControllerProvider.future);
+      return (container, fake);
+    }
+
+    // Any time of day: tomorrow's start puts the cut-off a day away.
+    const lateRule = AutoEndRule(enabled: true, hour: 23, minute: 59);
+
+    test('offers a restart of the rep\'s own end, before the cut-off', () async {
+      final (c, _) = await closed(started: DateTime.now(), rule: lateRule);
+      final controller = c.read(workdayControllerProvider.notifier);
+      expect(controller.isClosedForToday, isTrue);
+      expect(controller.canRestart, isTrue);
+    });
+
+    test('not past the cut-off', () async {
+      final (c, _) = await closed(
+        started: DateTime(2026, 1, 1, 8),
+        rule: const AutoEndRule(enabled: true, hour: 9, minute: 0),
+      );
+      expect(c.read(workdayControllerProvider.notifier).canRestart, isFalse);
+    });
+
+    test('any time, with auto-end switched off', () async {
+      final (c, _) = await closed(
+        started: DateTime(2026, 1, 1, 8),
+        rule: const AutoEndRule(enabled: false, hour: 9, minute: 0),
+      );
+      expect(c.read(workdayControllerProvider.notifier).canRestart, isTrue);
+    });
+
+    test('not for a day this phone did not see the rep end', () async {
+      final (c, _) = await closed(started: DateTime.now(), rule: lateRule, endedHere: false);
+      expect(c.read(workdayControllerProvider.notifier).canRestart, isFalse);
+    });
+
+    test('restarting opens the same day and clears "finished for today"', () async {
+      final (c, fake) = await closed(started: DateTime.now(), rule: lateRule);
+      final controller = c.read(workdayControllerProvider.notifier);
+
+      await controller.restartWorkday();
+
+      expect(fake.reopened, 1);
+      expect(c.read(workdayControllerProvider).value?.clientGeneratedId, 'day-1');
+      expect(controller.isClosedForToday, isFalse);
+      expect(controller.canRestart, isFalse);
+    });
+
+    test('past the cut-off, restarting does nothing', () async {
+      final (c, fake) = await closed(
+        started: DateTime(2026, 1, 1, 8),
+        rule: const AutoEndRule(enabled: true, hour: 9, minute: 0),
+      );
+      await c.read(workdayControllerProvider.notifier).restartWorkday();
+      expect(fake.reopened, 0);
+      expect(c.read(workdayControllerProvider).value, isNull);
+    });
+  });
+
+  test('a stalled end is taken back with the reopening, so the reopening can land', () async {
+    final r = repo(null);
+    await end(r);
+    final queuedEnd = (await db.entriesFor(OutboxType.workdayEnd, 'day-1')).single;
+    await db.recordFailure(queuedEnd.id, 8, 'refused');
+
+    await r.reopenWorkday(repId: 'rep-1', session: day());
+
+    expect(await db.entriesFor(OutboxType.workdayEnd, 'day-1'), isEmpty);
+    expect(await db.entriesFor(OutboxType.workdayReopen, 'day-1'), hasLength(1));
+  });
+
   group('the banner', () {
     Future<_ClosedDay> show(WidgetTester tester, {required bool canRestart}) async {
       final fake = _ClosedDay(canRestart: canRestart);
@@ -327,4 +440,35 @@ class _ClosedDay extends WorkdayController {
 
   @override
   Future<void> restartWorkday() async => restarts++;
+}
+
+/// Today's day, closed on this phone; reopening is counted, not queued.
+class _ClosedRepo extends WorkdayRepository {
+  _ClosedRepo(SupabaseClient client, AppDatabase db, {this.ended})
+      : super(
+          client,
+          db,
+          SyncEngine(db, client, readBuild: () async => null, signedInUser: () => null),
+        );
+
+  final WorkdaySession? ended;
+  int reopened = 0;
+
+  @override
+  Future<WorkdaySession?> fetchActiveSession(String repId) async => null;
+
+  @override
+  Future<bool> hasClosedWorkdayToday(String repId) async => true;
+
+  @override
+  Future<WorkdaySession?> endedToday(String repId) async => ended;
+
+  @override
+  Future<WorkdaySession> reopenWorkday({
+    required String repId,
+    required WorkdaySession session,
+  }) async {
+    reopened++;
+    return session;
+  }
 }

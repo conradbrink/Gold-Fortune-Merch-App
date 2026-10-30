@@ -127,9 +127,15 @@ void main() {
   test('once the server lists the customer, its copy replaces the phone\'s', () async {
     await addedOffline();
     final repo = RouteRepository(
-      await clientAnswering((r) => _answer(r, [
-            {'id': 'store-new', 'name': 'Kgale View Filling', 'geofence_radius_m': 80},
-          ], 200)),
+      // The list ends after this one (`id=gt.` the last id it sent).
+      await clientAnswering((r) => _answer(
+          r,
+          r.url.queryParameters.containsKey('id')
+              ? []
+              : [
+                  {'id': 'store-new', 'name': 'Kgale View Filling', 'geofence_radius_m': 80},
+                ],
+          200)),
       db,
     );
 
