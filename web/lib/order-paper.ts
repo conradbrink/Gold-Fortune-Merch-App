@@ -156,15 +156,21 @@ export type CombinedPick = Pick<
 const byText = (a: string | null | undefined, b: string | null | undefined) =>
   a && b ? a.localeCompare(b) : a ? -1 : b ? 1 : 0;
 
-/** What is left to take of a batch: an order part-picked already has some of it in hand. */
-const stillToPick = (r: Pick<PickingRow, "qty_to_pick" | "qty_picked">) => Number(r.qty_to_pick) - Number(r.qty_picked ?? 0);
+/**
+ * What is left to take of a batch: all of it until the picker saves a pick
+ * against it, then nothing. A pick saved short is the shelf's answer
+ * (`order_record_pick` marks it picked), not stock still to look for.
+ */
+const stillToPick = (r: Pick<PickingRow, "allocation_status" | "qty_to_pick">) =>
+  r.allocation_status === "picked" ? 0 : Number(r.qty_to_pick);
 
 /**
  * The orders' picking rows added together: one row per product, batch and
  * place, counting how many orders want it. Only what is still to pick
- * counts, so an order part-picked before it was ticked is not taken twice. Sorted by place, then product,
- * then oldest stock first, so the picker finds a product once on the sheet
- * and still takes the batch each order was given.
+ * counts (`stillToPick`), so an order part-picked before it was ticked is
+ * not taken twice. Sorted by place, then product, then oldest stock first,
+ * so the picker finds a product once on the sheet and still takes the batch
+ * each order was given.
  */
 export function combinePicks(orders: readonly { rows: readonly PickingRow[] }[]): CombinedPick[] {
   const out = new Map<string, CombinedPick & { from: Set<number> }>();
@@ -231,13 +237,18 @@ export function orderNumberRuns(numbers: readonly string[]): string {
  * it goes to, and a box to tick. The orders it covers are named at the top
  * (`orderNumberRuns`), and their notes for the picker under the lines. An
  * order with nothing reserved yet, or picked already, is left off and named
- * in the notes, rather than stopping the whole sheet. Sorting the picked stock into each order is
- * done on its own picking screen.
+ * in the notes, rather than stopping the whole sheet. Sorting the picked
+ * stock into each order is done on its own picking screen.
  */
 export function combinedPickingListPdfSpec(input: CombinedPickingInput, seller: QuoteSeller, paper: Paper): PdfSpec {
-  const ready = input.orders.filter((o) => o.rows.some((r) => stillToPick(r) > 0));
-  const waiting = input.orders.filter((o) => o.rows.length === 0);
-  const done = input.orders.filter((o) => o.rows.length > 0 && !ready.includes(o));
+  const ready: CombinedPickingInput["orders"] = [];
+  const waiting: CombinedPickingInput["orders"] = [];
+  const done: CombinedPickingInput["orders"] = [];
+  for (const o of input.orders) {
+    if (o.rows.length === 0) waiting.push(o);
+    else if (o.rows.some((r) => stillToPick(r) > 0)) ready.push(o);
+    else done.push(o);
+  }
   if (ready.length === 0) {
     throw new Error(
       done.length > 0
@@ -519,7 +530,33 @@ export function printPickingLists(supabase: Client, orderIds: string[]) {
 /** The most orders one combined picking list reads: each is a request of its own, and more keeps the tab waiting. */
 export const COMBINE_AT_ONCE = 200;
 
-type OrderBits = { id: string; order_number: string; notes: string | null; stores: { name: string } | { name: string }[] | null };
+export type OrderBits = { id: string; order_number: string; notes: string | null; stores: { name: string } | { name: string }[] | null };
+
+/**
+ * The ticked orders, in the board's order, each with its number, notes,
+ * customer and picking rows (`rows[i]` is `orderIds[i]`'s). An order that
+ * could not be read stops the print, as it does for one order's own list,
+ * rather than quietly leaving its stock off the sheet.
+ */
+export function combinedOrders(
+  orderIds: readonly string[],
+  bits: ReadonlyMap<string, OrderBits>,
+  rows: readonly PickingRow[][]
+): CombinedPickingInput["orders"] {
+  const missing = orderIds.filter((id) => !bits.has(id)).length;
+  if (missing > 0) {
+    throw new Error(
+      `${missing === 1 ? "One of the ticked orders" : `${missing} of the ticked orders`} could not be read. ` +
+        `${missing === 1 ? "It" : "They"} may have been cancelled or changed since the board was loaded. ` +
+        "Refresh the board and tick them again."
+    );
+  }
+  return orderIds.map((id, i) => {
+    const o = bits.get(id) as OrderBits;
+    const store = Array.isArray(o.stores) ? o.stores[0] : o.stores;
+    return { order: { order_number: o.order_number, notes: o.notes }, storeName: store?.name ?? null, rows: rows[i] };
+  });
+}
 
 /** These orders' numbers, notes and customers, by id; read 100 at a time. */
 async function fetchOrderBits(supabase: Client, orderIds: string[]): Promise<Map<string, OrderBits>> {
@@ -547,12 +584,7 @@ export function printCombinedPickingList(supabase: Client, orderIds: string[]) {
       fetchOrderBits(supabase, orderIds),
       inGroups(orderIds, 4, (id) => fetchPickingList(supabase, id)),
     ]);
-    const orders = orderIds.flatMap((id, i) => {
-      const o = bits.get(id);
-      if (!o) return [];
-      const store = Array.isArray(o.stores) ? o.stores[0] : o.stores;
-      return [{ order: { order_number: o.order_number, notes: o.notes }, storeName: store?.name ?? null, rows: rows[i] }];
-    });
+    const orders = combinedOrders(orderIds, bits, rows);
     const skus = await fetchSkus(supabase, orders.flatMap((o) => o.rows.map((r) => r.product_id)));
     return combinedPickingListPdfSpec({ orders, skus }, seller, paper);
   });

@@ -6,6 +6,7 @@ import assert from "node:assert/strict";
 import { buildMoneyPdf, buildMoneyPdfs, PRINT_AT_ONCE, tooManyToPrint } from "@/lib/money-pdf";
 import { DOCUMENT_STYLES, type DocumentStyle } from "@/lib/document-style";
 import {
+  combinedOrders,
   combinedPickingListPdfSpec,
   combinePicks,
   deliveryAddress,
@@ -20,6 +21,7 @@ import {
   sheetsFor,
   storeAddressLine,
   type CombinedPickingInput,
+  type OrderBits,
   type DeliveryNoteInput,
   type PickingSheetInput,
 } from "@/lib/order-paper";
@@ -272,16 +274,21 @@ test("stock at more than one warehouse gets a Location column; an order with not
   );
 });
 
-test("only what is still to pick counts: a part-picked order adds what is left, a picked one is named, not counted", () => {
+test("a batch the picker has saved a pick for is done, even short; a fully picked order is named, not counted", () => {
   const input = combined();
-  // SO-000302 took 6 of its 10 from B-100 before it was ticked, and all of B-090.
-  input.orders[1].rows = [{ ...juice, qty_to_pick: 10, qty_picked: 6 }, { ...juice, batch_id: "b0", batch_number: "B-090", qty_to_pick: 2, qty_picked: 2 }];
+  // SO-000302 saved 6 of its 10 from B-100 (the shelf had no more), and has B-090 still to take.
+  input.orders[1].rows = [
+    { ...juice, qty_to_pick: 10, qty_picked: 6, allocation_status: "picked" },
+    { ...juice, batch_id: "b0", batch_number: "B-090", expiry_date: "2026-12-15", qty_to_pick: 2 },
+  ];
   // SO-000303 has been picked in full.
-  input.orders[2].rows = [{ ...chips, qty_to_pick: 4, qty_picked: 4 }];
+  input.orders[2].rows = [{ ...chips, qty_to_pick: 4, qty_picked: 4, allocation_status: "picked" }];
   const spec = combinedPickingListPdfSpec(input, seller, paper);
+  // The 4 Juice short on B-100 are not asked for again; B-090 and SO-000301's lines are.
   assert.deepEqual(spec.rows.map((r) => [r[0], r[2], r[4], r[5]]), [
     ["Chips 125g", "Not batch-tracked", "1", "6"],
-    ["Juice 1L — Sunny", "B-100", "2", "28"],
+    ["Juice 1L — Sunny", "B-090", "1", "2"],
+    ["Juice 1L — Sunny", "B-100", "1", "24"],
   ]);
   assert.equal(spec.billTo.address, "SO-000301, SO-000302");
   assert.deepEqual(spec.notes, [
@@ -292,6 +299,23 @@ test("only what is still to pick counts: a part-picked order adds what is left, 
     () => combinedPickingListPdfSpec({ ...input, orders: [input.orders[2]] }, seller, paper),
     /Everything on these orders has been picked already/
   );
+});
+
+test("each ticked order keeps its own picking rows, in the board's order, and one that cannot be read stops the print", () => {
+  const bits = new Map<string, OrderBits>([
+    ["o2", { id: "o2", order_number: "SO-000302", notes: null, stores: [{ name: "Spar Hilton" }] }],
+    ["o1", { id: "o1", order_number: "SO-000301", notes: "Back door.", stores: { name: "Bloem Corner Tuck Shop" } }],
+    ["o3", { id: "o3", order_number: "SO-000303", notes: null, stores: null }],
+  ]);
+  const rows = [[juice], [chips], []];
+  // Read back in any order; the rows stay with the id they were read for.
+  assert.deepEqual(combinedOrders(["o2", "o1", "o3"], bits, rows), [
+    { order: { order_number: "SO-000302", notes: null }, storeName: "Spar Hilton", rows: [juice] },
+    { order: { order_number: "SO-000301", notes: "Back door." }, storeName: "Bloem Corner Tuck Shop", rows: [chips] },
+    { order: { order_number: "SO-000303", notes: null }, storeName: null, rows: [] },
+  ]);
+  assert.throws(() => combinedOrders(["o1", "gone"], bits, [[juice], []]), /^Error: One of the ticked orders could not be read\. It may/);
+  assert.throws(() => combinedOrders(["x", "o1", "y"], bits, [[], [juice], []]), /^Error: 2 of the ticked orders could not be read\. They may/);
 });
 
 test("a hundred orders of the same twenty products print on two pages, in every look", async () => {
