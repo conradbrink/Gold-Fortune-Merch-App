@@ -33,7 +33,9 @@ export type ModuleCode =
   | "invoicing"
   | "vehicle_logbook"
   /** Alerts when something's off (Stage 8.4): the bell and its emails, no page of its own. */
-  | "owner_notifications";
+  | "owner_notifications"
+  /** Invoices, credit notes and payments sent to Sage (30 Oct 2026). */
+  | "accounting_sync";
 
 /** The modules a company has on. `core` is implied and never stored. */
 export type ModuleSet = ReadonlySet<string>;
@@ -101,6 +103,11 @@ const MODULE_PATHS: { prefix: string; module: ModuleCode }[] = [
 
   // The vehicle logbook and its list of vehicles (Stage 8).
   { prefix: "/logbook", module: "vehicle_logbook" },
+
+  // Sending invoices to Sage: its settings tab, and the address Sage sends
+  // people back to after signing in.
+  { prefix: "/settings/sage", module: "accounting_sync" },
+  { prefix: "/integrations", module: "accounting_sync" },
 ];
 
 /** The module a path belongs to; `core` when no prefix claims it. */

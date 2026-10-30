@@ -99,6 +99,9 @@ const PATH_PERMISSIONS: { prefix: string; permission: PermissionCode }[] = [
   { prefix: "/settings/notifications", permission: "company_settings" },
   { prefix: "/settings/plan", permission: "company_settings" },
   { prefix: "/settings/company", permission: "company_settings" },
+  // Sending invoices to Sage (30 Oct 2026): whoever runs the settings.
+  { prefix: "/settings/sage", permission: "company_settings" },
+  { prefix: "/integrations", permission: "company_settings" },
   // The pilot's plans page (Stage 5), and paying for the plan (Stage 6):
   // whoever runs the company.
   { prefix: "/plans", permission: "company_settings" },

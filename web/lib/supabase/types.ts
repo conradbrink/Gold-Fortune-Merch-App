@@ -14,6 +14,162 @@ export type Database = {
   }
   public: {
     Tables: {
+      accounting_connections: {
+        Row: {
+          bank_account_id: number | null
+          bank_account_name: string | null
+          calls_day: string | null
+          calls_today: number
+          company_id: number
+          company_name: string
+          connected_at: string
+          connected_by: string | null
+          last_error: string | null
+          last_sent_at: string | null
+          org_id: string
+          paused_until: string | null
+          provider: string
+          sign_in: string
+          sign_in_name: string | null
+          sync_from: string
+          updated_at: string
+        }
+        Insert: {
+          bank_account_id?: number | null
+          bank_account_name?: string | null
+          calls_day?: string | null
+          calls_today?: number
+          company_id: number
+          company_name: string
+          connected_at?: string
+          connected_by?: string | null
+          last_error?: string | null
+          last_sent_at?: string | null
+          org_id: string
+          paused_until?: string | null
+          provider?: string
+          sign_in: string
+          sign_in_name?: string | null
+          sync_from?: string
+          updated_at?: string
+        }
+        Update: {
+          bank_account_id?: number | null
+          bank_account_name?: string | null
+          calls_day?: string | null
+          calls_today?: number
+          company_id?: number
+          company_name?: string
+          connected_at?: string
+          connected_by?: string | null
+          last_error?: string | null
+          last_sent_at?: string | null
+          org_id?: string
+          paused_until?: string | null
+          provider?: string
+          sign_in?: string
+          sign_in_name?: string | null
+          sync_from?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      accounting_links: {
+        Row: {
+          company_id: number
+          created_at: string
+          kind: string
+          local_id: string
+          org_id: string
+          provider: string
+          remote_id: number
+        }
+        Insert: {
+          company_id: number
+          created_at?: string
+          kind: string
+          local_id: string
+          org_id: string
+          provider?: string
+          remote_id: number
+        }
+        Update: {
+          company_id?: number
+          created_at?: string
+          kind?: string
+          local_id?: string
+          org_id?: string
+          provider?: string
+          remote_id?: number
+        }
+        Relationships: []
+      }
+      accounting_queue: {
+        Row: {
+          attempts: number
+          created_at: string
+          id: string
+          kind: string
+          label: string
+          last_error: string | null
+          local_id: string
+          org_id: string
+          remote_id: number | null
+          send_after: string
+          sent_at: string | null
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          attempts?: number
+          created_at?: string
+          id?: string
+          kind: string
+          label: string
+          last_error?: string | null
+          local_id: string
+          org_id: string
+          remote_id?: number | null
+          send_after?: string
+          sent_at?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          attempts?: number
+          created_at?: string
+          id?: string
+          kind?: string
+          label?: string
+          last_error?: string | null
+          local_id?: string
+          org_id?: string
+          remote_id?: number | null
+          send_after?: string
+          sent_at?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      accounting_secrets: {
+        Row: {
+          org_id: string
+          sealed: string
+          updated_at: string
+        }
+        Insert: {
+          org_id: string
+          sealed: string
+          updated_at?: string
+        }
+        Update: {
+          org_id?: string
+          sealed?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       commission_rules: {
         Row: {
           id: string
@@ -7588,6 +7744,22 @@ export type Database = {
       }
     }
     Functions: {
+      accounting_claim: {
+        Args: { p_limit?: number; p_per_company?: number; p_daily_calls?: number }
+        Returns: { id: string; org_id: string; kind: string; local_id: string; label: string; remote_id: number | null; status: string; attempts: number; last_error: string | null; send_after: string; sent_at: string | null; created_at: string; updated_at: string }[]
+      }
+      accounting_finish: {
+        Args: { p_id: string; p_ok: boolean; p_remote_id?: number | null; p_error?: string | null; p_permanent?: boolean; p_calls?: number; p_wait?: boolean; p_skip?: boolean }
+        Returns: undefined
+      }
+      accounting_queue_since: {
+        Args: { p_org: string }
+        Returns: number
+      }
+      accounting_retry: {
+        Args: { p_id: string }
+        Returns: undefined
+      }
       my_account: { Args: never; Returns: Json }
       billing_quote: { Args: { p_period: string; p_seats: number; p_addons: Json }; Returns: Json }
       billing_preview_change: { Args: { p_seats: number; p_addons: Json }; Returns: Json }

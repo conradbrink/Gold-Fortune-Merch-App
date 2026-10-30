@@ -39,6 +39,7 @@ const distributor = toModuleSet({
   invoicing: true,
   vehicle_logbook: true,
   owner_notifications: true,
+  accounting_sync: true,
 });
 const service = toModuleSet({
   recurring_jobs: true,
@@ -121,11 +122,14 @@ const BUILT_BY: Record<string, () => string> = {
 /**
  * Old addresses kept for the links already out there, which only forward to
  * where the page went: Company settings is Settings (22 Oct 2026), and Plan
- * and billing is Settings > Plan.
+ * and billing is Settings > Plan. Sage's own address for Tickd is Settings >
+ * Sage.
  */
 const FORWARDS: Record<string, string> = {
   "/settings/company": "/settings/business",
   "/billing": "/settings/plan",
+  // The address Sage knows Tickd by (its Sage ID logout URL).
+  "/integrations/sage": "/settings/sage",
 };
 
 test("every page in the app is in the menu or linked from a named page", () => {
@@ -237,7 +241,7 @@ test("the tab row is drawn on the pages it lists, not on a record", () => {
   );
   assert.deepEqual(
     tabsFor(groups, "/hr/settings")?.tabs.map((t) => t.label),
-    ["Business", "Team & Work", "Notifications", "Plan", "HR", "Warehouse"]
+    ["Business", "Team & Work", "Notifications", "Plan", "HR", "Warehouse", "Sage"]
   );
   assert.equal(tabsFor(groups, "/settings/notifications")?.current, "/settings/notifications");
   // A plan's invoice is a record: no tab row.
