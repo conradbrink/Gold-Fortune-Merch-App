@@ -100,7 +100,7 @@ import { storeHealthHref, storeIdFromQuery, storeRangeHref, storeReorderHref } f
 import { canAccessPath } from "@/lib/permissions";
 import { usePermissions } from "@/lib/use-permissions";
 import type { Tables } from "@/lib/supabase/types";
-import { allByKey, byName as nameOrder, type KeyedQuery } from "@/lib/all-pages";
+import { allByKey, type KeyedQuery } from "@/lib/all-pages";
 
 type StoreRow = Tables<"stores">;
 type StoreGroup = Tables<"store_groups">;
@@ -325,9 +325,10 @@ export default function StoresPage() {
         // Paged: one response stops at 1,000 rows, and a distributor's list
         // passes that. A failure shows an empty list, as it did before,
         // rather than a page that never stops loading.
-        allByKey<StoreRow>(() => supabase.from("stores").select("*") as unknown as KeyedQuery<StoreRow>)
-          .then((rows) => rows.sort(nameOrder))
-          .catch(() => [] as StoreRow[]),
+        // Unsorted: the table puts them in the order the manager chose.
+        allByKey<StoreRow>(() => supabase.from("stores").select("*") as unknown as KeyedQuery<StoreRow>).catch(
+          () => [] as StoreRow[]
+        ),
         // Reuses the representatives fetcher: store_assignments is missing from
         // the generated types, so querying it off the typed client won't compile.
         fetchAssignments(supabase),

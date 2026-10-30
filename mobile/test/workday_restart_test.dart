@@ -294,6 +294,9 @@ void main() {
         brandingProvider.overrideWithValue(Branding.product),
         termsProvider.overrideWithValue(Terms.defaults),
         workdayRepositoryProvider.overrideWithValue(fake),
+        syncEngineProvider.overrideWithValue(
+          SyncEngine(db, client!, readBuild: () async => null, signedInUser: () => null),
+        ),
         workdayTrailProvider.overrideWithValue(WorkdayTrail(
           currentMode: () async => LocationTrackingMode.background,
           openStream: (mode) => const Stream.empty(),
@@ -306,7 +309,8 @@ void main() {
       return (container, fake);
     }
 
-    // Any time of day: tomorrow's start puts the cut-off a day away.
+    // Never past for a day started now: a start after 23:59 runs to
+    // tomorrow's 23:59 (autoEndCutoffFor).
     const lateRule = AutoEndRule(enabled: true, hour: 23, minute: 59);
 
     test('offers a restart of the rep\'s own end, before the cut-off', () async {

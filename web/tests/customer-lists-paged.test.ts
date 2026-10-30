@@ -5,7 +5,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { allByKey, byName, type KeyedQuery } from "@/lib/all-pages";
+import { allByKey, byName, isLastPage, type KeyedQuery } from "@/lib/all-pages";
 import { fetchStoresForOrder } from "@/lib/orders";
 import { fetchStoreGroupUse } from "@/lib/price-lists";
 import { fetchAssignments, fetchStoreChoices, fetchStores } from "@/lib/representatives";
@@ -101,20 +101,43 @@ test("a customer added while the list is read is not read twice", async () => {
   assert.equal(ids.length, 1500);
 });
 
-test("a short list asks once more to be sure, and stops", async () => {
-  const { supabase, requests } = fakeClient(() => stores.slice(0, 12));
-  assert.equal((await fetchStoreChoices(supabase)).length, 12);
-  assert.equal(requests.length, 2);
+test("a short list is one request; one a round hundred long asks once more", async () => {
+  const short = fakeClient(() => stores.slice(0, 12));
+  assert.equal((await fetchStoreChoices(short.supabase)).length, 12);
+  assert.equal(short.requests.length, 1);
+
+  const round = fakeClient(() => stores.slice(0, 300));
+  assert.equal((await fetchStoreChoices(round.supabase)).length, 300);
+  assert.equal(round.requests.length, 2);
 });
 
-test("a server that ignores the key filter cannot keep the read going", async () => {
-  const page = stores.slice(0, 5);
+test("the last page: empty, shorter than the one before, or a short first page that is not round", () => {
+  assert.equal(isLastPage(0, null), true);
+  assert.equal(isLastPage(12, null), true);
+  assert.equal(isLastPage(500, null), false);
+  assert.equal(isLastPage(1000, null), false);
+  assert.equal(isLastPage(500, 500), false);
+  assert.equal(isLastPage(499, 500), true);
+});
+
+test("a query without the key it pages by fails plainly, not with a bad filter", async () => {
+  const page = Array.from({ length: 1000 }, (_, i) => ({ name: `Shop ${i}` }));
   const query = () =>
     ({
       gt: () => query(),
       order: () => ({ limit: () => Promise.resolve({ data: page, error: null }) }),
     }) as unknown as KeyedQuery<Row>;
-  assert.equal((await allByKey<Row>(query)).length, 10);
+  await assert.rejects(allByKey<Row>(query), /no "id" to page by/);
+});
+
+test("a server that ignores the key filter cannot keep the read going", async () => {
+  const page = stores.slice(0, 500);
+  const query = () =>
+    ({
+      gt: () => query(),
+      order: () => ({ limit: () => Promise.resolve({ data: page, error: null }) }),
+    }) as unknown as KeyedQuery<Row>;
+  assert.equal((await allByKey<Row>(query)).length, 1000);
 });
 
 test("equal names keep one order", () => {

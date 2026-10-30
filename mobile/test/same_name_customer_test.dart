@@ -133,8 +133,10 @@ void main() {
       expect(requests, hasLength(2));
     });
 
-    test('a short list asks once more to be sure, and stops', () async {
+    test('a short list is one request; one a round hundred long asks once more', () async {
       expect(await serverWith(12).fetchStores(), hasLength(12));
+      expect(requests, hasLength(1));
+      expect(await serverWith(300).fetchStores(), hasLength(300));
       expect(requests, hasLength(2));
     });
 
@@ -145,7 +147,8 @@ void main() {
 
     test('the last page is an empty one, or one shorter than the page before', () {
       expect(isLastPage(0, previous: null), isTrue);
-      expect(isLastPage(12, previous: null), isFalse);
+      expect(isLastPage(12, previous: null), isTrue);
+      expect(isLastPage(500, previous: null), isFalse);
       expect(isLastPage(500, previous: 500), isFalse);
       expect(isLastPage(499, previous: 500), isTrue);
     });

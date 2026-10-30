@@ -9,6 +9,7 @@ import 'package:uuid/uuid.dart';
 import '../../core/company_config.dart';
 import '../../core/location_service.dart';
 import '../../core/providers.dart';
+import '../../core/terms.dart' show title;
 import '../../core/theme.dart';
 import '../../data/models/store_group.dart';
 import '../../data/models/store_summary.dart';
@@ -24,11 +25,7 @@ const _uuid = Uuid();
 @visibleForTesting
 String initialCustomerName(String? search) {
   final tidy = tidySpaces(search ?? '');
-  if (tidy != tidy.toLowerCase()) return tidy;
-  return tidy
-      .split(' ')
-      .map((w) => w.isEmpty ? w : w[0].toUpperCase() + w.substring(1))
-      .join(' ');
+  return tidy == tidy.toLowerCase() ? title(tidy) : tidy;
 }
 
 /// A rep adds a shop that is not on the books, then goes straight into a

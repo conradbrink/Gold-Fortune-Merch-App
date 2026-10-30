@@ -234,8 +234,14 @@ export type TimelineEntry = { at: string; kind: "start" | "end" | "checkin" | "c
 /** The day in order: workday start and end, shops in and out, orders taken. */
 export function timelineOf(day: RepDay): TimelineEntry[] {
   const out: TimelineEntry[] = [];
-  for (const p of day.pings) {
-    if (p.source === "workday_start") out.push({ at: p.recordedAt, kind: "start", text: "Started the day" });
+  // A second start the same day is a rep taking back an End they tapped by
+  // mistake (the phone's Restart workday).
+  let started = false;
+  for (const p of [...day.pings].sort((a, b) => a.recordedAt.localeCompare(b.recordedAt))) {
+    if (p.source === "workday_start") {
+      out.push({ at: p.recordedAt, kind: "start", text: started ? "Restarted the day" : "Started the day" });
+      started = true;
+    }
     if (p.source === "workday_end") out.push({ at: p.recordedAt, kind: "end", text: "Ended the day" });
   }
   for (const v of day.visits) {

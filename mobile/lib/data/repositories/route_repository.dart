@@ -74,12 +74,17 @@ const kStorePageSize = 1000;
 ///
 /// Not simply "fewer than were asked for": if the API's max rows were ever set
 /// below the page size, every page would come back short, and the first would
-/// be taken for the whole list. A page is the last when it is empty, or shorter
-/// than the one before; a short first page is followed by one more request to
-/// be sure.
+/// be taken for the whole list. Empty, or shorter than the page before, it was
+/// the last. A short *first* page is the whole list unless its length is a
+/// round hundred: a server cap is a round number, which a whole list rarely
+/// is, so only those cost one more request to be sure. The web's
+/// `isLastPage` in `lib/all-pages.ts` is the same rule.
 @visibleForTesting
-bool isLastPage(int rows, {required int? previous}) =>
-    rows == 0 || (previous != null && rows < previous);
+bool isLastPage(int rows, {required int? previous, int asked = kStorePageSize}) {
+  if (rows == 0) return true;
+  if (previous != null) return rows < previous;
+  return rows < asked && rows % 100 != 0;
+}
 
 /// A refusal from `set_store_location_from_visit`, carrying a message written
 /// for the rep to read rather than a Postgres error to decode.

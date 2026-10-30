@@ -285,11 +285,12 @@ class WorkdayController extends AsyncNotifier<WorkdaySession?> {
     final ended = _endedToday;
     if (profile == null || ended == null || !canRestart) return;
 
+    final repo = ref.read(workdayRepositoryProvider);
+    final sync = ref.read(syncEngineProvider);
     state = const AsyncLoading();
     state = await AsyncValue.guard(() async {
-      final session = await ref
-          .read(workdayRepositoryProvider)
-          .reopenWorkday(repId: profile.id, session: ended);
+      final session =
+          await repo.reopenWorkday(repId: profile.id, session: ended);
       // Where the rep went while the day was ended is not mileage: the first
       // position after this starts a new leg.
       final trail = _trail;
@@ -300,6 +301,22 @@ class WorkdayController extends AsyncNotifier<WorkdaySession?> {
       _endedToday = null;
       await trail.ensureRunning(reason: 'restart');
       _armAutoEnd(session);
+      // Where the rep is as the day opens again, recorded as a start is.
+      // Without it the office's timeline and map end at the mistaken End
+      // until the next interval ping. Not waited for: a slow fix must not
+      // hold the day shut, and no fix at all only loses the marker.
+      unawaited(() async {
+        try {
+          await repo.queuePing(
+            orgId: profile.orgId,
+            repId: profile.id,
+            sessionClientId: session.clientGeneratedId,
+            position: await LocationService.getCurrentPosition(),
+            source: 'workday_start',
+          );
+          await sync.sync();
+        } catch (_) {}
+      }());
       return session;
     });
   }
