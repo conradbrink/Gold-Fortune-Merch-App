@@ -6,16 +6,20 @@ import assert from "node:assert/strict";
 import { buildMoneyPdf, buildMoneyPdfs, PRINT_AT_ONCE, tooManyToPrint } from "@/lib/money-pdf";
 import { DOCUMENT_STYLES, type DocumentStyle } from "@/lib/document-style";
 import {
+  combinedPickingListPdfSpec,
+  combinePicks,
   deliveryAddress,
   deliveryNotePdfSpec,
   letterhead,
   noteDispatch,
   noteLineOrder,
+  orderNumberRuns,
   pickingListPdfSpec,
   sentQty,
   sheetFor,
   sheetsFor,
   storeAddressLine,
+  type CombinedPickingInput,
   type DeliveryNoteInput,
   type PickingSheetInput,
 } from "@/lib/order-paper";
@@ -167,6 +171,150 @@ test("a picking list leaves out what the order does not have", () => {
     ["Printed", "29/10/2026"],
   ]);
   assert.deepEqual(spec.notes, []);
+});
+
+// Owner, 30 Oct: ticking a column of orders should print one or two pages with
+// every product added up, so the warehouse picks them all at once instead of
+// printing a page an order.
+const juice = pick({});
+const chips = pick({ product_id: "p2", product_name: "Chips 125g", brand: null as unknown as string, batch_id: null as unknown as string, batch_number: null as unknown as string, expiry_date: null as unknown as string, unit_barcode: null as unknown as string, qty_to_pick: 6 });
+const combined = (over: Partial<CombinedPickingInput> = {}): CombinedPickingInput => ({
+  orders: [
+    { order: { order_number: "SO-000301", notes: "  Pack the juice on top.  " }, storeName: "Bloem Corner Tuck Shop", rows: [juice, chips] },
+    // The same juice batch, and an older one when the first ran out.
+    { order: { order_number: "SO-000302", notes: null }, storeName: "Spar Hilton", rows: [{ ...juice, qty_to_pick: 10 }, { ...juice, batch_id: "b0", batch_number: "B-090", expiry_date: "2026-12-15", qty_to_pick: 2 }] },
+    { order: { order_number: "SO-000303", notes: "   " }, storeName: "Choppies Botshabelo", rows: [{ ...chips, qty_to_pick: 4 }] },
+  ],
+  skus: new Map([
+    ["p1", "JUI-1"],
+    ["p2", "CHP-125"],
+  ]),
+  ...over,
+});
+
+test("a combined picking list adds each product up across the orders: one row per batch, oldest first, counting the orders", () => {
+  const rows = combinePicks(combined().orders);
+  assert.deepEqual(
+    rows.map((r) => [r.product_name, r.batch_number, r.qty_to_pick, r.orders]),
+    [
+      // By product name; a product without a batch adds up as one.
+      ["Chips 125g", null, 10, 2],
+      // The older batch first, as the orders were given it.
+      ["Juice 1L", "B-090", 2, 1],
+      ["Juice 1L", "B-100", 34, 2],
+    ]
+  );
+  // The same batch kept at two places is picked at each.
+  const twoPlaces = combinePicks([{ rows: [juice] }, { rows: [{ ...juice, location_name: "Annex" }] }]);
+  assert.deepEqual(twoPlaces.map((r) => [r.location_name, r.qty_to_pick]), [["Annex", 24], ["Main warehouse", 24]]);
+  // One order with two lines of the same batch is still one order.
+  assert.equal(combinePicks([{ rows: [juice, { ...juice, allocation_id: "a9", order_line_id: "l9" }] }])[0].orders, 1);
+});
+
+test("the combined sheet names its orders, adds up the units, and has no prices", () => {
+  const spec = combinedPickingListPdfSpec(combined(), seller, paper);
+  assert.equal(spec.heading, "PICKING LIST");
+  assert.equal(spec.fileName, "Combined picking list (3 orders)");
+  assert.deepEqual(spec.billTo, { label: "Orders on this list", name: "Combined list for 3 orders", address: "SO-000301 to SO-000303" });
+  // The count is said once, in the name.
+  assert.deepEqual(spec.meta, [
+    ["Pick from", "Main warehouse"],
+    ["Printed", "29/10/2026"],
+  ]);
+  // One warehouse: it is at the top, not in a column.
+  assert.deepEqual(spec.head, ["Product", "Barcode / SKU", "Batch", "Expiry", "Orders", "To pick", "Picked"]);
+  assert.deepEqual(spec.rows, [
+    ["Chips 125g", "CHP-125", "Not batch-tracked", "", "2", "10", ""],
+    ["Juice 1L — Sunny", "6001234567890\nJUI-1", "B-090", "15/12/2026", "1", "2", ""],
+    ["Juice 1L — Sunny", "6001234567890\nJUI-1", "B-100", "31/01/2027", "2", "34", ""],
+  ]);
+  assert.deepEqual(spec.numeric, [4, 5]);
+  assert.deepEqual(spec.boxes, [6]);
+  assert.deepEqual(spec.totals, [["Units to pick", "46"]]);
+  // Each order's note, saying whose it is.
+  assert.deepEqual(spec.notes, ["SO-000301 (Bloem Corner Tuck Shop): Pack the juice on top."]);
+  assert.deepEqual(
+    spec.signOff?.rows.flatMap((r) => r.boxes.map((b) => b.label)),
+    ["Picked by (name and signature)", "Checked by (name and signature)"]
+  );
+  assert.doesNotMatch(JSON.stringify([spec.rows, spec.totals]), AMOUNT);
+});
+
+test("the orders at the top are sorted, and three or more in a row are written as a run", () => {
+  assert.equal(
+    orderNumberRuns(["SO-000356", "SO-000353", "SO-000354", "SO-000355", "SO-000360", "SO-000361", "SO-000370", "PO-12", "SO-000357"]),
+    "PO-12, SO-000353 to SO-000357, SO-000360, SO-000361, SO-000370"
+  );
+  // Only numbers written the same way run together; a number with no digits at the end stands alone.
+  assert.equal(orderNumberRuns(["SO-99", "SO-100", "SO-101", "Manual"]), "Manual, SO-99, SO-100, SO-101");
+  assert.equal(orderNumberRuns(["SO-000301"]), "SO-000301");
+});
+
+test("stock at more than one warehouse gets a Location column; an order with nothing reserved is left off and named", () => {
+  const input = combined();
+  input.orders[1].rows = input.orders[1].rows.map((r) => ({ ...r, location_name: "Annex" }));
+  input.orders.push({ order: { order_number: "SO-000304", notes: "Call first." }, storeName: "Kwik Spar", rows: [] });
+  const spec = combinedPickingListPdfSpec(input, seller, paper);
+  assert.deepEqual(spec.head, ["Product", "Barcode / SKU", "Batch", "Expiry", "Location", "Orders", "To pick", "Picked"]);
+  assert.deepEqual(spec.meta[0], ["Pick from", "Annex, Main warehouse"]);
+  assert.deepEqual(spec.numeric, [5, 6]);
+  assert.deepEqual(spec.boxes, [7]);
+  // SO-000304 is not counted, not listed at the top, and its note waits for its own list.
+  assert.equal(spec.billTo.name, "Combined list for 3 orders");
+  assert.equal(spec.billTo.address, "SO-000301 to SO-000303");
+  assert.deepEqual(spec.notes, [
+    "Not on this list, because nothing is reserved for it yet: SO-000304.",
+    "SO-000301 (Bloem Corner Tuck Shop): Pack the juice on top.",
+  ]);
+  assert.throws(
+    () => combinedPickingListPdfSpec({ ...input, orders: [input.orders[3]] }, seller, paper),
+    /Nothing is reserved for these orders/
+  );
+});
+
+test("only what is still to pick counts: a part-picked order adds what is left, a picked one is named, not counted", () => {
+  const input = combined();
+  // SO-000302 took 6 of its 10 from B-100 before it was ticked, and all of B-090.
+  input.orders[1].rows = [{ ...juice, qty_to_pick: 10, qty_picked: 6 }, { ...juice, batch_id: "b0", batch_number: "B-090", qty_to_pick: 2, qty_picked: 2 }];
+  // SO-000303 has been picked in full.
+  input.orders[2].rows = [{ ...chips, qty_to_pick: 4, qty_picked: 4 }];
+  const spec = combinedPickingListPdfSpec(input, seller, paper);
+  assert.deepEqual(spec.rows.map((r) => [r[0], r[2], r[4], r[5]]), [
+    ["Chips 125g", "Not batch-tracked", "1", "6"],
+    ["Juice 1L — Sunny", "B-100", "2", "28"],
+  ]);
+  assert.equal(spec.billTo.address, "SO-000301, SO-000302");
+  assert.deepEqual(spec.notes, [
+    "Already picked, so not on this list: SO-000303.",
+    "SO-000301 (Bloem Corner Tuck Shop): Pack the juice on top.",
+  ]);
+  assert.throws(
+    () => combinedPickingListPdfSpec({ ...input, orders: [input.orders[2]] }, seller, paper),
+    /Everything on these orders has been picked already/
+  );
+});
+
+test("a hundred orders of the same twenty products print on two pages, in every look", async () => {
+  const products = Array.from({ length: 20 }, (_, i) =>
+    pick({ product_id: `p${i}`, product_name: `Product ${String(i).padStart(2, "0")}`, batch_id: `b${i}`, qty_to_pick: 3 })
+  );
+  const orders = Array.from({ length: 100 }, (_, i) => ({
+    order: { order_number: `SO-${String(400 + i).padStart(6, "0")}`, notes: null },
+    storeName: `Shop ${i}`,
+    rows: products,
+  }));
+  const spec = combinedPickingListPdfSpec({ orders, skus: new Map() }, seller, paper);
+  assert.equal(spec.rows.length, 20);
+  assert.deepEqual(spec.totals, [["Units to pick", "6,000"]]);
+  assert.equal(spec.billTo.address, "SO-000400 to SO-000499");
+  for (const style of DOCUMENT_STYLES) {
+    const doc = await buildMoneyPdf(spec, look(style), null);
+    assert.ok(doc.getNumberOfPages() <= 2, `${style}: ${doc.getNumberOfPages()} pages`);
+    const pdf = text(doc);
+    assert.match(pdf, /PICKING LIST/, style);
+    assert.match(pdf, /Combined list for 100 orders/, style);
+    assert.match(pdf, /Picked and checked/, style);
+  }
 });
 
 test("the delivery note: numbers, who it goes to, the driver and vehicle from the dispatch, and no prices", () => {

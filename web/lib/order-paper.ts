@@ -16,7 +16,9 @@ import { todayIn } from "@/lib/client-document";
  *
  * The specs are pure, so the tests pin what each sheet says; the print
  * functions at the bottom read the orders and hand the specs to the drawer,
- * one order or a ticked batch of them as one PDF.
+ * one order or a ticked batch of them as one PDF. A ticked batch can also
+ * print as one combined picking list, every product added up across the
+ * orders, so the warehouse picks them all from a page or two.
  */
 
 type Client = SupabaseClient<Database>;
@@ -78,6 +80,17 @@ export type PickingSheetInput = {
   skus: ReadonlyMap<string, string>;
 };
 
+/** Who picked the goods and who checked them, at the foot of every picking list. */
+const PICKED_AND_CHECKED: PdfSpec["signOff"] = {
+  title: "Picked and checked",
+  rows: [
+    {
+      height: 46,
+      boxes: [{ label: "Picked by (name and signature)" }, { label: "Checked by (name and signature)" }],
+    },
+  ],
+};
+
 /**
  * The picking list on paper: one row per batch to take, in the order the
  * screen lists them, each with an empty box for the picker to tick or write
@@ -118,15 +131,172 @@ export function pickingListPdfSpec(input: PickingSheetInput, seller: QuoteSeller
     totals: [["Units to pick", formatQty(units)]],
     notesTitle: "Notes for the picker",
     notes: o.notes?.trim() ? [o.notes.trim()] : [],
-    signOff: {
-      title: "Picked and checked",
-      rows: [
-        {
-          height: 46,
-          boxes: [{ label: "Picked by (name and signature)" }, { label: "Checked by (name and signature)" }],
-        },
-      ],
+    signOff: PICKED_AND_CHECKED,
+  };
+}
+
+// ------------------------------------------------- combined picking list
+
+export type CombinedPickingInput = {
+  /** The ticked orders in the board's order, each with what is reserved for it. */
+  orders: {
+    order: Pick<OrderRow, "order_number" | "notes">;
+    storeName: string | null;
+    rows: PickingRow[];
+  }[];
+  skus: ReadonlyMap<string, string>;
+};
+
+/** One product batch at one place, with how much of it every ticked order together needs. */
+export type CombinedPick = Pick<
+  PickingRow,
+  "product_id" | "product_name" | "brand" | "unit_barcode" | "batch_number" | "expiry_date" | "location_name"
+> & { qty_to_pick: number; orders: number };
+
+const byText = (a: string | null | undefined, b: string | null | undefined) =>
+  a && b ? a.localeCompare(b) : a ? -1 : b ? 1 : 0;
+
+/** What is left to take of a batch: an order part-picked already has some of it in hand. */
+const stillToPick = (r: Pick<PickingRow, "qty_to_pick" | "qty_picked">) => Number(r.qty_to_pick) - Number(r.qty_picked ?? 0);
+
+/**
+ * The orders' picking rows added together: one row per product, batch and
+ * place, counting how many orders want it. Only what is still to pick
+ * counts, so an order part-picked before it was ticked is not taken twice. Sorted by place, then product,
+ * then oldest stock first, so the picker finds a product once on the sheet
+ * and still takes the batch each order was given.
+ */
+export function combinePicks(orders: readonly { rows: readonly PickingRow[] }[]): CombinedPick[] {
+  const out = new Map<string, CombinedPick & { from: Set<number> }>();
+  orders.forEach(({ rows }, i) => {
+    for (const r of rows) {
+      const left = stillToPick(r);
+      if (left <= 0) continue;
+      const key = [r.location_name ?? "", r.product_id, r.batch_id ?? ""].join("|");
+      const row = out.get(key) ?? {
+        product_id: r.product_id,
+        product_name: r.product_name,
+        brand: r.brand,
+        unit_barcode: r.unit_barcode,
+        batch_number: r.batch_number,
+        expiry_date: r.expiry_date,
+        location_name: r.location_name,
+        qty_to_pick: 0,
+        orders: 0,
+        from: new Set<number>(),
+      };
+      row.qty_to_pick += left;
+      row.from.add(i);
+      out.set(key, row);
+    }
+  });
+  return [...out.values()]
+    .map(({ from, ...row }) => ({ ...row, orders: from.size }))
+    .sort(
+      (a, b) =>
+        byText(a.location_name, b.location_name) ||
+        a.product_name.localeCompare(b.product_name) ||
+        byText(a.brand, b.brand) ||
+        byText(a.expiry_date, b.expiry_date) ||
+        byText(a.batch_number, b.batch_number)
+    );
+}
+
+/**
+ * Order numbers as a short list: sorted, with a run of three or more in a
+ * row written "SO-000353 to SO-000416", so a column of orders ticked
+ * together takes a line or two at the top of the sheet rather than half of it.
+ */
+export function orderNumberRuns(numbers: readonly string[]): string {
+  const parts = numbers.map((n) => {
+    const m = /^(.*?)(\d+)$/.exec(n);
+    return m ? { n, prefix: m[1], width: m[2].length, value: Number(m[2]) } : { n, prefix: n, width: 0, value: NaN };
+  });
+  parts.sort((a, b) => a.prefix.localeCompare(b.prefix) || a.value - b.value || a.n.localeCompare(b.n));
+  const runs: (typeof parts)[] = [];
+  for (const p of parts) {
+    const run = runs[runs.length - 1];
+    const last = run?.[run.length - 1];
+    if (last && last.prefix === p.prefix && last.width === p.width && p.value === last.value + 1) run.push(p);
+    else runs.push([p]);
+  }
+  return runs
+    .flatMap((run) => (run.length >= 3 ? [`${run[0].n} to ${run[run.length - 1].n}`] : run.map((p) => p.n)))
+    .join(", ");
+}
+
+/**
+ * Several orders' picking lists as one sheet, so the warehouse walks the
+ * shelves once: every product added up across the orders, how many orders
+ * it goes to, and a box to tick. The orders it covers are named at the top
+ * (`orderNumberRuns`), and their notes for the picker under the lines. An
+ * order with nothing reserved yet, or picked already, is left off and named
+ * in the notes, rather than stopping the whole sheet. Sorting the picked stock into each order is
+ * done on its own picking screen.
+ */
+export function combinedPickingListPdfSpec(input: CombinedPickingInput, seller: QuoteSeller, paper: Paper): PdfSpec {
+  const ready = input.orders.filter((o) => o.rows.some((r) => stillToPick(r) > 0));
+  const waiting = input.orders.filter((o) => o.rows.length === 0);
+  const done = input.orders.filter((o) => o.rows.length > 0 && !ready.includes(o));
+  if (ready.length === 0) {
+    throw new Error(
+      done.length > 0
+        ? "Everything on these orders has been picked already. Pack them from each order's picking list."
+        : "Nothing is reserved for these orders, so there is nothing to pick yet. Confirm them first."
+    );
+  }
+  const picks = combinePicks(ready);
+  const places = [...new Set(picks.map((p) => p.location_name).filter(Boolean))];
+  // One warehouse is named at the top; a column for it only when the stock is in more than one.
+  const showPlace = places.length > 1;
+  const count = ready.length === 1 ? "1 order" : `${ready.length} orders`;
+  const meta: [string, string][] = [];
+  if (places.length > 0) meta.push(["Pick from", places.join(", ")]);
+  meta.push(["Printed", paperDate(paper.today)]);
+  const notes: string[] = [];
+  if (waiting.length > 0) {
+    notes.push(
+      `Not on this list, because nothing is reserved for ${waiting.length === 1 ? "it" : "them"} yet: ` +
+        `${waiting.map((o) => o.order.order_number).join(", ")}.`
+    );
+  }
+  if (done.length > 0) {
+    notes.push(`Already picked, so not on this list: ${done.map((o) => o.order.order_number).join(", ")}.`);
+  }
+  for (const o of ready) {
+    const note = o.order.notes?.trim();
+    if (note) notes.push(`${o.order.order_number}${o.storeName ? ` (${o.storeName})` : ""}: ${note}`);
+  }
+  const units = picks.reduce((n, p) => n + p.qty_to_pick, 0);
+  return {
+    heading: "PICKING LIST",
+    fileName: `Combined picking list (${count})`,
+    seller: letterhead(seller),
+    metaTitle: "Picking details",
+    meta,
+    billTo: {
+      label: "Orders on this list",
+      name: `Combined list for ${count}`,
+      address: orderNumberRuns(ready.map((o) => o.order.order_number)),
     },
+    head: ["Product", "Barcode / SKU", "Batch", "Expiry", ...(showPlace ? ["Location"] : []), "Orders", "To pick", "Picked"],
+    rows: picks.map((p) => [
+      productLabel(p.product_name, p.brand),
+      [p.unit_barcode, input.skus.get(p.product_id)].filter(Boolean).join("\n"),
+      p.batch_number ?? "Not batch-tracked",
+      p.expiry_date ? paperDate(p.expiry_date) : "",
+      ...(showPlace ? [p.location_name ?? ""] : []),
+      String(p.orders),
+      formatQty(p.qty_to_pick),
+      "",
+    ]),
+    numeric: showPlace ? [5, 6] : [4, 5],
+    boxes: [showPlace ? 7 : 6],
+    numbered: true,
+    totals: [["Units to pick", formatQty(units)]],
+    notesTitle: "Notes for the picker",
+    notes,
+    signOff: PICKED_AND_CHECKED,
   };
 }
 
@@ -253,13 +423,16 @@ export function deliveryNotePdfSpec(input: DeliveryNoteInput, seller: QuoteSelle
 
 // ----------------------------------------------------------------- print
 
-/** Product codes for these products, by id. */
+/** Product codes for these products, by id; read 100 at a time, as a combined picking list can name hundreds. */
 async function fetchSkus(supabase: Client, productIds: string[]): Promise<Map<string, string>> {
   const ids = [...new Set(productIds)];
-  if (ids.length === 0) return new Map();
-  const { data, error } = await supabase.from("products").select("id, sku_code").in("id", ids);
-  if (error) throw new Error(error.message);
-  return new Map((data ?? []).filter((p) => p.sku_code?.trim()).map((p) => [p.id, (p.sku_code as string).trim()]));
+  const out = new Map<string, string>();
+  for (let i = 0; i < ids.length; i += 100) {
+    const { data, error } = await supabase.from("products").select("id, sku_code").in("id", ids.slice(i, i + 100));
+    if (error) throw new Error(error.message);
+    for (const p of data ?? []) if (p.sku_code?.trim()) out.set(p.id, p.sku_code.trim());
+  }
+  return out;
 }
 
 /** The customer's address with its town (the order's own read leaves the town out). */
@@ -340,6 +513,48 @@ export function printPickingLists(supabase: Client, orderIds: string[]) {
     const [seller, { paper }] = await Promise.all([fetchQuoteSeller(supabase), companyPaper()]);
     const specs = await inGroups(orderIds, 4, (id) => pickingListFor(supabase, id, seller, paper));
     return asBatch(specs, "Picking lists");
+  });
+}
+
+/** The most orders one combined picking list reads: each is a request of its own, and more keeps the tab waiting. */
+export const COMBINE_AT_ONCE = 200;
+
+type OrderBits = { id: string; order_number: string; notes: string | null; stores: { name: string } | { name: string }[] | null };
+
+/** These orders' numbers, notes and customers, by id; read 100 at a time. */
+async function fetchOrderBits(supabase: Client, orderIds: string[]): Promise<Map<string, OrderBits>> {
+  const out = new Map<string, OrderBits>();
+  for (let i = 0; i < orderIds.length; i += 100) {
+    const { data, error } = await supabase
+      .from("orders")
+      .select("id, order_number, notes, stores(name)")
+      .in("id", orderIds.slice(i, i + 100));
+    if (error) throw new Error(error.message);
+    for (const o of (data ?? []) as unknown as OrderBits[]) out.set(o.id, o);
+  }
+  return out;
+}
+
+/** Print these orders' picking lists added up on one sheet: a new tab with it and the print box. */
+export function printCombinedPickingList(supabase: Client, orderIds: string[]) {
+  return printMoneyPdf(async () => {
+    if (orderIds.length > COMBINE_AT_ONCE) {
+      throw new Error(`That is ${orderIds.length} orders. Combine up to ${COMBINE_AT_ONCE} at a time: untick some, or filter the board.`);
+    }
+    const [seller, { paper }, bits, rows] = await Promise.all([
+      fetchQuoteSeller(supabase),
+      companyPaper(),
+      fetchOrderBits(supabase, orderIds),
+      inGroups(orderIds, 4, (id) => fetchPickingList(supabase, id)),
+    ]);
+    const orders = orderIds.flatMap((id, i) => {
+      const o = bits.get(id);
+      if (!o) return [];
+      const store = Array.isArray(o.stores) ? o.stores[0] : o.stores;
+      return [{ order: { order_number: o.order_number, notes: o.notes }, storeName: store?.name ?? null, rows: rows[i] }];
+    });
+    const skus = await fetchSkus(supabase, orders.flatMap((o) => o.rows.map((r) => r.product_id)));
+    return combinedPickingListPdfSpec({ orders, skus }, seller, paper);
   });
 }
 

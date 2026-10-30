@@ -505,6 +505,8 @@ function drawTable(c: Ctx, autoTable: typeof import("jspdf-autotable").default, 
         : { fontStyle: "normal", textColor: INK, fontSize: 8.5, cellPadding: { ...padding, top: 8, bottom: 8 } },
     ...(bold ? { alternateRowStyles: { fillColor: tint(primary, 0.95) } } : {}),
     columnStyles,
+    // A line with a barcode under its code stays whole: half of it at the top of the next page reads as a line of its own.
+    rowPageBreak: "avoid",
     margin: { top: 40, left, right: MARGIN, bottom: 46 },
     willDrawCell: (data) => {
       if (bold && data.section === "head" && data.column.index === 0) {

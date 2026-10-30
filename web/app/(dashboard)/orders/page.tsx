@@ -13,7 +13,14 @@ import { NativeSelect } from "@/components/ui/native-select";
 import { ErrorBanner } from "@/components/warehouse/stat-tile";
 import { OrderStepDialog, type StepTarget } from "@/components/orders/order-step-dialog";
 import { fetchPipelineOrders, type PipelineOrder } from "@/lib/order-pipeline";
-import { printDeliveryNote, printDeliveryNotes, printPickingLists, sheetFor, sheetsFor } from "@/lib/order-paper";
+import {
+  printCombinedPickingList,
+  printDeliveryNote,
+  printDeliveryNotes,
+  printPickingLists,
+  sheetFor,
+  sheetsFor,
+} from "@/lib/order-paper";
 import {
   BOARD_COLUMNS,
   boardSince,
@@ -367,14 +374,27 @@ export default function OrdersBoardPage() {
               {query.trim() ? ", or search the archive with the link above." : "."}
             </p>
           )}
-          {/* What the ticks are for: each kind of sheet for every ticked order, in one PDF. */}
+          {/* What the ticks are for: each kind of sheet for every ticked order, in one PDF,
+              or the picking lists added up on one sheet. */}
           {tickedOrders.length > 0 && (
             <div className="flex flex-wrap items-center gap-2 rounded-lg border border-border bg-muted/40 p-2.5">
               <p className="mr-auto text-sm">
                 {tickedOrders.length === 1 ? "1 order ticked" : `${tickedOrders.length} orders ticked`}
               </p>
+              {/* Several orders to pick: every product added up on one sheet, so the
+                  warehouse walks the shelves once instead of printing a page an order. */}
+              {sheets.picking.length > 1 && (
+                <Button size="sm" onClick={() => printTicked(printCombinedPickingList, sheets.picking)}>
+                  <Printer className="mr-1.5 h-4 w-4" />
+                  Print combined list
+                </Button>
+              )}
               {sheets.picking.length > 0 && (
-                <Button size="sm" onClick={() => printTicked(printPickingLists, sheets.picking)}>
+                <Button
+                  size="sm"
+                  variant={sheets.picking.length > 1 ? "outline" : "default"}
+                  onClick={() => printTicked(printPickingLists, sheets.picking)}
+                >
                   <Printer className="mr-1.5 h-4 w-4" />
                   {sheets.picking.length === 1 ? "Print the picking list" : `Print ${sheets.picking.length} picking lists`}
                 </Button>
