@@ -2,7 +2,7 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { salesContact } from "@/lib/platform";
 import { paystackConfig } from "@/lib/billing/paystack";
-import { parseAccount, parseCard, parsePlan, parseQuote, type Period } from "@/lib/billing";
+import { parseAccount, parseCard, parseFounding, parsePlan, parseQuote, type Period } from "@/lib/billing";
 import { BillingPanel, type InvoiceRow } from "@/components/billing/billing-panel";
 import { SettingsPage } from "@/components/settings/settings-section";
 
@@ -35,7 +35,7 @@ export default async function PlanPage({
   } = await supabase.auth.getUser();
   if (!user) redirect("/login");
 
-  const [{ data: accountRaw }, { data: row }, { count: reps }, { data: cardRaw }, { data: invoices }, { data: charges }, contact] =
+  const [{ data: accountRaw }, { data: row }, { count: reps }, { data: cardRaw }, { data: invoices }, { data: charges }, contact, { data: foundingRaw }] =
     await Promise.all([
       supabase.rpc("my_account"),
       supabase
@@ -57,6 +57,8 @@ export default async function PlanPage({
         .order("created_at", { ascending: false })
         .limit(1),
       salesContact(),
+      // The founding price, for a founding company (20261030200000).
+      supabase.rpc("billing_founding"),
     ]);
 
   const account = parseAccount(accountRaw);
@@ -134,6 +136,7 @@ export default async function PlanPage({
         cardUpdated={params.card === "updated"}
         contact={contact}
         openChooser={openChooser}
+        founding={parseFounding(foundingRaw)}
       />
     </SettingsPage>
   );

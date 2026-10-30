@@ -64,7 +64,7 @@ export function SidebarContent({
           </span>
         )}
         {toggle && <div className={cn(!collapsed && "ml-auto")}>{toggle}</div>}
-        {collapsed && !toggle && <CompanyMark branding={branding} />}
+        {collapsed && !toggle && <CompanyMark branding={branding} className="max-w-8" />}
       </div>
       <nav aria-label="Main" className="flex-1 overflow-y-auto px-3 pt-2 pb-6">
         {groups.map((group, index) => (

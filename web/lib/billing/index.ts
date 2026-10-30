@@ -142,6 +142,36 @@ export function cardText(card: CardOnFile): string {
   return `${brand}${ending}${expires}`;
 }
 
+/**
+ * A founding company's price (`billing_founding()`, 20261030200000): this much
+ * off the plan for its first months paid monthly, and how many of those are
+ * left. Null for a company not on the founding offer.
+ */
+export type Founding = { percentOff: number; months: number; monthsLeft: number };
+
+export function parseFounding(raw: unknown): Founding | null {
+  const r = obj(raw);
+  const percentOff = num(r.percent_off, 0);
+  const months = num(r.months, 0);
+  if (percentOff < 1 || percentOff > 100 || months < 1) return null;
+  return { percentOff, months, monthsLeft: Math.max(0, Math.min(months, num(r.months_left, 0))) };
+}
+
+/**
+ * The add-on offered when a plan is chosen: Stock control and HR, one price
+ * for both (price_list.bundle `stock_control_hr`). Asked for as `warehouse`;
+ * paying switches HR on with it (`billing_apply_addons`).
+ */
+export const CHECKOUT_ADDON = "warehouse";
+
+/** Modules that mean a company already uses the checkout add-on. */
+export const CHECKOUT_ADDON_MODULES = ["warehouse", "hr"] as const;
+
+/** Whether the company already uses the checkout add-on (on its pilot, say). */
+export function usesCheckoutAddon(config: { modules: ReadonlySet<string> } | null): boolean {
+  return CHECKOUT_ADDON_MODULES.some((m) => config?.modules.has(m) ?? false);
+}
+
 export function parsePlan(raw: unknown): Plan | null {
   const r = obj(raw);
   const seats = num(r.seats, 0);

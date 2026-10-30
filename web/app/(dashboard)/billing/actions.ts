@@ -37,12 +37,12 @@ function period(p: string): Period | null {
   return p === "monthly" || p === "yearly" ? p : null;
 }
 
-export async function quoteAction(p: string, reps: number): Promise<Result<Quote>> {
+export async function quoteAction(p: string, reps: number, addons: Record<string, number> = {}): Promise<Result<Quote>> {
   const per = period(p);
   if (!per) return { ok: false, error: "Choose monthly or yearly." };
-  const plan = normalisePlan(reps, {});
+  const plan = normalisePlan(reps, addons);
   const supabase = await createClient();
-  const { data, error } = await supabase.rpc("billing_quote", { p_period: per, p_seats: plan.seats, p_addons: {} });
+  const { data, error } = await supabase.rpc("billing_quote", { p_period: per, p_seats: plan.seats, p_addons: plan.addons });
   if (error) return { ok: false, error: billingErrorMessage(error) ?? "No price." };
   return { ok: true, value: parseQuote(data) };
 }

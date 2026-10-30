@@ -42,6 +42,17 @@ export const PLANS = {
 
 export type Plan = (typeof PLANS.plans)[number];
 
+/**
+ * The one add-on, as the site's pricing section sells it (owner, 29 Oct 2026:
+ * "R495 for both"; price_list bundle `stock_control_hr`). What a company pays
+ * comes from price_list; this is what the plans page says about it.
+ */
+export const ADDON = {
+  name: "Stock control and HR",
+  what: "Track the stock in your warehouses, and keep your staff's leave, attendance and reviews in one place.",
+  monthly: 495,
+} as const;
+
 export const biggestPlan: Plan = PLANS.plans[PLANS.plans.length - 1];
 
 /** The smallest plan that fits this many reps, or null above the biggest one. */
@@ -54,9 +65,14 @@ export function rand(n: number): string {
   return `R${n.toLocaleString("en-US")}`;
 }
 
+/** A monthly price less [percentOff], in whole rands: the founding price's one formula. */
+export function percentOffPrice(monthly: number, percentOff: number): number {
+  return Math.round((monthly * (100 - percentOff)) / 100);
+}
+
 /** A plan's founding price a month: `FOUNDING_OFFER.percentOff` off, in whole rands. */
 export function foundingPrice(plan: Plan): number {
-  return Math.round((plan.monthly * (100 - FOUNDING_OFFER.percentOff)) / 100);
+  return percentOffPrice(plan.monthly, FOUNDING_OFFER.percentOff);
 }
 
 /** The lowest founding price, the "from" price: the smallest plan's. */
