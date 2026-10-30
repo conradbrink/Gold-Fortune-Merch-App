@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Tables } from "@/lib/supabase/types";
 import { lower, withArticle, type Terms } from "@/lib/terms";
+import { allPages, type Page } from "@/lib/all-pages";
 
 /**
  * Territories — the sales geography of one organisation.
@@ -98,12 +99,18 @@ export async function fetchTerritoryTree(
 ): Promise<CountryTree[]> {
   const [territories, storeRows] = await Promise.all([
     fetchTerritories(supabase),
-    supabase.from("stores").select("territory_id"),
+    // Paged: a response stops at 1,000 rows, and these are counts.
+    allPages<{ territory_id: string | null }>((from, to) =>
+      supabase
+        .from("stores")
+        .select("territory_id")
+        .order("id")
+        .range(from, to) as unknown as Page<{ territory_id: string | null }>
+    ),
   ]);
-  if (storeRows.error) throw new Error(storeRows.error.message);
 
   const perTerritory = new Map<string, number>();
-  for (const row of storeRows.data ?? []) {
+  for (const row of storeRows) {
     const id = (row as { territory_id: string | null }).territory_id;
     if (id) perTerritory.set(id, (perTerritory.get(id) ?? 0) + 1);
   }
@@ -152,14 +159,18 @@ export async function fetchTerritoryTree(
 export async function fetchTerritoryStoreCounts(
   supabase: SupabaseClient
 ): Promise<Record<string, number>> {
-  const { data, error } = await supabase
-    .from("stores")
-    .select("territory_id")
-    .not("territory_id", "is", null);
-  if (error) throw new Error(error.message);
+  // Paged: a response stops at 1,000 rows, and these are counts.
+  const data = await allPages<{ territory_id: string | null }>((from, to) =>
+    supabase
+      .from("stores")
+      .select("territory_id")
+      .not("territory_id", "is", null)
+      .order("id")
+      .range(from, to) as unknown as Page<{ territory_id: string | null }>
+  );
 
   const counts: Record<string, number> = {};
-  for (const row of data ?? []) {
+  for (const row of data) {
     const id = (row as { territory_id: string | null }).territory_id;
     if (id) counts[id] = (counts[id] ?? 0) + 1;
   }
@@ -356,13 +367,16 @@ export async function fetchTerritoryStores(
   supabase: SupabaseClient,
   mainId: string
 ): Promise<TerritoryStore[]> {
-  const { data, error } = await supabase
-    .from("stores")
-    .select(STORE_COLUMNS)
-    .eq("territory_id", mainId)
-    .order("name");
-  if (error) throw new Error(error.message);
-  return (data ?? []) as TerritoryStore[];
+  // Paged: a busy territory can pass the 1,000 rows one response holds.
+  return allPages<TerritoryStore>((from, to) =>
+    supabase
+      .from("stores")
+      .select(STORE_COLUMNS)
+      .eq("territory_id", mainId)
+      .order("name")
+      .order("id")
+      .range(from, to) as unknown as Page<TerritoryStore>
+  );
 }
 
 /**

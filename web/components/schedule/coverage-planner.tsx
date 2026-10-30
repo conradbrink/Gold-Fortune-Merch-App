@@ -29,6 +29,7 @@ import {
 } from "@/lib/territories";
 import { useTerms } from "@/lib/use-company-config";
 import { count, lower, withArticle } from "@/lib/terms";
+import { allPages, type Page } from "@/lib/all-pages";
 
 /**
  * Coverage: who covers which stores, and how often.
@@ -126,18 +127,22 @@ export function CoveragePlanner({
     setLoading(true);
     try {
       const [storeRes, groupRes, territoryRows] = await Promise.all([
-        supabase
-          .from("stores")
-          .select(
-            "id, name, city, store_group_id, visit_frequency, territory_id, sub_territory_id"
-          )
-          .eq("active", true)
-          .order("name"),
+        // Paged: one response stops at 1,000 rows.
+        allPages<StoreRow>((from, to) =>
+          supabase
+            .from("stores")
+            .select(
+              "id, name, city, store_group_id, visit_frequency, territory_id, sub_territory_id"
+            )
+            .eq("active", true)
+            .order("name")
+            .order("id")
+            .range(from, to) as unknown as Page<StoreRow>
+        ),
         supabase.from("store_groups").select("id, name").order("name"),
         fetchTerritories(supabase),
       ]);
-      if (storeRes.error) throw new Error(storeRes.error.message);
-      setStores((storeRes.data ?? []) as StoreRow[]);
+      setStores(storeRes);
       setGroups((groupRes.data ?? []) as { id: string; name: string }[]);
       setTerritories(territoryRows);
     } catch (e) {

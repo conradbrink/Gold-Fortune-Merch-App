@@ -44,6 +44,7 @@ import {
   type ActivityEvent,
   type ActivitySummary,
 } from "@/lib/activities";
+import { allPages, type Page } from "@/lib/all-pages";
 
 const PAGE_SIZE = 50;
 
@@ -119,7 +120,18 @@ export default function ActivitiesPage() {
           // `city` is here for the store picker's search, which matches on the
           // town as well as the name — a manager often knows an outlet by where
           // it is before they know what it is called.
-          supabase.from("stores").select("id, name, city").order("name"),
+          // Paged: one response stops at 1,000 rows. A failure leaves the
+          // picker empty, as it did before.
+          allPages<{ id: string; name: string; city: string | null }>((from, to) =>
+            supabase.from("stores").select("id, name, city").order("name").order("id").range(from, to) as unknown as Page<{
+              id: string;
+              name: string;
+              city: string | null;
+            }>
+          ).then(
+            (data) => ({ data }),
+            () => ({ data: null })
+          ),
           supabase.from("form_templates").select("id, name, active").order("name"),
         ]);
       if (cancelled) return;

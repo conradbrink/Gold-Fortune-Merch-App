@@ -100,6 +100,7 @@ import { storeHealthHref, storeIdFromQuery, storeRangeHref, storeReorderHref } f
 import { canAccessPath } from "@/lib/permissions";
 import { usePermissions } from "@/lib/use-permissions";
 import type { Tables } from "@/lib/supabase/types";
+import { allPages, type Page } from "@/lib/all-pages";
 
 type StoreRow = Tables<"stores">;
 type StoreGroup = Tables<"store_groups">;
@@ -321,19 +322,30 @@ export default function StoresPage() {
     const [groupRes, storeRes, assignmentRows, visitRes, repRes] =
       await Promise.all([
         supabase.from("store_groups").select("*").order("name"),
-        supabase.from("stores").select("*").order("name"),
+        // Paged: one response stops at 1,000 rows, and a distributor's list
+        // passes that. A failure shows an empty list, as it did before,
+        // rather than a page that never stops loading.
+        allPages<StoreRow>((from, to) =>
+          supabase.from("stores").select("*").order("name").order("id").range(from, to) as unknown as Page<StoreRow>
+        ).catch(() => [] as StoreRow[]),
         // Reuses the representatives fetcher: store_assignments is missing from
         // the generated types, so querying it off the typed client won't compile.
         fetchAssignments(supabase),
         // Aggregated in Postgres. `visits` is the fastest-growing table here, so
         // the list must not download it to compute a maximum per row.
-        callRpc(supabase, "store_last_visit", {}),
+        // A failure leaves the column blank rather than the page empty.
+        allPages<{ store_id: string; last_visit_at: string | null }>((from, to) =>
+          supabase.rpc("store_last_visit").order("store_id").range(from, to) as unknown as Page<{
+            store_id: string;
+            last_visit_at: string | null;
+          }>
+        ).catch(() => []),
         // Names for the "Responsible" column.
         supabase.from("profiles").select("id, full_name").eq("role", "rep"),
       ]);
 
     const groupRows = groupRes.data;
-    const storeRows = storeRes.data;
+    const storeRows = storeRes;
     const repRows = repRes.data;
 
     setGroups(groupRows ?? []);
@@ -341,13 +353,8 @@ export default function StoresPage() {
     setAssignments(assignmentRows);
 
     const seen: Record<string, string> = {};
-    if (!visitRes.error) {
-      for (const r of (visitRes.data ?? []) as {
-        store_id: string;
-        last_visit_at: string | null;
-      }[]) {
-        if (r.last_visit_at) seen[r.store_id] = r.last_visit_at;
-      }
+    for (const r of visitRes) {
+      if (r.last_visit_at) seen[r.store_id] = r.last_visit_at;
     }
     setLastVisits(seen);
 
@@ -357,8 +364,11 @@ export default function StoresPage() {
     // empty set on every page load.
     const byStore: Record<string, GeocodeCapture> = {};
     if ((storeRows ?? []).some((s) => s.geocode_visit_id !== null)) {
-      const { data: captureRows } = await supabase.rpc("store_geocode_capture");
-      for (const r of captureRows ?? []) {
+      type CaptureRow = { store_id: string; visit_id: string; rep_name: string | null; visit_checkin_at: string | null };
+      const captureRows = await allPages<CaptureRow>((from, to) =>
+        supabase.rpc("store_geocode_capture").order("store_id").range(from, to) as unknown as Page<CaptureRow>
+      ).catch(() => [] as CaptureRow[]);
+      for (const r of captureRows) {
         byStore[r.store_id] = {
           visitId: r.visit_id,
           // The RPC left-joins profiles and the generated types cannot express

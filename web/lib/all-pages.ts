@@ -8,6 +8,9 @@
  */
 export const PAGE_SIZE = 1000;
 
+/** One page of a query, as `allPages` asks for it. */
+export type Page<T> = PromiseLike<{ data: T[] | null; error: { message: string } | null }>;
+
 export async function allPages<T>(
   page: (from: number, to: number) => PromiseLike<{ data: T[] | null; error: { message: string } | null }>,
   size = PAGE_SIZE

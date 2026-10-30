@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { callRpc } from "@/lib/rpc";
 import { lower, type Terms } from "@/lib/terms";
+import { allPages, type Page } from "@/lib/all-pages";
 
 /**
  * Representatives and store ownership.
@@ -96,23 +97,26 @@ export async function fetchStores(
 ): Promise<StoreOption[]> {
   // Single string literal — a concatenated .select() degrades to
   // GenericStringError in postgrest-js.
-  const { data, error } = await supabase
-    .from("stores")
-    .select(
-      "id, name, city, store_group_id, location_confirmed_at, store_groups(name)"
-    )
-    .eq("active", true)
-    .order("name", { ascending: true });
-  if (error) throw new Error(error.message);
-
-  const rows = (data ?? []) as unknown as {
+  type Row = {
     id: string;
     name: string;
     city: string | null;
     store_group_id: string | null;
     location_confirmed_at: string | null;
     store_groups: { name: string } | { name: string }[] | null;
-  }[];
+  };
+  // Paged: one response stops at 1,000 rows.
+  const rows = await allPages<Row>((from, to) =>
+    supabase
+      .from("stores")
+      .select(
+        "id, name, city, store_group_id, location_confirmed_at, store_groups(name)"
+      )
+      .eq("active", true)
+      .order("name", { ascending: true })
+      .order("id", { ascending: true })
+      .range(from, to) as unknown as Page<Row>
+  );
 
   return rows.map((r) => ({
     id: r.id,
@@ -132,11 +136,14 @@ export async function fetchStores(
 export async function fetchAssignments(
   supabase: SupabaseClient
 ): Promise<Assignment[]> {
-  const { data, error } = await supabase
-    .from("store_assignments")
-    .select("id, store_id, rep_id, is_primary");
-  if (error) throw new Error(error.message);
-  return (data ?? []) as Assignment[];
+  // Paged: one or more per store, so it passes 1,000 rows with the stores.
+  return allPages<Assignment>((from, to) =>
+    supabase
+      .from("store_assignments")
+      .select("id, store_id, rep_id, is_primary")
+      .order("id", { ascending: true })
+      .range(from, to) as unknown as Page<Assignment>
+  );
 }
 
 export async function assignStore(
