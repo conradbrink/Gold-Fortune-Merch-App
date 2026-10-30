@@ -1,9 +1,10 @@
 import { Check } from "lucide-react";
 import type { ReactNode } from "react";
 import type { TrialState } from "@/lib/onboarding";
+import type { Founding } from "@/lib/billing";
 import { FOUNDING_OFFER } from "@/lib/founding-offer";
 import { lower, type Terms } from "@/lib/terms";
-import { PLANS, biggestPlan, contactLink, foundingFrom, foundingPrice, placesCount, placesPeople, planFor, planMessage, rand, type PlanChoice } from "@/lib/plans";
+import { ADDON, PLANS, biggestPlan, contactLink, foundingFrom, percentOffPrice, placesCount, placesPeople, planFor, planMessage, rand, type PlanChoice } from "@/lib/plans";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -13,6 +14,12 @@ export type PlansViewProps = {
   trialEndsAt: string | null;
   /** Show the Founding price: the company came in through the Founding pilot. */
   founding: boolean;
+  /**
+   * Its founding terms as the database bills them (`billing_founding()`). With
+   * them and card payments on, the founding price is paid by card; without,
+   * it is a message to our team.
+   */
+  foundingTerms?: Founding | null;
   /** Active logins with the field role (`rep`), or null if they could not be counted. */
   reps: number | null;
   /** The company's own words: plans are priced by its `staff` term ("Reps" for a distributor). */
@@ -29,17 +36,24 @@ export type PlansViewProps = {
  * The plans page: where the pilot stands, the Founding price for a company on
  * the pilot, the three plans, and a button on each that opens a ready-written
  * message to our team, or, once card payments are on, Settings > Plan to pay
- * by card. The Founding price stays a message: we set it on the company's
- * account before it pays. Presentational, so it can be rendered without a
- * session.
+ * by card. The Founding price is paid by card too once the database bills it
+ * (`foundingTerms`, 20261030200000): Settings > Plan shows it in the total.
+ * Presentational, so it can be rendered without a session.
  */
-export function PlansView({ trial, trialEndsAt, founding, reps, terms: t, company, timezone, contact, payByCard = false }: PlansViewProps) {
+export function PlansView({ trial, trialEndsAt, founding, foundingTerms = null, reps, terms: t, company, timezone, contact, payByCard = false }: PlansViewProps) {
   const staff = placesPeople(t);
   const fits = reps && reps > 0 ? planFor(reps) : null;
   const tooBig = reps !== null && reps > biggestPlan.reps;
   const link = (choice: PlanChoice, subject: string) => contactLink(contact, planMessage(choice, company, t), subject);
   const noContact = contactLink(contact, "", "") === null;
   const ends = trialEndsAt ? endDate(trialEndsAt, timezone) : null;
+  // The company's own terms when the database bills them, else the offer's.
+  const percentOff = foundingTerms?.percentOff ?? FOUNDING_OFFER.percentOff;
+  // The months the company still has at the founding price (the card shows
+  // only while it has some), else the offer's.
+  const months = foundingTerms ? foundingTerms.monthsLeft : FOUNDING_OFFER.priceMonths;
+  const foundingOf = (monthly: number) => percentOffPrice(monthly, percentOff);
+  const payFounding = payByCard && foundingTerms !== null;
 
   return (
     <div className="mx-auto max-w-3xl space-y-6">
@@ -70,27 +84,35 @@ export function PlansView({ trial, trialEndsAt, founding, reps, terms: t, compan
             <Badge className="bg-gold text-gold-foreground">Founding distributor price</Badge>
             {fits ? (
               <CardTitle className="pt-1">
-                <span className="text-3xl font-bold tabular-nums text-foreground">{rand(foundingPrice(fits))}</span>{" "}
+                <span className="text-3xl font-bold tabular-nums text-foreground">{rand(foundingOf(fits.monthly))}</span>{" "}
+                {/* The normal price beside it: what the founding price is off. */}
+                <s className="text-base font-medium tabular-nums text-muted-foreground">{rand(fits.monthly)}</s>{" "}
                 <span className="text-base font-medium text-muted-foreground">
-                  a month for {FOUNDING_OFFER.priceMonths} months, on the plan for up to {placesCount(t, fits.reps)}
+                  a month for {months} months, on the plan for up to {placesCount(t, fits.reps)}
                 </span>
               </CardTitle>
             ) : (
               <CardTitle className="pt-1 text-xl font-bold text-foreground">
-                {FOUNDING_OFFER.percentOff}% off your plan for {FOUNDING_OFFER.priceMonths} months
+                {percentOff}% off your plan for {months} months
               </CardTitle>
             )}
             <CardDescription className="text-pretty">
               {fits
-                ? `That is ${FOUNDING_OFFER.percentOff}% off the ${rand(fits.monthly)} plan, ${rand((fits.monthly - foundingPrice(fits)) * FOUNDING_OFFER.priceMonths)} less over the ${FOUNDING_OFFER.priceMonths} months`
+                ? `That is ${percentOff}% off the ${rand(fits.monthly)} plan, ${rand((fits.monthly - foundingOf(fits.monthly)) * months)} less over the ${months} months. Setup is included. After that it is ${rand(fits.monthly)} a month`
                 : `From ${rand(foundingFrom)} a month on the plan for up to ${placesCount(t, PLANS.plans[0].reps)}`}
               . It is only for the first {FOUNDING_OFFER.spots} distributors on the pilot.
             </CardDescription>
           </CardHeader>
           <CardContent className="flex flex-wrap items-center gap-3">
-            <ChooseButton href={link({ kind: "founding", reps }, "The founding price")} primary>
-              Choose the founding price
-            </ChooseButton>
+            {payFounding && !tooBig ? (
+              <ChooseButton href="/settings/plan?choose=1" primary>
+                Pay by card
+              </ChooseButton>
+            ) : (
+              <ChooseButton href={link({ kind: "founding", reps }, "The founding price")} primary>
+                Choose the founding price
+              </ChooseButton>
+            )}
             {fits && reps !== null && <FitsNote reps={reps} t={t} />}
             {tooBig && (
               <p className="text-sm text-foreground">
@@ -139,6 +161,17 @@ export function PlansView({ trial, trialEndsAt, founding, reps, terms: t, compan
         </ul>
         <p className="text-sm font-medium text-foreground">
           No contract. Cancel any time. Pay yearly and you get 2 months free.
+        </p>
+      </section>
+
+      {/* The one add-on, as the site sells it; added with a tick when paying. */}
+      <section className="space-y-1 rounded-lg border border-border p-4" aria-labelledby="addon-heading">
+        <h2 id="addon-heading" className="text-sm font-semibold text-foreground">
+          Add-on: {ADDON.name}
+        </h2>
+        <p className="text-sm text-pretty text-muted-foreground">{ADDON.what}</p>
+        <p className="text-sm text-foreground">
+          {rand(ADDON.monthly)} a month for both.{payByCard ? " Tick it when you pay." : ""}
         </p>
       </section>
 

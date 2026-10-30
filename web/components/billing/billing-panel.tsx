@@ -4,8 +4,10 @@ import { useEffect, useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Check, CreditCard, FileText, Lock, Minus, Plus } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -16,6 +18,7 @@ import {
   setCancelAction,
 } from "@/app/(dashboard)/billing/actions";
 import {
+  CHECKOUT_ADDON,
   STATUS_LABEL,
   cardText,
   formatDate,
@@ -24,10 +27,12 @@ import {
   type Account,
   type CardOnFile,
   type ChangePreview,
+  type Founding,
   type Line,
   type Period,
   type Plan,
   type Quote,
+  usesCheckoutAddon,
 } from "@/lib/billing";
 import type { SalesContact } from "@/lib/platform";
 import { useCompanyConfig, useTerms } from "@/lib/use-company-config";
@@ -71,6 +76,8 @@ type Props = {
    * which only reopens choosing a plan).
    */
   openChooser: "plans" | "retry" | null;
+  /** The founding price, for a founding company (`billing_founding()`). */
+  founding?: Founding | null;
 };
 
 /**
@@ -192,7 +199,7 @@ function AutoRefresh() {
 function useCheckout() {
   const [pending, start] = useTransition();
   const [error, setError] = useState<string | null>(null);
-  function go(body: { reps?: number; period?: Period; email?: string }) {
+  function go(body: { reps?: number; period?: Period; email?: string; addons?: Record<string, number> }) {
     setError(null);
     start(async () => {
       try {
@@ -524,37 +531,56 @@ function LinesTable({ lines, totalCents, note }: { lines: Line[]; totalCents: nu
   );
 }
 
-function ChoosePlan({ plan, defaultEmail, cardsReady, contact, customPriceCents, activeReps, account }: Props) {
+function ChoosePlan({ plan, defaultEmail, cardsReady, contact, customPriceCents, activeReps, account, founding }: Props) {
+  const config = useCompanyConfig();
   const [period, setPeriod] = useState<Period>("monthly");
   const [reps, setReps] = useState(Math.max(plan?.seats ?? activeReps, 1));
   const [email, setEmail] = useState(defaultEmail);
-  const [quote, setQuote] = useState<Quote | null>(null);
+  // Stock control and HR, offered with the plan. Ticked from the start for a
+  // company that uses it on its pilot, so paying never reads as losing it;
+  // null until the rep's own choice.
+  const usesAddon = usesCheckoutAddon(config);
+  const [addonChoice, setAddonChoice] = useState<boolean | null>(null);
+  const offerAddon = customPriceCents === null;
+  const withAddon = offerAddon && (addonChoice ?? usesAddon);
+  // Both quotes, with and without the add-on: its price is the database's own
+  // difference rather than a number written here, and ticking it only picks
+  // between the two.
+  const [quotes, setQuotes] = useState<{ without: Quote; withAddon: Quote | null } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const checkout = useCheckout();
   const t = useTerms();
+  const quote = quotes ? (withAddon && quotes.withAddon ? quotes.withAddon : quotes.without) : null;
+  const addonCents = quotes?.withAddon ? quotes.withAddon.totalCents - quotes.without.totalCents : null;
   const least = Math.max(quote?.seatsUsed ?? activeReps, 1);
+  const addons: Record<string, number> = withAddon ? { [CHECKOUT_ADDON]: 1 } : {};
 
   useEffect(() => {
     let live = true;
-    void quoteAction(period, reps).then((r) => {
-      if (!live) return;
-      if (r.ok) {
-        setQuote(r.value);
-        setError(null);
-        // Never fewer places than reps and drivers already on the app.
-        if (r.value.seatsUsed !== null && reps < r.value.seatsUsed) setReps(r.value.seatsUsed);
-      } else {
-        setQuote(null);
-        setError(r.error);
+    void Promise.all([quoteAction(period, reps), offerAddon ? quoteAction(period, reps, { [CHECKOUT_ADDON]: 1 }) : null]).then(
+      ([without, withIt]) => {
+        if (!live) return;
+        if (without.ok) {
+          setQuotes({ without: without.value, withAddon: withIt?.ok ? withIt.value : null });
+          setError(null);
+          // Never fewer places than reps and drivers already on the app.
+          if (without.value.seatsUsed !== null && reps < without.value.seatsUsed) setReps(without.value.seatsUsed);
+        } else {
+          setQuotes(null);
+          setError(without.error);
+        }
       }
-    });
+    );
     return () => {
       live = false;
     };
-  }, [period, reps]);
+  }, [period, reps, offerAddon]);
 
   const planLine = quote?.lines.find((l) => l.code === "base");
   const emailOk = /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email.trim());
+  // The founding price applies to monthly payments while the company has
+  // founding months left; the database adds it as a line of the quote.
+  const foundingNow = founding && founding.monthsLeft > 0 && customPriceCents === null ? founding : null;
 
   return (
     <Card>
@@ -567,6 +593,19 @@ function ChoosePlan({ plan, defaultEmail, cardsReady, contact, customPriceCents,
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
+        {foundingNow && (
+          <div className="space-y-1 rounded-md bg-gold/10 p-3 ring-1 ring-gold">
+            <Badge className="bg-gold text-gold-foreground">Founding distributor price</Badge>
+            <p className="text-sm text-pretty text-foreground">
+              {period === "monthly"
+                ? `${foundingNow.percentOff}% off your plan for your first ${foundingNow.monthsLeft} ${foundingNow.monthsLeft === 1 ? "month" : "months"}, and setup is included${
+                    planLine ? `. Then ${formatRand(planLine.amountCents)} a month.` : "."
+                  }`
+                : "The founding price is for paying monthly. Choose Monthly to get it."}
+            </p>
+          </div>
+        )}
+
         <div className="inline-flex rounded-md border border-border p-0.5" role="radiogroup" aria-label="How often to pay">
           {(["monthly", "yearly"] as const).map((p) => (
             <button
@@ -579,7 +618,7 @@ function ChoosePlan({ plan, defaultEmail, cardsReady, contact, customPriceCents,
                 period === p ? "bg-primary text-primary-foreground" : "text-foreground hover:bg-secondary"
               }`}
             >
-              {p === "yearly" ? "Yearly, 2 months free" : "Monthly"}
+              {p === "yearly" ? "Yearly, 2 months free" : foundingNow ? "Monthly, founding price" : "Monthly"}
             </button>
           ))}
         </div>
@@ -595,6 +634,23 @@ function ChoosePlan({ plan, defaultEmail, cardsReady, contact, customPriceCents,
             </div>
             <Stepper value={reps} min={least} label={placesPeople(t)} onChange={setReps} />
           </div>
+        )}
+
+        {offerAddon && addonCents !== null && addonCents > 0 && (
+          // One optional tick, never a step: the plan can be paid without it.
+          <label className="flex cursor-pointer items-start gap-3 rounded-md border border-border p-3 transition-colors has-[[data-checked]]:border-primary has-[[data-checked]]:bg-primary/5">
+            <Checkbox className="mt-0.5" checked={withAddon} onCheckedChange={(c) => setAddonChoice(Boolean(c))} />
+            <span className="grid gap-0.5 text-sm">
+              <span className="font-medium text-foreground">Add Stock control and HR</span>
+              <span className="text-pretty text-muted-foreground">
+                Track the stock in your warehouses, and keep your staff&apos;s leave, attendance and reviews in one place.
+              </span>
+              <span className="text-foreground">
+                {formatRand(addonCents)} a {periodWord(period)} for both
+                {usesAddon ? ". You use it on your pilot now." : "."}
+              </span>
+            </span>
+          </label>
         )}
 
         {quote && <LinesTable lines={quote.lines} totalCents={quote.totalCents} note="today" />}
@@ -618,7 +674,7 @@ function ChoosePlan({ plan, defaultEmail, cardsReady, contact, customPriceCents,
         {checkout.error && <p className="text-sm text-destructive">{checkout.error}</p>}
         {cardsReady ? (
           <Button
-            onClick={() => checkout.go({ reps, period, email: email.trim() })}
+            onClick={() => checkout.go({ reps, period, email: email.trim(), addons })}
             disabled={checkout.pending || !quote || !emailOk}
           >
             <CreditCard className="size-4" aria-hidden />

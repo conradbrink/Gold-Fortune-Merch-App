@@ -1114,6 +1114,8 @@ export type Database = {
           closed_reason: string | null
           created_at: string
           custom_price_cents: number | null
+          founding_months: number | null
+          founding_percent_off: number | null
           grace_ends_at: string | null
           onboarding_dismissed_at: string | null
           onboarding_dismissed_by: string | null
@@ -1142,6 +1144,8 @@ export type Database = {
           closed_reason?: string | null
           created_at?: string
           custom_price_cents?: number | null
+          founding_months?: number | null
+          founding_percent_off?: number | null
           grace_ends_at?: string | null
           onboarding_dismissed_at?: string | null
           onboarding_dismissed_by?: string | null
@@ -1170,6 +1174,8 @@ export type Database = {
           closed_reason?: string | null
           created_at?: string
           custom_price_cents?: number | null
+          founding_months?: number | null
+          founding_percent_off?: number | null
           grace_ends_at?: string | null
           onboarding_dismissed_at?: string | null
           onboarding_dismissed_by?: string | null
@@ -7636,6 +7642,8 @@ export type Database = {
         Returns: Json
       }
       billing_card: { Args: never; Returns: Json }
+      billing_founding: { Args: never; Returns: Json }
+      billing_founding_months_left: { Args: { p_org: string }; Returns: number }
       billing_start_card_check: { Args: { p_email: string }; Returns: Json }
       billing_save_card: { Args: { p_org: string; p_card: Json; p_reference: string }; Returns: boolean }
       billing_paystack_paid: {

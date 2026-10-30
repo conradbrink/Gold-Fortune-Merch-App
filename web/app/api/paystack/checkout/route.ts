@@ -2,7 +2,7 @@ import { headers } from "next/headers";
 import { createClient } from "@/lib/supabase/server";
 import { platformAdminClient } from "@/lib/platform";
 import { enforceRateLimit, LIMITS } from "@/lib/rate-limit";
-import { billingErrorMessage, parseAccount } from "@/lib/billing";
+import { billingErrorMessage, normalisePlan, parseAccount } from "@/lib/billing";
 import {
   initializeBody,
   initializeTransaction,
@@ -19,11 +19,13 @@ import { TRY_WINDOW_MS, failureRecorded, logPaystack, originFrom, settle } from 
 /**
  * POST /api/paystack/checkout — pays on Paystack's page, by card.
  *
- * Body (JSON): `{ reps, period?, email? }`. The browser says only how many
- * reps and where receipts go; what is charged is worked out here, from the
+ * Body (JSON): `{ reps, period?, email?, addons? }`. The browser says only how
+ * many reps, which add-ons (`{ warehouse: 1 }`: Stock control and HR) and
+ * where receipts go; what is charged is worked out here, from the
  * signed-in company's own account, by the database:
  *   - no paid plan yet (pilot, ended, or a price agreed by us): the plan for
- *     that many reps from price_list, plus setup on the first monthly payment
+ *     that many reps and its add-ons from price_list, plus setup on the first
+ *     monthly payment, or less the founding price for a founding company
  *     (`billing_start_checkout`);
  *   - behind on a renewal (past due or read-only): that renewal
  *     (`billing_retry_now`), so paying it also saves the new card; never while
@@ -38,7 +40,7 @@ import { TRY_WINDOW_MS, failureRecorded, logPaystack, originFrom, settle } from 
 
 export const runtime = "nodejs";
 
-type Body = { reps?: unknown; period?: unknown; email?: unknown };
+type Body = { reps?: unknown; period?: unknown; email?: unknown; addons?: unknown };
 
 export async function POST(request: Request) {
   const config = paystackConfig();
@@ -57,6 +59,10 @@ export async function POST(request: Request) {
   const period = body.period === "yearly" ? "yearly" : body.period === undefined || body.period === "monthly" ? "monthly" : null;
   if (!period) return Response.json({ error: "Choose monthly or yearly." }, { status: 400 });
   const offered = typeof body.email === "string" ? body.email.trim() : "";
+  // Names and quantities only; the database prices them and refuses one that
+  // cannot be bought.
+  const asked = body.addons && typeof body.addons === "object" && !Array.isArray(body.addons) ? (body.addons as Record<string, number>) : {};
+  const addons = normalisePlan(1, asked).addons;
 
   const supabase = await createClient();
   const {
@@ -105,7 +111,7 @@ export async function POST(request: Request) {
     const { data, error } = await supabase.rpc("billing_start_checkout", {
       p_period: period,
       p_seats: reps,
-      p_addons: {},
+      p_addons: addons,
       p_email: email,
     });
     if (error) return Response.json({ error: billingErrorMessage(error) }, { status: 400 });

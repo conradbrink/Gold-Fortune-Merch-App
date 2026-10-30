@@ -6,6 +6,7 @@ import { createClient } from "@/lib/supabase/server";
 import type { Json } from "@/lib/supabase/types";
 import { moduleDependencies, platformAdminClient, templateDefaults, trialDays } from "@/lib/platform";
 import { queueWelcomeEmail } from "@/lib/welcome-email";
+import { FOUNDING_OFFER } from "@/lib/founding-offer";
 import { OUTCOME_RELATED_KIND, isFoundingStatus, outcomePayload, outcomeTemplate } from "@/lib/founding-outcome";
 import {
   operatorMayChange,
@@ -409,7 +410,12 @@ export async function createCompanyAction(
 
 // ------------------------------------------------------------ Trials (Stage 5)
 
-/** Puts a new company on the free pilot: `trial_days` from now, with its audit row first. */
+/**
+ * Puts a new company on the free pilot: `trial_days` from now, with its audit
+ * row first. A pilot the operator starts is a founding one (20261020100000),
+ * so the company gets the founding price on its account, which billing
+ * applies to its first monthly payments (20261030200000).
+ */
 async function startPilot(
   admin: ReturnType<typeof platformAdminClient>,
   actor: string,
@@ -422,13 +428,21 @@ async function startPilot(
       actor_id: actor,
       action: "trial.start",
       target_org_id: orgId,
-      detail: { days, to: endsAt },
+      detail: { days, to: endsAt, founding: { percent_off: FOUNDING_OFFER.percentOff, months: FOUNDING_OFFER.priceMonths } },
     });
     if (auditError) return { error: `the audit log could not be written (${auditError.message})` };
     const { error } = await admin
       .from("company_account")
       .upsert({ org_id: orgId, trial_ends_at: endsAt, updated_at: new Date().toISOString() }, { onConflict: "org_id" });
     if (error) return { error: error.message };
+    // Its own write, after the pilot: the pilot must start even where the
+    // founding columns are not on the database yet (a deploy ahead of
+    // 20261030200000). Reported, not fatal.
+    const { error: foundingError } = await admin
+      .from("company_account")
+      .update({ founding_percent_off: FOUNDING_OFFER.percentOff, founding_months: FOUNDING_OFFER.priceMonths })
+      .eq("org_id", orgId);
+    if (foundingError) console.error("[platform] founding price not set", orgId, foundingError.message);
     return { endsAt };
   } catch (e) {
     return { error: e instanceof Error ? e.message : String(e) };

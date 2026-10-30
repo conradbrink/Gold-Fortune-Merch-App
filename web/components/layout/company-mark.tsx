@@ -25,9 +25,17 @@ export function CompanyMark({
 
   const src = logoUrl(process.env.NEXT_PUBLIC_SUPABASE_URL!, branding.logoPath);
   if (src) {
+    // The whole logo at its own shape: as tall as the square, as wide as it
+    // needs up to three squares. Cropped to a square, a wide logo lost its
+    // ends ("aQua blast" read "Qu bla", 30 Oct 2026). A caller with no room to
+    // spare narrows it with `max-w-8`, and the logo then shrinks to fit.
     return (
       // eslint-disable-next-line @next/next/no-img-element
-      <img src={src} alt={branding.name} className={cn(box, "object-cover")} />
+      <img
+        src={src}
+        alt={branding.name}
+        className={cn("h-8 w-auto max-w-24 shrink-0 rounded-md object-contain", className)}
+      />
     );
   }
 
