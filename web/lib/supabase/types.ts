@@ -7986,6 +7986,7 @@ export type Database = {
           product_name: string
           qty_already_reserved: number
           qty_available: number
+          qty_expired: number
           qty_ordered: number
           qty_short: number
         }[]
