@@ -114,6 +114,7 @@ export const CONTROL_CENTRE_OWNER_SETTINGS = [
   "money_invoice_direct",
   "money_contracts",
   "money_invoice_orders",
+  "money_paid_on_delivery",
   "alerts_on",
   "alerts_email",
 ] as const;
