@@ -258,15 +258,38 @@ export function matchItem(code: string, items: SageItem[]): SageItem | null {
 }
 
 /**
+ * A tax type's rate in percent. Sage's API gives it as a fraction (0.15 for
+ * 15%: the sandbox's 12% type came back as 0.12, 30 Oct 2026), though its
+ * docs call it a percentage; a value above 1 is read as percent already.
+ */
+export function taxPercent(t: SageTaxType): number {
+  const p = Number(t.Percentage);
+  return p > 0 && p <= 1 ? Math.round(p * 100_000) / 1000 : p;
+}
+
+/**
  * The tax type for a VAT rate: the active, non-manual one at that percentage,
  * Sage's default first; for 0%, "zero rated" before "exempt".
  */
 export function pickTaxType(rate: number, types: SageTaxType[]): SageTaxType | null {
-  const at = types.filter((t) => t.Active !== false && !t.IsManualTax && Math.abs(Number(t.Percentage) - rate) < 0.001);
+  const at = types.filter((t) => t.Active !== false && !t.IsManualTax && Math.abs(taxPercent(t) - rate) < 0.001);
   if (at.length === 0) return null;
   const score = (t: SageTaxType) =>
     (t.IsDefault ? 4 : 0) + (rate === 0 && /zero/i.test(t.Name) ? 2 : 0) - (rate === 0 && /exempt/i.test(t.Name) ? 1 : 0);
   return [...at].sort((a, b) => score(b) - score(a) || a.ID - b.ID)[0];
+}
+
+/** Why a VAT rate cannot be sent, naming the rates Sage has; null when it can. */
+export function taxTypeProblem(rate: number, types: SageTaxType[]): string | null {
+  if (pickTaxType(rate, types) || rate === 0) return null;
+  const rates = [...new Set(types.filter((t) => t.Active !== false && !t.IsManualTax).map(taxPercent))]
+    .sort((a, b) => b - a)
+    .map((r) => `${r}%`);
+  return (
+    `Sage has no active VAT type at ${rate}%, the rate on Tickd's invoices` +
+    (rates.length ? ` (Sage has ${rates.join(", ")})` : "") +
+    ". Check that the Sage company is set up for the same country."
+  );
 }
 
 /** The bank account payments go to: Sage's default, else the first active one. */

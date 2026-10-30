@@ -3,7 +3,18 @@ import { supabaseFetch } from "@/lib/supabase/fetch";
 import { createClient } from "@/lib/supabase/server";
 import type { Database } from "@/lib/supabase/types";
 import { enforceRateLimit, LIMITS } from "@/lib/rate-limit";
-import { SageError, officeMessage, pickBankAccount, sageAll, sageConfig, type SageAuth, type SageBankAccount, type SageCompany } from "@/lib/accounting/sage";
+import {
+  SageError,
+  officeMessage,
+  pickBankAccount,
+  sageAll,
+  sageConfig,
+  taxTypeProblem,
+  type SageAuth,
+  type SageBankAccount,
+  type SageCompany,
+  type SageTaxType,
+} from "@/lib/accounting/sage";
 import { seal, secretKey } from "@/lib/accounting/secret";
 import { dayIn, readSageInput, type SageCompanyChoice } from "@/lib/accounting/connect";
 
@@ -27,7 +38,16 @@ const json = (body: unknown, status = 200) => Response.json(body, { status });
 
 function sageProblem(err: unknown) {
   if (err instanceof SageError) {
-    if (err.kind === "sign_in") return json({ error: "Sage did not accept that email and password." }, 400);
+    if (err.kind === "sign_in") {
+      return json(
+        {
+          error:
+            "Sage did not accept that email and password. Use your Sage Accounting password, not your Sage ID one. " +
+            "If you have never set one, use Forgot password on Sage's own sign-in page.",
+        },
+        400,
+      );
+    }
     if (err.kind === "refused") return json({ error: `Sage said: ${err.message}` }, 400);
     return json({ error: officeMessage(err) }, err.kind === "limit" ? 429 : 502);
   }
@@ -59,7 +79,7 @@ export async function POST(request: Request) {
     return json({ error: "Sage is not set up on Tickd's side yet. Please ask Tickd." }, 503);
   }
 
-  const { data: org } = await supabase.from("organizations").select("timezone").eq("id", orgId).single();
+  const { data: org } = await supabase.from("organizations").select("timezone, vat_rate").eq("id", orgId).single();
   const today = dayIn(org?.timezone || "Africa/Johannesburg");
   const input = readSageInput(await request.json().catch(() => null), today);
   if ("error" in input) return json({ error: input.error }, 400);
@@ -124,6 +144,14 @@ export async function POST(request: Request) {
     return sageProblem(err);
   }
   if (!bank) return json({ error: "That bank account is not in the Sage company chosen." }, 400);
+  // Invoices carry the company's VAT rate; Sage must have a VAT type at it.
+  try {
+    const types = await sageAll<SageTaxType>(auth, "TaxType/Get", company.ID, { maxPages: 1 });
+    const problem = taxTypeProblem(Number(org?.vat_rate ?? 0), types);
+    if (problem) return json({ error: problem }, 400);
+  } catch (err) {
+    return sageProblem(err);
+  }
 
   const { error: connError } = await admin.from("accounting_connections").upsert(
     {

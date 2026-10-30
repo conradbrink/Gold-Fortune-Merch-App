@@ -19,6 +19,7 @@ import {
   pickTaxType,
   requestUrl,
   sageConfig,
+  taxTypeProblem,
 } from "@/lib/accounting/sage";
 import {
   addressLines,
@@ -139,6 +140,15 @@ test("the tax type is the rate's default; 0% prefers zero-rated to exempt", () =
   assert.equal(pickTaxType(15, types)?.ID, 1);
   assert.equal(pickTaxType(0, types)?.ID, 4);
   assert.equal(pickTaxType(14, types), null);
+  assert.equal(taxTypeProblem(15, types), null);
+  // Sage's API gives rates as fractions.
+  assert.equal(pickTaxType(15, [{ ID: 6, Name: "Standard Rate", Percentage: 0.15, Active: true }])?.ID, 6);
+  assert.equal(pickTaxType(12, [{ ID: 7, Name: "Standard", Percentage: 0.12, Active: true }])?.ID, 7);
+  assert.equal(taxTypeProblem(0, []), null);
+  assert.equal(
+    taxTypeProblem(15, [{ ID: 9, Name: "Standard", Percentage: 0.14, Active: true }, { ID: 8, Name: "Zero", Percentage: 0 }]),
+    "Sage has no active VAT type at 15%, the rate on Tickd's invoices (Sage has 14%, 0%). Check that the Sage company is set up for the same country.",
+  );
   assert.equal(pickBankAccount([{ ID: 7, Name: "Cheque", Active: true }, { ID: 8, Name: "FNB", Default: true }])?.ID, 8);
   assert.equal(pickBankAccount([{ ID: 7, Name: "Old", Active: false }]), null);
 });

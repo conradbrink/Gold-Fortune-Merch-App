@@ -6,6 +6,7 @@ import {
   officeMessage,
   pickTaxType,
   sageRequest,
+  taxTypeProblem,
   type SageAuth,
   type SageCall,
   type SageConfig,
@@ -196,8 +197,9 @@ class Company {
     this.taxTypes ??= await this.list<SageTaxType>("TaxType/Get");
     const t = pickTaxType(Number(rate), this.taxTypes);
     if (t) return t.ID;
-    if (Number(rate) === 0) return null;
-    throw new SageError("refused", `Sage has no active tax type at ${Number(rate)}% VAT. Add one in Sage, then try again.`);
+    const problem = taxTypeProblem(Number(rate), this.taxTypes);
+    if (problem) throw new SageError("refused", problem);
+    return null;
   }
 
   async customerId(inv: Invoice): Promise<number> {
@@ -296,6 +298,7 @@ class Company {
     const inv = await this.db.invoice(row.local_id);
     if (!inv) return { skip: "The invoice no longer exists." };
     if (inv.status === "void") return { skip: "Voided before it was sent." };
+    await this.taxTypeId(inv.vat_rate);
     const customerId = await this.customerId(inv);
     const ids = await this.lineIds(inv);
     let id = row.attempts > 1 ? await this.findDocument("TaxInvoice", inv.id, inv.invoice_number) : null;

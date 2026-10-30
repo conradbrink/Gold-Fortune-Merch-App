@@ -7,7 +7,6 @@ import { Label } from "@/components/ui/label";
 import { NativeSelect } from "@/components/ui/native-select";
 import { createClient } from "@/lib/supabase/client";
 import { useCompanyConfig, useTerms } from "@/lib/use-company-config";
-import { formatDateOnly } from "@/lib/format-date";
 import type { SageCompanyChoice } from "@/lib/accounting/connect";
 import { SettingsPage, SettingsSection, SettingsSurface } from "@/components/settings/settings-section";
 
@@ -48,6 +47,11 @@ function when(iso: string, timeZone: string): string {
     hourCycle: "h23",
     timeZone,
   });
+}
+
+/** A date column as "30 Oct 2026", the same day for everyone. */
+function day(value: string): string {
+  return new Date(`${value}T00:00:00`).toLocaleDateString("en-ZA", { day: "numeric", month: "short", year: "numeric" });
 }
 
 async function post(body: unknown): Promise<{ ok: boolean; data: Record<string, unknown> }> {
@@ -209,7 +213,7 @@ export default function SageSettingsPage() {
             <Fact term="Company" value={connection.company_name} />
             <Fact term="Signed in as" value={connection.sign_in_name ?? "Sage ID"} />
             <Fact term="Payments go into" value={connection.bank_account_name ?? "Not chosen"} />
-            <Fact term="Sending from" value={formatDateOnly(connection.sync_from)} />
+            <Fact term="Sending from" value={day(connection.sync_from)} />
             <Fact
               term="Last sent"
               value={connection.last_sent_at ? when(connection.last_sent_at, timeZone) : "Nothing yet"}
@@ -474,13 +478,18 @@ function ConnectForm({
                 disabled={busy || !company || company.bankAccounts.length === 0}
                 onChange={(e) => setBankAccountId(Number(e.target.value) || null)}
               >
-                {(company?.bankAccounts ?? []).length === 0 && <option value="">No bank accounts in Sage</option>}
+                {(company?.bankAccounts ?? []).length === 0 && <option value="">None</option>}
                 {(company?.bankAccounts ?? []).map((b) => (
                   <option key={b.id} value={b.id}>
                     {b.name}
                   </option>
                 ))}
               </NativeSelect>
+              {company && company.bankAccounts.length === 0 && (
+                <p role="alert" className="text-xs text-pretty text-destructive">
+                  This Sage company has no bank account yet. Add one in Sage under Banking, then press Back and Next.
+                </p>
+              )}
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="sage-from">Send from</Label>
