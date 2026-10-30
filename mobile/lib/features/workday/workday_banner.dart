@@ -11,6 +11,7 @@ import '../../core/terms.dart';
 import '../../core/theme.dart';
 import '../../data/models/route_visit.dart';
 import 'workday_controller.dart';
+import 'workday_restart.dart';
 import 'workday_summary_screen.dart';
 
 /// Start/End workday control shown at the top of today's route, with live
@@ -169,6 +170,12 @@ class _WorkdayBannerState extends ConsumerState<WorkdayBanner> {
     context.push('/workday-summary', extra: summary);
   }
 
+  Future<void> _restart() async {
+    setState(() => _pending = true);
+    await confirmRestartWorkday(context, ref);
+    if (mounted) setState(() => _pending = false);
+  }
+
   Future<void> _start() async {
     setState(() => _pending = true);
     await ref.read(workdayControllerProvider.notifier).startWorkday();
@@ -205,6 +212,9 @@ class _WorkdayBannerState extends ConsumerState<WorkdayBanner> {
     final endedItself =
         finishedForToday &&
         ref.watch(workdayControllerProvider.notifier).wasAutoEnded;
+    // Ended by the rep, and the cut-off still ahead: it can be taken back.
+    final canRestart = finishedForToday &&
+        ref.watch(workdayControllerProvider.notifier).canRestart;
     // Only the user's own start/end shows a busy label; the provider's first
     // load just disables the button briefly.
     final isLoading = _pending;
@@ -276,6 +286,10 @@ class _WorkdayBannerState extends ConsumerState<WorkdayBanner> {
                           ? 'Your ${workday.oneLower} was ended automatically '
                                 'at ${config.autoEnd.label}. Your next '
                                 '${workday.oneLower} can be started tomorrow.'
+                          : canRestart
+                              ? 'You have finished for today. Ended it by '
+                                  'mistake? You can restart it'
+                                  '${config.autoEnd.enabled ? ' until ${config.autoEnd.label}' : ''}.'
                           : finishedForToday
                               ? 'You have finished for today. Your next '
                                   '${workday.oneLower} can be started '
@@ -320,9 +334,21 @@ class _WorkdayBannerState extends ConsumerState<WorkdayBanner> {
               ],
             ),
           ],
-          // No button at all once the day is closed. A disabled Start button
-          // reads as "broken", and there is nothing the rep can do about it
-          // until tomorrow — the message above is the whole answer.
+          // Once the day is closed, Restart for a rep who ended it by mistake
+          // and no button at all otherwise. A disabled Start button reads as
+          // "broken", and there is nothing the rep can do about it until
+          // tomorrow — the message above is the whole answer.
+          if (canRestart) ...[
+            const SizedBox(height: 14),
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                onPressed: (isLoading || initialising) ? null : _restart,
+                icon: const Icon(Icons.replay_rounded, size: 18),
+                label: Text('Restart ${workday.oneLower}'),
+              ),
+            ),
+          ],
           if (!finishedForToday) ...[
           const SizedBox(height: 14),
           SizedBox(

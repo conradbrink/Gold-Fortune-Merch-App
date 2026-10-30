@@ -28,21 +28,30 @@ const _uuid = Uuid();
 /// Works with no signal: the customer is on this phone at once and reaches
 /// the server before the visit and the order that name it (`store_add`).
 ///
+/// A name already on the list is shown with the one that has it, to use
+/// instead of a copy, but does not stop a new one being added: two shops in
+/// different suburbs share a name often enough (one distributor, 30 Oct 2026, had
+/// four pairs in their own books). Refusing it left the button doing nothing
+/// and the rep with no way to take that shop's order.
+///
 /// With [forOrder], the customer sent a new order and the rep is not there:
 /// it goes on to that order instead of a check-in, and takes no position,
 /// since where the rep is standing is not where the shop is.
 class NewCustomerScreen extends ConsumerStatefulWidget {
-  const NewCustomerScreen({super.key, this.forOrder = false});
+  const NewCustomerScreen({super.key, this.forOrder = false, this.name});
 
   /// Adding the customer of a new order (`/unscheduled/order/new`).
   final bool forOrder;
+
+  /// The name to start with: what the rep searched for in the picker.
+  final String? name;
 
   @override
   ConsumerState<NewCustomerScreen> createState() => _NewCustomerScreenState();
 }
 
 class _NewCustomerScreenState extends ConsumerState<NewCustomerScreen> {
-  final _name = TextEditingController();
+  late final _name = TextEditingController(text: widget.name?.trim());
   final _address = TextEditingController();
   final _city = TextEditingController();
   final _contact = TextEditingController();
@@ -113,11 +122,25 @@ class _NewCustomerScreenState extends ConsumerState<NewCustomerScreen> {
       _error = null;
     });
     // Asked again here, not only as the rep types: while the list is still
-    // loading the warning under the name has nothing to compare against.
+    // loading the warning under the name has nothing to compare against. A
+    // match the rep has not been shown stops this tap once, so they see it;
+    // the next tap adds theirs.
+    final shown = {
+      for (final s in storesNamed(ref.read(storesProvider).value ?? const [], _name.text)) s.id,
+    };
     final known = storesNamed(await ref.read(storesProvider.future), _name.text);
     if (!mounted) return;
-    if (known.isNotEmpty) {
+    if (known.any((s) => !shown.contains(s.id))) {
+      final site = ref.read(termsProvider).site;
       setState(() => _saving = false);
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(SnackBar(
+          content: Text(
+            'That name is on your list already. If it is not the same '
+            '${site.oneLower}, tap the button again to add yours.',
+          ),
+        ));
       return;
     }
     try {
@@ -237,6 +260,18 @@ class _NewCustomerScreenState extends ConsumerState<NewCustomerScreen> {
                     ),
                   ],
                 ),
+              ),
+            ),
+          if (matches.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: Text(
+                matches.length == 1
+                    ? 'A different $site with the same name? Fill in the rest '
+                        'and add it as a new one.'
+                    : 'Not one of these? Fill in the rest and add it as a new '
+                        '$site.',
+                style: Theme.of(context).textTheme.bodySmall,
               ),
             ),
           const SizedBox(height: 12),

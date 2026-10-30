@@ -8,6 +8,11 @@ class OutboxType {
   static const visitCheckOut = 'visit_check_out';
   static const workdayStart = 'workday_start';
   static const workdayEnd = 'workday_end';
+
+  /// The rep's own end of today's workday, taken back: they ended it by
+  /// mistake. Shares the session's client id, so it waits behind that
+  /// session's start and end, and lands after them.
+  static const workdayReopen = 'workday_reopen';
   static const locationPing = 'location_ping';
 
   /// Composite: uploads any photos, then inserts the submission and all of

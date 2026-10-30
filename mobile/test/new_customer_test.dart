@@ -1,7 +1,8 @@
 // A rep adds a customer on the phone (`store_add_from_phone()`), then visits
 // and orders there, possibly with no signal. The customer must reach the
-// server before anything that names it, must stay in the picker until the
-// server has it, and must not be added twice under the same name.
+// server before anything that names it, and must stay in the picker until the
+// server has it. A name already on the list is offered, not refused: see
+// same_name_customer_test.dart.
 //
 // A real `SupabaseClient` over a fake PostgREST, as in order_replay_test.dart.
 

@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:http/http.dart' as http;
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -42,10 +43,25 @@ List<StoreSummary> storesNamed(List<StoreSummary> stores, String name) {
 ) {
   final known = {for (final s in fromServer) s.id};
   final stillLocal = added.where((s) => !known.contains(s.id)).toList();
-  final all = [...fromServer, ...stillLocal]
-    ..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+  final all = [...fromServer, ...stillLocal]..sort(compareStoreNames);
   return (stores: all, stillLocal: stillLocal);
 }
+
+/// A–Z by name, ignoring case. Two customers with the same name keep the same
+/// order on every refresh: a list that swaps them between refreshes makes a
+/// rep tap the wrong one.
+int compareStoreNames(StoreSummary a, StoreSummary b) {
+  final byName = a.name.toLowerCase().compareTo(b.name.toLowerCase());
+  if (byName != 0) return byName;
+  final byPlace = a.location.toLowerCase().compareTo(b.location.toLowerCase());
+  return byPlace != 0 ? byPlace : a.id.compareTo(b.id);
+}
+
+/// Rows per request for the customer list. The API answers at most 1,000
+/// rows a request (the project's max rows), so a page must not ask for more:
+/// a page shorter than this is how the last one is recognised.
+@visibleForTesting
+const kStorePageSize = 1000;
 
 /// A refusal from `set_store_location_from_visit`, carrying a message written
 /// for the rep to read rather than a Postgres error to decode.
@@ -318,18 +334,34 @@ class RouteRepository {
 
   /// The org's active stores, cached so an unscheduled visit can be started
   /// with no connection.
+  ///
+  /// Read a page at a time. One request stops at the API's 1,000 rows, and
+  /// a distributor passed that on 30 Oct 2026: the customers at the end of the
+  /// alphabet were missing from every phone, and each customer a rep added
+  /// pushed another one off. Paged by id rather than by name, so a customer
+  /// added while the pages are read cannot shift the rest and be skipped or
+  /// read twice; [mergeAddedStores] puts them in name order.
   Future<List<StoreSummary>> fetchStores() async {
     try {
-      final rows = await _client
-          .from('stores')
-          .select('id, name, address, city, state, lat, lng, geocode_source, '
-              'geofence_radius_m')
-          .eq('active', true)
-          .order('name', ascending: true);
-
-      final stores = (rows as List)
-          .map((r) => StoreSummary.fromMap(r as Map<String, dynamic>))
-          .toList();
+      final stores = <StoreSummary>[];
+      String? after;
+      while (true) {
+        var query = _client
+            .from('stores')
+            .select('id, name, address, city, state, lat, lng, geocode_source, '
+                'geofence_radius_m')
+            .eq('active', true);
+        if (after != null) query = query.gt('id', after);
+        final rows = await query
+            .order('id', ascending: true)
+            .limit(kStorePageSize);
+        final page = (rows as List)
+            .map((r) => StoreSummary.fromMap(r as Map<String, dynamic>))
+            .toList();
+        stores.addAll(page);
+        if (page.length < kStorePageSize) break;
+        after = page.last.id;
+      }
 
       await _db.setValue(
         _storesKey,

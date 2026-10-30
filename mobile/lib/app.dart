@@ -144,7 +144,10 @@ final routerProvider = Provider<GoRouter>((ref) {
                   // Before ':storeId', which would otherwise take 'new' as an id.
                   GoRoute(
                     path: 'new',
-                    builder: (context, state) => const NewCustomerScreen(forOrder: true),
+                    builder: (context, state) => NewCustomerScreen(
+                      forOrder: true,
+                      name: state.uri.queryParameters['name'],
+                    ),
                   ),
                   GoRoute(
                     path: ':storeId',
@@ -156,7 +159,8 @@ final routerProvider = Provider<GoRouter>((ref) {
               ),
               GoRoute(
                 path: 'new',
-                builder: (context, state) => const NewCustomerScreen(),
+                builder: (context, state) =>
+                    NewCustomerScreen(name: state.uri.queryParameters['name']),
               ),
               GoRoute(
                 path: 'sales',
