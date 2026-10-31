@@ -724,10 +724,16 @@ export default function StocktakeDetailPage() {
                 run(async () => {
                   try {
                     await cancelStocktake(supabase, { id, reason: note.trim() || null });
+                    setFailedLines(new Set());
                   } catch (e) {
                     // Most often someone else handed it in meanwhile: show the
-                    // sheet as it is now behind the refusal.
-                    await reload().catch(() => {});
+                    // sheet as it is now behind the refusal. Only then, though:
+                    // reloading a sheet still being counted would throw away
+                    // the counts typed but not saved.
+                    const now = await fetchStocktake(supabase, id).catch(() => null);
+                    if (now && now.stocktake.status !== "counting") {
+                      await reload().catch(() => {});
+                    }
                     throw e;
                   }
                 }, "Cancelled. Nothing in the stock changed.")
