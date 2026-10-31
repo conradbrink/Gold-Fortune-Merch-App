@@ -1,4 +1,5 @@
--- A rep adds a new customer from the phone: 20261029161300_store_add_from_phone.
+-- A rep adds a new customer from the phone: 20261029161300_store_add_from_phone,
+-- with the suburb and area from 20261031154700_store_add_from_phone_suburb.
 --
 --   A1  A rep adds a customer: name tidied, delivery address, town, the
 --       position they stand at (source 'rep'), the price group they chose.
@@ -11,6 +12,13 @@
 --   A6  The rep can take an order for the customer they just added.
 --   A7  store_add_from_phone keeps its security: definer, a fixed
 --       search_path, no execute for anon or PUBLIC.
+--   A8  A suburb the company has: the company's spelling, and the area most
+--       of its customers with an area are in. Customers with no area, and
+--       another company's, do not count.
+--   A9  A town with a suburb in it: the suburb, and the words left over on
+--       the end of the address (once, and not when the address has them).
+--   A10 The longest suburb wins; a town that matches nothing is kept as
+--       typed with no area.
 --
 -- HOW TO RUN: as dashboard.sql. One DO block that always ends in
 -- `raise exception`, so nothing survives.
@@ -21,8 +29,9 @@ declare
   v_fail text := '';
   v_checks int := 0;
   v_rep uuid; v_group uuid; v_other_group uuid; v_other_store uuid;
+  v_t1 uuid; v_t2 uuid; v_other_terr uuid; v_other_org uuid;
   v_id uuid := gen_random_uuid();
-  v_stores int; v_err text; v_res jsonb; r record;
+  v_stores int; v_err text; v_res jsonb; r record; v_row public.stores;
   v_name text := 'ZZ Phone Customer ' || left(md5(random()::text), 6);
 begin
   select p.id into v_rep from public.profiles p
@@ -31,8 +40,32 @@ begin
   select id into v_group from public.store_groups where org_id = c_gf order by name, id limit 1;
   select id into v_other_group from public.store_groups where org_id <> c_gf order by id limit 1;
   select id into v_other_store from public.stores where org_id <> c_gf order by id limit 1;
-  if v_rep is null then
-    raise exception 'Fixtures missing: a rep in the company';
+  select id into v_t1 from public.territories
+   where org_id = c_gf and level = 'territory' and active order by id limit 1;
+  select id into v_t2 from public.territories
+   where org_id = c_gf and level = 'territory' and active and id <> v_t1 order by id limit 1;
+  select id, org_id into v_other_terr, v_other_org from public.territories
+   where org_id <> c_gf and level = 'territory' and active order by id limit 1;
+  if v_rep is null or v_t2 is null then
+    raise exception 'Fixtures missing: a rep and two areas in the company';
+  end if;
+
+  -- Suburbs no company has (Zzq): Mitchells Plain mostly in the first area,
+  -- with a second spelling in the second; customers with no area that would
+  -- outvote both; Table View, Park and Park East in the second area; and
+  -- another company's suburb.
+  insert into public.stores (org_id, name, city, territory_id, geofence_radius_m)
+  select c_gf, 'ZZ Suburb fixture', t.city, t.territory_id, 100
+    from (values
+      ('Zzq Mitchells Plain', v_t1), ('Zzq Mitchells Plain', v_t1), ('Zzq Mitchells Plain', v_t1),
+      ('Zzq Mitchells Plain', v_t2), ('ZZQ MITCHELLS PLAIN', v_t2),
+      ('zzq mitchells plain', null), ('zzq mitchells plain', null), ('zzq mitchells plain', null),
+      ('zzq mitchells plain', null), ('zzq mitchells plain', null),
+      ('Zzq Table View', v_t2), ('Zzq Park', v_t1), ('Zzq Park East', v_t2)
+    ) t(city, territory_id);
+  if v_other_terr is not null then
+    insert into public.stores (org_id, name, city, territory_id, geofence_radius_m)
+    values (v_other_org, 'ZZ Suburb fixture', 'Zzq Elsewhere', v_other_terr, 100);
   end if;
 
   perform set_config('request.jwt.claims', json_build_object('sub', v_rep, 'role', 'authenticated')::text, true);
@@ -121,6 +154,65 @@ begin
     get stacked diagnostics v_err = message_text;
     v_fail := v_fail || 'A6 the rep could not order for the new customer: ' || v_err || E'\n';
   end;
+
+  ---------------------------------------------------------------- A8 a suburb the company has
+  for r in
+    select * from (values
+      ('picked', 'Zzq Mitchells Plain', 'Zzq Mitchells Plain', v_t1),
+      ('typed in small letters', 'zzq   mitchells plain', 'Zzq Mitchells Plain', v_t1),
+      ('typed with an apostrophe', 'ZZQ MITCHELL''S PLAIN', 'Zzq Mitchells Plain', v_t1),
+      ('typed as one word', 'ZZQTABLEVIEW', 'Zzq Table View', v_t2),
+      ('another company''s', 'Zzq Elsewhere', 'Zzq Elsewhere', null)
+    ) t(label, town, city, territory_id)
+  loop
+    v_id := gen_random_uuid();
+    v_checks := v_checks + 1;
+    perform public.store_add_from_phone(v_id, v_name || ' ' || r.label, '7 Rose Street', r.town);
+    select * into v_row from public.stores where id = v_id;
+    if (v_row.city, v_row.territory_id, v_row.address)
+       is distinct from (r.city, r.territory_id, '7 Rose Street') then
+      v_fail := v_fail || 'A8 ' || r.label || ': ' || coalesce(v_row.city, 'no town') || ' / '
+                || coalesce(v_row.territory_id::text, 'no area') || ' / ' || coalesce(v_row.address, '') || E'\n';
+    end if;
+  end loop;
+
+  ---------------------------------------------------------------- A9 the part of town goes to the address
+  for r in
+    select * from (values
+      ('after the suburb', 'ZZQ MITCHELL S PLAIN  WESTRIDGE', '12 Main Road', '12 Main Road, Westridge'),
+      ('before the suburb', 'new woodlands, zzq mitchells plain', '12 Main Road', '12 Main Road, New Woodlands'),
+      ('mixed case kept', 'Zzq Mitchells Plain Lentegeur Ext', '3 Kudu St', '3 Kudu St, Lentegeur Ext'),
+      ('in the address already', 'Zzq Mitchells Plain Westridge', '4 Rose St, Westridge', '4 Rose St, Westridge')
+    ) t(label, town, addr, expect)
+  loop
+    v_id := gen_random_uuid();
+    v_checks := v_checks + 1;
+    perform public.store_add_from_phone(v_id, v_name || ' ' || r.label, r.addr, r.town);
+    select * into v_row from public.stores where id = v_id;
+    if (v_row.city, v_row.territory_id, v_row.address)
+       is distinct from ('Zzq Mitchells Plain', v_t1, r.expect) then
+      v_fail := v_fail || 'A9 ' || r.label || ': ' || coalesce(v_row.city, 'no town') || ' / '
+                || coalesce(v_row.territory_id::text, 'no area') || ' / ' || coalesce(v_row.address, '') || E'\n';
+    end if;
+  end loop;
+
+  ---------------------------------------------------------------- A10 longest wins; unknown kept
+  for r in
+    select * from (values
+      ('longest', 'Zzq Park East', 'Zzq Park East', v_t2),
+      ('unknown', 'Zzq Nowhere Heights', 'Zzq Nowhere Heights', null::uuid)
+    ) t(label, town, city, territory_id)
+  loop
+    v_id := gen_random_uuid();
+    v_checks := v_checks + 1;
+    perform public.store_add_from_phone(v_id, v_name || ' ' || r.label, '1 Road', r.town);
+    select * into v_row from public.stores where id = v_id;
+    if (v_row.city, v_row.territory_id, v_row.address)
+       is distinct from (r.city, r.territory_id, '1 Road') then
+      v_fail := v_fail || 'A10 ' || r.label || ': ' || coalesce(v_row.city, 'no town') || ' / '
+                || coalesce(v_row.territory_id::text, 'no area') || ' / ' || coalesce(v_row.address, '') || E'\n';
+    end if;
+  end loop;
 
   reset role;
 
