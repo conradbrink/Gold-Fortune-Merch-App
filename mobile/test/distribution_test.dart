@@ -42,6 +42,18 @@ void main() {
     });
   });
 
+  group('checksForUpdates', () {
+    test('the APK asks the server for a newer release', () {
+      expect(checksForUpdates(DistributionChannel.direct), isTrue);
+    });
+
+    test('store builds do not ask for rows that cannot exist yet', () {
+      expect(kStoreReleaseRows, isFalse);
+      expect(checksForUpdates(DistributionChannel.googlePlay), isFalse);
+      expect(checksForUpdates(DistributionChannel.appStore), isFalse);
+    });
+  });
+
   group('releasePlatformFor', () {
     test('the APK keeps reading the rows the download page publishes', () {
       expect(releasePlatformFor(DistributionChannel.direct), 'android');

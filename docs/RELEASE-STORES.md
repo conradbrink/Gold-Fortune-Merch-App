@@ -27,8 +27,9 @@ all.
 
 **Store builds never prompt for an update yet.** `app_releases` only accepts
 `platform = 'android'`, and every row needs an uploaded file
-(`storage_path`, `file_size_bytes`). So `google_play` and `app_store` find
-nothing, and the stores update those phones themselves. To force a store
+(`storage_path`, `file_size_bytes`). So store builds do not ask at all
+(`kStoreReleaseRows` is false), and the stores update those phones
+themselves. Set it true in the same change as the migration below. To force a store
 install off an old version later, a migration has to let store rows in
 (platform check widened, file columns optional for store rows). Add a store
 row only once that version is live in that store: a floor raised before the
@@ -147,16 +148,15 @@ flutter build ipa --release \
 ```
 
 The App Store number exists once the app is created in App Store Connect,
-before the first upload. Without it the update button falls back to a search
-for Tickd in the App Store.
+before the first upload. Without it the update button can only open the App
+Store's front page (apps.apple.com has no search link to send a name to).
 
 Still to check on the first build and on a real iPhone:
 
 - that every plugin compiles with Xcode 26, and whether App Store Connect asks
   for a privacy manifest;
 - the trail behind other apps, the blue pill, and battery use over a day.
-  iOS has no time interval: with no distance filter and pausing switched off
-  it reports roughly every second while moving, and only the app's ping
-  spacing keeps the rows down. If the battery suffers, give iOS a distance
-  filter;
+  iOS has no time interval, so it reports by distance: every 100 m
+  (`kIosTrackingDistanceFilterM`). Check that a rep standing in a shop still
+  shows on the live map often enough;
 - check-in, camera, photo picker and file opening.

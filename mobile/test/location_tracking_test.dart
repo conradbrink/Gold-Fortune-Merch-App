@@ -100,6 +100,10 @@ void main() {
       expect(ios.showBackgroundLocationIndicator, isTrue);
       // Paused updates go quiet in a shop, which reads as a dead phone.
       expect(ios.pauseLocationUpdatesAutomatically, isFalse);
+      // No time interval on iOS: without a distance filter it reports about
+      // once a second while driving, all day.
+      expect(ios.distanceFilter, kIosTrackingDistanceFilterM);
+      expect(ios.distanceFilter, greaterThan(0));
     });
 
     test('no stream is offered when nothing is permitted', () {

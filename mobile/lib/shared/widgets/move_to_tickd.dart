@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/company_config.dart';
 import '../../core/env.dart';
@@ -8,6 +7,7 @@ import '../../core/move_to_tickd.dart';
 import '../../core/product.dart';
 import '../../core/providers.dart';
 import '../../features/workday/workday_controller.dart';
+import '../open_link.dart';
 
 /// The old app's last job: moving its rep to Tickd without losing anything.
 ///
@@ -104,15 +104,9 @@ class _MoveToTickdScreenState extends ConsumerState<MoveToTickdScreen> {
     }
   }
 
-  Future<void> _openDownload() async {
-    // A compile-time URL, never one from the server (see AppUpdateGate).
-    final ok = await launchUrl(Uri.parse(Env.downloadPageUrl), mode: LaunchMode.externalApplication);
-    if (!ok && mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Could not open the browser. Go to ${Env.downloadPageUrl}')),
-      );
-    }
-  }
+  // A compile-time URL, never one from the server (see AppUpdateGate).
+  Future<void> _openDownload() =>
+      openFirstLink(context, [Uri.parse(Env.downloadPageUrl)]);
 
   @override
   Widget build(BuildContext context) {

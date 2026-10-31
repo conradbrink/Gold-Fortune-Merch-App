@@ -56,6 +56,8 @@ const _postponedKey = 'update.postponed_version_code';
 /// into a lockout when the network is down is worse than no update check.
 final appUpdateProvider = FutureProvider<AppUpdateInfo?>((ref) async {
   final db = ref.watch(appDatabaseProvider);
+  final channel = distributionChannel;
+  if (!checksForUpdates(channel)) return null;
 
   final info = await PackageInfo.fromPlatform();
   final installed = int.tryParse(info.buildNumber);
@@ -66,7 +68,7 @@ final appUpdateProvider = FutureProvider<AppUpdateInfo?>((ref) async {
     row = await supabase
         .from('app_releases')
         .select('version_name, version_code, notes, min_supported_version_code')
-        .eq('platform', releasePlatformFor(distributionChannel))
+        .eq('platform', releasePlatformFor(channel))
         .eq('is_current', true)
         .maybeSingle();
   } catch (_) {

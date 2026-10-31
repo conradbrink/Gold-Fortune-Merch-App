@@ -38,13 +38,26 @@ DistributionChannel channelFor({
 DistributionChannel get distributionChannel =>
     channelFor(platform: defaultTargetPlatform, playBuild: Env.playBuild);
 
+/// Whether `app_releases` can hold store rows yet.
+///
+/// It cannot: its CHECK allows only `android`, and every row needs an uploaded
+/// file. Until the migration that lets store rows in, a store build would ask
+/// on every launch, over a rep's mobile data, for a row that cannot exist; so
+/// it does not ask at all. Set this true in the same change as that migration.
+const kStoreReleaseRows = false;
+
+/// Whether this channel's update check is worth a request.
+bool checksForUpdates(DistributionChannel channel) =>
+    channel == DistributionChannel.direct || kStoreReleaseRows;
+
 /// The `app_releases.platform` the update check reads for a channel.
 ///
 /// Each channel has its own row, because a store takes hours or days to
 /// review a release that the download page has the moment it is uploaded. A
 /// floor raised for the APK must not lock out a store install that has nothing
-/// newer to update to yet. Today only `android` rows exist, so store builds
-/// find nothing and never prompt; the stores update them on their own.
+/// newer to update to yet. Today only `android` rows can exist, so store
+/// builds do not ask ([kStoreReleaseRows]); the stores update them on their
+/// own.
 String releasePlatformFor(DistributionChannel channel) => switch (channel) {
       DistributionChannel.direct => 'android',
       DistributionChannel.googlePlay => 'google_play',

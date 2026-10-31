@@ -75,6 +75,17 @@ const kLocationPingInterval = Duration(minutes: 5);
 ///   does, so mileage still only counts movement that actually happened.
 const kTrackingDistanceFilterM = 0;
 
+/// Metres an iPhone must move before it reports a new position.
+///
+/// iOS has no time interval to sample on: with no distance filter and pausing
+/// switched off, it reports about once a second while the rep drives, all day.
+/// A hundred metres is the accuracy the trail asks for anyway (`medium`), so a
+/// closer fix is noise. Standing still costs nothing extra: iOS reports a
+/// position when it changes, not on a clock, so a rep in a shop is quiet with
+/// or without the filter, and the trail restarts on resume if it has gone
+/// quiet too long ([trailLooksStalled]).
+const kIosTrackingDistanceFilterM = 100;
+
 /// Metres a leg must cover before it counts toward a rep's mileage.
 ///
 /// The distance filter used to do this implicitly: nothing under 75 m was ever
@@ -198,7 +209,7 @@ class LocationTracking {
     if ((platform ?? defaultTargetPlatform) == TargetPlatform.iOS) {
       return AppleSettings(
         accuracy: LocationAccuracy.medium,
-        distanceFilter: kTrackingDistanceFilterM,
+        distanceFilter: kIosTrackingDistanceFilterM,
         // Keeps the stream alive behind other apps. It needs the `location`
         // background mode in Info.plist, and shows the blue location pill so
         // the rep can see that it is recording.

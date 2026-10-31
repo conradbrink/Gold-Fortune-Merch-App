@@ -86,7 +86,7 @@ export default function PrivacyPage() {
         <li>Location: the phone app records where a team member is only while they have a workday open, and the place of each check-in.</li>
         <li>Work records: check-ins and check-outs, photos taken in the app, forms, orders and notes your team adds.</li>
         <li>
-          Payments: Payfast handles your card. We receive a reference to the saved card and a record of each payment,
+          Payments: Paystack handles your card. We receive a reference to the saved card and a record of each payment,
           never the card number.
         </li>
       </ul>
@@ -109,7 +109,7 @@ export default function PrivacyPage() {
         <li>Vercel: hosts the website and the dashboard.</li>
         {usesAnalytics && <li>Google Analytics: counts visits to this website.</li>}
         {usesMetaPixel && <li>Meta: tells us which of our Facebook and Instagram adverts work.</li>}
-        <li>Payfast: takes card payments.</li>
+        <li>Paystack: takes card payments.</li>
         <li>Google Maps: shows maps and turns addresses into map positions.</li>
         <li>Sentry: tells us about faults in the app. It is set up not to receive IP addresses, cookies, passwords or sign-in details.</li>
         <li>OpenAI: only when a manager asks the dashboard&apos;s AI insights a question, the figures needed to answer it are sent.</li>

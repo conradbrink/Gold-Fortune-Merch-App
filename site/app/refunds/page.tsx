@@ -3,7 +3,8 @@ import { LegalPage } from "@/components/legal-page";
 import { founding, site } from "@/lib/site";
 
 // DRAFT for the owner's lawyer to check before launch (owner, 8 Oct 2026).
-// Payfast's review asks for a cancellation and refund policy on the website.
+// Card payment providers ask for a cancellation and refund policy on the
+// website (Payfast's review did; billing moved to Paystack on 22 Oct 2026).
 
 export const metadata: Metadata = { title: `Cancellations and refunds | ${site.name}` };
 
@@ -37,7 +38,7 @@ export default function RefundsPage() {
           If South Africa&apos;s Electronic Communications and Transactions Act gives you a cooling-off right as a
           consumer, you may use it as that Act allows, and we refund any payment it covers in full.
         </li>
-        <li>Refunds go back to the card you paid with, through Payfast, and you get a credit note in the app.</li>
+        <li>Refunds go back to the card you paid with, through Paystack, and you get a credit note in the app.</li>
       </ul>
 
       <h2>Ask us</h2>

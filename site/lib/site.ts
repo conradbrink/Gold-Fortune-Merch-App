@@ -207,7 +207,7 @@ export const legal = {
   informationOfficer: "",
   // Where the app's data is hosted (Supabase, AWS eu-west-3).
   dataLocation: "Paris, France",
-  lastUpdated: "22 October 2026",
+  lastUpdated: "31 October 2026",
 } as const;
 
 export function rand(amount: number): string {
