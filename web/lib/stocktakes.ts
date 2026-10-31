@@ -261,6 +261,23 @@ export async function decideStocktake(
 }
 
 /**
+ * Cancels a count that is still being counted. Nothing has touched the stock,
+ * so nothing changes; the count is filed as cancelled with who, when and the
+ * reason, if one was given. A handed-in sheet is rejected instead.
+ */
+export async function cancelStocktake(
+  supabase: Client,
+  input: { id: string; reason: string | null }
+) {
+  const { data, error } = await supabase.rpc("stocktake_cancel", {
+    p_stocktake_id: input.id,
+    p_reason: input.reason ?? undefined,
+  });
+  fail(error);
+  return data as Record<string, unknown>;
+}
+
+/**
  * A manager recounts one line of a handed-in sheet. The recount is measured
  * against what the system says now, and the first count stays on the line.
  */

@@ -15,6 +15,11 @@
 --   S6  anon cannot call the recount.
 --   S7  A line that changed after it was counted is refused at approval even
 --       when ticked "re-checked" (20261017130000), and named in the refusal.
+--   S8  Warehouse staff cancel a count being counted (20261031163700): filed
+--       as cancelled with who, when and why, the typed counts kept and locked,
+--       nothing posted, the freeze lifted, and a new count can start there.
+--   S9  A handed-in count, or one already cancelled, cannot be cancelled.
+--   S10 A rep and anon cannot cancel a count.
 --
 -- HOW TO RUN: one DO block that always ends in `raise exception`, so nothing
 -- survives. The last line of the message is the verdict.
@@ -27,6 +32,7 @@ declare
   v_loc uuid; v_store uuid; v_order uuid; v_order_no text;
   v_packed uuid; v_expired uuid; v_damaged uuid; v_moved uuid;
   v_st uuid; v_line uuid; v_msg text; v_n int; j jsonb; r record;
+  v_rep uuid; v_cancel uuid;
 begin
   select id into v_mgr from public.profiles
    where org_id = c_gf and role = 'manager' and is_active order by created_at limit 1;
@@ -206,6 +212,136 @@ begin
   ---------------------------------------------------------- S6 anon
   if has_function_privilege('anon', 'public.stocktake_recount_line(uuid, integer, text)', 'execute') then
     v_fail := v_fail || 'S6 anon can call the recount' || E'\n';
+  end if;
+
+  ---------------------------------------------------------- S8 cancel
+  -- The first count is approved, so the location is free for another.
+  perform set_config('request.jwt.claims',
+    json_build_object('sub', v_wh, 'role', 'authenticated')::text, true);
+  set local role authenticated;
+  j := public.stocktake_open(v_loc, 'full', null, true);
+  v_cancel := (j->>'stocktake_id')::uuid;
+  update public.stocktake_lines set counted_qty = 7
+   where stocktake_id = v_cancel and product_id = v_moved;
+  reset role;
+  begin
+    insert into public.stock_movements (org_id, product_id, qty, to_location_id, to_bucket, reason, source_doc_type)
+    values (c_gf, v_moved, 1, v_loc, 'available', 'adjustment_found', 'adjustment');
+    v_fail := v_fail || 'S8 stock moved at a frozen location' || E'\n';
+  exception when insufficient_privilege then null;
+  end;
+  set local role authenticated;
+
+  j := public.stocktake_cancel(v_cancel, '  Started at the wrong warehouse  ');
+  if j->>'status' <> 'cancelled' then
+    v_fail := v_fail || 'S8 the cancel returned ' || j::text || E'\n';
+  end if;
+  reset role;
+  select * into r from public.stocktakes where id = v_cancel;
+  if r.status <> 'cancelled' or r.decided_by is distinct from v_wh or r.decided_at is null
+     or r.decision_note is distinct from 'Started at the wrong warehouse' then
+    v_fail := v_fail || format('S8 the cancelled count: status %s, by %s, at %s, note %s',
+      r.status, r.decided_by, r.decided_at, r.decision_note) || E'\n';
+  end if;
+  select count(*) into v_n from public.stock_movements
+   where source_doc_type = 'stocktake' and source_doc_id = v_cancel;
+  if v_n <> 0 then
+    v_fail := v_fail || format('S8 a cancel posted %s movements', v_n) || E'\n';
+  end if;
+  select counted_qty into v_n from public.stocktake_lines
+   where stocktake_id = v_cancel and product_id = v_moved;
+  if v_n is distinct from 7 then
+    v_fail := v_fail || 'S8 the typed count did not stay on the cancelled sheet' || E'\n';
+  end if;
+  -- The freeze held only while the count was open.
+  begin
+    insert into public.stock_movements (org_id, product_id, qty, to_location_id, to_bucket, reason, source_doc_type)
+    values (c_gf, v_moved, 1, v_loc, 'available', 'adjustment_found', 'adjustment');
+  exception when others then
+    v_fail := v_fail || 'S8 the freeze outlived the cancel: ' || sqlerrm || E'\n';
+  end;
+  set local role authenticated;
+  -- A page left open: the counter is told it was cancelled.
+  v_msg := null;
+  begin
+    update public.stocktake_lines set counted_qty = 9
+     where stocktake_id = v_cancel and product_id = v_moved;
+    v_fail := v_fail || 'S8 a count was changed on a cancelled sheet' || E'\n';
+  exception when insufficient_privilege then
+    v_msg := sqlerrm;
+  end;
+  if v_msg is null or position('was cancelled, so its counts cannot be changed' in v_msg) = 0 then
+    v_fail := v_fail || 'S8 the refusal on a cancelled sheet says: ' || coalesce(v_msg, '(none)') || E'\n';
+  end if;
+  -- One open count per location: the cancel freed it. No reason is fine.
+  begin
+    j := public.stocktake_open(v_loc, 'spot', null, false);
+    v_st := (j->>'stocktake_id')::uuid;
+    perform public.stocktake_cancel(v_st, null);
+    if (select decision_note from public.stocktakes where id = v_st) is not null then
+      v_fail := v_fail || 'S8 a cancel with no reason filed one' || E'\n';
+    end if;
+  exception when others then
+    v_fail := v_fail || 'S8 a new count could not start after a cancel: ' || sqlerrm || E'\n';
+  end;
+
+  ---------------------------------------------------------- S9 not twice, not handed in
+  v_msg := null;
+  begin
+    perform public.stocktake_cancel(v_cancel, null);
+    v_fail := v_fail || 'S9 a cancelled count was cancelled again' || E'\n';
+  exception when insufficient_privilege then
+    v_msg := sqlerrm;
+  end;
+  if v_msg is null or position('is cancelled, so it cannot be cancelled' in v_msg) = 0 then
+    v_fail := v_fail || 'S9 cancelling twice says: ' || coalesce(v_msg, '(none)') || E'\n';
+  end if;
+  j := public.stocktake_open(v_loc, 'full', null, false);
+  v_st := (j->>'stocktake_id')::uuid;
+  update public.stocktake_lines set counted_qty = system_qty_at_open where stocktake_id = v_st;
+  perform public.stocktake_submit(v_st);
+  v_msg := null;
+  begin
+    perform public.stocktake_cancel(v_st, null);
+    v_fail := v_fail || 'S9 a handed-in count was cancelled' || E'\n';
+  exception when insufficient_privilege then
+    v_msg := sqlerrm;
+  end;
+  if v_msg is null or position('has been handed in. A manager can reject it instead' in v_msg) = 0 then
+    v_fail := v_fail || 'S9 cancelling a handed-in count says: ' || coalesce(v_msg, '(none)') || E'\n';
+  end if;
+  v_msg := null;
+  begin
+    update public.stocktake_lines set counted_qty = 0 where stocktake_id = v_st;
+    v_fail := v_fail || 'S9 a count was changed on a handed-in sheet' || E'\n';
+  exception when insufficient_privilege then
+    v_msg := sqlerrm;
+  end;
+  if v_msg is null or position('has been handed in, so its counts cannot be changed' in v_msg) = 0 then
+    v_fail := v_fail || 'S9 the refusal on a handed-in sheet says: ' || coalesce(v_msg, '(none)') || E'\n';
+  end if;
+  reset role;
+
+  ---------------------------------------------------------- S10 who may cancel
+  select id into v_rep from public.profiles
+   where org_id = c_gf and role = 'rep' and is_active order by created_at limit 1;
+  if v_rep is null then
+    v_fail := v_fail || 'S10 fixture missing: a Gold Fortune rep' || E'\n';
+  else
+    update public.stocktakes set status = 'counting', submitted_at = null, submitted_by = null
+     where id = v_st;
+    perform set_config('request.jwt.claims',
+      json_build_object('sub', v_rep, 'role', 'authenticated')::text, true);
+    set local role authenticated;
+    begin
+      perform public.stocktake_cancel(v_st, null);
+      v_fail := v_fail || 'S10 a rep cancelled a count' || E'\n';
+    exception when insufficient_privilege then null;
+    end;
+    reset role;
+  end if;
+  if has_function_privilege('anon', 'public.stocktake_cancel(uuid, text)', 'execute') then
+    v_fail := v_fail || 'S10 anon can call the cancel' || E'\n';
   end if;
 
   if v_fail = '' then

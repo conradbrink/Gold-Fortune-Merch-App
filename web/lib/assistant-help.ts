@@ -394,6 +394,7 @@ export const HELP_TOPICS: readonly HelpTopic[] = [
       `Open "Inventory" in the menu and press "Stocktakes".`,
       `Press "Start a count", choose the "Location" and "Type", then press "Start counting".`,
       `Type what you counted on each line. Press "Save counts" to carry on later.`,
+      `If you started the count by mistake, press "Cancel count", then "Cancel the count". Nothing in the stock changes.`,
       `Press "Hand the sheet in" when every line is counted.`,
       `Press "Approve" to correct the stock to the count, or "Reject" to leave it as it is.`,
     ],

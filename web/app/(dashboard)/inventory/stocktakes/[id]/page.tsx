@@ -37,6 +37,7 @@ import {
   CountSaveError,
   submitStocktake,
   decideStocktake,
+  cancelStocktake,
   recountLine,
   balanceKey,
   VARIANCE_REASONS,
@@ -44,7 +45,7 @@ import {
   type StocktakeRow,
   type VarianceRow,
 } from "@/lib/stocktakes";
-import { stocktakeSheet, whoAndWhen } from "@/lib/stocktake-sheet";
+import { decidedLabel, stocktakeSheet, whoAndWhen } from "@/lib/stocktake-sheet";
 
 type Line = {
   id: string;
@@ -76,6 +77,10 @@ type Line = {
  * A recount is measured against the system now, and the first count stays on
  * the line. It is also how a manager puts right a count that missed the boxes
  * packed for orders.
+ *
+ * A count started by mistake can be cancelled until it is handed in
+ * (20261031163700). Nothing has touched the stock by then, and the sheet stays
+ * on file, read-only, with whatever counts had been saved.
  */
 export default function StocktakeDetailPage() {
   const supabase = createClient();
@@ -107,7 +112,7 @@ export default function StocktakeDetailPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
-  const [dialog, setDialog] = useState<null | "approve" | "reject">(null);
+  const [dialog, setDialog] = useState<null | "approve" | "reject" | "cancel">(null);
   const [note, setNote] = useState("");
   const [recounting, setRecounting] = useState<VarianceRow | null>(null);
   const [recountQty, setRecountQty] = useState("");
@@ -131,7 +136,9 @@ export default function StocktakeDetailPage() {
     setReasons(
       Object.fromEntries(d.lines.map((l) => [l.id, l.variance_reason ?? ""]))
     );
-    if (d.stocktake.status !== "counting") {
+    // A cancelled count was never handed in, so there is nothing to measure
+    // its counts against.
+    if (d.stocktake.status !== "counting" && d.stocktake.status !== "cancelled") {
       setVariance(await fetchVarianceReport(supabase, id));
     } else {
       setVariance([]);
@@ -176,6 +183,7 @@ export default function StocktakeDetailPage() {
 
   const counting = head.status === "counting";
   const submitted = head.status === "submitted";
+  const cancelled = head.status === "cancelled";
   const uncounted = lines.filter((l) => (counts[l.id] ?? "") === "").length;
 
   /** Saves the sheet, remembering which lines failed so the table can say so. */
@@ -253,7 +261,8 @@ export default function StocktakeDetailPage() {
             <Badge variant={head.status === "approved" ? "default" : "secondary"}>
               {head.status}
             </Badge>
-            {head.freeze_movements && (
+            {/* The freeze only holds while the count is open. */}
+            {head.freeze_movements && (counting || submitted) && (
               <Badge variant="outline" className="border-sky-500/50 text-sky-600">
                 <Snowflake className="mr-1 h-3 w-3" /> frozen
               </Badge>
@@ -271,6 +280,17 @@ export default function StocktakeDetailPage() {
           <ExportMenu label="Print or Excel" build={exportSheet} />
           {counting && (
             <>
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setNote("");
+                  setError(null);
+                  setDialog("cancel");
+                }}
+                disabled={busy}
+              >
+                Cancel count
+              </Button>
               <Button
                 variant="outline"
                 onClick={() => run(persistCounts, "Counts saved.")}
@@ -325,11 +345,11 @@ export default function StocktakeDetailPage() {
       )}
       {head.decision_note && (
         <p className="rounded-lg border border-border bg-muted/40 p-2.5 text-sm">
-          {head.status === "rejected" ? "Rejected" : "Approved"} — {head.decision_note}
+          {decidedLabel(head.status) ?? "Approved"} — {head.decision_note}
         </p>
       )}
 
-      {!counting && (
+      {!counting && !cancelled && (
         <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
           <StatTile label="Lines counted" value={variance.length} />
           <StatTile
@@ -390,15 +410,16 @@ export default function StocktakeDetailPage() {
       <Card>
         <CardHeader>
           <CardTitle className="text-base">
-            {counting ? "Count sheet" : "Variances"}
+            {counting || cancelled ? "Count sheet" : "Variances"}
           </CardTitle>
         </CardHeader>
         <CardContent>
-          {counting ? (
+          {counting || cancelled ? (
             <>
             <p className="mb-3 text-sm text-muted-foreground">
-              Count every single item at this location, including boxes packed for
-              orders that have not left yet.
+              {counting
+                ? "Count every single item at this location, including boxes packed for orders that have not left yet."
+                : "This count was cancelled before it was handed in. Nothing in the stock changed."}
             </p>
             <Table>
               <TableHeader>
@@ -432,26 +453,34 @@ export default function StocktakeDetailPage() {
                         </TableCell>
                         <TableCell className="text-right tabular-nums text-muted-foreground">
                           {l.system_qty_at_open}
-                          {(setAside[l.id] ?? 0) > 0 && (
+                          {counting && (setAside[l.id] ?? 0) > 0 && (
                             <div className="text-xs">
                               {setAside[l.id]} packed for orders now
                             </div>
                           )}
                         </TableCell>
-                        <TableCell>
-                          <Input
-                            type="number"
-                            min={0}
-                            value={v ?? ""}
-                            onChange={(e) =>
-                              setCounts((p) => ({ ...p, [l.id]: e.target.value }))
-                            }
-                            className="text-right"
-                            aria-label={`Counted quantity for ${l.product_name}`}
-                          />
+                        <TableCell className={cancelled ? "text-right tabular-nums" : undefined}>
+                          {cancelled ? (
+                            (l.counted_qty ?? "—")
+                          ) : (
+                            <Input
+                              type="number"
+                              min={0}
+                              value={v ?? ""}
+                              onChange={(e) =>
+                                setCounts((p) => ({ ...p, [l.id]: e.target.value }))
+                              }
+                              className="text-right"
+                              aria-label={`Counted quantity for ${l.product_name}`}
+                            />
+                          )}
                         </TableCell>
                         <TableCell>
-                          {differs ? (
+                          {cancelled ? (
+                            <span className="text-sm text-muted-foreground">
+                              {l.variance_reason ? l.variance_reason.replace(/_/g, " ") : "—"}
+                            </span>
+                          ) : differs ? (
                             <NativeSelect
                               value={reasons[l.id] ?? ""}
                               onChange={(e) =>
@@ -660,6 +689,58 @@ export default function StocktakeDetailPage() {
               disabled={busy || recountQty === ""}
             >
               {busy ? "Saving…" : "Save the recount"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={dialog === "cancel"} onOpenChange={(v) => !v && setDialog(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Cancel this count</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <p className="text-sm text-muted-foreground">
+              Nothing in the stock changes. The sheet is kept as cancelled, and a new
+              count can be started at {locationName ?? "this location"}.
+              {head.freeze_movements && " Stock can move there again straight away."}
+            </p>
+            <div>
+              <Label htmlFor="cancel-reason">Why? (optional)</Label>
+              <Input
+                id="cancel-reason"
+                value={note}
+                onChange={(e) => setNote(e.target.value)}
+              />
+            </div>
+            <ErrorBanner message={error} />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDialog(null)} disabled={busy}>
+              Back
+            </Button>
+            <Button
+              onClick={() =>
+                run(async () => {
+                  try {
+                    await cancelStocktake(supabase, { id, reason: note.trim() || null });
+                    setFailedLines(new Set());
+                  } catch (e) {
+                    // Most often someone else handed it in meanwhile: show the
+                    // sheet as it is now behind the refusal. Only then, though:
+                    // reloading a sheet still being counted would throw away
+                    // the counts typed but not saved.
+                    const now = await fetchStocktake(supabase, id).catch(() => null);
+                    if (now && now.stocktake.status !== "counting") {
+                      await reload().catch(() => {});
+                    }
+                    throw e;
+                  }
+                }, "Cancelled. Nothing in the stock changed.")
+              }
+              disabled={busy}
+            >
+              {busy ? "Saving…" : "Cancel the count"}
             </Button>
           </DialogFooter>
         </DialogContent>
