@@ -260,11 +260,11 @@ class WorkdayController extends AsyncNotifier<WorkdaySession?> {
       return;
     }
 
-    // Before the trail starts, so its notification can show (Android 13+).
-    // Whatever the answer, the day starts.
-    await NotificationPermission.request();
-
+    // Loading first, so a second tap can't start the day again while the
+    // dialog is coming up. Then asked before the trail starts, so its
+    // notification can show (Android 13+). Whatever the answer, the day starts.
     state = const AsyncLoading();
+    await NotificationPermission.request();
     state = await AsyncValue.guard(() async {
       final repo = ref.read(workdayRepositoryProvider);
       final session = await repo.startWorkday(
@@ -292,8 +292,8 @@ class WorkdayController extends AsyncNotifier<WorkdaySession?> {
 
     final repo = ref.read(workdayRepositoryProvider);
     final sync = ref.read(syncEngineProvider);
-    await NotificationPermission.request();
     state = const AsyncLoading();
+    await NotificationPermission.request();
     state = await AsyncValue.guard(() async {
       final session = await repo.reopenWorkday(
         repId: profile.id,

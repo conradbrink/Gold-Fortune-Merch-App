@@ -59,6 +59,14 @@ class MainActivity : FlutterActivity() {
         pending = null
     }
 
+    override fun onDestroy() {
+        // A dialog the activity did not live to hear the answer to: let the
+        // waiting Dart call carry on rather than hold the workday start.
+        pending?.success(false)
+        pending = null
+        super.onDestroy()
+    }
+
     companion object {
         private const val CHANNEL = "za.co.tickd/notifications"
         private const val REQUEST_CODE = 4711
