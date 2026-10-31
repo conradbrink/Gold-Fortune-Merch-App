@@ -496,6 +496,23 @@ export function matchProducts<
 }
 
 /**
+ * What Enter adds from an order's product search: the top match, because a
+ * barcode scanner sends Enter after the code. Null when the code is a barcode
+ * several of the matches share (one product per quantity band, 31 Oct): the
+ * top one would be a guess at the band, so the clerk picks it from the list.
+ */
+export function enterPick<P extends { unit_barcode: string | null; shrink_barcode: string | null }>(
+  matches: P[],
+  query: string
+): P | null {
+  const code = query.trim().toLowerCase().replace(/\s+/g, "");
+  const exact = matches.filter((p) =>
+    [p.unit_barcode, p.shrink_barcode].some((c) => (c ?? "").toLowerCase().replace(/\s+/g, "") === code)
+  );
+  return exact.length > 1 ? null : (matches[0] ?? null);
+}
+
+/**
  * Creates a store from the order-capture screen.
  *
  * Deliberately minimal — name and where it is. Everything else on a store

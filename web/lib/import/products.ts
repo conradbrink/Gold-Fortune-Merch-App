@@ -12,8 +12,10 @@ import type { Tables } from "@/lib/supabase/types";
  *
  * A price card is a document that gets reissued. The second import of the same
  * file must update the eighteen lines already there rather than create eighteen
- * more, which is what the three partial unique indexes in
- * `20260729104245_create_products_and_projects.sql` exist for.
+ * more. It matches on the SKU code, which is unique per company, and on the
+ * barcodes, which are not: since `20261031172300_products_share_barcodes.sql`
+ * one item priced by quantity band is one product per band, all with the same
+ * barcode. A barcode on several products matches none of them on its own.
  */
 
 export type ProductRow = Tables<"products">;
@@ -223,17 +225,17 @@ export function buildDrafts(
   existing: ProductRow[]
 ): ProductDraft[] {
   const bySku: Record<string, ProductRow> = {};
-  const byUnit: Record<string, ProductRow> = {};
-  const byShrink: Record<string, ProductRow> = {};
+  const byUnit: Record<string, ProductRow[]> = {};
+  const byShrink: Record<string, ProductRow[]> = {};
   for (const p of existing) {
     if (p.sku_code) bySku[p.sku_code.trim().toLowerCase()] = p;
-    if (p.unit_barcode) byUnit[p.unit_barcode.trim()] = p;
-    if (p.shrink_barcode) byShrink[p.shrink_barcode.trim()] = p;
+    if (p.unit_barcode) (byUnit[p.unit_barcode.trim()] ??= []).push(p);
+    if (p.shrink_barcode) (byShrink[p.shrink_barcode.trim()] ??= []).push(p);
   }
 
   // Two rows in one sheet claiming the same barcode bites twice: as two updates
-  // where the second silently wins, or as two creates where the second violates
-  // a unique index and takes its whole batch down. `stores.ts` has no analogue.
+  // of one product where the second silently wins, or as two new products the
+  // next import can only tell apart by a SKU code. `stores.ts` has no analogue.
   const seenUnit: Record<string, number> = {};
   const seenShrink: Record<string, number> = {};
   const seenSku: Record<string, number> = {};
@@ -316,39 +318,61 @@ export function buildDrafts(
       return draft;
     }
 
-    // Match on the three enforced keys, never on name: products_org_name_idx is
-    // deliberately not unique, and the premise of this table is that free text
-    // cannot identify a line.
-    const hits: { product: ProductRow; on: string }[] = [];
+    // Match on the SKU code and the barcodes, never on name: products_org_name_idx
+    // is deliberately not unique, and the premise of this table is that free
+    // text cannot identify a line. Each key names the products that have it; a
+    // barcode can name several, one per quantity band.
+    const hits: { products: ProductRow[]; on: string }[] = [];
     if (sku_code && bySku[sku_code.trim().toLowerCase()]) {
-      hits.push({ product: bySku[sku_code.trim().toLowerCase()], on: `SKU ${sku_code}` });
+      hits.push({ products: [bySku[sku_code.trim().toLowerCase()]], on: `SKU ${sku_code}` });
     }
     if (unit_barcode && byUnit[unit_barcode]) {
-      hits.push({ product: byUnit[unit_barcode], on: `unit barcode ${unit_barcode}` });
+      hits.push({ products: byUnit[unit_barcode], on: `unit barcode ${unit_barcode}` });
     }
     if (shrink_barcode && byShrink[shrink_barcode]) {
-      hits.push({ product: byShrink[shrink_barcode], on: `shrink barcode ${shrink_barcode}` });
+      hits.push({ products: byShrink[shrink_barcode], on: `shrink barcode ${shrink_barcode}` });
     }
 
-    const distinct = Array.from(new Set(hits.map((h) => h.product.id)));
+    // The products every key in the row agrees on.
+    const agreed = hits.reduce<ProductRow[]>(
+      (acc, h, i) => (i === 0 ? h.products : acc.filter((p) => h.products.includes(p))),
+      []
+    );
 
-    if (distinct.length > 1) {
+    if (hits.length > 0 && agreed.length === 0) {
       // No priority tie-break on purpose. Picking a winner would write the
-      // sheet's other barcode onto it — either violating a unique index and
-      // killing the batch, or succeeding and leaving two rows claiming the same
-      // physical item. Only a person knows which side has the typo.
-      const names = hits.map((h) => `"${h.product.name}" (${h.on})`).join(" and ");
+      // sheet's other barcode or SKU onto it, leaving two products claiming the
+      // same item (or refused, for a SKU). Only a person knows which side has
+      // the typo.
+      const names = hits
+        .map((h) => `${h.products.map((p) => `"${p.name}"`).join(", ")} (${h.on})`)
+        .join(" and ");
       issues.push(`This row matches two different products: ${names}.`);
       draft.action = "conflict";
       draft.include = false;
       return draft;
     }
 
-    if (distinct.length === 0) {
+    if (agreed.length > 1) {
+      // Only barcodes matched, and they are on several products: one per
+      // quantity band. Updating them all would give every band one price.
+      const names = agreed.map((p) => `"${p.name}"`).join(", ");
+      const keys = hits.map((h) => h.on).join(" and ");
+      issues.push(
+        `${keys.charAt(0).toUpperCase()}${keys.slice(1)} ${hits.length === 1 ? "is" : "are"} on ` +
+          `${agreed.length} products: ${names}. Give each a SKU code, here and on the product, ` +
+          "so this row updates the right one."
+      );
+      draft.action = "conflict";
+      draft.include = false;
+      return draft;
+    }
+
+    if (agreed.length === 0) {
       if (!sku_code && !unit_barcode && !shrink_barcode) {
         // Nothing to match on now or ever, so every future import of this file
-        // would create it again. All three unique indexes are partial, so the
-        // database will not stop that.
+        // would create it again. Nothing in the database stops that: the SKU
+        // index is partial and barcodes are not unique.
         issues.push(
           "No barcode or SKU — re-importing this file would create a second copy."
         );
@@ -358,20 +382,22 @@ export function buildDrafts(
       return draft;
     }
 
-    const match = hits[0];
+    const match = agreed[0];
     draft.action = "update";
-    draft.matchedId = match.product.id;
-    draft.matchedName = match.product.name;
-    draft.matchedOn = match.on;
-    draft.changes = diffAgainst(draft, match.product);
+    draft.matchedId = match.id;
+    draft.matchedName = match.name;
+    // The key that picked it out; when only shared barcodes did, together.
+    draft.matchedOn =
+      hits.find((h) => h.products.length === 1)?.on ?? hits.map((h) => h.on).join(" and ");
+    draft.changes = diffAgainst(draft, match);
 
     if (
       draft.name &&
-      draft.name.trim().toLowerCase() !== match.product.name.trim().toLowerCase()
+      draft.name.trim().toLowerCase() !== match.name.trim().toLowerCase()
     ) {
       // The loudest available signal that the match is wrong. Amber in the
       // list, not buried among the other changed fields.
-      issues.push(`Sheet calls this "${draft.name}" but the matched product is "${match.product.name}".`);
+      issues.push(`Sheet calls this "${draft.name}" but the matched product is "${match.name}".`);
     }
     return draft;
   });
