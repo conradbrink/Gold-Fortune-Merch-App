@@ -45,7 +45,7 @@ class InterruptedLocation {
   /// A session is alive and the rep is somewhere in the app.
   ///
   /// This is what stops [expectSignOut] latching for the rest of the process.
-  /// `AuthController.signOut` catches both of its attempts, so a sign-out can
+  /// `AuthController.signOut` swallows its own failure, so a sign-out can
   /// fail with the session still in place: the router never reaches `/login`,
   /// [take] never runs, and every later *accidental* session loss would go
   /// unrecorded — route recovery silently off for the rest of the day, on the

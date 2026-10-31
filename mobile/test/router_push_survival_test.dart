@@ -178,8 +178,8 @@ void main() {
   });
 
   test('a live session cancels an expected sign-out', () {
-    // AuthController.signOut catches both attempts, so the session can survive
-    // the request. Without this the flag would latch for the rest of the
+    // AuthController.signOut catches a failed request, so the session can
+    // survive it. Without this the flag would latch for the rest of the
     // process and every later accidental loss would go unrecorded.
     InterruptedLocation.expectSignOut();
     InterruptedLocation.remember('/visit/abc/order');

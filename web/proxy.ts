@@ -9,6 +9,7 @@ import {
 } from "@/lib/permissions";
 import { canReachPath, moduleForPath, toModuleSet } from "@/lib/modules";
 import { nextParam, returnPath } from "@/lib/return-path";
+import { carryCookies } from "@/lib/carry-cookies";
 
 export async function proxy(request: NextRequest) {
   let response = NextResponse.next({ request });
@@ -21,13 +22,18 @@ export async function proxy(request: NextRequest) {
         getAll() {
           return request.cookies.getAll();
         },
-        setAll(cookiesToSet) {
+        setAll(cookiesToSet, headers) {
           cookiesToSet.forEach(({ name, value }) =>
             request.cookies.set(name, value)
           );
           response = NextResponse.next({ request });
           cookiesToSet.forEach(({ name, value, options }) =>
             response.cookies.set(name, value, options)
+          );
+          // "private, no-store" and friends: an answer that sets someone's
+          // session must never be kept by a cache and handed to someone else.
+          Object.entries(headers).forEach(([key, value]) =>
+            response.headers.set(key, value)
           );
         },
       },
@@ -38,6 +44,10 @@ export async function proxy(request: NextRequest) {
   const {
     data: { user },
   } = await supabase.auth.getUser();
+
+  // Every answer other than `response` itself is a new response, and must
+  // take the session's cookies with it (see carryCookies).
+  const redirect = (url: URL) => carryCookies(response, NextResponse.redirect(url));
 
   // Segment-aware, like every other prefix test in this file. A bare
   // `startsWith` would match /login-as-someone-else, and this list is the one
@@ -100,7 +110,7 @@ export async function proxy(request: NextRequest) {
     url.pathname = "/login";
     const next = nextParam(request.nextUrl.pathname, request.nextUrl.search);
     url.search = next ? `?next=${encodeURIComponent(next)}` : "";
-    return NextResponse.redirect(url);
+    return redirect(url);
   }
 
   if (user && (isLoginPage || isSignupPage)) {
@@ -108,7 +118,7 @@ export async function proxy(request: NextRequest) {
       isLoginPage ? returnPath(request.nextUrl.searchParams.get("next")) : "/",
       request.nextUrl.origin
     );
-    return NextResponse.redirect(url);
+    return redirect(url);
   }
 
   // Every signed-in request is checked against the role's allowlist, except the
@@ -162,9 +172,11 @@ export async function proxy(request: NextRequest) {
     // administrator on /rep-notice looking like a broken account, and the one
     // thing they could not work out is that it was temporary.
     if (permissionError || configError) {
-      return new NextResponse(
-        "Could not check your access just now. Reload in a moment.",
-        { status: 503 }
+      return carryCookies(
+        response,
+        new NextResponse("Could not check your access just now. Reload in a moment.", {
+          status: 503,
+        })
       );
     }
 
@@ -183,7 +195,7 @@ export async function proxy(request: NextRequest) {
         const url = request.nextUrl.clone();
         url.pathname = "/closed";
         url.search = "";
-        return NextResponse.redirect(url);
+        return redirect(url);
       }
     }
     const modules = toModuleSet(
@@ -197,7 +209,7 @@ export async function proxy(request: NextRequest) {
       const url = request.nextUrl.clone();
       url.pathname = "/not-enabled";
       url.search = `?module=${moduleForPath(request.nextUrl.pathname)}`;
-      return NextResponse.redirect(url);
+      return redirect(url);
     }
 
     if (!canAccessPath(permissions, request.nextUrl.pathname)) {
@@ -206,7 +218,7 @@ export async function proxy(request: NextRequest) {
       // Guard against a home that is itself refused, which would redirect for
       // ever. Only reachable if `homeFor` and the path map ever disagree.
       if (url.pathname === request.nextUrl.pathname) return response;
-      return NextResponse.redirect(url);
+      return redirect(url);
     }
   }
 
