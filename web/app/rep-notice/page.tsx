@@ -1,21 +1,18 @@
 "use client";
 
-import { forgetCompanyConfig } from "@/lib/use-company-config";
-import { forgetSitesView } from "@/lib/map-centre";
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { Smartphone, UserRound } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { createClient } from "@/lib/supabase/client";
+import { signOutHere } from "@/lib/sign-out";
 import { PRODUCT_MARK, PRODUCT_NAME } from "@/lib/product";
 import { moduleEnabled } from "@/lib/modules";
 import { getCompanyConfig } from "@/lib/use-company-config";
 
 export default function RepNoticePage() {
   const router = useRouter();
-  const supabase = createClient();
   // Whether the company has HR. No template switches it on, and offering
   // "My HR" without it led to a "not enabled" page. Unknown until loaded;
   // a failed lookup shows the link, as before.
@@ -26,17 +23,7 @@ export default function RepNoticePage() {
       .catch(() => setHasHr(true));
   }, []);
 
-  async function handleSignOut() {
-    // This browser only, as in TopBar: a rep signing out here must not be
-    // signed out of the app on their phone in the middle of their day.
-    await supabase.auth.signOut({ scope: "local" });
-    // This tab's caches belong to the person leaving: whoever signs in next
-    // here must not be shown their company's configuration or map view.
-    forgetCompanyConfig();
-    forgetSitesView();
-    router.push("/login");
-    router.refresh();
-  }
+  const handleSignOut = () => signOutHere(router);
 
   return (
     <div className="flex min-h-screen flex-col items-center justify-center gap-6 bg-secondary/40 px-4 text-center">

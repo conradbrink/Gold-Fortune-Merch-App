@@ -37,25 +37,28 @@ export function useIsManager(): boolean | null {
   useEffect(() => {
     const supabase = createClient();
     /**
-     * Bumped on every auth change, and captured by each lookup.
+     * Bumped whenever the person changes, and captured by each lookup.
      *
      * Asking once on mount is not enough: `TopBar` calls `signOut()` before it
      * navigates, so a mounted schedule page would keep a stale `true` through
      * the transition and go on offering writes that now have no session behind
-     * them. Resetting to `null` on any change closes the controls immediately,
+     * them. Resetting to `null` when the person changes closes the controls at once,
      * and the generation check drops the answer from a session that has since
      * been replaced — a sign-in and a sign-out racing would otherwise be
      * settled by whichever RPC happened to return last.
      */
     let generation = 0;
 
-    function refresh(signedIn: boolean) {
+    /** Whose answer this is: a user id, null when signed out, unset at first. */
+    let askedFor: string | null | undefined;
+
+    function refresh(userId: string | null) {
+      const lookup = lookupFor(askedFor, userId);
+      if (lookup === "keep") return;
+      askedFor = userId;
       const mine = ++generation;
       setIsManager(null);
-      // Signed out: there is nobody to ask about, and asking anyway is a 401
-      // that was reported as a failed lookup each time someone signed out
-      // with a schedule page open (Sentry JAVASCRIPT-NEXTJS-6).
-      if (!signedIn) return;
+      if (lookup === "clear") return;
       void (async () => {
         const { data, error } = await supabase.rpc("current_role");
         if (mine !== generation) return;
@@ -73,7 +76,7 @@ export function useIsManager(): boolean | null {
     // straight away, with the session or without one, and asking before that
     // could not tell a signed-out page from a signed-in one.
     const { data: sub } = supabase.auth.onAuthStateChange((_event, session) =>
-      refresh(session !== null)
+      refresh(session?.user.id ?? null)
     );
 
     return () => {
@@ -84,4 +87,26 @@ export function useIsManager(): boolean | null {
   }, []);
 
   return isManager;
+}
+
+/**
+ * What a session change means for the answer.
+ *
+ * - `keep`: the same person, which is every hourly token refresh. Asking again
+ *   would close the manager's controls for a round trip once an hour, under a
+ *   hand that might be pressing one.
+ * - `clear`: signed out. There is nobody to ask about, and asking anyway is a
+ *   401 that was reported as a failed lookup each time someone signed out with
+ *   a schedule page open (Sentry JAVASCRIPT-NEXTJS-6).
+ * - `ask`: a person this tab has not asked about yet.
+ *
+ * A role changed under a signed-in person is picked up on their next page
+ * load; until then the database still refuses what they may no longer do.
+ */
+export function lookupFor(
+  askedFor: string | null | undefined,
+  userId: string | null
+): "keep" | "clear" | "ask" {
+  if (userId === askedFor) return "keep";
+  return userId === null ? "clear" : "ask";
 }

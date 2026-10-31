@@ -1,13 +1,12 @@
 "use client";
 
-import { forgetCompanyConfig } from "@/lib/use-company-config";
-import { forgetSitesView } from "@/lib/map-centre";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { Lock } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { createClient } from "@/lib/supabase/client";
+import { signOutHere } from "@/lib/sign-out";
 import { PRODUCT_MARK, PRODUCT_NAME } from "@/lib/product";
 
 /**
@@ -18,7 +17,6 @@ import { PRODUCT_MARK, PRODUCT_NAME } from "@/lib/product";
  */
 export default function ClosedPage() {
   const router = useRouter();
-  const supabase = createClient();
   const [name, setName] = useState<string | null>(null);
   useEffect(() => {
     createClient()
@@ -34,15 +32,7 @@ export default function ClosedPage() {
       });
   }, [router]);
 
-  async function handleSignOut() {
-    // This browser only, as in TopBar.
-    await supabase.auth.signOut({ scope: "local" });
-    // This tab's caches belong to the person leaving.
-    forgetCompanyConfig();
-    forgetSitesView();
-    router.push("/login");
-    router.refresh();
-  }
+  const handleSignOut = () => signOutHere(router);
 
   return (
     <div className="flex min-h-screen flex-col items-center justify-center gap-6 bg-secondary/40 px-4 text-center">

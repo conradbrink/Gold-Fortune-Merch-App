@@ -1,7 +1,11 @@
 import type { NextResponse } from "next/server";
 
+/** The headers @supabase/ssr sends with a session's cookies, to keep it out of caches. */
+const SESSION_HEADERS = ["cache-control", "expires", "pragma"];
+
 /**
- * Copies the cookies the proxy has set on `from` onto `to`, and returns `to`.
+ * Copies the cookies the proxy has set on `from` onto `to`, with the headers
+ * that keep them out of caches, and returns `to`.
  *
  * The Supabase client in `proxy.ts` writes the session's cookies onto the
  * response it was given: a refreshed token, or the removal of one the server
@@ -13,5 +17,9 @@ import type { NextResponse } from "next/server";
  */
 export function carryCookies<T extends NextResponse>(from: NextResponse, to: T): T {
   for (const cookie of from.cookies.getAll()) to.cookies.set(cookie);
+  for (const name of SESSION_HEADERS) {
+    const value = from.headers.get(name);
+    if (value !== null) to.headers.set(name, value);
+  }
   return to;
 }

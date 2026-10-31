@@ -1,7 +1,5 @@
 "use client";
 
-import { forgetCompanyConfig } from "@/lib/use-company-config";
-import { forgetSitesView } from "@/lib/map-centre";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
@@ -27,7 +25,7 @@ import { ThemeToggle } from "@/components/layout/theme-toggle";
 import { NotificationsBell } from "@/components/hr/notifications-bell";
 import { AlertsBell } from "@/components/alerts/alerts-bell";
 import { WorkdayControl } from "@/components/workday/workday-control";
-import { forgetAssistant } from "@/components/assistant/assistant-provider";
+import { signOutHere } from "@/lib/sign-out";
 import { can } from "@/lib/permissions";
 import { usePermissions } from "@/lib/use-permissions";
 import { useCompanyConfig } from "@/lib/use-company-config";
@@ -82,22 +80,7 @@ export function TopBar() {
     });
   }, [supabase]);
 
-  async function handleSignOut() {
-    // This browser only. Supabase's default ends the person's sessions on
-    // every device, so signing out of the office computer also signed them
-    // out of their phone, whose next visit then failed its refresh (Sentry
-    // JAVASCRIPT-NEXTJS-5: a shared login signed out on a Mac on 30 October,
-    // its iPhone turned away the next morning). "local" still ends this
-    // session on the server, not only in the browser.
-    await supabase.auth.signOut({ scope: "local" });
-    // This tab's caches belong to the person leaving: whoever signs in next
-    // here must not be shown their company's configuration or map view.
-    forgetCompanyConfig();
-    forgetSitesView();
-    forgetAssistant();
-    router.push("/login");
-    router.refresh();
-  }
+  const handleSignOut = () => signOutHere(router);
 
   return (
     <header className="flex h-14 shrink-0 items-center gap-3 border-b border-border bg-background px-4 sm:px-6">
