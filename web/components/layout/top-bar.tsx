@@ -83,7 +83,13 @@ export function TopBar() {
   }, [supabase]);
 
   async function handleSignOut() {
-    await supabase.auth.signOut();
+    // This browser only. Supabase's default ends the person's sessions on
+    // every device, so signing out of the office computer also signed them
+    // out of their phone, whose next visit then failed its refresh (Sentry
+    // JAVASCRIPT-NEXTJS-5: a shared login signed out on a Mac on 30 October,
+    // its iPhone turned away the next morning). "local" still ends this
+    // session on the server, not only in the browser.
+    await supabase.auth.signOut({ scope: "local" });
     // This tab's caches belong to the person leaving: whoever signs in next
     // here must not be shown their company's configuration or map view.
     forgetCompanyConfig();

@@ -27,7 +27,9 @@ export default function RepNoticePage() {
   }, []);
 
   async function handleSignOut() {
-    await supabase.auth.signOut();
+    // This browser only, as in TopBar: a rep signing out here must not be
+    // signed out of the app on their phone in the middle of their day.
+    await supabase.auth.signOut({ scope: "local" });
     // This tab's caches belong to the person leaving: whoever signs in next
     // here must not be shown their company's configuration or map view.
     forgetCompanyConfig();

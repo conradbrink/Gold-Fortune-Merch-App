@@ -35,7 +35,8 @@ export default function ClosedPage() {
   }, [router]);
 
   async function handleSignOut() {
-    await supabase.auth.signOut();
+    // This browser only, as in TopBar.
+    await supabase.auth.signOut({ scope: "local" });
     // This tab's caches belong to the person leaving.
     forgetCompanyConfig();
     forgetSitesView();

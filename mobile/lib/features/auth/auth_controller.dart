@@ -50,38 +50,37 @@ class AuthController extends AsyncNotifier<void> {
     });
   }
 
-  /// Signs out, and does not depend on the network to do it.
+  /// Signs out of this handset, and does not depend on the network to do it.
   ///
-  /// `signOut()` calls `/auth/v1/logout` to revoke the refresh token server
-  /// side. With no signal that host lookup throws, and the throw escaped —
-  /// unlike `signIn` directly above, which has always been wrapped in
+  /// `signOut()` calls `/auth/v1/logout` to revoke the session server side.
+  /// With no signal that host lookup throws, and the throw escaped — unlike
+  /// `signIn` directly above, which has always been wrapped in
   /// `AsyncValue.guard`. Sentry FLUTTER-5 on 1.0.1+2 is that crash: level
   /// fatal, unhandled, from a rep tapping sign out with no bars.
   ///
-  /// Global first, then local as the fallback — in that order, because when
-  /// the network is there the refresh token should genuinely be revoked, and
-  /// only a failure makes that impossible.
+  /// Local scope: the server ends this handset's session and no other. It was
+  /// global until 31 October 2026, which also ended the same person's sign-in
+  /// on the web dashboard and on any other phone, and each of those then met
+  /// a refresh the server refused — what the web's own global sign-out did to
+  /// a shared login's iPhone (Sentry JAVASCRIPT-NEXTJS-5).
   ///
-  /// When the global call fails the local sign-out still runs, so the session
-  /// leaves *this* handset either way. That is the part that matters to a rep
-  /// handing their phone over or signing out to let a colleague on. The cost is
-  /// a refresh token that stays valid until it expires on its own, which is a
-  /// better outcome than an app that crashes instead of signing out.
+  /// gotrue removes the session from this handset before it calls the
+  /// server, so a call that fails offline still signs out here. That is the
+  /// part that matters to a rep handing their phone over or signing out to
+  /// let a colleague on. The cost is a refresh token that stays valid until
+  /// it expires on its own, which is a better outcome than an app that
+  /// crashes instead of signing out.
   Future<void> signOut() async {
     // Deliberate, unlike the session losses InterruptedLocation exists for.
     // Whoever signs in next must land on their own day, not in the last rep's
     // shop with a half-typed order on screen.
     InterruptedLocation.expectSignOut();
     try {
-      await supabase.auth.signOut(scope: SignOutScope.global);
+      await supabase.auth.signOut(scope: SignOutScope.local);
     } catch (_) {
-      // Offline, or the endpoint refused. The local session still has to go.
-      try {
-        await supabase.auth.signOut(scope: SignOutScope.local);
-      } catch (_) {
-        // Nothing left to try. The router sends the user to /login on the next
-        // auth state read either way, and a crash here is what we are fixing.
-      }
+      // Offline, or the endpoint refused. The session has already left this
+      // handset, and the router sends the user to /login on the next auth
+      // state read; a crash here is what we are fixing.
     }
   }
 }

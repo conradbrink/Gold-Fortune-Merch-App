@@ -86,9 +86,10 @@ function scrubRecord(
  */
 export function scrubEvent(
   event: ErrorEvent,
-  _hint: EventHint
+  hint: EventHint
 ): ErrorEvent | null {
   if (event.environment !== "production") return null;
+  if (isEndedSessionRefusal(event, hint)) return null;
 
   if (event.request) {
     if (event.request.headers) {
@@ -109,6 +110,35 @@ export function scrubEvent(
   event.extra = scrubRecord(event.extra);
 
   return event;
+}
+
+/**
+ * A browser came back with a sign-in the server has already ended: signed out
+ * on another device, the password reset, the person removed. Supabase's client
+ * logs the refused refresh with console.error, which the console integration
+ * turns into an issue (Sentry JAVASCRIPT-NEXTJS-5), yet nothing is broken: the
+ * cookie is cleared and the person is shown the sign-in page. The auth logs
+ * keep every refusal for about a week if one ever needs explaining.
+ *
+ * Only "not found". "Already used" is one token sent twice, which would be a
+ * race in the app itself, and that is worth hearing about. And only from a
+ * console.error: the same error thrown by our own code and left uncaught is a
+ * page that broke, and is reported.
+ */
+export function isEndedSessionRefusal(event: ErrorEvent, hint: EventHint): boolean {
+  const values = event.exception?.values ?? [];
+  if (!values.some((e) => e.mechanism?.type === "auto.core.capture_console")) return false;
+  const original = hint.originalException;
+  if (
+    original &&
+    typeof original === "object" &&
+    (original as { code?: unknown }).code === "refresh_token_not_found"
+  ) {
+    return true;
+  }
+  return values.some(
+    (e) => e.type === "AuthApiError" && /Refresh Token Not Found/i.test(e.value ?? "")
+  );
 }
 
 /** Options shared by every runtime. */

@@ -49,9 +49,13 @@ export function useIsManager(): boolean | null {
      */
     let generation = 0;
 
-    function refresh() {
+    function refresh(signedIn: boolean) {
       const mine = ++generation;
       setIsManager(null);
+      // Signed out: there is nobody to ask about, and asking anyway is a 401
+      // that was reported as a failed lookup each time someone signed out
+      // with a schedule page open (Sentry JAVASCRIPT-NEXTJS-6).
+      if (!signedIn) return;
       void (async () => {
         const { data, error } = await supabase.rpc("current_role");
         if (mine !== generation) return;
@@ -65,8 +69,12 @@ export function useIsManager(): boolean | null {
       })();
     }
 
-    refresh();
-    const { data: sub } = supabase.auth.onAuthStateChange(() => refresh());
+    // No lookup of its own on mount: subscribing delivers INITIAL_SESSION
+    // straight away, with the session or without one, and asking before that
+    // could not tell a signed-out page from a signed-in one.
+    const { data: sub } = supabase.auth.onAuthStateChange((_event, session) =>
+      refresh(session !== null)
+    );
 
     return () => {
       // Stops any in-flight lookup landing after unmount.
