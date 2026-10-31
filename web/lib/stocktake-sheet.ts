@@ -74,30 +74,44 @@ export function whoAndWhen(input: Pick<SheetInput, "stocktake" | "people">): str
   const { stocktake: s, people: p } = input;
   const step = (verb: string, who: string | null, when: string | null) =>
     when ? `${verb}${who ? ` by ${who}` : ""} on ${stampWhen(when)}` : null;
+  const decided = decidedLabel(s.status);
   return [
     step("Started", p.startedBy, s.started_at),
     step("Handed in", p.submittedBy, s.submitted_at),
-    s.status === "approved" || s.status === "rejected"
-      ? step(s.status === "approved" ? "Approved" : "Rejected", p.decidedBy, s.decided_at)
-      : null,
+    decided ? step(decided, p.decidedBy, s.decided_at) : null,
   ].filter((x): x is string => x !== null);
+}
+
+/** The last word on a count, and who said it (`decided_by`). */
+const DECIDED: Record<string, string> = {
+  approved: "Approved",
+  rejected: "Rejected",
+  cancelled: "Cancelled",
+};
+
+/** "Approved", "Rejected" or "Cancelled"; null while the count is still open. */
+export function decidedLabel(status: string): string | null {
+  return Object.hasOwn(DECIDED, status) ? DECIDED[status] : null;
 }
 
 export function stocktakeSheet(input: SheetInput): ExportSheet {
   const { stocktake: s } = input;
   const counting = s.status === "counting" || s.status === "draft";
+  // Cancelled before it was handed in: the sheet as it stood, with nothing to
+  // measure it against and no packed boxes that matter any more.
+  const cancelled = s.status === "cancelled";
   const context = [
     [input.locationName, `${s.stocktake_type} count`, s.status].filter(Boolean).join(" · "),
     ...whoAndWhen(input),
     ...(s.notes ? [`Note: ${s.notes}`] : []),
-    ...(s.decision_note ? [`${s.status === "rejected" ? "Rejected" : "Approved"}: ${s.decision_note}`] : []),
+    ...(s.decision_note ? [`${decidedLabel(s.status) ?? "Approved"}: ${s.decision_note}`] : []),
   ];
 
-  if (counting) {
+  if (counting || cancelled) {
     const columns: ExportColumn[] = [
       { header: "Product", key: "product" },
       { header: "System says", key: "system", numeric: true },
-      { header: "Of which packed for orders", key: "packed", numeric: true },
+      ...(cancelled ? [] : [{ header: "Of which packed for orders", key: "packed", numeric: true }]),
       { header: "Counted", key: "counted", numeric: true },
       { header: "If different, why?", key: "reason" },
     ];
@@ -105,7 +119,9 @@ export function stocktakeSheet(input: SheetInput): ExportSheet {
       title: `Stocktake ${s.stocktake_number}`,
       context: [
         ...context,
-        "Count every single item at this location, including boxes packed for orders that have not left.",
+        cancelled
+          ? "Cancelled before it was handed in. Nothing in the stock changed."
+          : "Count every single item at this location, including boxes packed for orders that have not left.",
       ],
       columns,
       rows: input.lines.map((l) => ({

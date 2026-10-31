@@ -148,3 +148,28 @@ test("a rejection's reason is on the sheet", () => {
   assert.ok(sheet.context?.includes("Rejected: Packed boxes not counted"));
   assert.ok(sheet.context?.some((l) => l.startsWith("Rejected by Conrad Brink on")));
 });
+
+test("a cancelled count is the sheet as it stood: who cancelled it, why, and no packed boxes", () => {
+  const sheet = stocktakeSheet({
+    ...base,
+    stocktake: {
+      ...base.stocktake,
+      status: "cancelled",
+      submitted_at: null,
+      decided_at: "2026-10-31T09:00:00Z",
+      decision_note: "Started at the wrong warehouse",
+    },
+    people: { ...base.people, submittedBy: null, decidedBy: "Conrad Brink" },
+    lines: base.lines.map((l, i) => ({ ...l, counted_qty: i === 0 ? 8 : null, recount_qty: null })),
+    variance: [],
+  });
+  assert.deepEqual(
+    sheet.columns.map((c) => c.header),
+    ["Product", "System says", "Counted", "If different, why?"]
+  );
+  assert.equal(sheet.rows[0].counted, 8);
+  assert.equal(sheet.rows[1].counted, null);
+  assert.ok(sheet.context?.includes("Cancelled: Started at the wrong warehouse"));
+  assert.ok(sheet.context?.some((l) => l.startsWith("Cancelled by Conrad Brink on 31 Oct 2026")));
+  assert.equal(sheet.context?.at(-1), "Cancelled before it was handed in. Nothing in the stock changed.");
+});

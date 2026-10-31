@@ -8742,6 +8742,10 @@ export type Database = {
         }
         Returns: Json
       }
+      stocktake_cancel: {
+        Args: { p_reason?: string; p_stocktake_id: string }
+        Returns: Json
+      }
       stocktake_open: {
         Args: {
           p_freeze?: boolean
