@@ -102,7 +102,7 @@ export default function WarehousePage() {
 
       <ErrorBanner message={error} />
 
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+      <div className={keepsStock ? "grid grid-cols-2 gap-3 lg:grid-cols-4" : "grid grid-cols-2 gap-3 lg:grid-cols-5"}>
         {/* Each tile opens the queue it counts. A number a clerk cannot press
             tells them four orders need picking and leaves them to work out
             which four. */}
@@ -113,37 +113,27 @@ export default function WarehousePage() {
           tone={count("new") > 0 ? "warn" : "neutral"}
           href="/orders?status=new"
         />
-        {keepsStock ? (
-          <>
-            <StatTile
-              label="Awaiting picking"
-              value={count("confirmed") + count("picking")}
-              sub="confirmed and being picked"
-              href="/orders?status=confirmed"
-            />
-            <StatTile
-              label="Awaiting dispatch"
-              value={count("packed")}
-              sub="packed and ready to go"
-              href="/orders?status=packed"
-            />
-          </>
-        ) : (
-          // No picking or packing: an invoiced order is waiting to go out.
-          <>
-            <StatTile
-              label="Awaiting dispatch"
-              value={count("confirmed")}
-              sub="invoiced and ready to go"
-              href="/orders?status=confirmed"
-            />
-            <StatTile
-              label="On the road"
-              value={count("dispatched")}
-              sub="dispatched, not yet delivered"
-              href="/orders?status=dispatched"
-            />
-          </>
+        {/* With or without stock: an order without it is picked and packed too (30 Oct 2026). */}
+        <StatTile
+          label="Awaiting picking"
+          value={count("confirmed") + count("picking")}
+          sub="confirmed and being picked"
+          href="/orders?status=confirmed"
+        />
+        <StatTile
+          label="Awaiting dispatch"
+          value={count("packed")}
+          sub="packed and ready to go"
+          href="/orders?status=packed"
+        />
+        {/* Without Stock control there is no stock position below, so what is on the road shows here. */}
+        {!keepsStock && (
+          <StatTile
+            label="On the road"
+            value={count("dispatched")}
+            sub="dispatched, not yet delivered"
+            href="/orders?status=dispatched"
+          />
         )}
         <StatTile
           label="Outstanding PODs"

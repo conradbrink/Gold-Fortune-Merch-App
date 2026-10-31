@@ -32,10 +32,10 @@ import {
   daysBetween,
   dropAnswer,
   invoicesOnConfirm,
-  deliversOrders,
   invoicesWithoutStock,
   keepsStock,
   matchesSearch,
+  packsWithoutStock,
   nextStepOf,
   poExpiry,
   stepLabel,
@@ -82,16 +82,17 @@ export default function OrdersBoardPage() {
   const timeZone = config?.timezone ?? Intl.DateTimeFormat().resolvedOptions().timeZone;
   /**
    * Moving an order on (confirming, packing, dispatching) is the warehouse
-   * module; the board itself only needs distribution. Without the module every
-   * step would be refused, so the board shows where orders are and moves none.
+   * module, or without it Deliveries (`packsWithoutStock`); the board itself
+   * only needs distribution. With neither every step would be refused, so the
+   * board shows where orders are and moves none.
    */
-  const canMove = keepsStock(config);
+  const keeps = keepsStock(config);
+  const canMove = keeps || packsWithoutStock(config);
   /**
-   * No Stock control: a new order is invoiced on its own page and, with
-   * Deliveries, dispatched and delivered from there too.
+   * No Stock control: a new order is invoiced on its own page, then picked,
+   * packed and sent out from the board like any other (with Deliveries).
    */
   const withoutStock = invoicesWithoutStock(config);
-  const delivers = deliversOrders(config);
 
   const [orders, setOrders] = useState<PipelineOrder[]>([]);
   /** When the board was read: "today" and every "waiting 3 days" are counted to it. */
@@ -196,7 +197,7 @@ export default function OrdersBoardPage() {
   const money = (n: number) => formatMoney(n, currency);
 
   const dragged = dragging ? orders.find((o) => o.id === dragging) : undefined;
-  // Printing reads dispatches and drivers, which are part of the warehouse module, like moving a card.
+  // Printing reads dispatches and drivers (Deliveries) and the picking list, like moving a card.
   const tickedOrders = canMove ? visible.filter((o) => ticked.has(o.id)) : [];
   const sheets = sheetsFor(tickedOrders);
 
@@ -223,7 +224,7 @@ export default function OrdersBoardPage() {
   }
 
   function drop(o: PipelineOrder, to: BoardColumn) {
-    const answer = dropAnswer(o, to, invoices);
+    const answer = dropAnswer(o, to, invoices, keeps);
     if (answer === null) return;
     if ("refuse" in answer) {
       setNotice({ text: answer.refuse, tone: "hint" });
@@ -323,9 +324,7 @@ export default function OrdersBoardPage() {
       {!canMove && (
         <p className="rounded-lg border border-border bg-muted/40 p-2.5 text-sm text-muted-foreground">
           {withoutStock
-            ? delivers
-              ? "Your company does not track stock, so orders are not picked or packed. Open an order to invoice it, dispatch it and record its delivery."
-              : "Your company does not track stock, so orders are not packed or dispatched here. Open a purchase order to confirm and invoice it."
+            ? "Your company does not track stock, so orders are not packed or dispatched here. Open a purchase order to confirm and invoice it."
             : "Confirming, picking and packing orders is part of Stock control, which is not switched on for your company. The board shows where each order is, but cannot move it on."}
         </p>
       )}
@@ -414,10 +413,16 @@ export default function OrdersBoardPage() {
             {BOARD_COLUMNS.map((column) => {
               const cards = visible.filter((o) => columnOf(o) === column);
               // A column whose orders print a sheet can be ticked as a whole.
-              const printable = canMove ? cards.filter((o) => sheetFor(o.status)) : [];
+              // Without Stock control an order still holding stock from before has no picking list to print.
+              const printable = canMove
+                ? cards.filter((o) => {
+                    const sheet = sheetFor(o.status);
+                    return sheet !== null && (keeps || sheet === "delivery" || o.fromStock === false);
+                  })
+                : [];
               const columnTicked = printable.length > 0 && printable.every((o) => ticked.has(o.id));
               const total = cards.reduce((n, o) => n + o.total, 0);
-              const answer = dragged ? dropAnswer(dragged, column, invoices) : null;
+              const answer = dragged ? dropAnswer(dragged, column, invoices, keeps) : null;
               const accepts = answer !== null && "step" in answer;
               const look =
                 dragOver === column && accepts
@@ -499,7 +504,7 @@ export default function OrdersBoardPage() {
                           : filtered
                             ? "Nothing here matches."
                             : canMove
-                              ? columnEmptyText(column, invoices)
+                              ? columnEmptyText(column, invoices, keeps)
                               : "Nothing here."}
                       </p>
                     ) : (
@@ -511,8 +516,8 @@ export default function OrdersBoardPage() {
                           today={today}
                           invoices={invoices}
                           canMove={canMove}
+                          keepsStock={keeps}
                           withoutStock={withoutStock}
-                          delivers={delivers}
                           money={money}
                           staffWord={lower(terms.staff.one)}
                           siteWord={lower(terms.site.one)}
@@ -582,8 +587,8 @@ function OrderCard({
   today,
   invoices,
   canMove,
+  keepsStock,
   withoutStock,
-  delivers,
   money,
   staffWord,
   siteWord,
@@ -601,10 +606,10 @@ function OrderCard({
   today: string;
   invoices: boolean;
   canMove: boolean;
+  /** The company's Stock control. Without it a purchase order is invoiced on its own page. */
+  keepsStock: boolean;
   /** No warehouse: a new order is confirmed and invoiced on its own page. */
   withoutStock: boolean;
-  /** With Deliveries, such an order is then dispatched and delivered from its page too. */
-  delivers: boolean;
   money: (n: number) => string;
   staffWord: string;
   siteWord: string;
@@ -639,45 +644,22 @@ function OrderCard({
   const toneText = toneClass(tone);
 
   let action: ReactNode = null;
-  if (!canMove) {
-    // Each step of an order with no stock is on its own page; the card says
-    // which one is next. One that went through the warehouse before the
-    // company dropped Stock control can still be delivered, not dispatched.
-    const open =
-      withoutStock && o.status === "new"
-        ? "Open to confirm and invoice"
-        : withoutStock && delivers && o.status === "confirmed" && !o.fromStock
-          ? "Open to dispatch"
-          : withoutStock && delivers && o.status === "dispatched"
-            ? "Open to record the delivery"
-            : withoutStock && delivers && column === "delivered"
-              ? "Open to upload the POD"
-              : null;
-    action = open ? (
-      <Button
-        variant="outline"
-        size="sm"
-        className="w-full text-xs"
-        nativeButton={false}
-        render={<Link href={`/orders/${o.id}`} draggable={false} />}
-      >
-        {open}
-      </Button>
-    ) : null;
-  } else if (o.status === "confirmed" && !o.fromStock) {
-    // Invoiced without stock before the company bought Stock control: nothing to
-    // pick or pack, so it goes out from its own page.
-    action = (
-      <Button
-        variant="outline"
-        size="sm"
-        className="w-full text-xs"
-        nativeButton={false}
-        render={<Link href={`/orders/${o.id}`} draggable={false} />}
-      >
-        Open to dispatch
-      </Button>
-    );
+  if (!canMove || (!keepsStock && o.status === "new")) {
+    // Without Stock control a purchase order is invoiced on its own page, where
+    // its prices are checked; with Deliveries it then moves on here like any
+    // other. Without Deliveries invoicing finishes it.
+    action =
+      withoutStock && o.status === "new" ? (
+        <Button
+          variant="outline"
+          size="sm"
+          className="w-full text-xs"
+          nativeButton={false}
+          render={<Link href={`/orders/${o.id}`} draggable={false} />}
+        >
+          Open to confirm and invoice
+        </Button>
+      ) : null;
   } else if (o.onHold && column !== "delivered") {
     action = (
       <Button

@@ -24,10 +24,16 @@
 --       and cancelled with its failed delivery, its invoice voided (off).
 --   D7  The rules stay shut: a stock order cannot skip picking, nor drop its
 --       location to do so; nothing comes
---       back to confirmed but through order_return_undelivered; an order with
---       no location cannot be picked; a new order cannot be dispatched.
---   D8  Deliveries off: dispatching is refused with the plan message, and
---       invoicing finishes the order as delivered (#234's one step).
+--       back to confirmed but through order_return_undelivered; a new order
+--       cannot be picked or dispatched.
+--   D10 Picked and packed without stock (20261030210500): the picking list is
+--       the live lines at the quantity ordered (no allocation, batch or place);
+--       a rep cannot start picking; picking and packing reserve and count
+--       nothing; a packed order is dispatched in full; a failed delivery puts
+--       it back to packed and it goes out again; an order being picked or
+--       packed is cancelled with its invoice voided.
+--   D8  Deliveries off: dispatching and picking are refused with the plan
+--       message, and invoicing finishes the order as delivered (#234's one step).
 --   D9  The catalogue: Deliveries is an edition module needing Distribution;
 --       Stock control needs Deliveries; every company with Distribution has it
 --       on; the Distribution template brings Deliveries, not Stock control; the
@@ -79,9 +85,10 @@ begin
   insert into public.products (org_id, name, units_per_shrink, shrink_price_excl_vat)
   values (c_gf, v_tag || ' product two', 1, 20) returning id into v_p2;
 
-  -- Nine orders of 10 x p1 at 12.50; the first also has a cancelled line.
-  -- All but the seventh are invoiced in D1; the seventh stays new.
-  for i in 1..9 loop
+  -- Thirteen orders of 10 x p1 at 12.50; the first and the tenth also have
+  -- a cancelled line. All but the seventh are invoiced in D1; the seventh
+  -- stays new. The tenth to thirteenth are D10's.
+  for i in 1..13 loop
     insert into public.orders (org_id, order_number, store_id, rep_id, source, received_via, client_generated_id)
     values (c_gf, v_tag || '-' || i, v_store, v_rep, 'warehouse_manual', 'other', gen_random_uuid())
     returning id into v_id;
@@ -92,11 +99,13 @@ begin
   end loop;
   insert into public.order_lines (org_id, order_id, product_id, qty_ordered, unit_price, client_generated_id, line_status)
   values (c_gf, v_o[1], v_p2, 3, 7, gen_random_uuid(), 'cancelled');
+  insert into public.order_lines (org_id, order_id, product_id, qty_ordered, unit_price, client_generated_id, line_status)
+  values (c_gf, v_o[10], v_p2, 3, 7, gen_random_uuid(), 'cancelled');
 
   ---------------------------------------------------------------- D1 invoiced, confirmed
   perform set_config('request.jwt.claims', json_build_object('sub', v_admin, 'role', 'authenticated')::text, true);
   set local role authenticated;
-  for i in 1..9 loop
+  for i in 1..13 loop
     continue when i = 7;
     begin
       v_res := public.order_invoice_without_stock(v_o[i]);
@@ -391,19 +400,18 @@ begin
       v_fail := v_fail || 'D7 coming back refused for another reason: ' || v_err || E'\n';
     end if;
   end;
-  v_checks := v_checks + 1;
-  begin
-    update public.orders set status = 'confirmed' where id = v_o[7] and status = 'new';
-    update public.orders set status = 'picking' where id = v_o[7];
-    v_fail := v_fail || 'D7 an order with no location was picked' || E'\n';
-  exception
-    when check_violation then null;
-    when others then
-      get stacked diagnostics v_err = message_text;
-      v_fail := v_fail || 'D7 picking with no location refused for another reason: ' || v_err || E'\n';
-  end;
   perform set_config('request.jwt.claims', json_build_object('sub', v_admin, 'role', 'authenticated')::text, true);
   set local role authenticated;
+  v_checks := v_checks + 1;
+  begin
+    perform public.order_start_picking(v_o[7]);
+    v_fail := v_fail || 'D7 a new order was picked' || E'\n';
+  exception when others then
+    get stacked diagnostics v_err = message_text;
+    if v_err <> 'That order is not waiting to be picked.' then
+      v_fail := v_fail || 'D7 picking a new order refused for another reason: ' || v_err || E'\n';
+    end if;
+  end;
   v_checks := v_checks + 1;
   begin
     perform public.order_dispatch(p_order_id => v_o[7], p_carrier_name => 'ZZ courier');
@@ -415,6 +423,119 @@ begin
     end if;
   end;
   reset role;
+
+  ---------------------------------------------------------------- D10 picked and packed
+  perform set_config('request.jwt.claims', json_build_object('sub', v_admin, 'role', 'authenticated')::text, true);
+  set local role authenticated;
+  v_checks := v_checks + 1;
+  begin
+    select count(*) into v_n from public.order_picking_list(v_o[10]);
+    select * into r from public.order_picking_list(v_o[10]);
+    if v_n <> 1 or r.order_line_id is distinct from v_l[10] or r.allocation_id is not null
+       or r.batch_id is not null or r.location_name is not null
+       or (r.qty_to_pick, r.qty_picked, r.allocation_status) is distinct from (10, 0, 'to_pick'::text) then
+      v_fail := v_fail || format('D10 the picking list has %s rows; the first is line %s, %s to pick, %s picked, %s, place %s',
+        v_n, r.order_line_id, r.qty_to_pick, r.qty_picked, r.allocation_status, r.location_name) || E'\n';
+    end if;
+  exception when others then
+    get stacked diagnostics v_err = message_text;
+    v_fail := v_fail || 'D10 the picking list could not be read: ' || v_err || E'\n';
+  end;
+  reset role;
+
+  perform set_config('request.jwt.claims', json_build_object('sub', v_rep, 'role', 'authenticated')::text, true);
+  set local role authenticated;
+  v_checks := v_checks + 1;
+  begin
+    perform public.order_start_picking(v_o[10]);
+    v_fail := v_fail || 'D10 a rep started picking' || E'\n';
+  exception when others then
+    get stacked diagnostics v_err = message_text;
+    if v_err <> 'Only warehouse staff can start picking.' then
+      v_fail := v_fail || 'D10 a rep picking refused for another reason: ' || v_err || E'\n';
+    end if;
+  end;
+  reset role;
+
+  perform set_config('request.jwt.claims', json_build_object('sub', v_admin, 'role', 'authenticated')::text, true);
+  set local role authenticated;
+  v_checks := v_checks + 1;
+  begin
+    v_res := public.order_start_picking(v_o[10]);
+    select count(*) into v_n from public.order_picking_list(v_o[10]);
+    if v_res->>'status' <> 'picking' or (select status from public.orders where id = v_o[10]) <> 'picking' or v_n <> 1 then
+      v_fail := v_fail || format('D10 picking started as %s, with %s lines on the list', v_res->>'status', v_n) || E'\n';
+    end if;
+    v_res := public.order_mark_packed(v_o[10]);
+    select count(*) into v_n from public.order_picking_list(v_o[10]);
+    if v_res->>'status' <> 'packed' or (v_res->>'packed_short')::boolean
+       or (select (status, packed_by) from public.orders where id = v_o[10]) is distinct from ('packed'::text, v_admin)
+       or v_n <> 0 then
+      v_fail := v_fail || format('D10 packing came back %s (short %s), with %s lines still to pick',
+        v_res->>'status', v_res->>'packed_short', v_n) || E'\n';
+    end if;
+  exception when others then
+    get stacked diagnostics v_err = message_text;
+    v_fail := v_fail || 'D10 the order could not be picked and packed: ' || v_err || E'\n';
+  end;
+  v_checks := v_checks + 1;
+  if exists (select 1 from public.order_lines where order_id = v_o[10]
+              and (qty_reserved, qty_picked, qty_dispatched) <> (0, 0, 0))
+     or exists (select 1 from public.order_allocations where order_id = v_o[10])
+     or exists (select 1 from public.credit_notes c join public.tax_invoices t on t.id = c.invoice_id where t.order_id = v_o[10]) then
+    v_fail := v_fail || 'D10 picking or packing reserved, counted or credited something' || E'\n';
+  end if;
+  v_checks := v_checks + 1;
+  begin
+    v_res := public.order_dispatch(p_order_id => v_o[10], p_carrier_name => 'ZZ courier');
+    v_dsp := (v_res->>'dispatch_id')::uuid;
+    if (v_res->>'lines')::int <> 1 or (v_res->>'units')::int <> 10
+       or (select status from public.orders where id = v_o[10]) <> 'dispatched'
+       or (select (dispatch_location_id, transit_location_id) from public.dispatches where id = v_dsp)
+          is distinct from (null::uuid, null::uuid)
+       or (select qty_dispatched from public.order_lines where id = v_l[10]) <> 10
+       or exists (select 1 from public.credit_notes c join public.tax_invoices t on t.id = c.invoice_id where t.order_id = v_o[10]) then
+      v_fail := v_fail || format('D10 the packed order went out as %s lines, %s units, or its invoice moved',
+        v_res->>'lines', v_res->>'units') || E'\n';
+    end if;
+  exception when others then
+    get stacked diagnostics v_err = message_text;
+    v_fail := v_fail || 'D10 the packed order could not be dispatched: ' || v_err || E'\n';
+  end;
+  v_checks := v_checks + 1;
+  begin
+    v_res := public.order_return_undelivered(v_dsp, 'Shop was closed');
+    if v_res->>'status' <> 'packed'
+       or (select (status, dispatched_at) from public.orders where id = v_o[10]) is distinct from ('packed'::text, null::timestamptz)
+       or (select (qty_dispatched, qty_reserved, qty_picked) from public.order_lines where id = v_l[10]) is distinct from (0, 0, 0) then
+      v_fail := v_fail || format('D10 after the failed delivery the order is %s, not packed', v_res->>'status') || E'\n';
+    end if;
+    v_res := public.order_dispatch(p_order_id => v_o[10], p_carrier_name => 'ZZ courier');
+    if (v_res->>'units')::int <> 10 or (select status from public.orders where id = v_o[10]) <> 'dispatched' then
+      v_fail := v_fail || 'D10 the returned order did not go out again in full' || E'\n';
+    end if;
+  exception when others then
+    get stacked diagnostics v_err = message_text;
+    v_fail := v_fail || 'D10 the failed delivery or the second dispatch failed: ' || v_err || E'\n';
+  end;
+  v_checks := v_checks + 1;
+  begin
+    perform public.order_start_picking(v_o[11]);
+    perform public.order_cancel_without_stock(v_o[11], 'Customer phoned to cancel');
+    perform public.order_start_picking(v_o[12]);
+    perform public.order_mark_packed(v_o[12]);
+    perform public.order_cancel_without_stock(v_o[12], 'Customer phoned to cancel');
+  exception when others then
+    get stacked diagnostics v_err = message_text;
+    v_fail := v_fail || 'D10 an order being picked or packed could not be cancelled: ' || v_err || E'\n';
+  end;
+  reset role;
+  if exists (select 1 from public.orders where id in (v_o[11], v_o[12]) and status <> 'cancelled')
+     or exists (select 1 from public.order_lines where order_id in (v_o[11], v_o[12]) and line_status <> 'cancelled')
+     or exists (select 1 from public.tax_invoices where order_id in (v_o[11], v_o[12]) and status = 'issued')
+     or (select count(*) from public.tax_invoices where order_id in (v_o[11], v_o[12]) and status = 'void') <> 2 then
+    v_fail := v_fail || 'D10 the orders picked and packed were not cancelled with their invoices voided' || E'\n';
+  end if;
 
   ---------------------------------------------------------------- D8 deliveries off
   update public.company_modules set enabled = false where org_id = c_gf and module_code = 'deliveries';
@@ -428,6 +549,16 @@ begin
     get stacked diagnostics v_err = message_text;
     if v_err not like '%not enabled for your company''s plan' then
       v_fail := v_fail || 'D8 dispatch refused for another reason: ' || v_err || E'\n';
+    end if;
+  end;
+  v_checks := v_checks + 1;
+  begin
+    perform public.order_start_picking(v_o[13]);
+    v_fail := v_fail || 'D8 picked with Deliveries off' || E'\n';
+  exception when others then
+    get stacked diagnostics v_err = message_text;
+    if v_err not like '%not enabled for your company''s plan' then
+      v_fail := v_fail || 'D8 picking refused for another reason: ' || v_err || E'\n';
     end if;
   end;
   v_checks := v_checks + 1;

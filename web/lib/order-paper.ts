@@ -92,12 +92,23 @@ const PICKED_AND_CHECKED: PdfSpec["signOff"] = {
 };
 
 /**
+ * Rows from an order invoiced without stock: `order_picking_list` gives its
+ * lines with no allocation, batch or place behind them. The sheet then has no
+ * batch, expiry or location columns, which would read "Not batch-tracked" on
+ * every line.
+ */
+export const withoutStock = (rows: readonly Pick<PickingRow, "allocation_id">[]) =>
+  rows.length > 0 && rows.every((r) => r.allocation_id === null);
+
+/**
  * The picking list on paper: one row per batch to take, in the order the
  * screen lists them, each with an empty box for the picker to tick or write
- * what they took, and boxes for who picked it and who checked it.
+ * what they took, and boxes for who picked it and who checked it. Without
+ * stock, one row per product line.
  */
 export function pickingListPdfSpec(input: PickingSheetInput, seller: QuoteSeller, paper: Paper): PdfSpec {
   const o = input.order;
+  const plain = withoutStock(input.rows);
   const meta: [string, string][] = [["Order no.", o.order_number]];
   if (o.invoice_number) meta.push(["Invoice no.", o.invoice_number]);
   if (o.required_by) meta.push(["Required by", paperDate(o.required_by)]);
@@ -115,18 +126,20 @@ export function pickingListPdfSpec(input: PickingSheetInput, seller: QuoteSeller
       name: input.storeName ?? "",
       address: deliveryAddress(o, input.storeAddress),
     },
-    head: ["Product", "Barcode / SKU", "Batch", "Expiry", "Location", "To pick", "Picked"],
+    head: plain
+      ? ["Product", "Barcode / SKU", "To pick", "Picked"]
+      : ["Product", "Barcode / SKU", "Batch", "Expiry", "Location", "To pick", "Picked"],
     rows: input.rows.map((r) => [
       productLabel(r.product_name, r.brand),
       [r.unit_barcode, input.skus.get(r.product_id)].filter(Boolean).join("\n"),
-      r.batch_number ?? "Not batch-tracked",
-      r.expiry_date ? paperDate(r.expiry_date) : "",
-      r.location_name ?? "",
+      ...(plain
+        ? []
+        : [r.batch_number ?? "Not batch-tracked", r.expiry_date ? paperDate(r.expiry_date) : "", r.location_name ?? ""]),
       formatQty(Number(r.qty_to_pick)),
       "",
     ]),
-    numeric: [5],
-    boxes: [6],
+    numeric: plain ? [2] : [5],
+    boxes: plain ? [3] : [6],
     numbered: true,
     totals: [["Units to pick", formatQty(units)]],
     notesTitle: "Notes for the picker",
@@ -253,10 +266,12 @@ export function combinedPickingListPdfSpec(input: CombinedPickingInput, seller: 
     throw new Error(
       done.length > 0
         ? "Everything on these orders has been picked already. Pack them from each order's picking list."
-        : "Nothing is reserved for these orders, so there is nothing to pick yet. Confirm them first."
+        : "Nothing on these orders is waiting to be picked yet. Confirm them first."
     );
   }
   const picks = combinePicks(ready);
+  // Every order invoiced without stock: no batch, expiry or place to show.
+  const plain = ready.every((o) => withoutStock(o.rows));
   const places = [...new Set(picks.map((p) => p.location_name).filter(Boolean))];
   // One warehouse is named at the top; a column for it only when the stock is in more than one.
   const showPlace = places.length > 1;
@@ -267,7 +282,7 @@ export function combinedPickingListPdfSpec(input: CombinedPickingInput, seller: 
   const notes: string[] = [];
   if (waiting.length > 0) {
     notes.push(
-      `Not on this list, because nothing is reserved for ${waiting.length === 1 ? "it" : "them"} yet: ` +
+      `Not on this list, because nothing on ${waiting.length === 1 ? "it" : "them"} is waiting to be picked yet: ` +
         `${waiting.map((o) => o.order.order_number).join(", ")}.`
     );
   }
@@ -279,6 +294,8 @@ export function combinedPickingListPdfSpec(input: CombinedPickingInput, seller: 
     if (note) notes.push(`${o.order.order_number}${o.storeName ? ` (${o.storeName})` : ""}: ${note}`);
   }
   const units = picks.reduce((n, p) => n + p.qty_to_pick, 0);
+  // Where the last three columns (Orders, To pick, Picked) start.
+  const counts = 2 + (plain ? 0 : 2) + (showPlace ? 1 : 0);
   return {
     heading: "PICKING LIST",
     fileName: `Combined picking list (${count})`,
@@ -290,19 +307,26 @@ export function combinedPickingListPdfSpec(input: CombinedPickingInput, seller: 
       name: `Combined list for ${count}`,
       address: orderNumberRuns(ready.map((o) => o.order.order_number)),
     },
-    head: ["Product", "Barcode / SKU", "Batch", "Expiry", ...(showPlace ? ["Location"] : []), "Orders", "To pick", "Picked"],
+    head: [
+      "Product",
+      "Barcode / SKU",
+      ...(plain ? [] : ["Batch", "Expiry"]),
+      ...(showPlace ? ["Location"] : []),
+      "Orders",
+      "To pick",
+      "Picked",
+    ],
     rows: picks.map((p) => [
       productLabel(p.product_name, p.brand),
       [p.unit_barcode, input.skus.get(p.product_id)].filter(Boolean).join("\n"),
-      p.batch_number ?? "Not batch-tracked",
-      p.expiry_date ? paperDate(p.expiry_date) : "",
+      ...(plain ? [] : [p.batch_number ?? "Not batch-tracked", p.expiry_date ? paperDate(p.expiry_date) : ""]),
       ...(showPlace ? [p.location_name ?? ""] : []),
       String(p.orders),
       formatQty(p.qty_to_pick),
       "",
     ]),
-    numeric: showPlace ? [5, 6] : [4, 5],
-    boxes: [showPlace ? 7 : 6],
+    numeric: [counts, counts + 1],
+    boxes: [counts + 2],
     numbered: true,
     totals: [["Units to pick", formatQty(units)]],
     notesTitle: "Notes for the picker",
@@ -337,15 +361,32 @@ export function noteLineOrder(a: NoteLine, b: NoteLine): number {
   return a.product_name.localeCompare(b.product_name) || a.id.localeCompare(b.id);
 }
 
-/** How many of a line are going: what was packed, and once it has left, what was dispatched. */
-export function sentQty(status: string, line: Pick<NoteLine, "qty_picked" | "qty_dispatched">): number {
-  return Number(status === "dispatched" || status === "delivered" ? line.qty_dispatched : line.qty_picked);
+/**
+ * How many of a line are going: what was packed, and once it has left, what
+ * was dispatched. An order without stock (`fromStock` false) counts nothing
+ * when it is packed: the whole line goes, as `order_dispatch` sends it.
+ */
+export function sentQty(
+  status: string,
+  line: Pick<NoteLine, "qty_ordered" | "qty_picked" | "qty_dispatched">,
+  fromStock = true
+): number {
+  if (status === "dispatched" || status === "delivered") return Number(line.qty_dispatched);
+  return Number(fromStock ? line.qty_picked : line.qty_ordered - line.qty_dispatched);
 }
 
 export type DeliveryNoteInput = {
   order: Pick<
     OrderRow,
-    "order_number" | "invoice_number" | "status" | "customer_po_number" | "customer_po_date" | "delivery_address" | "contact_name" | "contact_phone"
+    | "order_number"
+    | "invoice_number"
+    | "status"
+    | "customer_po_number"
+    | "customer_po_date"
+    | "delivery_address"
+    | "contact_name"
+    | "contact_phone"
+    | "fulfil_location_id"
   >;
   storeName: string | null;
   storeAddress: string | null;
@@ -387,7 +428,7 @@ export function deliveryNotePdfSpec(input: DeliveryNoteInput, seller: QuoteSelle
   // A cancelled line is off the invoice too; on the note it would read as goods the driver forgot.
   const lines = input.lines.filter((l) => l.line_status !== "cancelled");
   const coded = lines.some((l) => input.skus.has(l.product_id));
-  const sent = lines.map((l) => sentQty(o.status, l));
+  const sent = lines.map((l) => sentQty(o.status, l, o.fulfil_location_id !== null));
   return {
     heading: "DELIVERY NOTE",
     fileName: `Delivery note ${d ? d.dispatch_number : o.order_number}`,
@@ -471,7 +512,7 @@ async function inGroups<T, R>(items: T[], size: number, fn: (item: T) => Promise
 async function pickingListFor(supabase: Client, orderId: string, seller: QuoteSeller, paper: Paper): Promise<PdfSpec> {
   const [detail, rows] = await Promise.all([fetchOrderDetail(supabase, orderId), fetchPickingList(supabase, orderId)]);
   if (rows.length === 0) {
-    throw new Error(`Nothing is reserved for ${detail.order.order_number}, so there is nothing to pick yet. Confirm it first.`);
+    throw new Error(`Nothing on ${detail.order.order_number} is waiting to be picked yet. Confirm it first.`);
   }
   const [skus, storeAddress] = await Promise.all([
     fetchSkus(supabase, rows.map((r) => r.product_id)),

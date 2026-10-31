@@ -1,0 +1,543 @@
+-- Rollback of 20261030210500_no_stock_pick_and_pack. The six functions as they
+-- were live before it (pg_get_functiondef md5: order_start_picking
+-- bdd978256233ffd7d8f727a245ddaf12, order_mark_packed
+-- dfa2faf991f6e626641fc1c7651e1f9a, order_picking_list
+-- 18eb454b43b50544a9b6c83b29c5050e, order_dispatch
+-- 8ed1a740a0e844b2c699f7b8e5884078, order_return_undelivered
+-- c98f0bc273ea9bd3a3112f6a7ceeeb8b, order_cancel_without_stock
+-- d3a95f90bf11026e06880e05dc5d9460), their comments, their module (Stock
+-- control for the first three) and the location constraint.
+
+CREATE OR REPLACE FUNCTION public.order_start_picking(p_order_id uuid)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'pg_temp'
+AS $function$
+declare
+  v_org uuid;
+  v_role text;
+  v_number text;
+begin
+  perform public.require_writable();
+  perform public.require_module('warehouse');
+  v_org := public.current_org_id();
+  v_role := public."current_role"();
+  if not public.has_permission('warehouse') then
+    raise exception 'Only warehouse staff can start picking.' using errcode = '42501';
+  end if;
+
+  perform pg_advisory_xact_lock(hashtext('order_transition'), hashtext(p_order_id::text));
+
+  -- The status is re-checked in the WHERE clause rather than read first, so two
+  -- clerks starting the same order cannot both win. Same shape as
+  -- close_abandoned_workday.
+  update public.orders
+     set status = 'picking', picking_started_by = auth.uid(), picking_started_at = now()
+   where id = p_order_id and org_id = v_org and status = 'confirmed'
+  returning order_number into v_number;
+
+  if v_number is null then
+    raise exception 'That order is not waiting to be picked.' using errcode = '42501';
+  end if;
+
+  return jsonb_build_object('order_id', p_order_id, 'order_number', v_number,
+                            'status', 'picking');
+end;
+$function$;
+
+CREATE OR REPLACE FUNCTION public.order_mark_packed(p_order_id uuid, p_accept_short boolean DEFAULT false)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'pg_temp'
+AS $function$
+declare
+  v_org uuid;
+  v_role text;
+  v_order public.orders;
+  v_short record;
+  v_number text;
+begin
+  perform public.require_writable();
+  perform public.require_module('warehouse');
+  v_org := public.current_org_id();
+  v_role := public."current_role"();
+  if not public.has_permission('warehouse') then
+    raise exception 'Only warehouse staff can pack an order.' using errcode = '42501';
+  end if;
+
+  perform pg_advisory_xact_lock(hashtext('order_transition'), hashtext(p_order_id::text));
+
+  select * into v_order from public.orders where id = p_order_id and org_id = v_org;
+  if not found then
+    raise exception 'That order does not exist.' using errcode = 'P0002';
+  end if;
+  if v_order.status <> 'picking' then
+    raise exception 'Order % is %, not being picked.', v_order.order_number, v_order.status
+      using errcode = '42501';
+  end if;
+
+  if not p_accept_short then
+    select p.name, ol.qty_picked, ol.qty_reserved into v_short
+    from public.order_lines ol
+    join public.products p on p.id = ol.product_id
+    where ol.order_id = v_order.id
+      and ol.line_status <> 'cancelled'
+      and ol.qty_picked < ol.qty_reserved
+    order by p.name
+    limit 1;
+
+    if found then
+      raise exception
+        'Only % of % % have been picked. Finish the pick, or pack it short deliberately.',
+        v_short.qty_picked, v_short.qty_reserved, v_short.name
+        using errcode = '23514';
+    end if;
+  end if;
+
+  update public.orders
+     set status = 'packed', packed_by = auth.uid(), packed_at = now()
+   where id = v_order.id and status = 'picking'
+  returning order_number into v_number;
+
+  if v_number is null then
+    raise exception 'That order is no longer being picked.' using errcode = '42501';
+  end if;
+
+  return jsonb_build_object('order_id', v_order.id, 'order_number', v_number,
+                            'status', 'packed', 'packed_short', p_accept_short);
+end;
+$function$;
+
+CREATE OR REPLACE FUNCTION public.order_picking_list(p_order_id uuid)
+ RETURNS TABLE(allocation_id uuid, order_line_id uuid, product_id uuid, product_name text, brand text, unit_barcode text, batch_id uuid, batch_number text, expiry_date date, location_name text, qty_to_pick integer, qty_picked integer, allocation_status text)
+ LANGUAGE sql
+ STABLE
+ SET search_path TO 'public'
+AS $function$
+  select public.require_module('warehouse');
+  with cfg as materialized (select public.current_org_id() as org)
+  select
+    a.id, a.order_line_id, ol.product_id, p.name, p.brand, p.unit_barcode,
+    a.batch_id, pb.batch_number, pb.expiry_date,
+    l.name, a.qty_reserved, a.qty_picked, a.status
+  from public.order_allocations a
+  cross join cfg
+  join public.order_lines ol on ol.id = a.order_line_id
+  join public.products p on p.id = ol.product_id
+  join public.stock_locations l on l.id = a.location_id
+  left join public.product_batches pb on pb.id = a.batch_id
+  where a.order_id = p_order_id
+    and a.org_id = cfg.org
+    and a.status in ('reserved', 'picked')
+  -- Oldest stock first, so the sheet reads in the order it should be walked.
+  order by pb.expiry_date nulls last, p.name;
+$function$;
+
+CREATE OR REPLACE FUNCTION public.order_dispatch(p_order_id uuid, p_driver_id uuid DEFAULT NULL::uuid, p_vehicle_id uuid DEFAULT NULL::uuid, p_carrier_name text DEFAULT NULL::text, p_tracking_reference text DEFAULT NULL::text, p_expected_delivery_on date DEFAULT NULL::date, p_notes text DEFAULT NULL::text)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'pg_temp'
+AS $function$
+declare
+  v_org uuid;
+  v_role text;
+  v_order public.orders;
+  v_dispatch_id uuid;
+  v_number text;
+  v_transit uuid;
+  v_reg text;
+  v_alloc record;
+  v_line record;
+  v_total integer := 0;
+  v_lines integer := 0;
+begin
+  perform public.require_writable();
+  perform public.require_module('deliveries');
+  v_org := public.current_org_id();
+  v_role := public."current_role"();
+
+  if not public.has_permission('warehouse') then
+    raise exception 'Only warehouse staff can dispatch an order.' using errcode = '42501';
+  end if;
+  if p_driver_id is null and p_vehicle_id is null
+     and (p_carrier_name is null or btrim(p_carrier_name) = '') then
+    raise exception 'Say who is taking it: a driver, a vehicle, or a courier.'
+      using errcode = '22023';
+  end if;
+
+  perform pg_advisory_xact_lock(hashtext('order_transition'), hashtext(p_order_id::text));
+
+  select * into v_order from public.orders where id = p_order_id and org_id = v_org;
+  if not found then
+    raise exception 'That order does not exist.' using errcode = 'P0002';
+  end if;
+  -- No location: invoiced by a company that keeps no stock, so there is
+  -- nothing to pick or pack and it goes out from confirmed.
+  if v_order.fulfil_location_id is null then
+    if v_order.status <> 'confirmed' then
+      raise exception 'Order % is %, not invoiced and ready to go.',
+        v_order.order_number, v_order.status using errcode = '42501';
+    end if;
+  elsif v_order.status <> 'packed' then
+    raise exception 'Order % is %, not packed and ready to go.',
+      v_order.order_number, v_order.status using errcode = '42501';
+  end if;
+
+  if p_driver_id is not null and not exists (
+      select 1 from public.drivers where id = p_driver_id and org_id = v_org and active) then
+    raise exception 'That driver is not on the active list.' using errcode = '42501';
+  end if;
+  if p_vehicle_id is not null and not exists (
+      select 1 from public.vehicles where id = p_vehicle_id and org_id = v_org and active) then
+    raise exception 'That vehicle is not on the active list.' using errcode = '42501';
+  end if;
+
+  -- Where the in-transit stock lives. Our own van gets its own location,
+  -- created on first use; a courier leaves it in the warehouse's in_transit
+  -- bucket, which is excluded from on_hand and so does not double-count.
+  -- Without stock, nowhere: nothing is carried out of a location.
+  if v_order.fulfil_location_id is null then
+    v_transit := null;
+  elsif p_vehicle_id is not null then
+    select id into v_transit from public.stock_locations
+    where vehicle_id = p_vehicle_id and org_id = v_org;
+
+    if v_transit is null then
+      select registration into v_reg from public.vehicles where id = p_vehicle_id;
+      insert into public.stock_locations (org_id, name, type, vehicle_id, created_by)
+      values (v_org, 'Vehicle ' || v_reg, 'vehicle', p_vehicle_id, auth.uid())
+      returning id into v_transit;
+    end if;
+  else
+    v_transit := v_order.fulfil_location_id;
+  end if;
+
+  v_number := public.next_document_number(v_org, 'dispatch', 'DSP');
+
+  insert into public.dispatches (
+    org_id, dispatch_number, order_id, driver_id, vehicle_id, carrier_name,
+    tracking_reference, dispatch_location_id, transit_location_id,
+    dispatched_by, expected_delivery_on, notes)
+  values (
+    v_org, v_number, v_order.id, p_driver_id, p_vehicle_id, nullif(btrim(coalesce(p_carrier_name, '')), ''),
+    p_tracking_reference, v_order.fulfil_location_id, v_transit,
+    auth.uid(), p_expected_delivery_on, p_notes)
+  returning id into v_dispatch_id;
+
+  if v_order.fulfil_location_id is null then
+    -- Every live line, in full, at the quantity invoiced. Nothing is moved.
+    for v_line in
+      select ol.id, ol.qty_ordered - ol.qty_dispatched as qty
+      from public.order_lines ol
+      where ol.order_id = v_order.id and ol.line_status <> 'cancelled'
+        and ol.qty_ordered > ol.qty_dispatched
+      order by ol.product_id, ol.id
+      for update
+    loop
+      insert into public.dispatch_lines (org_id, dispatch_id, order_line_id, qty)
+      values (v_org, v_dispatch_id, v_line.id, v_line.qty);
+
+      update public.order_lines
+         set qty_dispatched = qty_dispatched + v_line.qty
+       where id = v_line.id;
+
+      v_total := v_total + v_line.qty;
+      v_lines := v_lines + 1;
+    end loop;
+  else
+    -- Sorted, for the same deadlock reason every other multi-line RPC here is.
+    for v_alloc in
+      select a.*, ol.product_id
+      from public.order_allocations a
+      join public.order_lines ol on ol.id = a.order_line_id
+      where a.order_id = v_order.id and a.status in ('reserved', 'picked')
+        and a.qty_reserved > 0
+      order by ol.product_id, a.batch_id nulls first, a.id
+    loop
+      insert into public.stock_movements (
+        org_id, product_id, batch_id, qty,
+        from_location_id, from_bucket, to_location_id, to_bucket,
+        reason, reference, source_doc_type, source_doc_id, source_line_id, actor_id)
+      values (
+        v_org, v_alloc.product_id, v_alloc.batch_id, v_alloc.qty_reserved,
+        v_alloc.location_id, 'reserved', v_transit, 'in_transit',
+        'order_dispatch', v_number,
+        'dispatch', v_dispatch_id, v_alloc.order_line_id, auth.uid());
+
+      insert into public.dispatch_lines (
+        org_id, dispatch_id, order_line_id, order_allocation_id, batch_id, qty)
+      values (v_org, v_dispatch_id, v_alloc.order_line_id, v_alloc.id,
+              v_alloc.batch_id, v_alloc.qty_reserved);
+
+      update public.order_lines
+         set qty_reserved = qty_reserved - v_alloc.qty_reserved,
+             qty_dispatched = qty_dispatched + v_alloc.qty_reserved
+       where id = v_alloc.order_line_id;
+
+      update public.order_allocations
+         set status = 'dispatched',
+             qty_dispatched = v_alloc.qty_reserved,
+             qty_reserved = 0
+       where id = v_alloc.id;
+
+      v_total := v_total + v_alloc.qty_reserved;
+      v_lines := v_lines + 1;
+    end loop;
+  end if;
+
+  if v_lines = 0 then
+    raise exception 'Order % has nothing held to dispatch.', v_order.order_number
+      using errcode = '42501';
+  end if;
+
+  update public.orders
+     set status = 'dispatched', dispatched_by = auth.uid(), dispatched_at = now()
+   where id = v_order.id;
+
+  return jsonb_build_object(
+    'order_id', v_order.id, 'order_number', v_order.order_number,
+    'dispatch_id', v_dispatch_id, 'dispatch_number', v_number,
+    'status', 'dispatched', 'transit_location_id', v_transit,
+    'lines', v_lines, 'units', v_total);
+end;
+$function$;
+
+CREATE OR REPLACE FUNCTION public.order_return_undelivered(p_dispatch_id uuid, p_reason text, p_cancel boolean DEFAULT false)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'pg_temp'
+AS $function$
+declare
+  v_org uuid;
+  v_role text;
+  v_dispatch public.dispatches;
+  v_order public.orders;
+  v_line record;
+  v_total integer := 0;
+  -- A dispatch with no transit location carried no stock: nothing goes back
+  -- on a shelf, and the order returns to confirmed, ready to go again.
+  v_stock boolean;
+begin
+  perform public.require_writable();
+  perform public.require_module('deliveries');
+  v_org := public.current_org_id();
+  v_role := public."current_role"();
+  if not public.has_permission('warehouse') then
+    raise exception 'Only warehouse staff can record a failed delivery.' using errcode = '42501';
+  end if;
+  if p_reason is null or btrim(p_reason) = '' then
+    raise exception 'Say why the delivery did not happen.' using errcode = '22023';
+  end if;
+
+  perform pg_advisory_xact_lock(hashtext('dispatch_doc'), hashtext(p_dispatch_id::text));
+
+  select * into v_dispatch from public.dispatches where id = p_dispatch_id and org_id = v_org;
+  if not found then
+    raise exception 'That dispatch does not exist.' using errcode = 'P0002';
+  end if;
+  if v_dispatch.status <> 'in_transit' then
+    raise exception 'Dispatch % is already %.', v_dispatch.dispatch_number, v_dispatch.status
+      using errcode = '42501';
+  end if;
+  v_stock := v_dispatch.transit_location_id is not null;
+
+  perform pg_advisory_xact_lock(hashtext('order_transition'),
+                                hashtext(v_dispatch.order_id::text));
+
+  select * into v_order from public.orders where id = v_dispatch.order_id;
+
+  for v_line in
+    select dl.*, ol.product_id
+    from public.dispatch_lines dl
+    join public.order_lines ol on ol.id = dl.order_line_id
+    where dl.dispatch_id = v_dispatch.id
+    order by ol.product_id, dl.batch_id nulls first, dl.id
+  loop
+    -- Back to `reserved` when the order lives on, so re-dispatching is the same
+    -- code path with nothing special about it; to `available` when it is being
+    -- cancelled, because nothing is holding it any more.
+    if v_stock then
+      insert into public.stock_movements (
+        org_id, product_id, batch_id, qty,
+        from_location_id, from_bucket, to_location_id, to_bucket,
+        reason, reference, source_doc_type, source_doc_id, source_line_id, actor_id, note)
+      values (
+        v_org, v_line.product_id, v_line.batch_id, v_line.qty,
+        v_dispatch.transit_location_id, 'in_transit',
+        v_dispatch.dispatch_location_id, case when p_cancel then 'available' else 'reserved' end,
+        'order_return_undelivered', v_dispatch.dispatch_number,
+        'dispatch', v_dispatch.id, v_line.order_line_id, auth.uid(), p_reason);
+    end if;
+
+    update public.dispatch_lines set qty_returned = v_line.qty where id = v_line.id;
+
+    -- When the order is cancelled, what was picked goes back with it: the
+    -- stock is on the shelf again, not in a box for this order. Left alone,
+    -- picked stayed above what the line holds and the update failed
+    -- order_lines_picked_within_held on every packed order. In the same
+    -- statement, so a line split over two batches never sits in between.
+    -- Without stock nothing was reserved, so nothing is again.
+    update public.order_lines
+       set qty_dispatched = qty_dispatched - v_line.qty,
+           qty_reserved = qty_reserved + case when p_cancel or not v_stock then 0 else v_line.qty end,
+           qty_picked = case when p_cancel then least(qty_picked, qty_dispatched - v_line.qty)
+                             else qty_picked end
+     where id = v_line.order_line_id;
+
+    if v_line.order_allocation_id is not null then
+      update public.order_allocations
+         set status = case when p_cancel then 'released' else 'picked' end,
+             qty_dispatched = 0,
+             qty_reserved = case when p_cancel then 0 else v_line.qty end,
+             qty_picked = case when p_cancel then 0 else qty_picked end
+       where id = v_line.order_allocation_id;
+    end if;
+
+    v_total := v_total + v_line.qty;
+  end loop;
+
+  update public.dispatches
+     set status = 'returned', failure_reason = p_reason
+   where id = v_dispatch.id and status = 'in_transit';
+  if not found then
+    raise exception 'Dispatch % was closed by somebody else while this was running.',
+      v_dispatch.dispatch_number using errcode = '40001';
+  end if;
+
+  -- The flag the transition guard is looking for. Transaction-local, and set
+  -- only here, so no other path can move an order out of `dispatched`.
+  perform set_config('app.stock_returned', v_order.id::text, true);
+
+  if p_cancel then
+    update public.order_lines set line_status = 'cancelled'
+     where order_id = v_order.id and line_status <> 'cancelled';
+    update public.orders
+       set status = 'cancelled', cancel_reason = p_reason,
+           cancelled_by = auth.uid(), cancelled_at = now()
+     where id = v_order.id;
+    -- Invoiced without stock: its invoice is settled here too where the
+    -- follow trigger would leave it standing.
+    if not v_stock then
+      perform public.order_cancel_settle_invoice(v_order.id);
+    end if;
+  else
+    update public.orders
+       set status = case when v_order.fulfil_location_id is null then 'confirmed' else 'packed' end,
+           dispatched_at = null, dispatched_by = null
+     where id = v_order.id;
+  end if;
+
+  return jsonb_build_object(
+    'order_id', v_order.id, 'order_number', v_order.order_number,
+    'dispatch_number', v_dispatch.dispatch_number,
+    'status', case when p_cancel then 'cancelled'
+                   when v_order.fulfil_location_id is null then 'confirmed'
+                   else 'packed' end,
+    'units_returned', v_total);
+end;
+$function$;
+
+CREATE OR REPLACE FUNCTION public.order_cancel_without_stock(p_order_id uuid, p_reason text)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'pg_temp'
+AS $function$
+declare
+  v_org uuid;
+  o public.orders;
+  -- Any run of white space, tabs and new lines included, counts as one space.
+  v_reason text := btrim(regexp_replace(coalesce(p_reason, ''), '\s+', ' ', 'g'));
+begin
+  perform public.require_writable();
+  perform public.require_module('distribution');
+  v_org := public.current_org_id();
+
+  if not public.has_permission('warehouse') then
+    raise exception 'Cancelling an order needs the Orders permission.' using errcode = '42501';
+  end if;
+  if v_reason = '' then
+    raise exception 'Say why the order is being cancelled.' using errcode = '22023';
+  end if;
+  if char_length(v_reason) > 500 then
+    raise exception 'That reason is too long.' using errcode = '22023';
+  end if;
+
+  perform pg_advisory_xact_lock(hashtext('order_transition'), hashtext(p_order_id::text));
+
+  select * into o from public.orders where id = p_order_id and org_id = v_org for update;
+  if not found then
+    raise exception 'That order does not exist.' using errcode = 'P0002';
+  end if;
+  -- A company that keeps stock cancels with order_cancel, which puts the
+  -- stock back; only an order invoiced without stock before it bought
+  -- Stock control is still this function's.
+  if public.module_enabled('warehouse')
+     and not (o.fulfil_location_id is null and o.status in ('confirmed', 'dispatched')) then
+    raise exception 'Your company keeps stock, so cancel the order with "Cancel", which also puts any reserved stock back.'
+      using errcode = '42501';
+  end if;
+  if o.status = 'cancelled' then
+    raise exception 'Order % is already cancelled.', o.order_number using errcode = '42501';
+  end if;
+  if o.status = 'delivered' then
+    -- Delivered, or finished here: either way a correction is a credit note,
+    -- when there is an invoice to credit.
+    raise exception 'Order % is delivered, so it cannot be cancelled. If it was invoiced, issue a credit note on its invoice instead.',
+      o.order_number using errcode = '42501';
+  end if;
+  if o.status = 'dispatched' and o.fulfil_location_id is null then
+    raise exception 'Order % is out for delivery. Record the delivery as failed, and cancel it there.',
+      o.order_number using errcode = '42501';
+  end if;
+  if o.status not in ('new', 'confirmed') or o.fulfil_location_id is not null then
+    -- Moved on through the warehouse before the company dropped it.
+    raise exception 'Order % is %, which only the warehouse steps can undo.', o.order_number, o.status
+      using errcode = '42501';
+  end if;
+
+  -- Lines first, then the order, as order_cancel does.
+  update public.order_lines set line_status = 'cancelled'
+   where order_id = o.id and line_status <> 'cancelled';
+  update public.orders
+     set status = 'cancelled',
+         cancel_reason = v_reason,
+         cancelled_by = auth.uid(),
+         cancelled_at = now()
+   where id = o.id;
+  -- Invoiced and not sent yet: its invoice is voided, or credited once paid
+  -- (orders_invoice_follow where "Invoice every order" is on, else here).
+  if o.status = 'confirmed' then
+    perform public.order_cancel_settle_invoice(o.id);
+  end if;
+
+  return jsonb_build_object('order_id', o.id, 'order_number', o.order_number, 'status', 'cancelled');
+end;
+$function$;
+
+update public.module_assignments set module_code = 'warehouse'
+ where kind = 'function' and module_code = 'deliveries'
+   and name in ('order_start_picking', 'order_mark_packed', 'order_picking_list');
+
+comment on function public.order_picking_list(uuid) is
+  'The picking list for an order: product, batch, expiry, location and quantity, oldest stock first.';
+
+comment on function public.order_cancel_without_stock(uuid, text) is
+  'For an order with no stock: cancels it while new, or invoiced and not yet sent (its invoice voided, or credited once paid).';
+
+-- An order without stock picked or packed while the migration was in place
+-- goes back to confirmed, which the functions above send straight out.
+-- Packed goes back through picking: the only way back the transition guard
+-- has. Nothing was reserved or counted, so nothing else moves. The invoice
+-- trigger is deferred: fired now, so the table has no pending events when
+-- the constraint is added back.
+set constraints all immediate;
+update public.orders set status = 'picking' where fulfil_location_id is null and status = 'packed';
+update public.orders set status = 'confirmed' where fulfil_location_id is null and status = 'picking';
+
+alter table public.orders add constraint orders_fulfil_location_set
+  check (fulfil_location_id is not null or status = any (array['new', 'cancelled', 'confirmed', 'dispatched', 'delivered']));

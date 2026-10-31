@@ -36,9 +36,10 @@ export type BoardFacts = {
   podStatus: string | null;
   onHold: boolean;
   /**
-   * False for an order invoiced without stock (no fulfilment location): it is
-   * never picked or packed, so the board's stock steps do not apply to it.
-   * Left out, the order is taken to hold stock, as every order did before.
+   * False for an order invoiced without stock (no fulfilment location). It is
+   * picked and packed like any other (since 30 Oct 2026), with nothing
+   * reserved or counted. Left out, the order is taken to hold stock, as every
+   * order did before.
    */
   fromStock?: boolean;
 };
@@ -82,12 +83,17 @@ export function columnLabel(c: BoardColumn, invoices: boolean): string {
   }
 }
 
-/** What an empty column says: how a card gets there, not just "nothing here". */
-export function columnEmptyText(c: BoardColumn, invoices: boolean): string {
+/**
+ * What an empty column says: how a card gets there, not just "nothing here".
+ * Without Stock control a purchase order is invoiced on its own page, so
+ * nothing is dragged into Invoiced.
+ */
+export function columnEmptyText(c: BoardColumn, invoices: boolean, keepsStock = true): string {
   switch (c) {
     case "purchase_orders":
       return "New orders from the phones, or keyed here, wait here.";
     case "invoiced":
+      if (!keepsStock) return "Open a purchase order to invoice it. It then waits here to be picked and packed.";
       return invoices
         ? "Drag a purchase order here to reserve its stock and issue its invoice."
         : "Drag a purchase order here to confirm it and reserve its stock.";
@@ -150,12 +156,15 @@ const STEP_INTO: Record<Exclude<BoardColumn, "purchase_orders">, BoardStep> = {
  *
  * `null` when it was dropped where it already is. Otherwise either the step to
  * open, or a sentence saying why not and what to do instead: a refused drop
- * that only snaps back teaches nobody anything.
+ * that only snaps back teaches nobody anything. `keepsStock` is the company's:
+ * without Stock control a purchase order is invoiced on its own page, where
+ * its prices are checked, rather than by the board's confirm step.
  */
 export function dropAnswer(
   o: BoardFacts,
   to: BoardColumn,
-  invoices: boolean
+  invoices: boolean,
+  keepsStock = true
 ): { step: BoardStep } | { refuse: string } | null {
   const from = columnOf(o);
   if (from === to) return null;
@@ -171,13 +180,8 @@ export function dropAnswer(
   if (o.onHold) {
     return { refuse: `${n} is on hold. Open the order and release the hold first.` };
   }
-  // Invoiced without stock, before the company bought Stock control: there is
-  // nothing to pick or pack, and the database refuses Packed for it.
-  if (o.fromStock === false && from === "invoiced") {
-    return { refuse: `${n} has no stock to pick or pack. Open it to dispatch it.` };
-  }
-  if (o.fromStock === false && from === "dispatched" && to !== "delivered") {
-    return { refuse: `${n} carried no stock. If it did not arrive, open it and record the failed delivery.` };
+  if (!keepsStock && from === "purchase_orders" && to === "invoiced") {
+    return { refuse: `Open ${n} to invoice it. Its prices are checked there first.` };
   }
   if (toAt === fromAt + 1) return { step: STEP_INTO[to as keyof typeof STEP_INTO] };
   if (toAt > fromAt + 1) {
@@ -186,7 +190,8 @@ export function dropAnswer(
     };
   }
   // Backwards. The one way back the database has is a delivery that did not
-  // happen, which brings the stock back onto the shelf.
+  // happen, which brings the stock back onto the shelf (or, without stock,
+  // the box back to Packed).
   if (from === "dispatched" && to === "packed") return { step: "failed" };
   if (from === "dispatched") {
     return { refuse: `${n} is on the road. If it did not arrive, drag it back to Packed.` };
@@ -288,10 +293,10 @@ export function deliversOrders(config: { modules: ModuleSet } | null): boolean {
 /**
  * A company with orders and invoicing but no Stock control: a new order is
  * invoiced at the quantities ordered with no stock reserved or moved
- * (`order_invoice_without_stock`). With Deliveries it is then confirmed and
- * sent out (`sentWithoutStock`); without, it is finished in one step. Cancelled
- * by `order_cancel_without_stock`. False while the config is loading, so no
- * button is offered that the database might refuse.
+ * (`order_invoice_without_stock`). With Deliveries it is then picked, packed
+ * and sent out (`packsWithoutStock`, `sentWithoutStock`); without, it is
+ * finished in one step. Cancelled by `order_cancel_without_stock`. False while
+ * the config is loading, so no button is offered that the database might refuse.
  */
 export function invoicesWithoutStock(config: { modules: ModuleSet } | null): boolean {
   return (
@@ -300,6 +305,17 @@ export function invoicesWithoutStock(config: { modules: ModuleSet } | null): boo
     moduleEnabled(config.modules, "distribution") &&
     moduleEnabled(config.modules, "invoicing")
   );
+}
+
+/**
+ * A company without Stock control whose invoiced orders are picked, packed and
+ * sent out: Deliveries is on (owner, 30 Oct 2026: "so orders can be picked and
+ * packed"). Nothing is reserved or counted: the picking list is the order's
+ * own lines, and packing puts the whole order in the box. The board's ticks,
+ * steps and paper are open to it as to a company that keeps stock.
+ */
+export function packsWithoutStock(config: { modules: ModuleSet } | null): boolean {
+  return invoicesWithoutStock(config) && deliversOrders(config);
 }
 
 /**
@@ -318,9 +334,10 @@ export function finishedWithoutStock(o: {
 
 /**
  * An order invoiced without stock and sent out from there: no location, past
- * new, not finished in one step. It goes confirmed -> dispatched -> delivered,
- * with no picking, packing or stock figures. Read from the order, like
- * `finishedWithoutStock`.
+ * new, not finished in one step. It goes confirmed -> picking -> packed ->
+ * dispatched -> delivered with no stock figures (before 30 Oct 2026 it went
+ * from confirmed straight out, which the database still allows). Read from
+ * the order, like `finishedWithoutStock`.
  */
 export function sentWithoutStock(o: {
   status: string;
@@ -329,7 +346,7 @@ export function sentWithoutStock(o: {
 }): boolean {
   return (
     o.fulfil_location_id === null &&
-    ["confirmed", "dispatched", "delivered"].includes(o.status) &&
+    ["confirmed", "picking", "packed", "dispatched", "delivered"].includes(o.status) &&
     !finishedWithoutStock(o)
   );
 }

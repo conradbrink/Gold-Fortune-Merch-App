@@ -65,7 +65,8 @@ import { capital, lower, withArticle } from "@/lib/terms";
  *   what happens on most orders. Once picking has started (somebody pressed
  *   Start picking), the counts belong to the picker, so the dialog only sends
  *   the order to its picking list: packing "everything" there would overwrite a
- *   line the picker saved at 0 or short.
+ *   line the picker saved at 0 or short. An order invoiced without stock has
+ *   no counts (nothing was reserved), so it is always packed whole from here.
  * - Recording a delivery takes the signed POD in the same dialog, because with
  *   the POD on file the order is finished and goes to the archive. The file is
  *   checked against the bucket's limits before the delivery is recorded.
@@ -373,6 +374,8 @@ function StepBody({
   }
 
   const o = detail.order;
+  /** Invoiced without stock: nothing reserved, so nothing counted when it is picked. */
+  const noStock = o.fulfil_location_id === null;
   const movedOn = !FROM[step].includes(o.status) || (step === "pod" && o.pod_status !== "outstanding");
   if (movedOn || (o.on_hold && step !== "pod")) {
     return frame(
@@ -541,7 +544,8 @@ function StepBody({
 
   // --------------------------------------------------------------- pack
   if (step === "pack") {
-    const picking = pickingStarted || o.status === "picking";
+    // Without stock there are no counts to protect, so a pick somebody started is packed whole too.
+    const picking = !noStock && (pickingStarted || o.status === "picking");
 
     /**
      * Starts picking. True when this dialog started it; false when somebody
@@ -596,7 +600,11 @@ function StepBody({
     return frame(
       <>
         {list.length === 0 ? (
-          <p className="text-muted-foreground">Nothing is reserved for this order, so there is nothing to pack.</p>
+          <p className="text-muted-foreground">
+            {noStock
+              ? "Nothing is left on this order to pack."
+              : "Nothing is reserved for this order, so there is nothing to pack."}
+          </p>
         ) : (
           <>
             <p>
@@ -605,7 +613,7 @@ function StepBody({
             </p>
             <ul className="max-h-48 space-y-0.5 overflow-y-auto rounded-md border border-border bg-muted/30 p-2 text-muted-foreground">
               {list.map((r) => (
-                <li key={r.allocation_id} className="flex justify-between gap-3">
+                <li key={r.allocation_id ?? r.order_line_id} className="flex justify-between gap-3">
                   <span className="min-w-0 truncate">
                     {r.product_name}
                     {r.batch_number ? ` · batch ${r.batch_number}` : ""}
@@ -616,7 +624,11 @@ function StepBody({
             </ul>
           </>
         )}
-        <p className="text-muted-foreground">If something was short, use the picking list instead.</p>
+        <p className="text-muted-foreground">
+          {noStock
+            ? "Your company does not track stock, so nothing is counted: the whole order goes in the box, as invoiced."
+            : "If something was short, use the picking list instead."}
+        </p>
       </>,
       <>
         {cancelButton}
@@ -627,6 +639,12 @@ function StepBody({
           disabled={busy || list.length === 0}
           onClick={() =>
             run(async () => {
+              if (noStock) {
+                // Nothing reserved, so nothing to record: start the pick if nobody has, then pack it.
+                if (o.status === "confirmed") await beginPicking();
+                await markPacked(supabase, orderId);
+                return `${orderNumber} is packed and ready to go out.`;
+              }
               // Somebody else's pick is theirs to finish: never packed in full over it.
               if (!(await beginPicking())) {
                 throw new Error(`Somebody started picking ${orderNumber} a moment ago. Finish it on the picking list.`);
@@ -803,8 +821,12 @@ function StepBody({
           />
         </div>
         <p className="text-muted-foreground">
-          It goes back to Packed with its stock still reserved, ready to go out again. If the order is off
-          altogether, cancel it on its own page once it is back in Packed.
+          {noStock && !o.packed_at
+            ? "It was sent before it could be packed, so it goes back to Invoiced to be packed and sent again"
+            : noStock
+              ? "It goes back to Packed, ready to go out again"
+              : "It goes back to Packed with its stock still reserved, ready to go out again"}
+          . If the order is off altogether, cancel it on its own page once it is back.
         </p>
         {noConsignment}
       </>,
@@ -815,8 +837,12 @@ function StepBody({
           onClick={() =>
             run(async () => {
               if (!openDispatch) throw new Error("This consignment is no longer on the road. Refresh the list.");
-              await returnUndelivered(supabase, openDispatch.id, reason, false);
-              return `${orderNumber}'s stock is back. It is packed and ready to go out again.`;
+              const back = await returnUndelivered(supabase, openDispatch.id, reason, false);
+              // An order sent without stock before it could be packed comes back to Invoiced.
+              if (back.status === "confirmed") return `${orderNumber} is back with the orders waiting to be packed.`;
+              return noStock
+                ? `${orderNumber} is back. It is packed and ready to go out again.`
+                : `${orderNumber}'s stock is back. It is packed and ready to go out again.`;
             })
           }
         >
