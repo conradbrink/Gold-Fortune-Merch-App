@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show TargetPlatform;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:gf_merch_rep/core/location_tracking.dart';
@@ -68,41 +69,41 @@ void main() {
   });
 
   group('tracking settings', () {
-    test('a foreground service is attached only when it can actually run', () {
-      // Asserting `isNotNull` here was worthless: it passed for any settings
-      // object at all, so deleting the foreground service — the entire substance
-      // of this change — would not have failed a single test. The service config
-      // itself is what has to be pinned.
-      // Cast once into a typed local rather than casting inline and leaning on
-      // Dart promoting the `final` afterwards. That promotion is real and
-      // analyses clean, but it is subtle enough to read as a mistake.
-      final background =
-          LocationTracking.settingsFor(LocationTrackingMode.background)
+    test('a foreground service keeps the trail running on Android', () {
+      // Asserting `isNotNull` alone would be worthless: it passes for any
+      // settings object at all, so deleting the foreground service — the
+      // whole substance of the trail — would not fail a test. The service
+      // config itself is what has to be pinned.
+      final android =
+          LocationTracking.settingsFor(platform: TargetPlatform.android)
               as AndroidSettings;
       expect(
-        background.foregroundNotificationConfig,
+        android.foregroundNotificationConfig,
         isNotNull,
         reason:
             'Without this the sampling stops the moment Android backgrounds the '
-            'app, which is the 3.6% delivery rate this change exists to fix.',
+            'app, which is the 3.6% delivery rate the trail exists to fix. It '
+            'is attached for "while using the app" too: started with the app '
+            'open, the service keeps that access until the day ends.',
       );
       // Persistent and wake-locked, or the trail arrives in one batch and reads
       // as a rep who teleported.
-      expect(background.foregroundNotificationConfig!.setOngoing, isTrue);
-      expect(background.foregroundNotificationConfig!.enableWakeLock, isTrue);
+      expect(android.foregroundNotificationConfig!.setOngoing, isTrue);
+      expect(android.foregroundNotificationConfig!.enableWakeLock, isTrue);
+    });
 
-      // Advertising "recording your route" to a rep whose grant stops at
-      // "while using the app" would promise tracking that is not happening.
-      final foregroundOnly =
-          LocationTracking.settingsFor(LocationTrackingMode.foregroundOnly)
-              as AndroidSettings;
-      expect(
-        foregroundOnly.foregroundNotificationConfig,
-        isNull,
-        reason:
-            'A permanent notification for tracking that cannot run in the '
-            'background is a promise the app does not keep.',
-      );
+    test('an iPhone keeps recording behind other apps, and shows it', () {
+      final ios = LocationTracking.settingsFor(platform: TargetPlatform.iOS)
+          as AppleSettings;
+      expect(ios.allowBackgroundLocationUpdates, isTrue);
+      // The blue pill: the rep can see that the phone is recording.
+      expect(ios.showBackgroundLocationIndicator, isTrue);
+      // Paused updates go quiet in a shop, which reads as a dead phone.
+      expect(ios.pauseLocationUpdatesAutomatically, isFalse);
+      // No time interval on iOS: without a distance filter it reports about
+      // once a second while driving, all day.
+      expect(ios.distanceFilter, kIosTrackingDistanceFilterM);
+      expect(ios.distanceFilter, greaterThan(0));
     });
 
     test('no stream is offered when nothing is permitted', () {

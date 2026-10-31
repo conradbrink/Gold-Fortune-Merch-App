@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/app_update.dart';
-import '../../core/env.dart';
+import '../../core/distribution.dart';
+import '../open_link.dart';
 import 'move_to_tickd.dart';
 
 /// Wraps the whole app and reacts to [appUpdateProvider].
@@ -51,23 +51,10 @@ class AppUpdateGate extends ConsumerWidget {
   }
 }
 
-/// Opens the official download page in the phone's browser.
-///
-/// The URL is a compile-time constant from [Env], never anything the server
-/// sent — a "download URL" taken from a response is an obvious way to point
-/// the whole field team at someone else's APK.
-Future<void> _openDownloadPage(BuildContext context) async {
-  final uri = Uri.parse(Env.downloadPageUrl);
-  final launched = await launchUrl(uri, mode: LaunchMode.externalApplication);
-
-  if (!launched && context.mounted) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('Could not open the browser. Go to ${Env.downloadPageUrl}'),
-      ),
-    );
-  }
-}
+/// Opens where this build's updates come from: the download page for the APK,
+/// or the store listing for a store build (core/distribution.dart).
+Future<void> _openUpdatePage(BuildContext context) =>
+    openFirstLink(context, updateLinksFor(distributionChannel));
 
 class _UpdateBanner extends ConsumerWidget {
   const _UpdateBanner({required this.update});
@@ -102,7 +89,7 @@ class _UpdateBanner extends ConsumerWidget {
                 ),
               ),
               TextButton(
-                onPressed: () => _openDownloadPage(context),
+                onPressed: () => _openUpdatePage(context),
                 child: const Text('Update'),
               ),
               IconButton(
@@ -168,9 +155,9 @@ class _ForcedUpdateScreen extends StatelessWidget {
                 ),
                 const SizedBox(height: 24),
                 FilledButton.icon(
-                  onPressed: () => _openDownloadPage(context),
+                  onPressed: () => _openUpdatePage(context),
                   icon: const Icon(Icons.download),
-                  label: const Text('Open the download page'),
+                  label: Text(updateButtonLabelFor(distributionChannel)),
                 ),
               ],
             ),

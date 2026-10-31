@@ -9,8 +9,8 @@ import '../../core/terms.dart';
 import '../../core/theme.dart';
 import '../../data/models/route_visit.dart';
 import '../../data/models/store_reorder.dart';
+import '../../shared/widgets/account_menu.dart';
 import '../../shared/widgets/status_badge.dart';
-import '../auth/auth_controller.dart';
 import '../../shared/widgets/sync_banner.dart';
 import '../workday/workday_banner.dart';
 import 'route_plan_panel.dart';
@@ -74,11 +74,7 @@ class RouteTodayScreen extends ConsumerWidget {
             _DeliveriesAction(
               count: ref.watch(outstandingDeliveryCountProvider),
             ),
-          IconButton(
-            icon: const Icon(Icons.logout),
-            tooltip: 'Sign out',
-            onPressed: () => ref.read(authControllerProvider.notifier).signOut(),
-          ),
+          const AccountMenu(),
         ],
       ),
       floatingActionButton: FloatingActionButton.extended(

@@ -6,8 +6,8 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../core/location_service.dart';
 import '../../core/providers.dart';
 import '../../core/theme.dart';
+import '../../shared/widgets/account_menu.dart';
 import '../../shared/widgets/message_panel.dart';
-import '../auth/auth_controller.dart';
 import '../deliveries/deliveries_screen.dart';
 import 'route_plan.dart';
 
@@ -51,16 +51,7 @@ class _DriverHomeScreenState extends ConsumerState<DriverHomeScreen> {
       appBar: AppBar(
         title: const Text('My deliveries'),
         actions: [
-          PopupMenuButton<String>(
-            onSelected: (v) {
-              if (v == 'out') {
-                ref.read(authControllerProvider.notifier).signOut();
-              }
-            },
-            itemBuilder: (_) => const [
-              PopupMenuItem(value: 'out', child: Text('Sign out')),
-            ],
-          ),
+          const AccountMenu(),
         ],
       ),
       body: RefreshIndicator(

@@ -98,6 +98,14 @@ class Harness {
     await Future<void>.delayed(Duration.zero);
   }
 
+  /// Location switched off, or the grant taken away, while the day is open:
+  /// the stream reports it as an error and the trail re-reads the grant.
+  Future<void> refuse() async {
+    mode = LocationTrackingMode.unavailable;
+    controller!.addError(const LocationServiceDisabledException());
+    await Future<void>.delayed(Duration.zero);
+  }
+
   Future<void> foreground() async {
     lifecycle = AppLifecycleState.resumed;
     trail.didChangeLifecycle(AppLifecycleState.resumed);
@@ -256,7 +264,7 @@ void main() {
       await h.background();
       h.now = h.now.add(const Duration(minutes: 30));
       // The foreground service kept sampling while backgrounded, as it
-      // should with "Allow all the time".
+      // should.
       h.controller!.add(fix(29));
       await Future<void>.delayed(Duration.zero);
       await h.foreground();
@@ -266,14 +274,15 @@ void main() {
     });
 
     test(
-      'coming back from settings with "all the time" reopens the trail',
+      'coming back from settings with location allowed reopens the trail',
       () async {
-        final h = Harness(mode: LocationTrackingMode.foregroundOnly)..attach();
+        final h = Harness()..attach();
         await h.trail.ensureRunning(reason: 'start');
-        expect(h.trail.mode, LocationTrackingMode.foregroundOnly);
+        await h.refuse();
+        expect(h.trail.mode, LocationTrackingMode.unavailable);
 
         // The banner's "Open settings": the app goes behind the settings
-        // page, the rep picks "Allow all the time", and comes back — through
+        // page, the rep switches location back on, and comes back — through
         // `inactive` and `resumed`, both of which arrive here.
         await h.background();
         h.mode = LocationTrackingMode.background;
@@ -285,25 +294,28 @@ void main() {
         // The banner reads this, and is told it changed.
         expect(h.trail.mode, LocationTrackingMode.background);
         expect(h.modeChanges, greaterThan(0));
-        // Reopened once, as the stream with the foreground service.
+        // Reopened once, as a fresh stream.
         expect(h.opened, 2);
         expect(h.cancelled, 1);
         expect(h.trail.isRunning, isTrue);
       },
     );
 
-    test('an unchanged "while using" grant is left running', () async {
-      final h = Harness(mode: LocationTrackingMode.foregroundOnly)..attach();
+    test('a refusal that still stands is left as it is', () async {
+      final h = Harness()..attach();
       await h.trail.ensureRunning(reason: 'start');
+      await h.refuse();
 
       await h.background();
       await h.foreground();
 
+      expect(h.trail.mode, LocationTrackingMode.unavailable);
+      // The open stream is kept: it resumes when location comes back.
       expect(h.opened, 1);
       expect(h.cancelled, 0);
     });
 
-    test('a trail with "all the time" does not ask again on resume', () async {
+    test('a recording trail does not ask again on resume', () async {
       final h = Harness()..attach();
       await h.trail.ensureRunning(reason: 'start');
       final reads = h.modeReads;
@@ -316,14 +328,17 @@ void main() {
     });
 
     test('location switched off is reported, not restarted', () async {
-      final h = Harness(mode: LocationTrackingMode.foregroundOnly)..attach();
+      final h = Harness()..attach();
       await h.trail.ensureRunning(reason: 'start');
 
       await h.background();
-      h.mode = LocationTrackingMode.unavailable;
+      // The stream is how it arrives: geolocator reports location switched
+      // off as an error on the open stream.
+      await h.refuse();
       await h.foreground();
 
       expect(h.trail.mode, LocationTrackingMode.unavailable);
+      expect(h.modeChanges, greaterThan(0));
       // The open stream is kept: it resumes when location comes back.
       expect(h.trail.isRunning, isTrue);
       expect(h.opened, 1);
@@ -331,8 +346,9 @@ void main() {
     });
 
     test('a day ended while the grant is being read stays ended', () async {
-      final h = Harness(mode: LocationTrackingMode.foregroundOnly)..attach();
+      final h = Harness()..attach();
       await h.trail.ensureRunning(reason: 'start');
+      await h.refuse();
 
       await h.background();
       h.mode = LocationTrackingMode.background;
@@ -347,8 +363,9 @@ void main() {
     });
 
     test('a grant that cannot be read leaves the trail alone', () async {
-      final h = Harness(mode: LocationTrackingMode.foregroundOnly)..attach();
+      final h = Harness()..attach();
       await h.trail.ensureRunning(reason: 'start');
+      await h.refuse();
       h.modeFails = true;
 
       await h.background();

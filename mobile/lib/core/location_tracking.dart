@@ -38,6 +38,7 @@ library;
 
 import 'dart:ui' show AppLifecycleState;
 
+import 'package:flutter/foundation.dart' show TargetPlatform, defaultTargetPlatform;
 import 'package:geolocator/geolocator.dart';
 
 import 'product.dart';
@@ -73,6 +74,17 @@ const kLocationPingInterval = Duration(minutes: 5);
 ///   at medium accuracy. The filter used to absorb that; now [kOdometerFloorM]
 ///   does, so mileage still only counts movement that actually happened.
 const kTrackingDistanceFilterM = 0;
+
+/// Metres an iPhone must move before it reports a new position.
+///
+/// iOS has no time interval to sample on: with no distance filter and pausing
+/// switched off, it reports about once a second while the rep drives, all day.
+/// A hundred metres is the accuracy the trail asks for anyway (`medium`), so a
+/// closer fix is noise. Standing still costs nothing extra: iOS reports a
+/// position when it changes, not on a clock, so a rep in a shop is quiet with
+/// or without the filter, and the trail restarts on resume if it has gone
+/// quiet too long ([trailLooksStalled]).
+const kIosTrackingDistanceFilterM = 100;
 
 /// Metres a leg must cover before it counts toward a rep's mileage.
 ///
@@ -137,26 +149,27 @@ String trackingNotificationText(String? companyName) {
 
 /// What tracking we are actually able to do, given what the rep has granted.
 enum LocationTrackingMode {
-  /// "Allow all the time" — the stream runs with a foreground service.
+  /// Recording, including while the app is not on screen.
+  ///
+  /// "While using the app" is enough, and is all the app asks for. The trail
+  /// is only ever started with the app open ([canStartTrail]), and a location
+  /// stream started then keeps running behind other apps: on Android through
+  /// the foreground service and its notification, on an iPhone through
+  /// background location updates and the blue location pill. Neither store
+  /// lets an app ask for "Allow all the time" without a review of its own,
+  /// and the trail does not need it.
   background,
-
-  /// "While using the app" — the stream still runs, but Android stops it once
-  /// the app is not visible. Better than nothing, and honest about being partial.
-  foregroundOnly,
 
   /// Denied, or location services are off. No trail at all.
   unavailable,
 }
 
 class LocationTracking {
-  /// Works out how much tracking this rep has permitted.
+  /// Works out whether this rep's grant lets the trail run.
   ///
-  /// Deliberately never *asks* for background permission here. On Android 11 and
-  /// later the "Allow all the time" option cannot be granted from an in-app
-  /// prompt at all — the request silently returns the same `whileInUse` and the
-  /// only route is the system settings page. Asking and being refused by the
-  /// platform, with no dialog shown, looks like a broken button. The UI explains
-  /// and links to settings instead; this call only reports the current state.
+  /// Never *asks*: the check-in asks for "while using the app" the first time
+  /// it needs a fix ([LocationService]), and this call only reports the
+  /// current state.
   static Future<LocationTrackingMode> currentMode() async {
     if (!await Geolocator.isLocationServiceEnabled()) {
       return LocationTrackingMode.unavailable;
@@ -164,9 +177,8 @@ class LocationTracking {
     final permission = await Geolocator.checkPermission();
     switch (permission) {
       case LocationPermission.always:
-        return LocationTrackingMode.background;
       case LocationPermission.whileInUse:
-        return LocationTrackingMode.foregroundOnly;
+        return LocationTrackingMode.background;
       case LocationPermission.denied:
       case LocationPermission.deniedForever:
       case LocationPermission.unableToDetermine:
@@ -184,36 +196,49 @@ class LocationTracking {
   /// check-out keep `LocationAccuracy.high` in [LocationService], because those
   /// are measured against a store geofence and a sloppy fix there is a wrong
   /// answer rather than a coarse one.
-  static LocationSettings settingsFor(
-    LocationTrackingMode mode, {
+  static LocationSettings settingsFor({
     // The company's `gps_ping_interval_minutes`; the constant is the fallback.
     Duration interval = kLocationPingInterval,
     // `branding.name` and the company's word for a workday, for the
     // notification.
     String? companyName,
     String workday = 'Workday',
+    // For tests; the phone's own platform otherwise.
+    TargetPlatform? platform,
   }) {
+    if ((platform ?? defaultTargetPlatform) == TargetPlatform.iOS) {
+      return AppleSettings(
+        accuracy: LocationAccuracy.medium,
+        distanceFilter: kIosTrackingDistanceFilterM,
+        // Keeps the stream alive behind other apps. It needs the `location`
+        // background mode in Info.plist, and shows the blue location pill so
+        // the rep can see that it is recording.
+        allowBackgroundLocationUpdates: true,
+        showBackgroundLocationIndicator: true,
+        // iOS would otherwise stop the updates when a rep stands still in a
+        // shop, which on the live map reads as a dead phone.
+        pauseLocationUpdatesAutomatically: false,
+      );
+    }
     return AndroidSettings(
       accuracy: LocationAccuracy.medium,
       distanceFilter: kTrackingDistanceFilterM,
       intervalDuration: interval,
-      // Only attach the foreground service when it can actually help. Showing a
-      // permanent notification to a rep whose grant stops at "while using the
-      // app" would advertise tracking that is not happening.
-      foregroundNotificationConfig: mode == LocationTrackingMode.background
-          ? ForegroundNotificationConfig(
-              notificationTitle: '$workday in progress',
-              notificationText: trackingNotificationText(companyName),
-              notificationChannelName: 'Workday tracking',
-              // Persistent: a rep swiping the notification away would stop the
-              // service and silently lose the rest of the day's trail.
-              setOngoing: true,
-              // Without the wake lock the device sleeps and Android delivers the
-              // whole batch at once when it next wakes — which reads as a rep who
-              // teleported, and is the failure this class exists to remove.
-              enableWakeLock: true,
-            )
-          : null,
+      // The foreground service is what keeps the stream running behind other
+      // apps, with either grant: started while the app is open, it holds
+      // "while using the app" access until the day ends.
+      foregroundNotificationConfig: ForegroundNotificationConfig(
+        notificationTitle: '$workday in progress',
+        notificationText: trackingNotificationText(companyName),
+        notificationChannelName: 'Workday tracking',
+        // Persistent: a rep swiping the notification away would stop the
+        // service and silently lose the rest of the day's trail.
+        setOngoing: true,
+        // Without the wake lock the device sleeps and Android delivers the
+        // whole batch at once when it next wakes — which reads as a rep who
+        // teleported, and is the failure this class exists to remove.
+        enableWakeLock: true,
+      ),
     );
   }
 
@@ -227,7 +252,6 @@ class LocationTracking {
     if (mode == LocationTrackingMode.unavailable) return null;
     return Geolocator.getPositionStream(
       locationSettings: settingsFor(
-        mode,
         interval: interval,
         companyName: companyName,
         workday: workday,
@@ -235,7 +259,8 @@ class LocationTracking {
     );
   }
 
-  /// Opens the system page where "Allow all the time" can be granted.
+  /// Opens this app's page in the phone's settings, where location can be
+  /// allowed.
   static Future<bool> openPermissionSettings() =>
       Geolocator.openAppSettings();
 }
@@ -278,8 +303,8 @@ bool canStartTrail(AppLifecycleState? state) {
 ///
 /// Two of the sampling interval, so one late fix does not count. A trail that
 /// has gone this long is one the platform stopped feeding — the foreground
-/// service refused in the background, or a "while using the app" grant that
-/// Android suspended — and is restarted the next time the app comes forward.
+/// service refused in the background, or killed with the app — and is
+/// restarted the next time the app comes forward.
 const kTrailStallAfter = Duration(minutes: 10);
 
 /// Whether a trail that is nominally running should be restarted on resume.

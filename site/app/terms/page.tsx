@@ -102,7 +102,7 @@ export default function TermsPage() {
       <h2>Paying</h2>
       <ul>
         <li>
-          You pay by card on the secure page of our payment provider, Payfast. Payfast keeps your card so that later
+          You pay by card on the secure page of our payment provider, Paystack. Paystack keeps your card so that later
           payments happen by themselves; we never see or store your card number.
         </li>
         <li>Each renewal is charged to your card on the day your paid period ends. You get an invoice in the app.</li>

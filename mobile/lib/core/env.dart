@@ -8,8 +8,8 @@ class Env {
 
   /// Base URL of the production web platform.
   ///
-  /// Only used to send a rep to the APK download page when an update is
-  /// available — no data is exchanged with it.
+  /// Used to send a rep to the APK download page when an update is available,
+  /// and to plan a driver's route.
   ///
   /// Overridable at build time so a release can be pointed at the real domain
   /// without editing source:
@@ -32,5 +32,27 @@ class Env {
     defaultValue: 'https://gold-fortune-merch-app-rnyn.vercel.app',
   );
 
-  static String get downloadPageUrl => '$webBaseUrl/download';
+  /// True in the Google Play build (`--dart-define=TICKD_STORE=play`).
+  ///
+  /// A constant so that [downloadPageUrl] is emptied when the Play build is
+  /// compiled: that build then carries no link to the download page at all,
+  /// rather than one that is merely never followed. Google Play removes an
+  /// app that installs updates it did not deliver (core/distribution.dart).
+  static const playBuild = String.fromEnvironment('TICKD_STORE') == 'play';
+
+  /// The App Store's number for Tickd (the `id…` in its App Store link). It
+  /// exists once the app is created in App Store Connect, before the first
+  /// upload, so every iPhone release build passes it:
+  /// `--dart-define=TICKD_APP_STORE_ID=<number>`.
+  static const appStoreId = String.fromEnvironment('TICKD_APP_STORE_ID');
+
+  /// The APK download page. Empty in the Play build ([playBuild]).
+  static const downloadPageUrl = playBuild ? '' : '$webBaseUrl/download';
+
+  /// The public website, which is not the web platform above.
+  static const siteUrl = 'https://tickd.co.za';
+
+  /// How to delete a login. Both stores ask for this page, and the home
+  /// screen's menu links to it (shared/widgets/account_menu.dart).
+  static const deleteAccountUrl = '$siteUrl/delete-account';
 }

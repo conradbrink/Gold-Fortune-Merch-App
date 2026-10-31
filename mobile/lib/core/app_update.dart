@@ -1,6 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 
+import 'distribution.dart';
 import 'move_to_tickd.dart';
 import 'providers.dart';
 import 'supabase_client.dart';
@@ -45,7 +46,8 @@ class AppUpdateInfo {
 /// same phone is looking at the same out-of-date APK.
 const _postponedKey = 'update.postponed_version_code';
 
-/// Checks whether a newer Android release has been published.
+/// Checks whether a newer release has been published for this build's channel
+/// (core/distribution.dart): the download page's APK, or a store's build.
 ///
 /// Returns null — meaning "carry on" — whenever the answer cannot be
 /// established: offline, the request failed, nothing published yet, or the
@@ -54,6 +56,8 @@ const _postponedKey = 'update.postponed_version_code';
 /// into a lockout when the network is down is worse than no update check.
 final appUpdateProvider = FutureProvider<AppUpdateInfo?>((ref) async {
   final db = ref.watch(appDatabaseProvider);
+  final channel = distributionChannel;
+  if (!checksForUpdates(channel)) return null;
 
   final info = await PackageInfo.fromPlatform();
   final installed = int.tryParse(info.buildNumber);
@@ -64,7 +68,7 @@ final appUpdateProvider = FutureProvider<AppUpdateInfo?>((ref) async {
     row = await supabase
         .from('app_releases')
         .select('version_name, version_code, notes, min_supported_version_code')
-        .eq('platform', 'android')
+        .eq('platform', releasePlatformFor(channel))
         .eq('is_current', true)
         .maybeSingle();
   } catch (_) {
