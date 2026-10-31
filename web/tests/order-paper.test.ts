@@ -110,6 +110,7 @@ const note = (over: Partial<DeliveryNoteInput> = {}): DeliveryNoteInput => ({
     delivery_address: "Back door, 12 Church St",
     contact_name: "Thabo Mokoena",
     contact_phone: "082 555 0101",
+    fulfil_location_id: "loc-1",
   },
   storeName: "Bloem Corner Tuck Shop",
   storeAddress: "12 Church St, Bloemfontein",
@@ -194,6 +195,58 @@ const combined = (over: Partial<CombinedPickingInput> = {}): CombinedPickingInpu
   ...over,
 });
 
+// An order invoiced without stock: its lines, with no allocation, batch or place (order_picking_list).
+const plainLine = (over: Partial<PickingRow>) =>
+  pick({
+    allocation_id: null as unknown as string,
+    allocation_status: "to_pick",
+    batch_id: null as unknown as string,
+    batch_number: null as unknown as string,
+    expiry_date: null as unknown as string,
+    location_name: null as unknown as string,
+    ...over,
+  });
+
+test("a picking list without stock has no batch, expiry or location columns", () => {
+  const spec = pickingListPdfSpec(
+    {
+      ...sheet,
+      fulfilLocationName: null,
+      rows: [plainLine({}), plainLine({ order_line_id: "l2", product_id: "p2", product_name: "Chips 125g", brand: null as unknown as string, unit_barcode: null as unknown as string, qty_to_pick: 6 })],
+    },
+    seller,
+    paper
+  );
+  assert.deepEqual(spec.head, ["Product", "Barcode / SKU", "To pick", "Picked"]);
+  assert.deepEqual(spec.rows, [
+    ["Juice 1L — Sunny", "6001234567890\nJUI-1", "24", ""],
+    ["Chips 125g", "CHP-125", "6", ""],
+  ]);
+  assert.deepEqual(spec.numeric, [2]);
+  assert.deepEqual(spec.boxes, [3]);
+  assert.deepEqual(spec.totals, [["Units to pick", "30"]]);
+  assert.ok(!spec.meta.some(([k]) => k === "Pick from"));
+});
+
+test("a combined list of orders without stock adds each product up, with no batch columns", () => {
+  const spec = combinedPickingListPdfSpec(
+    {
+      orders: [
+        { order: { order_number: "SO-000001", notes: null }, storeName: "Shop A", rows: [plainLine({ qty_to_pick: 5 })] },
+        { order: { order_number: "SO-000002", notes: null }, storeName: "Shop B", rows: [plainLine({ order_line_id: "l7", qty_to_pick: 7 })] },
+      ],
+      skus: new Map(),
+    },
+    seller,
+    paper
+  );
+  assert.deepEqual(spec.head, ["Product", "Barcode / SKU", "Orders", "To pick", "Picked"]);
+  assert.deepEqual(spec.rows, [["Juice 1L — Sunny", "6001234567890", "2", "12", ""]]);
+  assert.deepEqual(spec.numeric, [2, 3]);
+  assert.deepEqual(spec.boxes, [4]);
+  assert.deepEqual(spec.totals, [["Units to pick", "12"]]);
+});
+
 test("a combined picking list adds each product up across the orders: one row per batch, oldest first, counting the orders", () => {
   const rows = combinePicks(combined().orders);
   assert.deepEqual(
@@ -265,12 +318,12 @@ test("stock at more than one warehouse gets a Location column; an order with not
   assert.equal(spec.billTo.name, "Combined list for 3 orders");
   assert.equal(spec.billTo.address, "SO-000301 to SO-000303");
   assert.deepEqual(spec.notes, [
-    "Not on this list, because nothing is reserved for it yet: SO-000304.",
+    "Not on this list, because nothing on it is waiting to be picked yet: SO-000304.",
     "SO-000301 (Bloem Corner Tuck Shop): Pack the juice on top.",
   ]);
   assert.throws(
     () => combinedPickingListPdfSpec({ ...input, orders: [input.orders[3]] }, seller, paper),
-    /Nothing is reserved for these orders/
+    /Nothing on these orders is waiting to be picked yet/
   );
 });
 
@@ -441,10 +494,33 @@ test("which dispatch the note is for: the one on the road or delivered, never on
 });
 
 test("what a line sends: what was packed, then once it has left, what was dispatched", () => {
-  const line = { qty_picked: 6, qty_dispatched: 5 };
+  const line = { qty_ordered: 8, qty_picked: 6, qty_dispatched: 5 };
   assert.equal(sentQty("packed", line), 6);
   assert.equal(sentQty("dispatched", line), 5);
   assert.equal(sentQty("delivered", line), 5);
+  // Without stock nothing is counted: a packed line goes whole, as order_dispatch sends it.
+  const plain = { qty_ordered: 8, qty_picked: 0, qty_dispatched: 0 };
+  assert.equal(sentQty("packed", plain, false), 8);
+  assert.equal(sentQty("dispatched", { ...plain, qty_dispatched: 8 }, false), 8);
+});
+
+test("a packed order without stock: the delivery note sends every line it ordered", () => {
+  const spec = deliveryNotePdfSpec(
+    note({
+      order: { ...note().order, status: "packed", fulfil_location_id: null },
+      lines: note().lines.map((l) => ({ ...l, qty_picked: 0, qty_dispatched: 0 })),
+      dispatch: null,
+      dispatchedOn: null,
+      skus: new Map(),
+    }),
+    seller,
+    paper
+  );
+  assert.deepEqual(spec.rows, [
+    ["Juice 1L — Sunny", "24", "24"],
+    ["Chips 125g", "10", "10"],
+  ]);
+  assert.deepEqual(spec.totals, [["Units sent", "34"]]);
 });
 
 test("addresses and line order follow the order's invoice", () => {

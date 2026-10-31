@@ -23,9 +23,10 @@ import {
   fetchPickingList,
   recordPick,
   markPacked,
+  startPicking,
   type PickingRow,
 } from "@/lib/orders";
-import { printPickingList } from "@/lib/order-paper";
+import { printPickingList, withoutStock } from "@/lib/order-paper";
 
 /**
  * The picking list.
@@ -40,6 +41,10 @@ import { printPickingList } from "@/lib/order-paper";
  * order, and a short pick has to be accepted deliberately — the database
  * refuses it otherwise, and that refusal is worth surfacing as a choice rather
  * than as an error.
+ *
+ * An order invoiced without stock (a company without Stock control) has no
+ * batches and nothing reserved, so nothing is counted: the list is its lines
+ * at the quantity ordered, and packing puts the whole order in the box.
  */
 export default function PickingPage() {
   const supabase = createClient();
@@ -84,15 +89,24 @@ export default function PickingPage() {
     };
   }, [load]);
 
-  const anyShort = rows.some(
-    (r) => (Number(picked[r.allocation_id]) || 0) < r.qty_to_pick
-  );
+  /** Invoiced without stock: no allocation behind any line, so nothing to count. */
+  const noStock = withoutStock(rows);
+  const anyShort =
+    !noStock && rows.some((r) => (Number(picked[r.allocation_id]) || 0) < r.qty_to_pick);
 
   async function save(thenPack: boolean) {
     setBusy(true);
     setError(null);
     setNotice(null);
     try {
+      if (noStock) {
+        // Opened without pressing Start picking (a bookmark, the back button): start it here.
+        // Already started is fine; anything else wrong is said by packing.
+        await startPicking(supabase, orderId).catch(() => undefined);
+        await markPacked(supabase, orderId);
+        router.push(`/orders/${orderId}`);
+        return;
+      }
       await recordPick(
         supabase,
         orderId,
@@ -127,7 +141,9 @@ export default function PickingPage() {
           </Link>
           <h1 className="mt-1 text-2xl font-semibold tracking-tight">Picking list</h1>
           <p className="text-sm text-muted-foreground">
-            Oldest stock first. Change a quantity only if what you took differs.
+            {noStock
+              ? "Take everything on the list. Your company does not track stock, so nothing is counted: the whole order goes in the box, as invoiced."
+              : "Oldest stock first. Change a quantity only if what you took differs."}
           </p>
         </div>
         {/* The same list on paper, for a picker without a phone: tick each
@@ -159,6 +175,29 @@ export default function PickingPage() {
           </CardTitle>
         </CardHeader>
         <CardContent>
+          {noStock ? (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Product</TableHead>
+                  <TableHead className="text-right">To pick</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {rows.map((r) => (
+                  <TableRow key={r.order_line_id}>
+                    <TableCell>
+                      <div className="font-medium">{r.product_name}</div>
+                      <div className="text-xs text-muted-foreground">
+                        {[r.brand, r.unit_barcode].filter(Boolean).join(" · ") || "—"}
+                      </div>
+                    </TableCell>
+                    <TableCell className="text-right font-medium tabular-nums">{r.qty_to_pick}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          ) : (
           <Table>
             <TableHeader>
               <TableRow>
@@ -176,8 +215,8 @@ export default function PickingPage() {
                 <EmptyRow colSpan={7}>Loading…</EmptyRow>
               ) : rows.length === 0 ? (
                 <EmptyRow colSpan={7}>
-                  Nothing is allocated to this order. Confirm it first so stock is
-                  reserved against it.
+                  Nothing on this order is waiting to be picked. It may not be
+                  confirmed yet, or it is packed already.
                 </EmptyRow>
               ) : (
                 rows.map((r) => {
@@ -231,20 +270,25 @@ export default function PickingPage() {
               )}
             </TableBody>
           </Table>
+          )}
         </CardContent>
       </Card>
 
       {rows.length > 0 && (
         <div className="flex flex-wrap items-center justify-between gap-3">
           <p className="text-sm text-muted-foreground">
-            {anyShort
-              ? "Some lines are short. Packing will record this as a deliberate short pick."
-              : "Everything on the sheet has been picked."}
+            {noStock
+              ? "Pack it once everything on the list is in the box."
+              : anyShort
+                ? "Some lines are short. Packing will record this as a deliberate short pick."
+                : "Everything on the sheet has been picked."}
           </p>
           <div className="flex gap-2">
-            <Button variant="outline" onClick={() => save(false)} disabled={busy}>
-              {busy ? "Saving…" : "Save progress"}
-            </Button>
+            {!noStock && (
+              <Button variant="outline" onClick={() => save(false)} disabled={busy}>
+                {busy ? "Saving…" : "Save progress"}
+              </Button>
+            )}
             <Button onClick={() => save(true)} disabled={busy}>
               {busy ? "Saving…" : anyShort ? "Pack short" : "Pack and finish"}
             </Button>

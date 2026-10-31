@@ -6,6 +6,7 @@ import assert from "node:assert/strict";
 import {
   boardSince,
   boardViewFromQuery,
+  columnEmptyText,
   dayInZone,
   daysBetween,
   deliversOrders,
@@ -21,6 +22,7 @@ import {
   dropAnswer,
   matchesSearch,
   nextStepOf,
+  packsWithoutStock,
   poExpiry,
   sentWithoutStock,
   waitTone,
@@ -260,21 +262,48 @@ test("an order finished without stock is told apart by the order, not the compan
   assert.equal(finishedWithoutStock(o("cancelled", null, null)), false);
 });
 
-test("an order with no stock is not dragged through picking and packing", () => {
+test("an order with no stock is picked, packed and sent one step at a time, as any order is", () => {
+  // Owner, 30 Oct 2026: "so orders can be picked and packed" without Stock control.
   const o = { orderNumber: "SO-9", status: "confirmed", podStatus: null, onHold: false, fromStock: false };
-  assert.deepEqual(dropAnswer(o, "packed", true), { refuse: "SO-9 has no stock to pick or pack. Open it to dispatch it." });
-  assert.deepEqual(dropAnswer(o, "dispatched", true), { refuse: "SO-9 has no stock to pick or pack. Open it to dispatch it." });
-  const out = { ...o, status: "dispatched" };
-  assert.deepEqual(dropAnswer(out, "packed", true), {
-    refuse: "SO-9 carried no stock. If it did not arrive, open it and record the failed delivery.",
+  assert.deepEqual(dropAnswer(o, "packed", true, false), { step: "pack" });
+  assert.deepEqual(dropAnswer(o, "dispatched", true, false), {
+    refuse: "SO-9 moves one step at a time. Next it goes to Packed.",
   });
-  // Delivering it is the same step as for any order.
-  assert.deepEqual(dropAnswer(out, "delivered", true), { step: "deliver" });
+  assert.deepEqual(dropAnswer({ ...o, status: "packed" }, "dispatched", true, false), { step: "dispatch" });
+  const out = { ...o, status: "dispatched" };
+  // A failed delivery brings the box back to Packed.
+  assert.deepEqual(dropAnswer(out, "packed", true, false), { step: "failed" });
+  assert.deepEqual(dropAnswer(out, "delivered", true, false), { step: "deliver" });
   // An order through the warehouse, or one that does not say, is moved as before.
   assert.deepEqual(dropAnswer({ ...o, fromStock: true }, "packed", true), { step: "pack" });
   const { fromStock: _unused, ...unsaid } = o;
   void _unused;
   assert.deepEqual(dropAnswer(unsaid, "packed", true), { step: "pack" });
+});
+
+test("without Stock control a purchase order is invoiced on its own page, not dragged", () => {
+  const o = { orderNumber: "SO-9", status: "new", podStatus: null, onHold: false, fromStock: false };
+  assert.deepEqual(dropAnswer(o, "invoiced", true, false), {
+    refuse: "Open SO-9 to invoice it. Its prices are checked there first.",
+  });
+  // With Stock control the drop is the confirm step, as before.
+  assert.deepEqual(dropAnswer(o, "invoiced", true), { step: "confirm" });
+  assert.equal(
+    columnEmptyText("invoiced", true, false),
+    "Open a purchase order to invoice it. It then waits here to be picked and packed."
+  );
+  assert.equal(columnEmptyText("invoiced", true), "Drag a purchase order here to reserve its stock and issue its invoice.");
+});
+
+test("a company without Stock control packs its orders when it delivers them", () => {
+  const config = (modules: Record<string, boolean>) => ({ modules: toModuleSet(modules) });
+  const base = { distribution: true, invoicing: true, warehouse: false };
+  assert.equal(packsWithoutStock(config({ ...base, deliveries: true })), true);
+  // Without Deliveries invoicing finishes the order: nothing waits to be packed.
+  assert.equal(packsWithoutStock(config({ ...base, deliveries: false })), false);
+  // Stock control packs with its own counts.
+  assert.equal(packsWithoutStock(config({ ...base, warehouse: true, deliveries: true })), false);
+  assert.equal(packsWithoutStock(null), false);
 });
 
 test("Deliveries is its own module, on while the config loads", () => {
@@ -293,6 +322,8 @@ test("an order sent out without stock: no location, from confirmed until deliver
     fulfil_location_id,
   });
   assert.equal(sentWithoutStock(o("confirmed", null, null)), true);
+  assert.equal(sentWithoutStock(o("picking", null, null)), true);
+  assert.equal(sentWithoutStock(o("packed", null, null)), true);
   assert.equal(sentWithoutStock(o("dispatched", "2026-10-29T08:00:00Z", null)), true);
   assert.equal(sentWithoutStock(o("delivered", "2026-10-29T08:00:00Z", null)), true);
   // Finished in one step (no Deliveries): not sent, nothing to show as sent.
@@ -302,6 +333,7 @@ test("an order sent out without stock: no location, from confirmed until deliver
   assert.equal(sentWithoutStock(o("cancelled", null, null)), false);
   // Through the warehouse: it holds stock at a location.
   assert.equal(sentWithoutStock(o("confirmed", null, "loc-1")), false);
+  assert.equal(sentWithoutStock(o("packed", null, "loc-1")), false);
   assert.equal(sentWithoutStock(o("dispatched", "2026-10-29T08:00:00Z", "loc-1")), false);
 });
 

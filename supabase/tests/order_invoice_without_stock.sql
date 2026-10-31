@@ -28,8 +28,9 @@
 --   W10 With the warehouse module on, both are refused with the "keeps stock"
 --       message, changing nothing.
 --   W11 The rules it bends stay shut to everything else: new -> delivered
---       without the function is refused, and an order is not picked without
---       a location (a confirmed one may have none since 20261029224700).
+--       without the function is refused, and an order with no location goes
+--       one step at a time (it may be picked and packed since 20261030210500,
+--       but never straight from confirmed to packed).
 --   W12 Both functions keep their security: definer, a fixed search_path, no
 --       execute for anon or PUBLIC, and a Distribution module row each.
 --
@@ -435,12 +436,13 @@ begin
   v_checks := v_checks + 1;
   begin
     update public.orders set status = 'confirmed', fulfil_location_id = null where id = v_o2;
-    update public.orders set status = 'picking' where id = v_o2;
-    v_fail := v_fail || 'W11 an order was picked with no location' || E'\n';
-  exception when check_violation then null;
-    when others then
-      get stacked diagnostics v_err = message_text;
-      v_fail := v_fail || 'W11 picking with no location refused for another reason: ' || v_err || E'\n';
+    update public.orders set status = 'packed' where id = v_o2;
+    v_fail := v_fail || 'W11 an order with no location skipped picking' || E'\n';
+  exception when others then
+    get stacked diagnostics v_err = message_text;
+    if v_err <> 'An order cannot go from confirmed to packed.' then
+      v_fail := v_fail || 'W11 skipping picking with no location refused for another reason: ' || v_err || E'\n';
+    end if;
   end;
 
   ---------------------------------------------------------------- W12 security
