@@ -7,6 +7,7 @@ import '../../core/company_config.dart';
 import '../../core/location_service.dart';
 import '../../core/location_tracking.dart';
 import '../../core/monitoring.dart';
+import '../../core/notification_permission.dart';
 import '../../core/providers.dart';
 import '../../data/models/workday_session.dart';
 import '../route_today/visit_plan.dart';
@@ -259,6 +260,10 @@ class WorkdayController extends AsyncNotifier<WorkdaySession?> {
       return;
     }
 
+    // Before the trail starts, so its notification can show (Android 13+).
+    // Whatever the answer, the day starts.
+    await NotificationPermission.request();
+
     state = const AsyncLoading();
     state = await AsyncValue.guard(() async {
       final repo = ref.read(workdayRepositoryProvider);
@@ -287,10 +292,13 @@ class WorkdayController extends AsyncNotifier<WorkdaySession?> {
 
     final repo = ref.read(workdayRepositoryProvider);
     final sync = ref.read(syncEngineProvider);
+    await NotificationPermission.request();
     state = const AsyncLoading();
     state = await AsyncValue.guard(() async {
-      final session =
-          await repo.reopenWorkday(repId: profile.id, session: ended);
+      final session = await repo.reopenWorkday(
+        repId: profile.id,
+        session: ended,
+      );
       // Where the rep went while the day was ended is not mileage: the first
       // position after this starts a new leg.
       final trail = _trail;
@@ -334,16 +342,13 @@ class WorkdayController extends AsyncNotifier<WorkdaySession?> {
       final repo = ref.read(routeRepositoryProvider);
       if (await repo.savedVisitPlan(repId, date) != null) return;
       final day = await ref.read(todayRoutesProvider.future);
-      final planned = planToday(
-        repo,
-        repId: repId,
-        day: day,
-        date: date,
-      ).then((_) {
-        if (!ref.mounted) return;
-        ref.invalidate(todayRoutesProvider);
-        ref.invalidate(visitPlanProvider);
-      }).catchError((Object _) {});
+      final planned = planToday(repo, repId: repId, day: day, date: date)
+          .then((_) {
+            if (!ref.mounted) return;
+            ref.invalidate(todayRoutesProvider);
+            ref.invalidate(visitPlanProvider);
+          })
+          .catchError((Object _) {});
       await planned.timeout(const Duration(seconds: 12), onTimeout: () {});
     } catch (_) {
       // The free order the day already had is a fine order to start in.

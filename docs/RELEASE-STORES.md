@@ -106,10 +106,9 @@ is open.
 - **Foreground service permissions:** declare `FOREGROUND_SERVICE_LOCATION`
   for the workday trail, with a short screen recording: Start workday, the
   notification appears, the app goes to the background, the trail keeps
-  recording. The app never asks for permission to show notifications, so on
-  Android 13 and later the "Workday in progress" notification only shows once
-  notifications are switched on for Tickd in the phone's settings: switch
-  them on before recording.
+  recording. On Android 13 and later the app asks to show notifications as
+  the rep starts the day; allow it, or the "Workday in progress"
+  notification stays hidden (the trail records either way).
 - **Background location:** none to declare.
 - **Privacy policy:** https://tickd.co.za/privacy. The app's menu (⋮ on the
   home screen) links to it too, as both stores ask.

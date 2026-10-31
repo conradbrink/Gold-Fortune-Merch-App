@@ -23,6 +23,13 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION"/>
     <uses-permission android:name="android.permission.WAKE_LOCK"/>
+    <!-- The "Workday in progress" notification. On Android 13 and later an app
+         that does not declare this, and ask for it, has its notifications
+         hidden: the trail still records, but the rep is never shown that it
+         does, which is what a location foreground service exists to show.
+         Asked for as the rep starts a workday (MainActivity, and
+         lib/core/notification_permission.dart). -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
     <!-- Added by open_filex's own manifest, and not needed here: the app only
          opens files it downloaded into its own storage, and photos are chosen
          with the system photo picker, which asks for nothing. Google Play
