@@ -46,7 +46,7 @@ import {
   type ProofRow,
 } from "@/lib/invoices";
 import { formatQty, validQty } from "@/lib/money-docs";
-import { useTerms } from "@/lib/use-company-config";
+import { useCompanyConfig, useTerms } from "@/lib/use-company-config";
 import { lower } from "@/lib/terms";
 
 function today() {
@@ -63,6 +63,8 @@ function today() {
 export default function InvoiceDetailPage() {
   const supabase = createClient();
   const t = useTerms();
+  // A company that prints at the counter gets a till slip from Print; the PDF stays A4.
+  const printer = useCompanyConfig()?.settings.invoice_paper ?? "a4";
   const { id } = useParams<{ id: string }>();
   const [detail, setDetail] = useState<InvoiceDetail | null>(null);
   const [proof, setProof] = useState<ProofRow[] | null>(null);
@@ -214,10 +216,10 @@ export default function InvoiceDetailPage() {
             variant="outline"
             onClick={() => {
               setError(null);
-              printInvoicePdf(detail).catch((e) => setError(e instanceof Error ? e.message : String(e)));
+              printInvoicePdf(detail, printer).catch((e) => setError(e instanceof Error ? e.message : String(e)));
             }}
           >
-            <Printer className="mr-1.5 h-4 w-4" /> Print
+            <Printer className="mr-1.5 h-4 w-4" /> {printer === "slip_80" ? "Print slip" : "Print"}
           </Button>
           {live && outstanding > 0 && (
             <Button variant="outline" onClick={() => { setPayAmount(outstanding.toFixed(2)); setRestIsRebate(false); setPanel("pay"); }}>

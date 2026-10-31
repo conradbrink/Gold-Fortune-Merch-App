@@ -1,7 +1,14 @@
 import { toModuleSet, type ModuleSet } from "@/lib/modules";
 import { parseTerms, type Terms } from "@/lib/terms";
 import { parseBranding, type Branding } from "@/lib/branding";
-import { DEFAULT_DOCUMENT_STYLE, isDocumentStyle, type DocumentStyle } from "@/lib/document-style";
+import {
+  DEFAULT_DOCUMENT_STYLE,
+  DEFAULT_INVOICE_PAPER,
+  isDocumentStyle,
+  isInvoicePaper,
+  type DocumentStyle,
+  type InvoicePaper,
+} from "@/lib/document-style";
 import { isMoneyWorkflow, type MoneyWorkflow } from "@/lib/money-workflow";
 import type { AlertEmailMode } from "@/lib/alerts";
 
@@ -68,6 +75,8 @@ export type CompanySettings = {
   /** A site that goes longer than this between check-ins on one day raises an alert. */
   alerts_patrol_gap_minutes: number;
   document_style: DocumentStyle;
+  /** What the Print button on an invoice prints on: an A4 page or an 80 mm till slip. */
+  invoice_paper: InvoicePaper;
 };
 
 export type JobReportSend = "immediate" | "evening" | "manual";
@@ -123,6 +132,7 @@ const SETTING_FALLBACK: CompanySettings = {
   alerts_digest_time: "17:30",
   alerts_patrol_gap_minutes: 90,
   document_style: DEFAULT_DOCUMENT_STYLE,
+  invoice_paper: DEFAULT_INVOICE_PAPER,
 };
 
 function obj(v: unknown): Record<string, unknown> {
@@ -214,6 +224,7 @@ export function parseCompanyConfig(raw: unknown): CompanyConfig | null {
           : f.alerts_digest_time,
       alerts_patrol_gap_minutes: int(s.alerts_patrol_gap_minutes, f.alerts_patrol_gap_minutes),
       document_style: isDocumentStyle(s.document_style) ? s.document_style : f.document_style,
+      invoice_paper: isInvoicePaper(s.invoice_paper) ? s.invoice_paper : f.invoice_paper,
     },
     timezone: typeof r.timezone === "string" && r.timezone !== "" ? r.timezone : "UTC",
     vatRate: Number.isFinite(Number(r.vat_rate)) ? Number(r.vat_rate) : 0,

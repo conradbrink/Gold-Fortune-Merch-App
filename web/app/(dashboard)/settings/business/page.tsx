@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { Printer } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { NativeSelect } from "@/components/ui/native-select";
@@ -11,6 +13,10 @@ import { refreshCompanyConfig, useCompanyConfig, useTerms } from "@/lib/use-comp
 import { useRegionLists } from "@/lib/region-lists";
 import { BrandingSection } from "@/components/settings/branding-section";
 import { SaveRow, SettingsPage, SettingsSection, SettingsSurface } from "@/components/settings/settings-section";
+import { isInvoicePaper, type InvoicePaper } from "@/lib/document-style";
+import { printMoneyPdf } from "@/lib/money-pdf";
+import { testSlipSpec } from "@/lib/till-slip";
+import { todayIn } from "@/lib/client-document";
 
 type Form = {
   name: string;
@@ -22,6 +28,8 @@ type Form = {
   timezone: string;
   country: string;
   currency: string;
+  /** What the Print button on an invoice prints on (`invoice_paper`). */
+  invoice_paper: InvoicePaper;
 };
 
 const EMPTY: Form = {
@@ -34,6 +42,7 @@ const EMPTY: Form = {
   timezone: "",
   country: "",
   currency: "",
+  invoice_paper: "a4",
 };
 
 /**
@@ -84,6 +93,7 @@ export default function BusinessSettingsPage() {
         timezone: data.timezone ?? "",
         country: config.settings.country_code ?? "",
         currency: config.settings.currency_code ?? "",
+        invoice_paper: config.settings.invoice_paper,
       };
       setSaved(next);
       setForm(next);
@@ -141,8 +151,19 @@ export default function BusinessSettingsPage() {
       );
       if (r) {
         setBusy(false);
-        setSaved({ ...form, country: saved.country, currency: saved.currency });
+        setSaved({ ...form, country: saved.country, currency: saved.currency, invoice_paper: saved.invoice_paper });
         return setError(`Your details were saved, but not the country and currency: ${r.message}`);
+      }
+    }
+    if (form.invoice_paper !== saved.invoice_paper) {
+      const { error: r } = await supabase
+        .from("company_settings")
+        .upsert({ org_id: orgId, key: "invoice_paper", value: form.invoice_paper }, { onConflict: "org_id,key" });
+      if (r) {
+        setBusy(false);
+        setSaved({ ...form, invoice_paper: saved.invoice_paper });
+        refreshCompanyConfig();
+        return setError(`Your details were saved, but not what invoices print on: ${r.message}`);
       }
     }
     setBusy(false);
@@ -178,6 +199,22 @@ export default function BusinessSettingsPage() {
       ? lists.currencies
       : [{ code: form.currency, name: form.currency }, ...lists.currencies];
   const zones = !form.timezone || lists.zones.includes(form.timezone) ? lists.zones : [form.timezone, ...lists.zones];
+
+  // A slip from the details as they are on the page, so the printer can be set up before saving.
+  function printTestSlip() {
+    setError(null);
+    const seller = {
+      name: form.name.trim() || "Your business",
+      address: form.address.trim() || null,
+      phone: form.phone.trim() || null,
+      email: form.support_email.trim() || null,
+      logoPath,
+    };
+    const paper = { currency: form.currency || null, today: todayIn(config?.timezone ?? "UTC") };
+    printMoneyPdf(async () => testSlipSpec(seller, paper), { slip: true }).catch((e) =>
+      setError(e instanceof Error ? e.message : String(e))
+    );
+  }
 
   const field = (key: keyof Form, label: string, opts: { type?: string; wide?: boolean; hint?: string; autoComplete?: string } = {}) => (
     <div className={`space-y-1.5 ${opts.wide ? "sm:col-span-2" : ""}`}>
@@ -264,6 +301,37 @@ export default function BusinessSettingsPage() {
                 ))}
               </NativeSelect>
             </div>
+          </div>
+        </SettingsSection>
+        <SettingsSection id="printing" title="Printing" description="How the Print button prints your invoices.">
+          <div className="grid gap-5 sm:grid-cols-2">
+            <div className="space-y-1.5">
+              <Label htmlFor="business-invoice-paper">Invoices print on</Label>
+              <NativeSelect
+                id="business-invoice-paper"
+                value={form.invoice_paper}
+                disabled={!canEdit}
+                aria-describedby="business-invoice-paper-hint"
+                onChange={(e) => {
+                  if (isInvoicePaper(e.target.value)) set("invoice_paper", e.target.value);
+                }}
+              >
+                <option value="a4">A4 page</option>
+                <option value="slip_80">Till slip, 80 mm</option>
+              </NativeSelect>
+              <p id="business-invoice-paper-hint" className="text-xs text-muted-foreground">
+                {form.invoice_paper === "slip_80"
+                  ? "For a till slip printer, like the Epson TM-T20II. In the print box, pick that printer and its 80 mm paper. Downloaded and emailed invoices stay A4."
+                  : "Downloaded and emailed invoices are always A4."}
+              </p>
+            </div>
+            {form.invoice_paper === "slip_80" && (
+              <div className="flex items-start sm:pt-6">
+                <Button type="button" variant="outline" onClick={printTestSlip}>
+                  <Printer className="mr-1.5 h-4 w-4" /> Print a test slip
+                </Button>
+              </div>
+            )}
           </div>
         </SettingsSection>
         {canEdit && <SaveRow onSave={() => void save()} busy={busy} dirty={dirty} saved={done} error={error} />}

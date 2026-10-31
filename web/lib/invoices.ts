@@ -18,6 +18,7 @@ import {
 import { formatQty } from "@/lib/money-docs";
 import { periodLabel } from "@/lib/contract-periods";
 import { allPages } from "@/lib/all-pages";
+import type { InvoicePaper } from "@/lib/document-style";
 
 /**
  * Invoices, credit notes and payments.
@@ -471,9 +472,12 @@ export async function downloadInvoicePdf(detail: InvoiceDetail) {
   await drawMoneyPdf(invoicePdfSpec(detail, await signedInPaper()));
 }
 
-/** The same invoice the PDF button saves, opened with the print box up. */
-export async function printInvoicePdf(detail: InvoiceDetail) {
-  await printMoneyPdf(async () => invoicePdfSpec(detail, await signedInPaper()));
+/**
+ * The same invoice the PDF button saves, opened with the print box up: on A4,
+ * or as a till slip when the company prints its invoices on a receipt printer.
+ */
+export async function printInvoicePdf(detail: InvoiceDetail, printer: InvoicePaper = "a4") {
+  await printMoneyPdf(async () => invoicePdfSpec(detail, await signedInPaper()), { slip: printer === "slip_80" });
 }
 
 type PrintLink = { invoice_id: string; visit_id: string; visits: { checkin_at: string | null } | null };
@@ -484,7 +488,7 @@ type PrintLink = { invoice_id: string; visit_id: string; visits: { checkin_at: s
  * the invoice and its balance, so only the lines and the days of work are
  * read, a hundred invoices to a request and every page of each.
  */
-export async function printInvoicePdfs(supabase: Client, rows: InvoiceListRow[]) {
+export async function printInvoicePdfs(supabase: Client, rows: InvoiceListRow[], printer: InvoicePaper = "a4") {
   await printMoneyPdf(async (): Promise<PdfSpec | PdfBatch> => {
     const tooMany = tooManyToPrint(rows.length);
     if (tooMany) throw new Error(tooMany);
@@ -536,7 +540,7 @@ export async function printInvoicePdfs(supabase: Client, rows: InvoiceListRow[])
       )
     );
     return specs.length === 1 ? specs[0] : { title: `Invoices (${specs.length})`, specs };
-  });
+  }, { slip: printer === "slip_80" });
 }
 
 export function creditNotePdfSpec(

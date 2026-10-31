@@ -2,6 +2,7 @@ import { logoUrl } from "@/lib/branding";
 import { fitBox, loadLogoImage, type LogoImage } from "@/lib/pdf-logo";
 import { brandText, hexToRgb, mix, readableOn, tint, wash, type PdfLook, type Rgb } from "@/lib/document-style";
 import { amountText, daysBetween } from "@/lib/client-document";
+import { buildTillSlips } from "@/lib/till-slip";
 
 /**
  * One letterhead for every money document (invoice, credit note, quote and
@@ -95,10 +96,11 @@ export type PaperLine = { code?: string | null; description: string; qty: string
  * one (then the description beside it), and "VAT" against each line when VAT
  * is charged.
  */
-export function paperLines(lines: PaperLine[], taxed: boolean): Pick<PdfSpec, "head" | "rows" | "numeric" | "strong" | "numbered"> {
+export function paperLines(lines: PaperLine[], taxed: boolean): Pick<PdfSpec, "head" | "rows" | "numeric" | "strong" | "numbered" | "items"> {
   const coded = lines.some((l) => l.code);
   const first = coded ? 2 : 1;
   return {
+    items: lines,
     head: ["Product or service", ...(coded ? ["Description"] : []), "Qty", "Rate", "Amount", ...(taxed ? ["Tax"] : [])],
     rows: lines.map((l) => [
       ...(coded ? [l.code ?? "", l.description] : [l.description]),
@@ -183,6 +185,8 @@ export type PdfSpec = {
   shipTo?: { label?: string; address: string } | null;
   head: string[];
   rows: string[][];
+  /** The same lines as written out, for a till slip, which prints each line under its name rather than in columns. */
+  items?: PaperLine[];
   /** Column indexes printed right-aligned (numbers). */
   numeric: number[];
   /** Column indexes printed in bold (a product code). */
@@ -254,8 +258,8 @@ const lineIn = (doc: Doc, c: Rgb, width: number) => {
   doc.setLineWidth(width);
 };
 
-/** The company's VAT, tax and registration numbers, as printed. */
-function sellerNumbers(s: PdfSeller): string[] {
+/** The company's VAT, tax and registration numbers, as printed (on a till slip too). */
+export function sellerNumbers(s: PdfSeller): string[] {
   return [
     s.vatNumber && `VAT no: ${s.vatNumber}`,
     s.taxNumber && `TIN: ${s.taxNumber}`,
@@ -869,9 +873,10 @@ export function tooManyToPrint(count: number): string | null {
  * documents are only asked for once the tab is open, because reading orders
  * first would use up the click and a pop-up blocker would refuse the tab.
  * Where the tab is refused anyway, the PDF downloads instead, so the click
- * still gives the person something to print.
+ * still gives the person something to print. With `slip`, the documents are
+ * drawn as 80 mm till slips for a receipt printer (`lib/till-slip.ts`).
  */
-export async function printMoneyPdf(load: () => Promise<PdfSpec | PdfBatch>) {
+export async function printMoneyPdf(load: () => Promise<PdfSpec | PdfBatch>, opts: { slip?: boolean } = {}) {
   // A second click while the first is still reading would open a second tab and print the sheets twice.
   if (printing) return;
   printing = true;
@@ -888,13 +893,15 @@ export async function printMoneyPdf(load: () => Promise<PdfSpec | PdfBatch>) {
     const tooMany = tooManyToPrint(batch.specs.length);
     if (tooMany) throw new Error(tooMany);
     // One company's paper: its look, and each logo fetched once (an invoice keeps the logo it was issued with).
+    // A slip is black on white whatever the company's look, so the look is not read for one.
     const paths = [...new Set(batch.specs.map((d) => d.seller.logoPath ?? null))];
-    const [look, logos] = await Promise.all([lookOf(batch.specs[0]), Promise.all(paths.map((path) => loadLogoAt(path)))]);
+    const [look, logos] = await Promise.all([
+      opts.slip ? null : lookOf(batch.specs[0]),
+      Promise.all(paths.map((path) => loadLogoAt(path))),
+    ]);
     const logoOf = new Map(paths.map((path, i) => [path, logos[i]]));
-    const doc = await buildMoneyPdfs(
-      batch.specs.map((spec) => ({ spec, logo: logoOf.get(spec.seller.logoPath ?? null) ?? null })),
-      look
-    );
+    const docs = batch.specs.map((spec) => ({ spec, logo: logoOf.get(spec.seller.logoPath ?? null) ?? null }));
+    const doc = look ? await buildMoneyPdfs(docs, look) : await buildTillSlips(docs);
     if (!win) {
       doc.save(`${batch.title}.pdf`);
       return;
