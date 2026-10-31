@@ -21,6 +21,7 @@ import {
   fetchStoresForOrder,
   fetchRepsForOrder,
   fetchVatRate,
+  enterPick,
   matchProducts,
   netUnitPrice,
   orderTotals,
@@ -642,10 +643,13 @@ export default function NewOrderPage() {
               onKeyDown={(e) => {
                 if (e.key === "Escape") setProductOpen(false);
                 // Enter takes the top match, which is what a barcode scanner
-                // sends after the code — scan, scan, scan builds the order.
+                // sends after the code — scan, scan, scan builds the order. A
+                // barcode several products share leaves the list open to pick.
                 if (e.key === "Enter" && productMatches[0]) {
                   e.preventDefault();
-                  addFromSearch(productMatches[0]);
+                  const pick = enterPick(productMatches, productQuery);
+                  if (pick) addFromSearch(pick);
+                  else setProductOpen(true);
                 }
               }}
               placeholder="Search by product name, SKU or barcode"

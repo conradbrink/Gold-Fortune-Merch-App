@@ -90,6 +90,9 @@ export default function ProductsPage() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState(emptyForm);
   const [saving, setSaving] = useState(false);
+  // A save that fails says so in the form, where the person is looking, not on
+  // the page behind it, where it stayed after the form was closed.
+  const [formError, setFormError] = useState<string | null>(null);
 
   const [deleteTarget, setDeleteTarget] = useState<ProductRow | null>(null);
   const [impact, setImpact] = useState<DeleteImpact | null>(null);
@@ -212,6 +215,7 @@ export default function ProductsPage() {
   function openCreate() {
     setEditingId(null);
     setForm(emptyForm);
+    setFormError(null);
     setDialogOpen(true);
   }
 
@@ -234,7 +238,32 @@ export default function ProductsPage() {
         p.unit_cost_incl_vat === null ? "" : String(p.unit_cost_incl_vat),
       sku_code: p.sku_code ?? "",
     });
+    setFormError(null);
     setDialogOpen(true);
+  }
+
+  /**
+   * The database's refusal in the owner's words. A SKU code is one product's
+   * (barcodes are not: products priced by quantity band share one).
+   */
+  function saveProblem(e: { code?: string; message: string }, sku: string | null): string {
+    if (e.code === "23505" && e.message.includes("products_org_sku_code_idx")) {
+      const other = products.find((p) => p.id !== editingId && p.sku_code === sku);
+      return other
+        ? `"${other.name}" already has the SKU code ${sku}. Each product needs its own.`
+        : `Another product already has the SKU code ${sku}. Each product needs its own.`;
+    }
+    return e.message;
+  }
+
+  /** Other products with this barcode, so a shared one is a choice, not a typo. */
+  function alsoOn(field: "unit_barcode" | "shrink_barcode"): string {
+    const code = form[field].trim();
+    if (!code) return "";
+    const names = products
+      .filter((p) => p.id !== editingId && p[field]?.trim() === code)
+      .map((p) => (p.active ? p.name : `${p.name} (inactive)`));
+    return names.length ? ` Also on ${names.join(", ")}.` : "";
   }
 
   async function save() {
@@ -255,14 +284,15 @@ export default function ProductsPage() {
       if (v.trim() === "") continue;
       const n = Number(v);
       if (!Number.isFinite(n) || n < 0) {
-        setError(`${label} must be a number of zero or more.`);
+        setFormError(`${label} must be a number of zero or more.`);
         return;
       }
     }
     setSaving(true);
     setError(null);
-    // Empty strings must become null, or a blank barcode would collide with
-    // every other blank barcode under the partial unique indexes.
+    setFormError(null);
+    // Empty strings must become null, or a blank SKU code would collide with
+    // every other blank one under the partial unique index.
     const blank = (v: string) => (v.trim() === "" ? null : v.trim());
     const num = (v: string) => (v.trim() === "" ? null : Number(v));
     const payload = {
@@ -284,11 +314,11 @@ export default function ProductsPage() {
         ? supabase.from("products").update(payload).eq("id", editingId)
         : supabase.from("products").insert(payload);
       const { error: e } = await q;
-      if (e) throw new Error(e.message);
+      if (e) throw new Error(saveProblem(e, payload.sku_code));
       setDialogOpen(false);
       await load();
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setFormError(e instanceof Error ? e.message : String(e));
     } finally {
       setSaving(false);
     }
@@ -617,13 +647,13 @@ export default function ProductsPage() {
               <Field label="Category" value={form.category} onChange={(v) => setForm({ ...form, category: v })} />
               <Field
                 label="Unit barcode"
-                hint="On the item a shopper picks up"
+                hint={`On the item a shopper picks up.${alsoOn("unit_barcode")}`}
                 value={form.unit_barcode}
                 onChange={(v) => setForm({ ...form, unit_barcode: v })}
               />
               <Field
                 label="Shrink barcode"
-                hint="On the outer the store receives"
+                hint={`On the outer the ${lower(t.site.one)} receives.${alsoOn("shrink_barcode")}`}
                 value={form.shrink_barcode}
                 onChange={(v) => setForm({ ...form, shrink_barcode: v })}
               />
@@ -659,6 +689,14 @@ export default function ProductsPage() {
                 onChange={(v) => setForm({ ...form, unit_cost_incl_vat: v })}
               />
             </div>
+            {formError && (
+              <p
+                role="alert"
+                className="rounded-lg border border-destructive/40 bg-destructive/10 p-2.5 text-sm text-destructive"
+              >
+                {formError}
+              </p>
+            )}
           </div>
           <DialogFooter>
             <Button

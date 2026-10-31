@@ -20,6 +20,7 @@ import {
   fetchOrderableProducts,
   fetchRepsForOrder,
   fetchStoresForOrder,
+  enterPick,
   matchProducts,
   netUnitPrice,
   shrinkPriceFor,
@@ -530,7 +531,10 @@ export function QuoteForm({ quoteId }: { quoteId?: string }) {
                     if (e.key === "Escape") setProductOpen(false);
                     if (e.key === "Enter" && productMatches[0]) {
                       e.preventDefault();
-                      addProduct(productMatches[0]);
+                      // A barcode several products share leaves the list open to pick.
+                      const pick = enterPick(productMatches, productQuery);
+                      if (pick) addProduct(pick);
+                      else setProductOpen(true);
                     }
                   }}
                   placeholder="Search by product name, SKU or barcode"
