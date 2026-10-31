@@ -111,10 +111,13 @@ is open.
   notifications are switched on for Tickd in the phone's settings: switch
   them on before recording.
 - **Background location:** none to declare.
-- **Privacy policy:** https://tickd.co.za/privacy
+- **Privacy policy:** https://tickd.co.za/privacy. The app's menu (⋮ on the
+  home screen) links to it too, as both stores ask.
 - **Delete account:** https://tickd.co.za/delete-account. The app's menu (⋮
   on the home screen) also links to it.
-- **App access:** reviewers need a sign-in for a demo company. Not set up yet.
+- **App access:** reviewers sign in to a demo company with made-up shops and
+  products, set up on production for review. The login is kept outside this
+  repository, which is public.
 - **Data safety:** what the app collects is listed under "What the app
   collects" in the Privacy policy.
 

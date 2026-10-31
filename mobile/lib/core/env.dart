@@ -55,4 +55,8 @@ class Env {
   /// How to delete a login. Both stores ask for this page, and the home
   /// screen's menu links to it (shared/widgets/account_menu.dart).
   static const deleteAccountUrl = '$siteUrl/delete-account';
+
+  /// The privacy policy. Both stores want it reachable from inside the app as
+  /// well as from the listing, so the home screen's menu links to it too.
+  static const privacyPolicyUrl = '$siteUrl/privacy';
 }
