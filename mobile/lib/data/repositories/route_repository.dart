@@ -373,7 +373,7 @@ class RouteRepository {
         var query = _client
             .from('stores')
             .select('id, name, address, city, state, lat, lng, geocode_source, '
-                'geofence_radius_m')
+                'geofence_radius_m, territory_id')
             .eq('active', true);
         if (after != null) query = query.gt('id', after);
         final rows = await query

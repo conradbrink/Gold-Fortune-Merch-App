@@ -13,6 +13,9 @@ class StoreSummary {
   /// so an unscheduled visit can offer to fix a guessed position too.
   final String? geocodeSource;
   final int geofenceRadiusM;
+  /// The area the office placed the customer in. Only read for the suburbs a
+  /// rep can pick when adding a customer: the towns of customers in an area.
+  final String? territoryId;
 
   const StoreSummary({
     required this.id,
@@ -24,6 +27,7 @@ class StoreSummary {
     this.lng,
     this.geocodeSource,
     required this.geofenceRadiusM,
+    this.territoryId,
   });
 
   String get location =>
@@ -39,6 +43,7 @@ class StoreSummary {
         'lng': lng,
         'geocode_source': geocodeSource,
         'geofence_radius_m': geofenceRadiusM,
+        'territory_id': territoryId,
       };
 
   factory StoreSummary.fromMap(Map<String, dynamic> map) {
@@ -52,6 +57,7 @@ class StoreSummary {
       lng: (map['lng'] as num?)?.toDouble(),
       geocodeSource: map['geocode_source'] as String?,
       geofenceRadiusM: (map['geofence_radius_m'] as num?)?.toInt() ?? 100,
+      territoryId: map['territory_id'] as String?,
     );
   }
 }

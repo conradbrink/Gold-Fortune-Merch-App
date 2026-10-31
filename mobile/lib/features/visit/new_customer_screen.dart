@@ -15,6 +15,7 @@ import '../../data/models/store_group.dart';
 import '../../data/models/store_summary.dart';
 import '../../data/repositories/route_repository.dart';
 import 'store_picker_screen.dart';
+import 'suburb_picker.dart';
 
 const _uuid = Uuid();
 
@@ -46,6 +47,10 @@ String initialCustomerName(String? search) {
 /// different suburbs share a name often enough (one distributor, 30 Oct 2026, had
 /// four pairs in their own books). Refusing it left the button doing nothing
 /// and the rep with no way to take that shop's order.
+///
+/// The suburb is picked from the company's own (`companySuburbs`), so the
+/// server can place the customer in its area; a suburb not on the list can
+/// still be typed in. A company with no suburbs yet gets a plain town field.
 ///
 /// With [forOrder], the customer sent a new order and the rep is not there:
 /// it goes on to that order instead of a check-in, and takes no position,
@@ -79,6 +84,13 @@ class _NewCustomerScreenState extends ConsumerState<NewCustomerScreen> {
   final _phone = TextEditingController();
 
   String? _groupId;
+  /// Whether the town was picked from the company's suburbs (null: none yet).
+  bool? _townOnList;
+  /// The part of town the last pick put on the end of the address, taken off
+  /// again if the rep picks another suburb or clears it.
+  String _addedPart = '';
+  List<StoreSummary>? _suburbsOf;
+  List<String> _suburbs = const [];
   Position? _position;
   late bool _locating = !widget.forOrder;
   String? _locationError;
@@ -126,6 +138,38 @@ class _NewCustomerScreenState extends ConsumerState<NewCustomerScreen> {
       _locating = false;
     });
   }
+
+  /// The company's suburbs, worked out again only when the list changes: the
+  /// screen rebuilds on every letter typed, and a list runs to thousands.
+  List<String> _suburbsFor(List<StoreSummary> stores) {
+    if (!identical(stores, _suburbsOf)) {
+      _suburbsOf = stores;
+      _suburbs = companySuburbs(stores);
+    }
+    return _suburbs;
+  }
+
+  Future<void> _pickTown(List<String> suburbs) async {
+    FocusScope.of(context).unfocus();
+    final choice = await pickSuburb(context, suburbs);
+    if (choice == null || !mounted) return;
+    setState(() {
+      _city.text = choice.town;
+      _townOnList = choice.fromList;
+      // The part of town typed beside the suburb (Westridge) is for the
+      // driver, so it goes in the address rather than being lost.
+      final address = addressWithout(_address.text, _addedPart);
+      _address.text = addressWith(address, choice.partOfTown);
+      _addedPart = _address.text == address ? '' : choice.partOfTown;
+    });
+  }
+
+  void _clearTown() => setState(() {
+        _city.clear();
+        _townOnList = null;
+        _address.text = addressWithout(_address.text, _addedPart);
+        _addedPart = '';
+      });
 
   bool get _ready =>
       _name.text.trim().isNotEmpty &&
@@ -234,6 +278,8 @@ class _NewCustomerScreenState extends ConsumerState<NewCustomerScreen> {
     final stores = ref.watch(storesProvider).value ?? const <StoreSummary>[];
     final groups = ref.watch(storeGroupsProvider).value ?? const <StoreGroup>[];
     final matches = storesNamed(stores, _name.text);
+    final suburbs = _suburbsFor(stores);
+    final area = t.territory.oneLower;
 
     return Scaffold(
       appBar: AppBar(title: Text('New $site')),
@@ -321,11 +367,33 @@ class _NewCustomerScreenState extends ConsumerState<NewCustomerScreen> {
             onChanged: (_) => setState(() {}),
           ),
           const SizedBox(height: 12),
-          TextField(
-            controller: _city,
-            textCapitalization: TextCapitalization.words,
-            decoration: const InputDecoration(labelText: 'Town (optional)'),
-          ),
+          if (suburbs.isEmpty)
+            TextField(
+              controller: _city,
+              textCapitalization: TextCapitalization.words,
+              decoration: const InputDecoration(labelText: 'Town (optional)'),
+            )
+          else
+            TextField(
+              controller: _city,
+              readOnly: true,
+              onTap: _saving ? null : () => _pickTown(suburbs),
+              decoration: InputDecoration(
+                labelText: 'Suburb or town',
+                hintText: 'Choose from the list',
+                helperText: _townOnList == false
+                    ? 'Not on your list, so the office may need to choose its $area.'
+                    : 'Optional. Choose from the list so it lands in the right $area.',
+                helperMaxLines: 2,
+                suffixIcon: _city.text.isEmpty
+                    ? const Icon(Icons.arrow_drop_down)
+                    : IconButton(
+                        icon: const Icon(Icons.close),
+                        tooltip: 'Clear',
+                        onPressed: _saving ? null : _clearTown,
+                      ),
+              ),
+            ),
           const SizedBox(height: 12),
           TextField(
             controller: _contact,
