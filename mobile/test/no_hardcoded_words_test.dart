@@ -25,6 +25,8 @@ const _allowed = <String, String>{
   // The Sentry release name, an identifier kept unchanged so crash history
   // stays continuous across the rename.
   'gf-merch-rep@': 'Sentry release tag, not shown to anyone',
+  // Apple's name for its store, on the iPhone build's update button.
+  'the App Store': 'a proper name, not a business word',
 };
 
 final _literal = RegExp(r"'((?:[^'\\]|\\.)*)'" r'|"((?:[^"\\]|\\.)*)"');

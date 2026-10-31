@@ -136,11 +136,20 @@ flutter:
 # `tool/make_product_mark.py` and committed, so a build never depends on
 # regenerating them.
 #
+# The iPhone icon is its own image: iOS rounds the corners itself and App Store
+# Connect refuses an icon with an alpha channel, so it is the same mark drawn
+# full-bleed at 1024 px with no transparency (also by make_product_mark.py).
+#
 # Regenerate with: dart run flutter_launcher_icons
+# Then check ios/Runner.xcodeproj/project.pbxproj: version 0.14 also rewrites
+# ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS to "AppIcon",
+# which must stay YES.
 flutter_launcher_icons:
   android: true
-  ios: false
+  ios: true
   image_path: "assets/product_mark.png"
+  image_path_ios: "assets/product_mark_ios.png"
+  remove_alpha_ios: true
   adaptive_icon_background: "#0F3D3E"
   adaptive_icon_foreground: "assets/product_mark_adaptive_foreground.png"
   min_sdk_android: 24

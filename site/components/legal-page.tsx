@@ -2,11 +2,21 @@ import Link from "next/link";
 import { Logo } from "@/components/logo";
 import { legal, site } from "@/lib/site";
 
-// The frame of the Terms, Privacy and Refunds pages: the logo home, a title,
+// The frame of the Terms, Privacy, Refunds and Delete your account pages: the logo home, a title,
 // the date, and the business's details at the foot (South Africa's
 // Electronic Communications and Transactions Act asks a website that sells to
 // show them).
-export function LegalPage({ title, children }: { title: string; children: React.ReactNode }) {
+// `updated` is for a page that changes on its own date; the rest share
+// legal.lastUpdated.
+export function LegalPage({
+  title,
+  updated = legal.lastUpdated,
+  children,
+}: {
+  title: string;
+  updated?: string;
+  children: React.ReactNode;
+}) {
   const details = [
     site.legalName,
     legal.registrationNumber && `Registered in ${legal.registeredIn}, registration number ${legal.registrationNumber}`,
@@ -26,7 +36,7 @@ export function LegalPage({ title, children }: { title: string; children: React.
       </header>
       <main className="mx-auto max-w-3xl px-4 py-10 sm:px-6 sm:py-14">
         <h1 className="font-display text-3xl font-bold tracking-tight text-teal-900 sm:text-4xl">{title}</h1>
-        <p className="mt-2 text-sm text-muted">Last updated {legal.lastUpdated}</p>
+        <p className="mt-2 text-sm text-muted">Last updated {updated}</p>
         <div className="legal mt-8 grid gap-4 leading-relaxed text-ink [&_h2]:mt-6 [&_h2]:font-display [&_h2]:text-xl [&_h2]:font-bold [&_h2]:text-teal-900 [&_li]:ml-5 [&_li]:list-disc [&_ul]:grid [&_ul]:gap-1.5 [&_ol]:grid [&_ol]:gap-2 [&_ol>li]:list-decimal [&_h2]:scroll-mt-24 [&_a]:font-semibold [&_a]:text-teal-900 [&_a]:underline">
           {children}
         </div>
@@ -36,6 +46,7 @@ export function LegalPage({ title, children }: { title: string; children: React.
             <Link href="/terms" className="hover:text-teal-900">Terms</Link>
             <Link href="/privacy" className="hover:text-teal-900">Privacy</Link>
             <Link href="/refunds" className="hover:text-teal-900">Cancellations and refunds</Link>
+            <Link href="/delete-account" className="hover:text-teal-900">Delete your account</Link>
           </nav>
         </footer>
       </main>

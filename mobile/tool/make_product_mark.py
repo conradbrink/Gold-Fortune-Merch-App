@@ -8,6 +8,9 @@
   transparent canvas, shrunk to 62% about the centre, for Android 8+'s
   adaptive icon. The launcher crops the foreground to roughly its middle
   two-thirds; the teal comes from `adaptive_icon_background` in pubspec.yaml.
+* assets/product_mark_ios.png — the iPhone icon: the same mark at 1024 px,
+  teal to the edges and with no alpha channel at all. iOS rounds the corners
+  itself, and App Store Connect refuses an icon that has transparency.
 
 The geometry is the logo's own (`tickd-mark.svg`, a 64-unit square), drawn
 here with the standard library only, so regenerating needs nothing installed:
@@ -92,7 +95,7 @@ def pixel(x, y, tile=True, scale=1.0):
     return tuple(round(v / hits) for v in acc) + (round(255 * hits / (SS * SS)),)
 
 
-def png(width, height, rows):
+def png(width, height, rows, alpha=True):
     def chunk(tag, data):
         c = struct.pack(">I", len(data)) + tag + data
         return c + struct.pack(">I", zlib.crc32(tag + data) & 0xFFFFFFFF)
@@ -100,7 +103,8 @@ def png(width, height, rows):
     raw = b"".join(b"\x00" + bytes(v for px in row for v in px) for row in rows)
     return (
         b"\x89PNG\r\n\x1a\n"
-        + chunk(b"IHDR", struct.pack(">IIBBBBB", width, height, 8, 6, 0, 0, 0))
+        # Colour type 6 is RGBA, 2 is RGB.
+        + chunk(b"IHDR", struct.pack(">IIBBBBB", width, height, 8, 6 if alpha else 2, 0, 0, 0))
         + chunk(b"IDAT", zlib.compress(raw, 9))
         + chunk(b"IEND", b"")
     )
@@ -115,9 +119,34 @@ def write(name, **kw):
     return out
 
 
+IOS_SIZE = 1024
+
+
+def ios_pixel(x, y):
+    """An opaque pixel of the full-bleed iPhone icon, sampled in the mark's own
+    coordinates so the ticks sit exactly where they do on the tile."""
+    k = SIZE / IOS_SIZE
+    acc = [0, 0, 0]
+    for sy in range(SS):
+        for sx in range(SS):
+            colour = colour_at((x + (sx + 0.5) / SS) * k, (y + (sy + 0.5) / SS) * k, tile=False) or TEAL
+            for i in range(3):
+                acc[i] += colour[i]
+    return tuple(round(v / (SS * SS)) for v in acc)
+
+
+def write_ios(name):
+    rows = [[ios_pixel(x, y) for x in range(IOS_SIZE)] for y in range(IOS_SIZE)]
+    out = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", "assets", name))
+    with open(out, "wb") as f:
+        f.write(png(IOS_SIZE, IOS_SIZE, rows, alpha=False))
+    print("wrote", out)
+
+
 if __name__ == "__main__":
     mark = write("product_mark.png")
     write("product_mark_adaptive_foreground.png", tile=False, scale=0.62)
+    write_ios("product_mark_ios.png")
     # The web shows the same mark before sign-in.
     web = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", "..", "web", "public", "product-mark.png"))
     shutil.copyfile(mark, web)

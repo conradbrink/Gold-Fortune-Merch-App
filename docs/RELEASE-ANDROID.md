@@ -4,6 +4,9 @@ The rep app is Flutter, in `mobile/`. It is distributed as a signed APK from
 the website — not through the Play Store — so there is no review queue and no
 staged rollout. What you upload is what the field gets.
 
+Google Play and the App Store are being added alongside it: see
+`docs/RELEASE-STORES.md`.
+
 **Package id: `za.co.tickd.app`** (from 7 Oct 2026; it was
 `com.goldfortune.gf_merch_rep`). This is permanent from its first release, and
 on Google Play it can never change. Changing it produces a *different app* that

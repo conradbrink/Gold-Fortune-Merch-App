@@ -61,8 +61,6 @@ class _WorkdayBannerState extends ConsumerState<WorkdayBanner> {
     switch (mode) {
       case LocationTrackingMode.background:
         return 'Recording your location every ${interval.inMinutes} min';
-      case LocationTrackingMode.foregroundOnly:
-        return 'Only recording while this app is open';
       case LocationTrackingMode.unavailable:
         // Covers services switched off *and* permission denied. Naming only one
         // sends half of the reps to the wrong screen looking for the wrong
@@ -305,12 +303,12 @@ class _WorkdayBannerState extends ConsumerState<WorkdayBanner> {
               ),
             ],
           ),
-          // A partial grant is worth interrupting for. Without this the rep sees
-          // "Workday in progress", believes they are covered, and the gap only
-          // surfaces days later as a patchy trail nobody can explain.
-          if (active && trackingMode != LocationTrackingMode.background) ...[
+          // Worth interrupting for. Without this the rep sees "Workday in
+          // progress", believes they are covered, and the gap only surfaces
+          // days later as a trail nobody can explain.
+          if (active && trackingMode == LocationTrackingMode.unavailable) ...[
             const SizedBox(height: 12),
-            _PermissionNotice(mode: trackingMode),
+            const _PermissionNotice(),
           ],
           if (active) ...[
             const SizedBox(height: 14),
@@ -434,24 +432,13 @@ class _Metric extends StatelessWidget {
 
 /// Says what is missing and opens the one screen that can fix it.
 ///
-/// `LocationTracking.openPermissionSettings` has existed since the location
-/// stream landed and was wired to nothing, so the only route to "Allow all the
-/// time" was a rep knowing their way around Android settings. On Android 11 and
-/// later that grant *cannot* be requested from inside the app — the request
-/// returns "while in use" with no dialog shown, which looks like a broken
-/// button — so sending them to the system screen is the only honest option.
+/// Location switched off and permission refused look the same from here, so
+/// the copy names both and opens the app's settings, which fix either.
 class _PermissionNotice extends StatelessWidget {
-  const _PermissionNotice({required this.mode});
-
-  final LocationTrackingMode mode;
+  const _PermissionNotice();
 
   @override
   Widget build(BuildContext context) {
-    // `unavailable` is two different situations wearing one name — location
-    // services switched off, and permission denied or permanently denied. The
-    // enum does not tell them apart, so the copy must not pretend to: it names
-    // both and sends the rep to the screen that fixes either.
-    final off = mode == LocationTrackingMode.unavailable;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       decoration: BoxDecoration(
@@ -469,24 +456,19 @@ class _PermissionNotice extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  off
-                      ? 'Your location is not being recorded'
-                      : 'Your location stops recording in the background',
-                  style: const TextStyle(
+                const Text(
+                  'Your location is not being recorded',
+                  style: TextStyle(
                     fontWeight: FontWeight.w700,
                     fontSize: 13,
                     color: AppColors.textPrimary,
                   ),
                 ),
                 const SizedBox(height: 2),
-                Text(
-                  off
-                      ? 'Location is switched off, or this app has not been '
-                          'given permission. Open settings to turn it on.'
-                      : 'Set location to "Allow all the time" so your '
-                          'location keeps recording when the app is not open.',
-                  style: const TextStyle(
+                const Text(
+                  'Location is switched off, or this app has not been '
+                  'given permission. Open settings to turn it on.',
+                  style: TextStyle(
                       color: AppColors.textMuted, fontSize: 12.5),
                 ),
                 const SizedBox(height: 8),

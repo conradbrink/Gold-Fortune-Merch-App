@@ -1,4 +1,5 @@
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
     <!-- Supabase API calls -->
     <uses-permission android:name="android.permission.INTERNET"/>
     <!-- GPS check-in/out at stores -->
@@ -6,11 +7,11 @@
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
     <!-- The workday trail, recorded while a day is open.
 
-         Background location is a separate grant from the two above and cannot be
-         obtained from an in-app prompt on Android 11+ — the rep has to choose
-         "Allow all the time" in system settings. Without it the app still works
-         and still records a trail; it just stops whenever the app is not on
-         screen, which is what `LocationTrackingMode.foregroundOnly` reports.
+         No ACCESS_BACKGROUND_LOCATION ("Allow all the time"): the trail is
+         started with the app open, and a location foreground service started
+         then keeps "while using the app" access behind other apps until the
+         day ends (lib/core/location_tracking.dart). Google Play reviews every
+         app that asks for background location, and this one does not need it.
 
          FOREGROUND_SERVICE_LOCATION is the typed permission Android 14 requires
          alongside the untyped one. geolocator declares the service itself, with
@@ -19,10 +20,18 @@
          WAKE_LOCK backs ForegroundNotificationConfig.enableWakeLock: without it
          the device sleeps between fixes and Android delivers the whole batch on
          waking, which reads as a rep who sat still for hours and then teleported. -->
-    <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION"/>
     <uses-permission android:name="android.permission.WAKE_LOCK"/>
+    <!-- Added by open_filex's own manifest, and not needed here: the app only
+         opens files it downloaded into its own storage, and photos are chosen
+         with the system photo picker, which asks for nothing. Google Play
+         makes every app that asks for photos and videos justify it, and
+         turns down the ones that only attach a picture now and then. -->
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" tools:node="remove"/>
+    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" tools:node="remove"/>
+    <uses-permission android:name="android.permission.READ_MEDIA_VIDEO" tools:node="remove"/>
+    <uses-permission android:name="android.permission.READ_MEDIA_AUDIO" tools:node="remove"/>
     <!-- The product's name, not a company's: one app serves every company.
          Only the label changed. The applicationId in build.gradle stays as it
          was, because a new id installs as a second app beside the first and

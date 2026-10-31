@@ -172,13 +172,13 @@ class WorkdayTrail {
       unawaited(restart(reason: 'resume-stalled'));
       return;
     }
-    // A rep the banner sent to settings comes back through here. Nothing else
-    // reads the grant again while the trail is healthy, so "Allow all the
-    // time" went unnoticed and the banner kept saying it only records while
-    // the app is open. Only asked below `background`: a downgrade from it
-    // leaves the running service recording, and restarting would lose that.
-    // Only on `resumed`, which coming back from settings always ends with,
-    // so pulling down the notification shade does not ask every time.
+    // A rep the banner sent to settings comes back through here, with
+    // location switched back on or allowed again. Nothing else reads the
+    // grant while the stream is open, so the banner would keep saying that
+    // nothing is recorded. Only asked when not recording: a running trail is
+    // left alone. Only on `resumed`, which coming back from settings always
+    // ends with, so pulling down the notification shade does not ask every
+    // time.
     if (state == AppLifecycleState.resumed &&
         _mode != LocationTrackingMode.background) {
       _recheckingMode ??= _restartIfModeChanged().whenComplete(
@@ -191,8 +191,8 @@ class WorkdayTrail {
   Future<void>? _recheckingMode;
 
   /// Restarts the trail when the grant is not what it was opened with. A
-  /// restart, not just a new mode: the stream for "all the time" is the one
-  /// with the foreground service, so the old subscription cannot become it.
+  /// restart, not just a new mode: the stream that complained may have
+  /// stopped for good, and a fresh one is the sure way back.
   Future<void> _restartIfModeChanged() async {
     final LocationTrackingMode mode;
     try {
