@@ -22,6 +22,7 @@ export function operatorMayChange(key: string, audience: string): boolean {
 export function customerAlsoSets(key: string): string | null {
   if (key === "alerts_on" || key === "alerts_email") return "their switches on Notifications";
   if (key.startsWith("money_")) return "their set-up wizard";
+  if (key === "invoice_paper") return "their Business settings";
   return null;
 }
 
@@ -45,7 +46,7 @@ export const SETTING_GROUPS: { id: string; title: string; match: (key: string) =
     match: (k) => ["dashboard_cards", "dashboard_layout", "report_tabs", "staff_score_weights"].includes(k),
   },
   { id: "money", title: "How they get paid", match: (k) => k.startsWith("money_") },
-  { id: "documents", title: "Documents", match: (k) => k === "document_style" },
+  { id: "documents", title: "Documents", match: (k) => k === "document_style" || k === "invoice_paper" },
 ];
 
 /** Settings split into the page's groups, each in the order given; anything unknown goes last, under Other. */

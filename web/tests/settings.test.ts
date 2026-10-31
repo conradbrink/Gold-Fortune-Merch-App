@@ -172,6 +172,7 @@ test("the Control Centre groups every setting it shows", () => {
   assert.equal(where("range_lapse_days"), "orders");
   assert.equal(where("money_invoice_orders"), "money");
   assert.equal(where("document_style"), "documents");
+  assert.equal(where("invoice_paper"), "documents");
   assert.deepEqual(groupSettings([{ key: "something_new" }]).map((g) => g.id), ["other"]);
 });
 

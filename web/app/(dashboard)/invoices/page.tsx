@@ -65,6 +65,8 @@ export default function InvoicesPage() {
   const supabase = createClient();
   const terms = useTerms();
   const config = useCompanyConfig();
+  // A company that prints at the counter prints each ticked invoice as a till slip.
+  const printer = config?.settings.invoice_paper ?? "a4";
   const router = useRouter();
   const sw = config ? switchesOf(config.settings) : null;
   const canStart =
@@ -225,7 +227,7 @@ export default function InvoicesPage() {
       return;
     }
     setError(null);
-    printInvoicePdfs(supabase, tickedRows).catch((e) => setError(e instanceof Error ? e.message : String(e)));
+    printInvoicePdfs(supabase, tickedRows, printer).catch((e) => setError(e instanceof Error ? e.message : String(e)));
   }
 
   return (
@@ -294,7 +296,14 @@ export default function InvoicesPage() {
             {tickedRows.length === 1 ? "1 invoice ticked" : `${tickedRows.length} invoices ticked`}
           </p>
           <Button size="sm" onClick={printTicked}>
-            <Printer className="mr-1.5 h-4 w-4" /> {tickedRows.length === 1 ? "Print it" : `Print all ${tickedRows.length}`}
+            <Printer className="mr-1.5 h-4 w-4" />{" "}
+            {printer === "slip_80"
+              ? tickedRows.length === 1
+                ? "Print slip"
+                : `Print ${tickedRows.length} slips`
+              : tickedRows.length === 1
+                ? "Print it"
+                : `Print all ${tickedRows.length}`}
           </Button>
           <Button size="sm" variant="ghost" onClick={() => setTicked(new Set())}>
             Clear

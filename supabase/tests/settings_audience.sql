@@ -65,7 +65,7 @@ begin
     from (values ('checkin_radius_m'), ('auto_end_enabled'), ('auto_end_time'), ('country_code'), ('currency_code'),
                  ('brand_primary_color'), ('brand_accent_color'), ('job_report_send'), ('job_report_send_time'),
                  ('alerts_on'), ('alerts_email'), ('money_workflow'), ('money_quotes'), ('money_deposits'),
-                 ('money_invoice_from_jobs'), ('money_invoice_direct'), ('money_contracts')) v(key)
+                 ('money_invoice_from_jobs'), ('money_invoice_direct'), ('money_contracts'), ('invoice_paper')) v(key)
    where not exists (select 1 from public.setting_definitions d
                       where d.key = v.key and d.audience = 'owner');
   if v_txt is not null then

@@ -18,6 +18,20 @@ export function isDocumentStyle(v: unknown): v is DocumentStyle {
   return typeof v === "string" && (DOCUMENT_STYLES as readonly string[]).includes(v);
 }
 
+/**
+ * What the Print button on an invoice prints on (`invoice_paper`): an A4
+ * page, or an 80 mm till slip for a receipt printer at the counter
+ * (`lib/till-slip.ts`). The PDF button and emailed invoices stay A4.
+ */
+export const INVOICE_PAPERS = ["a4", "slip_80"] as const;
+export type InvoicePaper = (typeof INVOICE_PAPERS)[number];
+
+export const DEFAULT_INVOICE_PAPER: InvoicePaper = "a4";
+
+export function isInvoicePaper(v: unknown): v is InvoicePaper {
+  return typeof v === "string" && (INVOICE_PAPERS as readonly string[]).includes(v);
+}
+
 /** What a document needs to know to look like the company's: a style and two colours. */
 export type PdfLook = { style: DocumentStyle; primary: string; accent: string };
 

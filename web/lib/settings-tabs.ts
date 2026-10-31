@@ -105,6 +105,7 @@ export const INTERNAL_SETTINGS = [...ENGINE_SETTINGS, ...TICKD_RULES] as const;
  * Settings the customer can still write, because the set-up wizard asks for
  * them (how they get paid) or because Notifications offers a simpler switch
  * over them (alerts), but whose full detail only the Control Centre shows.
+ * The invoice printer is on Business, and Tickd sets it up for a company too.
  */
 export const CONTROL_CENTRE_OWNER_SETTINGS = [
   "money_workflow",
@@ -117,6 +118,7 @@ export const CONTROL_CENTRE_OWNER_SETTINGS = [
   "money_paid_on_delivery",
   "alerts_on",
   "alerts_email",
+  "invoice_paper",
 ] as const;
 
 /**
